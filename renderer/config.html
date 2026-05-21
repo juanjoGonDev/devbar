@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>DevBar — Configuración</title>
+  </head>
+  <body class="config">
+    <div class="app-window-spacer"></div>
+    <h1>Configuración</h1>
+
+    <!-- Global settings -->
+    <section class="settings-card">
+      <h2>General</h2>
+      <label class="toggle">
+        <input type="checkbox" id="set-autostart" />
+        <span>Iniciar al arrancar el Mac</span>
+        <small>Registra DevBar como Login Item. Solo aplica al .app empaquetado.</small>
+      </label>
+      <h2 style="margin-top:16px">Filtros globales</h2>
+      <p class="muted small">
+        Silenciar afecta solo al color de la bolita y al icono de la barra.
+      </p>
+      <label class="toggle">
+        <input type="checkbox" id="set-silence-warnings" />
+        <span>Silenciar <strong>warnings</strong> en todos los grupos</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="set-silence-errors" />
+        <span>Silenciar <strong>errors</strong> en todos los grupos</span>
+      </label>
+    </section>
+
+    <!-- Backup / Restore -->
+    <section class="settings-card">
+      <h2>Copia de seguridad</h2>
+      <p class="muted small">
+        Exporta toda la configuración a JSON o impórtala desde otra máquina.
+        Importar <strong>sobreescribe</strong> todo lo actual; se guarda un backup automático.
+      </p>
+      <div class="copy-actions">
+        <button id="export-config">Exportar</button>
+        <button id="import-config">Importar</button>
+      </div>
+    </section>
+
+    <!-- Two-pane layout -->
+    <div class="config-two-pane">
+      <!-- Left pane: groups list -->
+      <div class="config-left-pane">
+        <div class="config-left-header">
+          <span class="muted pane-title">Grupos</span>
+          <button id="add-group" class="primary small-btn">+ Añadir</button>
+        </div>
+        <div id="groups-list" class="groups-list-nav"></div>
+      </div>
+
+      <!-- Right pane: group detail editor -->
+      <div class="config-right-pane" id="group-detail">
+        <div class="detail-empty">
+          <p class="muted">Selecciona un grupo para editarlo.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Icon picker popover (hidden) -->
+    <div id="icon-picker" class="icon-picker-popover" hidden>
+      <input id="icon-search" type="search" placeholder="Buscar emoji…" class="icon-search" />
+      <div id="icon-grid" class="icon-grid"></div>
+    </div>
+
+    <!-- Command/action dialog -->
+    <dialog id="sub-dialog">
+      <div class="fake-traffic-lights">
+        <span class="light close" data-close></span>
+        <span class="light min"></span>
+        <span class="light max"></span>
+      </div>
+      <form id="sub-form" method="dialog">
+        <h2 id="sub-dialog-title">Comando</h2>
+
+        <div class="field sf-icon-field">
+          <label>Icono</label>
+          <div class="sf-icon-row">
+            <button type="button" id="sf-icon-btn" class="icon-btn sf-icon-btn">⚙️</button>
+            <small class="muted">(opcional)</small>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="sf-name">Nombre</label>
+          <input id="sf-name" required />
+        </div>
+        <div class="field" id="sf-command-field">
+          <label for="sf-command">Comando</label>
+          <input id="sf-command" placeholder="pnpm dev" required />
+        </div>
+        <div class="field" id="sf-args-field">
+          <label for="sf-args">Argumentos (opcional, uno por línea)</label>
+          <textarea id="sf-args" placeholder="solo si no los pones arriba"></textarea>
+        </div>
+        <!-- Env editor — built dynamically by config.js -->
+        <div class="field" id="sf-env-field">
+          <label>Variables de entorno</label>
+          <!-- Action-only: inheritGroupEnv toggle (hidden for commands) -->
+          <div id="sf-inherit-group-env-row" style="display:none; margin-bottom:8px;" class="env-section-header">
+            <label class="toggle inline">
+              <input type="checkbox" id="sf-inherit-group-env" />
+              <span>Heredar variables del grupo</span>
+            </label>
+            <p id="sf-inherit-group-env-hint" class="muted small" style="margin:2px 0 6px 42px;">
+              Cuando está activo, las variables del grupo se aplican antes que las de esta acción (las de aquí pueden sobreescribir).
+            </p>
+          </div>
+          <div id="sf-env-editor"></div>
+        </div>
+
+        <!-- Command-only fields -->
+        <div id="cmd-only-fields">
+          <details>
+            <summary class="muted small">Avanzado (regex, silencio, cwd override)</summary>
+            <div class="field" style="margin-top:8px">
+              <label for="sf-cwd">Working directory override (vacío = usar el del grupo)</label>
+              <div class="input-with-action">
+                <input id="sf-cwd" placeholder="/Users/yo/subproyecto" />
+                <button type="button" id="sf-cwd-pick" class="icon-action-btn" title="Seleccionar carpeta…">📁</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="sf-warn">Regex warnings</label>
+                <input id="sf-warn" />
+              </div>
+              <div class="field">
+                <label for="sf-error">Regex errors</label>
+                <input id="sf-error" />
+              </div>
+            </div>
+            <fieldset class="silence-group">
+              <legend>Silenciar en este comando</legend>
+              <label class="toggle inline">
+                <input type="checkbox" id="sf-silence-warn" />
+                <span>Warnings no afectan al color</span>
+              </label>
+              <label class="toggle inline">
+                <input type="checkbox" id="sf-silence-err" />
+                <span>Errors no afectan al color</span>
+              </label>
+            </fieldset>
+          </details>
+        </div>
+
+        <div class="dialog-buttons">
+          <button type="button" id="sub-cancel">Cancelar</button>
+          <button type="submit" class="primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" style="display:none" class="toast"></div>
+
+    <script src="dnd-helper.js"></script>
+    <script src="config.js"></script>
+  </body>
+</html>

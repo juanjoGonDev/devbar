@@ -1,0 +1,23 @@
+{
+  "name": "devbar",
+  "version": "0.1.0",
+  "description": "Menu bar service launcher for Mac (WAMP-style)",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . DevBar --platform=darwin --out=dist --overwrite --icon=assets/icon.icns",
+    "install-local": "bash scripts/install-local.sh",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-packager": "^17.1.2",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "menubar": "^9.4.0",
+    "uuid": "^9.0.1"
+  }
+}

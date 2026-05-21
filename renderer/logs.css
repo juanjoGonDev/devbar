@@ -1,0 +1,255 @@
+* { box-sizing: border-box; }
+
+/* Shared top spacer for hiddenInset windows */
+.app-window-spacer {
+  height: 64px;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+.app-window-spacer * { -webkit-app-region: no-drag; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #1c1c1e;
+  color: #e5e5e7;
+  font-family: "SF Mono", ui-monospace, Menlo, Consolas, "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-feature-settings: "calt" 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+body { display: flex; flex-direction: column; }
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  row-gap: 6px;
+  padding: 10px 16px;
+  background: rgba(36, 36, 38, 0.92);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+  -webkit-app-region: drag;
+  flex-wrap: wrap;
+}
+header > * { -webkit-app-region: no-drag; }
+header strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+header input[type="search"] {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  color: #e5e5e7;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  min-width: 140px;
+}
+header input[type="search"]:focus {
+  outline: 2px solid rgba(0, 122, 255, 0.5);
+  outline-offset: -1px;
+  border-color: #0a84ff;
+}
+header button {
+  background: rgba(255,255,255,0.08);
+  color: #e5e5e7;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 4px 11px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  transition: background 0.12s ease;
+}
+header button:hover { background: rgba(255,255,255,0.14); }
+header button:active { transform: scale(0.98); }
+header .check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  user-select: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: #c8c8cc;
+}
+header .check input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 24px;
+  height: 14px;
+  background: rgba(255,255,255,0.16);
+  border-radius: 999px;
+  position: relative;
+  margin: 0;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+header .check input[type="checkbox"]::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.18s ease;
+}
+header .check input[type="checkbox"]:checked { background: #30d158; }
+header .check input[type="checkbox"]:checked::before { transform: translateX(10px); }
+
+main {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+  background: #1c1c1e;
+}
+
+#lines {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 6px 0;
+}
+
+.line {
+  padding: 1px 16px;
+  display: flex;
+  gap: 10px;
+  line-height: 1.55;
+  border-left: 3px solid transparent;
+  min-width: 0;
+}
+.line:hover { background: rgba(255, 255, 255, 0.04); }
+.line .ts {
+  color: #6e7681;
+  flex-shrink: 0;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.line .body {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* preserve runs of spaces between tokens (typical of structured logs) */
+  tab-size: 2;
+}
+.line .body span { white-space: pre-wrap; }
+.line.stderr { background: rgba(255, 90, 70, 0.04); }
+.line.warn { border-left-color: #ffd60a; }
+.line.error { border-left-color: #ff453a; background: rgba(255, 69, 58, 0.06); }
+.line.sys .body { color: #7adfff; font-style: italic; }
+.line.hidden { display: none; }
+
+.line.silenced {
+  opacity: 0.45;
+  border-left-color: transparent;
+}
+.line.silenced .body { font-style: italic; }
+.line.silenced::before {
+  content: '🔕';
+  font-size: 10px;
+  user-select: none;
+  margin-right: 2px;
+}
+
+.line .silence-btn {
+  visibility: hidden;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #8a8a8a;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 4px;
+  margin-left: 6px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  line-height: 1.4;
+}
+.line:hover .silence-btn { visibility: visible; }
+.line .silence-btn:hover { background: rgba(255,255,255,0.08); border-color: #4a4a4a; color: #d4d4d4; }
+.line.warn .silence-btn,
+.line.error .silence-btn { visibility: visible; opacity: 0.5; }
+.line.warn .silence-btn:hover,
+.line.error .silence-btn:hover { opacity: 1; }
+
+.silenced-panel {
+  background: #232323;
+  border-bottom: 1px solid #3a3a3a;
+  padding: 10px 16px;
+  display: flex;
+  gap: 18px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 11px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.silenced-section { flex: 1; min-width: 0; }
+.silenced-section h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #8a8a8a;
+  font-weight: 600;
+}
+.silenced-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.silenced-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid #2e2e2e;
+}
+.silenced-list li:last-child { border-bottom: none; }
+.silenced-list .pattern {
+  flex: 1;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: #c8c8c8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.silenced-list .unsilence {
+  background: transparent;
+  border: 1px solid #3a3a3a;
+  color: #c8c8c8;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  cursor: pointer;
+}
+.silenced-list .unsilence:hover { background: #3a3a3a; }
+.silenced-list .empty { color: #6e7681; font-style: italic; padding: 4px 0; }
+
+header label.check { white-space: nowrap; }
+header button { white-space: nowrap; }
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 14px;
+  background: rgba(36, 36, 38, 0.92);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  color: #98989d;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 11px;
+  flex-shrink: 0;
+}

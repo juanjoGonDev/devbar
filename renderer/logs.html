@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <link rel="stylesheet" href="logs.css" />
+    <title>Logs</title>
+  </head>
+  <body>
+    <div class="app-window-spacer"></div>
+    <header>
+      <strong id="title">Logs</strong><span id="uptime-badge" style="display:none; margin-left:8px; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; font-weight:normal;"></span>
+      <input id="filter" type="search" placeholder="Filtrar (texto o regex)…" />
+      <label class="check"><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
+      <label class="check"><input type="checkbox" id="paused" /> Pausa</label>
+      <label class="check" title="Silencia todos los warnings detectados en este servicio (no afecta al color)"><input type="checkbox" id="mute-warn" /> 🔕 warns</label>
+      <label class="check" title="Silencia todos los errors detectados en este servicio (no afecta al color)"><input type="checkbox" id="mute-err" /> 🔕 errors</label>
+      <button id="clear">Limpiar</button>
+      <button id="copy">Copiar</button>
+      <button id="toggle-silenced" title="Mostrar / ocultar patrones silenciados">Silenciados</button>
+    </header>
+    <aside id="silenced-panel" class="silenced-panel" hidden>
+      <div class="silenced-section">
+        <h3>Warns silenciados</h3>
+        <ul id="silenced-warns" class="silenced-list"></ul>
+      </div>
+      <div class="silenced-section">
+        <h3>Errors silenciados</h3>
+        <ul id="silenced-errs" class="silenced-list"></ul>
+      </div>
+    </aside>
+    <main>
+      <div id="lines"></div>
+    </main>
+    <footer>
+      <span id="counts">0 líneas</span>
+      <span id="status"></span>
+    </footer>
+    <script src="format-uptime.js"></script>
+    <script src="logs.js"></script>
+  </body>
+</html>
