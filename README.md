@@ -5,7 +5,7 @@
 <h1 align="center">DevBar</h1>
 
 <p align="center">
-  A WAMP-style macOS menu-bar launcher for your local development services.<br/>
+  A macOS menu-bar launcher for your local development services.<br/>
   Start &amp; stop commands, switch git branches per group, run actions, watch logs &mdash; all from the menu bar.
 </p>
 
