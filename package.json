@@ -11,13 +11,13 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "electron": "^30.0.0",
+    "electron": "^39.8.5",
     "electron-packager": "^17.1.2",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.7"
   },
   "dependencies": {
     "electron-store": "^8.2.0",
     "menubar": "^9.4.0",
-    "uuid": "^9.0.1"
+    "uuid": "^14.0.0"
   }
 }
