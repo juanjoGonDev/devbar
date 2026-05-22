@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "07:00"
+      timezone: "Europe/Madrid"
+    versioning-strategy: "increase-if-necessary"
+    target-branch: "main"
+    rebase-strategy: auto
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "07:00"
+      timezone: "Europe/Madrid"
+    target-branch: "main"
+    rebase-strategy: auto
