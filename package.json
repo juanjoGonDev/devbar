@@ -16,7 +16,7 @@
     "vitest": "^4.1.7"
   },
   "dependencies": {
-    "electron-store": "^8.2.0",
+    "electron-store": "^11.0.2",
     "menubar": "^9.4.0",
     "uuid": "^14.0.0"
   }
