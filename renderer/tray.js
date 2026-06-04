@@ -3,6 +3,7 @@
 const groupsEl = document.getElementById('groups');
 const toastEl = document.getElementById('toast');
 
+
 // ─────────────────────── Uptime ticker ───────────────────────────────
 
 /**
@@ -225,6 +226,25 @@ function renderGroupRow(gs) {
   });
   row.appendChild(caret);
 
+  // Row click → toggle expand/collapse, but ignore clicks on interactive children
+  // (anything that already has its own click semantics, plus the uptime label
+  // which the user may want to select-as-text without expanding the group).
+  const INTERACTIVE_SELECTOR =
+    '.combobox, .combobox-input, .combobox-list, .combobox-item, ' +
+    '.caret-btn, .branch-select, .uptime, ' +
+    'button, input, select, textarea, a';
+  row.addEventListener('click', (e) => {
+    if (e.target.closest(INTERACTIVE_SELECTOR)) return;
+    // When a combobox dropdown closes via selection, the browser synthesizes
+    // a click on whatever is now under the cursor (the row, because the
+    // dropdown — appended to document.body — just got display:none'd between
+    // mousedown and mouseup). Ignore that synthetic click so we don't
+    // re-render the tray mid-selection and orphan the combo's onSelect.
+    if (window.__comboboxSelectingAt && Date.now() - window.__comboboxSelectingAt < 250) return;
+    expandedState.set(groupId, !expandedState.get(groupId));
+    render(lastGroupStates);
+  });
+
   wrapper.appendChild(row);
 
   // ── Expanded section ─────────────────────────────────────────────────
@@ -338,6 +358,28 @@ function loadBranchesIntoCombo(groupId, combo) {
   });
 }
 
+// ─────────────────────── Counter button helper ───────────────────────
+
+/**
+ * Build a clickable counter badge that opens filtered logs.
+ * @param {'warn'|'error'} kind
+ * @param {number} count
+ * @param {string} processId
+ * @param {string} filterRegex  — passed as filter to openLogs
+ */
+function buildCounterBtn(kind, count, processId, filterRegex) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = `counter-btn ${kind}`;
+  btn.textContent = kind === 'warn' ? `⚠ ${count}` : `✕ ${count}`;
+  btn.title = `Ver logs filtrados por ${kind === 'warn' ? 'warnings' : 'errors'}`;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    window.api.openLogs({ processId, filter: filterRegex });
+  });
+  return btn;
+}
+
 // ─────────────────────── Command sub-row (expanded) ──────────────────
 
 function buildCommandSubRow(gs, cs, cmd) {
@@ -364,15 +406,11 @@ function buildCommandSubRow(gs, cs, cmd) {
     const counters = document.createElement('span');
     counters.className = 'cmd-counters';
     if (!cs.muteWarn && cs.warnCount > 0) {
-      const w = document.createElement('span');
-      w.className = 'warn-count';
-      w.textContent = `⚠ ${cs.warnCount}`;
+      const w = buildCounterBtn('warn', cs.warnCount, cs.processId, '\\bwarn(ing)?s?\\b');
       counters.appendChild(w);
     }
     if (!cs.muteErr && cs.errorCount > 0) {
-      const e = document.createElement('span');
-      e.className = 'error-count';
-      e.textContent = `✕ ${cs.errorCount}`;
+      const e = buildCounterBtn('error', cs.errorCount, cs.processId, '\\berror(s)?\\b');
       counters.appendChild(e);
     }
     subRow.appendChild(counters);
@@ -501,3 +539,13 @@ window.api.onToast(({ kind, message }) => {
 window.api.getGroupStates().then((groupStates) => {
   render(groupStates);
 });
+
+// App version label
+if (window.api.getAppVersion) {
+  window.api.getAppVersion()
+    .then((v) => {
+      const el = document.getElementById('app-version');
+      if (el && v) el.textContent = `v${v}`;
+    })
+    .catch(() => { /* leave span empty on failure */ });
+}

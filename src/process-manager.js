@@ -8,7 +8,7 @@ const { buildCmdline } = require('./parse-command');
 const { parseProcessId } = require('./compound-id');
 const { materializeEnv } = require('./groups-model');
 
-const LOG_BUFFER_LIMIT = 2000;
+const DEFAULT_LOG_BUFFER_LIMIT = 2000;
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 const SHELL_NOISE_PATTERNS = [
@@ -40,6 +40,27 @@ function safeRegex(source) {
   }
 }
 
+/**
+ * Test whether a cleaned log line matches a silenced pattern.
+ *
+ * Heuristic: patterns produced by buildSilencePattern always contain at least
+ * one backslash (either from regex-escape or from \d+). Legacy literals that
+ * were stored before this change have no backslashes — fall back to substring.
+ *
+ * This avoids the trap where a literal like "[12:34:56] WARN msg" would parse
+ * as a valid regex (bracket = char class) but match in unintended ways.
+ *
+ * @param {string} p       — stored pattern
+ * @param {string} cleaned — ANSI-stripped log line
+ * @returns {boolean}
+ */
+function matchesPattern(p, cleaned) {
+  if (!p) return false;
+  if (!p.includes('\\')) return cleaned.includes(p);
+  const re = safeRegex(p);
+  return re ? re.test(cleaned) : cleaned.includes(p);
+}
+
 class ProcessManager extends EventEmitter {
   constructor(configStore) {
     super();
@@ -59,7 +80,9 @@ class ProcessManager extends EventEmitter {
       this.logs.set(id, buf);
     }
     buf.push(entry);
-    if (buf.length > LOG_BUFFER_LIMIT) buf.shift();
+    const state = this.states.get(id);
+    const limit = (state && state.logLimit) || DEFAULT_LOG_BUFFER_LIMIT;
+    if (buf.length > limit) buf.shift();
     this.emit('log', { id, entry });
   }
 
@@ -95,7 +118,7 @@ class ProcessManager extends EventEmitter {
       if (!lvl) continue;
       const list = patterns[lvl] || [];
       const cleaned = stripAnsi(e.line);
-      const isSilenced = list.length && list.some((p) => p && cleaned.includes(p));
+      const isSilenced = list.length && list.some((p) => matchesPattern(p, cleaned));
       e.silenced = isSilenced;
       e.level = isSilenced ? null : lvl;
       if (!isSilenced) {
@@ -152,6 +175,15 @@ class ProcessManager extends EventEmitter {
       }
     }
     return entries;
+  }
+
+  resolveLogLimit(resolved) {
+    const globals = this.configStore.getGlobalSettings();
+    if (resolved && resolved.kind === 'command' && resolved.target) {
+      const cmdLimit = resolved.target.maxLogLines;
+      if (cmdLimit != null) return cmdLimit;
+    }
+    return globals.maxLogLines || DEFAULT_LOG_BUFFER_LIMIT;
   }
 
   start(processId) {
@@ -211,14 +243,9 @@ class ProcessManager extends EventEmitter {
     let initWindow = true;
     setTimeout(() => { initWindow = false; }, 1500);
 
-    this.logs.set(processId, []);
-    this.pushLog(processId, {
-      ts: Date.now(),
-      stream: 'sys',
-      level: null,
-      line: `▶ start: ${shell} -ic '${cmdline}'  (cwd=${cwd})`,
-    });
+    const logLimit = this.resolveLogLimit(resolved);
 
+    this.logs.set(processId, []);
     this.states.set(processId, {
       id: processId,
       status: 'running',
@@ -227,9 +254,16 @@ class ProcessManager extends EventEmitter {
       lastError: null,
       startedAt: Date.now(),
       child,
+      logLimit,
       // Action extras
       lastExitCode: null,
       lastFinishedAt: null,
+    });
+    this.pushLog(processId, {
+      ts: Date.now(),
+      stream: 'sys',
+      level: null,
+      line: `▶ start: ${shell} -ic '${cmdline}'  (cwd=${cwd})`,
     });
     this.emit('change', this.getState(processId));
 
@@ -257,7 +291,7 @@ class ProcessManager extends EventEmitter {
         ) || [];
         if (patterns.length) {
           const cleaned = stripAnsi(line);
-          if (patterns.some((p) => p && cleaned.includes(p))) {
+          if (patterns.some((p) => matchesPattern(p, cleaned))) {
             silenced = true;
           }
         }

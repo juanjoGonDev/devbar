@@ -10,6 +10,7 @@ const { validateImportedConfig, summarizeImport } = require('./config-io');
 const { ProcessManager, deriveColor } = require('./process-manager');
 const gitManager = require('./git-manager');
 const trayIcon = require('./tray-icon');
+const logger = require('./logger');
 const { aggregateColor } = trayIcon;
 const { loadShellPath, expandTilde } = require('./path-helper');
 const { RepoWatcher } = require('./repo-watcher');
@@ -17,11 +18,30 @@ const { makeCommandId, makeActionId, parseProcessId } = require('./compound-id')
 
 loadShellPath();
 
+// ─── File logger ────────────────────────────────────────────────────
+// Initialise before anything noisy so we capture early `console.*`
+// from the main process. The renderer side is hooked later, when each
+// BrowserWindow is created (we need its `webContents` to subscribe).
+//
+// File lives at `app.getPath('logs')/app.log` which is
+// `~/Library/Logs/DevBar/app.log` on macOS. `install-local.sh` drops a
+// symlink at the repo root so the user can `tail -f app.log` from the
+// project directory.
+try {
+  logger.init({ filePath: path.join(app.getPath('logs'), 'app.log') });
+  logger.attachMainConsole();
+} catch (e) {
+  // Logger is best-effort; never block startup.
+  // eslint-disable-next-line no-console
+  console.error('logger init failed:', e);
+}
+
 const processManager = new ProcessManager(configStore);
 
 let mb;
 let configWindow = null;
 const logsWindows = new Map();
+const silencedWindows = new Map();
 const repoWatcher = new RepoWatcher();
 
 // Group-level transient errors (not persisted)
@@ -129,7 +149,90 @@ function rendererTargets() {
   for (const win of logsWindows.values()) {
     if (win && !win.isDestroyed()) targets.push(win.webContents);
   }
+  for (const win of silencedWindows.values()) {
+    if (win && !win.isDestroyed()) targets.push(win.webContents);
+  }
   return targets;
+}
+
+function updateDockVisibility() {
+  if (process.platform !== 'darwin' || !app.dock) return;
+  const anyOpen =
+    logsWindows.size > 0 ||
+    silencedWindows.size > 0 ||
+    (configWindow && !configWindow.isDestroyed());
+  if (anyOpen) {
+    if (!app.dock.isVisible()) app.dock.show();
+  } else {
+    if (app.dock.isVisible()) app.dock.hide();
+  }
+}
+
+function buildTrayContextMenu() {
+  const items = [];
+  if (logsWindows.size > 0) {
+    const submenu = [];
+    for (const [processId, win] of logsWindows.entries()) {
+      if (win && !win.isDestroyed()) {
+        const title = win.getTitle() || `Logs — ${processId}`;
+        submenu.push({
+          label: title,
+          click: () => {
+            if (!win.isDestroyed()) { win.show(); win.focus(); }
+          },
+        });
+      }
+    }
+    if (submenu.length > 0) {
+      items.push({ label: 'Ventanas de logs', submenu });
+      items.push({ type: 'separator' });
+    }
+  }
+  items.push({ label: 'Configuración…', click: () => ensureConfigWindow() });
+  items.push({ type: 'separator' });
+  items.push({ label: 'Salir', role: 'quit' });
+  return Menu.buildFromTemplate(items);
+}
+
+function ensureSilencedWindow(groupId, commandId) {
+  const key = `${groupId}:${commandId}`;
+  const existing = silencedWindows.get(key);
+  if (existing && !existing.isDestroyed()) {
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+  const group = configStore.getGroup(groupId);
+  const command = group && group.commands && group.commands.find((c) => c.id === commandId);
+  if (!command) return null;
+  const win = new BrowserWindow({
+    width: 480,
+    height: 520,
+    minWidth: 360,
+    minHeight: 320,
+    title: `Silenciados — ${command.name}`,
+    backgroundColor: '#1e1e1e',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 12, y: 14 },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.setMenuBarVisibility(false);
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'silenced.html'), {
+    query: { groupId, commandId },
+  });
+  win.on('closed', () => {
+    silencedWindows.delete(key);
+    updateDockVisibility();
+  });
+  silencedWindows.set(key, win);
+  logger.attachWindowConsole(win, `silenced:${key}`);
+  updateDockVisibility();
+  return win;
 }
 
 function broadcastBranchesChanged(repoPath) {
@@ -179,7 +282,7 @@ function adaptiveSize(maxW, maxH, marginW = 60, marginH = 100) {
   };
 }
 
-function ensureLogsWindow(processId) {
+function ensureLogsWindow(processId, { filter } = {}) {
   const existing = logsWindows.get(processId);
   if (existing && !existing.isDestroyed()) {
     existing.show();
@@ -210,13 +313,16 @@ function ensureLogsWindow(processId) {
   });
   win.setMenuBarVisibility(false);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'logs.html'), {
-    query: { id: processId },
-  });
+  const query = { id: processId };
+  if (filter) query.filter = filter;
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'logs.html'), { query });
   win.on('closed', () => {
     logsWindows.delete(processId);
+    updateDockVisibility();
   });
   logsWindows.set(processId, win);
+  logger.attachWindowConsole(win, `logs:${processId}`);
+  updateDockVisibility();
   return win;
 }
 
@@ -247,9 +353,17 @@ function ensureConfigWindow() {
   configWindow.setMenuBarVisibility(false);
   configWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   configWindow.loadFile(path.join(__dirname, '..', 'renderer', 'config.html'));
+  configWindow.on('close', (e) => {
+    if (configWindow.__forceClose) return;
+    e.preventDefault();
+    configWindow.webContents.send('config:closeRequested');
+  });
   configWindow.on('closed', () => {
     configWindow = null;
+    updateDockVisibility();
   });
+  logger.attachWindowConsole(configWindow, 'config');
+  updateDockVisibility();
 }
 
 function applyAutostart(enabled) {
@@ -520,10 +634,35 @@ function registerIpc() {
     return { ok: true, applied: desired };
   });
 
-  ipcMain.handle('window:openLogs', (_e, processId) => {
-    ensureLogsWindow(processId);
+  ipcMain.handle('window:openLogs', (_e, payload) => {
+    const { processId, filter } = typeof payload === 'string'
+      ? { processId: payload }
+      : payload;
+    const existed = !!logsWindows.get(processId);
+    const win = ensureLogsWindow(processId, { filter });
+    if (existed && filter) win.webContents.send('logs:setFilter', { processId, filter });
     if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
     return { ok: true };
+  });
+
+  ipcMain.handle('window:openSilenced', (_e, { groupId, commandId }) => {
+    const win = ensureSilencedWindow(groupId, commandId);
+    return win ? { ok: true } : { ok: false, error: 'command not found' };
+  });
+
+  ipcMain.handle('silenced:getForCommand', (_e, { groupId, commandId }) => {
+    const group = configStore.getGroup(groupId);
+    const command = group && group.commands && group.commands.find((c) => c.id === commandId);
+    if (!group || !command) return { ok: false, error: 'command not found' };
+    return {
+      ok: true,
+      group: { id: group.id, name: group.name },
+      command: {
+        id: command.id,
+        name: command.name,
+        silencedPatterns: command.silencedPatterns || { warn: [], error: [] },
+      },
+    };
   });
 
   // ── Settings ──────────────────────────────────────────────────────────
@@ -670,6 +809,38 @@ function registerIpc() {
     app.quit();
     return { ok: true };
   });
+
+  ipcMain.handle('app:version', () => app.getVersion());
+
+  // ── Config dirty-close helpers ─────────────────────────────────────────
+  ipcMain.handle('config:confirmDirty', async (e, { context }) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const message = 'Tienes cambios sin guardar.';
+    const detail = context === 'window-close'
+      ? '¿Quieres guardarlos antes de cerrar la ventana?'
+      : '¿Quieres guardarlos antes de cambiar de grupo?';
+    let res;
+    try {
+      res = await dialog.showMessageBox(win, {
+        type: 'warning',
+        buttons: ['Cancelar', 'Descartar', 'Guardar'],
+        cancelId: 0,
+        defaultId: 2,
+        message,
+        detail,
+      });
+    } catch (err) {
+      return { choice: 'cancel' };
+    }
+    return { choice: ['cancel', 'discard', 'save'][res.response] };
+  });
+
+  ipcMain.handle('window:confirmCloseConfig', () => {
+    if (!configWindow || configWindow.isDestroyed()) return { ok: true };
+    configWindow.__forceClose = true;
+    configWindow.close();
+    return { ok: true };
+  });
 }
 
 // ─────────────────────── Auto-start at boot ──────────────────────────
@@ -703,7 +874,10 @@ function autoStartAllMarkedCommands() {
 // ─────────────────────── App lifecycle ───────────────────────────────
 
 app.on('ready', () => {
-  if (process.platform === 'darwin' && app.dock) app.dock.hide();
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.hide();
+    updateDockVisibility();
+  }
 });
 
 app.whenReady().then(() => {
@@ -743,16 +917,9 @@ app.whenReady().then(() => {
   mb.on('ready', () => {
     mb.tray.setImage(trayIcon.defaultIcon());
     mb.tray.setTitle('');
-    const trayMenu = Menu.buildFromTemplate([
-      {
-        label: 'Configuración…',
-        click: () => ensureConfigWindow(),
-      },
-      { type: 'separator' },
-      { label: 'Salir', role: 'quit' },
-    ]);
+
     mb.tray.on('right-click', () => {
-      mb.tray.popUpContextMenu(trayMenu);
+      mb.tray.popUpContextMenu(buildTrayContextMenu());
     });
     broadcast();
 
@@ -763,6 +930,8 @@ app.whenReady().then(() => {
   });
 
   mb.on('after-create-window', () => {
+    // Capture renderer console for the tray popover.
+    if (mb.window) logger.attachWindowConsole(mb.window, 'tray');
     broadcast();
   });
 });

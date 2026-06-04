@@ -19,19 +19,12 @@
       <button id="copy">Copiar</button>
       <button id="toggle-silenced" title="Mostrar / ocultar patrones silenciados">Silenciados</button>
     </header>
-    <aside id="silenced-panel" class="silenced-panel" hidden>
-      <div class="silenced-section">
-        <h3>Warns silenciados</h3>
-        <ul id="silenced-warns" class="silenced-list"></ul>
-      </div>
-      <div class="silenced-section">
-        <h3>Errors silenciados</h3>
-        <ul id="silenced-errs" class="silenced-list"></ul>
-      </div>
-    </aside>
-    <main>
-      <div id="lines"></div>
-    </main>
+    <div class="log-container">
+      <main>
+        <div id="lines"></div>
+      </main>
+      <button id="scroll-bottom" class="scroll-bottom-btn" type="button" aria-label="Ir al final">↓</button>
+    </div>
     <footer>
       <span id="counts">0 líneas</span>
       <span id="status"></span>

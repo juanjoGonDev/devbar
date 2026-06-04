@@ -15,6 +15,7 @@ const toastEl = document.getElementById('toast');
 const setAutostart = document.getElementById('set-autostart');
 const setSilenceWarnings = document.getElementById('set-silence-warnings');
 const setSilenceErrors = document.getElementById('set-silence-errors');
+const setMaxLogLines = document.getElementById('set-max-log-lines');
 
 // Sub-dialog fields
 const sfIconBtn = document.getElementById('sf-icon-btn');
@@ -29,6 +30,7 @@ const sfWarn = document.getElementById('sf-warn');
 const sfError = document.getElementById('sf-error');
 const sfSilenceWarn = document.getElementById('sf-silence-warn');
 const sfSilenceErr = document.getElementById('sf-silence-err');
+const sfMaxLogLines = document.getElementById('sf-max-log-lines');
 const cmdOnlyFields = document.getElementById('cmd-only-fields');
 
 const DEFAULT_WARN = '\\bwarn(ing)?s?\\b';
@@ -40,6 +42,38 @@ let selectedGroupId = null;
 let iconPickerCallback = null;   // fn(emoji) when user picks an icon
 let subDialogCallback = null;    // fn(data) when sub-form submits
 let subDialogMode = 'command';   // 'command' | 'action'
+
+// ── Draft state ────────────────────────────────────────────────────────
+// draftGroup: in-memory copy of the selected group being edited
+// storedGroup: last-persisted snapshot (the "clean" baseline for dirty check)
+let draftGroup = null;
+let storedGroup = null;
+
+function isDirty() {
+  if (!storedGroup || !draftGroup) return false;
+  return JSON.stringify(draftGroup) !== JSON.stringify(storedGroup);
+}
+
+function loadDraftFromStored(groupId) {
+  const g = allGroups.find((x) => x.id === groupId);
+  if (!g) { draftGroup = null; storedGroup = null; return; }
+  storedGroup = JSON.parse(JSON.stringify(g));
+  draftGroup = JSON.parse(JSON.stringify(g));
+}
+
+function mutateDraft(mut) {
+  if (!draftGroup) return;
+  mut(draftGroup);
+  updateSaveBar();
+}
+
+function updateSaveBar() {
+  const dirty = isDirty();
+  const saveBtn = document.getElementById('detail-save');
+  const discardBtn = document.getElementById('detail-discard');
+  if (saveBtn) saveBtn.disabled = !dirty;
+  if (discardBtn) discardBtn.disabled = !dirty;
+}
 
 // ────────────────────── Toast ──────────────────────────────────────────
 
@@ -239,7 +273,8 @@ function renderGroupsList() {
     await loadGroups();
   });
 
-  if (selectedGroupId) renderGroupDetail();
+  // Only re-render detail when clean — preserve in-progress edits
+  if (selectedGroupId && !isDirty()) renderGroupDetail();
 }
 
 function buildGroupNavCard(group) {
@@ -264,9 +299,25 @@ function buildGroupNavCard(group) {
   nameEl.textContent = group.name || '(sin nombre)';
   card.appendChild(nameEl);
 
-  card.addEventListener('click', (e) => {
+  card.addEventListener('click', async (e) => {
     if (e.target.closest('.drag-handle')) return;
+    if (group.id === selectedGroupId) return;
+    if (isDirty()) {
+      const { choice } = await window.api.confirmDirty('nav-switch');
+      if (choice === 'cancel') return;
+      if (choice === 'save') {
+        try {
+          await window.api.saveGroup(draftGroup);
+          await loadGroups();
+        } catch (err) {
+          showToast(`Error: ${err.message}`, 'error');
+          return;
+        }
+      }
+      // 'discard' falls through
+    }
     selectedGroupId = group.id;
+    loadDraftFromStored(group.id);
     renderGroupsList();
     renderGroupDetail();
   });
@@ -277,13 +328,67 @@ function buildGroupNavCard(group) {
 // ────────────────────── Group detail (right pane) ─────────────────────
 
 function renderGroupDetail() {
-  const group = selectedGroup();
+  // Ensure draftGroup is initialised for the selected group if not already set
+  if (selectedGroupId && (!draftGroup || draftGroup.id !== selectedGroupId)) {
+    loadDraftFromStored(selectedGroupId);
+  }
+
+  const group = draftGroup;
   if (!group) {
     groupDetailEl.innerHTML = '<div class="detail-empty"><p class="muted">Selecciona un grupo para editarlo.</p></div>';
     return;
   }
 
   groupDetailEl.innerHTML = '';
+
+  // ── Save bar (sticky, shown when dirty) ─────────────────────────────
+  const saveBar = document.createElement('div');
+  saveBar.className = 'save-bar';
+  saveBar.id = 'save-bar';
+
+  const saveBarMsg = document.createElement('span');
+  saveBarMsg.className = 'save-bar-message';
+  saveBarMsg.textContent = 'Cambios sin guardar';
+  saveBar.appendChild(saveBarMsg);
+
+  const discardBarBtn = document.createElement('button');
+  discardBarBtn.id = 'detail-discard';
+  discardBarBtn.className = 'ghost';
+  discardBarBtn.textContent = 'Descartar';
+  discardBarBtn.disabled = true;
+  discardBarBtn.addEventListener('click', () => {
+    if (!isDirty()) return;
+    draftGroup = JSON.parse(JSON.stringify(storedGroup));
+    renderGroupDetail();
+  });
+  saveBar.appendChild(discardBarBtn);
+
+  const saveBarBtn = document.createElement('button');
+  saveBarBtn.id = 'detail-save';
+  saveBarBtn.className = 'primary';
+  saveBarBtn.textContent = 'Guardar';
+  saveBarBtn.disabled = true;
+  saveBarBtn.addEventListener('click', async () => {
+    if (!isDirty()) return;
+    if (!draftGroup.path) { showToast('El path no puede estar vacío', 'error'); return; }
+    try {
+      const savedGroup = await window.api.saveGroup(draftGroup);
+      storedGroup = JSON.parse(JSON.stringify(savedGroup || draftGroup));
+      const idx = allGroups.findIndex((g) => g.id === storedGroup.id);
+      if (idx >= 0) allGroups[idx] = storedGroup;
+      updateSaveBar();
+      renderGroupsList();
+      if (savedGroup && savedGroup._autoStartEnforced) {
+        showToast('Grupo guardado · Auto-arranque desactivado al cambiar a single', 'ok');
+      } else {
+        showToast('Grupo guardado', 'ok');
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`, 'error');
+    }
+  });
+  saveBar.appendChild(saveBarBtn);
+  // (saveBar is appended at the very end of the pane so it can sit sticky-bottom.)
 
   // ── Header ──────────────────────────────────────────────────────────
   const header = document.createElement('div');
@@ -298,6 +403,7 @@ function renderGroupDetail() {
   iconBtn.addEventListener('click', (e) => {
     openIconPicker(e.currentTarget, (emoji) => {
       iconBtn.textContent = emoji;
+      mutateDraft((d) => { d.icon = emoji; });
     });
   });
   header.appendChild(iconBtn);
@@ -307,6 +413,9 @@ function renderGroupDetail() {
   nameInput.className = 'detail-name-input';
   nameInput.value = group.name || '';
   nameInput.placeholder = 'Nombre del grupo';
+  nameInput.addEventListener('input', () => {
+    mutateDraft((d) => { d.name = nameInput.value; });
+  });
   header.appendChild(nameInput);
 
   groupDetailEl.appendChild(header);
@@ -316,6 +425,9 @@ function renderGroupDetail() {
   pathField.className += ' detail-field';
   // Wrap the input in an input-with-action container and add folder picker
   const pathInput = pathField.querySelector('input');
+  pathInput.addEventListener('input', () => {
+    mutateDraft((d) => { d.path = pathInput.value.trim(); });
+  });
   const pathPickerContainer = document.createElement('div');
   pathPickerContainer.className = 'input-with-action';
   pathField.replaceChild(pathPickerContainer, pathInput);
@@ -354,6 +466,9 @@ function renderGroupDetail() {
     radio.name = `mode-${group.id}`;
     radio.value = m;
     radio.checked = (group.mode || 'multi') === m;
+    radio.addEventListener('change', () => {
+      if (radio.checked) mutateDraft((d) => { d.mode = m; });
+    });
     lbl.appendChild(radio);
     lbl.appendChild(document.createTextNode(` ${m}`));
     modeRow.appendChild(lbl);
@@ -371,6 +486,12 @@ function renderGroupDetail() {
 
   const muteWarnLbl = buildToggleLabel('Warnings', group.silenceWarnings, 'detail-silence-warn');
   const muteErrLbl = buildToggleLabel('Errors', group.silenceErrors, 'detail-silence-err');
+  muteWarnLbl.querySelector('input').addEventListener('change', (e) => {
+    mutateDraft((d) => { d.silenceWarnings = e.target.checked; });
+  });
+  muteErrLbl.querySelector('input').addEventListener('change', (e) => {
+    mutateDraft((d) => { d.silenceErrors = e.target.checked; });
+  });
   silenceSection.appendChild(muteWarnLbl);
   silenceSection.appendChild(muteErrLbl);
   groupDetailEl.appendChild(silenceSection);
@@ -385,10 +506,15 @@ function renderGroupDetail() {
   const groupEnvContainer = document.createElement('div');
   groupEnvSection.appendChild(groupEnvContainer);
   groupDetailEl.appendChild(groupEnvSection);
-  // Build the editor (hold reference for reading on save)
+  // Build the editor — listen for input events bubbling out to detect changes
   const groupEnvEditor = buildEnvEditor(groupEnvContainer, group.env || []);
-  // Stash on the section so the save button can retrieve it
   groupEnvSection._envEditor = groupEnvEditor;
+  groupEnvContainer.addEventListener('input', () => {
+    mutateDraft((d) => { d.env = groupEnvEditor.getEntries(); });
+  });
+  groupEnvContainer.addEventListener('change', () => {
+    mutateDraft((d) => { d.env = groupEnvEditor.getEntries(); });
+  });
 
   // ── Commands sub-list ─────────────────────────────────────────────────
   buildSubList(group, 'command', groupDetailEl);
@@ -407,44 +533,21 @@ function renderGroupDetail() {
     if (!confirm(`¿Borrar el grupo "${group.name}"? Se detendrán todos sus procesos.`)) return;
     await window.api.deleteGroup(group.id);
     selectedGroupId = null;
+    draftGroup = null;
+    storedGroup = null;
     await loadGroups();
     renderGroupDetail();
   });
   btnRow.appendChild(deleteBtn);
 
-  const saveBtn = document.createElement('button');
-  saveBtn.className = 'primary';
-  saveBtn.textContent = 'Guardar';
-  saveBtn.addEventListener('click', async () => {
-    const mode = modeRow.querySelector('input[type="radio"]:checked');
-    const updated = {
-      ...group,
-      icon: iconBtn.textContent,
-      name: nameInput.value.trim(),
-      path: pathInput.value.trim(),
-      mode: mode ? mode.value : group.mode,
-      silenceWarnings: groupDetailEl.querySelector('.detail-silence-warn')?.checked ?? group.silenceWarnings,
-      silenceErrors: groupDetailEl.querySelector('.detail-silence-err')?.checked ?? group.silenceErrors,
-      env: groupEnvSection._envEditor ? groupEnvSection._envEditor.getEntries() : (group.env || []),
-    };
-    if (!updated.path) { showToast('El path no puede estar vacío', 'error'); return; }
-    try {
-      const savedGroup = await window.api.saveGroup(updated);
-      await loadGroups();
-      selectedGroupId = updated.id;
-      renderGroupDetail();
-      if (savedGroup && savedGroup._autoStartEnforced) {
-        showToast('Grupo guardado · Auto-arranque desactivado al cambiar a single', 'ok');
-      } else {
-        showToast('Grupo guardado', 'ok');
-      }
-    } catch (err) {
-      showToast(`Error: ${err.message}`, 'error');
-    }
-  });
-  btnRow.appendChild(saveBtn);
-
   groupDetailEl.appendChild(btnRow);
+
+  // Append the sticky save bar AFTER all other pane content so its
+  // sticky-bottom anchoring sits at the bottom of the scrolling viewport.
+  groupDetailEl.appendChild(saveBar);
+
+  // Apply initial save bar state
+  updateSaveBar();
 }
 
 function buildField(labelText, type, value, placeholder) {
@@ -654,6 +757,7 @@ function openSubDialog(item, kind, groupId) {
     sfError.value = item ? (item.errorRegex || DEFAULT_ERROR) : DEFAULT_ERROR;
     sfSilenceWarn.checked = !!(item && item.silenceWarnings);
     sfSilenceErr.checked = !!(item && item.silenceErrors);
+    if (sfMaxLogLines) sfMaxLogLines.value = (item && item.maxLogLines != null) ? item.maxLogLines : '';
   }
 
   subDialogCallback = async (data) => {
@@ -671,9 +775,12 @@ function openSubDialog(item, kind, groupId) {
           errorRegex: data.errorRegex || DEFAULT_ERROR,
           silenceWarnings: data.silenceWarnings,
           silenceErrors: data.silenceErrors,
+          maxLogLines: data.maxLogLines,
           // Preserve existing autoStart — the toggle for it lives in the
           // commands list now, not in this dialog.
           autoStart: item ? !!item.autoStart : false,
+          // Preserve silenced patterns
+          silencedPatterns: item ? item.silencedPatterns : { warn: [], error: [] },
         };
         await window.api.saveCommand(groupId, payload);
       } else {
@@ -688,8 +795,29 @@ function openSubDialog(item, kind, groupId) {
         };
         await window.api.saveAction(groupId, payload);
       }
+
+      // Refresh allGroups silently (no full re-render)
       await loadGroups();
-      renderGroupDetail();
+
+      // Merge the saved command/action slice back into draftGroup and storedGroup
+      // so the sub-list reflects the updated item while parent-level edits are preserved.
+      if (draftGroup && draftGroup.id === groupId) {
+        const fresh = allGroups.find((g) => g.id === groupId);
+        if (fresh) {
+          const slice = isCommand ? 'commands' : 'actions';
+          const freshSlice = JSON.parse(JSON.stringify(fresh[slice] || []));
+          // Sync storedGroup slice so dirty check reflects new sub-item state
+          storedGroup[slice] = freshSlice;
+          // Sync draftGroup slice — preserves parent-level field edits
+          draftGroup[slice] = freshSlice;
+        }
+        // Re-render from draftGroup (parent edits preserved)
+        renderGroupDetail();
+      } else {
+        // No draft active — fall back to full reload
+        renderGroupDetail();
+      }
+
       showToast(`${isCommand ? 'Comando' : 'Acción'} guardado`, 'ok');
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');
@@ -712,6 +840,8 @@ sfCwdPickBtn.addEventListener('click', async () => {
 subForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const args = sfArgs.value.split('\n').map((s) => s.trim()).filter(Boolean);
+  const maxLogLinesStr = sfMaxLogLines ? sfMaxLogLines.value : '';
+  const maxLogLines = maxLogLinesStr === '' ? null : (Number(maxLogLinesStr) || null);
   const data = {
     icon: sfIconBtn ? sfIconBtn.textContent : null,
     name: sfName.value.trim(),
@@ -724,6 +854,7 @@ subForm.addEventListener('submit', async (e) => {
     errorRegex: sfError.value.trim(),
     silenceWarnings: sfSilenceWarn.checked,
     silenceErrors: sfSilenceErr.checked,
+    maxLogLines,
   };
   subDialog.close();
   if (subDialogCallback) await subDialogCallback(data);
@@ -848,13 +979,17 @@ async function loadSettings() {
   setAutostart.checked = !!s.autostart;
   setSilenceWarnings.checked = !!s.silenceWarnings;
   setSilenceErrors.checked = !!s.silenceErrors;
+  if (setMaxLogLines) setMaxLogLines.value = s.maxLogLines != null ? s.maxLogLines : 2000;
 }
 
 async function persistSettings() {
+  const maxLogLinesRaw = setMaxLogLines ? setMaxLogLines.value : '';
+  const maxLogLines = maxLogLinesRaw === '' ? 2000 : (Number(maxLogLinesRaw) || 2000);
   await window.api.saveSettings({
     autostart: setAutostart.checked,
     silenceWarnings: setSilenceWarnings.checked,
     silenceErrors: setSilenceErrors.checked,
+    maxLogLines,
   });
   showToast('Ajustes guardados', 'ok');
 }
@@ -862,6 +997,10 @@ async function persistSettings() {
 setAutostart.addEventListener('change', persistSettings);
 setSilenceWarnings.addEventListener('change', persistSettings);
 setSilenceErrors.addEventListener('change', persistSettings);
+if (setMaxLogLines) {
+  setMaxLogLines.addEventListener('change', persistSettings);
+  setMaxLogLines.addEventListener('blur', persistSettings);
+}
 
 // ────────────────────── Backup / Restore ───────────────────────────────
 
@@ -932,11 +1071,68 @@ setSilenceErrors.addEventListener('change', persistSettings);
 // ────────────────────── Live updates ───────────────────────────────────
 
 window.api.onUpdate(async () => {
-  await loadGroups();
-  if (selectedGroupId) renderGroupDetail();
+  await loadGroups(); // refreshes allGroups + nav via renderGroupsList
+  if (!selectedGroupId) return;
+  if (isDirty()) {
+    // Pane has unsaved edits — do NOT overwrite draftGroup.
+    // The nav has already re-rendered via renderGroupsList inside loadGroups.
+    return;
+  }
+  // Clean pane: re-sync draft from freshest stored data and re-render.
+  loadDraftFromStored(selectedGroupId);
+  renderGroupDetail();
 });
+
+// ────────────────────── Window close guard ────────────────────────────
+
+let _closingGuard = false;
+
+if (window.api.onConfigCloseRequested) {
+  window.api.onConfigCloseRequested(async () => {
+    if (_closingGuard) return;
+    if (!isDirty()) {
+      window.api.confirmCloseConfig();
+      return;
+    }
+    _closingGuard = true;
+    let choice;
+    try {
+      const result = await window.api.confirmDirty('window-close');
+      choice = result.choice;
+    } catch (_) {
+      choice = 'cancel';
+    }
+    if (choice === 'cancel') {
+      _closingGuard = false;
+      return;
+    }
+    if (choice === 'save') {
+      try {
+        await window.api.saveGroup(draftGroup);
+      } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+        _closingGuard = false;
+        return;
+      }
+    }
+    // Nullify draft to prevent re-entry check on the next close event
+    draftGroup = null;
+    storedGroup = null;
+    window.api.confirmCloseConfig();
+  });
+}
 
 // ────────────────────── Init ───────────────────────────────────────────
 
 loadSettings();
 loadGroups();
+
+// App version label next to the page title.
+if (window.api && window.api.getAppVersion) {
+  window.api.getAppVersion()
+    .then((v) => {
+      const el = document.getElementById('app-version');
+      if (el && v) el.textContent = `v${v}`;
+    })
+    .catch(() => { /* leave the label empty on failure */ });
+}

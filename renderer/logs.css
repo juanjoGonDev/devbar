@@ -108,11 +108,47 @@ header .check input[type="checkbox"]::before {
 header .check input[type="checkbox"]:checked { background: #30d158; }
 header .check input[type="checkbox"]:checked::before { transform: translateX(10px); }
 
+.log-container {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
 main {
   flex: 1;
   overflow: auto;
   padding: 0;
   background: #1c1c1e;
+}
+
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #2d2d2d;
+  color: #fff;
+  border: 1px solid #444;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.scroll-bottom-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.scroll-bottom-btn:hover {
+  background: #3a3a3a;
 }
 
 #lines {
@@ -183,59 +219,6 @@ main {
 .line.warn .silence-btn:hover,
 .line.error .silence-btn:hover { opacity: 1; }
 
-.silenced-panel {
-  background: #232323;
-  border-bottom: 1px solid #3a3a3a;
-  padding: 10px 16px;
-  display: flex;
-  gap: 18px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 11px;
-  max-height: 180px;
-  overflow-y: auto;
-}
-.silenced-section { flex: 1; min-width: 0; }
-.silenced-section h3 {
-  margin: 0 0 6px;
-  font-size: 11px;
-  color: #8a8a8a;
-  font-weight: 600;
-}
-.silenced-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.silenced-list li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
-  border-bottom: 1px solid #2e2e2e;
-}
-.silenced-list li:last-child { border-bottom: none; }
-.silenced-list .pattern {
-  flex: 1;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11px;
-  color: #c8c8c8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.silenced-list .unsilence {
-  background: transparent;
-  border: 1px solid #3a3a3a;
-  color: #c8c8c8;
-  border-radius: 3px;
-  padding: 1px 6px;
-  font-size: 10px;
-  cursor: pointer;
-}
-.silenced-list .unsilence:hover { background: #3a3a3a; }
-.silenced-list .empty { color: #6e7681; font-style: italic; padding: 4px 0; }
 
 header label.check { white-space: nowrap; }
 header button { white-space: nowrap; }

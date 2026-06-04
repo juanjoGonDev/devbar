@@ -2,6 +2,21 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Inlined copy of src/silence-pattern.js. We intentionally don't `require`
+// the file here: in the packaged bundle a require()'d sibling module
+// referenced from preload silently kills the entire contextBridge call,
+// leaving `window.api` undefined and the renderer blank. Keeping the
+// helper inline guarantees the bridge always loads. Tests still cover
+// src/silence-pattern.js — this code path is structurally identical.
+function _regexEscape(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function _buildSilencePattern(line) {
+  const s = (line == null ? '' : String(line)).trim();
+  if (!s) return '';
+  return _regexEscape(s).replace(/\d{2,}/g, '\\d+');
+}
+
 contextBridge.exposeInMainWorld('api', {
   // ── Groups ──────────────────────────────────────────────────────────
   listGroups: () => ipcRenderer.invoke('groups:list'),
@@ -48,7 +63,10 @@ contextBridge.exposeInMainWorld('api', {
   // ── Window management ─────────────────────────────────────────────────
   openConfig: () => ipcRenderer.invoke('window:openConfig'),
   hideTray: () => ipcRenderer.invoke('window:hideTray'),
-  openLogs: (processId) => ipcRenderer.invoke('window:openLogs', processId),
+  // openLogs accepts either a processId string or { processId, filter? }
+  openLogs: (arg) => ipcRenderer.invoke('window:openLogs', arg),
+  openSilenced: (groupId, commandId) => ipcRenderer.invoke('window:openSilenced', { groupId, commandId }),
+  getSilencedForCommand: (groupId, commandId) => ipcRenderer.invoke('silenced:getForCommand', { groupId, commandId }),
   setTrayHeight: (h) => ipcRenderer.invoke('tray:setHeight', h),
 
   // ── Settings ──────────────────────────────────────────────────────────
@@ -69,6 +87,19 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── App ───────────────────────────────────────────────────────────────
   quit: () => ipcRenderer.invoke('app:quit'),
+  getAppVersion: () => ipcRenderer.invoke('app:version'),
+
+  // ── Config dirty-close ────────────────────────────────────────────────
+  confirmDirty: (context) => ipcRenderer.invoke('config:confirmDirty', { context }),
+  confirmCloseConfig: () => ipcRenderer.invoke('window:confirmCloseConfig'),
+  onConfigCloseRequested: (cb) => {
+    const h = (_e) => cb();
+    ipcRenderer.on('config:closeRequested', h);
+    return () => ipcRenderer.removeListener('config:closeRequested', h);
+  },
+
+  // ── Silence pattern helper (pure, sync) ───────────────────────────────
+  buildSilencePattern: _buildSilencePattern,
 
   // ── Event subscriptions ───────────────────────────────────────────────
   onUpdate: (cb) => {
@@ -80,6 +111,11 @@ contextBridge.exposeInMainWorld('api', {
     const handler = (_e, payload) => cb(payload);
     ipcRenderer.on('logs:line', handler);
     return () => ipcRenderer.removeListener('logs:line', handler);
+  },
+  onLogsSetFilter: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('logs:setFilter', handler);
+    return () => ipcRenderer.removeListener('logs:setFilter', handler);
   },
   onBranchesChanged: (cb) => {
     const handler = (_e, payload) => cb(payload);

@@ -17,6 +17,7 @@ import {
   regenerateLegacyServices,
   validateGroupShape,
   enforceSingleModeAutoStart,
+  clampMaxLogLinesOrNull,
 } from '../src/groups-model.js';
 
 // ─── Real user config fixture (7 services, 2 repos) ───────────────────
@@ -993,6 +994,78 @@ describe('enforceSingleModeAutoStart', () => {
   it('null group — returns unchanged with changed:false', () => {
     const { changed } = enforceSingleModeAutoStart(null);
     expect(changed).toBe(false);
+  });
+});
+
+// ─── clampMaxLogLinesOrNull ──────────────────────────────────────────────
+describe('clampMaxLogLinesOrNull', () => {
+  it('returns null for undefined', () => {
+    expect(clampMaxLogLinesOrNull(undefined)).toBeNull();
+  });
+
+  it('returns null for null', () => {
+    expect(clampMaxLogLinesOrNull(null)).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(clampMaxLogLinesOrNull('')).toBeNull();
+  });
+
+  it('returns null for NaN string', () => {
+    expect(clampMaxLogLinesOrNull('abc')).toBeNull();
+  });
+
+  it('preserves a valid value within range', () => {
+    expect(clampMaxLogLinesOrNull(500)).toBe(500);
+    expect(clampMaxLogLinesOrNull(2000)).toBe(2000);
+  });
+
+  it('clamps below floor (50 → 100)', () => {
+    expect(clampMaxLogLinesOrNull(50)).toBe(100);
+  });
+
+  it('clamps at floor boundary (100 → 100)', () => {
+    expect(clampMaxLogLinesOrNull(100)).toBe(100);
+  });
+
+  it('clamps above ceiling (99999 → 50000)', () => {
+    expect(clampMaxLogLinesOrNull(99999)).toBe(50000);
+  });
+
+  it('clamps at ceiling boundary (50000 → 50000)', () => {
+    expect(clampMaxLogLinesOrNull(50000)).toBe(50000);
+  });
+
+  it('floors float values', () => {
+    expect(clampMaxLogLinesOrNull(500.9)).toBe(500);
+  });
+});
+
+// ─── normalizeCommand — maxLogLines field ───────────────────────────────
+describe('normalizeCommand — maxLogLines field', () => {
+  it('defaults to null when not provided', () => {
+    const c = normalizeCommand({});
+    expect(c.maxLogLines).toBeNull();
+  });
+
+  it('defaults to null for null input', () => {
+    const c = normalizeCommand({ maxLogLines: null });
+    expect(c.maxLogLines).toBeNull();
+  });
+
+  it('preserves a valid value in range', () => {
+    const c = normalizeCommand({ maxLogLines: 1000 });
+    expect(c.maxLogLines).toBe(1000);
+  });
+
+  it('clamps below floor to 100', () => {
+    const c = normalizeCommand({ maxLogLines: 50 });
+    expect(c.maxLogLines).toBe(100);
+  });
+
+  it('clamps above ceiling to 50000', () => {
+    const c = normalizeCommand({ maxLogLines: 99999 });
+    expect(c.maxLogLines).toBe(50000);
   });
 });
 

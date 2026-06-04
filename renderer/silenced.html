@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="silenced.css" />
+    <title>Silenciados</title>
+  </head>
+  <body class="silenced-window">
+    <div class="fake-traffic-lights">
+      <span class="light close" data-close></span>
+      <span class="light min"></span>
+      <span class="light max"></span>
+    </div>
+    <header class="silenced-header">
+      <h1 id="title">Silenciados</h1>
+      <p id="subtitle" class="muted"></p>
+    </header>
+    <main class="silenced-body">
+      <section class="silenced-section">
+        <h2>Warnings silenciados</h2>
+        <ul id="silenced-warns" class="pattern-list"></ul>
+        <div class="add-row">
+          <input id="add-warn-input" type="text" placeholder="Patrón (texto o regex)" />
+          <button id="add-warn-btn" type="button">Añadir</button>
+        </div>
+      </section>
+      <section class="silenced-section">
+        <h2>Errores silenciados</h2>
+        <ul id="silenced-errs" class="pattern-list"></ul>
+        <div class="add-row">
+          <input id="add-err-input" type="text" placeholder="Patrón (texto o regex)" />
+          <button id="add-err-btn" type="button">Añadir</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="silenced.js"></script>
+  </body>
+</html>

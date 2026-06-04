@@ -42,6 +42,17 @@ function uuidv4() {
 const DEFAULT_WARN_REGEX = '\\bwarn(ing)?s?\\b';
 const DEFAULT_ERROR_REGEX = '\\berror(s)?\\b';
 
+/**
+ * Clamp a maxLogLines value for a command: returns null for missing/empty/invalid,
+ * otherwise clamps to [100, 50000]. null means "use global default".
+ */
+function clampMaxLogLinesOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(50000, Math.max(100, Math.floor(n)));
+}
+
 // ─────────────────────── Env helpers ────────────────────────────────
 
 /**
@@ -136,6 +147,7 @@ function normalizeCommand(input) {
       error: Array.isArray(sp.error) ? sp.error.slice() : [],
     },
     autoStart: !!raw.autoStart,
+    maxLogLines: clampMaxLogLinesOrNull(raw.maxLogLines),
   };
 }
 
@@ -446,6 +458,7 @@ module.exports = {
   regenerateLegacyServices,
   validateGroupShape,
   enforceSingleModeAutoStart,
+  clampMaxLogLinesOrNull,
   DEFAULT_WARN_REGEX,
   DEFAULT_ERROR_REGEX,
 };

@@ -62,8 +62,22 @@ cp -R "$APP_PATH" "$TARGET_DIR/"
 # Gatekeeper dialog on first launch. Stripping it makes the launch silent.
 xattr -dr com.apple.quarantine "$TARGET_DIR/DevBar.app" 2>/dev/null || true
 
-# ─── 5. launch ─────────────────────────────────────────────────────────
+# ─── 5. log symlink ────────────────────────────────────────────────────
+# The packaged .app writes its log to ~/Library/Logs/DevBar/app.log.
+# Drop a symlink at the repo root so developers can `tail -f app.log`
+# directly from the project. `app.log` is already in .gitignore via *.log.
+LOG_TARGET="$HOME/Library/Logs/DevBar/app.log"
+mkdir -p "$(dirname "$LOG_TARGET")"
+touch "$LOG_TARGET"
+if [ ! -L "app.log" ] || [ "$(readlink app.log)" != "$LOG_TARGET" ]; then
+  rm -f app.log
+  ln -s "$LOG_TARGET" app.log
+  ok "Symlinked $(pwd)/app.log → $LOG_TARGET"
+fi
+
+# ─── 6. launch ─────────────────────────────────────────────────────────
 step "Launching"
 open "$TARGET_DIR/DevBar.app"
 
 ok "Installed at $TARGET_DIR/DevBar.app"
+ok "Tail logs with: pnpm logs   (file: $LOG_TARGET)"
