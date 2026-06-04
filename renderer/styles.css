@@ -1565,6 +1565,82 @@ dialog form {
   overflow-x: hidden;
 }
 
+/* ── App version label (tray header + config title) ───────────────────── */
+.app-version {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 6px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+/* Inside the config window's bigger title it deserves a slightly larger
+   size so the label doesn't disappear next to a 20-px heading. */
+.config h1 .app-version {
+  font-size: 12px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+/* ── Counter buttons (tray command sub-row) ───────────────────────────── */
+.counter-btn {
+  font-size: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  font-family: inherit;
+}
+.counter-btn:hover { background: var(--bg-row-hover); }
+.counter-btn.warn  { color: #b58105; }
+.counter-btn.error { color: #b32420; }
+@media (prefers-color-scheme: dark) {
+  .counter-btn.warn  { color: #ffd60a; }
+  .counter-btn.error { color: #ff6961; }
+}
+
+/* ── Config save bar (right pane sticky bar, anchored at the bottom) ──── */
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  margin: 16px -20px -16px;          /* full-bleed to the edges of the pane */
+  background: var(--bg-card-strong);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;       /* match the rounded pane corners     */
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.05);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+}
+@media (prefers-color-scheme: dark) {
+  .save-bar { box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.25); }
+}
+.save-bar .save-bar-message {
+  font-size: 12px;
+  color: var(--muted);
+  flex: 1;
+  letter-spacing: -0.1px;
+}
+.save-bar button { font-size: 12px; }
+.save-bar button[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Editable silence pattern rows ───────────────────────────────────── */
+.pattern.editable { cursor: pointer; }
+.pattern.editable:hover { text-decoration: underline dotted; }
+.pattern-edit {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  flex: 1;
+  min-width: 0;
+}
+
 /* ================================================================
    SERVICE/LEGACY CLASSES KEPT FOR COMPATIBILITY (used in dist/ only)
    ================================================================ */

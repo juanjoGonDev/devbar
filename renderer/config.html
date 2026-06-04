@@ -8,7 +8,7 @@
   </head>
   <body class="config">
     <div class="app-window-spacer"></div>
-    <h1>Configuración</h1>
+    <h1>Configuración <span id="app-version" class="app-version" title="DevBar version"></span></h1>
 
     <!-- Global settings -->
     <section class="settings-card">
@@ -30,6 +30,11 @@
         <input type="checkbox" id="set-silence-errors" />
         <span>Silenciar <strong>errors</strong> en todos los grupos</span>
       </label>
+      <div class="field" style="margin-top:12px">
+        <label for="set-max-log-lines">Líneas máximas de logs</label>
+        <input type="number" id="set-max-log-lines" min="100" max="50000" step="100" style="width:120px" />
+        <small class="muted" style="display:block; margin-top:4px">Por defecto para todos los procesos (100–50000). El cambio aplica al reiniciar el proceso.</small>
+      </div>
     </section>
 
     <!-- Backup / Restore -->
@@ -148,6 +153,11 @@
                 <span>Errors no afectan al color</span>
               </label>
             </fieldset>
+            <div class="field" style="margin-top:8px">
+              <label for="sf-max-log-lines">Líneas máximas (opcional)</label>
+              <input type="number" id="sf-max-log-lines" min="100" max="50000" step="100" placeholder="usar global" style="width:120px" />
+              <small class="muted" style="display:block; margin-top:4px">Vacío = usar el valor global. El cambio aplica al reiniciar.</small>
+            </div>
           </details>
         </div>
 

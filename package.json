@@ -7,6 +7,7 @@
     "start": "electron .",
     "pack": "electron-packager . DevBar --platform=darwin --out=dist --overwrite --icon=assets/icon.icns",
     "install-local": "bash scripts/install-local.sh",
+    "logs": "tail -F \"$HOME/Library/Logs/DevBar/app.log\"",
     "test": "vitest run",
     "test:watch": "vitest"
   },

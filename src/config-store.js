@@ -1,6 +1,11 @@
 'use strict';
 
-const Store = require('electron-store');
+// electron-store v10+ ships as ESM-only. Node 22 lets us require() it, but the
+// returned value is the ESM namespace — the constructor lives on .default.
+// Older v8/v9 CJS builds exported the constructor directly, so we fall back
+// to the raw require for compatibility.
+const _StoreImport = require('electron-store');
+const Store = _StoreImport.default || _StoreImport;
 const { v4: uuidv4 } = require('uuid');
 const {
   normalizeGroup,
@@ -17,7 +22,14 @@ const DEFAULT_GLOBAL_SETTINGS = {
   autostart: false,
   silenceWarnings: false,
   silenceErrors: false,
+  maxLogLines: 2000,
 };
+
+function clampMaxLogLines(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 2000;
+  return Math.min(50000, Math.max(100, Math.floor(n)));
+}
 
 const schema = {
   version: { type: 'number', default: 3 },
@@ -272,6 +284,7 @@ function saveGlobalSettings(patch) {
   next.autostart = !!next.autostart;
   next.silenceWarnings = !!next.silenceWarnings;
   next.silenceErrors = !!next.silenceErrors;
+  next.maxLogLines = clampMaxLogLines(next.maxLogLines);
   store.set('globalSettings', next);
   return next;
 }

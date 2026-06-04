@@ -115,6 +115,8 @@ function stripAnsi(s) {
 const params = new URLSearchParams(location.search);
 // Support both old --service-id= and new --process-id= argument
 const processId = params.get('id');
+// Pre-set filter if passed as a query param (e.g. from counter-button click)
+const initialFilter = params.get('filter') || '';
 
 const titleEl = document.getElementById('title');
 const uptimeBadgeEl = document.getElementById('uptime-badge');
@@ -130,9 +132,7 @@ const mainEl = document.querySelector('main');
 const muteWarnEl = document.getElementById('mute-warn');
 const muteErrEl = document.getElementById('mute-err');
 const togglePanelBtn = document.getElementById('toggle-silenced');
-const panelEl = document.getElementById('silenced-panel');
-const silencedWarnsEl = document.getElementById('silenced-warns');
-const silencedErrsEl = document.getElementById('silenced-errs');
+const scrollBtn = document.getElementById('scroll-bottom');
 
 // ────────────────────── Uptime for logs window ───────────────────
 // startedAt: timestamp (ms) of the running process, or null if stopped
@@ -166,7 +166,7 @@ let currentTarget = null;
 let currentGroupId = null;
 let currentCommandId = null;
 
-const RENDER_LIMIT = 2000;
+let RENDER_LIMIT = 2000;
 let visibleCount = 0;
 let pendingQueue = [];
 let filterRe = null;
@@ -230,10 +230,19 @@ function appendLine(entry) {
       ev.stopPropagation();
       const lvl = entry.originalLevel;
       const cleaned = stripAnsi(entry.line).trim();
+      // Build a regex pattern when possible so it matches across timestamp changes
+      const pattern = (window.api.buildSilencePattern && cleaned)
+        ? window.api.buildSilencePattern(cleaned)
+        : cleaned;
       if (entry.silenced) {
+        // Try removing the built pattern first; then fall back to literal cleaned.
+        // removeSilencePattern is a no-op when the pattern is not found.
+        if (pattern && pattern !== cleaned) {
+          await window.api.removeSilencePattern(currentGroupId, currentCommandId, lvl, pattern);
+        }
         await window.api.removeSilencePattern(currentGroupId, currentCommandId, lvl, cleaned);
       } else {
-        await window.api.addSilencePattern(currentGroupId, currentCommandId, lvl, cleaned);
+        await window.api.addSilencePattern(currentGroupId, currentCommandId, lvl, pattern || cleaned);
       }
     });
     div.appendChild(btn);
@@ -252,6 +261,7 @@ function appendLine(entry) {
     mainEl.scrollTop = mainEl.scrollHeight;
   }
   countsEl.textContent = `${linesEl.childElementCount} líneas`;
+  updateScrollButton();
 }
 
 function applyFilter() {
@@ -301,10 +311,44 @@ copyBtn.addEventListener('click', async () => {
   }
 });
 
+const SCROLL_THRESHOLD = 4;
+
+function isAtBottom() {
+  return mainEl.scrollTop + mainEl.clientHeight >= mainEl.scrollHeight - SCROLL_THRESHOLD;
+}
+
+function updateScrollButton() {
+  if (!scrollBtn) return;
+  const atBottom = isAtBottom();
+  scrollBtn.classList.toggle('visible', !atBottom);
+  if (atBottom && !autoscrollEl.checked) {
+    autoscrollEl.checked = true;
+  }
+}
+
 mainEl.addEventListener('scroll', () => {
-  const atBottom = mainEl.scrollTop + mainEl.clientHeight >= mainEl.scrollHeight - 4;
+  const atBottom = isAtBottom();
   if (!atBottom && autoscrollEl.checked) {
     autoscrollEl.checked = false;
+  }
+  updateScrollButton();
+});
+
+window.addEventListener('resize', updateScrollButton);
+
+if (scrollBtn) {
+  scrollBtn.addEventListener('click', () => {
+    mainEl.scrollTop = mainEl.scrollHeight;
+    autoscrollEl.checked = true;
+    updateScrollButton();
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault();
+    filterEl.focus();
+    filterEl.select();
   }
 });
 
@@ -316,40 +360,18 @@ function applyTargetSnapshot(target) {
     const cmd = target.target;
     muteWarnEl.checked = !!cmd.silenceWarnings;
     muteErrEl.checked = !!cmd.silenceErrors;
-    renderSilencedPanel(cmd.silencedPatterns || { warn: [], error: [] });
   }
 }
 
-function renderSilencedPanel(sp) {
-  renderPatternList(silencedWarnsEl, sp.warn || [], 'warn');
-  renderPatternList(silencedErrsEl, sp.error || [], 'error');
-}
 
-function renderPatternList(ul, list, level) {
-  ul.innerHTML = '';
-  if (!list.length) {
-    const li = document.createElement('li');
-    li.className = 'empty';
-    li.textContent = 'Ninguno';
-    ul.appendChild(li);
-    return;
-  }
-  for (const p of list) {
-    const li = document.createElement('li');
-    const span = document.createElement('span');
-    span.className = 'pattern';
-    span.textContent = p;
-    span.title = p;
-    const btn = document.createElement('button');
-    btn.className = 'unsilence';
-    btn.textContent = 'Quitar';
-    btn.addEventListener('click', async () => {
-      if (currentGroupId && currentCommandId) {
-        await window.api.removeSilencePattern(currentGroupId, currentCommandId, level, p);
-      }
-    });
-    li.append(span, btn);
-    ul.appendChild(li);
+function clientMatchesPattern(p, lineText) {
+  if (!p) return false;
+  // Mirror process-manager heuristic: backslash present → try as regex.
+  if (!p.includes('\\')) return lineText.includes(p);
+  try {
+    return new RegExp(p, 'i').test(lineText);
+  } catch (_) {
+    return lineText.includes(p);
   }
 }
 
@@ -361,7 +383,7 @@ function rerenderExistingLines() {
     if (!orig) continue;
     const list = sp[orig] || [];
     const lineText = stripAnsi(node.dataset.line || '');
-    const isSilenced = list.some((p) => p && lineText.includes(p));
+    const isSilenced = list.some((p) => clientMatchesPattern(p, lineText));
     node.classList.toggle('silenced', isSilenced);
     node.classList.toggle('warn', orig === 'warn' && !isSilenced);
     node.classList.toggle('error', orig === 'error' && !isSilenced);
@@ -386,16 +408,27 @@ muteErrEl.addEventListener('change', () => {
   }
 });
 
-togglePanelBtn.addEventListener('click', () => {
-  panelEl.hidden = !panelEl.hidden;
-});
+if (togglePanelBtn) {
+  togglePanelBtn.addEventListener('click', () => {
+    if (!currentGroupId || !currentCommandId) return;
+    window.api.openSilenced(currentGroupId, currentCommandId);
+  });
+}
 
 (async () => {
   if (!processId) {
     titleEl.textContent = 'Logs (sin proceso)';
     return;
   }
-  const res = await window.api.getLogs(processId);
+
+  const [res, settings] = await Promise.all([
+    window.api.getLogs(processId),
+    window.api.getSettings(),
+  ]);
+
+  // Resolve render limit: per-command override → global setting → fallback 2000
+  const cmdLimit = res && res.target && res.target.target && res.target.target.maxLogLines;
+  RENDER_LIMIT = cmdLimit != null ? cmdLimit : ((settings && settings.maxLogLines) || 2000);
 
   // res.target = { kind, group, target: command|action }
   const target = res.target;
@@ -425,8 +458,24 @@ togglePanelBtn.addEventListener('click', () => {
     titleEl.textContent = `Logs — ${processId}`;
   }
 
+  // Apply initial filter before rendering buffered lines so appendLine's
+  // matchesFilter check already uses it.
+  if (initialFilter) {
+    filterEl.value = initialFilter;
+    filterRe = buildFilter(initialFilter);
+  }
+
   for (const entry of res.lines) appendLine(entry);
 })();
+
+// Subscribe to filter push from main (already-open window scenario)
+if (window.api.onLogsSetFilter) {
+  window.api.onLogsSetFilter(({ processId: pid, filter }) => {
+    if (pid !== processId) return;
+    filterEl.value = filter;
+    filterEl.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
 
 window.api.onLog((payload) => {
   if (!payload || payload.id !== processId) return;

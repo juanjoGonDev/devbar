@@ -159,9 +159,25 @@ function createCombobox({ value, options, placeholder, onSelect }) {
       labelSpan.textContent = opt.label;
       item.appendChild(labelSpan);
 
+      // CRITICAL: mouseenter MUST NOT trigger a full re-render of the list.
+      //
+      // Calling renderList() here destroys + recreates every item DOM node.
+      // The cursor then "enters" the newly-created item under it, which
+      // re-fires mouseenter, which re-renders, which… creates a tight
+      // destroy/recreate loop. The user-visible symptom is that mousedown
+      // never lands on the item — by the time the OS dispatches mousedown,
+      // the node that received pointerdown has already been replaced, and
+      // the event falls through to `.combobox-list`, so selectOption is
+      // never called and the branch never switches.
+      //
+      // Fix: just toggle the `is-highlighted` CSS class on the previous
+      // and new items. No DOM rebuild. No more event-loss races.
       item.addEventListener('mouseenter', () => {
+        if (highlightIndex === idx) return;
+        const prev = list.querySelector('.combobox-item.is-highlighted');
+        if (prev && prev !== item) prev.classList.remove('is-highlighted');
+        item.classList.add('is-highlighted');
         highlightIndex = idx;
-        renderList();
       });
 
       item.addEventListener('mousedown', (e) => {
@@ -210,6 +226,11 @@ function createCombobox({ value, options, placeholder, onSelect }) {
   function selectOption(val, label) {
     currentValue = val;
     input.value = label || labelFor(val);
+    // Mark a recent combobox interaction so external click handlers
+    // (e.g., the tray row's click-to-expand) can ignore the click event
+    // that browsers synthesize when mouseup lands on the row below after
+    // closeList() hides the dropdown under the cursor.
+    window.__comboboxSelectingAt = Date.now();
     closeList(false);
     if (onSelect) onSelect(val);
   }
