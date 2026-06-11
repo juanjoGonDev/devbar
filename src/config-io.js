@@ -6,7 +6,7 @@
  * Exports:
  *   serializeConfig(rawStore, appVersion)    → export-shape object
  *   validateImportedConfig(obj)              → { ok, payload } | { ok: false, error }
- *   summarizeImport(payload)                 → { groupsCount, commandsCount, actionsCount, hasGlobalSettings }
+ *   summarizeImport(payload)                 → { groupsCount, commandsCount, actionsCount, preStepsCount, preScriptsCount, hasGlobalSettings }
  *   EXPORT_SCHEMA_VERSION                    → 3
  */
 
@@ -157,6 +157,58 @@ function validateImportedConfig(obj) {
       }
     }
 
+    // Validate preSteps shape (must match commands/actions rigor)
+    const rawPreSteps = Array.isArray(rawGroup.preSteps) ? rawGroup.preSteps : [];
+    for (let si = 0; si < rawPreSteps.length; si++) {
+      const rawStep = rawPreSteps[si] || {};
+      if (rawStep.mode !== undefined && rawStep.mode !== 'parallel' && rawStep.mode !== 'serial') {
+        return {
+          ok: false,
+          error: `Grupo "${rawGroup.name || `#${i}`}" paso #${si} con mode inválido`,
+        };
+      }
+      if (rawStep.scripts !== undefined && !Array.isArray(rawStep.scripts)) {
+        return {
+          ok: false,
+          error: `Grupo "${rawGroup.name || `#${i}`}" paso #${si} scripts debe ser array`,
+        };
+      }
+      const rawScripts = Array.isArray(rawStep.scripts) ? rawStep.scripts : [];
+      for (const rawScript of rawScripts) {
+        const rs = rawScript || {};
+        if (!rs.command || typeof rs.command !== 'string' || !rs.command.trim()) {
+          return {
+            ok: false,
+            error: `Grupo "${rawGroup.name || `#${i}`}" tiene un pre-script sin command`,
+          };
+        }
+        if (!rs.name || typeof rs.name !== 'string' || !rs.name.trim()) {
+          return {
+            ok: false,
+            error: `Grupo "${rawGroup.name || `#${i}`}" tiene un pre-script sin name`,
+          };
+        }
+        if (rs.env !== undefined && rs.env !== null) {
+          if (typeof rs.env === 'string' || typeof rs.env === 'number' || typeof rs.env === 'boolean') {
+            return {
+              ok: false,
+              error: `Grupo "${rawGroup.name || `#${i}`}" tiene un pre-script con env inválido`,
+            };
+          }
+          if (Array.isArray(rs.env)) {
+            for (const entry of rs.env) {
+              if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                return {
+                  ok: false,
+                  error: `Grupo "${rawGroup.name || `#${i}`}" tiene un pre-script con entradas env inválidas`,
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+
     let g;
     try {
       g = normalizeGroup(rawGroup);
@@ -197,22 +249,30 @@ function validateImportedConfig(obj) {
 // ─────────────────────── Summary ──────────────────────────────────────────
 
 /**
- * Count groups, commands, and actions from a validated payload.
+ * Count groups, commands, actions, preSteps, and preScripts from a validated payload.
  *
  * @param {{ groups: object[], globalSettings: object }} payload
- * @returns {{ groupsCount: number, commandsCount: number, actionsCount: number, hasGlobalSettings: boolean }}
+ * @returns {{ groupsCount: number, commandsCount: number, actionsCount: number, preStepsCount: number, preScriptsCount: number, hasGlobalSettings: boolean }}
  */
 function summarizeImport(payload) {
   let commandsCount = 0;
   let actionsCount = 0;
+  let preStepsCount = 0;
+  let preScriptsCount = 0;
   for (const g of payload.groups || []) {
     commandsCount += (g.commands || []).length;
     actionsCount += (g.actions || []).length;
+    preStepsCount += (g.preSteps || []).length;
+    for (const step of (g.preSteps || [])) {
+      preScriptsCount += (step.scripts || []).length;
+    }
   }
   return {
     groupsCount: (payload.groups || []).length,
     commandsCount,
     actionsCount,
+    preStepsCount,
+    preScriptsCount,
     hasGlobalSettings: !!(payload.globalSettings && typeof payload.globalSettings === 'object'),
   };
 }

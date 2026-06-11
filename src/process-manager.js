@@ -87,12 +87,20 @@ class ProcessManager extends EventEmitter {
   }
 
   /**
-   * Resolve group + command/action from a compound process id.
-   * Returns { group, target } or null if not found.
+   * Resolve group + command/action/prescript from a compound process id.
+   * Returns { group, target, kind } or null if not found.
+   *
+   * NOTE: preAggregator kind is virtual (logs-only); it intentionally returns
+   * null here so process-manager never spawns for it.
+   *
+   * NOTE: pre-script pids are intentionally excluded from allStates() — they
+   * are transient and aggregated via preScriptsStatus on the group state in
+   * snapshotGroupStates(). A future maintainer should NOT add them to allStates().
    */
   resolveTarget(processId) {
     const parsed = parseProcessId(processId);
     if (parsed.kind === 'unknown') return null;
+    if (parsed.kind === 'preAggregator') return null; // virtual pid; logs window opens by pid only
     const group = this.configStore.getGroup(parsed.groupId);
     if (!group) return null;
     if (parsed.kind === 'command') {
@@ -100,9 +108,19 @@ class ProcessManager extends EventEmitter {
       if (!command) return null;
       return { group, target: command, kind: 'command' };
     }
-    const action = group.actions.find((a) => a.id === parsed.actionId);
-    if (!action) return null;
-    return { group, target: action, kind: 'action' };
+    if (parsed.kind === 'action') {
+      const action = group.actions.find((a) => a.id === parsed.actionId);
+      if (!action) return null;
+      return { group, target: action, kind: 'action' };
+    }
+    if (parsed.kind === 'prescript') {
+      const step = (group.preSteps || []).find((s) => s.id === parsed.stepId);
+      if (!step) return null;
+      const script = (step.scripts || []).find((sc) => sc.id === parsed.scriptId);
+      if (!script) return null;
+      return { group, target: script, kind: 'prescript' };
+    }
+    return null;
   }
 
   recount(id) {
@@ -343,8 +361,10 @@ class ProcessManager extends EventEmitter {
         line: wasKilled ? `■ stopped (${signal})` : `■ exited with code ${code}`,
       });
 
-      if (kind === 'action') {
-        // Actions use 'done' status to distinguish from a long-running stop
+      if (kind === 'action' || kind === 'prescript') {
+        // Actions and prescripts use 'done' status to distinguish from a long-running stop.
+        // We reuse the same event name 'action:done' for prescripts (ADR-2): listeners that
+        // only care about actions can filter by parseProcessId(processId).kind.
         this.setState(processId, {
           status: 'done',
           lastError: wasKilled ? null : code !== 0 ? `exited with code ${code}` : null,

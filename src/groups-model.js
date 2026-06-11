@@ -121,6 +121,11 @@ function normalizeGroup(input) {
     env: normalizeEnvEntries(raw.env),
     commands: Array.isArray(raw.commands) ? raw.commands.map(normalizeCommand) : [],
     actions: Array.isArray(raw.actions) ? raw.actions.map(normalizeAction) : [],
+    preSteps: Array.isArray(raw.preSteps) ? raw.preSteps.map(normalizePreStep) : [],
+    // When true, pre-scripts run automatically — but ONLY when DevBar was
+    // launched by macOS at login (i.e. system boot), not on every manual
+    // app restart. Default false so the user opts in explicitly.
+    preScriptsAutoRun: !!raw.preScriptsAutoRun,
   };
 }
 
@@ -148,6 +153,35 @@ function normalizeCommand(input) {
     },
     autoStart: !!raw.autoStart,
     maxLogLines: clampMaxLogLinesOrNull(raw.maxLogLines),
+  };
+}
+
+/**
+ * Normalize a raw PreScript object.
+ * Mirrors normalizeAction shape minus icon, warnRegex, errorRegex, etc.
+ */
+function normalizePreScript(input) {
+  const raw = input || {};
+  return {
+    id: raw.id || uuidv4(),
+    name: (raw.name || '').trim() || 'Unnamed',
+    command: (raw.command || '').trim(),
+    args: Array.isArray(raw.args) ? raw.args.slice() : [],
+    env: normalizeEnvEntries(raw.env),
+    inheritGroupEnv: typeof raw.inheritGroupEnv === 'boolean' ? raw.inheritGroupEnv : false,
+  };
+}
+
+/**
+ * Normalize a raw PreStep object.
+ * mode defaults to 'parallel' for any unknown/missing value.
+ */
+function normalizePreStep(input) {
+  const raw = input || {};
+  return {
+    id: raw.id || uuidv4(),
+    mode: raw.mode === 'serial' ? 'serial' : 'parallel',
+    scripts: Array.isArray(raw.scripts) ? raw.scripts.map(normalizePreScript) : [],
   };
 }
 
@@ -444,6 +478,39 @@ function validateGroupShape(group) {
   if (group.mode !== 'single' && group.mode !== 'multi') {
     errors.push('Group mode must be "single" or "multi"');
   }
+  if (group.preSteps !== undefined) {
+    if (!Array.isArray(group.preSteps)) {
+      errors.push('preSteps must be an array');
+    } else {
+      for (let si = 0; si < group.preSteps.length; si++) {
+        const step = group.preSteps[si];
+        if (!step || typeof step !== 'object') {
+          errors.push(`preSteps[${si}] must be an object`);
+          continue;
+        }
+        if (!step.id) errors.push(`preSteps[${si}] missing id`);
+        if (step.mode !== 'parallel' && step.mode !== 'serial') {
+          errors.push(`preSteps[${si}] mode must be "parallel" or "serial"`);
+        }
+        if (!Array.isArray(step.scripts)) {
+          errors.push(`preSteps[${si}] scripts must be an array`);
+        } else {
+          for (let sci = 0; sci < step.scripts.length; sci++) {
+            const sc = step.scripts[sci];
+            if (!sc || typeof sc !== 'object') {
+              errors.push(`preSteps[${si}].scripts[${sci}] must be an object`);
+              continue;
+            }
+            if (!sc.id) errors.push(`preSteps[${si}].scripts[${sci}] missing id`);
+            if (!sc.name) errors.push(`preSteps[${si}].scripts[${sci}] missing name`);
+            if (sc.command === undefined || sc.command === null) {
+              errors.push(`preSteps[${si}].scripts[${sci}] missing command`);
+            }
+          }
+        }
+      }
+    }
+  }
   return { valid: errors.length === 0, errors };
 }
 
@@ -451,6 +518,8 @@ module.exports = {
   normalizeGroup,
   normalizeCommand,
   normalizeAction,
+  normalizePreScript,
+  normalizePreStep,
   normalizeEnvEntries,
   materializeEnv,
   bucketKeyFor,

@@ -263,6 +263,8 @@ describe('summarizeImport', () => {
       groupsCount: 0,
       commandsCount: 0,
       actionsCount: 0,
+      preStepsCount: 0,
+      preScriptsCount: 0,
       hasGlobalSettings: true,
     });
   });
@@ -281,6 +283,31 @@ describe('summarizeImport', () => {
     expect(summary.commandsCount).toBe(3);
     expect(summary.actionsCount).toBe(1);
     expect(summary.hasGlobalSettings).toBe(true);
+  });
+
+  it('counts preSteps and preScripts correctly', () => {
+    const payload = {
+      version: 3,
+      groups: [
+        {
+          commands: [],
+          actions: [],
+          preSteps: [
+            { scripts: [{ id: 'sc1' }, { id: 'sc2' }] },
+            { scripts: [{ id: 'sc3' }] },
+          ],
+        },
+        {
+          commands: [],
+          actions: [],
+          preSteps: [],
+        },
+      ],
+      globalSettings: {},
+    };
+    const summary = summarizeImport(payload);
+    expect(summary.preStepsCount).toBe(2);
+    expect(summary.preScriptsCount).toBe(3);
   });
 
   it('sets hasGlobalSettings false when globalSettings absent', () => {

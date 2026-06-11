@@ -214,6 +214,100 @@ function renderGroupRow(gs) {
   const branchSel = buildBranchSelector(gs);
   row.appendChild(branchSel);
 
+  // Pre-scripts trigger — only shown when the group has preSteps defined.
+  if ((group.preSteps || []).length > 0) {
+    const prescriptStatus = gs.preScriptsStatus || 'idle';
+
+    // ▶▶ trigger button
+    const prescriptsBtn = document.createElement('button');
+    prescriptsBtn.className = 'ghost prescripts-trigger';
+    prescriptsBtn.title = prescriptStatus === 'running'
+      ? 'Pre-scripts corriendo…'
+      : 'Ejecutar pre-scripts';
+    prescriptsBtn.dataset.prestepStatus = prescriptStatus;
+    prescriptsBtn.textContent = '▶▶';
+    prescriptsBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (prescriptStatus === 'running') {
+        showToast('Ya hay un pipeline corriendo', 'warn');
+        return;
+      }
+      const res = await window.api.runPreScripts(groupId);
+      if (res && !res.ok && res.error === 'already_running') {
+        showToast('Ya hay un pipeline corriendo', 'warn');
+      }
+    });
+    row.appendChild(prescriptsBtn);
+
+    // Status badge — paso N/M when running, ✓ when done, ✕ when error
+    if (prescriptStatus === 'running') {
+      const badge = document.createElement('span');
+      badge.className = 'prestep-badge';
+      badge.textContent = `paso ${gs.preScriptsCurrentStep || 1}/${gs.preScriptsTotalSteps || '?'}`;
+      row.appendChild(badge);
+
+      const cancelChip = document.createElement('button');
+      cancelChip.className = 'ghost prestep-cancel';
+      cancelChip.title = 'Cancelar pre-scripts';
+      cancelChip.textContent = '×';
+      cancelChip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.api.cancelPreScripts(groupId);
+      });
+      row.appendChild(cancelChip);
+
+      // Logs opener for the aggregator pid (shows pipeline boundary lines)
+      if (gs.preScriptsLastRunId) {
+        const logsBtn = document.createElement('button');
+        logsBtn.className = 'ghost prestep-logs-btn';
+        logsBtn.title = 'Ver logs del pipeline';
+        logsBtn.textContent = '📋';
+        logsBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.api.openLogs(`pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`);
+        });
+        row.appendChild(logsBtn);
+      }
+    } else if (prescriptStatus === 'done') {
+      const badge = document.createElement('span');
+      badge.className = 'prestep-badge ok';
+      badge.textContent = '✓';
+      row.appendChild(badge);
+
+      // Still allow opening logs for the last run
+      if (gs.preScriptsLastRunId) {
+        const logsBtn = document.createElement('button');
+        logsBtn.className = 'ghost prestep-logs-btn';
+        logsBtn.title = 'Ver logs del pipeline';
+        logsBtn.textContent = '📋';
+        logsBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.api.openLogs(`pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`);
+        });
+        row.appendChild(logsBtn);
+      }
+    } else if (prescriptStatus === 'error') {
+      const badge = document.createElement('span');
+      badge.className = 'prestep-badge err';
+      badge.title = gs.preScriptsLastError || 'Error en el pipeline';
+      badge.textContent = '✕';
+      row.appendChild(badge);
+
+      // Still allow opening logs for the last run
+      if (gs.preScriptsLastRunId) {
+        const logsBtn = document.createElement('button');
+        logsBtn.className = 'ghost prestep-logs-btn';
+        logsBtn.title = 'Ver logs del pipeline';
+        logsBtn.textContent = '📋';
+        logsBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.api.openLogs(`pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`);
+        });
+        row.appendChild(logsBtn);
+      }
+    }
+  }
+
   // Expand chevron (only if group has actions or commands)
   const caret = document.createElement('button');
   caret.className = 'caret-btn ghost';

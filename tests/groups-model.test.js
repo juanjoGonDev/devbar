@@ -10,6 +10,8 @@ import {
   normalizeGroup,
   normalizeCommand,
   normalizeAction,
+  normalizePreScript,
+  normalizePreStep,
   normalizeEnvEntries,
   materializeEnv,
   bucketKeyFor,
@@ -1104,5 +1106,134 @@ describe('action effective env — inheritGroupEnv semantics', () => {
     const env = { ...materializeEnv(groupEnv), ...materializeEnv(actionEnv) };
     expect(env.FOO).toBe('bar');
     expect(env).not.toHaveProperty('SECRET');
+  });
+});
+
+// ─── normalizePreScript ──────────────────────────────────────────────────
+describe('normalizePreScript', () => {
+  it('applies defaults for minimal input', () => {
+    const sc = normalizePreScript({});
+    expect(sc.name).toBe('Unnamed');
+    expect(sc.command).toBe('');
+    expect(sc.args).toEqual([]);
+    expect(sc.env).toEqual([]);
+    expect(sc.inheritGroupEnv).toBe(false);
+    expect(typeof sc.id).toBe('string');
+    expect(sc.id.length).toBeGreaterThan(0);
+  });
+
+  it('preserves provided values', () => {
+    const sc = normalizePreScript({
+      id: 'sc-1',
+      name: 'Install',
+      command: 'pnpm install',
+      args: ['--frozen-lockfile'],
+      inheritGroupEnv: true,
+    });
+    expect(sc.id).toBe('sc-1');
+    expect(sc.name).toBe('Install');
+    expect(sc.command).toBe('pnpm install');
+    expect(sc.args).toEqual(['--frozen-lockfile']);
+    expect(sc.inheritGroupEnv).toBe(true);
+  });
+
+  it('preserves empty command as-is (model layer does not reject it)', () => {
+    const sc = normalizePreScript({ command: '' });
+    expect(sc.command).toBe('');
+  });
+
+  it('defaults inheritGroupEnv to false', () => {
+    const sc = normalizePreScript({ command: 'echo hi' });
+    expect(sc.inheritGroupEnv).toBe(false);
+  });
+
+  it('preserves raw id (UUID round-trip)', () => {
+    const id = 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee';
+    const sc = normalizePreScript({ id });
+    expect(sc.id).toBe(id);
+  });
+});
+
+// ─── normalizePreStep ────────────────────────────────────────────────────
+describe('normalizePreStep', () => {
+  it('defaults mode to parallel for missing value', () => {
+    const step = normalizePreStep({});
+    expect(step.mode).toBe('parallel');
+  });
+
+  it('defaults mode to parallel for unknown value', () => {
+    const step = normalizePreStep({ mode: 'foo' });
+    expect(step.mode).toBe('parallel');
+  });
+
+  it('accepts serial mode', () => {
+    const step = normalizePreStep({ mode: 'serial' });
+    expect(step.mode).toBe('serial');
+  });
+
+  it('defaults scripts to []', () => {
+    const step = normalizePreStep({});
+    expect(step.scripts).toEqual([]);
+  });
+
+  it('normalizes nested scripts', () => {
+    const step = normalizePreStep({
+      id: 'step-1',
+      mode: 'serial',
+      scripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }],
+    });
+    expect(step.scripts).toHaveLength(1);
+    expect(step.scripts[0].id).toBe('sc-1');
+    expect(step.scripts[0].name).toBe('Install');
+  });
+
+  it('preserves raw id', () => {
+    const id = 'step-uuid-1234';
+    const step = normalizePreStep({ id });
+    expect(step.id).toBe(id);
+  });
+
+  it('generates id when missing', () => {
+    const step = normalizePreStep({});
+    expect(typeof step.id).toBe('string');
+    expect(step.id.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── normalizeGroup — preSteps field ────────────────────────────────────
+describe('normalizeGroup — preSteps field', () => {
+  it('defaults preSteps to [] when absent', () => {
+    const g = normalizeGroup({ path: '/some/path' });
+    expect(g.preSteps).toEqual([]);
+  });
+
+  it('normalizes provided preSteps', () => {
+    const g = normalizeGroup({
+      path: '/p',
+      preSteps: [
+        { id: 'step-1', mode: 'serial', scripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }] },
+      ],
+    });
+    expect(g.preSteps).toHaveLength(1);
+    expect(g.preSteps[0].id).toBe('step-1');
+    expect(g.preSteps[0].mode).toBe('serial');
+  });
+
+  it('UUID round-trip: re-normalizing an already-normalized group preserves all ids', () => {
+    const original = normalizeGroup({
+      path: '/p',
+      preSteps: [
+        { id: 'step-aaa', mode: 'parallel', scripts: [{ id: 'sc-bbb', name: 'Build', command: 'pnpm build' }] },
+      ],
+    });
+    const json = JSON.stringify(original);
+    const restored = normalizeGroup(JSON.parse(json));
+    expect(restored.preSteps[0].id).toBe('step-aaa');
+    expect(restored.preSteps[0].scripts[0].id).toBe('sc-bbb');
+  });
+
+  it('old group fixture without preSteps gets preSteps:[]', () => {
+    const g = normalizeGroup({ path: '/p', name: 'Legacy', commands: [], actions: [] });
+    expect(g.preSteps).toEqual([]);
   });
 });

@@ -516,6 +516,9 @@ function renderGroupDetail() {
     mutateDraft((d) => { d.env = groupEnvEditor.getEntries(); });
   });
 
+  // ── Pre-scripts section ───────────────────────────────────────────────
+  buildPreStepsSection(group, groupDetailEl);
+
   // ── Commands sub-list ─────────────────────────────────────────────────
   buildSubList(group, 'command', groupDetailEl);
 
@@ -576,6 +579,233 @@ function buildToggleLabel(text, checked, cssClass) {
   span.textContent = text;
   lbl.appendChild(span);
   return lbl;
+}
+
+// ────────────────────── Pre-steps section ────────────────────────────────
+
+/**
+ * Build the Pre-scripts section and append it to `parent`.
+ * Placed between the group env editor and the Commands section.
+ */
+function buildPreStepsSection(group, parent) {
+  const section = document.createElement('div');
+  section.className = 'detail-section presteps-section';
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'sub-list-header';
+
+  const titleSpan = document.createElement('span');
+  titleSpan.className = 'section-label';
+  titleSpan.textContent = 'Pre-scripts';
+  headerRow.appendChild(titleSpan);
+
+  const addStepBtn = document.createElement('button');
+  addStepBtn.className = 'small-btn';
+  addStepBtn.textContent = '+ Añadir paso';
+  addStepBtn.addEventListener('click', async () => {
+    await window.api.savePreStep(group.id, { mode: 'parallel', scripts: [] });
+    await loadGroups();
+    renderGroupDetail();
+  });
+  headerRow.appendChild(addStepBtn);
+  section.appendChild(headerRow);
+
+  const helpText = document.createElement('p');
+  helpText.className = 'help-text muted';
+  helpText.style.cssText = 'font-size:11px; margin:4px 0 8px;';
+  helpText.textContent = 'Se ejecutan antes de iniciar los comandos auto-start. Cada paso puede correr en paralelo o en serie.';
+  section.appendChild(helpText);
+
+  // ── Auto-run toggle ───────────────────────────────────────────────────
+  // When ON, pre-scripts auto-run ONLY when DevBar was launched by macOS
+  // at login (system boot), not on every manual app restart. Default OFF.
+  const autoRunLbl = buildToggleLabel(
+    'Ejecutar automáticamente al arrancar el Mac',
+    !!group.preScriptsAutoRun,
+    'detail-prestep-autorun',
+  );
+  autoRunLbl.querySelector('input').addEventListener('change', (e) => {
+    mutateDraft((d) => { d.preScriptsAutoRun = e.target.checked; });
+  });
+  const autoRunHint = document.createElement('small');
+  autoRunHint.className = 'muted';
+  autoRunHint.style.cssText = 'display:block; margin:2px 0 8px 42px; font-size:10px;';
+  autoRunHint.textContent = 'Solo dispara cuando DevBar abre como Login Item del sistema; no en relanzados manuales.';
+  section.appendChild(autoRunLbl);
+  section.appendChild(autoRunHint);
+
+  const steps = group.preSteps || [];
+
+  if (steps.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'prestep-empty';
+    empty.textContent = 'Sin pasos. Pulsa «+ Añadir paso» para comenzar.';
+    section.appendChild(empty);
+    parent.appendChild(section);
+    return;
+  }
+
+  const stepsRoot = document.createElement('div');
+  stepsRoot.className = 'presteps-list';
+
+  for (let si = 0; si < steps.length; si++) {
+    const step = steps[si];
+    const card = buildPreStepCard(group, step, si + 1);
+    stepsRoot.appendChild(card);
+  }
+
+  section.appendChild(stepsRoot);
+
+  // Step-level DnD
+  attachDragHandlers(stepsRoot, async (orderedIds) => {
+    await window.api.reorderPreSteps(group.id, orderedIds);
+    await loadGroups();
+    renderGroupDetail();
+  });
+
+  parent.appendChild(section);
+}
+
+function buildPreStepCard(group, step, stepNumber) {
+  const card = document.createElement('div');
+  card.className = 'prestep-card';
+  card.dataset.id = step.id;
+
+  // ── Header ───────────────────────────────────────────────────────────
+  const header = document.createElement('div');
+  header.className = 'prestep-card-header';
+
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'drag-handle';
+  dragHandle.draggable = true;
+  dragHandle.title = 'Arrastra para reordenar';
+  dragHandle.textContent = '⋮⋮';
+  header.appendChild(dragHandle);
+
+  const stepLabel = document.createElement('span');
+  stepLabel.className = 'step-label';
+  stepLabel.textContent = `Paso ${stepNumber}`;
+  header.appendChild(stepLabel);
+
+  // Mode toggle (segmented control)
+  const modeToggle = document.createElement('div');
+  modeToggle.className = 'prestep-mode-toggle';
+  modeToggle.setAttribute('role', 'group');
+  modeToggle.setAttribute('aria-label', 'Modo de ejecución');
+
+  for (const mode of ['parallel', 'serial']) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mode-btn';
+    btn.textContent = mode === 'parallel' ? 'Paralelo ⇉' : 'Serie →';
+    btn.setAttribute('aria-pressed', String(step.mode === mode));
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await window.api.savePreStep(group.id, { ...step, mode });
+      await loadGroups();
+      renderGroupDetail();
+    });
+    modeToggle.appendChild(btn);
+  }
+  header.appendChild(modeToggle);
+
+  // Spacer
+  const spacer = document.createElement('span');
+  spacer.style.flex = '1';
+  header.appendChild(spacer);
+
+  // Delete step button
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'small-btn danger';
+  delBtn.title = 'Eliminar paso';
+  delBtn.textContent = '×';
+  delBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!confirm(`¿Eliminar el paso ${stepNumber}?`)) return;
+    await window.api.deletePreStep(group.id, step.id);
+    await loadGroups();
+    renderGroupDetail();
+  });
+  header.appendChild(delBtn);
+
+  card.appendChild(header);
+
+  // ── Script list ───────────────────────────────────────────────────────
+  const scriptList = document.createElement('ul');
+  scriptList.className = 'prescript-list';
+  scriptList.dataset.dndScope = `script-${step.id}`;
+
+  for (const script of step.scripts || []) {
+    scriptList.appendChild(buildPreScriptRow(group, step, script));
+  }
+  card.appendChild(scriptList);
+
+  // Script-level DnD (scoped to this step — no cross-step drag)
+  attachDragHandlers(scriptList, async (orderedIds) => {
+    await window.api.reorderPreScripts(group.id, step.id, orderedIds);
+    await loadGroups();
+    renderGroupDetail();
+  });
+
+  // Add script button
+  const addScriptBtn = document.createElement('button');
+  addScriptBtn.type = 'button';
+  addScriptBtn.className = 'small-btn';
+  addScriptBtn.textContent = '+ Añadir script';
+  addScriptBtn.style.marginTop = '4px';
+  addScriptBtn.addEventListener('click', () => {
+    openSubDialog(null, 'prescript', group.id, step.id);
+  });
+  card.appendChild(addScriptBtn);
+
+  return card;
+}
+
+function buildPreScriptRow(group, step, script) {
+  const li = document.createElement('li');
+  li.className = 'prescript-row';
+  li.dataset.id = script.id;
+
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'drag-handle';
+  dragHandle.draggable = true;
+  dragHandle.title = 'Arrastra para reordenar';
+  dragHandle.textContent = '⋮';
+  li.appendChild(dragHandle);
+
+  const nameEl = document.createElement('strong');
+  nameEl.textContent = script.name || 'Unnamed';
+  li.appendChild(nameEl);
+
+  const cmdEl = document.createElement('code');
+  cmdEl.textContent = [script.command, ...(script.args || [])].join(' ');
+  li.appendChild(cmdEl);
+
+  const spacer = document.createElement('span');
+  spacer.style.flex = '1';
+  li.appendChild(spacer);
+
+  const editBtn = document.createElement('button');
+  editBtn.textContent = '✎';
+  editBtn.title = 'Editar';
+  editBtn.className = 'small-btn';
+  editBtn.addEventListener('click', () => openSubDialog(script, 'prescript', group.id, step.id));
+  li.appendChild(editBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.textContent = '🗑';
+  delBtn.title = 'Borrar';
+  delBtn.className = 'small-btn danger';
+  delBtn.addEventListener('click', async () => {
+    if (!confirm(`¿Borrar "${script.name}"?`)) return;
+    await window.api.deletePreScript(group.id, step.id, script.id);
+    await loadGroups();
+    renderGroupDetail();
+  });
+  li.appendChild(delBtn);
+
+  return li;
 }
 
 // ────────────────────── Sub-list (commands or actions) ─────────────────
@@ -711,19 +941,25 @@ function buildSubItemRow(item, kind, groupId) {
   return row;
 }
 
-// ────────────────────── Sub-dialog (command/action) ────────────────────
+// ────────────────────── Sub-dialog (command/action/prescript) ──────────────
 
 // Module-level ref so the submit handler can read the current editor state
 let _sfEnvEditorHandle = null;
+// stepId for 'prescript' mode
+let _sfPreStepId = null;
 
-function openSubDialog(item, kind, groupId) {
+function openSubDialog(item, kind, groupId, stepId) {
   subDialogMode = kind;
+  _sfPreStepId = stepId || null;
   const isCommand = kind === 'command';
+  const isPreScript = kind === 'prescript';
   subDialogTitle.textContent = item
-    ? `Editar ${isCommand ? 'comando' : 'acción'}: ${item.name}`
-    : `Nuevo ${isCommand ? 'comando' : 'acción'}`;
+    ? `Editar ${isCommand ? 'comando' : isPreScript ? 'pre-script' : 'acción'}: ${item.name}`
+    : `Nuevo ${isCommand ? 'comando' : isPreScript ? 'pre-script' : 'acción'}`;
 
-  // Icon button
+  // Icon button — hidden for prescripts (they don't have icons)
+  const sfIconField = document.querySelector('.sf-icon-field');
+  if (sfIconField) sfIconField.style.display = isPreScript ? 'none' : '';
   sfIconBtn.textContent = (item && item.icon) || (isCommand ? '⚙️' : '🪄');
   sfIconBtn.onclick = (e) => {
     openIconPicker(e.currentTarget, (emoji) => {
@@ -735,7 +971,7 @@ function openSubDialog(item, kind, groupId) {
   sfCommand.value = item ? item.command : '';
   sfArgs.value = item ? (item.args || []).join('\n') : '';
 
-  // Action-only: inheritGroupEnv toggle
+  // Action and prescript: inheritGroupEnv toggle
   if (!isCommand) {
     sfInheritGroupEnvRow.style.display = '';
     sfInheritGroupEnv.checked = item ? !!item.inheritGroupEnv : false;
@@ -749,7 +985,7 @@ function openSubDialog(item, kind, groupId) {
   const initialEnv = item ? (item.env || []) : [];
   _sfEnvEditorHandle = buildEnvEditor(sfEnvEditor, initialEnv);
 
-  // Command-only fields
+  // Command-only fields — hidden for actions and prescripts
   cmdOnlyFields.style.display = isCommand ? '' : 'none';
   if (isCommand) {
     sfCwd.value = item ? (item.cwd || '') : '';
@@ -762,7 +998,17 @@ function openSubDialog(item, kind, groupId) {
 
   subDialogCallback = async (data) => {
     try {
-      if (isCommand) {
+      if (isPreScript) {
+        const payload = {
+          id: item ? item.id : undefined,
+          name: data.name,
+          command: data.command,
+          args: data.args,
+          env: data.env,
+          inheritGroupEnv: data.inheritGroupEnv,
+        };
+        await window.api.savePreScript(groupId, _sfPreStepId, payload);
+      } else if (isCommand) {
         const payload = {
           id: item ? item.id : undefined,
           icon: data.icon || null,
@@ -799,17 +1045,23 @@ function openSubDialog(item, kind, groupId) {
       // Refresh allGroups silently (no full re-render)
       await loadGroups();
 
-      // Merge the saved command/action slice back into draftGroup and storedGroup
+      // Merge the saved command/action/prescript slice back into draftGroup and storedGroup
       // so the sub-list reflects the updated item while parent-level edits are preserved.
       if (draftGroup && draftGroup.id === groupId) {
         const fresh = allGroups.find((g) => g.id === groupId);
         if (fresh) {
-          const slice = isCommand ? 'commands' : 'actions';
-          const freshSlice = JSON.parse(JSON.stringify(fresh[slice] || []));
-          // Sync storedGroup slice so dirty check reflects new sub-item state
-          storedGroup[slice] = freshSlice;
-          // Sync draftGroup slice — preserves parent-level field edits
-          draftGroup[slice] = freshSlice;
+          if (isPreScript) {
+            const freshSlice = JSON.parse(JSON.stringify(fresh.preSteps || []));
+            storedGroup.preSteps = freshSlice;
+            draftGroup.preSteps = freshSlice;
+          } else {
+            const slice = isCommand ? 'commands' : 'actions';
+            const freshSlice = JSON.parse(JSON.stringify(fresh[slice] || []));
+            // Sync storedGroup slice so dirty check reflects new sub-item state
+            storedGroup[slice] = freshSlice;
+            // Sync draftGroup slice — preserves parent-level field edits
+            draftGroup[slice] = freshSlice;
+          }
         }
         // Re-render from draftGroup (parent edits preserved)
         renderGroupDetail();
@@ -818,7 +1070,7 @@ function openSubDialog(item, kind, groupId) {
         renderGroupDetail();
       }
 
-      showToast(`${isCommand ? 'Comando' : 'Acción'} guardado`, 'ok');
+      showToast(`${isCommand ? 'Comando' : isPreScript ? 'Pre-script' : 'Acción'} guardado`, 'ok');
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');
     }

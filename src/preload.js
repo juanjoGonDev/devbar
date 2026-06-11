@@ -85,6 +85,16 @@ contextBridge.exposeInMainWorld('api', {
   // ── Folder picker ─────────────────────────────────────────────────────
   pickFolder: (defaultPath) => ipcRenderer.invoke('dialog:pickFolder', { defaultPath }),
 
+  // ── Pre-scripts ───────────────────────────────────────────────────────
+  runPreScripts: (groupId) => ipcRenderer.invoke('prescripts:run', { groupId }),
+  cancelPreScripts: (groupId) => ipcRenderer.invoke('prescripts:cancel', { groupId }),
+  savePreStep: (groupId, data) => ipcRenderer.invoke('preSteps:save', { groupId, data }),
+  deletePreStep: (groupId, stepId) => ipcRenderer.invoke('preSteps:delete', { groupId, stepId }),
+  reorderPreSteps: (groupId, orderedIds) => ipcRenderer.invoke('preSteps:reorder', { groupId, orderedIds }),
+  savePreScript: (groupId, stepId, data) => ipcRenderer.invoke('preScripts:save', { groupId, stepId, data }),
+  deletePreScript: (groupId, stepId, scriptId) => ipcRenderer.invoke('preScripts:delete', { groupId, stepId, scriptId }),
+  reorderPreScripts: (groupId, stepId, orderedIds) => ipcRenderer.invoke('preScripts:reorder', { groupId, stepId, orderedIds }),
+
   // ── App ───────────────────────────────────────────────────────────────
   quit: () => ipcRenderer.invoke('app:quit'),
   getAppVersion: () => ipcRenderer.invoke('app:version'),

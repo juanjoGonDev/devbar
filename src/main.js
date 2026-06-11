@@ -15,6 +15,7 @@ const { aggregateColor } = trayIcon;
 const { loadShellPath, expandTilde } = require('./path-helper');
 const { RepoWatcher } = require('./repo-watcher');
 const { makeCommandId, makeActionId, parseProcessId } = require('./compound-id');
+const { createPreScriptRunner } = require('./pre-script-runner');
 
 loadShellPath();
 
@@ -37,6 +38,15 @@ try {
 }
 
 const processManager = new ProcessManager(configStore);
+
+const preScriptRunner = createPreScriptRunner({
+  processManager,
+  configStore,
+  broadcastUpdate: () => broadcast(),
+  onError: (err, ctx) => {
+    broadcastToast('error', `Pre-scripts: ${err}`);
+  },
+});
 
 let mb;
 let configWindow = null;
@@ -111,6 +121,20 @@ function snapshotGroupStates() {
       if (anyErr) groupColor = 'error';
     }
 
+    // Pre-scripts runtime fields
+    const runState = preScriptRunner.getRunState(group.id);
+    const recentResult = preScriptRunner.getRecentResult(group.id);
+    const preScriptsStatus = runState ? runState.status
+      : recentResult ? recentResult.status
+      : 'idle';
+    const preScriptsCurrentStep = runState ? runState.currentStep : null;
+    const preScriptsTotalSteps = runState ? runState.totalSteps
+      : (group.preSteps || []).length;
+    const preScriptsLastError = (recentResult && recentResult.status === 'error')
+      ? recentResult.error : null;
+    const preScriptsLastRunId = runState ? String(runState.runId)
+      : recentResult ? String(recentResult.runId) : null;
+
     return {
       groupId: group.id,
       group,
@@ -119,6 +143,11 @@ function snapshotGroupStates() {
       commands: commandStates,
       actions: actionStates,
       lastError: groupErrors.get(group.id) || null,
+      preScriptsStatus,
+      preScriptsCurrentStep,
+      preScriptsTotalSteps,
+      preScriptsLastError,
+      preScriptsLastRunId,
     };
   });
 }
@@ -492,6 +521,41 @@ function registerIpc() {
     return { ok: res.ok, processId: pid, error: res.error };
   });
 
+  // ── Pre-scripts ───────────────────────────────────────────────────────
+  ipcMain.handle('prescripts:run', (_e, { groupId }) => preScriptRunner.run(groupId));
+  ipcMain.handle('prescripts:cancel', (_e, { groupId }) => preScriptRunner.cancel(groupId));
+
+  ipcMain.handle('preSteps:save', (_e, { groupId, data }) => {
+    const result = configStore.savePreStep(groupId, data);
+    broadcast();
+    return result;
+  });
+  ipcMain.handle('preSteps:delete', (_e, { groupId, stepId }) => {
+    configStore.deletePreStep(groupId, stepId);
+    broadcast();
+    return { ok: true };
+  });
+  ipcMain.handle('preSteps:reorder', (_e, { groupId, orderedIds }) => {
+    configStore.reorderPreSteps(groupId, orderedIds);
+    broadcast();
+    return { ok: true };
+  });
+  ipcMain.handle('preScripts:save', (_e, { groupId, stepId, data }) => {
+    const result = configStore.savePreScript(groupId, stepId, data);
+    broadcast();
+    return result;
+  });
+  ipcMain.handle('preScripts:delete', (_e, { groupId, stepId, scriptId }) => {
+    configStore.deletePreScript(groupId, stepId, scriptId);
+    broadcast();
+    return { ok: true };
+  });
+  ipcMain.handle('preScripts:reorder', (_e, { groupId, stepId, orderedIds }) => {
+    configStore.reorderPreScripts(groupId, stepId, orderedIds);
+    broadcast();
+    return { ok: true };
+  });
+
   // ── Process start/stop ────────────────────────────────────────────────
   ipcMain.handle('process:start', async (_e, processId) => {
     const parsed = parseProcessId(processId);
@@ -854,11 +918,40 @@ function registerIpc() {
  *   than one has autoStart:true (enforceSingleModeAutoStart should prevent that,
  *   but this is a belt-and-suspenders guard).
  * - Errors per command are logged and swallowed so the remaining commands still start.
+ * - For groups with preSteps, the pipeline runs first (per group, in parallel via
+ *   Promise.all — distinct groups are independent; ADR-3). If the pipeline fails,
+ *   the group's autoStart commands are NOT started and a toast is shown.
  */
-function autoStartAllMarkedCommands() {
-  for (const group of configStore.listGroups()) {
+async function autoStartAllMarkedCommands() {
+  // Only run pre-scripts when DevBar was launched by macOS at login —
+  // i.e. on system boot — not on every manual app restart. This protects
+  // the user from re-running expensive `make setup` style scripts every
+  // time they quit and reopen DevBar.
+  const wasOpenedAtLogin =
+    process.platform === 'darwin' &&
+    !!(app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin);
+
+  const groups = configStore.listGroups();
+  await Promise.all(groups.map(async (group) => {
     const eligible = (group.commands || []).filter((c) => c.autoStart === true);
-    if (eligible.length === 0) continue;
+    if (eligible.length === 0) return;
+
+    // Run pre-scripts pipeline if:
+    // - the group has preSteps configured
+    // - the user opted in via `preScriptsAutoRun: true`
+    // - and DevBar was opened at login (not a manual restart)
+    const shouldRunPre =
+      group.preSteps && group.preSteps.length > 0 &&
+      group.preScriptsAutoRun === true &&
+      wasOpenedAtLogin;
+    if (shouldRunPre) {
+      const res = await preScriptRunner.run(group.id);
+      if (!res.ok) {
+        broadcastToast('error', `Pre-scripts ${group.name}: ${res.error || 'failed'}`);
+        return; // skip starting commands for this group
+      }
+    }
+
     const toStart = group.mode === 'single' ? eligible.slice(0, 1) : eligible;
     for (const cmd of toStart) {
       const pid = makeCommandId(group.id, cmd.id);
@@ -868,7 +961,7 @@ function autoStartAllMarkedCommands() {
         console.error(`autoStart failed for ${group.name}/${cmd.name}:`, err);
       }
     }
-  }
+  }));
 }
 
 // ─────────────────────── App lifecycle ───────────────────────────────
@@ -886,6 +979,14 @@ app.whenReady().then(() => {
   processManager.on('change', () => broadcast());
   processManager.on('log', (payload) => broadcastLog(payload));
   processManager.on('action:done', ({ processId, code, group, target }) => {
+    // Pre-script exits are handled by pre-script-runner (pipeline aggregator).
+    // Do not toast for individual pre-script script exits — the pipeline runner
+    // handles success/failure toasting at the pipeline level.
+    const parsed = parseProcessId(processId);
+    if (parsed.kind === 'prescript') {
+      broadcast();
+      return;
+    }
     const kind = code === 0 ? 'ok' : 'error';
     const message = `${group ? group.name : '?'} · ${target ? target.name : '?'} exited ${code}`;
     broadcastToast(kind, message);
@@ -942,6 +1043,10 @@ app.on('window-all-closed', (e) => {
 
 app.on('before-quit', async () => {
   repoWatcher.closeAll();
+  // Cancel any running pre-script pipelines
+  for (const groupId of preScriptRunner.running.keys()) {
+    try { preScriptRunner.cancel(groupId); } catch (_) {}
+  }
   // Stop all running processes
   const groups = configStore.listGroups();
   for (const group of groups) {

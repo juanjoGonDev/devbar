@@ -11,6 +11,8 @@ const {
   normalizeGroup,
   normalizeCommand,
   normalizeAction,
+  normalizePreScript,
+  normalizePreStep,
   migrateServicesToGroups,
   regenerateLegacyServices,
   enforceSingleModeAutoStart,
@@ -203,6 +205,116 @@ function reorderActions(groupId, orderedIds) {
   _persistGroups(groups);
 }
 
+// ─────────────────────── PreStep CRUD ────────────────────────────────
+
+function savePreStep(groupId, data) {
+  const groups = _getGroups();
+  const gIdx = groups.findIndex((g) => g.id === groupId);
+  if (gIdx < 0) return null;
+  const group = groups[gIdx];
+  const normalized = normalizePreStep(data);
+  const preSteps = group.preSteps || [];
+  const sIdx = preSteps.findIndex((s) => s.id === normalized.id);
+  if (sIdx >= 0) {
+    preSteps[sIdx] = normalized;
+  } else {
+    preSteps.push(normalized);
+  }
+  groups[gIdx] = { ...group, preSteps };
+  _persistGroups(groups);
+  return normalized;
+}
+
+function deletePreStep(groupId, stepId) {
+  const groups = _getGroups();
+  const gIdx = groups.findIndex((g) => g.id === groupId);
+  if (gIdx < 0) return;
+  const group = groups[gIdx];
+  groups[gIdx] = { ...group, preSteps: (group.preSteps || []).filter((s) => s.id !== stepId) };
+  _persistGroups(groups);
+}
+
+function reorderPreSteps(groupId, orderedIds) {
+  const groups = _getGroups();
+  const gIdx = groups.findIndex((g) => g.id === groupId);
+  if (gIdx < 0) return;
+  const group = groups[gIdx];
+  const preSteps = group.preSteps || [];
+  const byId = new Map(preSteps.map((s) => [s.id, s]));
+  const seen = new Set();
+  const sorted = [];
+  for (const id of orderedIds) {
+    if (byId.has(id) && !seen.has(id)) { sorted.push(byId.get(id)); seen.add(id); }
+  }
+  for (const s of preSteps) { if (!seen.has(s.id)) sorted.push(s); }
+  groups[gIdx] = { ...group, preSteps: sorted };
+  _persistGroups(groups);
+}
+
+// ─────────────────────── PreScript CRUD ───────────────────────────────
+
+function savePreScript(groupId, stepId, data) {
+  const groups = _getGroups();
+  const gIdx = groups.findIndex((g) => g.id === groupId);
+  if (gIdx < 0) return null;
+  const group = groups[gIdx];
+  const preSteps = (group.preSteps || []).slice();
+  const sIdx = preSteps.findIndex((s) => s.id === stepId);
+  if (sIdx < 0) return null;
+  const step = { ...preSteps[sIdx] };
+  const normalized = normalizePreScript(data);
+  const scripts = (step.scripts || []).slice();
+  const scIdx = scripts.findIndex((sc) => sc.id === normalized.id);
+  if (scIdx >= 0) {
+    scripts[scIdx] = normalized;
+  } else {
+    scripts.push(normalized);
+  }
+  step.scripts = scripts;
+  preSteps[sIdx] = step;
+  groups[gIdx] = { ...group, preSteps };
+  _persistGroups(groups);
+  return normalized;
+}
+
+function deletePreScript(groupId, stepId, scriptId) {
+  const groups = _getGroups();
+  const gIdx = groups.findIndex((g) => g.id === groupId);
+  if (gIdx < 0) return;
+  const group = groups[gIdx];
+  const preSteps = (group.preSteps || []).slice();
+  const sIdx = preSteps.findIndex((s) => s.id === stepId);
+  if (sIdx < 0) return;
+  const step = { ...preSteps[sIdx] };
+  step.scripts = (step.scripts || []).filter((sc) => sc.id !== scriptId);
+  preSteps[sIdx] = step;
+  groups[gIdx] = { ...group, preSteps };
+  _persistGroups(groups);
+}
+
+function reorderPreScripts(groupId, stepId, orderedIds) {
+  const groups = _getGroups();
+  const gIdx = groups.findIndex((g) => g.id === groupId);
+  if (gIdx < 0) return;
+  const group = groups[gIdx];
+  const preSteps = (group.preSteps || []).slice();
+  const sIdx = preSteps.findIndex((s) => s.id === stepId);
+  if (sIdx < 0) return;
+  const step = { ...preSteps[sIdx] };
+  const scripts = step.scripts || [];
+  const byId = new Map(scripts.map((sc) => [sc.id, sc]));
+  const seen = new Set();
+  const sorted = [];
+  for (const id of orderedIds) {
+    if (byId.has(id) && !seen.has(id)) { sorted.push(byId.get(id)); seen.add(id); }
+  }
+  for (const sc of scripts) { if (!seen.has(sc.id)) sorted.push(sc); }
+  step.scripts = sorted;
+  preSteps[sIdx] = step;
+  groups[gIdx] = { ...group, preSteps };
+  _persistGroups(groups);
+}
+
 // ─────────────────────── Silence helpers ─────────────────────────────
 
 function addSilencedPattern(groupId, commandId, level, pattern) {
@@ -359,6 +471,14 @@ module.exports = {
   saveAction,
   deleteAction,
   reorderActions,
+  // PreSteps
+  savePreStep,
+  deletePreStep,
+  reorderPreSteps,
+  // PreScripts
+  savePreScript,
+  deletePreScript,
+  reorderPreScripts,
   // Silence
   addSilencedPattern,
   removeSilencedPattern,
