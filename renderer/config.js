@@ -32,6 +32,8 @@ const sfSilenceWarn = document.getElementById('sf-silence-warn');
 const sfSilenceErr = document.getElementById('sf-silence-err');
 const sfMaxLogLines = document.getElementById('sf-max-log-lines');
 const cmdOnlyFields = document.getElementById('cmd-only-fields');
+const sfTimeoutSecs = document.getElementById('sf-timeout-secs');
+const sfTimeoutRow = document.getElementById('sf-timeout-row');
 
 const DEFAULT_WARN = '\\bwarn(ing)?s?\\b';
 const DEFAULT_ERROR = '\\berror(s)?\\b';
@@ -985,6 +987,10 @@ function openSubDialog(item, kind, groupId, stepId) {
   const initialEnv = item ? (item.env || []) : [];
   _sfEnvEditorHandle = buildEnvEditor(sfEnvEditor, initialEnv);
 
+  // PreScript-only: timeout field
+  if (sfTimeoutRow) sfTimeoutRow.style.display = isPreScript ? '' : 'none';
+  if (sfTimeoutSecs) sfTimeoutSecs.value = (item && item.timeoutMs) ? Math.round(item.timeoutMs / 1000) : '';
+
   // Command-only fields — hidden for actions and prescripts
   cmdOnlyFields.style.display = isCommand ? '' : 'none';
   if (isCommand) {
@@ -1006,6 +1012,7 @@ function openSubDialog(item, kind, groupId, stepId) {
           args: data.args,
           env: data.env,
           inheritGroupEnv: data.inheritGroupEnv,
+          timeoutMs: data.timeoutSecs ? data.timeoutSecs * 1000 : null,
         };
         await window.api.savePreScript(groupId, _sfPreStepId, payload);
       } else if (isCommand) {
@@ -1094,6 +1101,8 @@ subForm.addEventListener('submit', async (e) => {
   const args = sfArgs.value.split('\n').map((s) => s.trim()).filter(Boolean);
   const maxLogLinesStr = sfMaxLogLines ? sfMaxLogLines.value : '';
   const maxLogLines = maxLogLinesStr === '' ? null : (Number(maxLogLinesStr) || null);
+  const timeoutSecsStr = sfTimeoutSecs ? sfTimeoutSecs.value.trim() : '';
+  const timeoutSecs = timeoutSecsStr ? parseInt(timeoutSecsStr, 10) : null;
   const data = {
     icon: sfIconBtn ? sfIconBtn.textContent : null,
     name: sfName.value.trim(),
@@ -1107,6 +1116,7 @@ subForm.addEventListener('submit', async (e) => {
     silenceWarnings: sfSilenceWarn.checked,
     silenceErrors: sfSilenceErr.checked,
     maxLogLines,
+    timeoutSecs,
   };
   subDialog.close();
   if (subDialogCallback) await subDialogCallback(data);

@@ -20,6 +20,7 @@ import {
   validateGroupShape,
   enforceSingleModeAutoStart,
   clampMaxLogLinesOrNull,
+  clampTimeoutOrNull,
 } from '../src/groups-model.js';
 
 // ─── Real user config fixture (7 services, 2 repos) ───────────────────
@@ -1197,6 +1198,86 @@ describe('normalizePreStep', () => {
     const step = normalizePreStep({});
     expect(typeof step.id).toBe('string');
     expect(step.id.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── clampTimeoutOrNull ──────────────────────────────────────────────────
+describe('clampTimeoutOrNull', () => {
+  it('returns null for undefined', () => {
+    expect(clampTimeoutOrNull(undefined)).toBeNull();
+  });
+
+  it('returns null for null', () => {
+    expect(clampTimeoutOrNull(null)).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(clampTimeoutOrNull('')).toBeNull();
+  });
+
+  it('returns null for NaN (string)', () => {
+    expect(clampTimeoutOrNull('abc')).toBeNull();
+  });
+
+  it('returns null for zero', () => {
+    expect(clampTimeoutOrNull(0)).toBeNull();
+  });
+
+  it('returns null for negative value', () => {
+    expect(clampTimeoutOrNull(-100)).toBeNull();
+  });
+
+  it('preserves valid in-range value', () => {
+    expect(clampTimeoutOrNull(5000)).toBe(5000);
+  });
+
+  it('clamps below minimum (500 → 1000)', () => {
+    expect(clampTimeoutOrNull(500)).toBe(1000);
+  });
+
+  it('clamps above maximum (9_999_999 → 3_600_000)', () => {
+    expect(clampTimeoutOrNull(9_999_999)).toBe(3_600_000);
+  });
+
+  it('accepts numeric string "5000" → 5000', () => {
+    expect(clampTimeoutOrNull('5000')).toBe(5000);
+  });
+
+  it('rounds float values', () => {
+    expect(clampTimeoutOrNull(5000.7)).toBe(5001);
+  });
+});
+
+// ─── normalizePreScript — timeoutMs field ────────────────────────────────
+describe('normalizePreScript — timeoutMs field', () => {
+  it('defaults timeoutMs to null when not provided', () => {
+    const sc = normalizePreScript({ command: 'echo hi' });
+    expect(sc.timeoutMs).toBeNull();
+  });
+
+  it('defaults timeoutMs to null for explicit null', () => {
+    const sc = normalizePreScript({ command: 'echo hi', timeoutMs: null });
+    expect(sc.timeoutMs).toBeNull();
+  });
+
+  it('preserves valid timeoutMs within range', () => {
+    const sc = normalizePreScript({ command: 'echo hi', timeoutMs: 5000 });
+    expect(sc.timeoutMs).toBe(5000);
+  });
+
+  it('clamps timeoutMs below minimum (500 → 1000)', () => {
+    const sc = normalizePreScript({ command: 'echo hi', timeoutMs: 500 });
+    expect(sc.timeoutMs).toBe(1000);
+  });
+
+  it('clamps timeoutMs above maximum', () => {
+    const sc = normalizePreScript({ command: 'echo hi', timeoutMs: 9_999_999 });
+    expect(sc.timeoutMs).toBe(3_600_000);
+  });
+
+  it('sets timeoutMs to null for empty string', () => {
+    const sc = normalizePreScript({ command: 'echo hi', timeoutMs: '' });
+    expect(sc.timeoutMs).toBeNull();
   });
 });
 

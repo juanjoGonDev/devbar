@@ -243,7 +243,20 @@ function renderGroupRow(gs) {
     if (prescriptStatus === 'running') {
       const badge = document.createElement('span');
       badge.className = 'prestep-badge';
-      badge.textContent = `paso ${gs.preScriptsCurrentStep || 1}/${gs.preScriptsTotalSteps || '?'}`;
+
+      const stepSpan = document.createElement('span');
+      stepSpan.textContent = `paso ${gs.preScriptsCurrentStep || 1}/${gs.preScriptsTotalSteps || '?'}`;
+      badge.appendChild(stepSpan);
+
+      if (gs.preScriptsStartedAt) {
+        badge.appendChild(document.createTextNode(' · '));
+        const elapsedSpan = document.createElement('span');
+        elapsedSpan.className = 'uptime prestep-elapsed';
+        elapsedSpan.dataset.startedAt = String(gs.preScriptsStartedAt);
+        elapsedSpan.textContent = formatUptime(Date.now() - gs.preScriptsStartedAt);
+        badge.appendChild(elapsedSpan);
+      }
+
       row.appendChild(badge);
 
       const cancelChip = document.createElement('button');

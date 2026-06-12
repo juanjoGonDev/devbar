@@ -148,6 +148,7 @@ function snapshotGroupStates() {
       preScriptsTotalSteps,
       preScriptsLastError,
       preScriptsLastRunId,
+      preScriptsStartedAt: runState ? runState.startedAt : null,
     };
   });
 }

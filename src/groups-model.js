@@ -53,6 +53,18 @@ function clampMaxLogLinesOrNull(v) {
   return Math.min(50000, Math.max(100, Math.floor(n)));
 }
 
+/**
+ * Clamp a timeoutMs value for a pre-script: returns null for missing/empty/invalid/<=0,
+ * otherwise clamps to [1000, 3_600_000] and rounds to integer.
+ * null means no timeout (unconstrained run).
+ */
+function clampTimeoutOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(3_600_000, Math.max(1000, Math.round(n)));
+}
+
 // ─────────────────────── Env helpers ────────────────────────────────
 
 /**
@@ -169,6 +181,7 @@ function normalizePreScript(input) {
     args: Array.isArray(raw.args) ? raw.args.slice() : [],
     env: normalizeEnvEntries(raw.env),
     inheritGroupEnv: typeof raw.inheritGroupEnv === 'boolean' ? raw.inheritGroupEnv : false,
+    timeoutMs: clampTimeoutOrNull(raw.timeoutMs),
   };
 }
 
@@ -528,6 +541,7 @@ module.exports = {
   validateGroupShape,
   enforceSingleModeAutoStart,
   clampMaxLogLinesOrNull,
+  clampTimeoutOrNull,
   DEFAULT_WARN_REGEX,
   DEFAULT_ERROR_REGEX,
 };

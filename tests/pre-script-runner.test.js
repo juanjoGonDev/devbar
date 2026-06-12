@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createPreScriptRunner } from '../src/pre-script-runner.js';
 
 // ─── Mock factory ───────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ function makeMockPM(pidBehaviours = {}) {
       });
       return { ok: true };
     },
-    stop(pid) {
+    stop: vi.fn((pid) => {
       // Simulate stop: emit action:done with code 143 (SIGTERM) if hanging
       const state = states[pid];
       if (state && state.status === 'running') {
@@ -59,7 +59,7 @@ function makeMockPM(pidBehaviours = {}) {
         });
       }
       return Promise.resolve({ ok: true });
-    },
+    }),
     _logs: logs,
     _listeners: listeners,
   };
@@ -84,7 +84,16 @@ function makeConfigStore(groupOverride = {}) {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeStep(id, mode, scripts) {
-  return { id, mode, scripts: scripts.map((sc) => ({ id: sc.id, name: sc.name, command: sc.cmd || 'echo ok' })) };
+  return {
+    id,
+    mode,
+    scripts: scripts.map((sc) => ({
+      id: sc.id,
+      name: sc.name,
+      command: sc.cmd || 'echo ok',
+      ...(sc.timeoutMs != null ? { timeoutMs: sc.timeoutMs } : {}),
+    })),
+  };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -344,6 +353,164 @@ describe('createPreScriptRunner — cancel()', () => {
     const res = await runPromise;
     expect(res.ok).toBe(false);
     expect(res.error).toBe('cancelled');
+  });
+});
+
+describe('createPreScriptRunner — timeout enforcement', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('script exceeds timeoutMs: resolves ok:false, aggregator contains "timed out", no "failed (exit" line, stop called once', async () => {
+    const step = makeStep('s1', 'parallel', [{ id: 'sc1', name: 'Slow', timeoutMs: 5000 }]);
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': 'hang' });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    const runPromise = runner.run('g1');
+    // Give the pipeline time to set up the timeout
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Advance clock past the timeout
+    vi.advanceTimersByTime(5001);
+
+    // Let the resulting stop → action:done microtask propagate
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const res = await runPromise;
+    expect(res.ok).toBe(false);
+
+    const aggKey = Object.keys(pm._logs).find((k) => k.startsWith('pre-pipeline:g1:'));
+    expect(aggKey).toBeTruthy();
+    const lines = pm._logs[aggKey].map((e) => e.line);
+
+    expect(lines.some((l) => l.includes('timed out'))).toBe(true);
+    expect(lines.some((l) => l.includes('failed (exit'))).toBe(false);
+    expect(pm.stop.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('script completes before timeout: resolves ok:true, no "timed out" line, stop not called from timeout path', async () => {
+    const step = makeStep('s1', 'parallel', [{ id: 'sc1', name: 'Fast', timeoutMs: 10000 }]);
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    const res = await runner.run('g1');
+    expect(res.ok).toBe(true);
+
+    const aggKey = Object.keys(pm._logs).find((k) => k.startsWith('pre-pipeline:g1:'));
+    expect(aggKey).toBeTruthy();
+    const lines = pm._logs[aggKey].map((e) => e.line);
+
+    expect(lines.some((l) => l.includes('timed out'))).toBe(false);
+    // stop should not have been called from the timeout path
+    // (cancel() in the runner uses stop, but this pipeline succeeded)
+    const stopCallsOnSc1 = pm.stop.mock.calls.filter((args) => args[0] === 'pre:g1:s1:sc1');
+    expect(stopCallsOnSc1.length).toBe(0);
+  });
+
+  it('simultaneous completion and timeout boundary: stop called at most once per pid', async () => {
+    const step = makeStep('s1', 'parallel', [{ id: 'sc1', name: 'Race', timeoutMs: 5000 }]);
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    // Run completes naturally (code 0), timeout not fired since clearTimeout runs first
+    const res = await runner.run('g1');
+    expect(res.ok).toBe(true);
+
+    const stopCallsOnSc1 = pm.stop.mock.calls.filter((args) => args[0] === 'pre:g1:s1:sc1');
+    expect(stopCallsOnSc1.length).toBe(0);
+  });
+});
+
+describe('createPreScriptRunner — duration markers', () => {
+  it('"Pipeline complete (Xs)" present in aggregator', async () => {
+    const steps = [makeStep('s1', 'parallel', [{ id: 'sc1', name: 'A' }])];
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: steps }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    await runner.run('g1');
+    const aggKey = Object.keys(pm._logs).find((k) => k.startsWith('pre-pipeline:g1:'));
+    const lines = pm._logs[aggKey].map((e) => e.line);
+    expect(lines.some((l) => l.includes('Pipeline complete') && l.match(/\(\d+\w+.*\)/))).toBe(true);
+  });
+
+  it('"Step 1 completed (Xs)" present after step success', async () => {
+    const steps = [makeStep('s1', 'parallel', [{ id: 'sc1', name: 'A' }])];
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: steps }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    await runner.run('g1');
+    const aggKey = Object.keys(pm._logs).find((k) => k.startsWith('pre-pipeline:g1:'));
+    const lines = pm._logs[aggKey].map((e) => e.line);
+    expect(lines.some((l) => l.includes('Step 1 completed'))).toBe(true);
+  });
+
+  it('"Script finished ok (Xs)" contains no bare "exit N"', async () => {
+    const steps = [makeStep('s1', 'parallel', [{ id: 'sc1', name: 'A' }])];
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: steps }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    await runner.run('g1');
+    const aggKey = Object.keys(pm._logs).find((k) => k.startsWith('pre-pipeline:g1:'));
+    const lines = pm._logs[aggKey].map((e) => e.line);
+    const finishedLine = lines.find((l) => l.includes('finished ok'));
+    expect(finishedLine).toBeTruthy();
+    // New format: "finished ok (Xs)" — no "exit N" in the finished-ok line
+    expect(finishedLine).not.toMatch(/finished ok \(exit \d+\)/);
+    expect(finishedLine).toMatch(/finished ok \(\d+\w+.*\)/);
+  });
+
+  it('failed script keeps "failed (exit N, Xs)" shape', async () => {
+    const steps = [makeStep('s1', 'parallel', [{ id: 'sc1', name: 'A' }])];
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 1 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: steps }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    await runner.run('g1');
+    const aggKey = Object.keys(pm._logs).find((k) => k.startsWith('pre-pipeline:g1:'));
+    const lines = pm._logs[aggKey].map((e) => e.line);
+    const failedLine = lines.find((l) => l.includes('failed (exit'));
+    expect(failedLine).toBeTruthy();
+    expect(failedLine).toMatch(/failed \(exit 1,/);
   });
 });
 

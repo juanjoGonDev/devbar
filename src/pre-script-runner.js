@@ -14,6 +14,7 @@
  */
 
 const { makePreScriptId, makeAggregatorId } = require('./compound-id');
+const { formatUptime } = require('./format-uptime');
 
 /**
  * @param {{
@@ -98,25 +99,49 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
       processManager.on('log', logHandler);
 
       // SUBSCRIBE BEFORE START — must be synchronous before start() returns.
+      let timeoutToken = null;
       const handler = ({ processId, code }) => {
         if (processId !== pid) return;
+        // clearTimeout MUST be the first operation — before any await or listener removal
+        if (timeoutToken) { clearTimeout(timeoutToken); timeoutToken = null; }
         processManager.removeListener('action:done', handler);
         processManager.removeListener('log', logHandler);
         handle.childPids.delete(pid);
+        const elapsed = formatUptime(Date.now() - scriptStartedAt);
         const ok = code === 0;
-        pushAggregatorLog(
-          handle.aggregatorId,
-          ok
-            ? `── Script "${script.name}" finished ok (exit ${code}) ──`
-            : `── Script "${script.name}" failed (exit ${code}) ──`,
-          ok ? null : 'error',
-        );
+        // If a timeout already fired for this pid, skip the regular finished/failed line
+        if (!handle._timedOutScripts.has(pid)) {
+          pushAggregatorLog(
+            handle.aggregatorId,
+            ok
+              ? `── Script "${script.name}" finished ok (${elapsed}) ──`
+              : `── Script "${script.name}" failed (exit ${code}, ${elapsed}) ──`,
+            ok ? null : 'error',
+          );
+        }
         resolve({ ok, code });
       };
       processManager.on('action:done', handler);
 
+      const scriptStartedAt = Date.now();
+
+      // Schedule timeout AFTER subscribing action:done and BEFORE start
+      if (script.timeoutMs) {
+        timeoutToken = setTimeout(() => {
+          const elapsed = formatUptime(Date.now() - scriptStartedAt);
+          pushAggregatorLog(
+            handle.aggregatorId,
+            `── Script "${script.name}" timed out (${elapsed}) ──`,
+            'error',
+          );
+          handle._timedOutScripts.add(pid);
+          processManager.stop(pid); // fire-and-forget
+        }, script.timeoutMs);
+      }
+
       const result = processManager.start(pid);
       if (!result.ok) {
+        if (timeoutToken) { clearTimeout(timeoutToken); timeoutToken = null; }
         processManager.removeListener('action:done', handler);
         processManager.removeListener('log', logHandler);
         handle.childPids.delete(pid);
@@ -172,6 +197,7 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
       currentStep: 1,
       totalSteps: steps.length,
       status: 'running',
+      _timedOutScripts: new Set(),
     };
     running.set(groupId, handle);
     broadcastUpdate();
@@ -194,6 +220,7 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
 
       pushAggregatorLog(aggregatorId, `── Step ${i + 1}/${steps.length} (${step.mode}) starting ──`);
 
+      const stepStartedAt = Date.now();
       let stepOk = false;
       if (step.mode === 'serial') {
         // Serial: run one by one, abort on first failure
@@ -211,6 +238,10 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
         stepOk = results.every((r) => r.ok);
       }
 
+      if (stepOk && !handle.cancelled) {
+        pushAggregatorLog(aggregatorId, `── Step ${i + 1} completed (${formatUptime(Date.now() - stepStartedAt)}) ──`);
+      }
+
       if (!stepOk || handle.cancelled) {
         pipelineOk = false;
         failedStepIdx = i + 1;
@@ -219,12 +250,13 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
     }
 
     running.delete(groupId);
+    const pipelineDuration = formatUptime(Date.now() - handle.runId);
 
     if (!pipelineOk) {
       const reason = handle.cancelled ? 'cancelled' : `step_${failedStepIdx}_failed`;
       const logLine = handle.cancelled
-        ? '── Pipeline cancelled ──'
-        : `── Pipeline failed at step ${failedStepIdx} ──`;
+        ? `── Pipeline cancelled (${pipelineDuration}) ──`
+        : `── Pipeline failed at step ${failedStepIdx} (${pipelineDuration}) ──`;
       pushAggregatorLog(aggregatorId, logLine, 'error');
       handle.status = 'error';
       // Keep error visible for 5 seconds
@@ -235,7 +267,7 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
     }
 
     handle.status = 'done';
-    pushAggregatorLog(aggregatorId, '── Pipeline complete ──');
+    pushAggregatorLog(aggregatorId, `── Pipeline complete (${pipelineDuration}) ──`);
     // Keep done visible for 3 seconds
     setRecentResult(groupId, 'done', null, runId, 3000);
     broadcastUpdate();
@@ -269,6 +301,7 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
       totalSteps: h.totalSteps,
       runId: h.runId,
       aggregatorId: h.aggregatorId,
+      startedAt: h.runId,
     };
   }
 
