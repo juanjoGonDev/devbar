@@ -18,9 +18,13 @@ function createCombobox({ value, options, placeholder, onSelect }) {
   let highlightIndex = -1;
 
   // ── Root container ────────────────────────────────────────────────────
+  // Stays a flex-friendly child of its host row: starts at 110px but is
+  // allowed to shrink down to its CSS-defined min-width when the row gets
+  // crowded (e.g. while a pre-scripts pipeline is running and adds extra
+  // controls on the right). Sizing rules live in styles.css (.combobox).
   const root = document.createElement('div');
   root.className = 'combobox';
-  root.style.cssText = 'position:relative; display:inline-block; min-width:0;';
+  root.style.cssText = 'position:relative; min-width:0;';
 
   // ── Input ─────────────────────────────────────────────────────────────
   const input = document.createElement('input');
@@ -39,7 +43,6 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     'background:var(--bg-card-strong)',
     'color:inherit',
     'cursor:pointer',
-    'max-width:110px',
   ].join(';');
 
   root.appendChild(input);

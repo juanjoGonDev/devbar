@@ -699,10 +699,14 @@ dialog h2 {
   flex-shrink: 0;
 }
 
-/* Branch selector in group row */
+/* Branch selector in group row.
+ * Allowed to shrink when the row is crowded (e.g. while a pre-scripts
+ * pipeline is running and adds badge + cancel + logs buttons on the
+ * right). min-width keeps the input readable; ellipsis preserves the
+ * branch name visually. */
 .branch-select {
-  flex-shrink: 0;
-  max-width: 110px;
+  flex: 0 1 110px;
+  min-width: 56px;
   font-size: 11px;
   padding: 2px 4px;
   border-radius: 4px;
@@ -1338,8 +1342,8 @@ dialog h2 {
 
 /* ── Combobox ────────────────────────────────────────────────────── */
 .combobox {
-  flex-shrink: 0;
-  min-width: 0;
+  flex: 0 1 110px;
+  min-width: 56px;
   position: relative;
 }
 .combobox-input {
@@ -1664,17 +1668,30 @@ dialog form {
   50%       { opacity: 0.4; }
 }
 
-/* Status badge (paso N/M, ✓, ✕) */
+/* Status badge (paso N/M, ✓, ✕).
+ * Responsive: shrinks before the branch selector but never below ~36px
+ * (enough to show a short uptime like "9s"). Full info lives in the
+ * `title` attribute so the user can hover for context. */
 .prestep-badge {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.06);
   color: var(--muted);
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 110px;
   display: inline-flex;
   align-items: center;
   gap: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prestep-badge .prestep-step,
+.prestep-badge .prestep-elapsed {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .prestep-badge .prestep-elapsed {
   font-variant-numeric: tabular-nums;

@@ -239,17 +239,27 @@ function renderGroupRow(gs) {
     });
     row.appendChild(prescriptsBtn);
 
-    // Status badge — paso N/M when running, ✓ when done, ✕ when error
+    // Status badge — compact, responsive: hide "paso N/M" when redundant
+    // (single-step pipelines) and drop the word "paso" for multi-step.
+    // Full info lives in the tooltip so the row never gets squeezed by the
+    // badge regardless of how long the pipeline runs.
     if (prescriptStatus === 'running') {
       const badge = document.createElement('span');
       badge.className = 'prestep-badge';
+      const total = gs.preScriptsTotalSteps || 1;
+      const current = gs.preScriptsCurrentStep || 1;
+      const showStep = total > 1;
+      badge.title = `Pre-scripts: paso ${current}/${total}`;
 
-      const stepSpan = document.createElement('span');
-      stepSpan.textContent = `paso ${gs.preScriptsCurrentStep || 1}/${gs.preScriptsTotalSteps || '?'}`;
-      badge.appendChild(stepSpan);
+      if (showStep) {
+        const stepSpan = document.createElement('span');
+        stepSpan.className = 'prestep-step';
+        stepSpan.textContent = `${current}/${total}`;
+        badge.appendChild(stepSpan);
+      }
 
       if (gs.preScriptsStartedAt) {
-        badge.appendChild(document.createTextNode(' · '));
+        if (showStep) badge.appendChild(document.createTextNode(' · '));
         const elapsedSpan = document.createElement('span');
         elapsedSpan.className = 'uptime prestep-elapsed';
         elapsedSpan.dataset.startedAt = String(gs.preScriptsStartedAt);
