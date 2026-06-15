@@ -31,7 +31,7 @@ sleep 1
 
 # ─── 2. pack ───────────────────────────────────────────────────────────
 step "Packaging (electron-packager)…"
-npm run pack >/tmp/devbar-pack.log 2>&1 || {
+pnpm run pack >/tmp/devbar-pack.log 2>&1 || {
   warn "pack failed — last 20 lines:"
   tail -20 /tmp/devbar-pack.log
   exit 1

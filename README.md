@@ -27,9 +27,15 @@
 ## Run in dev
 
 ```bash
-npm install
-npm start
+pnpm install
+pnpm run fetch-electron   # one-time: downloads the Electron binary for `pnpm start`
+pnpm start
 ```
+
+> Requires pnpm ≥ 10.16 and Node ≥ 22 (enforced via `engine-strict`).
+> Electron 42 no longer ships a postinstall, so `pnpm start` (dev mode)
+> needs `fetch-electron` once. Packaging (`pnpm run pack`) downloads its
+> own Electron and does not need this step.
 
 A status icon (the same one shown above) appears on the right side of the menu bar:
 
@@ -43,7 +49,7 @@ Click the icon to open the popover. Click **Configuración** to add and edit gro
 ## Build a `.app`
 
 ```bash
-npm run pack
+pnpm run pack
 ```
 
 The bundle ends up in `dist/DevBar-darwin-*`. The icon comes from
@@ -52,10 +58,10 @@ The bundle ends up in `dist/DevBar-darwin-*`. The icon comes from
 ## Install / reinstall to `/Applications`
 
 ```bash
-npm run install-local
+pnpm run install-local
 ```
 
-Stops any running DevBar (packaged or `npm start`), repacks, replaces
+Stops any running DevBar (packaged or `pnpm start`), repacks, replaces
 `/Applications/DevBar.app`, strips the Gatekeeper quarantine flag (the
 bundle is unsigned), and relaunches. Falls back to `~/Applications` if
 `/Applications` is not writable.
@@ -63,7 +69,7 @@ bundle is unsigned), and relaunches. Falls back to `~/Applications` if
 ## Tests
 
 ```bash
-npm test
+pnpm test
 ```
 
 Vitest covers the pure modules (`groups-model`, `compound-id`,
