@@ -27,14 +27,14 @@
   },
   "devDependencies": {
     "dependency-cruiser": "16.10.4",
-    "electron": "42.2.0",
+    "electron": "42.4.0",
     "electron-packager": "17.1.2",
     "eslint": "10.5.0",
     "globals": "17.6.0",
     "knip": "6.16.1",
     "lefthook": "2.1.9",
     "prettier": "3.8.4",
-    "vitest": "4.1.7"
+    "vitest": "4.1.8"
   },
   "dependencies": {
     "electron-store": "11.0.2",
