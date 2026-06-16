@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm # caches the pnpm content-addressable store
+
+      # Cache the flat node_modules itself (node-linker=hoisted makes it
+      # self-contained) so installs are skipped/instant on lockfile hits.
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}-
+
+      # Cache the Electron binary @electron/get downloads for `pack`.
+      - name: Cache Electron download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Checks (lint, format, dead code, deps)
+        run: pnpm lint:strict && pnpm format:check && pnpm deadcode && pnpm deps:check
+
+      - name: Tests
+        run: pnpm test
+
+      - name: Build (package app)
+        run: pnpm run pack
