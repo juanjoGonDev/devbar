@@ -29,7 +29,7 @@
     "dependency-cruiser": "16.10.4",
     "electron": "42.4.0",
     "electron-packager": "17.1.2",
-    "eslint": "9.39.4",
+    "eslint": "10.5.0",
     "globals": "17.6.0",
     "knip": "6.16.1",
     "lefthook": "2.1.9",
