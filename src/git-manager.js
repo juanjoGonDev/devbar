@@ -13,7 +13,12 @@ function git(repo, args, opts = {}) {
       },
       (err, stdout, stderr) => {
         if (err) {
-          resolve({ ok: false, error: (stderr || err.message).trim(), stdout, stderr });
+          resolve({
+            ok: false,
+            error: (stderr || err.message).trim(),
+            stdout,
+            stderr,
+          });
         } else {
           resolve({ ok: true, stdout: stdout.trim(), stderr });
         }
@@ -24,14 +29,21 @@ function git(repo, args, opts = {}) {
 
 async function listBranches(repo) {
   if (!repo) return { ok: false, error: 'No git repo configured' };
-  const res = await git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes']);
+  const res = await git(repo, [
+    'for-each-ref',
+    '--format=%(refname:short)',
+    'refs/heads',
+    'refs/remotes',
+  ]);
   if (!res.ok) return res;
   const seen = new Set();
   const branches = [];
   for (const raw of res.stdout.split('\n')) {
     const line = raw.trim();
     if (!line || line.endsWith('/HEAD')) continue;
-    const name = line.startsWith('origin/') ? line.slice('origin/'.length) : line;
+    const name = line.startsWith('origin/')
+      ? line.slice('origin/'.length)
+      : line;
     if (seen.has(name)) continue;
     seen.add(name);
     branches.push(name);
@@ -54,13 +66,20 @@ async function switchBranch(repo, branch) {
   const dirty = await git(repo, ['status', '--porcelain']);
   if (!dirty.ok) return dirty;
   if (dirty.stdout) {
-    return { ok: false, error: 'Working tree has uncommitted changes — commit or stash first' };
+    return {
+      ok: false,
+      error: 'Working tree has uncommitted changes — commit or stash first',
+    };
   }
 
   const fetched = await git(repo, ['fetch', 'origin'], { timeout: 60000 });
   if (!fetched.ok) return fetched;
 
-  const localExists = await git(repo, ['rev-parse', '--verify', `refs/heads/${branch}`]);
+  const localExists = await git(repo, [
+    'rev-parse',
+    '--verify',
+    `refs/heads/${branch}`,
+  ]);
   let checkout;
   if (localExists.ok) {
     checkout = await git(repo, ['checkout', branch]);
@@ -69,7 +88,9 @@ async function switchBranch(repo, branch) {
   }
   if (!checkout.ok) return checkout;
 
-  const pulled = await git(repo, ['pull', '--ff-only', 'origin', branch], { timeout: 60000 });
+  const pulled = await git(repo, ['pull', '--ff-only', 'origin', branch], {
+    timeout: 60000,
+  });
   if (!pulled.ok) return pulled;
 
   return { ok: true };

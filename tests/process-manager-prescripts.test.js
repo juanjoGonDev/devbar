@@ -1,5 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseProcessId, makePreScriptId, makeAggregatorId, makeCommandId, makeActionId } from '../src/compound-id.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  parseProcessId,
+  makePreScriptId,
+  makeAggregatorId,
+  makeCommandId,
+  makeActionId,
+} from '../src/compound-id.js';
 
 /**
  * process-manager-prescripts.test.js
@@ -31,8 +37,20 @@ const GROUP = {
       id: 's1',
       mode: 'parallel',
       scripts: [
-        { id: 'sc1', name: 'Build', command: 'pnpm build', env: [], inheritGroupEnv: false },
-        { id: 'sc2', name: 'Lint', command: 'pnpm lint', env: [], inheritGroupEnv: true },
+        {
+          id: 'sc1',
+          name: 'Build',
+          command: 'pnpm build',
+          env: [],
+          inheritGroupEnv: false,
+        },
+        {
+          id: 'sc2',
+          name: 'Lint',
+          command: 'pnpm lint',
+          env: [],
+          inheritGroupEnv: true,
+        },
       ],
     },
   ],

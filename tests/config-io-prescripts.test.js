@@ -48,13 +48,23 @@ const VALID_PRESTEPS_PAYLOAD = {
           id: 'step-ddd',
           mode: 'parallel',
           scripts: [
-            { id: 'sc-eee', name: 'Lint', command: 'pnpm lint', args: [], env: [] },
+            {
+              id: 'sc-eee',
+              name: 'Lint',
+              command: 'pnpm lint',
+              args: [],
+              env: [],
+            },
           ],
         },
       ],
     },
   ],
-  globalSettings: { autostart: false, silenceWarnings: false, silenceErrors: false },
+  globalSettings: {
+    autostart: false,
+    silenceWarnings: false,
+    silenceErrors: false,
+  },
 };
 
 // ─── Round-trip ───────────────────────────────────────────────────────────────
@@ -81,7 +91,9 @@ describe('validateImportedConfig — preSteps round-trip (R10)', () => {
     const result = validateImportedConfig(VALID_PRESTEPS_PAYLOAD);
     const group = result.payload.groups[0];
     const stepIds = group.preSteps.map((s) => s.id);
-    const scriptIds = group.preSteps.flatMap((s) => s.scripts.map((sc) => sc.id));
+    const scriptIds = group.preSteps.flatMap((s) =>
+      s.scripts.map((sc) => sc.id),
+    );
     expect(stepIds).toContain('step-aaa');
     expect(stepIds).toContain('step-ddd');
     expect(scriptIds).toContain('sc-bbb');
@@ -92,7 +104,9 @@ describe('validateImportedConfig — preSteps round-trip (R10)', () => {
   it('accepts a payload with no preSteps key (defaults to [])', () => {
     const payload = {
       version: 3,
-      groups: [{ name: 'G', path: '/p', mode: 'multi', commands: [], actions: [] }],
+      groups: [
+        { name: 'G', path: '/p', mode: 'multi', commands: [], actions: [] },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -108,10 +122,22 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
   it('rejects a script with missing command', () => {
     const payload = {
       version: 3,
-      groups: [{
-        name: 'G', path: '/p', mode: 'multi', commands: [], actions: [],
-        preSteps: [{ id: 's1', mode: 'parallel', scripts: [{ id: 'sc1', name: 'Install' /* no command */ }] }],
-      }],
+      groups: [
+        {
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preSteps: [
+            {
+              id: 's1',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'Install' /* no command */ }],
+            },
+          ],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -122,10 +148,22 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
   it('rejects a script with empty command', () => {
     const payload = {
       version: 3,
-      groups: [{
-        name: 'G', path: '/p', mode: 'multi', commands: [], actions: [],
-        preSteps: [{ id: 's1', mode: 'parallel', scripts: [{ id: 'sc1', name: 'Install', command: '' }] }],
-      }],
+      groups: [
+        {
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preSteps: [
+            {
+              id: 's1',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'Install', command: '' }],
+            },
+          ],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -136,10 +174,22 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
   it('rejects a script with missing name', () => {
     const payload = {
       version: 3,
-      groups: [{
-        name: 'G', path: '/p', mode: 'multi', commands: [], actions: [],
-        preSteps: [{ id: 's1', mode: 'parallel', scripts: [{ id: 'sc1', command: 'pnpm install' /* no name */ }] }],
-      }],
+      groups: [
+        {
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preSteps: [
+            {
+              id: 's1',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', command: 'pnpm install' /* no name */ }],
+            },
+          ],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -150,10 +200,16 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
   it('rejects a step with invalid mode', () => {
     const payload = {
       version: 3,
-      groups: [{
-        name: 'G', path: '/p', mode: 'multi', commands: [], actions: [],
-        preSteps: [{ id: 's1', mode: 'batch', scripts: [] }],
-      }],
+      groups: [
+        {
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preSteps: [{ id: 's1', mode: 'batch', scripts: [] }],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -164,10 +220,16 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
   it('rejects a step where scripts is not an array', () => {
     const payload = {
       version: 3,
-      groups: [{
-        name: 'G', path: '/p', mode: 'multi', commands: [], actions: [],
-        preSteps: [{ id: 's1', mode: 'parallel', scripts: 'not-an-array' }],
-      }],
+      groups: [
+        {
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preSteps: [{ id: 's1', mode: 'parallel', scripts: 'not-an-array' }],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -178,13 +240,24 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
   it('rejects a script with invalid env shape (string)', () => {
     const payload = {
       version: 3,
-      groups: [{
-        name: 'G', path: '/p', mode: 'multi', commands: [], actions: [],
-        preSteps: [{
-          id: 's1', mode: 'parallel',
-          scripts: [{ id: 'sc1', name: 'Build', command: 'pnpm build', env: 'bad' }],
-        }],
-      }],
+      groups: [
+        {
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preSteps: [
+            {
+              id: 's1',
+              mode: 'parallel',
+              scripts: [
+                { id: 'sc1', name: 'Build', command: 'pnpm build', env: 'bad' },
+              ],
+            },
+          ],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -207,7 +280,16 @@ describe('summarizeImport — preStepsCount / preScriptsCount', () => {
   it('returns 0 for preStepsCount and preScriptsCount when no preSteps', () => {
     const payload = {
       version: 3,
-      groups: [{ id: 'g1', name: 'G', path: '/p', mode: 'multi', commands: [], actions: [] }],
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);

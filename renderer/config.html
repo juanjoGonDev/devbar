@@ -1,14 +1,20 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
     <link rel="stylesheet" href="styles.css" />
     <title>DevBar — Configuración</title>
   </head>
   <body class="config">
     <div class="app-window-spacer"></div>
-    <h1>Configuración <span id="app-version" class="app-version" title="DevBar version"></span></h1>
+    <h1>
+      Configuración
+      <span id="app-version" class="app-version" title="DevBar version"></span>
+    </h1>
 
     <!-- Global settings -->
     <section class="settings-card">
@@ -16,9 +22,12 @@
       <label class="toggle">
         <input type="checkbox" id="set-autostart" />
         <span>Iniciar al arrancar el Mac</span>
-        <small>Registra DevBar como Login Item. Solo aplica al .app empaquetado.</small>
+        <small
+          >Registra DevBar como Login Item. Solo aplica al .app
+          empaquetado.</small
+        >
       </label>
-      <h2 style="margin-top:16px">Filtros globales</h2>
+      <h2 style="margin-top: 16px">Filtros globales</h2>
       <p class="muted small">
         Silenciar afecta solo al color de la bolita y al icono de la barra.
       </p>
@@ -30,10 +39,20 @@
         <input type="checkbox" id="set-silence-errors" />
         <span>Silenciar <strong>errors</strong> en todos los grupos</span>
       </label>
-      <div class="field" style="margin-top:12px">
+      <div class="field" style="margin-top: 12px">
         <label for="set-max-log-lines">Líneas máximas de logs</label>
-        <input type="number" id="set-max-log-lines" min="100" max="50000" step="100" style="width:120px" />
-        <small class="muted" style="display:block; margin-top:4px">Por defecto para todos los procesos (100–50000). El cambio aplica al reiniciar el proceso.</small>
+        <input
+          type="number"
+          id="set-max-log-lines"
+          min="100"
+          max="50000"
+          step="100"
+          style="width: 120px"
+        />
+        <small class="muted" style="display: block; margin-top: 4px"
+          >Por defecto para todos los procesos (100–50000). El cambio aplica al
+          reiniciar el proceso.</small
+        >
       </div>
     </section>
 
@@ -42,7 +61,8 @@
       <h2>Copia de seguridad</h2>
       <p class="muted small">
         Exporta toda la configuración a JSON o impórtala desde otra máquina.
-        Importar <strong>sobreescribe</strong> todo lo actual; se guarda un backup automático.
+        Importar <strong>sobreescribe</strong> todo lo actual; se guarda un
+        backup automático.
       </p>
       <div class="copy-actions">
         <button id="export-config">Exportar</button>
@@ -71,7 +91,12 @@
 
     <!-- Icon picker popover (hidden) -->
     <div id="icon-picker" class="icon-picker-popover" hidden>
-      <input id="icon-search" type="search" placeholder="Buscar emoji…" class="icon-search" />
+      <input
+        id="icon-search"
+        type="search"
+        placeholder="Buscar emoji…"
+        class="icon-search"
+      />
       <div id="icon-grid" class="icon-grid"></div>
     </div>
 
@@ -88,7 +113,9 @@
         <div class="field sf-icon-field">
           <label>Icono</label>
           <div class="sf-icon-row">
-            <button type="button" id="sf-icon-btn" class="icon-btn sf-icon-btn">⚙️</button>
+            <button type="button" id="sf-icon-btn" class="icon-btn sf-icon-btn">
+              ⚙️
+            </button>
             <small class="muted">(opcional)</small>
           </div>
         </div>
@@ -103,39 +130,69 @@
         </div>
         <div class="field" id="sf-args-field">
           <label for="sf-args">Argumentos (opcional, uno por línea)</label>
-          <textarea id="sf-args" placeholder="solo si no los pones arriba"></textarea>
+          <textarea
+            id="sf-args"
+            placeholder="solo si no los pones arriba"
+          ></textarea>
         </div>
         <!-- Env editor — built dynamically by config.js -->
         <div class="field" id="sf-env-field">
           <label>Variables de entorno</label>
           <!-- Action-only: inheritGroupEnv toggle (hidden for commands) -->
-          <div id="sf-inherit-group-env-row" style="display:none; margin-bottom:8px;" class="env-section-header">
+          <div
+            id="sf-inherit-group-env-row"
+            style="display: none; margin-bottom: 8px"
+            class="env-section-header"
+          >
             <label class="toggle inline">
               <input type="checkbox" id="sf-inherit-group-env" />
               <span>Heredar variables del grupo</span>
             </label>
-            <p id="sf-inherit-group-env-hint" class="muted small" style="margin:2px 0 6px 42px;">
-              Cuando está activo, las variables del grupo se aplican antes que las de esta acción (las de aquí pueden sobreescribir).
+            <p
+              id="sf-inherit-group-env-hint"
+              class="muted small"
+              style="margin: 2px 0 6px 42px"
+            >
+              Cuando está activo, las variables del grupo se aplican antes que
+              las de esta acción (las de aquí pueden sobreescribir).
             </p>
           </div>
           <div id="sf-env-editor"></div>
         </div>
 
         <!-- PreScript-only: timeout field -->
-        <div class="field" id="sf-timeout-row" style="display:none;">
+        <div class="field" id="sf-timeout-row" style="display: none">
           <label for="sf-timeout-secs">Timeout (segundos, opcional)</label>
-          <input id="sf-timeout-secs" type="number" min="1" max="3600" step="1" placeholder="vacío = sin límite" />
+          <input
+            id="sf-timeout-secs"
+            type="number"
+            min="1"
+            max="3600"
+            step="1"
+            placeholder="vacío = sin límite"
+          />
         </div>
 
         <!-- Command-only fields -->
         <div id="cmd-only-fields">
           <details>
-            <summary class="muted small">Avanzado (regex, silencio, cwd override)</summary>
-            <div class="field" style="margin-top:8px">
-              <label for="sf-cwd">Working directory override (vacío = usar el del grupo)</label>
+            <summary class="muted small">
+              Avanzado (regex, silencio, cwd override)
+            </summary>
+            <div class="field" style="margin-top: 8px">
+              <label for="sf-cwd"
+                >Working directory override (vacío = usar el del grupo)</label
+              >
               <div class="input-with-action">
                 <input id="sf-cwd" placeholder="/Users/yo/subproyecto" />
-                <button type="button" id="sf-cwd-pick" class="icon-action-btn" title="Seleccionar carpeta…">📁</button>
+                <button
+                  type="button"
+                  id="sf-cwd-pick"
+                  class="icon-action-btn"
+                  title="Seleccionar carpeta…"
+                >
+                  📁
+                </button>
               </div>
             </div>
             <div class="field-row">
@@ -159,10 +216,21 @@
                 <span>Errors no afectan al color</span>
               </label>
             </fieldset>
-            <div class="field" style="margin-top:8px">
+            <div class="field" style="margin-top: 8px">
               <label for="sf-max-log-lines">Líneas máximas (opcional)</label>
-              <input type="number" id="sf-max-log-lines" min="100" max="50000" step="100" placeholder="usar global" style="width:120px" />
-              <small class="muted" style="display:block; margin-top:4px">Vacío = usar el valor global. El cambio aplica al reiniciar.</small>
+              <input
+                type="number"
+                id="sf-max-log-lines"
+                min="100"
+                max="50000"
+                step="100"
+                placeholder="usar global"
+                style="width: 120px"
+              />
+              <small class="muted" style="display: block; margin-top: 4px"
+                >Vacío = usar el valor global. El cambio aplica al
+                reiniciar.</small
+              >
             </div>
           </details>
         </div>
@@ -174,7 +242,7 @@
       </form>
     </dialog>
 
-    <div id="toast" style="display:none" class="toast"></div>
+    <div id="toast" style="display: none" class="toast"></div>
 
     <script src="dnd-helper.js"></script>
     <script src="config.js"></script>

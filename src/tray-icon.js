@@ -48,4 +48,10 @@ function aggregateColor(states) {
   return worst;
 }
 
-module.exports = { loadIcon, defaultIcon, preload, STATUS_EMOJI, aggregateColor };
+module.exports = {
+  loadIcon,
+  defaultIcon,
+  preload,
+  STATUS_EMOJI,
+  aggregateColor,
+};

@@ -54,7 +54,8 @@ function parseProcessId(s) {
 
   // 4-segment: pre:<groupId>:<stepId>:<scriptId>
   let m = /^pre:([^:]+):([^:]+):(.+)$/.exec(s);
-  if (m) return { kind: 'prescript', groupId: m[1], stepId: m[2], scriptId: m[3] };
+  if (m)
+    return { kind: 'prescript', groupId: m[1], stepId: m[2], scriptId: m[3] };
 
   // 3-segment: pre-pipeline:<groupId>:<runId>
   m = /^pre-pipeline:([^:]+):(.+)$/.exec(s);
@@ -69,4 +70,10 @@ function parseProcessId(s) {
   return { kind: 'action', groupId: m[2], actionId: m[3] };
 }
 
-module.exports = { makeCommandId, makeActionId, makePreScriptId, makeAggregatorId, parseProcessId };
+module.exports = {
+  makeCommandId,
+  makeActionId,
+  makePreScriptId,
+  makeAggregatorId,
+  parseProcessId,
+};

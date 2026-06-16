@@ -1,3 +1,4 @@
+/* exported attachDragHandlers */
 /**
  * dnd-helper.js — shared drag-and-drop reorder utility.
  *
@@ -21,7 +22,9 @@ function cssEscape(s) {
 }
 
 function clearDragVisuals(container) {
-  for (const n of container.querySelectorAll('.drag-over-before, .drag-over-after, .dragging')) {
+  for (const n of container.querySelectorAll(
+    '.drag-over-before, .drag-over-after, .dragging',
+  )) {
     n.classList.remove('drag-over-before', 'drag-over-after', 'dragging');
   }
 }
@@ -39,9 +42,15 @@ function attachDragHandlers(container, onReorder) {
   container.addEventListener('dragstart', (e) => {
     // Only start if the drag originated from a .drag-handle inside a [data-id] card
     const handle = e.target.closest('.drag-handle');
-    if (!handle) { e.preventDefault(); return; }
+    if (!handle) {
+      e.preventDefault();
+      return;
+    }
     const card = handle.closest('[data-id]');
-    if (!card) { e.preventDefault(); return; }
+    if (!card) {
+      e.preventDefault();
+      return;
+    }
 
     dragSourceId = card.dataset.id;
     dragContainer = container;
@@ -49,7 +58,9 @@ function attachDragHandlers(container, onReorder) {
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', dragSourceId);
-      try { e.dataTransfer.setDragImage(card, 20, 20); } catch (_) {}
+      try {
+        e.dataTransfer.setDragImage(card, 20, 20);
+      } catch (_) {}
     }
   });
 
@@ -94,7 +105,8 @@ function attachDragHandlers(container, onReorder) {
   // ── drop ─────────────────────────────────────────────────────────────
   container.addEventListener('drop', async (e) => {
     e.preventDefault();
-    const sourceId = (e.dataTransfer && e.dataTransfer.getData('text/plain')) || dragSourceId;
+    const sourceId =
+      (e.dataTransfer && e.dataTransfer.getData('text/plain')) || dragSourceId;
     const targetCard = e.target.closest('[data-id]');
     if (!targetCard || !sourceId || sourceId === targetCard.dataset.id) {
       clearDragVisuals(container);
@@ -115,7 +127,9 @@ function attachDragHandlers(container, onReorder) {
     ids.splice(before ? insertIdx : insertIdx + 1, 0, sourceId);
 
     // Optimistic DOM reorder
-    const draggedCard = container.querySelector(`[data-id="${cssEscape(sourceId)}"]`);
+    const draggedCard = container.querySelector(
+      `[data-id="${cssEscape(sourceId)}"]`,
+    );
     if (draggedCard) {
       if (before) container.insertBefore(draggedCard, targetCard);
       else container.insertBefore(draggedCard, targetCard.nextSibling);
@@ -127,9 +141,4 @@ function attachDragHandlers(container, onReorder) {
       console.error('Reorder failed:', err);
     }
   });
-}
-
-// CommonJS export (renderer context)
-if (typeof module !== 'undefined') {
-  module.exports = { attachDragHandlers };
 }

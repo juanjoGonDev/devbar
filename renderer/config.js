@@ -23,7 +23,9 @@ const sfName = document.getElementById('sf-name');
 const sfCommand = document.getElementById('sf-command');
 const sfArgs = document.getElementById('sf-args');
 const sfEnvEditor = document.getElementById('sf-env-editor');
-const sfInheritGroupEnvRow = document.getElementById('sf-inherit-group-env-row');
+const sfInheritGroupEnvRow = document.getElementById(
+  'sf-inherit-group-env-row',
+);
 const sfInheritGroupEnv = document.getElementById('sf-inherit-group-env');
 const sfCwd = document.getElementById('sf-cwd');
 const sfWarn = document.getElementById('sf-warn');
@@ -41,9 +43,8 @@ const DEFAULT_ERROR = '\\berror(s)?\\b';
 // ────────────────────── State ──────────────────────────────────────────
 let allGroups = [];
 let selectedGroupId = null;
-let iconPickerCallback = null;   // fn(emoji) when user picks an icon
-let subDialogCallback = null;    // fn(data) when sub-form submits
-let subDialogMode = 'command';   // 'command' | 'action'
+let iconPickerCallback = null; // fn(emoji) when user picks an icon
+let subDialogCallback = null; // fn(data) when sub-form submits
 
 // ── Draft state ────────────────────────────────────────────────────────
 // draftGroup: in-memory copy of the selected group being edited
@@ -58,7 +59,11 @@ function isDirty() {
 
 function loadDraftFromStored(groupId) {
   const g = allGroups.find((x) => x.id === groupId);
-  if (!g) { draftGroup = null; storedGroup = null; return; }
+  if (!g) {
+    draftGroup = null;
+    storedGroup = null;
+    return;
+  }
   storedGroup = JSON.parse(JSON.stringify(g));
   draftGroup = JSON.parse(JSON.stringify(g));
 }
@@ -84,14 +89,12 @@ function showToast(msg, kind = 'ok') {
   toastEl.className = `toast ${kind}`;
   toastEl.style.display = 'block';
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => { toastEl.style.display = 'none'; }, 4500);
+  showToast._t = setTimeout(() => {
+    toastEl.style.display = 'none';
+  }, 4500);
 }
 
 // ────────────────────── Data helpers ──────────────────────────────────
-
-function selectedGroup() {
-  return allGroups.find((g) => g.id === selectedGroupId) || null;
-}
 
 /**
  * Build a reusable env editor widget.
@@ -101,8 +104,8 @@ function selectedGroup() {
  * @param {object} opts  — currently unused, kept for API compat
  * @returns {{ getEntries: () => EnvEntry[] }}
  */
-function buildEnvEditor(container, initialEntries, opts = {}) {
-  let entries = (initialEntries || []).map((e) => ({ ...e }));
+function buildEnvEditor(container, initialEntries, _opts = {}) {
+  const entries = (initialEntries || []).map((e) => ({ ...e }));
 
   function updateMasterToggle(masterInput) {
     if (!masterInput) return;
@@ -181,7 +184,9 @@ function buildEnvEditor(container, initialEntries, opts = {}) {
       keyInput.className = 'env-key';
       keyInput.placeholder = 'KEY';
       keyInput.value = entry.key || '';
-      keyInput.addEventListener('input', () => { entries[i].key = keyInput.value; });
+      keyInput.addEventListener('input', () => {
+        entries[i].key = keyInput.value;
+      });
       row.appendChild(keyInput);
 
       // Value input
@@ -190,7 +195,9 @@ function buildEnvEditor(container, initialEntries, opts = {}) {
       valInput.className = 'env-value';
       valInput.placeholder = 'value';
       valInput.value = entry.value || '';
-      valInput.addEventListener('input', () => { entries[i].value = valInput.value; });
+      valInput.addEventListener('input', () => {
+        entries[i].value = valInput.value;
+      });
       row.appendChild(valInput);
 
       // Delete button
@@ -234,17 +241,6 @@ function buildEnvEditor(container, initialEntries, opts = {}) {
     // setDisabled kept for API compat but is a no-op (env editor is always active now)
     setDisabled: (_disabled) => {},
   };
-}
-
-function shortenPath(p) {
-  if (!p) return '';
-  const home = '/Users/';
-  if (p.startsWith(home)) {
-    const rest = p.slice(home.length);
-    const idx = rest.indexOf('/');
-    if (idx >= 0) return '~' + rest.slice(idx);
-  }
-  return p;
 }
 
 // ────────────────────── Groups list (left pane) ────────────────────────
@@ -337,7 +333,8 @@ function renderGroupDetail() {
 
   const group = draftGroup;
   if (!group) {
-    groupDetailEl.innerHTML = '<div class="detail-empty"><p class="muted">Selecciona un grupo para editarlo.</p></div>';
+    groupDetailEl.innerHTML =
+      '<div class="detail-empty"><p class="muted">Selecciona un grupo para editarlo.</p></div>';
     return;
   }
 
@@ -372,7 +369,10 @@ function renderGroupDetail() {
   saveBarBtn.disabled = true;
   saveBarBtn.addEventListener('click', async () => {
     if (!isDirty()) return;
-    if (!draftGroup.path) { showToast('El path no puede estar vacío', 'error'); return; }
+    if (!draftGroup.path) {
+      showToast('El path no puede estar vacío', 'error');
+      return;
+    }
     try {
       const savedGroup = await window.api.saveGroup(draftGroup);
       storedGroup = JSON.parse(JSON.stringify(savedGroup || draftGroup));
@@ -381,7 +381,10 @@ function renderGroupDetail() {
       updateSaveBar();
       renderGroupsList();
       if (savedGroup && savedGroup._autoStartEnforced) {
-        showToast('Grupo guardado · Auto-arranque desactivado al cambiar a single', 'ok');
+        showToast(
+          'Grupo guardado · Auto-arranque desactivado al cambiar a single',
+          'ok',
+        );
       } else {
         showToast('Grupo guardado', 'ok');
       }
@@ -405,7 +408,9 @@ function renderGroupDetail() {
   iconBtn.addEventListener('click', (e) => {
     openIconPicker(e.currentTarget, (emoji) => {
       iconBtn.textContent = emoji;
-      mutateDraft((d) => { d.icon = emoji; });
+      mutateDraft((d) => {
+        d.icon = emoji;
+      });
     });
   });
   header.appendChild(iconBtn);
@@ -416,19 +421,28 @@ function renderGroupDetail() {
   nameInput.value = group.name || '';
   nameInput.placeholder = 'Nombre del grupo';
   nameInput.addEventListener('input', () => {
-    mutateDraft((d) => { d.name = nameInput.value; });
+    mutateDraft((d) => {
+      d.name = nameInput.value;
+    });
   });
   header.appendChild(nameInput);
 
   groupDetailEl.appendChild(header);
 
   // ── Path field ───────────────────────────────────────────────────────
-  const pathField = buildField('Path del grupo (cwd y git repo)', 'text', group.path || '', '/Users/yo/proyecto');
+  const pathField = buildField(
+    'Path del grupo (cwd y git repo)',
+    'text',
+    group.path || '',
+    '/Users/yo/proyecto',
+  );
   pathField.className += ' detail-field';
   // Wrap the input in an input-with-action container and add folder picker
   const pathInput = pathField.querySelector('input');
   pathInput.addEventListener('input', () => {
-    mutateDraft((d) => { d.path = pathInput.value.trim(); });
+    mutateDraft((d) => {
+      d.path = pathInput.value.trim();
+    });
   });
   const pathPickerContainer = document.createElement('div');
   pathPickerContainer.className = 'input-with-action';
@@ -444,7 +458,10 @@ function renderGroupDetail() {
   grpPathPickBtn.addEventListener('click', async () => {
     const res = await window.api.pickFolder(pathInput.value || undefined);
     if (res.canceled) return;
-    if (!res.ok) { showToast(`Error: ${res.error || 'desconocido'}`, 'error'); return; }
+    if (!res.ok) {
+      showToast(`Error: ${res.error || 'desconocido'}`, 'error');
+      return;
+    }
     pathInput.value = res.path;
     pathInput.dispatchEvent(new Event('input', { bubbles: true }));
   });
@@ -469,7 +486,10 @@ function renderGroupDetail() {
     radio.value = m;
     radio.checked = (group.mode || 'multi') === m;
     radio.addEventListener('change', () => {
-      if (radio.checked) mutateDraft((d) => { d.mode = m; });
+      if (radio.checked)
+        mutateDraft((d) => {
+          d.mode = m;
+        });
     });
     lbl.appendChild(radio);
     lbl.appendChild(document.createTextNode(` ${m}`));
@@ -486,13 +506,25 @@ function renderGroupDetail() {
   silenceLabel.textContent = 'Silenciar en este grupo';
   silenceSection.appendChild(silenceLabel);
 
-  const muteWarnLbl = buildToggleLabel('Warnings', group.silenceWarnings, 'detail-silence-warn');
-  const muteErrLbl = buildToggleLabel('Errors', group.silenceErrors, 'detail-silence-err');
+  const muteWarnLbl = buildToggleLabel(
+    'Warnings',
+    group.silenceWarnings,
+    'detail-silence-warn',
+  );
+  const muteErrLbl = buildToggleLabel(
+    'Errors',
+    group.silenceErrors,
+    'detail-silence-err',
+  );
   muteWarnLbl.querySelector('input').addEventListener('change', (e) => {
-    mutateDraft((d) => { d.silenceWarnings = e.target.checked; });
+    mutateDraft((d) => {
+      d.silenceWarnings = e.target.checked;
+    });
   });
   muteErrLbl.querySelector('input').addEventListener('change', (e) => {
-    mutateDraft((d) => { d.silenceErrors = e.target.checked; });
+    mutateDraft((d) => {
+      d.silenceErrors = e.target.checked;
+    });
   });
   silenceSection.appendChild(muteWarnLbl);
   silenceSection.appendChild(muteErrLbl);
@@ -512,10 +544,14 @@ function renderGroupDetail() {
   const groupEnvEditor = buildEnvEditor(groupEnvContainer, group.env || []);
   groupEnvSection._envEditor = groupEnvEditor;
   groupEnvContainer.addEventListener('input', () => {
-    mutateDraft((d) => { d.env = groupEnvEditor.getEntries(); });
+    mutateDraft((d) => {
+      d.env = groupEnvEditor.getEntries();
+    });
   });
   groupEnvContainer.addEventListener('change', () => {
-    mutateDraft((d) => { d.env = groupEnvEditor.getEntries(); });
+    mutateDraft((d) => {
+      d.env = groupEnvEditor.getEntries();
+    });
   });
 
   // ── Pre-scripts section ───────────────────────────────────────────────
@@ -535,7 +571,12 @@ function renderGroupDetail() {
   deleteBtn.className = 'danger';
   deleteBtn.textContent = 'Borrar grupo';
   deleteBtn.addEventListener('click', async () => {
-    if (!confirm(`¿Borrar el grupo "${group.name}"? Se detendrán todos sus procesos.`)) return;
+    if (
+      !confirm(
+        `¿Borrar el grupo "${group.name}"? Se detendrán todos sus procesos.`,
+      )
+    )
+      return;
     await window.api.deleteGroup(group.id);
     selectedGroupId = null;
     draftGroup = null;
@@ -615,7 +656,8 @@ function buildPreStepsSection(group, parent) {
   const helpText = document.createElement('p');
   helpText.className = 'help-text muted';
   helpText.style.cssText = 'font-size:11px; margin:4px 0 8px;';
-  helpText.textContent = 'Se ejecutan antes de iniciar los comandos auto-start. Cada paso puede correr en paralelo o en serie.';
+  helpText.textContent =
+    'Se ejecutan antes de iniciar los comandos auto-start. Cada paso puede correr en paralelo o en serie.';
   section.appendChild(helpText);
 
   // ── Auto-run toggle ───────────────────────────────────────────────────
@@ -627,12 +669,16 @@ function buildPreStepsSection(group, parent) {
     'detail-prestep-autorun',
   );
   autoRunLbl.querySelector('input').addEventListener('change', (e) => {
-    mutateDraft((d) => { d.preScriptsAutoRun = e.target.checked; });
+    mutateDraft((d) => {
+      d.preScriptsAutoRun = e.target.checked;
+    });
   });
   const autoRunHint = document.createElement('small');
   autoRunHint.className = 'muted';
-  autoRunHint.style.cssText = 'display:block; margin:2px 0 8px 42px; font-size:10px;';
-  autoRunHint.textContent = 'Solo dispara cuando DevBar abre como Login Item del sistema; no en relanzados manuales.';
+  autoRunHint.style.cssText =
+    'display:block; margin:2px 0 8px 42px; font-size:10px;';
+  autoRunHint.textContent =
+    'Solo dispara cuando DevBar abre como Login Item del sistema; no en relanzados manuales.';
   section.appendChild(autoRunLbl);
   section.appendChild(autoRunHint);
 
@@ -792,7 +838,9 @@ function buildPreScriptRow(group, step, script) {
   editBtn.textContent = '✎';
   editBtn.title = 'Editar';
   editBtn.className = 'small-btn';
-  editBtn.addEventListener('click', () => openSubDialog(script, 'prescript', group.id, step.id));
+  editBtn.addEventListener('click', () =>
+    openSubDialog(script, 'prescript', group.id, step.id),
+  );
   li.appendChild(editBtn);
 
   const delBtn = document.createElement('button');
@@ -814,7 +862,7 @@ function buildPreScriptRow(group, step, script) {
 
 function buildSubList(group, kind, parent) {
   const isCommand = kind === 'command';
-  const items = isCommand ? (group.commands || []) : (group.actions || []);
+  const items = isCommand ? group.commands || [] : group.actions || [];
   const sectionTitle = isCommand ? 'Comandos' : 'Acciones';
   const addLabel = isCommand ? '+ Añadir comando' : '+ Añadir acción';
 
@@ -951,7 +999,6 @@ let _sfEnvEditorHandle = null;
 let _sfPreStepId = null;
 
 function openSubDialog(item, kind, groupId, stepId) {
-  subDialogMode = kind;
   _sfPreStepId = stepId || null;
   const isCommand = kind === 'command';
   const isPreScript = kind === 'prescript';
@@ -984,22 +1031,26 @@ function openSubDialog(item, kind, groupId, stepId) {
   // (auto-start lives in the commands list, not in this dialog.)
 
   // Build env editor — always interactive (no dimming)
-  const initialEnv = item ? (item.env || []) : [];
+  const initialEnv = item ? item.env || [] : [];
   _sfEnvEditorHandle = buildEnvEditor(sfEnvEditor, initialEnv);
 
   // PreScript-only: timeout field
   if (sfTimeoutRow) sfTimeoutRow.style.display = isPreScript ? '' : 'none';
-  if (sfTimeoutSecs) sfTimeoutSecs.value = (item && item.timeoutMs) ? Math.round(item.timeoutMs / 1000) : '';
+  if (sfTimeoutSecs)
+    sfTimeoutSecs.value =
+      item && item.timeoutMs ? Math.round(item.timeoutMs / 1000) : '';
 
   // Command-only fields — hidden for actions and prescripts
   cmdOnlyFields.style.display = isCommand ? '' : 'none';
   if (isCommand) {
-    sfCwd.value = item ? (item.cwd || '') : '';
-    sfWarn.value = item ? (item.warnRegex || DEFAULT_WARN) : DEFAULT_WARN;
-    sfError.value = item ? (item.errorRegex || DEFAULT_ERROR) : DEFAULT_ERROR;
+    sfCwd.value = item ? item.cwd || '' : '';
+    sfWarn.value = item ? item.warnRegex || DEFAULT_WARN : DEFAULT_WARN;
+    sfError.value = item ? item.errorRegex || DEFAULT_ERROR : DEFAULT_ERROR;
     sfSilenceWarn.checked = !!(item && item.silenceWarnings);
     sfSilenceErr.checked = !!(item && item.silenceErrors);
-    if (sfMaxLogLines) sfMaxLogLines.value = (item && item.maxLogLines != null) ? item.maxLogLines : '';
+    if (sfMaxLogLines)
+      sfMaxLogLines.value =
+        item && item.maxLogLines != null ? item.maxLogLines : '';
   }
 
   subDialogCallback = async (data) => {
@@ -1033,7 +1084,9 @@ function openSubDialog(item, kind, groupId, stepId) {
           // commands list now, not in this dialog.
           autoStart: item ? !!item.autoStart : false,
           // Preserve silenced patterns
-          silencedPatterns: item ? item.silencedPatterns : { warn: [], error: [] },
+          silencedPatterns: item
+            ? item.silencedPatterns
+            : { warn: [], error: [] },
         };
         await window.api.saveCommand(groupId, payload);
       } else {
@@ -1077,7 +1130,10 @@ function openSubDialog(item, kind, groupId, stepId) {
         renderGroupDetail();
       }
 
-      showToast(`${isCommand ? 'Comando' : isPreScript ? 'Pre-script' : 'Acción'} guardado`, 'ok');
+      showToast(
+        `${isCommand ? 'Comando' : isPreScript ? 'Pre-script' : 'Acción'} guardado`,
+        'ok',
+      );
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');
     }
@@ -1091,16 +1147,23 @@ const sfCwdPickBtn = document.getElementById('sf-cwd-pick');
 sfCwdPickBtn.addEventListener('click', async () => {
   const res = await window.api.pickFolder(sfCwd.value || undefined);
   if (res.canceled) return;
-  if (!res.ok) { showToast(`Error: ${res.error || 'desconocido'}`, 'error'); return; }
+  if (!res.ok) {
+    showToast(`Error: ${res.error || 'desconocido'}`, 'error');
+    return;
+  }
   sfCwd.value = res.path;
   sfCwd.dispatchEvent(new Event('input', { bubbles: true }));
 });
 
 subForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const args = sfArgs.value.split('\n').map((s) => s.trim()).filter(Boolean);
+  const args = sfArgs.value
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const maxLogLinesStr = sfMaxLogLines ? sfMaxLogLines.value : '';
-  const maxLogLines = maxLogLinesStr === '' ? null : (Number(maxLogLinesStr) || null);
+  const maxLogLines =
+    maxLogLinesStr === '' ? null : Number(maxLogLinesStr) || null;
   const timeoutSecsStr = sfTimeoutSecs ? sfTimeoutSecs.value.trim() : '';
   const timeoutSecs = timeoutSecsStr ? parseInt(timeoutSecsStr, 10) : null;
   const data = {
@@ -1128,12 +1191,14 @@ document.getElementById('sub-cancel').addEventListener('click', (e) => {
 });
 
 // Wire fake traffic-light close buttons on all <dialog> elements
-document.querySelectorAll('.fake-traffic-lights .light.close').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const d = btn.closest('dialog');
-    if (d && d.open) d.close();
+document
+  .querySelectorAll('.fake-traffic-lights .light.close')
+  .forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const d = btn.closest('dialog');
+      if (d && d.open) d.close();
+    });
   });
-});
 
 // ────────────────────── Icon picker ────────────────────────────────────
 
@@ -1141,12 +1206,15 @@ let allIcons = [];
 
 // Load the battery from the main process (single source of truth).
 // Render an empty grid until it resolves, then re-render.
-window.api.getIconBattery().then((battery) => {
-  allIcons = battery || [];
-  renderIconGrid(iconSearchEl.value || '');
-}).catch(() => {
-  // If IPC fails (e.g., test environment), allIcons stays []
-});
+window.api
+  .getIconBattery()
+  .then((battery) => {
+    allIcons = battery || [];
+    renderIconGrid(iconSearchEl.value || '');
+  })
+  .catch(() => {
+    // If IPC fails (e.g., test environment), allIcons stays []
+  });
 
 function renderIconGrid(filter) {
   iconGridEl.innerHTML = '';
@@ -1204,9 +1272,15 @@ function closeIconPicker() {
   iconPickerCallback = null;
 }
 
-iconSearchEl.addEventListener('input', () => renderIconGrid(iconSearchEl.value));
+iconSearchEl.addEventListener('input', () =>
+  renderIconGrid(iconSearchEl.value),
+);
 document.addEventListener('click', (e) => {
-  if (!iconPickerEl.hidden && !iconPickerEl.contains(e.target) && !e.target.closest('.icon-btn')) {
+  if (
+    !iconPickerEl.hidden &&
+    !iconPickerEl.contains(e.target) &&
+    !e.target.closest('.icon-btn')
+  ) {
     closeIconPicker();
   }
 });
@@ -1241,12 +1315,14 @@ async function loadSettings() {
   setAutostart.checked = !!s.autostart;
   setSilenceWarnings.checked = !!s.silenceWarnings;
   setSilenceErrors.checked = !!s.silenceErrors;
-  if (setMaxLogLines) setMaxLogLines.value = s.maxLogLines != null ? s.maxLogLines : 2000;
+  if (setMaxLogLines)
+    setMaxLogLines.value = s.maxLogLines != null ? s.maxLogLines : 2000;
 }
 
 async function persistSettings() {
   const maxLogLinesRaw = setMaxLogLines ? setMaxLogLines.value : '';
-  const maxLogLines = maxLogLinesRaw === '' ? 2000 : (Number(maxLogLinesRaw) || 2000);
+  const maxLogLines =
+    maxLogLinesRaw === '' ? 2000 : Number(maxLogLinesRaw) || 2000;
   await window.api.saveSettings({
     autostart: setAutostart.checked,
     silenceWarnings: setSilenceWarnings.checked,
@@ -1391,10 +1467,13 @@ loadGroups();
 
 // App version label next to the page title.
 if (window.api && window.api.getAppVersion) {
-  window.api.getAppVersion()
+  window.api
+    .getAppVersion()
     .then((v) => {
       const el = document.getElementById('app-version');
       if (el && v) el.textContent = `v${v}`;
     })
-    .catch(() => { /* leave the label empty on failure */ });
+    .catch(() => {
+      /* leave the label empty on failure */
+    });
 }

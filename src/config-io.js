@@ -29,11 +29,13 @@ function serializeConfig(rawStore, appVersion) {
   return {
     exportedAt: new Date().toISOString(),
     appVersion: appVersion || null,
-    version: typeof raw.version === 'number' ? raw.version : EXPORT_SCHEMA_VERSION,
+    version:
+      typeof raw.version === 'number' ? raw.version : EXPORT_SCHEMA_VERSION,
     groups: Array.isArray(raw.groups) ? raw.groups : [],
-    globalSettings: (raw.globalSettings && typeof raw.globalSettings === 'object')
-      ? raw.globalSettings
-      : {},
+    globalSettings:
+      raw.globalSettings && typeof raw.globalSettings === 'object'
+        ? raw.globalSettings
+        : {},
   };
 }
 
@@ -46,6 +48,7 @@ function serializeConfig(rawStore, appVersion) {
  * @param {unknown} obj
  * @returns {{ ok: true, payload: object } | { ok: false, error: string }}
  */
+/* eslint-disable complexity, max-depth -- Exhaustive import-shape validator; splitting it would scatter the schema checks across many tiny helpers. Tracked as tech debt. */
 function validateImportedConfig(obj) {
   // Root must be a plain object
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -72,7 +75,9 @@ function validateImportedConfig(obj) {
 
     // Pre-validate commands and actions on the RAW input BEFORE normalizeGroup
     // fills in defaults — so we can catch missing required fields.
-    const rawCommands = Array.isArray(rawGroup.commands) ? rawGroup.commands : [];
+    const rawCommands = Array.isArray(rawGroup.commands)
+      ? rawGroup.commands
+      : [];
     for (const rawCmd of rawCommands) {
       const rc = rawCmd || {};
       // command is required for commands (not actions); name is required
@@ -90,7 +95,11 @@ function validateImportedConfig(obj) {
       }
       // env must be an object (legacy) or array (new), not a string/number/etc.
       if (rc.env !== undefined && rc.env !== null) {
-        if (typeof rc.env === 'string' || typeof rc.env === 'number' || typeof rc.env === 'boolean') {
+        if (
+          typeof rc.env === 'string' ||
+          typeof rc.env === 'number' ||
+          typeof rc.env === 'boolean'
+        ) {
           return {
             ok: false,
             error: `Grupo "${rawGroup.name || `#${i}`}" tiene un comando con env inválido (debe ser objeto o array)`,
@@ -120,7 +129,11 @@ function validateImportedConfig(obj) {
       }
       // env must be an object (legacy) or array (new), not a string/number/etc.
       if (ra.env !== undefined && ra.env !== null) {
-        if (typeof ra.env === 'string' || typeof ra.env === 'number' || typeof ra.env === 'boolean') {
+        if (
+          typeof ra.env === 'string' ||
+          typeof ra.env === 'number' ||
+          typeof ra.env === 'boolean'
+        ) {
           return {
             ok: false,
             error: `Grupo "${rawGroup.name || `#${i}`}" tiene una acción con env inválido (debe ser objeto o array)`,
@@ -158,10 +171,16 @@ function validateImportedConfig(obj) {
     }
 
     // Validate preSteps shape (must match commands/actions rigor)
-    const rawPreSteps = Array.isArray(rawGroup.preSteps) ? rawGroup.preSteps : [];
+    const rawPreSteps = Array.isArray(rawGroup.preSteps)
+      ? rawGroup.preSteps
+      : [];
     for (let si = 0; si < rawPreSteps.length; si++) {
       const rawStep = rawPreSteps[si] || {};
-      if (rawStep.mode !== undefined && rawStep.mode !== 'parallel' && rawStep.mode !== 'serial') {
+      if (
+        rawStep.mode !== undefined &&
+        rawStep.mode !== 'parallel' &&
+        rawStep.mode !== 'serial'
+      ) {
         return {
           ok: false,
           error: `Grupo "${rawGroup.name || `#${i}`}" paso #${si} con mode inválido`,
@@ -176,7 +195,11 @@ function validateImportedConfig(obj) {
       const rawScripts = Array.isArray(rawStep.scripts) ? rawStep.scripts : [];
       for (const rawScript of rawScripts) {
         const rs = rawScript || {};
-        if (!rs.command || typeof rs.command !== 'string' || !rs.command.trim()) {
+        if (
+          !rs.command ||
+          typeof rs.command !== 'string' ||
+          !rs.command.trim()
+        ) {
           return {
             ok: false,
             error: `Grupo "${rawGroup.name || `#${i}`}" tiene un pre-script sin command`,
@@ -189,7 +212,11 @@ function validateImportedConfig(obj) {
           };
         }
         if (rs.env !== undefined && rs.env !== null) {
-          if (typeof rs.env === 'string' || typeof rs.env === 'number' || typeof rs.env === 'boolean') {
+          if (
+            typeof rs.env === 'string' ||
+            typeof rs.env === 'number' ||
+            typeof rs.env === 'boolean'
+          ) {
             return {
               ok: false,
               error: `Grupo "${rawGroup.name || `#${i}`}" tiene un pre-script con env inválido`,
@@ -218,16 +245,22 @@ function validateImportedConfig(obj) {
 
     const v = validateGroupShape(g);
     if (!v.valid) {
-      return { ok: false, error: `Grupo #${i} "${g.name}": ${v.errors.join(', ')}` };
+      return {
+        ok: false,
+        error: `Grupo #${i} "${g.name}": ${v.errors.join(', ')}`,
+      };
     }
 
     cleanGroups.push(g);
   }
 
   // globalSettings is optional; coerce known booleans, strip unknown keys
-  const gs = (obj.globalSettings && typeof obj.globalSettings === 'object' && !Array.isArray(obj.globalSettings))
-    ? obj.globalSettings
-    : {};
+  const gs =
+    obj.globalSettings &&
+    typeof obj.globalSettings === 'object' &&
+    !Array.isArray(obj.globalSettings)
+      ? obj.globalSettings
+      : {};
 
   const cleanGlobalSettings = {
     autostart: !!gs.autostart,
@@ -245,6 +278,7 @@ function validateImportedConfig(obj) {
     },
   };
 }
+/* eslint-enable complexity, max-depth */
 
 // ─────────────────────── Summary ──────────────────────────────────────────
 
@@ -263,7 +297,7 @@ function summarizeImport(payload) {
     commandsCount += (g.commands || []).length;
     actionsCount += (g.actions || []).length;
     preStepsCount += (g.preSteps || []).length;
-    for (const step of (g.preSteps || [])) {
+    for (const step of g.preSteps || []) {
       preScriptsCount += (step.scripts || []).length;
     }
   }
@@ -273,7 +307,9 @@ function summarizeImport(payload) {
     actionsCount,
     preStepsCount,
     preScriptsCount,
-    hasGlobalSettings: !!(payload.globalSettings && typeof payload.globalSettings === 'object'),
+    hasGlobalSettings: !!(
+      payload.globalSettings && typeof payload.globalSettings === 'object'
+    ),
   };
 }
 

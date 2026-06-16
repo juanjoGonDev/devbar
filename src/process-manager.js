@@ -116,7 +116,9 @@ class ProcessManager extends EventEmitter {
     if (parsed.kind === 'prescript') {
       const step = (group.preSteps || []).find((s) => s.id === parsed.stepId);
       if (!step) return null;
-      const script = (step.scripts || []).find((sc) => sc.id === parsed.scriptId);
+      const script = (step.scripts || []).find(
+        (sc) => sc.id === parsed.scriptId,
+      );
       if (!script) return null;
       return { group, target: script, kind: 'prescript' };
     }
@@ -128,7 +130,9 @@ class ProcessManager extends EventEmitter {
     if (!state) return;
     const buf = this.logs.get(id) || [];
     const resolved = this.resolveTarget(id);
-    const patterns = (resolved && resolved.target && resolved.target.silencedPatterns) || { warn: [], error: [] };
+    const patterns = (resolved &&
+      resolved.target &&
+      resolved.target.silencedPatterns) || { warn: [], error: [] };
     let warns = 0;
     let errs = 0;
     for (const e of buf) {
@@ -136,7 +140,8 @@ class ProcessManager extends EventEmitter {
       if (!lvl) continue;
       const list = patterns[lvl] || [];
       const cleaned = stripAnsi(e.line);
-      const isSilenced = list.length && list.some((p) => matchesPattern(p, cleaned));
+      const isSilenced =
+        list.length && list.some((p) => matchesPattern(p, cleaned));
       e.silenced = isSilenced;
       e.level = isSilenced ? null : lvl;
       if (!isSilenced) {
@@ -184,12 +189,21 @@ class ProcessManager extends EventEmitter {
     for (const group of groups) {
       for (const cmd of group.commands || []) {
         const pid = `cmd:${group.id}:${cmd.id}`;
-        entries.push({ ...this.getState(pid), group, target: cmd, kind: 'command' });
+        entries.push({
+          ...this.getState(pid),
+          group,
+          target: cmd,
+          kind: 'command',
+        });
       }
       for (const act of group.actions || []) {
-        const pid = `act:${group.id}:act.id`;
         const actPid = `act:${group.id}:${act.id}`;
-        entries.push({ ...this.getState(actPid), group, target: act, kind: 'action' });
+        entries.push({
+          ...this.getState(actPid),
+          group,
+          target: act,
+          kind: 'action',
+        });
       }
     }
     return entries;
@@ -213,7 +227,10 @@ class ProcessManager extends EventEmitter {
     if (current.status === 'running') return { ok: true };
 
     if (!target.command) {
-      this.setState(processId, { status: 'stopped', lastError: 'No command configured' });
+      this.setState(processId, {
+        status: 'stopped',
+        lastError: 'No command configured',
+      });
       return { ok: false, error: 'No command configured' };
     }
 
@@ -259,7 +276,9 @@ class ProcessManager extends EventEmitter {
     const errRe = kind === 'command' ? safeRegex(target.errorRegex) : null;
 
     let initWindow = true;
-    setTimeout(() => { initWindow = false; }, 1500);
+    setTimeout(() => {
+      initWindow = false;
+    }, 1500);
 
     const logLimit = this.resolveLogLimit(resolved);
 
@@ -303,10 +322,12 @@ class ProcessManager extends EventEmitter {
       if (detectedLevel) {
         // Re-read fresh config for silenced patterns
         const freshResolved = this.resolveTarget(processId);
-        const patterns = (
-          freshResolved && freshResolved.target && freshResolved.target.silencedPatterns &&
-          freshResolved.target.silencedPatterns[detectedLevel]
-        ) || [];
+        const patterns =
+          (freshResolved &&
+            freshResolved.target &&
+            freshResolved.target.silencedPatterns &&
+            freshResolved.target.silencedPatterns[detectedLevel]) ||
+          [];
         if (patterns.length) {
           const cleaned = stripAnsi(line);
           if (patterns.some((p) => matchesPattern(p, cleaned))) {
@@ -332,8 +353,12 @@ class ProcessManager extends EventEmitter {
       if (detectedLevel && !silenced) this.emit('change', state);
     };
 
-    readline.createInterface({ input: child.stdout }).on('line', handleLine('stdout'));
-    readline.createInterface({ input: child.stderr }).on('line', handleLine('stderr'));
+    readline
+      .createInterface({ input: child.stdout })
+      .on('line', handleLine('stdout'));
+    readline
+      .createInterface({ input: child.stderr })
+      .on('line', handleLine('stderr'));
 
     child.on('error', (err) => {
       this.pushLog(processId, {
@@ -358,7 +383,9 @@ class ProcessManager extends EventEmitter {
         ts: Date.now(),
         stream: 'sys',
         level: wasKilled ? null : code !== 0 ? 'error' : null,
-        line: wasKilled ? `■ stopped (${signal})` : `■ exited with code ${code}`,
+        line: wasKilled
+          ? `■ stopped (${signal})`
+          : `■ exited with code ${code}`,
       });
 
       if (kind === 'action' || kind === 'prescript') {
@@ -367,7 +394,11 @@ class ProcessManager extends EventEmitter {
         // only care about actions can filter by parseProcessId(processId).kind.
         this.setState(processId, {
           status: 'done',
-          lastError: wasKilled ? null : code !== 0 ? `exited with code ${code}` : null,
+          lastError: wasKilled
+            ? null
+            : code !== 0
+              ? `exited with code ${code}`
+              : null,
           lastExitCode: code,
           lastFinishedAt: Date.now(),
           child: null,
@@ -379,8 +410,8 @@ class ProcessManager extends EventEmitter {
           lastError: wasKilled
             ? null
             : code !== 0
-            ? `exited with code ${code}`
-            : null,
+              ? `exited with code ${code}`
+              : null,
           child: null,
         });
       }
@@ -426,7 +457,11 @@ class ProcessManager extends EventEmitter {
       const err = killGroup(child, 'SIGTERM');
       if (err) {
         clearTimeout(timer);
-        this.setState(id, { status: 'stopped', child: null, lastError: err.message });
+        this.setState(id, {
+          status: 'stopped',
+          child: null,
+          lastError: err.message,
+        });
         resolve({ ok: false, error: err.message });
       }
     });
@@ -457,7 +492,11 @@ function deriveColor(state, command, group, globals) {
   const grp = group || {};
   const cmd = command || {};
   const muteErr = !!(g.silenceErrors || grp.silenceErrors || cmd.silenceErrors);
-  const muteWarn = !!(g.silenceWarnings || grp.silenceWarnings || cmd.silenceWarnings);
+  const muteWarn = !!(
+    g.silenceWarnings ||
+    grp.silenceWarnings ||
+    cmd.silenceWarnings
+  );
   if (state.errorCount > 0 && !muteErr) return 'error';
   if (state.warnCount > 0 && !muteWarn) return 'warn';
   return 'running';

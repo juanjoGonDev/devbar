@@ -24,7 +24,12 @@ const { formatUptime } = require('./format-uptime');
  *   onError: (err: string, ctx: object) => void,
  * }} deps
  */
-function createPreScriptRunner({ processManager, configStore, broadcastUpdate, onError }) {
+function createPreScriptRunner({
+  processManager,
+  configStore,
+  broadcastUpdate,
+  onError,
+}) {
   // groupId → RunHandle
   const running = new Map();
 
@@ -57,7 +62,12 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
 
   function setRecentResult(groupId, status, error, runId, delayMs) {
     const expiresAt = Date.now() + delayMs;
-    recentResult.set(groupId, { status, error: error || null, runId, expiresAt });
+    recentResult.set(groupId, {
+      status,
+      error: error || null,
+      runId,
+      expiresAt,
+    });
     setTimeout(() => {
       const entry = recentResult.get(groupId);
       if (entry && entry.runId === runId) {
@@ -103,7 +113,10 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
       const handler = ({ processId, code }) => {
         if (processId !== pid) return;
         // clearTimeout MUST be the first operation — before any await or listener removal
-        if (timeoutToken) { clearTimeout(timeoutToken); timeoutToken = null; }
+        if (timeoutToken) {
+          clearTimeout(timeoutToken);
+          timeoutToken = null;
+        }
         processManager.removeListener('action:done', handler);
         processManager.removeListener('log', logHandler);
         handle.childPids.delete(pid);
@@ -141,7 +154,10 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
 
       const result = processManager.start(pid);
       if (!result.ok) {
-        if (timeoutToken) { clearTimeout(timeoutToken); timeoutToken = null; }
+        if (timeoutToken) {
+          clearTimeout(timeoutToken);
+          timeoutToken = null;
+        }
         processManager.removeListener('action:done', handler);
         processManager.removeListener('log', logHandler);
         handle.childPids.delete(pid);
@@ -180,7 +196,13 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
         `── Pipeline aborted: group "${group.name}" has no path configured ──`,
         'error',
       );
-      setRecentResult(groupId, 'error', 'Group has no path configured', runIdEarly, 5000);
+      setRecentResult(
+        groupId,
+        'error',
+        'Group has no path configured',
+        runIdEarly,
+        5000,
+      );
       broadcastUpdate();
       if (onError) onError('Group has no path configured', { groupId });
       return { ok: false, error: 'no_group_path' };
@@ -202,7 +224,10 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
     running.set(groupId, handle);
     broadcastUpdate();
 
-    pushAggregatorLog(aggregatorId, `── Pipeline started (${steps.length} steps) ──`);
+    pushAggregatorLog(
+      aggregatorId,
+      `── Pipeline started (${steps.length} steps) ──`,
+    );
     pushAggregatorLog(aggregatorId, `── Working directory: ${groupPath} ──`);
 
     let pipelineOk = true;
@@ -218,7 +243,10 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
         break;
       }
 
-      pushAggregatorLog(aggregatorId, `── Step ${i + 1}/${steps.length} (${step.mode}) starting ──`);
+      pushAggregatorLog(
+        aggregatorId,
+        `── Step ${i + 1}/${steps.length} (${step.mode}) starting ──`,
+      );
 
       const stepStartedAt = Date.now();
       let stepOk = false;
@@ -226,20 +254,31 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
         // Serial: run one by one, abort on first failure
         stepOk = true;
         for (const script of step.scripts || []) {
-          if (handle.cancelled) { stepOk = false; break; }
+          if (handle.cancelled) {
+            stepOk = false;
+            break;
+          }
           const r = await runOne(script, step, groupId, handle);
-          if (!r.ok) { stepOk = false; break; }
+          if (!r.ok) {
+            stepOk = false;
+            break;
+          }
         }
       } else {
         // Parallel: run all, succeed only if all exit 0
         const results = await Promise.all(
-          (step.scripts || []).map((script) => runOne(script, step, groupId, handle)),
+          (step.scripts || []).map((script) =>
+            runOne(script, step, groupId, handle),
+          ),
         );
         stepOk = results.every((r) => r.ok);
       }
 
       if (stepOk && !handle.cancelled) {
-        pushAggregatorLog(aggregatorId, `── Step ${i + 1} completed (${formatUptime(Date.now() - stepStartedAt)}) ──`);
+        pushAggregatorLog(
+          aggregatorId,
+          `── Step ${i + 1} completed (${formatUptime(Date.now() - stepStartedAt)}) ──`,
+        );
       }
 
       if (!stepOk || handle.cancelled) {
@@ -253,7 +292,9 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
     const pipelineDuration = formatUptime(Date.now() - handle.runId);
 
     if (!pipelineOk) {
-      const reason = handle.cancelled ? 'cancelled' : `step_${failedStepIdx}_failed`;
+      const reason = handle.cancelled
+        ? 'cancelled'
+        : `step_${failedStepIdx}_failed`;
       const logLine = handle.cancelled
         ? `── Pipeline cancelled (${pipelineDuration}) ──`
         : `── Pipeline failed at step ${failedStepIdx} (${pipelineDuration}) ──`;
@@ -267,7 +308,10 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
     }
 
     handle.status = 'done';
-    pushAggregatorLog(aggregatorId, `── Pipeline complete (${pipelineDuration}) ──`);
+    pushAggregatorLog(
+      aggregatorId,
+      `── Pipeline complete (${pipelineDuration}) ──`,
+    );
     // Keep done visible for 3 seconds
     setRecentResult(groupId, 'done', null, runId, 3000);
     broadcastUpdate();
@@ -281,7 +325,9 @@ function createPreScriptRunner({ processManager, configStore, broadcastUpdate, o
     if (!handle) return { ok: false, error: 'not_running' };
     handle.cancelled = true;
     for (const pid of handle.childPids) {
-      try { processManager.stop(pid); } catch (_) {}
+      try {
+        processManager.stop(pid);
+      } catch (_) {}
     }
     return { ok: true };
   }

@@ -2,7 +2,14 @@
 
 const path = require('path');
 const fs = require('fs');
-const { app, BrowserWindow, ipcMain, Menu, screen, dialog } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  screen,
+  dialog,
+} = require('electron');
 const { menubar } = require('menubar');
 
 const configStore = require('./config-store');
@@ -14,7 +21,11 @@ const logger = require('./logger');
 const { aggregateColor } = trayIcon;
 const { loadShellPath, expandTilde } = require('./path-helper');
 const { RepoWatcher } = require('./repo-watcher');
-const { makeCommandId, makeActionId, parseProcessId } = require('./compound-id');
+const {
+  makeCommandId,
+  makeActionId,
+  parseProcessId,
+} = require('./compound-id');
 const { createPreScriptRunner } = require('./pre-script-runner');
 
 loadShellPath();
@@ -33,7 +44,7 @@ try {
   logger.attachMainConsole();
 } catch (e) {
   // Logger is best-effort; never block startup.
-  // eslint-disable-next-line no-console
+
   console.error('logger init failed:', e);
 }
 
@@ -43,7 +54,7 @@ const preScriptRunner = createPreScriptRunner({
   processManager,
   configStore,
   broadcastUpdate: () => broadcast(),
-  onError: (err, ctx) => {
+  onError: (err, _ctx) => {
     broadcastToast('error', `Pre-scripts: ${err}`);
   },
 });
@@ -77,8 +88,16 @@ function snapshotGroupStates() {
       const pid = makeCommandId(group.id, cmd.id);
       const state = processManager.getState(pid);
       const color = deriveColor(state, cmd, group, globals);
-      const muteWarn = !!(globals.silenceWarnings || group.silenceWarnings || cmd.silenceWarnings);
-      const muteErr = !!(globals.silenceErrors || group.silenceErrors || cmd.silenceErrors);
+      const muteWarn = !!(
+        globals.silenceWarnings ||
+        group.silenceWarnings ||
+        cmd.silenceWarnings
+      );
+      const muteErr = !!(
+        globals.silenceErrors ||
+        group.silenceErrors ||
+        cmd.silenceErrors
+      );
       return {
         commandId: cmd.id,
         processId: pid,
@@ -110,9 +129,13 @@ function snapshotGroupStates() {
     let groupColor = 'stopped';
     for (const cs of commandStates) {
       if (cs.status === 'running') {
-        if (cs.color === 'error') { groupColor = 'error'; break; }
+        if (cs.color === 'error') {
+          groupColor = 'error';
+          break;
+        }
         if (cs.color === 'warn' && groupColor !== 'error') groupColor = 'warn';
-        else if (cs.color === 'running' && groupColor === 'stopped') groupColor = 'running';
+        else if (cs.color === 'running' && groupColor === 'stopped')
+          groupColor = 'running';
       }
     }
     // Check lastError on running commands too
@@ -124,16 +147,24 @@ function snapshotGroupStates() {
     // Pre-scripts runtime fields
     const runState = preScriptRunner.getRunState(group.id);
     const recentResult = preScriptRunner.getRecentResult(group.id);
-    const preScriptsStatus = runState ? runState.status
-      : recentResult ? recentResult.status
-      : 'idle';
+    const preScriptsStatus = runState
+      ? runState.status
+      : recentResult
+        ? recentResult.status
+        : 'idle';
     const preScriptsCurrentStep = runState ? runState.currentStep : null;
-    const preScriptsTotalSteps = runState ? runState.totalSteps
+    const preScriptsTotalSteps = runState
+      ? runState.totalSteps
       : (group.preSteps || []).length;
-    const preScriptsLastError = (recentResult && recentResult.status === 'error')
-      ? recentResult.error : null;
-    const preScriptsLastRunId = runState ? String(runState.runId)
-      : recentResult ? String(recentResult.runId) : null;
+    const preScriptsLastError =
+      recentResult && recentResult.status === 'error'
+        ? recentResult.error
+        : null;
+    const preScriptsLastRunId = runState
+      ? String(runState.runId)
+      : recentResult
+        ? String(recentResult.runId)
+        : null;
 
     return {
       groupId: group.id,
@@ -174,8 +205,10 @@ function broadcastToast(kind, message) {
 
 function rendererTargets() {
   const targets = [];
-  if (mb && mb.window && !mb.window.isDestroyed()) targets.push(mb.window.webContents);
-  if (configWindow && !configWindow.isDestroyed()) targets.push(configWindow.webContents);
+  if (mb && mb.window && !mb.window.isDestroyed())
+    targets.push(mb.window.webContents);
+  if (configWindow && !configWindow.isDestroyed())
+    targets.push(configWindow.webContents);
   for (const win of logsWindows.values()) {
     if (win && !win.isDestroyed()) targets.push(win.webContents);
   }
@@ -208,7 +241,10 @@ function buildTrayContextMenu() {
         submenu.push({
           label: title,
           click: () => {
-            if (!win.isDestroyed()) { win.show(); win.focus(); }
+            if (!win.isDestroyed()) {
+              win.show();
+              win.focus();
+            }
           },
         });
       }
@@ -233,7 +269,8 @@ function ensureSilencedWindow(groupId, commandId) {
     return existing;
   }
   const group = configStore.getGroup(groupId);
-  const command = group && group.commands && group.commands.find((c) => c.id === commandId);
+  const command =
+    group && group.commands && group.commands.find((c) => c.id === commandId);
   if (!command) return null;
   const win = new BrowserWindow({
     width: 480,
@@ -273,7 +310,9 @@ function broadcastBranchesChanged(repoPath) {
 
 function syncRepoWatchers() {
   const groups = configStore.listGroups();
-  const paths = [...new Set(groups.map((g) => expandTilde(g.path)).filter(Boolean))];
+  const paths = [
+    ...new Set(groups.map((g) => expandTilde(g.path)).filter(Boolean)),
+  ];
   repoWatcher.sync(paths);
 }
 
@@ -322,7 +361,9 @@ function ensureLogsWindow(processId, { filter } = {}) {
   // Resolve target name for window title
   const resolved = processManager.resolveTarget(processId);
   const titleName = resolved
-    ? (resolved.kind === 'command' ? resolved.target.name : resolved.target.name)
+    ? resolved.kind === 'command'
+      ? resolved.target.name
+      : resolved.target.name
     : processId;
   const size = adaptiveSize(960, 600);
   const win = new BrowserWindow({
@@ -473,28 +514,31 @@ function registerIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle('commands:setAutoStart', (_e, { groupId, commandId, enabled }) => {
-    const group = configStore.getGroup(groupId);
-    if (!group) return { ok: false, error: 'group not found' };
-    const cmd = (group.commands || []).find((c) => c.id === commandId);
-    if (!cmd) return { ok: false, error: 'command not found' };
+  ipcMain.handle(
+    'commands:setAutoStart',
+    (_e, { groupId, commandId, enabled }) => {
+      const group = configStore.getGroup(groupId);
+      if (!group) return { ok: false, error: 'group not found' };
+      const cmd = (group.commands || []).find((c) => c.id === commandId);
+      if (!cmd) return { ok: false, error: 'command not found' };
 
-    let nextCommands = group.commands.map((c) =>
-      c.id === commandId ? { ...c, autoStart: !!enabled } : c
-    );
-
-    // In single mode, enabling one command's autoStart clears all others
-    // (radio semantics). Disabling does nothing extra.
-    if (enabled && group.mode === 'single') {
-      nextCommands = nextCommands.map((c) =>
-        c.id === commandId ? c : { ...c, autoStart: false }
+      let nextCommands = group.commands.map((c) =>
+        c.id === commandId ? { ...c, autoStart: !!enabled } : c,
       );
-    }
 
-    configStore.saveGroup({ ...group, commands: nextCommands });
-    broadcast();
-    return { ok: true };
-  });
+      // In single mode, enabling one command's autoStart clears all others
+      // (radio semantics). Disabling does nothing extra.
+      if (enabled && group.mode === 'single') {
+        nextCommands = nextCommands.map((c) =>
+          c.id === commandId ? c : { ...c, autoStart: false },
+        );
+      }
+
+      configStore.saveGroup({ ...group, commands: nextCommands });
+      broadcast();
+      return { ok: true };
+    },
+  );
 
   // ── Actions ──────────────────────────────────────────────────────────
   ipcMain.handle('actions:save', (_e, { groupId, actionData }) => {
@@ -523,8 +567,12 @@ function registerIpc() {
   });
 
   // ── Pre-scripts ───────────────────────────────────────────────────────
-  ipcMain.handle('prescripts:run', (_e, { groupId }) => preScriptRunner.run(groupId));
-  ipcMain.handle('prescripts:cancel', (_e, { groupId }) => preScriptRunner.cancel(groupId));
+  ipcMain.handle('prescripts:run', (_e, { groupId }) =>
+    preScriptRunner.run(groupId),
+  );
+  ipcMain.handle('prescripts:cancel', (_e, { groupId }) =>
+    preScriptRunner.cancel(groupId),
+  );
 
   ipcMain.handle('preSteps:save', (_e, { groupId, data }) => {
     const result = configStore.savePreStep(groupId, data);
@@ -551,16 +599,20 @@ function registerIpc() {
     broadcast();
     return { ok: true };
   });
-  ipcMain.handle('preScripts:reorder', (_e, { groupId, stepId, orderedIds }) => {
-    configStore.reorderPreScripts(groupId, stepId, orderedIds);
-    broadcast();
-    return { ok: true };
-  });
+  ipcMain.handle(
+    'preScripts:reorder',
+    (_e, { groupId, stepId, orderedIds }) => {
+      configStore.reorderPreScripts(groupId, stepId, orderedIds);
+      broadcast();
+      return { ok: true };
+    },
+  );
 
   // ── Process start/stop ────────────────────────────────────────────────
   ipcMain.handle('process:start', async (_e, processId) => {
     const parsed = parseProcessId(processId);
-    if (parsed.kind === 'unknown') return { ok: false, error: 'Invalid process id' };
+    if (parsed.kind === 'unknown')
+      return { ok: false, error: 'Invalid process id' };
 
     // Single-mode: stop other running commands in the same group first
     if (parsed.kind === 'command') {
@@ -568,7 +620,11 @@ function registerIpc() {
       if (group && group.mode === 'single') {
         const running = (group.commands || [])
           .map((c) => makeCommandId(group.id, c.id))
-          .filter((pid) => pid !== processId && processManager.getState(pid).status === 'running');
+          .filter(
+            (pid) =>
+              pid !== processId &&
+              processManager.getState(pid).status === 'running',
+          );
         for (const pid of running) {
           await processManager.stop(pid);
         }
@@ -628,31 +684,55 @@ function registerIpc() {
   });
 
   // ── Silence ──────────────────────────────────────────────────────────
-  ipcMain.handle('silence:add', (_e, { groupId, commandId, level, pattern }) => {
-    const cmd = configStore.addSilencedPattern(groupId, commandId, level, pattern);
-    if (cmd) {
-      const pid = makeCommandId(groupId, commandId);
-      processManager.recount(pid);
-      broadcast();
-    }
-    return { ok: !!cmd, command: cmd };
-  });
+  ipcMain.handle(
+    'silence:add',
+    (_e, { groupId, commandId, level, pattern }) => {
+      const cmd = configStore.addSilencedPattern(
+        groupId,
+        commandId,
+        level,
+        pattern,
+      );
+      if (cmd) {
+        const pid = makeCommandId(groupId, commandId);
+        processManager.recount(pid);
+        broadcast();
+      }
+      return { ok: !!cmd, command: cmd };
+    },
+  );
 
-  ipcMain.handle('silence:remove', (_e, { groupId, commandId, level, pattern }) => {
-    const cmd = configStore.removeSilencedPattern(groupId, commandId, level, pattern);
-    if (cmd) {
-      const pid = makeCommandId(groupId, commandId);
-      processManager.recount(pid);
-      broadcast();
-    }
-    return { ok: !!cmd, command: cmd };
-  });
+  ipcMain.handle(
+    'silence:remove',
+    (_e, { groupId, commandId, level, pattern }) => {
+      const cmd = configStore.removeSilencedPattern(
+        groupId,
+        commandId,
+        level,
+        pattern,
+      );
+      if (cmd) {
+        const pid = makeCommandId(groupId, commandId);
+        processManager.recount(pid);
+        broadcast();
+      }
+      return { ok: !!cmd, command: cmd };
+    },
+  );
 
-  ipcMain.handle('silence:setCommand', (_e, { groupId, commandId, level, enabled }) => {
-    const cmd = configStore.setCommandSilence(groupId, commandId, level, enabled);
-    if (cmd) broadcast();
-    return { ok: !!cmd, command: cmd };
-  });
+  ipcMain.handle(
+    'silence:setCommand',
+    (_e, { groupId, commandId, level, enabled }) => {
+      const cmd = configStore.setCommandSilence(
+        groupId,
+        commandId,
+        level,
+        enabled,
+      );
+      if (cmd) broadcast();
+      return { ok: !!cmd, command: cmd };
+    },
+  );
 
   ipcMain.handle('silence:setGroup', (_e, { groupId, level, enabled }) => {
     const grp = configStore.setGroupSilence(groupId, level, enabled);
@@ -665,7 +745,11 @@ function registerIpc() {
     const resolved = processManager.resolveTarget(processId);
     const cmdState = processManager.getState(processId);
     return {
-      target: resolved || { kind: 'unknown', group: null, target: { name: '?' } },
+      target: resolved || {
+        kind: 'unknown',
+        group: null,
+        target: { name: '?' },
+      },
       lines: processManager.getLogs(processId),
       commandState: { status: cmdState.status, startedAt: cmdState.startedAt },
     };
@@ -700,12 +784,12 @@ function registerIpc() {
   });
 
   ipcMain.handle('window:openLogs', (_e, payload) => {
-    const { processId, filter } = typeof payload === 'string'
-      ? { processId: payload }
-      : payload;
+    const { processId, filter } =
+      typeof payload === 'string' ? { processId: payload } : payload;
     const existed = !!logsWindows.get(processId);
     const win = ensureLogsWindow(processId, { filter });
-    if (existed && filter) win.webContents.send('logs:setFilter', { processId, filter });
+    if (existed && filter)
+      win.webContents.send('logs:setFilter', { processId, filter });
     if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
     return { ok: true };
   });
@@ -717,7 +801,8 @@ function registerIpc() {
 
   ipcMain.handle('silenced:getForCommand', (_e, { groupId, commandId }) => {
     const group = configStore.getGroup(groupId);
-    const command = group && group.commands && group.commands.find((c) => c.id === commandId);
+    const command =
+      group && group.commands && group.commands.find((c) => c.id === commandId);
     if (!group || !command) return { ok: false, error: 'command not found' };
     return {
       ok: true,
@@ -742,7 +827,8 @@ function registerIpc() {
   // ── Config Export / Import ────────────────────────────────────────────
 
   ipcMain.handle('config:export', async () => {
-    const owner = configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
+    const owner =
+      configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
     const stamp = new Date().toISOString().slice(0, 10);
     let res;
     try {
@@ -765,7 +851,8 @@ function registerIpc() {
   });
 
   ipcMain.handle('config:import', async () => {
-    const owner = configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
+    const owner =
+      configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
     let res;
     try {
       res = await dialog.showOpenDialog(owner, {
@@ -799,11 +886,17 @@ function registerIpc() {
     // Clear stale tokens after 5 minutes
     setTimeout(() => pendingImports.delete(token), 5 * 60 * 1000);
 
-    return { ok: true, token, preview: summarizeImport(v.payload), path: res.filePaths[0] };
+    return {
+      ok: true,
+      token,
+      preview: summarizeImport(v.payload),
+      path: res.filePaths[0],
+    };
   });
 
   ipcMain.handle('config:confirmImport', async (_e, { preview }) => {
-    const owner = configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
+    const owner =
+      configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
     const detail =
       `Esto sobreescribirá TODA tu configuración actual:\n\n` +
       `· ${preview.groupsCount} grupos\n` +
@@ -830,7 +923,10 @@ function registerIpc() {
   ipcMain.handle('config:applyImport', async (_e, { token }) => {
     const payload = pendingImports.get(token);
     if (!payload) {
-      return { ok: false, error: 'La importación expiró — vuelve a seleccionar el archivo' };
+      return {
+        ok: false,
+        error: 'La importación expiró — vuelve a seleccionar el archivo',
+      };
     }
     pendingImports.delete(token);
     try {
@@ -865,7 +961,8 @@ function registerIpc() {
     } catch (err) {
       return { ok: false, error: err.message };
     }
-    if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true };
+    if (res.canceled || !res.filePaths.length)
+      return { ok: false, canceled: true };
     return { ok: true, path: res.filePaths[0] };
   });
 
@@ -881,9 +978,10 @@ function registerIpc() {
   ipcMain.handle('config:confirmDirty', async (e, { context }) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const message = 'Tienes cambios sin guardar.';
-    const detail = context === 'window-close'
-      ? '¿Quieres guardarlos antes de cerrar la ventana?'
-      : '¿Quieres guardarlos antes de cambiar de grupo?';
+    const detail =
+      context === 'window-close'
+        ? '¿Quieres guardarlos antes de cerrar la ventana?'
+        : '¿Quieres guardarlos antes de cambiar de grupo?';
     let res;
     try {
       res = await dialog.showMessageBox(win, {
@@ -933,36 +1031,44 @@ async function autoStartAllMarkedCommands() {
     !!(app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin);
 
   const groups = configStore.listGroups();
-  await Promise.all(groups.map(async (group) => {
-    const eligible = (group.commands || []).filter((c) => c.autoStart === true);
-    if (eligible.length === 0) return;
+  await Promise.all(
+    groups.map(async (group) => {
+      const eligible = (group.commands || []).filter(
+        (c) => c.autoStart === true,
+      );
+      if (eligible.length === 0) return;
 
-    // Run pre-scripts pipeline if:
-    // - the group has preSteps configured
-    // - the user opted in via `preScriptsAutoRun: true`
-    // - and DevBar was opened at login (not a manual restart)
-    const shouldRunPre =
-      group.preSteps && group.preSteps.length > 0 &&
-      group.preScriptsAutoRun === true &&
-      wasOpenedAtLogin;
-    if (shouldRunPre) {
-      const res = await preScriptRunner.run(group.id);
-      if (!res.ok) {
-        broadcastToast('error', `Pre-scripts ${group.name}: ${res.error || 'failed'}`);
-        return; // skip starting commands for this group
+      // Run pre-scripts pipeline if:
+      // - the group has preSteps configured
+      // - the user opted in via `preScriptsAutoRun: true`
+      // - and DevBar was opened at login (not a manual restart)
+      const shouldRunPre =
+        group.preSteps &&
+        group.preSteps.length > 0 &&
+        group.preScriptsAutoRun === true &&
+        wasOpenedAtLogin;
+      if (shouldRunPre) {
+        const res = await preScriptRunner.run(group.id);
+        if (!res.ok) {
+          broadcastToast(
+            'error',
+            `Pre-scripts ${group.name}: ${res.error || 'failed'}`,
+          );
+          return; // skip starting commands for this group
+        }
       }
-    }
 
-    const toStart = group.mode === 'single' ? eligible.slice(0, 1) : eligible;
-    for (const cmd of toStart) {
-      const pid = makeCommandId(group.id, cmd.id);
-      try {
-        processManager.start(pid);
-      } catch (err) {
-        console.error(`autoStart failed for ${group.name}/${cmd.name}:`, err);
+      const toStart = group.mode === 'single' ? eligible.slice(0, 1) : eligible;
+      for (const cmd of toStart) {
+        const pid = makeCommandId(group.id, cmd.id);
+        try {
+          processManager.start(pid);
+        } catch (err) {
+          console.error(`autoStart failed for ${group.name}/${cmd.name}:`, err);
+        }
       }
-    }
-  }));
+    }),
+  );
 }
 
 // ─────────────────────── App lifecycle ───────────────────────────────
@@ -1046,14 +1152,18 @@ app.on('before-quit', async () => {
   repoWatcher.closeAll();
   // Cancel any running pre-script pipelines
   for (const groupId of preScriptRunner.running.keys()) {
-    try { preScriptRunner.cancel(groupId); } catch (_) {}
+    try {
+      preScriptRunner.cancel(groupId);
+    } catch (_) {}
   }
   // Stop all running processes
   const groups = configStore.listGroups();
   for (const group of groups) {
     for (const cmd of group.commands || []) {
       const pid = makeCommandId(group.id, cmd.id);
-      try { await processManager.stop(pid); } catch (_) {}
+      try {
+        await processManager.stop(pid);
+      } catch (_) {}
     }
   }
 });

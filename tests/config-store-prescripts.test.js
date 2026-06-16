@@ -23,9 +23,14 @@ function reorderById(items, orderedIds) {
   const seen = new Set();
   const sorted = [];
   for (const id of orderedIds) {
-    if (byId.has(id) && !seen.has(id)) { sorted.push(byId.get(id)); seen.add(id); }
+    if (byId.has(id) && !seen.has(id)) {
+      sorted.push(byId.get(id));
+      seen.add(id);
+    }
   }
-  for (const x of items) { if (!seen.has(x.id)) sorted.push(x); }
+  for (const x of items) {
+    if (!seen.has(x.id)) sorted.push(x);
+  }
   return sorted;
 }
 
@@ -75,7 +80,11 @@ describe('savePreScript contract — normalizePreScript', () => {
   });
 
   it('preserves provided id', () => {
-    const sc = normalizePreScript({ id: 'sc-abc', name: 'Build', command: 'pnpm build' });
+    const sc = normalizePreScript({
+      id: 'sc-abc',
+      name: 'Build',
+      command: 'pnpm build',
+    });
     expect(sc.id).toBe('sc-abc');
   });
 
@@ -85,7 +94,10 @@ describe('savePreScript contract — normalizePreScript', () => {
   });
 
   it('preserves args as array', () => {
-    const sc = normalizePreScript({ command: 'pnpm', args: ['install', '--frozen'] });
+    const sc = normalizePreScript({
+      command: 'pnpm',
+      args: ['install', '--frozen'],
+    });
     expect(sc.args).toEqual(['install', '--frozen']);
   });
 
@@ -99,8 +111,12 @@ describe('savePreScript contract — normalizePreScript', () => {
   });
 
   it('inherits inheritGroupEnv from raw value', () => {
-    expect(normalizePreScript({ inheritGroupEnv: true }).inheritGroupEnv).toBe(true);
-    expect(normalizePreScript({ inheritGroupEnv: false }).inheritGroupEnv).toBe(false);
+    expect(normalizePreScript({ inheritGroupEnv: true }).inheritGroupEnv).toBe(
+      true,
+    );
+    expect(normalizePreScript({ inheritGroupEnv: false }).inheritGroupEnv).toBe(
+      false,
+    );
   });
 });
 
@@ -138,10 +154,7 @@ describe('reorderPreSteps contract — reorder algorithm', () => {
   });
 
   it('appends unknown ids at the end', () => {
-    const steps = [
-      { id: 's1' },
-      { id: 's2' },
-    ];
+    const steps = [{ id: 's1' }, { id: 's2' }];
     const result = reorderById(steps, ['s2']); // s1 not mentioned
     expect(result.map((s) => s.id)).toEqual(['s2', 's1']);
   });
@@ -165,10 +178,7 @@ describe('reorderPreSteps contract — reorder algorithm', () => {
 
 describe('deletePreScript contract', () => {
   it('removes a script by id from a step', () => {
-    const scripts = [
-      { id: 'sc1' },
-      { id: 'sc2' },
-    ];
+    const scripts = [{ id: 'sc1' }, { id: 'sc2' }];
     const result = scripts.filter((sc) => sc.id !== 'sc1');
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('sc2');
@@ -179,11 +189,7 @@ describe('deletePreScript contract', () => {
 
 describe('reorderPreScripts contract', () => {
   it('reorders scripts within a step', () => {
-    const scripts = [
-      { id: 'sc1' },
-      { id: 'sc2' },
-      { id: 'sc3' },
-    ];
+    const scripts = [{ id: 'sc1' }, { id: 'sc2' }, { id: 'sc3' }];
     const result = reorderById(scripts, ['sc3', 'sc1', 'sc2']);
     expect(result.map((sc) => sc.id)).toEqual(['sc3', 'sc1', 'sc2']);
   });

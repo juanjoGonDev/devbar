@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { makeCommandId, makeActionId, makePreScriptId, makeAggregatorId, parseProcessId } from '../src/compound-id.js';
+import {
+  makeCommandId,
+  makeActionId,
+  makePreScriptId,
+  makeAggregatorId,
+  parseProcessId,
+} from '../src/compound-id.js';
 
 describe('compound-id', () => {
   // ─── makeCommandId ───────────────────────────────────────────────────
@@ -103,7 +109,9 @@ describe('compound-id', () => {
   // ─── makeAggregatorId ────────────────────────────────────────────────
   describe('makeAggregatorId', () => {
     it('returns the correct pre-pipeline format', () => {
-      expect(makeAggregatorId('g1', '1234567890')).toBe('pre-pipeline:g1:1234567890');
+      expect(makeAggregatorId('g1', '1234567890')).toBe(
+        'pre-pipeline:g1:1234567890',
+      );
     });
   });
 

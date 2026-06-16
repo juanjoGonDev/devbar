@@ -181,7 +181,10 @@ describe('normalizeCommand', () => {
   });
 
   it('converts legacy object env to EnvEntry[]', () => {
-    const c = normalizeCommand({ command: 'node', env: { PORT: '3000', NODE_ENV: 'dev' } });
+    const c = normalizeCommand({
+      command: 'node',
+      env: { PORT: '3000', NODE_ENV: 'dev' },
+    });
     expect(c.env).toEqual([
       { key: 'PORT', value: '3000', enabled: true },
       { key: 'NODE_ENV', value: 'dev', enabled: true },
@@ -207,15 +210,24 @@ describe('normalizeAction', () => {
   });
 
   it('preserves fields', () => {
-    const a = normalizeAction({ id: 'a1', name: 'Install', command: 'pnpm install' });
+    const a = normalizeAction({
+      id: 'a1',
+      name: 'Install',
+      command: 'pnpm install',
+    });
     expect(a.id).toBe('a1');
     expect(a.name).toBe('Install');
     expect(a.command).toBe('pnpm install');
   });
 
   it('converts legacy object env to EnvEntry[] and defaults inheritGroupEnv:false', () => {
-    const a = normalizeAction({ command: 'pnpm build', env: { NODE_ENV: 'production' } });
-    expect(a.env).toEqual([{ key: 'NODE_ENV', value: 'production', enabled: true }]);
+    const a = normalizeAction({
+      command: 'pnpm build',
+      env: { NODE_ENV: 'production' },
+    });
+    expect(a.env).toEqual([
+      { key: 'NODE_ENV', value: 'production', enabled: true },
+    ]);
     expect(a.inheritGroupEnv).toBe(false);
   });
 
@@ -271,9 +283,13 @@ describe('normalizeEnvEntries', () => {
   });
 
   it('filters out non-object array entries', () => {
-    expect(normalizeEnvEntries(['bad', null, { key: 'A', value: '1', enabled: true }])).toEqual([
-      { key: 'A', value: '1', enabled: true },
-    ]);
+    expect(
+      normalizeEnvEntries([
+        'bad',
+        null,
+        { key: 'A', value: '1', enabled: true },
+      ]),
+    ).toEqual([{ key: 'A', value: '1', enabled: true }]);
   });
 
   it('defaults enabled to true when absent', () => {
@@ -311,7 +327,10 @@ describe('materializeEnv', () => {
 // ─── bucketKeyFor ─────────────────────────────────────────────────────
 describe('bucketKeyFor', () => {
   it('uses gitRepo when present', () => {
-    const svc = { gitRepo: '/Users/juan/workspace/nx-platform', cwd: '/something/else' };
+    const svc = {
+      gitRepo: '/Users/juan/workspace/nx-platform',
+      cwd: '/something/else',
+    };
     expect(bucketKeyFor(svc)).toBe('/Users/juan/workspace/nx-platform');
   });
 
@@ -463,13 +482,19 @@ describe('migrateServicesToGroups — empty path fallback (S3)', () => {
 // ─── migrateServicesToGroups: idempotency (S1 second run) ────────────
 describe('migrateServicesToGroups — idempotency', () => {
   it('returns changed:false on second run', () => {
-    const firstRun = migrateServicesToGroups({ version: 1, services: REAL_SERVICES });
+    const firstRun = migrateServicesToGroups({
+      version: 1,
+      services: REAL_SERVICES,
+    });
     const secondRun = migrateServicesToGroups(firstRun.state);
     expect(secondRun.changed).toBe(false);
   });
 
   it('does not modify groups on second run', () => {
-    const firstRun = migrateServicesToGroups({ version: 1, services: REAL_SERVICES });
+    const firstRun = migrateServicesToGroups({
+      version: 1,
+      services: REAL_SERVICES,
+    });
     const secondRun = migrateServicesToGroups(firstRun.state);
     expect(secondRun.state.groups).toEqual(firstRun.state.groups);
   });
@@ -478,7 +503,9 @@ describe('migrateServicesToGroups — idempotency', () => {
     const preBackup = [{ id: 'original' }];
     const state = {
       version: 3,
-      groups: [normalizeGroup({ id: 'g1', name: 'G', path: '/p', mode: 'multi' })],
+      groups: [
+        normalizeGroup({ id: 'g1', name: 'G', path: '/p', mode: 'multi' }),
+      ],
       _services_pre_v3_backup: preBackup,
       services: [],
     };
@@ -493,8 +520,13 @@ describe('migrateServicesToGroups — idempotency', () => {
 // ─── migrateServicesToGroups: id preservation ────────────────────────
 describe('migrateServicesToGroups — id preservation', () => {
   it('preserves all 7 original service ids as command ids', () => {
-    const result = migrateServicesToGroups({ version: 1, services: REAL_SERVICES });
-    const allIds = result.state.groups.flatMap((g) => g.commands.map((c) => c.id));
+    const result = migrateServicesToGroups({
+      version: 1,
+      services: REAL_SERVICES,
+    });
+    const allIds = result.state.groups.flatMap((g) =>
+      g.commands.map((c) => c.id),
+    );
     const originalIds = REAL_SERVICES.map((s) => s.id);
     for (const id of originalIds) {
       expect(allIds).toContain(id);
@@ -505,7 +537,11 @@ describe('migrateServicesToGroups — id preservation', () => {
 // ─── validateGroupShape ───────────────────────────────────────────────
 describe('validateGroupShape', () => {
   it('returns valid true for a well-formed group', () => {
-    const g = normalizeGroup({ name: 'My Group', path: '/some/path', mode: 'multi' });
+    const g = normalizeGroup({
+      name: 'My Group',
+      path: '/some/path',
+      mode: 'multi',
+    });
     expect(validateGroupShape(g).valid).toBe(true);
   });
 
@@ -537,8 +573,16 @@ describe('regenerateLegacyServices', () => {
         name: 'G1',
         path: '/repo',
         mode: 'multi',
-        commands: [normalizeCommand({ id: 'c1', name: 'Dev', command: 'pnpm dev' })],
-        actions: [normalizeAction({ id: 'a1', name: 'Install', command: 'pnpm install' })],
+        commands: [
+          normalizeCommand({ id: 'c1', name: 'Dev', command: 'pnpm dev' }),
+        ],
+        actions: [
+          normalizeAction({
+            id: 'a1',
+            name: 'Install',
+            command: 'pnpm install',
+          }),
+        ],
       }),
     ];
     const services = regenerateLegacyServices(groups);
@@ -555,7 +599,9 @@ describe('regenerateLegacyServices', () => {
         name: 'G1',
         path: '/repo',
         mode: 'multi',
-        commands: [normalizeCommand({ id: 'c1', command: 'pnpm dev', cwd: '/repo/sub' })],
+        commands: [
+          normalizeCommand({ id: 'c1', command: 'pnpm dev', cwd: '/repo/sub' }),
+        ],
       }),
     ];
     const services = regenerateLegacyServices(groups);
@@ -616,31 +662,35 @@ describe('migrateServicesToGroups — env shape migration on v3 state', () => {
   it('migrates command.env object to array on v3 state', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        env: [],
-        commands: [{
-          id: 'c1',
-          name: 'Dev',
-          icon: null,
-          command: 'pnpm dev',
-          args: [],
-          env: { PORT: '3000' },     // legacy object shape
-          cwd: null,
-          warnRegex: '\\bwarn(ing)?s?\\b',
-          errorRegex: '\\berror(s)?\\b',
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
           silenceWarnings: false,
           silenceErrors: false,
-          silencedPatterns: { warn: [], error: [] },
-        }],
-        actions: [],
-      }],
+          order: 0,
+          env: [],
+          commands: [
+            {
+              id: 'c1',
+              name: 'Dev',
+              icon: null,
+              command: 'pnpm dev',
+              args: [],
+              env: { PORT: '3000' }, // legacy object shape
+              cwd: null,
+              warnRegex: '\\bwarn(ing)?s?\\b',
+              errorRegex: '\\berror(s)?\\b',
+              silenceWarnings: false,
+              silenceErrors: false,
+              silencedPatterns: { warn: [], error: [] },
+            },
+          ],
+          actions: [],
+        },
+      ],
       services: [],
     };
     const result = migrateServicesToGroups(state);
@@ -653,32 +703,38 @@ describe('migrateServicesToGroups — env shape migration on v3 state', () => {
   it('migrates action.env object and sets inheritGroupEnv:false when action had no prior useEnvs', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        env: [],
-        commands: [],
-        actions: [{
-          id: 'a1',
-          name: 'Build',
-          icon: null,
-          command: 'pnpm build',
-          args: [],
-          env: { NODE_ENV: 'production' },   // legacy object shape
-          // no useEnvs or inheritGroupEnv field
-        }],
-      }],
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          silenceWarnings: false,
+          silenceErrors: false,
+          order: 0,
+          env: [],
+          commands: [],
+          actions: [
+            {
+              id: 'a1',
+              name: 'Build',
+              icon: null,
+              command: 'pnpm build',
+              args: [],
+              env: { NODE_ENV: 'production' }, // legacy object shape
+              // no useEnvs or inheritGroupEnv field
+            },
+          ],
+        },
+      ],
       services: [],
     };
     const result = migrateServicesToGroups(state);
     expect(result.changed).toBe(true);
     const act = result.state.groups[0].actions[0];
-    expect(act.env).toEqual([{ key: 'NODE_ENV', value: 'production', enabled: true }]);
+    expect(act.env).toEqual([
+      { key: 'NODE_ENV', value: 'production', enabled: true },
+    ]);
     // No prior useEnvs → inheritGroupEnv defaults to false
     expect(act.inheritGroupEnv).toBe(false);
     expect(act).not.toHaveProperty('useEnvs');
@@ -687,26 +743,30 @@ describe('migrateServicesToGroups — env shape migration on v3 state', () => {
   it('migrates action with useEnvs:true to inheritGroupEnv:true and drops useEnvs', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        env: [],
-        commands: [],
-        actions: [{
-          id: 'a1',
-          name: 'Build',
-          icon: null,
-          command: 'pnpm build',
-          args: [],
-          env: [{ key: 'NODE_ENV', value: 'production', enabled: true }],
-          useEnvs: true,
-        }],
-      }],
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          silenceWarnings: false,
+          silenceErrors: false,
+          order: 0,
+          env: [],
+          commands: [],
+          actions: [
+            {
+              id: 'a1',
+              name: 'Build',
+              icon: null,
+              command: 'pnpm build',
+              args: [],
+              env: [{ key: 'NODE_ENV', value: 'production', enabled: true }],
+              useEnvs: true,
+            },
+          ],
+        },
+      ],
       services: [],
     };
     const result = migrateServicesToGroups(state);
@@ -719,26 +779,30 @@ describe('migrateServicesToGroups — env shape migration on v3 state', () => {
   it('migrates action with useEnvs:false to inheritGroupEnv:false and drops useEnvs', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        env: [],
-        commands: [],
-        actions: [{
-          id: 'a1',
-          name: 'Clean',
-          icon: null,
-          command: 'pnpm clean',
-          args: [],
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          silenceWarnings: false,
+          silenceErrors: false,
+          order: 0,
           env: [],
-          useEnvs: false,
-        }],
-      }],
+          commands: [],
+          actions: [
+            {
+              id: 'a1',
+              name: 'Clean',
+              icon: null,
+              command: 'pnpm clean',
+              args: [],
+              env: [],
+              useEnvs: false,
+            },
+          ],
+        },
+      ],
       services: [],
     };
     const result = migrateServicesToGroups(state);
@@ -751,26 +815,30 @@ describe('migrateServicesToGroups — env shape migration on v3 state', () => {
   it('action without either flag defaults inheritGroupEnv:false', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        env: [],
-        commands: [],
-        actions: [{
-          id: 'a1',
-          name: 'Clean',
-          icon: null,
-          command: 'pnpm clean',
-          args: [],
-          env: {},        // empty legacy object triggers migration
-          // no useEnvs or inheritGroupEnv
-        }],
-      }],
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          silenceWarnings: false,
+          silenceErrors: false,
+          order: 0,
+          env: [],
+          commands: [],
+          actions: [
+            {
+              id: 'a1',
+              name: 'Clean',
+              icon: null,
+              command: 'pnpm clean',
+              args: [],
+              env: {}, // empty legacy object triggers migration
+              // no useEnvs or inheritGroupEnv
+            },
+          ],
+        },
+      ],
       services: [],
     };
     const result = migrateServicesToGroups(state);
@@ -782,40 +850,46 @@ describe('migrateServicesToGroups — env shape migration on v3 state', () => {
   it('already-migrated v3 state with array envs and inheritGroupEnv returns changed:false (idempotent)', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        env: [{ key: 'X', value: '1', enabled: true }],
-        commands: [{
-          id: 'c1',
-          name: 'Dev',
-          icon: null,
-          command: 'pnpm dev',
-          args: [],
-          env: [{ key: 'PORT', value: '3000', enabled: true }],
-          cwd: null,
-          warnRegex: '\\bwarn(ing)?s?\\b',
-          errorRegex: '\\berror(s)?\\b',
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
           silenceWarnings: false,
           silenceErrors: false,
-          silencedPatterns: { warn: [], error: [] },
-          autoStart: false,  // fully-migrated state must include this field
-        }],
-        actions: [{
-          id: 'a1',
-          name: 'Build',
-          icon: null,
-          command: 'pnpm build',
-          args: [],
-          env: [],
-          inheritGroupEnv: false,
-        }],
-      }],
+          order: 0,
+          env: [{ key: 'X', value: '1', enabled: true }],
+          commands: [
+            {
+              id: 'c1',
+              name: 'Dev',
+              icon: null,
+              command: 'pnpm dev',
+              args: [],
+              env: [{ key: 'PORT', value: '3000', enabled: true }],
+              cwd: null,
+              warnRegex: '\\bwarn(ing)?s?\\b',
+              errorRegex: '\\berror(s)?\\b',
+              silenceWarnings: false,
+              silenceErrors: false,
+              silencedPatterns: { warn: [], error: [] },
+              autoStart: false, // fully-migrated state must include this field
+            },
+          ],
+          actions: [
+            {
+              id: 'a1',
+              name: 'Build',
+              icon: null,
+              command: 'pnpm build',
+              args: [],
+              env: [],
+              inheritGroupEnv: false,
+            },
+          ],
+        },
+      ],
       services: [],
     };
     const result = migrateServicesToGroups(state);
@@ -825,18 +899,20 @@ describe('migrateServicesToGroups — env shape migration on v3 state', () => {
   it('sets group.env to [] when missing in v3 state', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        // no env field
-        commands: [],
-        actions: [],
-      }],
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          silenceWarnings: false,
+          silenceErrors: false,
+          order: 0,
+          // no env field
+          commands: [],
+          actions: [],
+        },
+      ],
       services: [],
     };
     const result = migrateServicesToGroups(state);
@@ -873,32 +949,36 @@ describe('migrateServicesToGroups — autoStart shape-fix on v3 state', () => {
   it('sets autoStart:false on commands that lack the field', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        env: [],
-        commands: [{
-          id: 'c1',
-          name: 'Dev',
-          icon: null,
-          command: 'pnpm dev',
-          args: [],
-          env: [],
-          cwd: null,
-          warnRegex: '\\bwarn(ing)?s?\\b',
-          errorRegex: '\\berror(s)?\\b',
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
           silenceWarnings: false,
           silenceErrors: false,
-          silencedPatterns: { warn: [], error: [] },
-          // autoStart intentionally missing
-        }],
-        actions: [],
-      }],
+          order: 0,
+          env: [],
+          commands: [
+            {
+              id: 'c1',
+              name: 'Dev',
+              icon: null,
+              command: 'pnpm dev',
+              args: [],
+              env: [],
+              cwd: null,
+              warnRegex: '\\bwarn(ing)?s?\\b',
+              errorRegex: '\\berror(s)?\\b',
+              silenceWarnings: false,
+              silenceErrors: false,
+              silencedPatterns: { warn: [], error: [] },
+              // autoStart intentionally missing
+            },
+          ],
+          actions: [],
+        },
+      ],
       services: [],
     };
     const result = migrateServicesToGroups(state);
@@ -909,32 +989,36 @@ describe('migrateServicesToGroups — autoStart shape-fix on v3 state', () => {
   it('preserves autoStart:true on commands that already have it', () => {
     const state = {
       version: 3,
-      groups: [{
-        id: 'g1',
-        name: 'G',
-        path: '/p',
-        mode: 'multi',
-        silenceWarnings: false,
-        silenceErrors: false,
-        order: 0,
-        env: [],
-        commands: [{
-          id: 'c1',
-          name: 'Dev',
-          icon: null,
-          command: 'pnpm dev',
-          args: [],
-          env: [],
-          cwd: null,
-          warnRegex: '\\bwarn(ing)?s?\\b',
-          errorRegex: '\\berror(s)?\\b',
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
           silenceWarnings: false,
           silenceErrors: false,
-          silencedPatterns: { warn: [], error: [] },
-          autoStart: true,
-        }],
-        actions: [],
-      }],
+          order: 0,
+          env: [],
+          commands: [
+            {
+              id: 'c1',
+              name: 'Dev',
+              icon: null,
+              command: 'pnpm dev',
+              args: [],
+              env: [],
+              cwd: null,
+              warnRegex: '\\bwarn(ing)?s?\\b',
+              errorRegex: '\\berror(s)?\\b',
+              silenceWarnings: false,
+              silenceErrors: false,
+              silencedPatterns: { warn: [], error: [] },
+              autoStart: true,
+            },
+          ],
+          actions: [],
+        },
+      ],
       services: [],
     };
     // A fully-migrated state with autoStart already present should be idempotent
@@ -1095,8 +1179,8 @@ describe('action effective env — inheritGroupEnv semantics', () => {
       ...materializeEnv(groupEnv),
       ...materializeEnv(actionEnv),
     };
-    expect(env.A).toBe('2-override');   // action wins
-    expect(env.B).toBe('2');            // group still present
+    expect(env.A).toBe('2-override'); // action wins
+    expect(env.B).toBe('2'); // group still present
   });
 
   it('disabled action env entries are excluded', () => {
@@ -1292,7 +1376,11 @@ describe('normalizeGroup — preSteps field', () => {
     const g = normalizeGroup({
       path: '/p',
       preSteps: [
-        { id: 'step-1', mode: 'serial', scripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }] },
+        {
+          id: 'step-1',
+          mode: 'serial',
+          scripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }],
+        },
       ],
     });
     expect(g.preSteps).toHaveLength(1);
@@ -1304,7 +1392,11 @@ describe('normalizeGroup — preSteps field', () => {
     const original = normalizeGroup({
       path: '/p',
       preSteps: [
-        { id: 'step-aaa', mode: 'parallel', scripts: [{ id: 'sc-bbb', name: 'Build', command: 'pnpm build' }] },
+        {
+          id: 'step-aaa',
+          mode: 'parallel',
+          scripts: [{ id: 'sc-bbb', name: 'Build', command: 'pnpm build' }],
+        },
       ],
     });
     const json = JSON.stringify(original);
@@ -1314,7 +1406,12 @@ describe('normalizeGroup — preSteps field', () => {
   });
 
   it('old group fixture without preSteps gets preSteps:[]', () => {
-    const g = normalizeGroup({ path: '/p', name: 'Legacy', commands: [], actions: [] });
+    const g = normalizeGroup({
+      path: '/p',
+      name: 'Legacy',
+      commands: [],
+      actions: [],
+    });
     expect(g.preSteps).toEqual([]);
   });
 });

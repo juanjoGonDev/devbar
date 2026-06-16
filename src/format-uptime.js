@@ -16,8 +16,8 @@ function formatUptime(ms) {
 
   const totalSeconds = Math.floor(ms / 1000);
   const totalMinutes = Math.floor(totalSeconds / 60);
-  const totalHours   = Math.floor(totalMinutes / 60);
-  const totalDays    = Math.floor(totalHours   / 24);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const totalDays = Math.floor(totalHours / 24);
 
   if (totalDays >= 1) {
     const h = totalHours % 24;

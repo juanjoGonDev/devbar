@@ -17,7 +17,11 @@ import {
 const MINIMAL_VALID_PAYLOAD = {
   version: 3,
   groups: [],
-  globalSettings: { autostart: false, silenceWarnings: false, silenceErrors: false },
+  globalSettings: {
+    autostart: false,
+    silenceWarnings: false,
+    silenceErrors: false,
+  },
 };
 
 const VALID_GROUP = {
@@ -38,24 +42,40 @@ const VALID_V3_FILE = {
   appVersion: '0.1.0',
   version: 3,
   groups: [VALID_GROUP],
-  globalSettings: { autostart: true, silenceWarnings: false, silenceErrors: false },
+  globalSettings: {
+    autostart: true,
+    silenceWarnings: false,
+    silenceErrors: false,
+  },
 };
 
 // ─── serializeConfig ───────────────────────────────────────────────────────────
 
 describe('serializeConfig', () => {
   it('includes exportedAt as an ISO8601 string', () => {
-    const result = serializeConfig({ version: 3, groups: [], globalSettings: {} }, '0.1.0');
-    expect(result.exportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    const result = serializeConfig(
+      { version: 3, groups: [], globalSettings: {} },
+      '0.1.0',
+    );
+    expect(result.exportedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
   });
 
   it('includes appVersion from the argument', () => {
-    const result = serializeConfig({ version: 3, groups: [], globalSettings: {} }, '0.1.0');
+    const result = serializeConfig(
+      { version: 3, groups: [], globalSettings: {} },
+      '0.1.0',
+    );
     expect(result.appVersion).toBe('0.1.0');
   });
 
   it('sets appVersion to null when not provided', () => {
-    const result = serializeConfig({ version: 3, groups: [], globalSettings: {} });
+    const result = serializeConfig({
+      version: 3,
+      groups: [],
+      globalSettings: {},
+    });
     expect(result.appVersion).toBeNull();
   });
 
@@ -82,7 +102,10 @@ describe('serializeConfig', () => {
   });
 
   it('includes version from rawStore', () => {
-    const result = serializeConfig({ version: 3, groups: [], globalSettings: {} }, '0.1.0');
+    const result = serializeConfig(
+      { version: 3, groups: [], globalSettings: {} },
+      '0.1.0',
+    );
     expect(result.version).toBe(3);
   });
 
@@ -93,13 +116,23 @@ describe('serializeConfig', () => {
 
   it('includes groups array', () => {
     const groups = [{ id: 'g1', name: 'G1' }];
-    const result = serializeConfig({ version: 3, groups, globalSettings: {} }, '0.1.0');
+    const result = serializeConfig(
+      { version: 3, groups, globalSettings: {} },
+      '0.1.0',
+    );
     expect(result.groups).toEqual(groups);
   });
 
   it('includes globalSettings', () => {
-    const gs = { autostart: true, silenceWarnings: false, silenceErrors: false };
-    const result = serializeConfig({ version: 3, groups: [], globalSettings: gs }, '0.1.0');
+    const gs = {
+      autostart: true,
+      silenceWarnings: false,
+      silenceErrors: false,
+    };
+    const result = serializeConfig(
+      { version: 3, groups: [], globalSettings: gs },
+      '0.1.0',
+    );
     expect(result.globalSettings).toEqual(gs);
   });
 
@@ -144,14 +177,22 @@ describe('validateImportedConfig', () => {
   });
 
   it('rejects version !== 3', () => {
-    const result = validateImportedConfig({ version: 2, groups: [], globalSettings: {} });
+    const result = validateImportedConfig({
+      version: 2,
+      groups: [],
+      globalSettings: {},
+    });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/versión/i);
     expect(result.error).toMatch(/2/);
   });
 
   it('rejects when groups is not an array', () => {
-    const result = validateImportedConfig({ version: 3, groups: 'bad', globalSettings: {} });
+    const result = validateImportedConfig({
+      version: 3,
+      groups: 'bad',
+      globalSettings: {},
+    });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/groups/);
   });
@@ -159,14 +200,16 @@ describe('validateImportedConfig', () => {
   it('rejects a command missing the command field', () => {
     const obj = {
       version: 3,
-      groups: [{
-        id: 'grp-1',
-        name: 'Test',
-        path: '/tmp/test',
-        mode: 'multi',
-        commands: [{ id: 'cmd-1', name: 'broken' /* no command field */ }],
-        actions: [],
-      }],
+      groups: [
+        {
+          id: 'grp-1',
+          name: 'Test',
+          path: '/tmp/test',
+          mode: 'multi',
+          commands: [{ id: 'cmd-1', name: 'broken' /* no command field */ }],
+          actions: [],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(obj);
@@ -177,14 +220,16 @@ describe('validateImportedConfig', () => {
   it('rejects an action missing the name field', () => {
     const obj = {
       version: 3,
-      groups: [{
-        id: 'grp-1',
-        name: 'Test',
-        path: '/tmp/test',
-        mode: 'multi',
-        commands: [],
-        actions: [{ id: 'act-1' /* no name */ }],
-      }],
+      groups: [
+        {
+          id: 'grp-1',
+          name: 'Test',
+          path: '/tmp/test',
+          mode: 'multi',
+          commands: [],
+          actions: [{ id: 'act-1' /* no name */ }],
+        },
+      ],
       globalSettings: {},
     };
     const result = validateImportedConfig(obj);
@@ -222,7 +267,11 @@ describe('validateImportedConfig', () => {
     const obj = {
       version: 3,
       groups: [],
-      globalSettings: { autostart: 1, silenceWarnings: 0, silenceErrors: 'yes' },
+      globalSettings: {
+        autostart: 1,
+        silenceWarnings: 0,
+        silenceErrors: 'yes',
+      },
     };
     const result = validateImportedConfig(obj);
     expect(result.ok).toBe(true);
@@ -250,7 +299,9 @@ describe('validateImportedConfig', () => {
     };
     const result = validateImportedConfig(obj);
     expect(result.ok).toBe(true);
-    expect(result.payload.globalSettings).not.toHaveProperty('unknownGsSetting');
+    expect(result.payload.globalSettings).not.toHaveProperty(
+      'unknownGsSetting',
+    );
   });
 });
 

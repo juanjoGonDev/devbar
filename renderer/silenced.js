@@ -5,7 +5,6 @@ const groupId = params.get('groupId');
 const commandId = params.get('commandId');
 
 let currentCommand = null;
-let currentGroup = null;
 
 const warnsEl = document.getElementById('silenced-warns');
 const errsEl = document.getElementById('silenced-errs');
@@ -23,7 +22,6 @@ async function load() {
     return;
   }
   currentCommand = res.command;
-  currentGroup = res.group;
   const name = res.command.name || commandId;
   titleEl.textContent = `Silenciados — ${name}`;
   if (subtitleEl) subtitleEl.textContent = res.group.name || '';
@@ -35,10 +33,12 @@ function render() {
   if (!currentCommand) return;
   const sp = currentCommand.silencedPatterns || { warn: [], error: [] };
   renderPatternList(warnsEl, sp.warn || [], 'warn', {
-    onRemove: (pattern) => window.api.removeSilencePattern(groupId, commandId, 'warn', pattern),
+    onRemove: (pattern) =>
+      window.api.removeSilencePattern(groupId, commandId, 'warn', pattern),
   });
   renderPatternList(errsEl, sp.error || [], 'error', {
-    onRemove: (pattern) => window.api.removeSilencePattern(groupId, commandId, 'error', pattern),
+    onRemove: (pattern) =>
+      window.api.removeSilencePattern(groupId, commandId, 'error', pattern),
   });
 }
 
@@ -46,14 +46,20 @@ wireAddPattern(
   document.getElementById('add-warn-input'),
   document.getElementById('add-warn-btn'),
   'warn',
-  { onAdd: (pattern) => window.api.addSilencePattern(groupId, commandId, 'warn', pattern) }
+  {
+    onAdd: (pattern) =>
+      window.api.addSilencePattern(groupId, commandId, 'warn', pattern),
+  },
 );
 
 wireAddPattern(
   document.getElementById('add-err-input'),
   document.getElementById('add-err-btn'),
   'error',
-  { onAdd: (pattern) => window.api.addSilencePattern(groupId, commandId, 'error', pattern) }
+  {
+    onAdd: (pattern) =>
+      window.api.addSilencePattern(groupId, commandId, 'error', pattern),
+  },
 );
 
 // Live updates: re-fetch when groups change anywhere

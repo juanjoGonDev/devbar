@@ -66,4 +66,10 @@ function buildCmdline(command, args) {
   return cmd + ' ' + args.map(shellQuote).join(' ');
 }
 
-module.exports = { tokenize, splitCommand, hasShellMeta, shellQuote, buildCmdline };
+module.exports = {
+  tokenize,
+  splitCommand,
+  hasShellMeta,
+  shellQuote,
+  buildCmdline,
+};

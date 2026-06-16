@@ -34,14 +34,17 @@ describe('buildSilencePattern', () => {
 
   it('escapes regex specials', () => {
     expect(buildSilencePattern('a.b')).toBe('a\\.b');
-    expect(buildSilencePattern('foo (bar) [baz]')).toBe('foo \\(bar\\) \\[baz\\]');
+    expect(buildSilencePattern('foo (bar) [baz]')).toBe(
+      'foo \\(bar\\) \\[baz\\]',
+    );
   });
 
   it('replaces digit runs >= 2 with \\d+', () => {
     expect(buildSilencePattern('12:34')).toBe('\\d+:\\d+');
     expect(buildSilencePattern('12:34:56')).toBe('\\d+:\\d+:\\d+');
-    expect(buildSilencePattern('Request 8472931 failed with code 500'))
-      .toBe('Request \\d+ failed with code \\d+');
+    expect(buildSilencePattern('Request 8472931 failed with code 500')).toBe(
+      'Request \\d+ failed with code \\d+',
+    );
   });
 
   it('keeps single digits literal', () => {
@@ -50,8 +53,9 @@ describe('buildSilencePattern', () => {
   });
 
   it('combined realistic case — timestamp with level', () => {
-    expect(buildSilencePattern('[12:34:56] WARN deprecated foo'))
-      .toBe('\\[\\d+:\\d+:\\d+\\] WARN deprecated foo');
+    expect(buildSilencePattern('[12:34:56] WARN deprecated foo')).toBe(
+      '\\[\\d+:\\d+:\\d+\\] WARN deprecated foo',
+    );
   });
 
   it('produced pattern matches a sibling line with a different timestamp', () => {

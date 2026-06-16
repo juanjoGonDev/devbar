@@ -1,19 +1,25 @@
 /* silenced.css — styles for the silenced-patterns window */
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   height: 100%;
   background: #1e1e1e;
   color: #e5e5e7;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }
 
-body { display: flex; flex-direction: column; }
+body {
+  display: flex;
+  flex-direction: column;
+}
 
 .fake-traffic-lights {
   position: fixed;
@@ -34,21 +40,29 @@ body { display: flex; flex-direction: column; }
   cursor: pointer;
 }
 
-.fake-traffic-lights .light.close { background: #ff5f56; }
-.fake-traffic-lights .light.min   { background: #ffbd2e; }
-.fake-traffic-lights .light.max   { background: #27c93f; }
+.fake-traffic-lights .light.close {
+  background: #ff5f56;
+}
+.fake-traffic-lights .light.min {
+  background: #ffbd2e;
+}
+.fake-traffic-lights .light.max {
+  background: #27c93f;
+}
 
 .silenced-header {
   padding: 40px 20px 16px;
   -webkit-app-region: drag;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(36, 36, 38, 0.92);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
-.silenced-header > * { -webkit-app-region: no-drag; }
+.silenced-header > * {
+  -webkit-app-region: no-drag;
+}
 
 .silenced-header h1 {
   margin: 0 0 2px;
@@ -86,7 +100,7 @@ body { display: flex; flex-direction: column; }
   list-style: none;
   margin: 0 0 10px;
   padding: 0;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -96,10 +110,12 @@ body { display: flex; flex-direction: column; }
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.pattern-list li:last-child { border-bottom: none; }
+.pattern-list li:last-child {
+  border-bottom: none;
+}
 
 .pattern-list .empty {
   color: #6e7681;
@@ -110,7 +126,7 @@ body { display: flex; flex-direction: column; }
 
 .pattern-list .pattern {
   flex: 1;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 12px;
   color: #c8c8c8;
   overflow: hidden;
@@ -120,19 +136,21 @@ body { display: flex; flex-direction: column; }
 
 .pattern-list .unsilence {
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: #8a8a8e;
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 11px;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
   flex-shrink: 0;
 }
 
 .pattern-list .unsilence:hover {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   color: #e5e5e7;
 }
 
@@ -142,29 +160,31 @@ body { display: flex; flex-direction: column; }
   gap: 8px;
 }
 
-.add-row input[type="text"] {
+.add-row input[type='text'] {
   flex: 1;
-  background: rgba(255,255,255,0.06);
+  background: rgba(255, 255, 255, 0.06);
   color: #e5e5e7;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 12px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
-.add-row input[type="text"]:focus {
+.add-row input[type='text']:focus {
   outline: 2px solid rgba(0, 122, 255, 0.5);
   outline-offset: -1px;
   border-color: #0a84ff;
 }
 
-.add-row input[type="text"]::placeholder { color: #6e7681; }
+.add-row input[type='text']::placeholder {
+  color: #6e7681;
+}
 
 .add-row button {
-  background: rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: #e5e5e7;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 6px 14px;
   font-size: 12px;
@@ -174,5 +194,9 @@ body { display: flex; flex-direction: column; }
   flex-shrink: 0;
 }
 
-.add-row button:hover { background: rgba(255,255,255,0.14); }
-.add-row button:active { transform: scale(0.98); }
+.add-row button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.add-row button:active {
+  transform: scale(0.98);
+}

@@ -80,7 +80,10 @@ function normalizeEnvEntries(raw) {
       .filter((e) => e && typeof e === 'object' && !Array.isArray(e))
       .map((e) => ({
         key: typeof e.key === 'string' ? e.key : '',
-        value: typeof e.value === 'string' ? e.value : String(e.value == null ? '' : e.value),
+        value:
+          typeof e.value === 'string'
+            ? e.value
+            : String(e.value == null ? '' : e.value),
         enabled: e.enabled !== false, // default true
       }));
   }
@@ -104,7 +107,10 @@ function materializeEnv(entries) {
   const result = {};
   for (const e of entries) {
     if (e && e.enabled && typeof e.key === 'string' && e.key.trim() !== '') {
-      result[e.key.trim()] = typeof e.value === 'string' ? e.value : String(e.value == null ? '' : e.value);
+      result[e.key.trim()] =
+        typeof e.value === 'string'
+          ? e.value
+          : String(e.value == null ? '' : e.value);
     }
   }
   return result;
@@ -131,9 +137,13 @@ function normalizeGroup(input) {
     silenceWarnings: !!raw.silenceWarnings,
     silenceErrors: !!raw.silenceErrors,
     env: normalizeEnvEntries(raw.env),
-    commands: Array.isArray(raw.commands) ? raw.commands.map(normalizeCommand) : [],
+    commands: Array.isArray(raw.commands)
+      ? raw.commands.map(normalizeCommand)
+      : [],
     actions: Array.isArray(raw.actions) ? raw.actions.map(normalizeAction) : [],
-    preSteps: Array.isArray(raw.preSteps) ? raw.preSteps.map(normalizePreStep) : [],
+    preSteps: Array.isArray(raw.preSteps)
+      ? raw.preSteps.map(normalizePreStep)
+      : [],
     // When true, pre-scripts run automatically — but ONLY when DevBar was
     // launched by macOS at login (i.e. system boot), not on every manual
     // app restart. Default false so the user opts in explicitly.
@@ -180,7 +190,8 @@ function normalizePreScript(input) {
     command: (raw.command || '').trim(),
     args: Array.isArray(raw.args) ? raw.args.slice() : [],
     env: normalizeEnvEntries(raw.env),
-    inheritGroupEnv: typeof raw.inheritGroupEnv === 'boolean' ? raw.inheritGroupEnv : false,
+    inheritGroupEnv:
+      typeof raw.inheritGroupEnv === 'boolean' ? raw.inheritGroupEnv : false,
     timeoutMs: clampTimeoutOrNull(raw.timeoutMs),
   };
 }
@@ -194,7 +205,9 @@ function normalizePreStep(input) {
   return {
     id: raw.id || uuidv4(),
     mode: raw.mode === 'serial' ? 'serial' : 'parallel',
-    scripts: Array.isArray(raw.scripts) ? raw.scripts.map(normalizePreScript) : [],
+    scripts: Array.isArray(raw.scripts)
+      ? raw.scripts.map(normalizePreScript)
+      : [],
   };
 }
 
@@ -235,7 +248,7 @@ function normalizeAction(input) {
  * Uses expandTilde(gitRepo || cwd || '').
  */
 function bucketKeyFor(svc) {
-  const raw = ((svc.gitRepo || '').trim()) || ((svc.cwd || '').trim()) || '';
+  const raw = (svc.gitRepo || '').trim() || (svc.cwd || '').trim() || '';
   return expandTilde(raw);
 }
 
@@ -254,26 +267,41 @@ function migrateServicesToGroups(state) {
   // ── Shape-only env migration for existing v3 states ─────────────────────────
   // If already on v3 with groups, we may still need to migrate env from object
   // to EnvEntry[] and add useEnvs/group.env fields.
-  if (
-    s.version === 3 &&
-    Array.isArray(s.groups)
-  ) {
+  if (s.version === 3 && Array.isArray(s.groups)) {
     let needsEnvMigration = false;
 
     // Check if any group, command, or action needs env shape migration
     for (const g of s.groups) {
-      if (!Array.isArray(g.env)) { needsEnvMigration = true; break; }
-      for (const cmd of (g.commands || [])) {
-        if (!Array.isArray(cmd.env)) { needsEnvMigration = true; break; }
+      if (!Array.isArray(g.env)) {
+        needsEnvMigration = true;
+        break;
+      }
+      for (const cmd of g.commands || []) {
+        if (!Array.isArray(cmd.env)) {
+          needsEnvMigration = true;
+          break;
+        }
         // Shape-fix: commands that lack autoStart field (boolean) need migration
-        if (typeof cmd.autoStart !== 'boolean') { needsEnvMigration = true; break; }
+        if (typeof cmd.autoStart !== 'boolean') {
+          needsEnvMigration = true;
+          break;
+        }
       }
       if (needsEnvMigration) break;
-      for (const act of (g.actions || [])) {
-        if (!Array.isArray(act.env)) { needsEnvMigration = true; break; }
+      for (const act of g.actions || []) {
+        if (!Array.isArray(act.env)) {
+          needsEnvMigration = true;
+          break;
+        }
         // Needs migration if: has useEnvs (legacy) OR lacks inheritGroupEnv (new field)
-        if (typeof act.inheritGroupEnv !== 'boolean') { needsEnvMigration = true; break; }
-        if ('useEnvs' in act) { needsEnvMigration = true; break; }
+        if (typeof act.inheritGroupEnv !== 'boolean') {
+          needsEnvMigration = true;
+          break;
+        }
+        if ('useEnvs' in act) {
+          needsEnvMigration = true;
+          break;
+        }
       }
       if (needsEnvMigration) break;
     }
@@ -357,7 +385,7 @@ function migrateServicesToGroups(state) {
   const groups = order.map((key, idx) => {
     const bucket = buckets.get(key);
     // Derive group name from last path segment; fallback to 'Servicios'
-    const baseName = key ? (path.basename(key) || 'Servicios') : '(no path)';
+    const baseName = key ? path.basename(key) || 'Servicios' : '(no path)';
 
     return normalizeGroup({
       id: uuidv4(),
@@ -462,7 +490,7 @@ function enforceSingleModeAutoStart(group) {
   }
   // More than one flagged in single mode → clear all
   const clearedCommands = commands.map((c) =>
-    c.autoStart ? { ...c, autoStart: false } : c
+    c.autoStart ? { ...c, autoStart: false } : c,
   );
   return {
     group: { ...group, commands: clearedCommands },
@@ -514,8 +542,10 @@ function validateGroupShape(group) {
               errors.push(`preSteps[${si}].scripts[${sci}] must be an object`);
               continue;
             }
-            if (!sc.id) errors.push(`preSteps[${si}].scripts[${sci}] missing id`);
-            if (!sc.name) errors.push(`preSteps[${si}].scripts[${sci}] missing name`);
+            if (!sc.id)
+              errors.push(`preSteps[${si}].scripts[${sci}] missing id`);
+            if (!sc.name)
+              errors.push(`preSteps[${si}].scripts[${sci}] missing name`);
             if (sc.command === undefined || sc.command === null) {
               errors.push(`preSteps[${si}].scripts[${sci}] missing command`);
             }

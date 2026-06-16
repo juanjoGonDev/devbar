@@ -1,16 +1,16 @@
 version: 2
 updates:
   # pnpm is covered by the "npm" ecosystem (Dependabot reads pnpm-lock.yaml).
-  - package-ecosystem: "npm"
-    directory: "/"
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: "daily"
-      time: "07:00"
-      timezone: "Europe/Madrid"
+      interval: 'daily'
+      time: '07:00'
+      timezone: 'Europe/Madrid'
     # Pin exact versions (package.json has no ^), so always bump to the
     # exact new version rather than widening a range.
-    versioning-strategy: "increase"
-    target-branch: "main"
+    versioning-strategy: 'increase'
+    target-branch: 'main'
     rebase-strategy: auto
     # Supply-chain cooldown: don't even open a PR for a release until it
     # has been public for a few days. Mirrors `.npmrc minimum-release-age`
@@ -18,13 +18,13 @@ updates:
     cooldown:
       default-days: 3
 
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: "daily"
-      time: "07:00"
-      timezone: "Europe/Madrid"
-    target-branch: "main"
+      interval: 'daily'
+      time: '07:00'
+      timezone: 'Europe/Madrid'
+    target-branch: 'main'
     rebase-strategy: auto
     cooldown:
       default-days: 3

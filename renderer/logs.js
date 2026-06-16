@@ -3,22 +3,48 @@ const ANSI_ANY_RE = /\x1b\[[\d;?]*[a-zA-Z]/g;
 const ANSI_SGR_RE = /\x1b\[([\d;?]*)([a-zA-Z])/g;
 
 const PALETTE_FG = {
-  30: '#3a3a3c', 31: '#ff6961', 32: '#5fdb86', 33: '#ffd60a',
-  34: '#5e9eff', 35: '#d97cf2', 36: '#7adfff', 37: '#e5e5e7',
-  90: '#8e8e93', 91: '#ff8a8a', 92: '#7eea9f', 93: '#ffe066',
-  94: '#85b6ff', 95: '#e29bf6', 96: '#a3e8ff', 97: '#ffffff',
+  30: '#3a3a3c',
+  31: '#ff6961',
+  32: '#5fdb86',
+  33: '#ffd60a',
+  34: '#5e9eff',
+  35: '#d97cf2',
+  36: '#7adfff',
+  37: '#e5e5e7',
+  90: '#8e8e93',
+  91: '#ff8a8a',
+  92: '#7eea9f',
+  93: '#ffe066',
+  94: '#85b6ff',
+  95: '#e29bf6',
+  96: '#a3e8ff',
+  97: '#ffffff',
 };
 
 const PALETTE_BG = {
-  40: '#3a3a3c', 41: '#ff453a', 42: '#30d158', 43: '#a07a00',
-  44: '#0a84ff', 45: '#9543c1', 46: '#0090a8', 47: '#dcdce0',
-  100: '#5e5e63', 101: '#ff6961', 102: '#5fdb86', 103: '#ffe066',
-  104: '#5e9eff', 105: '#d97cf2', 106: '#7adfff', 107: '#f5f5f7',
+  40: '#3a3a3c',
+  41: '#ff453a',
+  42: '#30d158',
+  43: '#a07a00',
+  44: '#0a84ff',
+  45: '#9543c1',
+  46: '#0090a8',
+  47: '#dcdce0',
+  100: '#5e5e63',
+  101: '#ff6961',
+  102: '#5fdb86',
+  103: '#ffe066',
+  104: '#5e9eff',
+  105: '#d97cf2',
+  106: '#7adfff',
+  107: '#f5f5f7',
 };
 
 function color256(n) {
   if (n < 16) {
-    const map = [30, 31, 32, 33, 34, 35, 36, 37, 90, 91, 92, 93, 94, 95, 96, 97];
+    const map = [
+      30, 31, 32, 33, 34, 35, 36, 37, 90, 91, 92, 93, 94, 95, 96, 97,
+    ];
     return PALETTE_FG[map[n]] || '#e5e5e7';
   }
   if (n >= 232) {
@@ -33,7 +59,13 @@ function color256(n) {
   return `rgb(${ramp[r]},${ramp[g]},${ramp[b]})`;
 }
 
-const HTML_ESCAPE = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const HTML_ESCAPE = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, (ch) => HTML_ESCAPE[ch]);
 }
@@ -56,32 +88,41 @@ function clamp255(n) {
 }
 
 function applyCodes(codeStr, style) {
-  const codes = (codeStr || '').split(';').map((s) => (s === '' ? 0 : parseInt(s, 10)));
+  const codes = (codeStr || '')
+    .split(';')
+    .map((s) => (s === '' ? 0 : parseInt(s, 10)));
   let i = 0;
   while (i < codes.length) {
     const c = isNaN(codes[i]) ? 0 : codes[i];
     if (c === 0) {
-      style.fg = null; style.bg = null;
-      style.bold = false; style.dim = false;
-      style.italic = false; style.underline = false;
+      style.fg = null;
+      style.bg = null;
+      style.bold = false;
+      style.dim = false;
+      style.italic = false;
+      style.underline = false;
     } else if (c === 1) style.bold = true;
     else if (c === 2) style.dim = true;
     else if (c === 3) style.italic = true;
     else if (c === 4) style.underline = true;
-    else if (c === 22) { style.bold = false; style.dim = false; }
-    else if (c === 23) style.italic = false;
+    else if (c === 22) {
+      style.bold = false;
+      style.dim = false;
+    } else if (c === 23) style.italic = false;
     else if (c === 24) style.underline = false;
     else if (c === 39) style.fg = null;
     else if (c === 49) style.bg = null;
     else if (PALETTE_FG[c]) style.fg = PALETTE_FG[c];
     else if (PALETTE_BG[c]) style.bg = PALETTE_BG[c];
     else if (c === 38 && codes[i + 1] === 5) {
-      style.fg = color256(codes[i + 2] || 0); i += 2;
+      style.fg = color256(codes[i + 2] || 0);
+      i += 2;
     } else if (c === 38 && codes[i + 1] === 2) {
       style.fg = `rgb(${clamp255(codes[i + 2])},${clamp255(codes[i + 3])},${clamp255(codes[i + 4])})`;
       i += 4;
     } else if (c === 48 && codes[i + 1] === 5) {
-      style.bg = color256(codes[i + 2] || 0); i += 2;
+      style.bg = color256(codes[i + 2] || 0);
+      i += 2;
     } else if (c === 48 && codes[i + 1] === 2) {
       style.bg = `rgb(${clamp255(codes[i + 2])},${clamp255(codes[i + 3])},${clamp255(codes[i + 4])})`;
       i += 4;
@@ -93,7 +134,14 @@ function applyCodes(codeStr, style) {
 function ansiToHtml(line) {
   const cleaned = line.replace(/\r/g, '');
   const out = [];
-  const style = { fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+  const style = {
+    fg: null,
+    bg: null,
+    bold: false,
+    dim: false,
+    italic: false,
+    underline: false,
+  };
   ANSI_SGR_RE.lastIndex = 0;
   let lastIndex = 0;
   let m;
@@ -168,7 +216,7 @@ let currentCommandId = null;
 
 let RENDER_LIMIT = 2000;
 let visibleCount = 0;
-let pendingQueue = [];
+const pendingQueue = [];
 let filterRe = null;
 
 function fmtTime(ts) {
@@ -219,7 +267,10 @@ function appendLine(entry) {
   body.innerHTML = ansiToHtml(entry.line);
   div.appendChild(body);
 
-  if ((entry.originalLevel === 'warn' || entry.originalLevel === 'error') && currentCommandId) {
+  if (
+    (entry.originalLevel === 'warn' || entry.originalLevel === 'error') &&
+    currentCommandId
+  ) {
     const btn = document.createElement('button');
     btn.className = 'silence-btn';
     btn.textContent = entry.silenced ? '🔔' : '🔕';
@@ -231,18 +282,34 @@ function appendLine(entry) {
       const lvl = entry.originalLevel;
       const cleaned = stripAnsi(entry.line).trim();
       // Build a regex pattern when possible so it matches across timestamp changes
-      const pattern = (window.api.buildSilencePattern && cleaned)
-        ? window.api.buildSilencePattern(cleaned)
-        : cleaned;
+      const pattern =
+        window.api.buildSilencePattern && cleaned
+          ? window.api.buildSilencePattern(cleaned)
+          : cleaned;
       if (entry.silenced) {
         // Try removing the built pattern first; then fall back to literal cleaned.
         // removeSilencePattern is a no-op when the pattern is not found.
         if (pattern && pattern !== cleaned) {
-          await window.api.removeSilencePattern(currentGroupId, currentCommandId, lvl, pattern);
+          await window.api.removeSilencePattern(
+            currentGroupId,
+            currentCommandId,
+            lvl,
+            pattern,
+          );
         }
-        await window.api.removeSilencePattern(currentGroupId, currentCommandId, lvl, cleaned);
+        await window.api.removeSilencePattern(
+          currentGroupId,
+          currentCommandId,
+          lvl,
+          cleaned,
+        );
       } else {
-        await window.api.addSilencePattern(currentGroupId, currentCommandId, lvl, pattern || cleaned);
+        await window.api.addSilencePattern(
+          currentGroupId,
+          currentCommandId,
+          lvl,
+          pattern || cleaned,
+        );
       }
     });
     div.appendChild(btn);
@@ -298,7 +365,10 @@ clearBtn.addEventListener('click', () => {
 copyBtn.addEventListener('click', async () => {
   const text = Array.from(linesEl.children)
     .filter((n) => !n.classList.contains('hidden'))
-    .map((n) => `${n.querySelector('.ts').textContent} ${n.querySelector('.body').textContent}`)
+    .map(
+      (n) =>
+        `${n.querySelector('.ts').textContent} ${n.querySelector('.body').textContent}`,
+    )
     .join('\n');
   try {
     await navigator.clipboard.writeText(text);
@@ -314,7 +384,10 @@ copyBtn.addEventListener('click', async () => {
 const SCROLL_THRESHOLD = 4;
 
 function isAtBottom() {
-  return mainEl.scrollTop + mainEl.clientHeight >= mainEl.scrollHeight - SCROLL_THRESHOLD;
+  return (
+    mainEl.scrollTop + mainEl.clientHeight >=
+    mainEl.scrollHeight - SCROLL_THRESHOLD
+  );
 }
 
 function updateScrollButton() {
@@ -363,7 +436,6 @@ function applyTargetSnapshot(target) {
   }
 }
 
-
 function clientMatchesPattern(p, lineText) {
   if (!p) return false;
   // Mirror process-manager heuristic: backslash present → try as regex.
@@ -376,7 +448,12 @@ function clientMatchesPattern(p, lineText) {
 }
 
 function rerenderExistingLines() {
-  if (!currentTarget || currentTarget.kind !== 'command' || !currentTarget.target) return;
+  if (
+    !currentTarget ||
+    currentTarget.kind !== 'command' ||
+    !currentTarget.target
+  )
+    return;
   const sp = currentTarget.target.silencedPatterns || { warn: [], error: [] };
   for (const node of linesEl.children) {
     const orig = node.dataset.originalLevel;
@@ -399,12 +476,22 @@ function rerenderExistingLines() {
 
 muteWarnEl.addEventListener('change', () => {
   if (currentGroupId && currentCommandId) {
-    window.api.setCommandSilence(currentGroupId, currentCommandId, 'warn', muteWarnEl.checked);
+    window.api.setCommandSilence(
+      currentGroupId,
+      currentCommandId,
+      'warn',
+      muteWarnEl.checked,
+    );
   }
 });
 muteErrEl.addEventListener('change', () => {
   if (currentGroupId && currentCommandId) {
-    window.api.setCommandSilence(currentGroupId, currentCommandId, 'error', muteErrEl.checked);
+    window.api.setCommandSilence(
+      currentGroupId,
+      currentCommandId,
+      'error',
+      muteErrEl.checked,
+    );
   }
 });
 
@@ -427,8 +514,10 @@ if (togglePanelBtn) {
   ]);
 
   // Resolve render limit: per-command override → global setting → fallback 2000
-  const cmdLimit = res && res.target && res.target.target && res.target.target.maxLogLines;
-  RENDER_LIMIT = cmdLimit != null ? cmdLimit : ((settings && settings.maxLogLines) || 2000);
+  const cmdLimit =
+    res && res.target && res.target.target && res.target.target.maxLogLines;
+  RENDER_LIMIT =
+    cmdLimit != null ? cmdLimit : (settings && settings.maxLogLines) || 2000;
 
   // res.target = { kind, group, target: command|action }
   const target = res.target;
@@ -450,7 +539,11 @@ if (togglePanelBtn) {
 
     // Check if process is running and has a startedAt timestamp
     // getLogs returns the command state snapshot in res.commandState
-    if (res.commandState && res.commandState.status === 'running' && res.commandState.startedAt) {
+    if (
+      res.commandState &&
+      res.commandState.status === 'running' &&
+      res.commandState.startedAt
+    ) {
       _logsStartedAt = res.commandState.startedAt;
       updateLogsUptime();
     }
@@ -495,7 +588,9 @@ window.api.onUpdate((groupStates) => {
 
     // Update uptime tracking based on live command state
     if (currentCommandId) {
-      const cs = (gs.commands || []).find((c) => c.commandId === currentCommandId);
+      const cs = (gs.commands || []).find(
+        (c) => c.commandId === currentCommandId,
+      );
       if (cs) {
         if (cs.status === 'running' && cs.startedAt) {
           _logsStartedAt = cs.startedAt;

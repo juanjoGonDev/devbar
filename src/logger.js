@@ -37,7 +37,11 @@ function safeFormat(arg) {
   try {
     return JSON.stringify(arg);
   } catch {
-    try { return String(arg); } catch { return '[unserializable]'; }
+    try {
+      return String(arg);
+    } catch {
+      return '[unserializable]';
+    }
   }
 }
 
@@ -56,15 +60,21 @@ function init({ filePath, maxBytes: cap } = {}) {
     stream = fs.createWriteStream(filePath, { flags: 'a' });
     bytesWritten = 0;
     capWarned = false;
-    write('info', 'logger', [`Log session started → ${filePath} (cap ${maxBytes} bytes)`]);
+    write('info', 'logger', [
+      `Log session started → ${filePath} (cap ${maxBytes} bytes)`,
+    ]);
   } catch (e) {
     stream = null;
     // best-effort: logger is optional
-    try { process.stderr.write(`[logger] init failed: ${e.message}\n`); } catch {}
+    try {
+      process.stderr.write(`[logger] init failed: ${e.message}\n`);
+    } catch {}
   }
 }
 
-function getPath() { return logFilePath; }
+function getPath() {
+  return logFilePath;
+}
 
 function write(level, origin, args) {
   if (!stream) return;
@@ -72,7 +82,9 @@ function write(level, origin, args) {
     if (!capWarned) {
       capWarned = true;
       const note = `[${new Date().toISOString()}] [warn ] [logger] Cap reached (${maxBytes} bytes). Further entries dropped this session.\n`;
-      try { stream.write(note); } catch {}
+      try {
+        stream.write(note);
+      } catch {}
     }
     return;
   }
@@ -96,7 +108,9 @@ function attachMainConsole() {
   for (const level of ['log', 'info', 'warn', 'error']) {
     const orig = console[level].bind(console);
     console[level] = (...args) => {
-      try { orig(...args); } catch {}
+      try {
+        orig(...args);
+      } catch {}
       write(level, 'main', args);
     };
   }
@@ -113,9 +127,18 @@ function attachMainConsole() {
 function attachWindowConsole(win, origin) {
   if (!win || !win.webContents) return;
   const map = ['verbose', 'info', 'warn ', 'error'];
-  win.webContents.on('console-message', (_event, levelInt, message /*, line, sourceId*/) => {
-    write(map[levelInt] || 'log', origin || 'renderer', [message]);
-  });
+  win.webContents.on(
+    'console-message',
+    (_event, levelInt, message /*, line, sourceId*/) => {
+      write(map[levelInt] || 'log', origin || 'renderer', [message]);
+    },
+  );
 }
 
-module.exports = { init, getPath, write, attachMainConsole, attachWindowConsole };
+module.exports = {
+  init,
+  getPath,
+  write,
+  attachMainConsole,
+  attachWindowConsole,
+};

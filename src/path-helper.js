@@ -76,4 +76,9 @@ function enhancedEnv(extra = {}) {
   };
 }
 
-module.exports = { loadShellPath, expandTilde, enhancedEnv, ensureStandardPaths };
+module.exports = {
+  loadShellPath,
+  expandTilde,
+  enhancedEnv,
+  ensureStandardPaths,
+};

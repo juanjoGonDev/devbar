@@ -15,11 +15,25 @@
     "install-local": "bash scripts/install-local.sh",
     "logs": "tail -F \"$HOME/Library/Logs/DevBar/app.log\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "deadcode": "knip",
+    "deps:check": "depcruise src renderer scripts --config .dependency-cruiser.cjs",
+    "quality": "pnpm lint:strict && pnpm deadcode && pnpm deps:check && pnpm test",
+    "postinstall": "node scripts/install-hooks.js"
   },
   "devDependencies": {
+    "dependency-cruiser": "16.10.4",
     "electron": "42.2.0",
     "electron-packager": "17.1.2",
+    "eslint": "9.39.4",
+    "globals": "17.6.0",
+    "knip": "6.16.1",
+    "lefthook": "2.1.9",
+    "prettier": "3.8.4",
     "vitest": "4.1.7"
   },
   "dependencies": {
@@ -28,6 +42,8 @@
     "uuid": "14.0.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": []
+    "onlyBuiltDependencies": [
+      "lefthook"
+    ]
   }
 }

@@ -1,19 +1,39 @@
 import { describe, it, expect } from 'vitest';
-import { tokenize, splitCommand, buildCmdline, hasShellMeta } from '../src/parse-command.js';
+import {
+  tokenize,
+  splitCommand,
+  buildCmdline,
+  hasShellMeta,
+} from '../src/parse-command.js';
 
 describe('parse-command', () => {
   // ─── tokenize ───────────────────────────────────────────────────────
   describe('tokenize', () => {
     it('splits simple command by whitespace', () => {
-      expect(tokenize('git commit -m msg')).toEqual(['git', 'commit', '-m', 'msg']);
+      expect(tokenize('git commit -m msg')).toEqual([
+        'git',
+        'commit',
+        '-m',
+        'msg',
+      ]);
     });
 
     it('preserves single-quoted strings as one token', () => {
-      expect(tokenize("git commit -m 'hello world'")).toEqual(['git', 'commit', '-m', 'hello world']);
+      expect(tokenize("git commit -m 'hello world'")).toEqual([
+        'git',
+        'commit',
+        '-m',
+        'hello world',
+      ]);
     });
 
     it('preserves double-quoted strings as one token', () => {
-      expect(tokenize('git commit -m "hello world"')).toEqual(['git', 'commit', '-m', 'hello world']);
+      expect(tokenize('git commit -m "hello world"')).toEqual([
+        'git',
+        'commit',
+        '-m',
+        'hello world',
+      ]);
     });
 
     it('handles escaped spaces inside unquoted', () => {
@@ -35,15 +55,33 @@ describe('parse-command', () => {
 
   // ─── hasShellMeta ────────────────────────────────────────────────────
   describe('hasShellMeta', () => {
-    it('detects pipe', () => { expect(hasShellMeta('cmd | grep foo')).toBe(true); });
-    it('detects semicolon', () => { expect(hasShellMeta('a; b')).toBe(true); });
-    it('detects redirect', () => { expect(hasShellMeta('cmd > out.txt')).toBe(true); });
-    it('detects ampersand', () => { expect(hasShellMeta('cmd &')).toBe(true); });
-    it('detects dollar', () => { expect(hasShellMeta('$VAR')).toBe(true); });
-    it('detects backtick', () => { expect(hasShellMeta('`cmd`')).toBe(true); });
-    it('detects glob', () => { expect(hasShellMeta('*.js')).toBe(true); });
-    it('returns false for plain args', () => { expect(hasShellMeta('--flag')).toBe(false); });
-    it('returns false for empty string', () => { expect(hasShellMeta('')).toBe(false); });
+    it('detects pipe', () => {
+      expect(hasShellMeta('cmd | grep foo')).toBe(true);
+    });
+    it('detects semicolon', () => {
+      expect(hasShellMeta('a; b')).toBe(true);
+    });
+    it('detects redirect', () => {
+      expect(hasShellMeta('cmd > out.txt')).toBe(true);
+    });
+    it('detects ampersand', () => {
+      expect(hasShellMeta('cmd &')).toBe(true);
+    });
+    it('detects dollar', () => {
+      expect(hasShellMeta('$VAR')).toBe(true);
+    });
+    it('detects backtick', () => {
+      expect(hasShellMeta('`cmd`')).toBe(true);
+    });
+    it('detects glob', () => {
+      expect(hasShellMeta('*.js')).toBe(true);
+    });
+    it('returns false for plain args', () => {
+      expect(hasShellMeta('--flag')).toBe(false);
+    });
+    it('returns false for empty string', () => {
+      expect(hasShellMeta('')).toBe(false);
+    });
   });
 
   // ─── splitCommand ────────────────────────────────────────────────────
@@ -110,8 +148,10 @@ describe('parse-command', () => {
     it('quotes args containing single quotes', () => {
       // Single quote is escaped with '\\'' pattern
       const result = buildCmdline('echo', ["it's alive"]);
-      expect(result).toContain("echo");
-      expect(result).toContain("it's alive".replace(/'/g, "'\\''") || "it's alive");
+      expect(result).toContain('echo');
+      expect(result).toContain(
+        "it's alive".replace(/'/g, "'\\''") || "it's alive",
+      );
     });
   });
 });

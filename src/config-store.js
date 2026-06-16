@@ -6,7 +6,6 @@
 // to the raw require for compatibility.
 const _StoreImport = require('electron-store');
 const Store = _StoreImport.default || _StoreImport;
-const { v4: uuidv4 } = require('uuid');
 const {
   normalizeGroup,
   normalizeCommand,
@@ -35,10 +34,10 @@ function clampMaxLogLines(v) {
 
 const schema = {
   version: { type: 'number', default: 3 },
-  services: { type: 'array', default: [] },                     // legacy mirror, dual-write
-  groups: { type: 'array', default: [] },                       // canonical
+  services: { type: 'array', default: [] }, // legacy mirror, dual-write
+  groups: { type: 'array', default: [] }, // canonical
   globalSettings: { type: 'object', default: DEFAULT_GLOBAL_SETTINGS },
-  _services_pre_v3_backup: { type: 'array', default: [] },      // written once on migration
+  _services_pre_v3_backup: { type: 'array', default: [] }, // written once on migration
 };
 
 const store = new Store({ name: 'config', schema });
@@ -143,7 +142,9 @@ function deleteCommand(groupId, commandId) {
   const groups = _getGroups();
   const gIdx = groups.findIndex((g) => g.id === groupId);
   if (gIdx < 0) return;
-  groups[gIdx].commands = groups[gIdx].commands.filter((c) => c.id !== commandId);
+  groups[gIdx].commands = groups[gIdx].commands.filter(
+    (c) => c.id !== commandId,
+  );
   _persistGroups(groups);
 }
 
@@ -156,9 +157,14 @@ function reorderCommands(groupId, orderedIds) {
   const seen = new Set();
   const sorted = [];
   for (const id of orderedIds) {
-    if (byId.has(id) && !seen.has(id)) { sorted.push(byId.get(id)); seen.add(id); }
+    if (byId.has(id) && !seen.has(id)) {
+      sorted.push(byId.get(id));
+      seen.add(id);
+    }
   }
-  for (const c of commands) { if (!seen.has(c.id)) sorted.push(c); }
+  for (const c of commands) {
+    if (!seen.has(c.id)) sorted.push(c);
+  }
   groups[gIdx].commands = sorted;
   _persistGroups(groups);
 }
@@ -198,9 +204,14 @@ function reorderActions(groupId, orderedIds) {
   const seen = new Set();
   const sorted = [];
   for (const id of orderedIds) {
-    if (byId.has(id) && !seen.has(id)) { sorted.push(byId.get(id)); seen.add(id); }
+    if (byId.has(id) && !seen.has(id)) {
+      sorted.push(byId.get(id));
+      seen.add(id);
+    }
   }
-  for (const a of actions) { if (!seen.has(a.id)) sorted.push(a); }
+  for (const a of actions) {
+    if (!seen.has(a.id)) sorted.push(a);
+  }
   groups[gIdx].actions = sorted;
   _persistGroups(groups);
 }
@@ -230,7 +241,10 @@ function deletePreStep(groupId, stepId) {
   const gIdx = groups.findIndex((g) => g.id === groupId);
   if (gIdx < 0) return;
   const group = groups[gIdx];
-  groups[gIdx] = { ...group, preSteps: (group.preSteps || []).filter((s) => s.id !== stepId) };
+  groups[gIdx] = {
+    ...group,
+    preSteps: (group.preSteps || []).filter((s) => s.id !== stepId),
+  };
   _persistGroups(groups);
 }
 
@@ -244,9 +258,14 @@ function reorderPreSteps(groupId, orderedIds) {
   const seen = new Set();
   const sorted = [];
   for (const id of orderedIds) {
-    if (byId.has(id) && !seen.has(id)) { sorted.push(byId.get(id)); seen.add(id); }
+    if (byId.has(id) && !seen.has(id)) {
+      sorted.push(byId.get(id));
+      seen.add(id);
+    }
   }
-  for (const s of preSteps) { if (!seen.has(s.id)) sorted.push(s); }
+  for (const s of preSteps) {
+    if (!seen.has(s.id)) sorted.push(s);
+  }
   groups[gIdx] = { ...group, preSteps: sorted };
   _persistGroups(groups);
 }
@@ -306,9 +325,14 @@ function reorderPreScripts(groupId, stepId, orderedIds) {
   const seen = new Set();
   const sorted = [];
   for (const id of orderedIds) {
-    if (byId.has(id) && !seen.has(id)) { sorted.push(byId.get(id)); seen.add(id); }
+    if (byId.has(id) && !seen.has(id)) {
+      sorted.push(byId.get(id));
+      seen.add(id);
+    }
   }
-  for (const sc of scripts) { if (!seen.has(sc.id)) sorted.push(sc); }
+  for (const sc of scripts) {
+    if (!seen.has(sc.id)) sorted.push(sc);
+  }
   step.scripts = sorted;
   preSteps[sIdx] = step;
   groups[gIdx] = { ...group, preSteps };
@@ -330,7 +354,10 @@ function addSilencedPattern(groupId, commandId, level, pattern) {
   const sp = cmd.silencedPatterns || { warn: [], error: [] };
   const list = Array.isArray(sp[level]) ? sp[level].slice() : [];
   if (!list.includes(trimmed)) list.push(trimmed);
-  groups[gIdx].commands[cIdx] = { ...cmd, silencedPatterns: { ...sp, [level]: list } };
+  groups[gIdx].commands[cIdx] = {
+    ...cmd,
+    silencedPatterns: { ...sp, [level]: list },
+  };
   _persistGroups(groups);
   return groups[gIdx].commands[cIdx];
 }
@@ -344,8 +371,13 @@ function removeSilencedPattern(groupId, commandId, level, pattern) {
   if (cIdx < 0) return null;
   const cmd = groups[gIdx].commands[cIdx];
   const sp = cmd.silencedPatterns || { warn: [], error: [] };
-  const list = (Array.isArray(sp[level]) ? sp[level] : []).filter((p) => p !== pattern);
-  groups[gIdx].commands[cIdx] = { ...cmd, silencedPatterns: { ...sp, [level]: list } };
+  const list = (Array.isArray(sp[level]) ? sp[level] : []).filter(
+    (p) => p !== pattern,
+  );
+  groups[gIdx].commands[cIdx] = {
+    ...cmd,
+    silencedPatterns: { ...sp, [level]: list },
+  };
   _persistGroups(groups);
   return groups[gIdx].commands[cIdx];
 }
@@ -356,9 +388,17 @@ function setCommandSilence(groupId, commandId, level, enabled) {
   if (gIdx < 0) return null;
   const cIdx = groups[gIdx].commands.findIndex((c) => c.id === commandId);
   if (cIdx < 0) return null;
-  const key = level === 'warn' ? 'silenceWarnings' : level === 'error' ? 'silenceErrors' : null;
+  const key =
+    level === 'warn'
+      ? 'silenceWarnings'
+      : level === 'error'
+        ? 'silenceErrors'
+        : null;
   if (!key) return null;
-  groups[gIdx].commands[cIdx] = { ...groups[gIdx].commands[cIdx], [key]: !!enabled };
+  groups[gIdx].commands[cIdx] = {
+    ...groups[gIdx].commands[cIdx],
+    [key]: !!enabled,
+  };
   _persistGroups(groups);
   return groups[gIdx].commands[cIdx];
 }
@@ -367,7 +407,12 @@ function setGroupSilence(groupId, level, enabled) {
   const groups = _getGroups();
   const gIdx = groups.findIndex((g) => g.id === groupId);
   if (gIdx < 0) return null;
-  const key = level === 'warn' ? 'silenceWarnings' : level === 'error' ? 'silenceErrors' : null;
+  const key =
+    level === 'warn'
+      ? 'silenceWarnings'
+      : level === 'error'
+        ? 'silenceErrors'
+        : null;
   if (!key) return null;
   groups[gIdx] = { ...groups[gIdx], [key]: !!enabled };
   _persistGroups(groups);
@@ -433,7 +478,9 @@ function replaceConfig(payload) {
   store.set('version', payload.version);
   store.set('globalSettings', payload.globalSettings);
   // Defensively enforce single-mode auto-start invariant on all imported groups.
-  const safeGroups = (payload.groups || []).map((g) => enforceSingleModeAutoStart(g).group);
+  const safeGroups = (payload.groups || []).map(
+    (g) => enforceSingleModeAutoStart(g).group,
+  );
   _persistGroups(safeGroups);
 }
 

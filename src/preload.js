@@ -26,17 +26,28 @@ contextBridge.exposeInMainWorld('api', {
   reorderGroups: (groupIds) => ipcRenderer.invoke('groups:reorder', groupIds),
 
   // ── Commands ─────────────────────────────────────────────────────────
-  saveCommand: (groupId, commandData) => ipcRenderer.invoke('commands:save', { groupId, commandData }),
-  deleteCommand: (groupId, commandId) => ipcRenderer.invoke('commands:delete', { groupId, commandId }),
-  reorderCommands: (groupId, commandIds) => ipcRenderer.invoke('commands:reorder', { groupId, commandIds }),
+  saveCommand: (groupId, commandData) =>
+    ipcRenderer.invoke('commands:save', { groupId, commandData }),
+  deleteCommand: (groupId, commandId) =>
+    ipcRenderer.invoke('commands:delete', { groupId, commandId }),
+  reorderCommands: (groupId, commandIds) =>
+    ipcRenderer.invoke('commands:reorder', { groupId, commandIds }),
   setCommandAutoStart: (groupId, commandId, enabled) =>
-    ipcRenderer.invoke('commands:setAutoStart', { groupId, commandId, enabled }),
+    ipcRenderer.invoke('commands:setAutoStart', {
+      groupId,
+      commandId,
+      enabled,
+    }),
 
   // ── Actions ──────────────────────────────────────────────────────────
-  saveAction: (groupId, actionData) => ipcRenderer.invoke('actions:save', { groupId, actionData }),
-  deleteAction: (groupId, actionId) => ipcRenderer.invoke('actions:delete', { groupId, actionId }),
-  reorderActions: (groupId, actionIds) => ipcRenderer.invoke('actions:reorder', { groupId, actionIds }),
-  runAction: (groupId, actionId) => ipcRenderer.invoke('actions:run', { groupId, actionId }),
+  saveAction: (groupId, actionData) =>
+    ipcRenderer.invoke('actions:save', { groupId, actionData }),
+  deleteAction: (groupId, actionId) =>
+    ipcRenderer.invoke('actions:delete', { groupId, actionId }),
+  reorderActions: (groupId, actionIds) =>
+    ipcRenderer.invoke('actions:reorder', { groupId, actionIds }),
+  runAction: (groupId, actionId) =>
+    ipcRenderer.invoke('actions:run', { groupId, actionId }),
 
   // ── Process control ───────────────────────────────────────────────────
   startProcess: (processId) => ipcRenderer.invoke('process:start', processId),
@@ -45,15 +56,26 @@ contextBridge.exposeInMainWorld('api', {
   // ── Git (group level) ─────────────────────────────────────────────────
   listBranches: (groupId) => ipcRenderer.invoke('git:listBranches', groupId),
   currentBranch: (groupId) => ipcRenderer.invoke('git:currentBranch', groupId),
-  switchBranch: (groupId, branch) => ipcRenderer.invoke('git:switchBranch', { groupId, branch }),
+  switchBranch: (groupId, branch) =>
+    ipcRenderer.invoke('git:switchBranch', { groupId, branch }),
 
   // ── Silence ───────────────────────────────────────────────────────────
   addSilencePattern: (groupId, commandId, level, pattern) =>
     ipcRenderer.invoke('silence:add', { groupId, commandId, level, pattern }),
   removeSilencePattern: (groupId, commandId, level, pattern) =>
-    ipcRenderer.invoke('silence:remove', { groupId, commandId, level, pattern }),
+    ipcRenderer.invoke('silence:remove', {
+      groupId,
+      commandId,
+      level,
+      pattern,
+    }),
   setCommandSilence: (groupId, commandId, level, enabled) =>
-    ipcRenderer.invoke('silence:setCommand', { groupId, commandId, level, enabled }),
+    ipcRenderer.invoke('silence:setCommand', {
+      groupId,
+      commandId,
+      level,
+      enabled,
+    }),
   setGroupSilence: (groupId, level, enabled) =>
     ipcRenderer.invoke('silence:setGroup', { groupId, level, enabled }),
 
@@ -65,8 +87,10 @@ contextBridge.exposeInMainWorld('api', {
   hideTray: () => ipcRenderer.invoke('window:hideTray'),
   // openLogs accepts either a processId string or { processId, filter? }
   openLogs: (arg) => ipcRenderer.invoke('window:openLogs', arg),
-  openSilenced: (groupId, commandId) => ipcRenderer.invoke('window:openSilenced', { groupId, commandId }),
-  getSilencedForCommand: (groupId, commandId) => ipcRenderer.invoke('silenced:getForCommand', { groupId, commandId }),
+  openSilenced: (groupId, commandId) =>
+    ipcRenderer.invoke('window:openSilenced', { groupId, commandId }),
+  getSilencedForCommand: (groupId, commandId) =>
+    ipcRenderer.invoke('silenced:getForCommand', { groupId, commandId }),
   setTrayHeight: (h) => ipcRenderer.invoke('tray:setHeight', h),
 
   // ── Settings ──────────────────────────────────────────────────────────
@@ -83,24 +107,33 @@ contextBridge.exposeInMainWorld('api', {
   applyImportedConfig: (args) => ipcRenderer.invoke('config:applyImport', args),
 
   // ── Folder picker ─────────────────────────────────────────────────────
-  pickFolder: (defaultPath) => ipcRenderer.invoke('dialog:pickFolder', { defaultPath }),
+  pickFolder: (defaultPath) =>
+    ipcRenderer.invoke('dialog:pickFolder', { defaultPath }),
 
   // ── Pre-scripts ───────────────────────────────────────────────────────
   runPreScripts: (groupId) => ipcRenderer.invoke('prescripts:run', { groupId }),
-  cancelPreScripts: (groupId) => ipcRenderer.invoke('prescripts:cancel', { groupId }),
-  savePreStep: (groupId, data) => ipcRenderer.invoke('preSteps:save', { groupId, data }),
-  deletePreStep: (groupId, stepId) => ipcRenderer.invoke('preSteps:delete', { groupId, stepId }),
-  reorderPreSteps: (groupId, orderedIds) => ipcRenderer.invoke('preSteps:reorder', { groupId, orderedIds }),
-  savePreScript: (groupId, stepId, data) => ipcRenderer.invoke('preScripts:save', { groupId, stepId, data }),
-  deletePreScript: (groupId, stepId, scriptId) => ipcRenderer.invoke('preScripts:delete', { groupId, stepId, scriptId }),
-  reorderPreScripts: (groupId, stepId, orderedIds) => ipcRenderer.invoke('preScripts:reorder', { groupId, stepId, orderedIds }),
+  cancelPreScripts: (groupId) =>
+    ipcRenderer.invoke('prescripts:cancel', { groupId }),
+  savePreStep: (groupId, data) =>
+    ipcRenderer.invoke('preSteps:save', { groupId, data }),
+  deletePreStep: (groupId, stepId) =>
+    ipcRenderer.invoke('preSteps:delete', { groupId, stepId }),
+  reorderPreSteps: (groupId, orderedIds) =>
+    ipcRenderer.invoke('preSteps:reorder', { groupId, orderedIds }),
+  savePreScript: (groupId, stepId, data) =>
+    ipcRenderer.invoke('preScripts:save', { groupId, stepId, data }),
+  deletePreScript: (groupId, stepId, scriptId) =>
+    ipcRenderer.invoke('preScripts:delete', { groupId, stepId, scriptId }),
+  reorderPreScripts: (groupId, stepId, orderedIds) =>
+    ipcRenderer.invoke('preScripts:reorder', { groupId, stepId, orderedIds }),
 
   // ── App ───────────────────────────────────────────────────────────────
   quit: () => ipcRenderer.invoke('app:quit'),
   getAppVersion: () => ipcRenderer.invoke('app:version'),
 
   // ── Config dirty-close ────────────────────────────────────────────────
-  confirmDirty: (context) => ipcRenderer.invoke('config:confirmDirty', { context }),
+  confirmDirty: (context) =>
+    ipcRenderer.invoke('config:confirmDirty', { context }),
   confirmCloseConfig: () => ipcRenderer.invoke('window:confirmCloseConfig'),
   onConfigCloseRequested: (cb) => {
     const h = (_e) => cb();

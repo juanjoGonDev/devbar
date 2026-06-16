@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/preload.js",
+    "renderer/*.js",
+    "scripts/*.js",
+    "tests/**/*.test.js"
+  ],
+  "project": ["src/**/*.js", "renderer/**/*.js", "scripts/**/*.js"],
+  "ignoreBinaries": ["tail"],
+  "rules": {
+    "exports": "off",
+    "nsExports": "off"
+  }
+}

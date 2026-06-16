@@ -1,4 +1,5 @@
 'use strict';
+/* exported createCombobox */
 
 /**
  * createCombobox — a lightweight typeahead combobox for the DevBar popover.
@@ -79,7 +80,7 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     // input so it grows leftwards (macOS menus near the screen edge).
     const preferredW = 320;
     const roomRight = winW - rect.left - margin;
-    const roomLeft  = rect.right - margin;
+    const roomLeft = rect.right - margin;
 
     list.style.width = 'auto';
     list.style.minWidth = `${Math.min(260, winW - margin * 2)}px`;
@@ -136,7 +137,11 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     );
     const opts =
       currentIdx > 0
-        ? [raw[currentIdx], ...raw.slice(0, currentIdx), ...raw.slice(currentIdx + 1)]
+        ? [
+            raw[currentIdx],
+            ...raw.slice(0, currentIdx),
+            ...raw.slice(currentIdx + 1),
+          ]
         : raw;
 
     opts.forEach((opt, idx) => {
@@ -257,7 +262,10 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     const opts = filteredOptions();
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (!isOpen) { openList(); return; }
+      if (!isOpen) {
+        openList();
+        return;
+      }
       highlightIndex = Math.min(highlightIndex + 1, opts.length - 1);
       renderList();
     } else if (e.key === 'ArrowUp') {
@@ -312,7 +320,10 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     currentOptions = newOpts || [];
     // Update currentValue if the new options include it; otherwise reset label
     input.value = labelFor(currentValue);
-    if (isOpen) { highlightIndex = -1; renderList(); }
+    if (isOpen) {
+      highlightIndex = -1;
+      renderList();
+    }
   };
 
   root.setLoading = function (bool) {

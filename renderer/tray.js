@@ -3,7 +3,6 @@
 const groupsEl = document.getElementById('groups');
 const toastEl = document.getElementById('toast');
 
-
 // ─────────────────────── Uptime ticker ───────────────────────────────
 
 /**
@@ -72,7 +71,9 @@ function renderAlertsSummary(groupStates) {
   summary.style.display = '';
   summary.innerHTML =
     (warns > 0 ? `<span class="warn-count">⚠ ${warns}</span>` : '') +
-    (errs > 0 ? `<span class="error-count" style="margin-left:8px">✕ ${errs}</span>` : '');
+    (errs > 0
+      ? `<span class="error-count" style="margin-left:8px">✕ ${errs}</span>`
+      : '');
 }
 
 // ─────────────────────── Main render ─────────────────────────────────
@@ -221,9 +222,10 @@ function renderGroupRow(gs) {
     // ▶▶ trigger button
     const prescriptsBtn = document.createElement('button');
     prescriptsBtn.className = 'ghost prescripts-trigger';
-    prescriptsBtn.title = prescriptStatus === 'running'
-      ? 'Pre-scripts corriendo…'
-      : 'Ejecutar pre-scripts';
+    prescriptsBtn.title =
+      prescriptStatus === 'running'
+        ? 'Pre-scripts corriendo…'
+        : 'Ejecutar pre-scripts';
     prescriptsBtn.dataset.prestepStatus = prescriptStatus;
     prescriptsBtn.textContent = '▶▶';
     prescriptsBtn.addEventListener('click', async (e) => {
@@ -263,7 +265,9 @@ function renderGroupRow(gs) {
         const elapsedSpan = document.createElement('span');
         elapsedSpan.className = 'uptime prestep-elapsed';
         elapsedSpan.dataset.startedAt = String(gs.preScriptsStartedAt);
-        elapsedSpan.textContent = formatUptime(Date.now() - gs.preScriptsStartedAt);
+        elapsedSpan.textContent = formatUptime(
+          Date.now() - gs.preScriptsStartedAt,
+        );
         badge.appendChild(elapsedSpan);
       }
 
@@ -287,7 +291,9 @@ function renderGroupRow(gs) {
         logsBtn.textContent = '📋';
         logsBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          window.api.openLogs(`pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`);
+          window.api.openLogs(
+            `pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`,
+          );
         });
         row.appendChild(logsBtn);
       }
@@ -305,7 +311,9 @@ function renderGroupRow(gs) {
         logsBtn.textContent = '📋';
         logsBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          window.api.openLogs(`pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`);
+          window.api.openLogs(
+            `pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`,
+          );
         });
         row.appendChild(logsBtn);
       }
@@ -324,7 +332,9 @@ function renderGroupRow(gs) {
         logsBtn.textContent = '📋';
         logsBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          window.api.openLogs(`pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`);
+          window.api.openLogs(
+            `pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`,
+          );
         });
         row.appendChild(logsBtn);
       }
@@ -357,7 +367,11 @@ function renderGroupRow(gs) {
     // dropdown — appended to document.body — just got display:none'd between
     // mousedown and mouseup). Ignore that synthetic click so we don't
     // re-render the tray mid-selection and orphan the combo's onSelect.
-    if (window.__comboboxSelectingAt && Date.now() - window.__comboboxSelectingAt < 250) return;
+    if (
+      window.__comboboxSelectingAt &&
+      Date.now() - window.__comboboxSelectingAt < 250
+    )
+      return;
     expandedState.set(groupId, !expandedState.get(groupId));
     render(lastGroupStates);
   });
@@ -414,14 +428,15 @@ function buildBranchSelector(gs) {
   if (!group.path) {
     const placeholder = document.createElement('span');
     placeholder.className = 'branch-select';
-    placeholder.style.cssText = 'font-size:11px; color:var(--muted); flex-shrink:0; padding:2px 4px;';
+    placeholder.style.cssText =
+      'font-size:11px; color:var(--muted); flex-shrink:0; padding:2px 4px;';
     placeholder.textContent = 'Rama…';
     return placeholder;
   }
 
   const cached = branchCache.get(groupId);
   const initOptions = cached ? branchDataToOptions(cached) : [];
-  const initValue = cached ? (cached.current || null) : null;
+  const initValue = cached ? cached.current || null : null;
 
   const combo = createCombobox({
     value: initValue,
@@ -434,7 +449,10 @@ function buildBranchSelector(gs) {
       combo.setLoading(false);
       branchCache.delete(groupId);
       if (!res.ok) {
-        showToast(`${group.name}: ${(res.error || '').split('\n')[0]}`, 'error');
+        showToast(
+          `${group.name}: ${(res.error || '').split('\n')[0]}`,
+          'error',
+        );
         // Reload branches to restore correct state
         loadBranchesIntoCombo(groupId, combo);
       } else {
@@ -467,7 +485,10 @@ function loadBranchesIntoCombo(groupId, combo) {
     combo.setLoading(false);
     if (!res.ok) return;
     window.api.currentBranch(groupId).then((cur) => {
-      const data = { branches: res.branches, current: cur.ok ? cur.branch : null };
+      const data = {
+        branches: res.branches,
+        current: cur.ok ? cur.branch : null,
+      };
       branchCache.set(groupId, data);
       combo.setOptions(branchDataToOptions(data));
       combo.setValue(data.current || null);
@@ -523,11 +544,21 @@ function buildCommandSubRow(gs, cs, cmd) {
     const counters = document.createElement('span');
     counters.className = 'cmd-counters';
     if (!cs.muteWarn && cs.warnCount > 0) {
-      const w = buildCounterBtn('warn', cs.warnCount, cs.processId, '\\bwarn(ing)?s?\\b');
+      const w = buildCounterBtn(
+        'warn',
+        cs.warnCount,
+        cs.processId,
+        '\\bwarn(ing)?s?\\b',
+      );
       counters.appendChild(w);
     }
     if (!cs.muteErr && cs.errorCount > 0) {
-      const e = buildCounterBtn('error', cs.errorCount, cs.processId, '\\berror(s)?\\b');
+      const e = buildCounterBtn(
+        'error',
+        cs.errorCount,
+        cs.processId,
+        '\\berror(s)?\\b',
+      );
       counters.appendChild(e);
     }
     subRow.appendChild(counters);
@@ -659,10 +690,13 @@ window.api.getGroupStates().then((groupStates) => {
 
 // App version label
 if (window.api.getAppVersion) {
-  window.api.getAppVersion()
+  window.api
+    .getAppVersion()
     .then((v) => {
       const el = document.getElementById('app-version');
       if (el && v) el.textContent = `v${v}`;
     })
-    .catch(() => { /* leave span empty on failure */ });
+    .catch(() => {
+      /* leave span empty on failure */
+    });
 }

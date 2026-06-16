@@ -13,7 +13,9 @@ describe('path-helper', () => {
     });
 
     it('expands ~/subpath to homedir/subpath', () => {
-      expect(expandTilde('~/projects/devbar')).toBe('/home/testuser/projects/devbar');
+      expect(expandTilde('~/projects/devbar')).toBe(
+        '/home/testuser/projects/devbar',
+      );
     });
 
     it('leaves absolute paths unchanged', () => {
@@ -50,19 +52,21 @@ describe('path-helper', () => {
   describe('ensureStandardPaths', () => {
     it('appends /usr/local/bin when missing (the Docker CLI case)', () => {
       // Reproduces the real DevBar bug: a GUI-launched PATH lacking /usr/local/bin.
-      const input = '/Users/me/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+      const input =
+        '/Users/me/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin';
       const result = ensureStandardPaths(input);
       expect(result.split(':')).toContain('/usr/local/bin');
     });
 
     it('does NOT reorder or duplicate existing entries', () => {
       // Input already contains every standard dir → output must be identical.
-      const input = '/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin';
+      const input =
+        '/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin';
       const result = ensureStandardPaths(input);
       expect(result).toBe(input);
     });
 
-    it('preserves the precedence of the user\'s own entries (only appends)', () => {
+    it("preserves the precedence of the user's own entries (only appends)", () => {
       const input = '/Users/me/.volta/bin:/usr/bin';
       const parts = ensureStandardPaths(input).split(':');
       // user entries stay first, in original order
@@ -75,14 +79,23 @@ describe('path-helper', () => {
 
     it('adds all standard dirs when given an empty PATH', () => {
       const parts = ensureStandardPaths('').split(':');
-      for (const dir of ['/usr/local/bin', '/opt/homebrew/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']) {
+      for (const dir of [
+        '/usr/local/bin',
+        '/opt/homebrew/bin',
+        '/usr/bin',
+        '/bin',
+        '/usr/sbin',
+        '/sbin',
+      ]) {
         expect(parts).toContain(dir);
       }
     });
 
     it('handles null/undefined by returning the standard dirs', () => {
       expect(ensureStandardPaths(null).split(':')).toContain('/usr/local/bin');
-      expect(ensureStandardPaths(undefined).split(':')).toContain('/usr/local/bin');
+      expect(ensureStandardPaths(undefined).split(':')).toContain(
+        '/usr/local/bin',
+      );
     });
 
     it('drops empty segments from a malformed PATH', () => {
