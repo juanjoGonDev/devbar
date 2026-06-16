@@ -1216,33 +1216,154 @@ window.api
     // If IPC fails (e.g., test environment), allIcons stays []
   });
 
+// macOS-style category order + Spanish headers (data stays English-keyed).
+const ICON_GROUP_ORDER = [
+  'Smileys & Emotion',
+  'People & Body',
+  'Animals & Nature',
+  'Food & Drink',
+  'Travel & Places',
+  'Activities',
+  'Objects',
+  'Symbols',
+  'Flags',
+];
+const ICON_GROUP_LABELS = {
+  'Smileys & Emotion': 'Caras y emociones',
+  'People & Body': 'Personas',
+  'Animals & Nature': 'Animales y naturaleza',
+  'Food & Drink': 'Comida y bebida',
+  'Travel & Places': 'Viajes y lugares',
+  Activities: 'Actividades',
+  Objects: 'Objetos',
+  Symbols: 'Símbolos',
+  Flags: 'Banderas',
+  Recientes: 'Recientes',
+};
+
+const RECENT_ICONS_KEY = 'devbar.recentIcons';
+const RECENT_ICONS_MAX = 20;
+
+function getRecentIcons() {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_ICONS_KEY) || '[]');
+    return Array.isArray(v) ? v.slice(0, RECENT_ICONS_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pushRecentIcon(emoji) {
+  const next = [emoji, ...getRecentIcons().filter((e) => e !== emoji)].slice(
+    0,
+    RECENT_ICONS_MAX,
+  );
+  try {
+    localStorage.setItem(RECENT_ICONS_KEY, JSON.stringify(next));
+  } catch {
+    /* localStorage unavailable — recents just won't persist */
+  }
+}
+
+function makeIconCell(item) {
+  const btn = document.createElement('button');
+  btn.className = 'icon-cell';
+  btn.title = item.label;
+  btn.textContent = item.emoji;
+  btn.addEventListener('click', () => {
+    pushRecentIcon(item.emoji);
+    if (iconPickerCallback) iconPickerCallback(item.emoji);
+    closeIconPicker();
+  });
+  return btn;
+}
+
+// Representative glyph per tab (macOS-style).
+const ICON_GROUP_TAB = {
+  Recientes: '🕘',
+  'Smileys & Emotion': '😀',
+  'People & Body': '👋',
+  'Animals & Nature': '🐶',
+  'Food & Drink': '🍎',
+  'Travel & Places': '🚗',
+  Activities: '⚽',
+  Objects: '💡',
+  Symbols: '❤️',
+  Flags: '🏳️',
+};
+
+let activeIconGroup = null;
+
+function iconsInGroup(group) {
+  if (group === 'Recientes') {
+    return getRecentIcons()
+      .map((e) => allIcons.find((i) => i.emoji === e))
+      .filter(Boolean);
+  }
+  return allIcons.filter((i) => i.group === group);
+}
+
+// Tabs to show: Recents (only if any) + the macOS categories that have icons.
+function availableIconTabs() {
+  const tabs = [];
+  if (getRecentIcons().length) tabs.push('Recientes');
+  for (const g of ICON_GROUP_ORDER) {
+    if (allIcons.some((i) => i.group === g)) tabs.push(g);
+  }
+  return tabs;
+}
+
+function renderIconTabs() {
+  const tabsEl = document.getElementById('icon-tabs');
+  if (!tabsEl) return;
+  tabsEl.innerHTML = '';
+  for (const g of availableIconTabs()) {
+    const btn = document.createElement('button');
+    btn.className = 'icon-tab' + (g === activeIconGroup ? ' is-active' : '');
+    btn.textContent = ICON_GROUP_TAB[g] || '•';
+    btn.title = ICON_GROUP_LABELS[g] || g;
+    btn.dataset.group = g;
+    btn.addEventListener('click', () => {
+      activeIconGroup = g;
+      iconSearchEl.value = '';
+      // Toggle active class in place — do NOT rebuild the tab bar here, or the
+      // clicked button detaches mid-click and the outside-click handler treats
+      // it as a click outside the picker and closes it.
+      for (const t of tabsEl.querySelectorAll('.icon-tab')) {
+        t.classList.toggle('is-active', t.dataset.group === g);
+      }
+      renderIconGrid('');
+    });
+    tabsEl.appendChild(btn);
+  }
+}
+
 function renderIconGrid(filter) {
   iconGridEl.innerHTML = '';
   const q = (filter || '').toLowerCase().trim();
-  const filtered = q
-    ? allIcons.filter((i) => {
-        if (i.emoji.startsWith(q)) return true;
-        if (i.label.toLowerCase().includes(q)) return true;
-        if (i.keywords && i.keywords.some((k) => k.includes(q))) return true;
-        return false;
-      })
-    : allIcons;
-  for (const item of filtered) {
-    const btn = document.createElement('button');
-    btn.className = 'icon-cell';
-    btn.title = item.label;
-    btn.textContent = item.emoji;
-    btn.addEventListener('click', () => {
-      if (iconPickerCallback) iconPickerCallback(item.emoji);
-      closeIconPicker();
-    });
-    iconGridEl.appendChild(btn);
-  }
+
+  // Searching: flat results across ALL categories.
+  const items = q
+    ? allIcons.filter(
+        (i) =>
+          i.emoji.startsWith(q) ||
+          i.label.toLowerCase().includes(q) ||
+          (i.keywords && i.keywords.some((k) => k.includes(q))),
+      )
+    : iconsInGroup(activeIconGroup);
+
+  const grid = document.createElement('div');
+  grid.className = 'icon-grid';
+  for (const item of items) grid.appendChild(makeIconCell(item));
+  iconGridEl.appendChild(grid);
 }
 
 function openIconPicker(anchorEl, onSelect) {
   iconPickerCallback = onSelect;
   iconSearchEl.value = '';
+  const tabs = availableIconTabs();
+  activeIconGroup = tabs[0] || ICON_GROUP_ORDER[0];
+  renderIconTabs();
   renderIconGrid('');
 
   // Reparent the picker: if the sub-dialog is open it lives in the top layer,
