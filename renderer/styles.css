@@ -1530,17 +1530,52 @@ dialog h2 {
   outline-offset: -1px;
 }
 
+/* Category tab bar (macOS-style). */
+.icon-tabs {
+  display: flex;
+  gap: 1px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.icon-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.icon-tab:hover {
+  background: var(--bg-row-hover);
+  opacity: 1;
+}
+.icon-tab.is-active {
+  opacity: 1;
+  background: rgba(0, 122, 255, 0.14);
+}
+
+/* Scroll container holding the active category's grid. */
+.icon-grid-scroll {
+  max-height: 260px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .icon-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 2px;
-  max-height: 180px;
-  overflow-y: auto;
 }
 
 .icon-cell {
   font-size: 18px;
-  width: 30px;
+  width: 100%;
+  min-width: 0;
   height: 30px;
   border: none;
   background: transparent;
