@@ -13,7 +13,7 @@ importers:
         version: 11.0.2
       menubar:
         specifier: 9.5.2
-        version: 9.5.2(electron@42.2.0)
+        version: 9.5.2(electron@42.4.0)
       uuid:
         specifier: 14.0.0
         version: 14.0.0
@@ -22,8 +22,8 @@ importers:
         specifier: 16.10.4
         version: 16.10.4
       electron:
-        specifier: 42.2.0
-        version: 42.2.0
+        specifier: 42.4.0
+        version: 42.4.0
       electron-packager:
         specifier: 17.1.2
         version: 17.1.2
@@ -47,6 +47,10 @@ importers:
         version: 4.1.8(@types/node@25.9.3)(vite@8.0.16(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0))
 
 packages:
+
+  '@electron-internal/extract-zip@1.0.3':
+    resolution: {integrity: sha512-OjKpjB7gohtEjZiq6nDx1egqjZJhGPN1iFOIED+NFhB/MMkXw/XRcHjh1DGXKT5z2W9eW7Jy2UKU3gpjvusFTQ==}
+    engines: {node: '>=22.12.0'}
 
   '@electron/asar@3.4.1':
     resolution: {integrity: sha512-i4/rNPRS84t0vSRa2HorerGRXWyF4vThfHesw0dmcWHp+cspK743UanA0suA5Q5y8kzY2y6YKrvbIUn69BCAiA==}
@@ -777,8 +781,8 @@ packages:
     resolution: {integrity: sha512-4VkNRdN+BImL2KcCi41WvAYbh6zLX5AUTi4so68yPqiItjbgTjqpEnGAqasgnG+lB6GuAyUltKwVopp6Uv+gwQ==}
     engines: {node: '>=20'}
 
-  electron@42.2.0:
-    resolution: {integrity: sha512-b2Tc7sIKiZEl0tBVwFM5GJ+FT5KYhmy9QJHjx8BGVZPVW2SctXWEvrE959ElB56qw7H05dBkhlikDA1DmpaAMw==}
+  electron@42.4.0:
+    resolution: {integrity: sha512-OXXqh9LD9KxXPv2Fe25EfU9N9AvWTuV6V81sfhQaNvTAXCd9ONA+Q4OWvMe+CmYD6xIwjFxGGtG/ZphDYYC5OQ==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -1887,6 +1891,8 @@ packages:
 
 snapshots:
 
+  '@electron-internal/extract-zip@1.0.3': {}
+
   '@electron/asar@3.4.1':
     dependencies:
       commander: 5.1.0
@@ -2270,7 +2276,7 @@ snapshots:
 
   '@types/yauzl@2.10.3':
     dependencies:
-      '@types/node': 24.13.2
+      '@types/node': 25.9.3
     optional: true
 
   '@vitest/expect@4.1.8':
@@ -2554,11 +2560,11 @@ snapshots:
       conf: 15.1.0
       type-fest: 5.7.0
 
-  electron@42.2.0:
+  electron@42.4.0:
     dependencies:
+      '@electron-internal/extract-zip': 1.0.3
       '@electron/get': 5.0.0
       '@types/node': 24.13.2
-      extract-zip: 2.0.1
     transitivePeerDependencies:
       - supports-color
 
@@ -3107,9 +3113,9 @@ snapshots:
     dependencies:
       mimic-function: 5.0.1
 
-  menubar@9.5.2(electron@42.2.0):
+  menubar@9.5.2(electron@42.4.0):
     dependencies:
-      electron: 42.2.0
+      electron: 42.4.0
       electron-positioner: 4.1.0
 
   mimic-function@5.0.1: {}
