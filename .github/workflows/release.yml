@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # create releases + upload assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never cancel a release mid-publish
+
+jobs:
+  # Cheap gate: only proceed when package.json "version" changed in this push.
+  detect:
+    if: github.repository == 'juanjoGonDev/devbar' # never run in forks
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.ver.outputs.changed }}
+      version: ${{ steps.ver.outputs.current }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 2 # need HEAD and HEAD~1
+          persist-credentials: false
+      - name: Detect version bump
+        id: ver
+        run: |
+          CURR=$(node -pe "require('./package.json').version")
+          PREV=$(git show HEAD~1:package.json 2>/dev/null \
+            | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "")
+          echo "prev=$PREV current=$CURR"
+          echo "current=$CURR" >> "$GITHUB_OUTPUT"
+          if [ "$CURR" != "$PREV" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Build + publish the macOS app — only on a version bump.
+  release:
+    needs: detect
+    if: needs.detect.outputs.changed == 'true'
+    runs-on: macos-15 # arm64; a mac .app can only be built on macOS
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        # version comes from package.json "packageManager"
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cache Electron download
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/Library/Caches/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Package app
+        run: pnpm run pack
+
+      - name: Zip .app
+        run: |
+          APP=$(find dist -maxdepth 2 -name 'DevBar.app' -type d | head -1)
+          test -n "$APP" || { echo "DevBar.app not found"; exit 1; }
+          ditto -c -k --sequesterRsrc --keepParent "$APP" \
+            "dist/DevBar-macos-arm64.zip"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V="${{ needs.detect.outputs.version }}"
+          gh release create "v$V" \
+            --title "DevBar v$V" \
+            --generate-notes \
+            "dist/DevBar-macos-arm64.zip"

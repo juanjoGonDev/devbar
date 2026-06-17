@@ -1,0 +1,56 @@
+name: Version bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'Tipo de subida — patch: 0.1.0→0.1.1 · minor: 0.1.0→0.2.0 · major: 0.1.0→1.0.0'
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+# Open a bump PR. Merging it to main triggers release.yml (which publishes
+# the GitHub Release on the detected version change).
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    # Dispatch is maintainer-only; this also stops the workflow running in forks.
+    if: github.repository == 'juanjoGonDev/devbar'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Bump version
+        id: bump
+        env:
+          BUMP_TYPE: ${{ inputs.type }} # constrained choice; via env to avoid injection
+        run: |
+          npm version "$BUMP_TYPE" --no-git-tag-version
+          echo "version=$(node -pe "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          BUMP_TYPE: ${{ inputs.type }}
+        run: |
+          BRANCH="release/v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "chore: release v$VERSION"
+          git push --set-upstream origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Release v$VERSION" \
+            --body "Automated **$BUMP_TYPE** bump to \`v$VERSION\`. Merging this PR publishes the release."

@@ -9,6 +9,8 @@ const {
   Menu,
   screen,
   dialog,
+  Notification,
+  shell,
 } = require('electron');
 const { menubar } = require('menubar');
 
@@ -18,6 +20,7 @@ const { ProcessManager, deriveColor } = require('./process-manager');
 const gitManager = require('./git-manager');
 const trayIcon = require('./tray-icon');
 const logger = require('./logger');
+const { checkForUpdate } = require('./update-check');
 const { aggregateColor } = trayIcon;
 const { loadShellPath, expandTilde } = require('./path-helper');
 const { RepoWatcher } = require('./repo-watcher');
@@ -64,6 +67,10 @@ let configWindow = null;
 const logsWindows = new Map();
 const silencedWindows = new Map();
 const repoWatcher = new RepoWatcher();
+
+// GitHub repo to check for newer releases, and the result once found.
+const UPDATE_REPO = { owner: 'juanjoGonDev', repo: 'devbar' };
+let availableUpdate = null; // { version, url } when a newer release exists
 
 // Group-level transient errors (not persisted)
 const groupErrors = new Map();
@@ -233,6 +240,13 @@ function updateDockVisibility() {
 
 function buildTrayContextMenu() {
   const items = [];
+  if (availableUpdate) {
+    items.push({
+      label: `⬆︎ Actualizar a v${availableUpdate.version}…`,
+      click: () => shell.openExternal(availableUpdate.url),
+    });
+    items.push({ type: 'separator' });
+  }
   if (logsWindows.size > 0) {
     const submenu = [];
     for (const [processId, win] of logsWindows.entries()) {
@@ -258,6 +272,26 @@ function buildTrayContextMenu() {
   items.push({ type: 'separator' });
   items.push({ label: 'Salir', role: 'quit' });
   return Menu.buildFromTemplate(items);
+}
+
+// Check GitHub for a newer release; on first discovery, notify the user.
+// The "Actualizar a vX" item lives in the tray right-click menu thereafter.
+async function runUpdateCheck() {
+  const found = await checkForUpdate({
+    ...UPDATE_REPO,
+    currentVersion: app.getVersion(),
+  });
+  if (!found) return;
+  const isNew = !availableUpdate || availableUpdate.version !== found.version;
+  availableUpdate = found;
+  if (isNew && Notification.isSupported()) {
+    const n = new Notification({
+      title: 'DevBar — actualización disponible',
+      body: `v${found.version} está lista. Click para descargar.`,
+    });
+    n.on('click', () => shell.openExternal(found.url));
+    n.show();
+  }
 }
 
 function ensureSilencedWindow(groupId, commandId) {
@@ -1135,6 +1169,10 @@ app.whenReady().then(() => {
     // Delay 300 ms so the renderer can paint its initial empty state first.
     // Only commands are eligible — actions are one-shots and must not run at boot.
     setTimeout(() => autoStartAllMarkedCommands(), 300);
+
+    // Check GitHub for a newer release now and once a day after.
+    runUpdateCheck();
+    setInterval(runUpdateCheck, 24 * 60 * 60 * 1000);
   });
 
   mb.on('after-create-window', () => {
