@@ -14,6 +14,7 @@ concurrency:
 jobs:
   # Cheap gate: only proceed when package.json "version" changed in this push.
   detect:
+    if: github.repository == 'juanjoGonDev/devbar' # never run in forks
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.ver.outputs.changed }}
