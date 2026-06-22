@@ -31,7 +31,7 @@
     "electron-packager": "17.1.2",
     "eslint": "9.39.4",
     "globals": "17.6.0",
-    "knip": "6.16.1",
+    "knip": "6.17.1",
     "lefthook": "2.1.9",
     "prettier": "3.8.4",
     "vitest": "4.1.8"
