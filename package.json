@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "dependency-cruiser": "16.10.4",
-    "electron": "42.4.0",
+    "electron": "42.4.1",
     "electron-packager": "17.1.2",
     "eslint": "9.39.4",
     "globals": "17.6.0",
