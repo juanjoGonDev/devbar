@@ -66,6 +66,25 @@ Stops any running DevBar (packaged or `pnpm start`), repacks, replaces
 bundle is unsigned), and relaunches. Falls back to `~/Applications` if
 `/Applications` is not writable.
 
+## Simulating a login/boot launch
+
+Group **pre-scripts** only auto-run when DevBar was opened by macOS at
+login (`app.getLoginItemSettings().wasOpenedAtLogin`) — not on a manual
+reopen. To exercise that boot path without rebooting, launch the packaged
+binary with `DEVBAR_FORCE_LOGIN=1`, which forces the "opened at login"
+branch:
+
+```bash
+# stop any running instance first
+pkill -f "DevBar.app/Contents/MacOS/DevBar"
+# launch as if started at login (runs pre-scripts + their confirmation modals)
+DEVBAR_FORCE_LOGIN=1 /Applications/DevBar.app/Contents/MacOS/DevBar
+```
+
+`open -a DevBar` does NOT propagate env vars, so launch the binary
+directly. The flag is inert in normal use (nobody sets it), so it is safe
+to ship — it only short-circuits the login check for testing.
+
 ## Tests
 
 ```bash

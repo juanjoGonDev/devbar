@@ -99,12 +99,20 @@ function createPreScriptRunner({
         ? await confirmScript(script, group, groupId)
         : false;
       if (!ok) {
+        // Declining a confirmation is a deliberate user choice, NOT a
+        // failure — flag it as cancelled so the pipeline stops without
+        // erroring and the group's auto-start commands can still run.
         pushAggregatorLog(
           handle.aggregatorId,
           `── Script "${script.name}" cancelado por el usuario ──`,
-          'error',
+          null,
         );
-        return { ok: false, code: -1, error: 'confirm_declined' };
+        return {
+          ok: false,
+          code: -1,
+          error: 'confirm_declined',
+          cancelled: true,
+        };
       }
     }
 
@@ -254,6 +262,7 @@ function createPreScriptRunner({
     pushAggregatorLog(aggregatorId, `── Working directory: ${groupPath} ──`);
 
     let pipelineOk = true;
+    let pipelineCancelled = false; // user declined a confirmation, or cancel()
     let failedStepIdx = -1;
 
     for (let i = 0; i < steps.length; i++) {
@@ -263,6 +272,7 @@ function createPreScriptRunner({
 
       if (handle.cancelled) {
         pipelineOk = false;
+        pipelineCancelled = true;
         break;
       }
 
@@ -274,7 +284,7 @@ function createPreScriptRunner({
       const stepStartedAt = Date.now();
       let stepOk = false;
       if (step.mode === 'serial') {
-        // Serial: run one by one, abort on first failure
+        // Serial: run one by one, abort on first failure/decline
         stepOk = true;
         for (const script of step.scripts || []) {
           if (handle.cancelled) {
@@ -282,6 +292,11 @@ function createPreScriptRunner({
             break;
           }
           const r = await runOne(script, step, groupId, handle);
+          if (r.cancelled) {
+            pipelineCancelled = true;
+            stepOk = false;
+            break;
+          }
           if (!r.ok) {
             stepOk = false;
             break;
@@ -294,6 +309,14 @@ function createPreScriptRunner({
             runOne(script, step, groupId, handle),
           ),
         );
+        // A genuine failure takes priority over a decline; a decline alone
+        // (no real failure) is treated as a user cancellation.
+        if (
+          results.some((r) => r.cancelled) &&
+          results.every((r) => r.ok || r.cancelled)
+        ) {
+          pipelineCancelled = true;
+        }
         stepOk = results.every((r) => r.ok);
       }
 
@@ -315,13 +338,25 @@ function createPreScriptRunner({
     const pipelineDuration = formatUptime(Date.now() - handle.runId);
 
     if (!pipelineOk) {
-      const reason = handle.cancelled
-        ? 'cancelled'
-        : `step_${failedStepIdx}_failed`;
-      const logLine = handle.cancelled
-        ? `── Pipeline cancelled (${pipelineDuration}) ──`
-        : `── Pipeline failed at step ${failedStepIdx} (${pipelineDuration}) ──`;
-      pushAggregatorLog(aggregatorId, logLine, 'error');
+      // Cancellation (manual cancel() or a declined confirmation) is NOT an
+      // error: no red badge, no onError, and — crucially — the caller may
+      // still start the group's auto-start commands.
+      if (pipelineCancelled || handle.cancelled) {
+        pushAggregatorLog(
+          aggregatorId,
+          `── Pipeline cancelled (${pipelineDuration}) ──`,
+          null,
+        );
+        handle.status = 'idle';
+        broadcastUpdate();
+        return { ok: false, cancelled: true, error: 'cancelled' };
+      }
+      const reason = `step_${failedStepIdx}_failed`;
+      pushAggregatorLog(
+        aggregatorId,
+        `── Pipeline failed at step ${failedStepIdx} (${pipelineDuration}) ──`,
+        'error',
+      );
       handle.status = 'error';
       // Keep error visible for 5 seconds
       setRecentResult(groupId, 'error', reason, runId, 5000);

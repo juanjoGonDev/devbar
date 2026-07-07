@@ -670,28 +670,36 @@ describe('createPreScriptRunner — confirmation gate', () => {
     expect(pm.getState('pre:g1:s1:sc1').status).toBe('done');
   });
 
-  it('R2.3: confirm:true + confirmScript resolves false → start never called, step fails, aggregator logs decline', async () => {
+  it('R2.3: confirm:true + confirmScript resolves false → declined (cancelled, NOT a failure), start never called, no onError', async () => {
     const step = makeStep('s1', 'serial', [
       { id: 'sc1', name: 'A', confirm: true },
     ]);
     // sc1 intentionally not configured in pm — if start() were called it would error
     const pm = makeMockPM({});
     const confirmScript = vi.fn().mockResolvedValue(false);
+    const onError = vi.fn();
     const runner = createPreScriptRunner({
       processManager: pm,
       configStore: makeConfigStore({ preSteps: [step] }),
       broadcastUpdate: vi.fn(),
-      onError: vi.fn(),
+      onError,
       confirmScript,
       cancelConfirm: vi.fn(),
     });
 
     const res = await runner.run('g1');
+    // Declining a confirmation is a user choice, NOT a pipeline failure:
+    // it must not surface as an error (so main can still start commands).
     expect(res.ok).toBe(false);
-    expect(res.error).toBe('step_1_failed');
+    expect(res.cancelled).toBe(true);
+    expect(res.error).toBe('cancelled');
+    expect(onError).not.toHaveBeenCalled();
     expect(confirmScript).toHaveBeenCalledTimes(1);
     // start() was never called for sc1 (no logs recorded for its pid)
     expect(pm.getLogs('pre:g1:s1:sc1').length).toBe(0);
+    // No lingering error result → tray shows no red badge.
+    const rr = runner.getRecentResult('g1');
+    expect(rr == null || rr.status !== 'error').toBe(true);
 
     const aggKey = Object.keys(pm._logs).find((k) =>
       k.startsWith('pre-pipeline:g1:'),
@@ -702,26 +710,47 @@ describe('createPreScriptRunner — confirmation gate', () => {
     );
   });
 
-  it('R2.4: no confirmScript dep injected → fail-safe declined, start never called', async () => {
+  it('R2.4: no confirmScript dep injected → fail-safe declined (cancelled, not failure), start never called', async () => {
     const step = makeStep('s1', 'parallel', [
       { id: 'sc1', name: 'A', confirm: true },
     ]);
     // Configure a valid, would-succeed pid so a false pass is impossible:
     // without the fail-safe gate, start() would run and the pipeline would
-    // succeed instead of failing.
+    // succeed instead of being declined.
     const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const onError = vi.fn();
     const runner = createPreScriptRunner({
       processManager: pm,
       configStore: makeConfigStore({ preSteps: [step] }),
       broadcastUpdate: vi.fn(),
-      onError: vi.fn(),
+      onError,
       // No confirmScript / cancelConfirm injected — fail-safe path
     });
 
     const res = await runner.run('g1');
     expect(res.ok).toBe(false);
-    expect(res.error).toBe('step_1_failed');
+    expect(res.cancelled).toBe(true);
+    expect(res.error).toBe('cancelled');
+    expect(onError).not.toHaveBeenCalled();
     expect(pm.getLogs('pre:g1:s1:sc1').length).toBe(0);
+  });
+
+  it('R2.7: a real script failure (exit≠0) stays a failure — NOT cancelled — and calls onError', async () => {
+    const step = makeStep('s1', 'serial', [{ id: 'sc1', name: 'A' }]);
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 1 } });
+    const onError = vi.fn();
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError,
+    });
+
+    const res = await runner.run('g1');
+    expect(res.ok).toBe(false);
+    expect(res.cancelled).toBeFalsy();
+    expect(res.error).toBe('step_1_failed');
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 
   it('R2.5: parallel step with 2 confirm:true scripts → confirmScript called once per script', async () => {

@@ -1193,9 +1193,14 @@ async function autoStartAllMarkedCommands() {
   // i.e. on system boot — not on every manual app restart. This protects
   // the user from re-running expensive `make setup` style scripts every
   // time they quit and reopen DevBar.
+  // DEVBAR_FORCE_LOGIN=1 forces the "opened at login" path — for testing the
+  // boot auto-run flow without rebooting. Otherwise use the real signal.
   const wasOpenedAtLogin =
-    process.platform === 'darwin' &&
-    !!(app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin);
+    process.env.DEVBAR_FORCE_LOGIN === '1' ||
+    (process.platform === 'darwin' &&
+      !!(
+        app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin
+      ));
 
   const groups = configStore.listGroups();
   await Promise.all(
@@ -1216,7 +1221,10 @@ async function autoStartAllMarkedCommands() {
         wasOpenedAtLogin;
       if (shouldRunPre) {
         const res = await preScriptRunner.run(group.id);
-        if (!res.ok) {
+        // A user cancellation (declined confirmation) is NOT a failure —
+        // skip the pre-scripts but STILL start the group's commands. Only a
+        // genuine pre-script failure blocks the auto-start.
+        if (!res.ok && !res.cancelled) {
           broadcastToast(
             'error',
             `Pre-scripts ${group.name}: ${res.error || 'failed'}`,
