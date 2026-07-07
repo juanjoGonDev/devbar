@@ -100,3 +100,14 @@ Vitest covers the pure modules (`groups-model`, `compound-id`,
 
 You can also export it to JSON or import another machine's config from
 **Configuración → Copia de seguridad**.
+
+## Star History
+
+<a href="https://www.star-history.com/?type=date&repos=juanjoGonDev%2Fdevbar">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&theme=dark&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+ </picture>
+</a>
+
