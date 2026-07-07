@@ -22,6 +22,8 @@ const { formatUptime } = require('./format-uptime');
  *   configStore: object,
  *   broadcastUpdate: () => void,
  *   onError: (err: string, ctx: object) => void,
+ *   confirmScript?: (script: object, group: object, groupId: string) => Promise<boolean>,
+ *   cancelConfirm?: (groupId: string) => void,
  * }} deps
  */
 function createPreScriptRunner({
@@ -29,6 +31,8 @@ function createPreScriptRunner({
   configStore,
   broadcastUpdate,
   onError,
+  confirmScript,
+  cancelConfirm,
 }) {
   // groupId → RunHandle
   const running = new Map();
@@ -84,7 +88,26 @@ function createPreScriptRunner({
    * CRITICAL: subscribes to 'action:done' BEFORE calling processManager.start(pid)
    * to avoid missing the event for fast-finishing scripts (Risk R1).
    */
-  function runOne(script, step, groupId, handle) {
+  async function runOne(script, step, groupId, handle) {
+    // ── Confirmation gate (opt-in, per-script) ─────────────────────────
+    // Sits BEFORE childPids.add / subscribe / start so a declined script
+    // never spawns nor leaks an action:done listener.
+    if (script.confirm === true) {
+      const group = configStore.getGroup(groupId);
+      // Fail-safe: no confirmScript dep injected => treated as declined.
+      const ok = confirmScript
+        ? await confirmScript(script, group, groupId)
+        : false;
+      if (!ok) {
+        pushAggregatorLog(
+          handle.aggregatorId,
+          `── Script "${script.name}" cancelado por el usuario ──`,
+          'error',
+        );
+        return { ok: false, code: -1, error: 'confirm_declined' };
+      }
+    }
+
     const pid = makePreScriptId(groupId, step.id, script.id);
     handle.childPids.add(pid);
     const tag = `[${script.name}]`;
@@ -329,6 +352,9 @@ function createPreScriptRunner({
         processManager.stop(pid);
       } catch (_) {}
     }
+    // A script parked in the confirmation gate has NOT added a childPid yet
+    // (gate precedes childPids.add), so this acts on a disjoint set — safe.
+    if (cancelConfirm) cancelConfirm(groupId);
     return { ok: true };
   }
 

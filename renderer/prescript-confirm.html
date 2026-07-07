@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <title>Confirmar pre-script</title>
+  </head>
+  <body class="prescript-confirm">
+    <div class="pc-card">
+      <img id="pc-logo" alt="" />
+      <h1 id="pc-title"></h1>
+      <code id="pc-cmd"></code>
+      <div class="pc-buttons">
+        <button id="pc-btn-confirm" class="pc-btn pc-confirm" type="button">
+          Ejecutar
+        </button>
+        <button id="pc-btn-cancel" class="pc-btn pc-cancel" type="button">
+          Cancelar
+        </button>
+      </div>
+    </div>
+    <script src="prescript-confirm.js"></script>
+  </body>
+</html>

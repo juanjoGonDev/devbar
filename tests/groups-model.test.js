@@ -21,6 +21,7 @@ import {
   enforceSingleModeAutoStart,
   clampMaxLogLinesOrNull,
   clampTimeoutOrNull,
+  clampConfirmSecsOrNull,
 } from '../src/groups-model.js';
 
 // ─── Real user config fixture (7 services, 2 repos) ───────────────────
@@ -1362,6 +1363,103 @@ describe('normalizePreScript — timeoutMs field', () => {
   it('sets timeoutMs to null for empty string', () => {
     const sc = normalizePreScript({ command: 'echo hi', timeoutMs: '' });
     expect(sc.timeoutMs).toBeNull();
+  });
+});
+
+// ─── clampConfirmSecsOrNull ──────────────────────────────────────────────
+describe('clampConfirmSecsOrNull', () => {
+  it('returns null for undefined', () => {
+    expect(clampConfirmSecsOrNull(undefined)).toBeNull();
+  });
+
+  it('returns null for null', () => {
+    expect(clampConfirmSecsOrNull(null)).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(clampConfirmSecsOrNull('')).toBeNull();
+  });
+
+  it('returns null for NaN (string)', () => {
+    expect(clampConfirmSecsOrNull('abc')).toBeNull();
+  });
+
+  it('returns null for zero', () => {
+    expect(clampConfirmSecsOrNull(0)).toBeNull();
+  });
+
+  it('returns null for negative value', () => {
+    expect(clampConfirmSecsOrNull(-100)).toBeNull();
+  });
+
+  it('preserves valid in-range value', () => {
+    expect(clampConfirmSecsOrNull(60)).toBe(60);
+  });
+
+  it('clamps below minimum (1 → 3)', () => {
+    expect(clampConfirmSecsOrNull(1)).toBe(3);
+  });
+
+  it('preserves minimum boundary (3 → 3)', () => {
+    expect(clampConfirmSecsOrNull(3)).toBe(3);
+  });
+
+  it('preserves maximum boundary (3600 → 3600)', () => {
+    expect(clampConfirmSecsOrNull(3600)).toBe(3600);
+  });
+
+  it('clamps above maximum (999999 → 3600)', () => {
+    expect(clampConfirmSecsOrNull(999999)).toBe(3600);
+  });
+});
+
+// ─── normalizePreScript — confirm fields ─────────────────────────────────
+describe('normalizePreScript — confirm fields', () => {
+  it('defaults confirm/confirmSecs/confirmOnTimeout for missing input', () => {
+    const sc = normalizePreScript({});
+    expect(sc.confirm).toBe(false);
+    expect(sc.confirmSecs).toBeNull();
+    expect(sc.confirmOnTimeout).toBe('cancel');
+  });
+
+  it('defaults confirmSecs to 60 when confirm:true and confirmSecs unset', () => {
+    const sc = normalizePreScript({ confirm: true });
+    expect(sc.confirm).toBe(true);
+    expect(sc.confirmSecs).toBe(60);
+    expect(sc.confirmOnTimeout).toBe('cancel');
+  });
+
+  it('clamps confirmSecs below minimum (confirm:true, confirmSecs:2 → 3)', () => {
+    const sc = normalizePreScript({ confirm: true, confirmSecs: 2 });
+    expect(sc.confirmSecs).toBe(3);
+  });
+
+  it('clamps confirmSecs above maximum (confirm:true, confirmSecs:99999 → 3600)', () => {
+    const sc = normalizePreScript({ confirm: true, confirmSecs: 99999 });
+    expect(sc.confirmSecs).toBe(3600);
+  });
+
+  it('sets confirmSecs to null for explicit empty string even when confirm:true', () => {
+    const sc = normalizePreScript({ confirm: true, confirmSecs: '' });
+    expect(sc.confirmSecs).toBeNull();
+  });
+
+  it('sets confirmSecs to null when confirm is false, regardless of confirmSecs input', () => {
+    const sc = normalizePreScript({ confirm: false, confirmSecs: 60 });
+    expect(sc.confirmSecs).toBeNull();
+  });
+
+  it('preserves explicit confirmOnTimeout "confirm"', () => {
+    const sc = normalizePreScript({
+      confirm: true,
+      confirmOnTimeout: 'confirm',
+    });
+    expect(sc.confirmOnTimeout).toBe('confirm');
+  });
+
+  it('defaults unknown confirmOnTimeout to "cancel"', () => {
+    const sc = normalizePreScript({ confirmOnTimeout: 'xyz' });
+    expect(sc.confirmOnTimeout).toBe('cancel');
   });
 });
 

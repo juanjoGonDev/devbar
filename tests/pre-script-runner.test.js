@@ -97,6 +97,11 @@ function makeStep(id, mode, scripts) {
       name: sc.name,
       command: sc.cmd || 'echo ok',
       ...(sc.timeoutMs != null ? { timeoutMs: sc.timeoutMs } : {}),
+      ...(sc.confirm != null ? { confirm: sc.confirm } : {}),
+      ...(sc.confirmSecs !== undefined ? { confirmSecs: sc.confirmSecs } : {}),
+      ...(sc.confirmOnTimeout != null
+        ? { confirmOnTimeout: sc.confirmOnTimeout }
+        : {}),
     })),
   };
 }
@@ -618,5 +623,163 @@ describe('createPreScriptRunner — getRunState / getRecentResult', () => {
     const recent = runner.getRecentResult('g1');
     expect(recent).not.toBeNull();
     expect(recent.status).toBe('error');
+  });
+});
+
+describe('createPreScriptRunner — confirmation gate', () => {
+  it('R2.1: confirm:false → confirmScript never called, start runs normally', async () => {
+    const step = makeStep('s1', 'parallel', [
+      { id: 'sc1', name: 'A', confirm: false },
+    ]);
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const confirmScript = vi.fn().mockResolvedValue(true);
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+      confirmScript,
+      cancelConfirm: vi.fn(),
+    });
+
+    const res = await runner.run('g1');
+    expect(res.ok).toBe(true);
+    expect(confirmScript).not.toHaveBeenCalled();
+  });
+
+  it('R2.2: confirm:true + confirmScript resolves true → start is called, pipeline succeeds', async () => {
+    const step = makeStep('s1', 'parallel', [
+      { id: 'sc1', name: 'A', confirm: true },
+    ]);
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const confirmScript = vi.fn().mockResolvedValue(true);
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+      confirmScript,
+      cancelConfirm: vi.fn(),
+    });
+
+    const res = await runner.run('g1');
+    expect(res.ok).toBe(true);
+    expect(confirmScript).toHaveBeenCalledTimes(1);
+    // Proves start() actually ran for sc1 (pipeline can only succeed if it did)
+    expect(pm.getLogs('pre:g1:s1:sc1')).toEqual([]);
+    expect(pm.getState('pre:g1:s1:sc1').status).toBe('done');
+  });
+
+  it('R2.3: confirm:true + confirmScript resolves false → start never called, step fails, aggregator logs decline', async () => {
+    const step = makeStep('s1', 'serial', [
+      { id: 'sc1', name: 'A', confirm: true },
+    ]);
+    // sc1 intentionally not configured in pm — if start() were called it would error
+    const pm = makeMockPM({});
+    const confirmScript = vi.fn().mockResolvedValue(false);
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+      confirmScript,
+      cancelConfirm: vi.fn(),
+    });
+
+    const res = await runner.run('g1');
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('step_1_failed');
+    expect(confirmScript).toHaveBeenCalledTimes(1);
+    // start() was never called for sc1 (no logs recorded for its pid)
+    expect(pm.getLogs('pre:g1:s1:sc1').length).toBe(0);
+
+    const aggKey = Object.keys(pm._logs).find((k) =>
+      k.startsWith('pre-pipeline:g1:'),
+    );
+    const lines = pm._logs[aggKey].map((e) => e.line);
+    expect(lines.some((l) => l.includes('cancelado por el usuario'))).toBe(
+      true,
+    );
+  });
+
+  it('R2.4: no confirmScript dep injected → fail-safe declined, start never called', async () => {
+    const step = makeStep('s1', 'parallel', [
+      { id: 'sc1', name: 'A', confirm: true },
+    ]);
+    // Configure a valid, would-succeed pid so a false pass is impossible:
+    // without the fail-safe gate, start() would run and the pipeline would
+    // succeed instead of failing.
+    const pm = makeMockPM({ 'pre:g1:s1:sc1': { code: 0 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+      // No confirmScript / cancelConfirm injected — fail-safe path
+    });
+
+    const res = await runner.run('g1');
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('step_1_failed');
+    expect(pm.getLogs('pre:g1:s1:sc1').length).toBe(0);
+  });
+
+  it('R2.5: parallel step with 2 confirm:true scripts → confirmScript called once per script', async () => {
+    const step = makeStep('s1', 'parallel', [
+      { id: 'sc1', name: 'A', confirm: true },
+      { id: 'sc2', name: 'B', confirm: true },
+    ]);
+    const pm = makeMockPM({
+      'pre:g1:s1:sc1': { code: 0 },
+      'pre:g1:s1:sc2': { code: 0 },
+    });
+    const confirmScript = vi.fn().mockResolvedValue(true);
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+      confirmScript,
+      cancelConfirm: vi.fn(),
+    });
+
+    const res = await runner.run('g1');
+    expect(res.ok).toBe(true);
+    expect(confirmScript).toHaveBeenCalledTimes(2);
+  });
+
+  it('R2.6: cancel() while awaiting confirmScript → cancelConfirm called, pipeline resolves cancelled', async () => {
+    const step = makeStep('s1', 'parallel', [
+      { id: 'sc1', name: 'A', confirm: true },
+    ]);
+    const pm = makeMockPM({});
+    let pendingResolve;
+    const confirmScript = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pendingResolve = resolve;
+        }),
+    );
+    const cancelConfirm = vi.fn(() => {
+      if (pendingResolve) pendingResolve(false);
+    });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore({ preSteps: [step] }),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+      confirmScript,
+      cancelConfirm,
+    });
+
+    const runPromise = runner.run('g1');
+    // Give the pipeline time to reach the confirm await
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.cancel('g1');
+    const res = await runPromise;
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('cancelled');
+    expect(cancelConfirm).toHaveBeenCalledWith('g1');
   });
 });

@@ -65,6 +65,18 @@ function clampTimeoutOrNull(v) {
   return Math.min(3_600_000, Math.max(1000, Math.round(n)));
 }
 
+/**
+ * Clamp a confirmSecs countdown for a pre-script: null for missing/empty/0/invalid/
+ * <=0, otherwise clamp to [3, 3600]. null means "wait indefinitely (no countdown)".
+ * Mirrors clampTimeoutOrNull.
+ */
+function clampConfirmSecsOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(3600, Math.max(3, Math.round(n)));
+}
+
 // ─────────────────────── Env helpers ────────────────────────────────
 
 /**
@@ -184,6 +196,17 @@ function normalizeCommand(input) {
  */
 function normalizePreScript(input) {
   const raw = input || {};
+  const confirm = raw.confirm === true;
+  // confirmSecs MUST be null unless confirm===true (spec requirement).
+  // Default 60 ONLY when opting in AND the field is entirely absent.
+  // Explicit 0/''/null -> null = indefinite (no countdown).
+  const confirmSecs = !confirm
+    ? null
+    : raw.confirmSecs === undefined
+      ? 60
+      : clampConfirmSecsOrNull(raw.confirmSecs);
+  const confirmOnTimeout =
+    raw.confirmOnTimeout === 'confirm' ? 'confirm' : 'cancel';
   return {
     id: raw.id || uuidv4(),
     name: (raw.name || '').trim() || 'Unnamed',
@@ -193,6 +216,9 @@ function normalizePreScript(input) {
     inheritGroupEnv:
       typeof raw.inheritGroupEnv === 'boolean' ? raw.inheritGroupEnv : false,
     timeoutMs: clampTimeoutOrNull(raw.timeoutMs),
+    confirm,
+    confirmSecs,
+    confirmOnTimeout,
   };
 }
 
@@ -572,6 +598,7 @@ module.exports = {
   enforceSingleModeAutoStart,
   clampMaxLogLinesOrNull,
   clampTimeoutOrNull,
+  clampConfirmSecsOrNull,
   DEFAULT_WARN_REGEX,
   DEFAULT_ERROR_REGEX,
 };

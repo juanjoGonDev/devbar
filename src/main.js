@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const {
   app,
   BrowserWindow,
@@ -53,6 +54,83 @@ try {
 
 const processManager = new ProcessManager(configStore);
 
+// ── Pre-script confirmation orchestrator ────────────────────────────────
+// Owns ALL Electron concerns for the confirmation gate: the token → pending
+// map, the authoritative auto-resolve timer (ADR-1), the global serial modal
+// queue (ADR-2), and the frameless BrowserWindow. This is the ONLY place
+// with mutable confirm state.
+const pendingConfirms = new Map(); // token -> { resolve, timer, win, groupId, context }
+const prescriptConfirmWindows = new Map(); // token -> BrowserWindow (dock ref-counting)
+let confirmChain = Promise.resolve(); // global serial queue: one modal at a time
+let _prescriptConfirmLogo = null;
+
+function getPrescriptConfirmLogo() {
+  if (_prescriptConfirmLogo !== null) return _prescriptConfirmLogo;
+  try {
+    const p = path.join(__dirname, '..', 'assets', 'icon.png');
+    _prescriptConfirmLogo = `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`;
+  } catch (e) {
+    _prescriptConfirmLogo = ''; // renderer degrades gracefully (hides <img>)
+  }
+  return _prescriptConfirmLogo;
+}
+
+function resolvePrescriptConfirm(token, decision) {
+  const entry = pendingConfirms.get(token);
+  if (!entry) return; // no-op guard => double-resolve safe
+  pendingConfirms.delete(token); // delete FIRST so a re-entrant close is a no-op
+  if (entry.timer) clearTimeout(entry.timer);
+  if (entry.win && !entry.win.isDestroyed()) entry.win.close();
+  entry.resolve(decision === 'confirm');
+}
+
+function cancelConfirm(groupId) {
+  for (const [token, entry] of pendingConfirms) {
+    if (entry.groupId === groupId) resolvePrescriptConfirm(token, 'cancel');
+  }
+}
+
+function showConfirmModal(script, groupId) {
+  return new Promise((resolve) => {
+    const token = crypto.randomUUID();
+    const entry = {
+      resolve,
+      timer: null,
+      win: null,
+      groupId,
+      context: {
+        name: script.name,
+        command: [script.command, ...(script.args || [])].join(' ').trim(),
+        secs: script.confirmSecs, // null => no countdown (indefinite)
+        onTimeout: script.confirmOnTimeout, // 'confirm' | 'cancel'
+        logo: getPrescriptConfirmLogo(),
+      },
+    };
+    pendingConfirms.set(token, entry);
+    entry.win = ensurePrescriptConfirmWindow(token);
+    // AUTHORITATIVE auto-resolve timer lives in MAIN (ADR-1) — the renderer's
+    // countdown is purely cosmetic and never resolves on its own.
+    if (script.confirmSecs != null) {
+      entry.timer = setTimeout(
+        () => resolvePrescriptConfirm(token, script.confirmOnTimeout),
+        script.confirmSecs * 1000,
+      );
+    }
+  });
+}
+
+// Injected into the runner. Serializes via confirmChain so only ONE modal
+// shows at a time across ALL concurrent group pipelines (global queue).
+function confirmScript(script, group, groupId) {
+  const run = () => showConfirmModal(script, groupId); // always resolves boolean, never rejects
+  const result = confirmChain.then(run, run);
+  confirmChain = result.then(
+    () => undefined,
+    () => undefined,
+  ); // neutralize so the next job is unaffected
+  return result;
+}
+
 const preScriptRunner = createPreScriptRunner({
   processManager,
   configStore,
@@ -60,6 +138,8 @@ const preScriptRunner = createPreScriptRunner({
   onError: (err, _ctx) => {
     broadcastToast('error', `Pre-scripts: ${err}`);
   },
+  confirmScript,
+  cancelConfirm,
 });
 
 let mb;
@@ -230,6 +310,7 @@ function updateDockVisibility() {
   const anyOpen =
     logsWindows.size > 0 ||
     silencedWindows.size > 0 ||
+    prescriptConfirmWindows.size > 0 ||
     (configWindow && !configWindow.isDestroyed());
   if (anyOpen) {
     if (!app.dock.isVisible()) app.dock.show();
@@ -427,6 +508,49 @@ function ensureLogsWindow(processId, { filter } = {}) {
   });
   logsWindows.set(processId, win);
   logger.attachWindowConsole(win, `logs:${processId}`);
+  updateDockVisibility();
+  return win;
+}
+
+function ensurePrescriptConfirmWindow(token) {
+  const win = new BrowserWindow({
+    width: 380,
+    height: 300, // fixed for v1; CSS ellipsis/wrap handles long commands
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    center: true,
+    fullscreenable: false,
+    minimizable: false,
+    maximizable: false,
+    show: false, // show on ready-to-show to avoid a white flash
+    backgroundColor: '#1e1e1e',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.setMenuBarVisibility(false);
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  win.loadFile(
+    path.join(__dirname, '..', 'renderer', 'prescript-confirm.html'),
+    {
+      query: { token },
+    },
+  );
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
+  win.on('closed', () => {
+    // OS-level / force close without a decision => implicit cancel (Risk R4)
+    if (pendingConfirms.has(token)) resolvePrescriptConfirm(token, 'cancel');
+    prescriptConfirmWindows.delete(token);
+    updateDockVisibility();
+  });
+  prescriptConfirmWindows.set(token, win);
+  logger.attachWindowConsole(win, `prescript-confirm:${token}`);
   updateDockVisibility();
   return win;
 }
@@ -641,6 +765,15 @@ function registerIpc() {
       return { ok: true };
     },
   );
+
+  ipcMain.handle('prescriptConfirm:getContext', (_e, token) => {
+    const entry = pendingConfirms.get(token);
+    return entry ? entry.context : null; // { name, command, secs, onTimeout, logo }
+  });
+  ipcMain.handle('prescriptConfirm:resolve', (_e, { token, decision }) => {
+    resolvePrescriptConfirm(token, decision);
+    return { ok: true };
+  });
 
   // ── Process start/stop ────────────────────────────────────────────────
   ipcMain.handle('process:start', async (_e, processId) => {
