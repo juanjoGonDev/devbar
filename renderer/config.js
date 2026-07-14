@@ -36,6 +36,11 @@ const sfMaxLogLines = document.getElementById('sf-max-log-lines');
 const cmdOnlyFields = document.getElementById('cmd-only-fields');
 const sfTimeoutSecs = document.getElementById('sf-timeout-secs');
 const sfTimeoutRow = document.getElementById('sf-timeout-row');
+const sfConfirmRow = document.getElementById('sf-confirm-row');
+const sfConfirm = document.getElementById('sf-confirm');
+const sfConfirmDetails = document.getElementById('sf-confirm-details');
+const sfConfirmOnTimeout = document.getElementById('sf-confirm-on-timeout');
+const sfConfirmSecs = document.getElementById('sf-confirm-secs');
 
 const DEFAULT_WARN = '\\bwarn(ing)?s?\\b';
 const DEFAULT_ERROR = '\\berror(s)?\\b';
@@ -1040,6 +1045,27 @@ function openSubDialog(item, kind, groupId, stepId) {
     sfTimeoutSecs.value =
       item && item.timeoutMs ? Math.round(item.timeoutMs / 1000) : '';
 
+  // PreScript-only: confirmation gate
+  if (sfConfirmRow) sfConfirmRow.style.display = isPreScript ? '' : 'none';
+  if (sfConfirm) {
+    sfConfirm.checked = !!(item && item.confirm);
+    if (sfConfirmOnTimeout) {
+      sfConfirmOnTimeout.value = (item && item.confirmOnTimeout) || 'cancel';
+    }
+    if (sfConfirmSecs) {
+      sfConfirmSecs.value =
+        item && item.confirmSecs != null ? item.confirmSecs : '';
+    }
+    if (sfConfirmDetails) {
+      sfConfirmDetails.style.display = sfConfirm.checked ? '' : 'none';
+    }
+    sfConfirm.onchange = () => {
+      if (sfConfirmDetails) {
+        sfConfirmDetails.style.display = sfConfirm.checked ? '' : 'none';
+      }
+    };
+  }
+
   // Command-only fields — hidden for actions and prescripts
   cmdOnlyFields.style.display = isCommand ? '' : 'none';
   if (isCommand) {
@@ -1064,6 +1090,9 @@ function openSubDialog(item, kind, groupId, stepId) {
           env: data.env,
           inheritGroupEnv: data.inheritGroupEnv,
           timeoutMs: data.timeoutSecs ? data.timeoutSecs * 1000 : null,
+          confirm: data.confirm,
+          confirmSecs: data.confirmSecs,
+          confirmOnTimeout: data.confirmOnTimeout,
         };
         await window.api.savePreScript(groupId, _sfPreStepId, payload);
       } else if (isCommand) {
@@ -1166,6 +1195,8 @@ subForm.addEventListener('submit', async (e) => {
     maxLogLinesStr === '' ? null : Number(maxLogLinesStr) || null;
   const timeoutSecsStr = sfTimeoutSecs ? sfTimeoutSecs.value.trim() : '';
   const timeoutSecs = timeoutSecsStr ? parseInt(timeoutSecsStr, 10) : null;
+  const confirmSecsStr = sfConfirmSecs ? sfConfirmSecs.value.trim() : '';
+  const confirmSecs = confirmSecsStr ? parseInt(confirmSecsStr, 10) : null;
   const data = {
     icon: sfIconBtn ? sfIconBtn.textContent : null,
     name: sfName.value.trim(),
@@ -1180,6 +1211,9 @@ subForm.addEventListener('submit', async (e) => {
     silenceErrors: sfSilenceErr.checked,
     maxLogLines,
     timeoutSecs,
+    confirm: sfConfirm ? sfConfirm.checked : false,
+    confirmSecs,
+    confirmOnTimeout: sfConfirmOnTimeout ? sfConfirmOnTimeout.value : 'cancel',
   };
   subDialog.close();
   if (subDialogCallback) await subDialogCallback(data);

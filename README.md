@@ -66,6 +66,25 @@ Stops any running DevBar (packaged or `pnpm start`), repacks, replaces
 bundle is unsigned), and relaunches. Falls back to `~/Applications` if
 `/Applications` is not writable.
 
+## Simulating a login/boot launch
+
+Group **pre-scripts** only auto-run when DevBar was opened by macOS at
+login (`app.getLoginItemSettings().wasOpenedAtLogin`) — not on a manual
+reopen. To exercise that boot path without rebooting, launch the packaged
+binary with `DEVBAR_FORCE_LOGIN=1`, which forces the "opened at login"
+branch:
+
+```bash
+# stop any running instance first
+pkill -f "DevBar.app/Contents/MacOS/DevBar"
+# launch as if started at login (runs pre-scripts + their confirmation modals)
+DEVBAR_FORCE_LOGIN=1 /Applications/DevBar.app/Contents/MacOS/DevBar
+```
+
+`open -a DevBar` does NOT propagate env vars, so launch the binary
+directly. The flag is inert in normal use (nobody sets it), so it is safe
+to ship — it only short-circuits the login check for testing.
+
 ## Tests
 
 ```bash
@@ -81,3 +100,14 @@ Vitest covers the pure modules (`groups-model`, `compound-id`,
 
 You can also export it to JSON or import another machine's config from
 **Configuración → Copia de seguridad**.
+
+## Star History
+
+<a href="https://www.star-history.com/?type=date&repos=juanjoGonDev%2Fdevbar">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&theme=dark&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+ </picture>
+</a>
+

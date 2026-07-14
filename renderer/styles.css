@@ -2178,5 +2178,80 @@ dialog form {
 }
 
 /* ================================================================
+   Pre-script confirmation modal (renderer/prescript-confirm.html)
+   ================================================================ */
+body.prescript-confirm {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card-strong);
+}
+.prescript-confirm .pc-card {
+  width: 100%;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  -webkit-app-region: drag;
+}
+.prescript-confirm #pc-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  object-fit: contain;
+  margin-bottom: 4px;
+}
+.prescript-confirm #pc-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.prescript-confirm #pc-cmd {
+  display: block;
+  max-width: 100%;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prescript-confirm #pc-countdown {
+  margin: 2px 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.prescript-confirm .pc-buttons {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  -webkit-app-region: no-drag;
+}
+.prescript-confirm .pc-btn {
+  flex: 1;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.prescript-confirm .pc-confirm {
+  background: var(--running);
+  color: #fff;
+}
+.prescript-confirm .pc-cancel {
+  background: var(--error);
+  color: #fff;
+}
+
+/* ================================================================
    SERVICE/LEGACY CLASSES KEPT FOR COMPATIBILITY (used in dist/ only)
    ================================================================ */

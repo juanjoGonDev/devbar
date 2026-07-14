@@ -126,6 +126,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('preScripts:delete', { groupId, stepId, scriptId }),
   reorderPreScripts: (groupId, stepId, orderedIds) =>
     ipcRenderer.invoke('preScripts:reorder', { groupId, stepId, orderedIds }),
+  getPrescriptConfirmContext: (token) =>
+    ipcRenderer.invoke('prescriptConfirm:getContext', token),
+  resolvePrescriptConfirm: (token, decision) =>
+    ipcRenderer.invoke('prescriptConfirm:resolve', { token, decision }),
 
   // ── App ───────────────────────────────────────────────────────────────
   quit: () => ipcRenderer.invoke('app:quit'),
