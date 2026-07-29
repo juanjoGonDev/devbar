@@ -23,14 +23,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
+    env:
+      AUTOMATION_TOKEN: ${{ secrets.REPOSITORY_AUTOMATION_TOKEN || secrets.PAT_FINE }}
     steps:
-      - name: Validate approvals and enable auto-merge
+      - name: Explain missing automation token
+        if: env.AUTOMATION_TOKEN == ''
+        run: |
+          echo "::notice title=Repository automation token missing::Configure REPOSITORY_AUTOMATION_TOKEN or PAT_FINE to enable branch updates and auto-merge."
+
+      - name: Validate current approvals and enable auto-merge
+        if: env.AUTOMATION_TOKEN != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           DRY_RUN: ${{ inputs.dry_run || false }}
         with:
+          github-token: ${{ env.AUTOMATION_TOKEN }}
           script: |
             const dryRun = process.env.DRY_RUN === 'true';
             const { owner, repo } = context.repo;
@@ -40,11 +49,14 @@ jobs:
               { owner, repo, state: 'open', per_page: 100 },
             );
 
-            const candidates = pullRequests.filter((pullRequest) =>
-              pullRequest.user?.login === 'dependabot[bot]' &&
-              pullRequest.base.ref === defaultBranch &&
-              pullRequest.head.repo?.full_name === `${owner}/${repo}` &&
-              pullRequest.labels.some((label) => label.name === 'requires-manual-qa'),
+            const candidates = pullRequests.filter(
+              (pullRequest) =>
+                pullRequest.user?.login === 'dependabot[bot]' &&
+                pullRequest.base.ref === defaultBranch &&
+                pullRequest.head.repo?.full_name === `${owner}/${repo}` &&
+                pullRequest.labels.some(
+                  (label) => label.name === 'requires-manual-qa',
+                ),
             );
 
             const permissionCache = new Map();
@@ -52,10 +64,14 @@ jobs:
               if (permissionCache.has(login)) {
                 return permissionCache.get(login);
               }
+
               try {
-                const response = await github.rest.repos.getCollaboratorPermissionLevel({
-                  owner, repo, username: login,
-                });
+                const response =
+                  await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner,
+                    repo,
+                    username: login,
+                  });
                 const allowed = ['admin', 'maintain', 'write'].includes(
                   response.data.permission,
                 );
@@ -72,26 +88,72 @@ jobs:
 
             const results = [];
             for (const candidate of candidates) {
+              const current = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: candidate.number,
+              });
+              const currentHeadSha = current.data.head.sha;
+
+              if (current.data.mergeable_state === 'behind') {
+                if (dryRun) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'would-update-branch',
+                    reason: 'fresh approval required after the update',
+                  });
+                  continue;
+                }
+
+                await github.rest.pulls.updateBranch({
+                  owner,
+                  repo,
+                  pull_number: candidate.number,
+                  expected_head_sha: currentHeadSha,
+                });
+                results.push({
+                  number: candidate.number,
+                  action: 'branch-update-requested',
+                  reason: 'fresh approval required for the new head commit',
+                });
+                continue;
+              }
+
               const reviews = await github.paginate(
                 github.rest.pulls.listReviews,
                 { owner, repo, pull_number: candidate.number, per_page: 100 },
               );
-
               const latestReviewByUser = new Map();
+
               for (const review of reviews) {
                 const login = review.user?.login;
                 const submittedAt = Date.parse(review.submitted_at ?? '');
-                if (!login || !Number.isFinite(submittedAt)) continue;
+                if (
+                  !login ||
+                  !Number.isFinite(submittedAt) ||
+                  review.commit_id !== currentHeadSha
+                ) {
+                  continue;
+                }
+
                 const previous = latestReviewByUser.get(login);
                 if (!previous || submittedAt > previous.submittedAt) {
-                  latestReviewByUser.set(login, { state: review.state, submittedAt });
+                  latestReviewByUser.set(login, {
+                    state: review.state,
+                    submittedAt,
+                  });
                 }
               }
 
               let approved = false;
               let changesRequested = false;
               for (const [login, review] of latestReviewByUser) {
-                if (login.endsWith('[bot]') || !(await hasWritePermission(login))) continue;
+                if (
+                  login.endsWith('[bot]') ||
+                  !(await hasWritePermission(login))
+                ) {
+                  continue;
+                }
                 approved ||= review.state === 'APPROVED';
                 changesRequested ||= review.state === 'CHANGES_REQUESTED';
               }
@@ -101,40 +163,63 @@ jobs:
                   number: candidate.number,
                   action: 'skipped',
                   reason: changesRequested
-                    ? 'latest maintainer review requests changes'
-                    : 'no current maintainer approval',
+                    ? 'current maintainer review requests changes'
+                    : 'no maintainer approval for the current head commit',
                 });
                 continue;
               }
 
               if (dryRun) {
-                results.push({ number: candidate.number, action: 'would-enable-auto-merge' });
+                results.push({
+                  number: candidate.number,
+                  action: 'would-enable-auto-merge',
+                });
                 continue;
               }
 
-              const current = await github.rest.pulls.get({
-                owner, repo, pull_number: candidate.number,
+              const verified = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: candidate.number,
               });
-              if (current.data.mergeable_state === 'behind') {
-                await github.rest.pulls.updateBranch({
-                  owner,
-                  repo,
-                  pull_number: candidate.number,
-                  expected_head_sha: current.data.head.sha,
+              if (verified.data.head.sha !== currentHeadSha) {
+                results.push({
+                  number: candidate.number,
+                  action: 'skipped',
+                  reason: 'head commit changed during validation',
                 });
+                continue;
               }
-              if (!current.data.auto_merge) {
+
+              if (!verified.data.auto_merge) {
                 await github.graphql(
-                  `mutation EnableAutoMerge($pullRequestId: ID!) {
-                    enablePullRequestAutoMerge(input: {
-                      pullRequestId: $pullRequestId
-                      mergeMethod: SQUASH
-                    }) { pullRequest { number } }
+                  `mutation EnableAutoMerge(
+                    $pullRequestId: ID!
+                    $expectedHeadOid: GitObjectID!
+                  ) {
+                    enablePullRequestAutoMerge(
+                      input: {
+                        pullRequestId: $pullRequestId
+                        mergeMethod: SQUASH
+                        expectedHeadOid: $expectedHeadOid
+                      }
+                    ) {
+                      pullRequest {
+                        number
+                      }
+                    }
                   }`,
-                  { pullRequestId: current.data.node_id },
+                  {
+                    pullRequestId: verified.data.node_id,
+                    expectedHeadOid: currentHeadSha,
+                  },
                 );
               }
-              results.push({ number: candidate.number, action: 'auto-merge-enabled' });
+
+              results.push({
+                number: candidate.number,
+                action: 'auto-merge-enabled',
+              });
             }
 
             await core.summary
@@ -142,9 +227,12 @@ jobs:
               .addRaw(
                 results.length === 0
                   ? 'No eligible Dependabot pull requests found.'
-                  : results.map((result) =>
-                      `- #${result.number}: ${result.action}` +
-                      `${result.reason ? ` — ${result.reason}` : ''}`,
-                    ).join('\n'),
+                  : results
+                      .map(
+                        (result) =>
+                          `- #${result.number}: ${result.action}` +
+                          `${result.reason ? ` — ${result.reason}` : ''}`,
+                      )
+                      .join('\n'),
               )
               .write();
