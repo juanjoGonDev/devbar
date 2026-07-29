@@ -154,6 +154,11 @@ jobs:
         run: |
           branch="release/v$VERSION"
           actor_login=$(gh api user --jq .login)
+          if [ "$actor_login" != "$GITHUB_REPOSITORY_OWNER" ]; then
+            echo "::error title=Invalid release automation actor::PAT_FINE authenticates as $actor_login, but this repository requires $GITHUB_REPOSITORY_OWNER."
+            exit 1
+          fi
+
           git config user.name "$actor_login"
           git config user.email "$actor_login@users.noreply.github.com"
           npm version "$VERSION" --no-git-tag-version
