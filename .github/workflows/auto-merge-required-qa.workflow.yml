@@ -23,23 +23,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read
-      pull-requests: read
-    env:
-      AUTOMATION_TOKEN: ${{ secrets.REPOSITORY_AUTOMATION_TOKEN || secrets.PAT_FINE }}
+      contents: write
+      pull-requests: write
     steps:
-      - name: Explain missing automation token
-        if: env.AUTOMATION_TOKEN == ''
-        run: |
-          echo "::notice title=Repository automation token missing::Configure REPOSITORY_AUTOMATION_TOKEN or PAT_FINE to enable branch updates and auto-merge."
-
       - name: Validate current approvals and enable auto-merge
-        if: env.AUTOMATION_TOKEN != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           DRY_RUN: ${{ inputs.dry_run || false }}
         with:
-          github-token: ${{ env.AUTOMATION_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
             const dryRun = process.env.DRY_RUN === 'true';
             const { owner, repo } = context.repo;
