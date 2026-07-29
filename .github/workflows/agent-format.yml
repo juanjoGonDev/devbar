@@ -1,27 +1,39 @@
 name: Agent format branch
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/chore-repository-automation
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: agent-format-repository-automation
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   format:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/chore-repository-automation' &&
+      github.actor != 'github-actions[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
       - name: Checkout task branch
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           ref: agent/chore-repository-automation
+          token: ${{ secrets.REPOSITORY_AUTOMATION_TOKEN || secrets.PAT_FINE || github.token }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
@@ -39,6 +51,7 @@ jobs:
         run: >-
           pnpm exec prettier --write
           .github/dependabot.yml
+          .github/workflows/agent-format.yml
           .github/workflows/auto-merge-required-qa.workflow.yml
           .github/workflows/auto-release.workflow.yml
           .github/workflows/delete-cache.workflow.yml
@@ -49,6 +62,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .github/dependabot.yml \
+            .github/workflows/agent-format.yml \
             .github/workflows/auto-merge-required-qa.workflow.yml \
             .github/workflows/auto-release.workflow.yml \
             .github/workflows/delete-cache.workflow.yml \
