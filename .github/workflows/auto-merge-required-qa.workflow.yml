@@ -2,7 +2,7 @@ name: 🔄 Required QA auto-merge
 
 on:
   schedule:
-    - cron: '0 8 * * 6'
+    - cron: "0 8 * * 6"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -20,12 +20,43 @@ concurrency:
 jobs:
   process:
     name: Process approved Dependabot majors
+    if: github.event.repository.fork == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      issues: write
       pull-requests: write
     steps:
+      - name: Synchronize manual QA label
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const label = {
+              name: 'requires-manual-qa',
+              color: 'E99695',
+              description: 'Needs manual quality assurance testing before merging',
+            };
+
+            try {
+              await github.rest.issues.updateLabel({
+                owner,
+                repo,
+                name: label.name,
+                new_name: label.name,
+                color: label.color,
+                description: label.description,
+              });
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+
+              await github.rest.issues.createLabel({ owner, repo, ...label });
+            }
+
       - name: Validate current approvals and enable auto-merge
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
