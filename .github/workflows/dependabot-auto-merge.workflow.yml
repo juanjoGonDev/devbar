@@ -6,6 +6,7 @@ on:
       - opened
       - reopened
       - synchronize
+      - labeled
 
 permissions: read-all
 
@@ -14,9 +15,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  approve-release:
+    name: Approve trusted release pull request
+    if: >-
+      github.event.repository.fork == false &&
+      contains(github.event.pull_request.labels.*.name, 'auto-release') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Approve current release head
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const pullNumber = context.payload.pull_request.number;
+            const headSha = context.payload.pull_request.head.sha;
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              { owner, repo, pull_number: pullNumber, per_page: 100 },
+            );
+            const alreadyApproved = reviews.some(
+              (review) =>
+                review.user?.login === 'github-actions[bot]' &&
+                review.state === 'APPROVED' &&
+                review.commit_id === headSha,
+            );
+
+            if (alreadyApproved) {
+              core.info(`Release PR #${pullNumber} is already approved for ${headSha}.`);
+              return;
+            }
+
+            await github.rest.pulls.createReview({
+              owner,
+              repo,
+              pull_number: pullNumber,
+              commit_id: headSha,
+              event: 'APPROVE',
+              body: 'Approved by the trusted release workflow contract.',
+            });
+
   dependabot:
     name: Validate and queue eligible updates
     if: >-
+      github.event.repository.fork == false &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.base.ref == github.event.repository.default_branch
@@ -61,11 +109,16 @@ jobs:
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
           echo "requires_manual_qa=$requires_manual_qa" >> "$GITHUB_OUTPUT"
 
-      - name: Approve eligible update
+      - name: Approve eligible update as repository owner
         if: steps.policy.outputs.eligible == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PAT_FINE }}
         run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error title=Missing Dependabot secret::Configure PAT_FINE as a Dependabot repository secret. It must be a fine-grained token for this repository with Pull requests read/write permission."
+            exit 1
+          fi
+
           gh pr review "$PR_URL" \
             --approve \
             --body "Approved automatically: patch/minor update, or a development-only major update."
@@ -86,7 +139,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh label create "requires-manual-qa" \
-            --color "B60205" \
-            --description "Requires explicit maintainer approval before auto-merge" \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "E99695" \
+            --description "Needs manual quality assurance testing before merging" \
             --force
           gh pr edit "$PR_URL" --add-label "requires-manual-qa"
