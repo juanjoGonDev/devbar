@@ -2,13 +2,13 @@ name: 🗑️ Cache maintenance
 
 on:
   schedule:
-    - cron: "17 3 * * 0"
+    - cron: '17 3 * * 0'
   workflow_dispatch:
     inputs:
       stale_days:
         description: Delete caches unused for this many days
         required: true
-        default: "7"
+        default: '7'
         type: string
       dry_run:
         description: Report matching caches without deleting them
