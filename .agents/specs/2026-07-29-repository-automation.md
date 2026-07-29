@@ -10,22 +10,27 @@ Audit the active GitHub Actions setup against `fastypest`, add generic cache mai
 - Stack: pnpm, Node.js, and Electron.
 - Existing workflows: `ci.yml`, `release.yml`, and `version-bump.yml`.
 - `release.yml` already builds `DevBar.app`, uploads `DevBar-macos-arm64.zip`, and generates GitHub release notes after a version bump.
-- The reference cache pipeline is not empty-safe; the reference privileged workflow uses mutable Action tags and a PAT.
+- Dependabot-triggered `pull_request_target` workflows receive a read-only token and no secrets, so privileged Dependabot automation must not depend on repository secrets.
+- Release PRs created with the built-in `GITHUB_TOKEN` would not trigger the downstream CI/release workflow chain; the release preparer therefore needs an external automation credential.
 
 ## Decision
 
 - Add one cache-key-independent workflow using the repository cache API, bounded input validation, concurrent-delete handling, and manual dry-run by default.
-- Group weekly npm and GitHub Actions updates after a seven-day cooldown.
-- Auto-approve patch/minor updates and development-only majors without checking out PR code. Production majors require a current approval from a reviewer with repository write permission.
-- Use immutable Action SHAs and read-only defaults. Write operations require `REPOSITORY_AUTOMATION_TOKEN`, with `PAT_FINE` as compatibility fallback.
+- Group weekly npm and GitHub Actions updates after a seven-day cooldown while preserving exact dependency versions.
+- Use `pull_request` plus the repository-scoped `GITHUB_TOKEN` for Dependabot approval, labels, and auto-merge; no PR code is checked out.
+- Require a current write-permission maintainer approval for production majors, bound to the current head SHA.
+- Use the scheduled default-branch workflow and `GITHUB_TOKEN` for required-QA branch updates and auto-merge.
 - Add a scheduled Conventional-Commit release PR. Merging it delegates installer creation and generated release notes to the existing `release.yml`; npm publication is not added.
+- Restrict the external credential to the release PR workflow only.
 
 ## Acceptance
 
-- [x] No privileged workflow executes pull-request-controlled code.
+- [x] No privileged workflow checks out pull-request-controlled code.
 - [x] Cache cleanup covers every repository Actions cache and handles empty/concurrent deletion safely.
 - [x] Default branch lookup is dynamic.
 - [x] Production majors cannot pass on an external or stale approval.
+- [x] Dependabot and required-QA automation require no repository secret or variable.
+- [x] Only GitHub-only release preparation requires an external automation secret.
 - [x] New third-party Actions are pinned by full SHA.
 - [x] No merge, release, deployment, or publication is performed by this task.
 
@@ -33,9 +38,17 @@ Audit the active GitHub Actions setup against `fastypest`, add generic cache mai
 
 All proposed YAML parsed successfully with scalar-preserving YAML validation. Existing CI and release contracts were inspected. Pull-request checks remain the runtime gate.
 
+## Repository settings
+
+Enable repository auto-merge and `Allow GitHub Actions to create and approve pull requests`. Required status checks must remain enforced on `main`.
+
+## Release secret
+
+Configure the Actions secret `REPOSITORY_AUTOMATION_TOKEN` for `auto-release.workflow.yml`. `PAT_FINE` remains a compatibility fallback. Use a fine-grained token limited to `devbar` with Contents and Pull requests read/write permissions.
+
 ## Risks and rollback
 
-Auto-merge and branch protection must be configured consistently, and the automation token must have Contents, Issues, and Pull requests write access. Revert the workflow and Dependabot commits to roll back; no runtime data or artifacts require recovery.
+The release workflow cannot create a PR without the external token. Dependabot approval and auto-merge cannot operate if the repository settings above are disabled. Revert this PR to roll back; no runtime data or artifacts require recovery.
 
 ## Delivery
 
@@ -45,4 +58,4 @@ Auto-merge and branch protection must be configured consistently, and the automa
 
 ## Status
 
-Implemented on the task branch; pull-request CI and repository settings remain to be verified.
+Implemented on the task branch; pull-request checks and repository settings remain to be verified.
