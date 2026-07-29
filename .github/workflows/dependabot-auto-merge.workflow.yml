@@ -1,7 +1,7 @@
 name: 🤖 Dependabot auto-merge
 
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - reopened
@@ -23,11 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: read
-      issues: read
-      pull-requests: read
+      contents: write
+      issues: write
+      pull-requests: write
     env:
-      AUTOMATION_TOKEN: ${{ secrets.REPOSITORY_AUTOMATION_TOKEN || secrets.PAT_FINE }}
       PR_URL: ${{ github.event.pull_request.html_url }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
@@ -62,24 +61,19 @@ jobs:
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
           echo "requires_manual_qa=$requires_manual_qa" >> "$GITHUB_OUTPUT"
 
-      - name: Explain missing automation token
-        if: env.AUTOMATION_TOKEN == ''
-        run: |
-          echo "::notice title=Repository automation token missing::Configure REPOSITORY_AUTOMATION_TOKEN (preferred) or PAT_FINE with Contents, Issues and Pull requests write access to enable approval, labels and auto-merge."
-
       - name: Approve eligible update
-        if: env.AUTOMATION_TOKEN != '' && steps.policy.outputs.eligible == 'true'
+        if: steps.policy.outputs.eligible == 'true'
         env:
-          GH_TOKEN: ${{ env.AUTOMATION_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh pr review "$PR_URL" \
             --approve \
             --body "Approved automatically: patch/minor update, or a development-only major update."
 
       - name: Enable squash auto-merge
-        if: env.AUTOMATION_TOKEN != '' && steps.policy.outputs.eligible == 'true'
+        if: steps.policy.outputs.eligible == 'true'
         env:
-          GH_TOKEN: ${{ env.AUTOMATION_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh pr merge "$PR_URL" \
             --auto \
@@ -87,9 +81,9 @@ jobs:
             --match-head-commit "$HEAD_SHA"
 
       - name: Mark production major for manual QA
-        if: env.AUTOMATION_TOKEN != '' && steps.policy.outputs.requires_manual_qa == 'true'
+        if: steps.policy.outputs.requires_manual_qa == 'true'
         env:
-          GH_TOKEN: ${{ env.AUTOMATION_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh label create "requires-manual-qa" \
             --color "B60205" \
