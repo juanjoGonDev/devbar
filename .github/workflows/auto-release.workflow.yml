@@ -35,22 +35,35 @@ concurrency:
 jobs:
   prepare:
     name: Prepare GitHub release PR
-    if: github.repository == 'juanjoGonDev/devbar'
+    if: github.repository == 'juanjoGonDev/devbar' && github.event.repository.fork == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: read
+      issues: write
+      pull-requests: write
     env:
-      AUTOMATION_TOKEN: ${{ secrets.REPOSITORY_AUTOMATION_TOKEN || secrets.PAT_FINE }}
+      AUTOMATION_TOKEN: ${{ secrets.PAT_FINE }}
       FORCE_RELEASE: ${{ inputs.force || false }}
       RELEASE_STRATEGY: ${{ inputs.strategy || 'auto' }}
       DRY_RUN: ${{ inputs.dry_run || false }}
     steps:
-      - name: Explain missing automation token
+      - name: Explain missing user automation token
         if: env.AUTOMATION_TOKEN == '' && env.DRY_RUN != 'true'
         run: |
-          echo "::notice title=Repository automation token missing::Configure REPOSITORY_AUTOMATION_TOKEN (preferred) or PAT_FINE with Contents and Pull requests write access."
+          echo "::error title=Repository automation token missing::Configure PAT_FINE as an Actions secret. The release pull request must be created by the repository owner so github-actions[bot] can approve it."
+          exit 1
+
+      - name: Synchronize release label
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "auto-release" \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "FEF2C0" \
+            --description "Automatically prepares a version bump and GitHub release" \
+            --force
 
       - name: Checkout trusted default branch
         if: env.AUTOMATION_TOKEN != '' || env.DRY_RUN == 'true'
@@ -63,7 +76,7 @@ jobs:
         if: env.AUTOMATION_TOKEN != '' || env.DRY_RUN == 'true'
         id: release
         env:
-          GH_TOKEN: ${{ secrets.REPOSITORY_AUTOMATION_TOKEN || secrets.PAT_FINE || github.token }}
+          GH_TOKEN: ${{ secrets.PAT_FINE || github.token }}
         run: |
           latest_tag=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
           if [ -n "$latest_tag" ]; then
@@ -131,6 +144,7 @@ jobs:
           echo "Commits: ${{ steps.release.outputs.commit_count }}"
 
       - name: Create version bump pull request
+        id: create_pr
         if: steps.release.outputs.ready == 'true' && env.DRY_RUN != 'true' && env.AUTOMATION_TOKEN != ''
         env:
           GH_TOKEN: ${{ env.AUTOMATION_TOKEN }}
@@ -139,8 +153,9 @@ jobs:
           COMMIT_COUNT: ${{ steps.release.outputs.commit_count }}
         run: |
           branch="release/v$VERSION"
-          git config user.name "repository-automation[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          actor_login=$(gh api user --jq .login)
+          git config user.name "$actor_login"
+          git config user.email "$actor_login@users.noreply.github.com"
           npm version "$VERSION" --no-git-tag-version
           git checkout -b "$branch"
           git add package.json
@@ -155,6 +170,13 @@ jobs:
             --base "${{ github.event.repository.default_branch }}" \
             --head "$branch" \
             --title "chore(release): prepare v$VERSION" \
+            --label "auto-release" \
             --body "Automated **$STRATEGY** release from $COMMIT_COUNT commits. Merging this PR triggers the existing macOS build and publishes a GitHub Release with generated notes and the installer ZIP.")
+          echo "pr_url=$pr_url" >> "$GITHUB_OUTPUT"
 
-          gh pr merge "$pr_url" --auto --squash
+      - name: Queue release pull request
+        if: steps.create_pr.outputs.pr_url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ steps.create_pr.outputs.pr_url }}
+        run: gh pr merge "$PR_URL" --auto --squash
