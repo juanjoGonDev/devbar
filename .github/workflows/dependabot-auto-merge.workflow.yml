@@ -98,21 +98,48 @@ jobs:
         id: policy
         env:
           UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
-          DEPENDENCY_TYPE: ${{ steps.metadata.outputs.dependency-type }}
         run: |
+          set -euo pipefail
+
+          classify_update() {
+            case "$1" in
+              version-update:semver-patch|version-update:semver-minor)
+                printf '%s\n' eligible
+                ;;
+              version-update:semver-major)
+                printf '%s\n' manual
+                ;;
+              *)
+                printf '%s\n' ignored
+                ;;
+            esac
+          }
+
+          assert_decision() {
+            input=$1
+            expected=$2
+            actual=$(classify_update "$input")
+            if [ "$actual" != "$expected" ]; then
+              echo "::error title=Dependabot policy contract failed::$input resolved to $actual instead of $expected."
+              exit 1
+            fi
+          }
+
+          assert_decision version-update:semver-patch eligible
+          assert_decision version-update:semver-minor eligible
+          assert_decision version-update:semver-major manual
+          assert_decision unknown ignored
+
           eligible=false
           requires_manual_qa=false
+          decision=$(classify_update "$UPDATE_TYPE")
 
-          case "$UPDATE_TYPE" in
-            version-update:semver-patch|version-update:semver-minor)
+          case "$decision" in
+            eligible)
               eligible=true
               ;;
-            version-update:semver-major)
-              if [ "$DEPENDENCY_TYPE" = "direct:development" ]; then
-                eligible=true
-              elif [ "$DEPENDENCY_TYPE" = "direct:production" ]; then
-                requires_manual_qa=true
-              fi
+            manual)
+              requires_manual_qa=true
               ;;
           esac
 
@@ -137,7 +164,7 @@ jobs:
 
           gh pr review "$PR_URL" \
             --approve \
-            --body "Approved automatically: patch/minor update, or a development-only major update."
+            --body "Approved automatically: patch or minor update."
 
       - name: Enable squash auto-merge
         if: steps.policy.outputs.eligible == 'true'
@@ -149,7 +176,7 @@ jobs:
             --squash \
             --match-head-commit "$HEAD_SHA"
 
-      - name: Mark production major for manual QA
+      - name: Mark major update for manual QA
         if: steps.policy.outputs.requires_manual_qa == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
