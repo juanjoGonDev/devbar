@@ -28,33 +28,42 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Synchronize manual QA label
+      - name: Synchronize automation labels
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           github-token: ${{ github.token }}
           script: |
             const { owner, repo } = context.repo;
-            const label = {
-              name: 'requires-manual-qa',
-              color: 'E99695',
-              description: 'Needs manual quality assurance testing before merging',
-            };
+            const labels = [
+              {
+                name: 'requires-manual-qa',
+                color: 'E99695',
+                description: 'Needs manual quality assurance testing before merging',
+              },
+              {
+                name: 'auto-release',
+                color: 'FEF2C0',
+                description: 'Automatically prepares a version bump and GitHub release',
+              },
+            ];
 
-            try {
-              await github.rest.issues.updateLabel({
-                owner,
-                repo,
-                name: label.name,
-                new_name: label.name,
-                color: label.color,
-                description: label.description,
-              });
-            } catch (error) {
-              if (error.status !== 404) {
-                throw error;
+            for (const label of labels) {
+              try {
+                await github.rest.issues.updateLabel({
+                  owner,
+                  repo,
+                  name: label.name,
+                  new_name: label.name,
+                  color: label.color,
+                  description: label.description,
+                });
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+
+                await github.rest.issues.createLabel({ owner, repo, ...label });
               }
-
-              await github.rest.issues.createLabel({ owner, repo, ...label });
             }
 
       - name: Validate current approvals and enable auto-merge
