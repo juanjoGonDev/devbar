@@ -52,14 +52,24 @@ jobs:
               return;
             }
 
-            await github.rest.pulls.createReview({
-              owner,
-              repo,
-              pull_number: pullNumber,
-              commit_id: headSha,
-              event: 'APPROVE',
-              body: 'Approved by the trusted release workflow contract.',
-            });
+            try {
+              await github.rest.pulls.createReview({
+                owner,
+                repo,
+                pull_number: pullNumber,
+                commit_id: headSha,
+                event: 'APPROVE',
+                body: 'Approved by the trusted release workflow contract.',
+              });
+            } catch (error) {
+              if (error.status === 403) {
+                core.setFailed(
+                  'GitHub Actions cannot approve pull requests. Enable “Allow GitHub Actions to create and approve pull requests” under Settings → Actions → General → Workflow permissions.',
+                );
+                return;
+              }
+              throw error;
+            }
 
   dependabot:
     name: Validate and queue eligible updates
@@ -116,6 +126,12 @@ jobs:
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "::error title=Missing Dependabot secret::Configure PAT_FINE as a Dependabot repository secret. It must be a fine-grained token for this repository with Pull requests read/write permission."
+            exit 1
+          fi
+
+          authenticated_login=$(gh api user --jq .login)
+          if [ "$authenticated_login" != "$GITHUB_REPOSITORY_OWNER" ]; then
+            echo "::error title=Invalid Dependabot approval actor::PAT_FINE authenticates as $authenticated_login, but this repository requires $GITHUB_REPOSITORY_OWNER."
             exit 1
           fi
 
