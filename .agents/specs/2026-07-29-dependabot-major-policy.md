@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress.
+Ready for review.
 
 ## Request
 
@@ -10,7 +10,7 @@ Prevent every semantic-version major Dependabot update from being approved or qu
 
 ## Evidence
 
-The current workflow marks development-only major updates as eligible. Tooling and runtime majors such as Electron, ESLint, dependency-cruiser and GitHub Actions can require migrations or break CI despite being development dependencies.
+The previous workflow marked development-only major updates as eligible. Tooling and runtime majors such as Electron, ESLint, dependency-cruiser and GitHub Actions can require migrations or break CI despite being development dependencies.
 
 ## Decision
 
@@ -26,11 +26,16 @@ Classify only patch and minor updates as eligible. Classify every major update a
 
 ## Validation
 
-Pending workflow syntax review, pull-request checks and runtime evidence from the next Dependabot event.
+- CI run `30471214036`: success.
+- The Dependabot job is skipped as expected because this corrective PR is owner-authored.
+- Existing majors are labeled `requires-manual-qa`; stale bot approvals on majors were dismissed.
+- Valid patch/minor PRs were rebased and their application CI passed.
+- Runtime activation remains blocked because `PAT_FINE` resolves to an empty value in Dependabot-triggered runs; the secret must exist in the Dependabot repository-secret scope.
 
 ## Delivery
 
 Branch: `agent/fix-dependabot-major-policy`.
+Pull request: `#30`.
 
 ## Rollback
 
