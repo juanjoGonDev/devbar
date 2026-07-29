@@ -7,7 +7,7 @@ updates:
       day: "tuesday"
       time: "07:00"
       timezone: "Europe/Madrid"
-    versioning-strategy: "increase-if-necessary"
+    versioning-strategy: "increase"
     rebase-strategy: "auto"
     open-pull-requests-limit: 10
     cooldown:
