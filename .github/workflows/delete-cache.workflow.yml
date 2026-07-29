@@ -38,12 +38,13 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run || false }}
         with:
           script: |
-            const staleDays = Number.parseInt(process.env.STALE_DAYS, 10);
-            if (!Number.isInteger(staleDays) || staleDays < 1 || staleDays > 90) {
+            const staleDaysInput = process.env.STALE_DAYS ?? '';
+            if (!/^(?:[1-9]|[1-8]\d|90)$/.test(staleDaysInput)) {
               core.setFailed('stale_days must be an integer between 1 and 90');
               return;
             }
 
+            const staleDays = Number(staleDaysInput);
             const dryRun = process.env.DRY_RUN === 'true';
             const cutoff = Date.now() - staleDays * 24 * 60 * 60 * 1000;
             const { owner, repo } = context.repo;
@@ -62,7 +63,7 @@ jobs:
             for (const cache of staleCaches) {
               core.info(
                 `${dryRun ? 'Would delete' : 'Deleting'} cache ${cache.id} ` +
-                `(${cache.key}), last used ${cache.last_accessed_at}`,
+                  `(${cache.key}), last used ${cache.last_accessed_at}`,
               );
               if (dryRun) {
                 continue;
@@ -86,7 +87,10 @@ jobs:
             await core.summary
               .addHeading('Actions cache maintenance')
               .addTable([
-                [{ data: 'Metric', header: true }, { data: 'Value', header: true }],
+                [
+                  { data: 'Metric', header: true },
+                  { data: 'Value', header: true },
+                ],
                 ['Repository caches inspected', String(caches.length)],
                 ['Caches older than threshold', String(staleCaches.length)],
                 ['Caches deleted', String(deleted)],
