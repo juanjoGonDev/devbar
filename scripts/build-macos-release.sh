@@ -47,7 +47,7 @@ build_architecture() {
   local zip="$OUTPUT_DIR/DevBar-$VERSION-macos-$arch.zip"
 
   expected_mach_arch=$(mach_architecture "$arch")
-  "$ROOT_DIR/scripts/package-macos-app.sh" "$arch" "$package_dir"
+  bash "$ROOT_DIR/scripts/package-macos-app.sh" "$arch" "$package_dir"
 
   app=$(find "$package_dir" -maxdepth 2 -name 'DevBar.app' -type d | head -n 1)
   [ -n "$app" ] || fail "DevBar.app was not generated for $arch."
