@@ -84,13 +84,17 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install frozen dependency graph
+      - name: Resolve exact lockfile
+        run: pnpm install --lockfile-only --ignore-scripts
+
+      - name: Install generated dependency graph
         run: pnpm install --frozen-lockfile
 
       - name: Format changed files
         run: |
           pnpm exec prettier --write \
             package.json \
+            pnpm-lock.yaml \
             README.md \
             .github/workflows/auto-release.workflow.yml \
             .github/workflows/release.yml \
@@ -153,6 +157,7 @@ jobs:
           if-no-files-found: error
           path: |
             package.json
+            pnpm-lock.yaml
             README.md
             .github/workflows/auto-release.workflow.yml
             .github/workflows/release.yml
