@@ -69,8 +69,6 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: read
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
       - name: Checkout installer branch
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -86,19 +84,14 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Resolve exact lockfile
-        run: pnpm install --lockfile-only --ignore-scripts
-
-      - name: Install generated dependency graph
+      - name: Install frozen dependency graph
         run: pnpm install --frozen-lockfile
 
       - name: Format changed files
         run: |
           pnpm exec prettier --write \
             package.json \
-            pnpm-lock.yaml \
             README.md \
-            electron-builder.yml \
             .github/workflows/auto-release.workflow.yml \
             .github/workflows/release.yml \
             .agents/specs/2026-07-30-macos-release-installer.md
@@ -112,43 +105,47 @@ jobs:
       - name: Run existing package smoke build
         run: pnpm run pack
 
-      - name: Build universal installer
+      - name: Build architecture-specific installers
         run: |
           rm -rf dist
           pnpm run dist:mac
 
-      - name: Verify architectures and DMG contents
+      - name: Verify architectures, DMG contents, and checksums
         run: |
           set -euo pipefail
 
           version=$(node -p "require('./package.json').version")
-          dmg="dist/DevBar-$version-universal.dmg"
-          zip="dist/DevBar-$version-universal.zip"
-          app=$(find dist -path '*/mac-universal/DevBar.app' -type d | head -n 1)
+          validation_file=release-validation.txt
+          : > "$validation_file"
+          printf 'version=%s\n' "$version" >> "$validation_file"
 
-          test -s "$dmg"
-          test -s "$zip"
-          test -n "$app"
+          for arch in arm64 x64; do
+            dmg="dist/release/DevBar-$version-macos-$arch.dmg"
+            zip="dist/release/DevBar-$version-macos-$arch.zip"
+            test -s "$dmg"
+            test -s "$zip"
 
-          archs=$(lipo -archs "$app/Contents/MacOS/DevBar")
-          printf '%s\n' "$archs" | grep -q 'arm64'
-          printf '%s\n' "$archs" | grep -q 'x86_64'
+            mount_output=$(hdiutil attach "$dmg" -nobrowse -readonly)
+            mount_point=$(printf '%s\n' "$mount_output" | awk -F '\t' '$3 ~ /^\/Volumes\// { print $3; exit }')
+            test -n "$mount_point"
+            trap 'hdiutil detach "$mount_point" >/dev/null' EXIT
 
-          mount_output=$(hdiutil attach "$dmg" -nobrowse -readonly)
-          mount_point=$(printf '%s\n' "$mount_output" | awk -F '\t' '$3 ~ /^\/Volumes\// { print $3; exit }')
-          test -n "$mount_point"
-          trap 'hdiutil detach "$mount_point" >/dev/null' EXIT
-          test -d "$mount_point/DevBar.app"
-          hdiutil detach "$mount_point" >/dev/null
-          trap - EXIT
+            test -d "$mount_point/DevBar.app"
+            test -L "$mount_point/Applications"
+            executable_archs=$(lipo -archs "$mount_point/DevBar.app/Contents/MacOS/DevBar")
+            printf '%s\n' "$executable_archs" | grep -qw "$arch"
+            printf '%s=%s\n' "$arch" "$executable_archs" >> "$validation_file"
+
+            hdiutil detach "$mount_point" >/dev/null
+            trap - EXIT
+          done
 
           (
-            cd dist
-            shasum -a 256 "$(basename "$dmg")" "$(basename "$zip")" > SHA256SUMS.txt
+            cd dist/release
+            shasum -a 256 --check SHA256SUMS.txt
           )
-          printf 'version=%s\narchitectures=%s\n' "$version" "$archs" > release-validation.txt
 
-      - name: Upload generated validation inputs
+      - name: Upload validation evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mac-installer-validation-${{ github.sha }}
@@ -156,11 +153,9 @@ jobs:
           if-no-files-found: error
           path: |
             package.json
-            pnpm-lock.yaml
             README.md
-            electron-builder.yml
             .github/workflows/auto-release.workflow.yml
             .github/workflows/release.yml
             .agents/specs/2026-07-30-macos-release-installer.md
             release-validation.txt
-            dist/SHA256SUMS.txt
+            dist/release/SHA256SUMS.txt
