@@ -3,14 +3,12 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main] # only PRs targeting the main branch
+    branches: [main]
     types: [opened, reopened, synchronize, ready_for_review]
 
-# Least privilege: this pipeline only reads the repo.
 permissions:
   contents: read
 
-# One run per branch; new pushes cancel the previous in-flight run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
@@ -18,9 +16,6 @@ concurrency:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    # Only in this repo (not forks), skip draft PRs, still allow manual runs.
-    # Fork PRs that TARGET this repo still run here (github.repository is ours);
-    # this only stops the workflow executing inside someone's fork.
     if: >-
       github.repository == 'juanjoGonDev/devbar' &&
       (github.event_name == 'workflow_dispatch' ||
@@ -31,15 +26,12 @@ jobs:
           persist-credentials: false
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        # version comes from package.json "packageManager"
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
-          cache: pnpm # caches the pnpm content-addressable store
+          cache: pnpm
 
-      # Cache the flat node_modules itself (node-linker=hoisted makes it
-      # self-contained) so installs are skipped/instant on lockfile hits.
       - name: Cache node_modules
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -48,7 +40,6 @@ jobs:
           restore-keys: |
             node-modules-${{ runner.os }}-
 
-      # Cache the Electron binary @electron/get downloads for `pack`.
       - name: Cache Electron download
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -66,3 +57,110 @@ jobs:
 
       - name: Build (package app)
         run: pnpm run pack
+
+  mac-installer-validation:
+    name: macOS installer validation
+    if: >-
+      github.repository == 'juanjoGonDev/devbar' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
+      github.head_ref == 'agent/fix-macos-release-installer'
+    runs-on: macos-15
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - name: Checkout installer branch
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Resolve exact lockfile
+        run: pnpm install --lockfile-only --ignore-scripts
+
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            package.json \
+            pnpm-lock.yaml \
+            README.md \
+            electron-builder.yml \
+            .github/workflows/auto-release.workflow.yml \
+            .github/workflows/release.yml \
+            .agents/specs/2026-07-30-macos-release-installer.md
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependency graph
+        run: pnpm audit --audit-level=moderate
+
+      - name: Run quality checks
+        run: pnpm lint:strict && pnpm format:check && pnpm deadcode && pnpm deps:check && pnpm test
+
+      - name: Run existing package smoke build
+        run: pnpm run pack
+
+      - name: Build universal installer
+        run: |
+          rm -rf dist
+          pnpm run dist:mac
+
+      - name: Verify architectures and DMG contents
+        run: |
+          set -euo pipefail
+
+          version=$(node -p "require('./package.json').version")
+          dmg="dist/DevBar-$version-universal.dmg"
+          zip="dist/DevBar-$version-universal.zip"
+          app=$(find dist -path '*/mac-universal/DevBar.app' -type d | head -n 1)
+
+          test -s "$dmg"
+          test -s "$zip"
+          test -n "$app"
+
+          archs=$(lipo -archs "$app/Contents/MacOS/DevBar")
+          printf '%s\n' "$archs" | grep -q 'arm64'
+          printf '%s\n' "$archs" | grep -q 'x86_64'
+
+          mount_output=$(hdiutil attach "$dmg" -nobrowse -readonly)
+          mount_point=$(printf '%s\n' "$mount_output" | awk -F '\t' '$3 ~ /^\/Volumes\// { print $3; exit }')
+          test -n "$mount_point"
+          trap 'hdiutil detach "$mount_point" >/dev/null' EXIT
+          test -d "$mount_point/DevBar.app"
+          hdiutil detach "$mount_point" >/dev/null
+          trap - EXIT
+
+          (
+            cd dist
+            shasum -a 256 "$(basename "$dmg")" "$(basename "$zip")" > SHA256SUMS.txt
+          )
+          printf 'version=%s\narchitectures=%s\n' "$version" "$archs" > release-validation.txt
+
+      - name: Upload generated validation inputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mac-installer-validation-${{ github.sha }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            package.json
+            pnpm-lock.yaml
+            README.md
+            electron-builder.yml
+            .github/workflows/auto-release.workflow.yml
+            .github/workflows/release.yml
+            .agents/specs/2026-07-30-macos-release-installer.md
+            release-validation.txt
+            dist/SHA256SUMS.txt
