@@ -13,6 +13,8 @@
     "fetch-electron": "node node_modules/electron/install.js",
     "pack": "bash scripts/package-macos-app.sh",
     "dist:mac": "bash scripts/build-macos-release.sh",
+    "release:verify": "bash scripts/verify-macos-release.sh",
+    "release:mac": "pnpm run dist:mac && pnpm run release:verify",
     "install-local": "bash scripts/install-local.sh",
     "logs": "tail -F \"$HOME/Library/Logs/DevBar/app.log\"",
     "test": "vitest run",
