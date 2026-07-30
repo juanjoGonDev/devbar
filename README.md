@@ -11,6 +11,19 @@
 
 ---
 
+## Download
+
+Download the latest universal macOS installer from
+[GitHub Releases](https://github.com/juanjoGonDev/devbar/releases/latest):
+
+- `DevBar-<version>-universal.dmg` — standard drag-to-Applications installer.
+- `DevBar-<version>-universal.zip` — portable application archive.
+- `SHA256SUMS.txt` — integrity hashes for both artifacts.
+
+The current public builds are unsigned and not notarized. macOS may require an
+explicit approval in **System Settings → Privacy & Security** the first time the
+application is opened.
+
 ## Features
 
 - **Groups of commands** — bundle every `pnpm start:*` of a monorepo under one group sharing the same `cwd` and git repo.
@@ -54,6 +67,16 @@ pnpm run pack
 
 The bundle ends up in `dist/DevBar-darwin-*`. The icon comes from
 `assets/icon.icns` (multi-resolution 16 → 1024).
+
+## Build the universal macOS installer
+
+```bash
+pnpm run dist:mac
+```
+
+This creates a universal DMG and ZIP in `dist/`, compatible with Intel and Apple
+Silicon Macs. The release workflow runs the same command and publishes both
+files with SHA-256 checksums.
 
 ## Install / reinstall to `/Applications`
 
@@ -105,8 +128,8 @@ You can also export it to JSON or import another machine's config from
 
 <a href="https://www.star-history.com/?type=date&repos=juanjoGonDev%2Fdevbar">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&theme=dark&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&theme=dark&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
+  <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=juanjoGonDev/devbar&type=date&legend=top-left&sealed_token=SiobjIhLMyb_GKNYtWMigQfCvWNOgIgmnCAeSQxe42HTDl7UQDf0p6jcrSZzK75UogchLVfpVpgeAL6lfbd6aSoMGp92ZlqHnG88aesOfi4wwbCaV-_1VmYmwUFAiJeTRUnXAopttQWM7cBQsdgOvV3I0XG3Rxl6kN6QKkie2m9XOMbWQcOU_qGT8Tjc" />
  </picture>
 </a>
