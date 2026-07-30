@@ -1,0 +1,123 @@
+name: Validate macOS installer once
+
+on:
+  push:
+    branches:
+      - agent/fix-macos-release-installer
+
+permissions: read-all
+
+concurrency:
+  group: validate-macos-installer-once
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: >-
+      github.repository == 'juanjoGonDev/devbar' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: macos-15
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - name: Checkout corrective branch
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: agent/fix-macos-release-installer
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Resolve exact dependency lockfile
+        run: pnpm install --lockfile-only --ignore-scripts
+
+      - name: Format permanent changes
+        run: |
+          pnpm exec prettier --write \
+            package.json \
+            pnpm-lock.yaml \
+            README.md \
+            electron-builder.yml \
+            .github/workflows/auto-release.workflow.yml \
+            .github/workflows/release.yml \
+            .agents/specs/2026-07-30-macos-release-installer.md
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependency graph
+        run: pnpm audit --audit-level=moderate
+
+      - name: Run quality checks
+        run: pnpm lint:strict && pnpm format:check && pnpm deadcode && pnpm deps:check && pnpm test
+
+      - name: Run existing package smoke build
+        run: pnpm run pack
+
+      - name: Build universal installer
+        run: |
+          rm -rf dist
+          pnpm run dist:mac
+
+      - name: Verify architectures and DMG contents
+        run: |
+          set -euo pipefail
+
+          version=$(node -p "require('./package.json').version")
+          dmg="dist/DevBar-$version-universal.dmg"
+          zip="dist/DevBar-$version-universal.zip"
+          app=$(find dist -path '*/mac-universal/DevBar.app' -type d | head -n 1)
+
+          test -s "$dmg"
+          test -s "$zip"
+          test -n "$app"
+
+          archs=$(lipo -archs "$app/Contents/MacOS/DevBar")
+          printf 'Architectures: %s\n' "$archs"
+          printf '%s' "$archs" | grep -q 'arm64'
+          printf '%s' "$archs" | grep -q 'x86_64'
+
+          mount_output=$(hdiutil attach "$dmg" -nobrowse -readonly)
+          mount_point=$(printf '%s\n' "$mount_output" | awk -F '\t' '$3 ~ /^\/Volumes\// { print $3; exit }')
+          test -n "$mount_point"
+          trap 'hdiutil detach "$mount_point" >/dev/null' EXIT
+          test -d "$mount_point/DevBar.app"
+          hdiutil detach "$mount_point" >/dev/null
+          trap - EXIT
+
+      - name: Commit generated lockfile and formatting
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            package.json \
+            pnpm-lock.yaml \
+            README.md \
+            electron-builder.yml \
+            .github/workflows/auto-release.workflow.yml \
+            .github/workflows/release.yml \
+            .agents/specs/2026-07-30-macos-release-installer.md
+          if git diff --cached --quiet; then
+            echo 'Generated files are already current.'
+            exit 0
+          fi
+          git commit -m 'build(mac): finalize installer artifacts'
+          authorization=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::$authorization"
+          git -c http.extraheader="Authorization: Basic $authorization" \
+            push origin HEAD:agent/fix-macos-release-installer
