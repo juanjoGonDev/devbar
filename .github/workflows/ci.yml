@@ -178,7 +178,7 @@ jobs:
       github.event_name == 'pull_request' &&
       github.actor != 'github-actions[bot]' &&
       github.head_ref == 'agent/fix-macos-release-installer'
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 10
     permissions:
       contents: write
