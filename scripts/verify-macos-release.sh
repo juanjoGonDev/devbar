@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+readonly ROOT_DIR
 readonly OUTPUT_DIR=${1:-"$ROOT_DIR/dist/release"}
-readonly VERSION=${2:-$(node -p "require('$ROOT_DIR/package.json').version")}
+VERSION=${2:-$(node -p "require('$ROOT_DIR/package.json').version")}
+readonly VERSION
 MOUNT_POINT=''
 
 fail() {
