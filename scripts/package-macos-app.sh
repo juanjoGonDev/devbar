@@ -18,15 +18,7 @@ esac
 
 [ -s "$ICON_PATH" ] || fail "macOS icon not found at $ICON_PATH."
 
-pnpm exec electron-packager "$ROOT_DIR" DevBar \
-  --platform=darwin \
-  --arch="$ARCH" \
-  --out="$OUT_DIR" \
-  --overwrite \
-  --ignore='^/dist($|/)' \
-  --ignore='^/tests($|/)' \
-  --ignore='^/\.agents($|/)' \
-  --ignore='^/\.github($|/)'
+node "$ROOT_DIR/scripts/package-electron.js" "$ARCH" "$OUT_DIR"
 
 app=$(find "$OUT_DIR" -maxdepth 2 -name 'DevBar.app' -type d | head -n 1)
 [ -n "$app" ] || fail "DevBar.app was not generated for $ARCH."
