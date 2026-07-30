@@ -1,55 +1,78 @@
-# DevBar release lockfile CI repair
+# DevBar release lockfile and trusted auto-merge repair
 
 ## Request
 
-Restore the failing CI for pull request #31 and ensure the trusted release pull request is automatically merged after all required checks pass.
+Restore pull request #31, determine why its expected auto-merge did not occur, and make trusted release and Dependabot automation wait for the required validation gates.
 
 ## Evidence
 
-- CI run `30531092681` failed in `pnpm install --frozen-lockfile`.
-- pnpm reported `ERR_PNPM_BROKEN_LOCKFILE` because the snapshot key `fdir@6.5.0(picomatch@4.0.5)` appeared twice.
-- The duplicate was introduced when the grouped Dependabot update changed the older `picomatch@4.0.4` snapshot to `4.0.5` while an existing `4.0.5` snapshot was already present.
-- Both duplicated blocks were byte-for-byte identical; all consumers resolve to the remaining `fdir@6.5.0(picomatch@4.0.5)` snapshot.
-- After the lockfile repair, CI run `30538688837` passed installation and then failed `prettier --check .` on `.github/workflows/codeql.yml`.
-- The generated CodeQL workflow also used mutable action tags and persisted checkout credentials.
-- Final CI and CodeQL runs passed, but pull request #31 remained open.
-- `.github/workflows/auto-release.workflow.yml` attempts to queue auto-merge only once, immediately after creating the pull request.
-- `.github/workflows/dependabot-auto-merge.workflow.yml` re-approves trusted release heads on every relevant pull-request event but did not enable auto-merge for release pull requests. Its successful runs therefore proved approval only, not merge queueing.
+- CI run `30531092681` initially failed because `pnpm-lock.yaml` contained a duplicated `fdir@6.5.0(picomatch@4.0.5)` snapshot.
+- After repairing the lockfile, CI exposed an independent Prettier failure in the generated CodeQL workflow.
+- Pull request #31 eventually passed CI and CodeQL but remained open because the trusted release pull-request job only approved the current head.
+- `.github/workflows/auto-release.workflow.yml` attempted `gh pr merge --auto` only once, immediately after creating the release pull request.
+- `.github/workflows/dependabot-auto-merge.workflow.yml` also used `gh pr merge --auto` for eligible Dependabot updates.
+- The repository allows auto-merge but does not enforce CI and CodeQL as required branch checks.
+- Enabling GitHub auto-merge without required checks therefore merged pull request #31 immediately instead of waiting for its in-progress CI run.
+- CI run `30540512244` subsequently failed only because this specification lacked its final newline; the application and workflow logic were not executed after that failure.
 
 ## Decision
 
-- Remove exactly one of the two identical snapshot blocks.
-- Keep frozen-lockfile enforcement and avoid regenerating unrelated dependency resolutions.
-- Format the CodeQL workflow with the repository-pinned Prettier version, pin its actions to immutable SHAs, and disable persisted checkout credentials.
-- Extend the trusted release pull-request job so every `opened`, `reopened`, `synchronize`, or `labeled` event both approves the exact current head and enables squash auto-merge for that same head.
-- Keep the release eligibility checks: repository-owned actor, same-repository head, default target branch, non-fork repository, and `auto-release` label.
-- Do not modify the intended release version or application behavior.
+- Keep the repaired lockfile and hardened CodeQL workflow.
+- Remove direct `gh pr merge --auto` calls from release creation and Dependabot eligibility workflows.
+- Keep trusted release approval separate from merge execution.
+- Mark eligible patch and minor Dependabot updates with `auto-merge-eligible` after owner approval.
+- Add a privileged `workflow_run` gate sourced from the default branch. It never checks out or executes pull-request-controlled code.
+- Require successful `CI` and `CodeQL Advanced` runs for the exact pull-request head SHA before squash merging.
+- Revalidate pull-request state and head SHA immediately before merge to prevent races.
+- Extract eligibility, approval, and workflow-run selection into a pure CommonJS policy module with Vitest coverage.
+
+## Trust contract
+
+A release pull request is eligible only when all of these conditions hold:
+
+- The repository is not a fork.
+- The head belongs to this repository.
+- The base is the default branch.
+- The author is the repository owner.
+- The pull request has the `auto-release` label.
+- `github-actions[bot]` approved the exact current head.
+
+A Dependabot pull request is eligible only when all of these conditions hold:
+
+- The repository is not a fork.
+- The head belongs to this repository.
+- The base is the default branch.
+- The author is `dependabot[bot]`.
+- The update policy classified it as patch or minor.
+- The pull request has the `auto-merge-eligible` label.
+- The repository owner approved the exact current head through `PAT_FINE`.
+
+Both paths additionally require the latest `CI` and `CodeQL Advanced` runs for the exact head SHA to be completed successfully.
 
 ## Acceptance criteria
 
-- `pnpm-lock.yaml` contains one `fdir@6.5.0(picomatch@4.0.5)` snapshot.
 - `pnpm install --frozen-lockfile` succeeds.
-- Existing lint, formatting, dead-code, dependency, test, package-build, and CodeQL checks remain enabled.
-- CodeQL actions use immutable commit SHAs and checkout does not persist credentials.
-- Trusted release pull requests enable squash auto-merge for the exact current head after approval.
-- Non-release and untrusted pull requests cannot enter the release auto-merge path.
-- The pull request contains no permanent elevated-permission repair automation.
+- Lint, Prettier, dead-code analysis, dependency architecture, tests, packaging, and CodeQL pass.
+- Release creation does not request GitHub auto-merge directly.
+- Dependabot eligibility does not request GitHub auto-merge directly.
+- No trusted pull request can merge while CI or CodeQL is missing, pending, cancelled, or failing.
+- Stale approvals and workflow runs from another SHA do not satisfy the gate.
+- Fork heads, drafts, wrong-base pull requests, and untrusted actors are rejected.
+- The final merge uses squash and an exact expected head SHA.
 
 ## Validation
 
-- A one-time branch-scoped workflow removed one duplicate and successfully ran `pnpm install --frozen-lockfile --ignore-scripts` before committing the lockfile.
-- Temporary repair and formatting instrumentation was removed from the final diff.
-- CI run `30539453638` passed frozen installation, lint, formatting, dead-code analysis, dependency architecture checks, tests, and application packaging.
-- CodeQL run `30539453379` passed both the `actions` and `javascript-typescript` analyses.
-- CI run `30539551598` and CodeQL run `30539551595` repeated the full green validation on the documented head.
-- Auto-merge validation requires the final trusted release workflow run to enable the queue and GitHub to merge only after all required checks pass.
+- Policy tests cover release and Dependabot eligibility, every rejection guard, exact-head approvals, missing workflows, pending workflows, failed workflows, unrelated workflows, stale SHAs, and latest-run precedence.
+- Pull request CI must validate workflow syntax, formatting, policy tests, the full existing test suite, and packaging.
+- CodeQL must validate both `actions` and `javascript-typescript`.
+- The post-CI merge workflow can be exercised only after it exists on the default branch; its runtime contract is guarded by the tested policy and exact-SHA checks.
 
 ## Delivery
 
-- Branch: `release/v0.2.0`
-- Pull request: #31
-- Rollback: revert the lockfile, CodeQL workflow, and release auto-merge repair commits independently if investigation requires restoring prior behavior.
+- Corrective branch: `agent/fix-release-auto-merge-gates`
+- The accidental pull request #31 merge is not rewritten or force-pushed.
+- Rollback: revert the three workflow changes and the policy module together; retain the lockfile and CodeQL fixes.
 
 ## Status
 
-Implemented; awaiting final auto-merge workflow and required checks.
+Implemented; awaiting pull-request validation and review before merge.
