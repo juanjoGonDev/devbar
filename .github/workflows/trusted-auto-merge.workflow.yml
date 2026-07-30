@@ -29,11 +29,20 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
       - name: Verify current head and merge
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           github-token: ${{ github.token }}
           script: |
+            const policy = require(
+              `${process.env.GITHUB_WORKSPACE}/scripts/trusted-auto-merge-policy.cjs`,
+            );
             const { owner, repo } = context.repo;
             const repository = context.payload.repository;
             const completedRun = context.payload.workflow_run;
@@ -50,24 +59,16 @@ jobs:
               repo,
               pull_number: pullReference.number,
             });
-            const labels = new Set(pull.labels.map((label) => label.name));
-            const sameRepository = pull.head.repo?.full_name === repository.full_name;
-            const targetsDefaultBranch = pull.base.ref === repository.default_branch;
-            const isRelease =
-              labels.has('auto-release') && pull.user?.login === repository.owner.login;
-            const isDependabot =
-              labels.has('auto-merge-eligible') &&
-              pull.user?.login === 'dependabot[bot]';
+            const classification = policy.classifyTrustedPull({
+              pull,
+              repository,
+              headSha,
+            });
 
-            if (
-              pull.state !== 'open' ||
-              pull.draft ||
-              pull.head.sha !== headSha ||
-              !sameRepository ||
-              !targetsDefaultBranch ||
-              (!isRelease && !isDependabot)
-            ) {
-              core.info(`Pull request #${pull.number} is not eligible for trusted auto-merge.`);
+            if (!classification.eligible) {
+              core.info(
+                `Pull request #${pull.number} is not eligible: ${classification.reason}.`,
+              );
               return;
             }
 
@@ -75,19 +76,15 @@ jobs:
               github.rest.pulls.listReviews,
               { owner, repo, pull_number: pull.number, per_page: 100 },
             );
-            const requiredApprover = isRelease
-              ? 'github-actions[bot]'
-              : repository.owner.login;
-            const approvedCurrentHead = reviews.some(
-              (review) =>
-                review.user?.login === requiredApprover &&
-                review.state === 'APPROVED' &&
-                review.commit_id === headSha,
-            );
+            const approvedCurrentHead = policy.hasCurrentApproval({
+              reviews,
+              requiredApprover: classification.requiredApprover,
+              headSha,
+            });
 
             if (!approvedCurrentHead) {
               core.info(
-                `Pull request #${pull.number} lacks the required ${requiredApprover} approval for ${headSha}.`,
+                `Pull request #${pull.number} lacks the required ${classification.requiredApprover} approval for ${headSha}.`,
               );
               return;
             }
@@ -102,23 +99,9 @@ jobs:
                 per_page: 100,
               },
             );
-            const requiredWorkflows = ['CI', 'CodeQL Advanced'];
-            const latestRequiredRuns = new Map();
-
-            for (const run of workflowRuns) {
-              if (!requiredWorkflows.includes(run.name) || run.head_sha !== headSha) {
-                continue;
-              }
-
-              const current = latestRequiredRuns.get(run.name);
-              if (!current || run.run_number > current.run_number) {
-                latestRequiredRuns.set(run.name, run);
-              }
-            }
-
-            const incompleteWorkflows = requiredWorkflows.filter((name) => {
-              const run = latestRequiredRuns.get(name);
-              return !run || run.status !== 'completed' || run.conclusion !== 'success';
+            const incompleteWorkflows = policy.getIncompleteRequiredWorkflows({
+              workflowRuns,
+              headSha,
             });
 
             if (incompleteWorkflows.length > 0) {
