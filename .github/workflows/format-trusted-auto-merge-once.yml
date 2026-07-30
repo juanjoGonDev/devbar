@@ -1,0 +1,76 @@
+name: Format trusted auto-merge once
+
+on:
+  push:
+    branches:
+      - agent/fix-release-auto-merge-gates
+
+permissions: read-all
+
+concurrency:
+  group: format-trusted-auto-merge-once
+  cancel-in-progress: false
+
+jobs:
+  format:
+    if: github.repository == 'juanjoGonDev/devbar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout corrective branch
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: agent/fix-release-auto-merge-gates
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install formatter
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Format changed automation files
+        run: |
+          pnpm exec prettier --write \
+            .agents/specs/2026-07-30-devbar-release-lockfile-ci.md \
+            .github/workflows/auto-release.workflow.yml \
+            .github/workflows/dependabot-auto-merge.workflow.yml \
+            .github/workflows/trusted-auto-merge.workflow.yml \
+            .github/workflows/format-trusted-auto-merge-once.yml \
+            scripts/trusted-auto-merge-policy.cjs \
+            tests/trusted-auto-merge-policy.test.js
+          pnpm exec prettier --check \
+            .agents/specs/2026-07-30-devbar-release-lockfile-ci.md \
+            .github/workflows/auto-release.workflow.yml \
+            .github/workflows/dependabot-auto-merge.workflow.yml \
+            .github/workflows/trusted-auto-merge.workflow.yml \
+            .github/workflows/format-trusted-auto-merge-once.yml \
+            scripts/trusted-auto-merge-policy.cjs \
+            tests/trusted-auto-merge-policy.test.js
+
+      - name: Commit formatting
+        run: |
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .agents/specs/2026-07-30-devbar-release-lockfile-ci.md \
+            .github/workflows/auto-release.workflow.yml \
+            .github/workflows/dependabot-auto-merge.workflow.yml \
+            .github/workflows/trusted-auto-merge.workflow.yml \
+            .github/workflows/format-trusted-auto-merge-once.yml \
+            scripts/trusted-auto-merge-policy.cjs \
+            tests/trusted-auto-merge-policy.test.js
+          if git diff --cached --quiet; then
+            echo 'Formatting already current'
+            exit 0
+          fi
+          git commit -m 'style(actions): format trusted auto-merge changes'
+          git push origin HEAD:agent/fix-release-auto-merge-gates
