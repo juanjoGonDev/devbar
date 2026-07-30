@@ -124,6 +124,12 @@ jobs:
           printf 'version=%s\n' "$version" >> "$validation_file"
 
           for arch in arm64 x64; do
+            case "$arch" in
+              arm64) expected_mach_arch=arm64 ;;
+              x64) expected_mach_arch=x86_64 ;;
+              *) exit 1 ;;
+            esac
+
             dmg="dist/release/DevBar-$version-macos-$arch.dmg"
             zip="dist/release/DevBar-$version-macos-$arch.zip"
             test -s "$dmg"
@@ -137,7 +143,7 @@ jobs:
             test -d "$mount_point/DevBar.app"
             test -L "$mount_point/Applications"
             executable_archs=$(lipo -archs "$mount_point/DevBar.app/Contents/MacOS/DevBar")
-            printf '%s\n' "$executable_archs" | grep -qw "$arch"
+            printf '%s\n' "$executable_archs" | grep -qw "$expected_mach_arch"
             printf '%s=%s\n' "$arch" "$executable_archs" >> "$validation_file"
 
             hdiutil detach "$mount_point" >/dev/null
