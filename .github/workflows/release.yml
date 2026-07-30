@@ -77,15 +77,13 @@ jobs:
           echo "Resolved release v$current; publish=$publish"
 
   release:
-    name: Build and publish macOS installer
+    name: Build and publish macOS installers
     needs: detect
     if: needs.detect.outputs.publish == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     permissions:
       contents: write
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
       - name: Checkout release commit
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -101,18 +99,16 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Cache Electron build downloads
+      - name: Cache Electron downloads
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: |
-            ~/Library/Caches/electron
-            ~/Library/Caches/electron-builder
+          path: ~/Library/Caches/electron
           key: macos-installer-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build universal DMG and ZIP
+      - name: Build Intel and Apple Silicon installers
         run: pnpm run dist:mac
 
       - name: Verify release artifacts
@@ -120,14 +116,15 @@ jobs:
           VERSION: ${{ needs.detect.outputs.version }}
         run: |
           set -euo pipefail
-          dmg="DevBar-$VERSION-universal.dmg"
-          zip="DevBar-$VERSION-universal.zip"
-          test -s "dist/$dmg"
-          test -s "dist/$zip"
-          (
-            cd dist
-            shasum -a 256 "$dmg" "$zip" > SHA256SUMS.txt
-          )
+          for artifact in \
+            "DevBar-$VERSION-macos-arm64.dmg" \
+            "DevBar-$VERSION-macos-arm64.zip" \
+            "DevBar-$VERSION-macos-x64.dmg" \
+            "DevBar-$VERSION-macos-x64.zip" \
+            'SHA256SUMS.txt'; do
+            test -s "dist/release/$artifact"
+          done
+          shasum -a 256 --check "dist/release/SHA256SUMS.txt"
 
       - name: Create GitHub release
         env:
@@ -144,6 +141,8 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "DevBar v$VERSION" \
             --generate-notes \
-            "dist/DevBar-$VERSION-universal.dmg" \
-            "dist/DevBar-$VERSION-universal.zip" \
-            "dist/SHA256SUMS.txt"
+            "dist/release/DevBar-$VERSION-macos-arm64.dmg" \
+            "dist/release/DevBar-$VERSION-macos-arm64.zip" \
+            "dist/release/DevBar-$VERSION-macos-x64.dmg" \
+            "dist/release/DevBar-$VERSION-macos-x64.zip" \
+            "dist/release/SHA256SUMS.txt"
