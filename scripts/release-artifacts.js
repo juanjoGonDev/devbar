@@ -11,7 +11,9 @@ const RELEASE_ARCHITECTURES = Object.freeze(['arm64', 'x64']);
 
 function assertStableVersion(version) {
   if (!STABLE_VERSION_PATTERN.test(version)) {
-    throw new Error(`Invalid stable release version: ${version || '<missing>'}`);
+    throw new Error(
+      `Invalid stable release version: ${version || '<missing>'}`,
+    );
   }
 }
 
@@ -84,7 +86,10 @@ async function verifyReleaseArtifactSet({ directory, version }) {
 
   await Promise.all(
     artifactNames.map((artifactName) =>
-      assertNonEmptyFile(path.join(outputDirectory, artifactName), artifactName),
+      assertNonEmptyFile(
+        path.join(outputDirectory, artifactName),
+        artifactName,
+      ),
     ),
   );
   await assertNonEmptyFile(manifestPath, 'SHA256SUMS.txt');
@@ -106,7 +111,9 @@ async function verifyReleaseArtifactSet({ directory, version }) {
 
   await Promise.all(
     artifactNames.map(async (artifactName) => {
-      const actualChecksum = await hashFile(path.join(outputDirectory, artifactName));
+      const actualChecksum = await hashFile(
+        path.join(outputDirectory, artifactName),
+      );
       const expectedChecksum = manifest.get(artifactName);
       if (actualChecksum !== expectedChecksum) {
         throw new Error(`Checksum mismatch for ${artifactName}.`);
