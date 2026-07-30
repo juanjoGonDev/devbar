@@ -5,7 +5,6 @@ readonly ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 readonly OUTPUT_DIR="$ROOT_DIR/dist/release"
 readonly WORK_DIR="$ROOT_DIR/dist/release-work"
 readonly VERSION=$(node -p "require('$ROOT_DIR/package.json').version")
-readonly ICON_PATH="$ROOT_DIR/assets/icon.icns"
 
 fail() {
   printf 'error: %s\n' "$1" >&2
@@ -19,11 +18,6 @@ fi
 if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
   fail "package.json version '$VERSION' is not a stable semantic version."
 fi
-
-[ -s "$ICON_PATH" ] || fail "macOS icon not found at $ICON_PATH."
-
-rm -rf "$OUTPUT_DIR" "$WORK_DIR"
-mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
 
 mach_architecture() {
   case "$1" in
@@ -39,6 +33,9 @@ mach_architecture() {
   esac
 }
 
+rm -rf "$OUTPUT_DIR" "$WORK_DIR"
+mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
+
 build_architecture() {
   local arch=$1
   local expected_mach_arch
@@ -50,17 +47,7 @@ build_architecture() {
   local zip="$OUTPUT_DIR/DevBar-$VERSION-macos-$arch.zip"
 
   expected_mach_arch=$(mach_architecture "$arch")
-
-  pnpm exec electron-packager . DevBar \
-    --platform=darwin \
-    --arch="$arch" \
-    --out="$package_dir" \
-    --overwrite \
-    --icon="$ICON_PATH" \
-    --ignore='^/dist($|/)' \
-    --ignore='^/tests($|/)' \
-    --ignore='^/\.agents($|/)' \
-    --ignore='^/\.github($|/)'
+  "$ROOT_DIR/scripts/package-macos-app.sh" "$arch" "$package_dir"
 
   app=$(find "$package_dir" -maxdepth 2 -name 'DevBar.app' -type d | head -n 1)
   [ -n "$app" ] || fail "DevBar.app was not generated for $arch."
@@ -68,6 +55,10 @@ build_architecture() {
   executable_archs=$(lipo -archs "$app/Contents/MacOS/DevBar")
   printf '%s\n' "$executable_archs" | grep -qw "$expected_mach_arch" ||
     fail "Expected $expected_mach_arch executable for $arch, found: $executable_archs"
+
+  [ -s "$app/Contents/Resources/icon.icns" ] || fail "Application icon is missing for $arch."
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")" = 'icon.icns' ] ||
+    fail "CFBundleIconFile is incorrect for $arch."
 
   ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
 
