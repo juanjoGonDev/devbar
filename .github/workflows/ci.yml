@@ -89,6 +89,9 @@ jobs:
       - name: Resolve exact lockfile
         run: pnpm install --lockfile-only --ignore-scripts
 
+      - name: Install generated dependency graph
+        run: pnpm install --frozen-lockfile
+
       - name: Format changed files
         run: |
           pnpm exec prettier --write \
@@ -99,9 +102,6 @@ jobs:
             .github/workflows/auto-release.workflow.yml \
             .github/workflows/release.yml \
             .agents/specs/2026-07-30-macos-release-installer.md
-
-      - name: Install frozen dependency graph
-        run: pnpm install --frozen-lockfile
 
       - name: Audit dependency graph
         run: pnpm audit --audit-level=moderate
