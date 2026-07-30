@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   approve-release:
-    name: Approve trusted release pull request
+    name: Approve and queue trusted release pull request
     if: >-
       github.event.repository.fork == false &&
       contains(github.event.pull_request.labels.*.name, 'auto-release') &&
@@ -26,7 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      contents: write
       pull-requests: write
+    env:
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Approve current release head
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -70,6 +74,16 @@ jobs:
               }
               throw error;
             }
+
+      - name: Enable squash auto-merge for current release head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr merge "$PR_URL" \
+            --auto \
+            --squash \
+            --match-head-commit "$HEAD_SHA"
 
   dependabot:
     name: Validate and queue eligible updates
