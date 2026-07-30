@@ -108,23 +108,8 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build Intel and Apple Silicon installers
-        run: pnpm run dist:mac
-
-      - name: Verify release artifacts
-        env:
-          VERSION: ${{ needs.detect.outputs.version }}
-        run: |
-          set -euo pipefail
-          for artifact in \
-            "DevBar-$VERSION-macos-arm64.dmg" \
-            "DevBar-$VERSION-macos-arm64.zip" \
-            "DevBar-$VERSION-macos-x64.dmg" \
-            "DevBar-$VERSION-macos-x64.zip" \
-            'SHA256SUMS.txt'; do
-            test -s "dist/release/$artifact"
-          done
-          shasum -a 256 --check "dist/release/SHA256SUMS.txt"
+      - name: Build and verify Intel and Apple Silicon installers
+        run: pnpm run release:mac
 
       - name: Create GitHub release
         env:
