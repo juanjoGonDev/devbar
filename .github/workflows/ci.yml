@@ -202,6 +202,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm install --lockfile-only --ignore-scripts
+          pnpm install --frozen-lockfile
           pnpm exec prettier --write pnpm-lock.yaml
           test "$(shasum -a 256 pnpm-lock.yaml | awk '{print $1}')" = 'd19ff81b6bc9651e2f144c2f0b700693a831f7c187c8bdf9b730a7fb41669079'
 
