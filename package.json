@@ -5,7 +5,7 @@
   "main": "src/main.js",
   "packageManager": "pnpm@10.32.1",
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=22.12.0",
     "pnpm": ">=10.16.0"
   },
   "scripts": {
@@ -27,9 +27,9 @@
     "postinstall": "node scripts/install-hooks.js"
   },
   "devDependencies": {
+    "@electron/packager": "20.0.3",
     "dependency-cruiser": "18.1.0",
     "electron": "43.2.0",
-    "electron-packager": "17.1.2",
     "eslint": "9.39.4",
     "globals": "17.7.0",
     "knip": "6.29.0",
@@ -43,6 +43,10 @@
     "uuid": "14.0.1"
   },
   "pnpm": {
+    "overrides": {
+      "fast-uri": "3.1.4",
+      "js-yaml": "4.3.0"
+    },
     "onlyBuiltDependencies": [
       "lefthook"
     ]
