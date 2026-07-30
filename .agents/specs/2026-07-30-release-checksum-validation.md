@@ -30,15 +30,18 @@ Repair failed Release run `30551549616`, prevent the same checksum-path defect f
 - The mounted executables report the expected `arm64` and `x86_64` Mach-O architectures.
 - Both ZIP archives pass integrity checks and contain the DevBar executable.
 - The app icon and `CFBundleIconFile` remain correct in both bundles.
-- Pull-request CI, CodeQL, and the non-publishing Release validation workflow pass on the final head.
+- Pull-request CI, CodeQL, and the non-publishing Release validation workflow pass.
 - No release, tag, merge, or deployment occurs as part of validation.
 
-## Test plan
+## Tests and validation
 
-- Add Vitest coverage for expected artifact names, valid manifests, unsafe paths, duplicate entries, tampered artifacts, and caller working-directory independence.
-- Run the full existing test and quality suite through CI.
-- Run the new release validation workflow on `macos-15` using frozen installation, dependency audit, regression tests, and the exact `pnpm run release:mac` command used by production publication.
-- Upload only checksum and release-plan evidence with short retention; do not upload or publish release assets externally.
+- Vitest covers expected artifact names, valid manifests, unsafe paths, duplicate entries, missing artifacts, missing manifest entries, unexpected entries, tampered artifacts, and caller working-directory independence.
+- CI run `30554221379` passed frozen installation, ESLint, Prettier, Knip, dependency-cruiser, all 14 test files and 361 tests, and the existing app packaging smoke build.
+- Release validation run `30554221461` passed frozen installation, dependency audit, focused regression tests, and the exact `pnpm run release:mac` command used by production publication.
+- The macOS dry run verified four release artifacts, valid SHA-256 contents, ZIP integrity, valid ARM64 and x64 DMGs, read-only mounting, Applications links, icons, `Info.plist`, and Mach-O architectures `arm64` and `x86_64`.
+- Evidence artifact `8764096937` has digest `sha256:79bd66a8dc265600bd197b671140a35210390fdd5e2775a41bd00046bde9a08a` and records `publication=false`.
+- CodeQL run `30554221358` passed both `actions` and `javascript-typescript` analyses.
+- Both CodeRabbit findings were addressed and resolved.
 
 ## Risks
 
@@ -53,9 +56,9 @@ Revert the artifact verifier, macOS verifier, package scripts, release workflow 
 ## Delivery
 
 - Branch: `agent/fix-release-checksum-validation`.
-- Pull request: pending.
-- Failed release recovery after merge: manually rerun Release for version `0.2.0` only after the corrected dry run and required checks are green.
+- Pull request: #34.
+- Failed release recovery after merge: manually rerun Release for version `0.2.0` only after explicit merge approval.
 
 ## Status
 
-Implemented; validation pending.
+Validated; pull request #34 is ready for review and explicit merge approval.
