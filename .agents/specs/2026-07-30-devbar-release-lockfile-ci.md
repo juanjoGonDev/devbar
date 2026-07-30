@@ -63,16 +63,18 @@ Both paths additionally require the latest `CI` and `CodeQL Advanced` runs for t
 ## Validation
 
 - Policy tests cover release and Dependabot eligibility, every rejection guard, exact-head approvals, missing workflows, pending workflows, failed workflows, unrelated workflows, stale SHAs, and latest-run precedence.
-- Pull request CI must validate workflow syntax, formatting, policy tests, the full existing test suite, and packaging.
-- CodeQL must validate both `actions` and `javascript-typescript`.
+- CI run `30541592058` passed frozen installation, lint, Prettier, Knip, dependency-cruiser, the full Vitest suite, and application packaging on the clean corrective head.
+- CodeQL run `30541592034` passed both `actions` and `javascript-typescript` analysis on the same head.
+- The temporary formatting workflow was removed from the final diff.
 - The post-CI merge workflow can be exercised only after it exists on the default branch; its runtime contract is guarded by the tested policy and exact-SHA checks.
 
 ## Delivery
 
 - Corrective branch: `agent/fix-release-auto-merge-gates`
+- Corrective pull request: #32
 - The accidental pull request #31 merge is not rewritten or force-pushed.
 - Rollback: revert the three workflow changes and the policy module together; retain the lockfile and CodeQL fixes.
 
 ## Status
 
-Implemented; awaiting pull-request validation and review before merge.
+Validated; awaiting explicit approval to merge pull request #32.
