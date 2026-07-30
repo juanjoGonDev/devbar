@@ -13,12 +13,13 @@
 
 ## Download
 
-Download the latest universal macOS installer from
+Download the latest macOS installer from
 [GitHub Releases](https://github.com/juanjoGonDev/devbar/releases/latest):
 
-- `DevBar-<version>-universal.dmg` — standard drag-to-Applications installer.
-- `DevBar-<version>-universal.zip` — portable application archive.
-- `SHA256SUMS.txt` — integrity hashes for both artifacts.
+- `DevBar-<version>-macos-arm64.dmg` — Apple Silicon Macs.
+- `DevBar-<version>-macos-x64.dmg` — Intel Macs.
+- Matching `.zip` files — portable application archives.
+- `SHA256SUMS.txt` — integrity hashes for every artifact.
 
 The current public builds are unsigned and not notarized. macOS may require an
 explicit approval in **System Settings → Privacy & Security** the first time the
@@ -68,15 +69,15 @@ pnpm run pack
 The bundle ends up in `dist/DevBar-darwin-*`. The icon comes from
 `assets/icon.icns` (multi-resolution 16 → 1024).
 
-## Build the universal macOS installer
+## Build the macOS installers
 
 ```bash
 pnpm run dist:mac
 ```
 
-This creates a universal DMG and ZIP in `dist/`, compatible with Intel and Apple
-Silicon Macs. The release workflow runs the same command and publishes both
-files with SHA-256 checksums.
+This creates separate DMG and ZIP artifacts for Apple Silicon and Intel Macs in
+`dist/release/`, plus a `SHA256SUMS.txt` integrity manifest. The release workflow
+runs the same command and publishes all five files.
 
 ## Install / reinstall to `/Applications`
 
