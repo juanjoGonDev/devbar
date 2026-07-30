@@ -43,7 +43,7 @@ jobs:
       issues: write
       pull-requests: write
     env:
-      AUTOMATION_TOKEN: ${{ secrets.PAT_FINE }}
+      AUTOMATION_TOKEN: ${{ secrets.REPOSITORY_AUTOMATION_TOKEN || secrets.PAT_FINE }}
       FORCE_RELEASE: ${{ inputs.force || false }}
       RELEASE_STRATEGY: ${{ inputs.strategy || 'auto' }}
       DRY_RUN: ${{ inputs.dry_run || false }}
@@ -51,7 +51,7 @@ jobs:
       - name: Explain missing user automation token
         if: env.AUTOMATION_TOKEN == '' && env.DRY_RUN != 'true'
         run: |
-          echo "::error title=Repository automation token missing::Configure PAT_FINE as an Actions secret. The release pull request must be created by the repository owner so github-actions[bot] can approve it."
+          echo "::error title=Repository automation token missing::Configure REPOSITORY_AUTOMATION_TOKEN or PAT_FINE as an Actions secret. It must belong to the repository owner and grant Contents and Pull requests read/write."
           exit 1
 
       - name: Synchronize release label
@@ -76,7 +76,7 @@ jobs:
         if: env.AUTOMATION_TOKEN != '' || env.DRY_RUN == 'true'
         id: release
         env:
-          GH_TOKEN: ${{ secrets.PAT_FINE || github.token }}
+          GH_TOKEN: ${{ env.AUTOMATION_TOKEN || github.token }}
         run: |
           latest_tag=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
           if [ -n "$latest_tag" ]; then
@@ -105,14 +105,14 @@ jobs:
 
           current_version=$(node -p "require('./package.json').version")
           next_version=$(node -e "
-            const [major, minor, patch] = process.argv[1].split('.').map(Number);
-            const strategy = process.argv[2];
-            const versions = {
-              major: [major + 1, 0, 0],
-              minor: [major, minor + 1, 0],
-              patch: [major, minor, patch + 1],
-            };
-            process.stdout.write(versions[strategy].join('.'));
+          const [major, minor, patch] = process.argv[1].split('.').map(Number);
+          const strategy = process.argv[2];
+          const versions = {
+            major: [major + 1, 0, 0],
+            minor: [major, minor + 1, 0],
+            patch: [major, minor, patch + 1],
+          };
+          process.stdout.write(versions[strategy].join('.'));
           " "$current_version" "$strategy")
 
           if gh release view "v$next_version" >/dev/null 2>&1; then
@@ -155,7 +155,7 @@ jobs:
           branch="release/v$VERSION"
           actor_login=$(gh api user --jq .login)
           if [ "$actor_login" != "$GITHUB_REPOSITORY_OWNER" ]; then
-            echo "::error title=Invalid release automation actor::PAT_FINE authenticates as $actor_login, but this repository requires $GITHUB_REPOSITORY_OWNER."
+            echo "::error title=Invalid release automation actor::The automation token authenticates as $actor_login, but this repository requires $GITHUB_REPOSITORY_OWNER."
             exit 1
           fi
 
@@ -176,12 +176,18 @@ jobs:
             --head "$branch" \
             --title "chore(release): prepare v$VERSION" \
             --label "auto-release" \
-            --body "Automated **$STRATEGY** release from $COMMIT_COUNT commits. Merging this PR triggers the existing macOS build and publishes a GitHub Release with generated notes and the installer ZIP.")
+            --body "Automated **$STRATEGY** release from $COMMIT_COUNT commits. Merging this PR builds a universal macOS DMG and ZIP and publishes them in GitHub Releases.")
           echo "pr_url=$pr_url" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Queue release pull request
         if: steps.create_pr.outputs.pr_url != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ env.AUTOMATION_TOKEN }}
           PR_URL: ${{ steps.create_pr.outputs.pr_url }}
-        run: gh pr merge "$PR_URL" --auto --squash
+          HEAD_SHA: ${{ steps.create_pr.outputs.head_sha }}
+        run: |
+          gh pr merge "$PR_URL" \
+            --auto \
+            --squash \
+            --match-head-commit "$HEAD_SHA"
