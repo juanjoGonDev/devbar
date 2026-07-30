@@ -1,0 +1,48 @@
+name: Format CodeQL workflow once
+
+on:
+  push:
+    branches: [release/v0.2.0]
+
+permissions: read-all
+
+concurrency:
+  group: format-codeql-once
+  cancel-in-progress: false
+
+jobs:
+  format:
+    if: github.repository == 'juanjoGonDev/devbar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: release/v0.2.0
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install formatter
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Format and validate CodeQL workflow
+        run: |
+          pnpm exec prettier --write .github/workflows/codeql.yml
+          pnpm exec prettier --check .github/workflows/codeql.yml
+          git diff --check
+
+      - name: Commit formatted workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/codeql.yml
+          git diff --cached --quiet && { echo 'No formatting changes produced'; exit 1; }
+          git commit -m 'style(actions): format codeql workflow'
+          git push origin HEAD:release/v0.2.0
