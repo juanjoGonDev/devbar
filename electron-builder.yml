@@ -1,0 +1,27 @@
+appId: com.juanjogondev.devbar
+productName: DevBar
+asar: true
+artifactName: '${productName}-${version}-${arch}.${ext}'
+directories:
+  output: dist
+  buildResources: assets
+files:
+  - src/**/*
+  - renderer/**/*
+  - assets/**/*
+  - package.json
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icon.icns
+  identity: null
+  hardenedRuntime: false
+  target:
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal
+dmg:
+  title: '${productName} ${version}'
+  format: ULFO
