@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -34,16 +34,19 @@ async function createArtifactFixture(version = '0.2.0') {
     manifestLines.push(`${sha256(contents)}  ${artifactName}`);
   }
 
-  await writeFile(path.join(directory, 'SHA256SUMS.txt'), `${manifestLines.join('\n')}\n`);
+  await writeFile(
+    path.join(directory, 'SHA256SUMS.txt'),
+    `${manifestLines.join('\n')}\n`,
+  );
 
   return { artifactNames, directory, version };
 }
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -60,11 +63,13 @@ describe('release artifact contract', () => {
   it('rejects unsafe and duplicate manifest entries', () => {
     const checksum = 'a'.repeat(64);
 
-    expect(() => parseChecksumManifest(`${checksum}  ../artifact.dmg\n`)).toThrow(
-      'Unsafe checksum manifest path',
-    );
     expect(() =>
-      parseChecksumManifest(`${checksum}  artifact.dmg\n${checksum}  artifact.dmg\n`),
+      parseChecksumManifest(`${checksum}  ../artifact.dmg\n`),
+    ).toThrow('Unsafe checksum manifest path');
+    expect(() =>
+      parseChecksumManifest(
+        `${checksum}  artifact.dmg\n${checksum}  artifact.dmg\n`,
+      ),
     ).toThrow('Duplicate checksum manifest entry');
   });
 
@@ -83,9 +88,59 @@ describe('release artifact contract', () => {
     });
   });
 
+  it('fails when an expected artifact is missing', async () => {
+    const fixture = await createArtifactFixture();
+    await unlink(path.join(fixture.directory, fixture.artifactNames[0]));
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: fixture.version,
+      }),
+    ).rejects.toThrow(`${fixture.artifactNames[0]} is missing or empty`);
+  });
+
+  it('fails when the manifest omits an expected artifact', async () => {
+    const fixture = await createArtifactFixture();
+    const manifestPath = path.join(fixture.directory, 'SHA256SUMS.txt');
+    const manifestLines = (await readFile(manifestPath, 'utf8'))
+      .trimEnd()
+      .split('\n');
+    await writeFile(manifestPath, `${manifestLines.slice(1).join('\n')}\n`);
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: fixture.version,
+      }),
+    ).rejects.toThrow(
+      `Missing checksum manifest entry: ${fixture.artifactNames[0]}`,
+    );
+  });
+
+  it('fails when the manifest includes an unexpected artifact', async () => {
+    const fixture = await createArtifactFixture();
+    const manifestPath = path.join(fixture.directory, 'SHA256SUMS.txt');
+    const manifest = await readFile(manifestPath, 'utf8');
+    await writeFile(
+      manifestPath,
+      `${manifest}${'b'.repeat(64)}  unexpected.bin\n`,
+    );
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: fixture.version,
+      }),
+    ).rejects.toThrow('Unexpected checksum manifest entry: unexpected.bin');
+  });
+
   it('fails when an artifact is changed after the manifest is generated', async () => {
     const fixture = await createArtifactFixture();
-    await writeFile(path.join(fixture.directory, fixture.artifactNames[0]), 'tampered');
+    await writeFile(
+      path.join(fixture.directory, fixture.artifactNames[0]),
+      'tampered',
+    );
 
     await expect(
       verifyReleaseArtifactSet({
@@ -97,7 +152,9 @@ describe('release artifact contract', () => {
 
   it('runs independently from the caller working directory', async () => {
     const fixture = await createArtifactFixture();
-    const callerDirectory = await mkdtemp(path.join(tmpdir(), 'devbar-release-caller-'));
+    const callerDirectory = await mkdtemp(
+      path.join(tmpdir(), 'devbar-release-caller-'),
+    );
     temporaryDirectories.push(callerDirectory);
     const verifier = path.resolve('scripts/verify-release-artifacts.js');
 
