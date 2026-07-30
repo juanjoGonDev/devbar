@@ -76,8 +76,16 @@ describe('classifyTrustedPull', () => {
   it.each([
     ['closed', { state: 'closed' }, 'closed'],
     ['draft', { draft: true }, 'draft'],
-    ['stale head', { head: { sha: 'old', repo: { full_name: REPOSITORY.full_name } } }, 'stale-head'],
-    ['foreign head', { head: { sha: HEAD_SHA, repo: { full_name: 'attacker/fork' } } }, 'foreign-head'],
+    [
+      'stale head',
+      { head: { sha: 'old', repo: { full_name: REPOSITORY.full_name } } },
+      'stale-head',
+    ],
+    [
+      'foreign head',
+      { head: { sha: HEAD_SHA, repo: { full_name: 'attacker/fork' } } },
+      'foreign-head',
+    ],
     ['wrong base', { base: { ref: 'develop' } }, 'wrong-base'],
     ['untrusted actor', { user: { login: 'other-user' } }, 'untrusted-policy'],
     ['missing policy label', { labels: [] }, 'untrusted-policy'],
@@ -142,7 +150,9 @@ describe('required workflow gates', () => {
 
     expect(
       getIncompleteRequiredWorkflows({
-        workflowRuns: [createRun('CI', { status: 'in_progress', conclusion: null })],
+        workflowRuns: [
+          createRun('CI', { status: 'in_progress', conclusion: null }),
+        ],
         headSha: HEAD_SHA,
       }),
     ).toEqual(REQUIRED_WORKFLOWS);

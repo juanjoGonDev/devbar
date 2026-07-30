@@ -13,11 +13,15 @@ function classifyTrustedPull({ pull, repository, headSha }) {
 
   if (pull.state !== 'open') return { eligible: false, reason: 'closed' };
   if (pull.draft) return { eligible: false, reason: 'draft' };
-  if (pull.head.sha !== headSha) return { eligible: false, reason: 'stale-head' };
+  if (pull.head.sha !== headSha)
+    return { eligible: false, reason: 'stale-head' };
   if (!sameRepository) return { eligible: false, reason: 'foreign-head' };
   if (!targetsDefaultBranch) return { eligible: false, reason: 'wrong-base' };
 
-  if (labels.has('auto-release') && pull.user?.login === repository.owner.login) {
+  if (
+    labels.has('auto-release') &&
+    pull.user?.login === repository.owner.login
+  ) {
     return {
       eligible: true,
       kind: 'release',
