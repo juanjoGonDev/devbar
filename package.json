@@ -11,7 +11,7 @@
   "scripts": {
     "start": "electron .",
     "fetch-electron": "node node_modules/electron/install.js",
-    "pack": "electron-packager . DevBar --platform=darwin --out=dist --overwrite --icon=assets/icon.icns",
+    "pack": "bash scripts/package-macos-app.sh",
     "dist:mac": "bash scripts/build-macos-release.sh",
     "install-local": "bash scripts/install-local.sh",
     "logs": "tail -F \"$HOME/Library/Logs/DevBar/app.log\"",
