@@ -54,8 +54,9 @@ Restore automatic GitHub Releases after a trusted release pull request merges an
 - The same run completed the macOS validation job successfully on `macos-15`.
 - The macOS job passed dependency audit, quality checks, and the existing packaging smoke build.
 - It built ARM64 and x64 DMG and ZIP artifacts, mounted both DMGs, validated their Applications links, confirmed Mach-O architectures, checked the app icon and `Info.plist`, and verified `SHA256SUMS.txt`.
-- The branch-specific validation and lockfile-finalization jobs are removed from the permanent CI workflow after this evidence is captured.
-- Final pull-request CI and CodeQL must pass again after restoring the permanent workflow.
+- The branch-specific validation and lockfile-finalization jobs were removed from the permanent CI workflow after this evidence was captured.
+- Final clean-head CI run `30550314687` passed frozen install, quality checks, all 353 tests, and the packaging smoke build.
+- Final clean-head CodeQL run `30550314729` passed both `actions` and `javascript-typescript` analyses.
 
 ## Delivery and rollback
 
