@@ -9,7 +9,9 @@ async function main() {
   const [architecture, outputDirectory] = process.argv.slice(2);
 
   if (!SUPPORTED_ARCHITECTURES.has(architecture)) {
-    throw new Error(`Unsupported macOS architecture: ${architecture || '<missing>'}`);
+    throw new Error(
+      `Unsupported macOS architecture: ${architecture || '<missing>'}`,
+    );
   }
   if (!outputDirectory) {
     throw new Error('Output directory is required.');
