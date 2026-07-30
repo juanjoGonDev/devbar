@@ -17,7 +17,7 @@ Restore the failing CI for pull request #31 without changing the intended v0.2.0
 
 - Remove exactly one of the two identical snapshot blocks.
 - Keep frozen-lockfile enforcement and avoid regenerating unrelated dependency resolutions.
-- Format the CodeQL workflow, pin its actions to the exact SHAs resolved by the successful CodeQL run, and disable persisted checkout credentials.
+- Format the CodeQL workflow with the repository-pinned Prettier version, pin its actions to immutable SHAs, and disable persisted checkout credentials.
 - Do not modify the intended release version or application behavior.
 
 ## Acceptance criteria
@@ -31,9 +31,10 @@ Restore the failing CI for pull request #31 without changing the intended v0.2.0
 ## Validation
 
 - A one-time branch-scoped workflow removed one duplicate and successfully ran `pnpm install --frozen-lockfile --ignore-scripts` before committing the lockfile.
-- The temporary workflow was removed immediately after the validated repair.
-- The normal CI subsequently confirmed the frozen install succeeds and exposed the independent CodeQL workflow formatting failure.
-- Final validation is the normal pull-request CI and CodeQL suite on the resulting branch head.
+- Temporary repair and formatting instrumentation was removed from the final diff.
+- CI run `30539453638` passed frozen installation, lint, formatting, dead-code analysis, dependency architecture checks, tests, and application packaging.
+- CodeQL run `30539453379` passed both the `actions` and `javascript-typescript` analyses.
+- Pull request #31 remained open and mergeable; no merge or release action was performed.
 
 ## Delivery
 
@@ -43,4 +44,4 @@ Restore the failing CI for pull request #31 without changing the intended v0.2.0
 
 ## Status
 
-Implemented; awaiting final GitHub Actions completion.
+Validated.
