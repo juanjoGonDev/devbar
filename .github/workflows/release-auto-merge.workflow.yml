@@ -131,7 +131,7 @@ jobs:
               await readRepositoryFile('package.json', pullRequest.head.sha),
             );
             const basePackageJson = JSON.parse(
-              await readRepositoryFile('package.json', pullRequest.base.sha),
+              await readRepositoryFile('package.json', defaultBranch),
             );
             const parsedBaseVersion = parseSemver(basePackageJson.version);
             if (
