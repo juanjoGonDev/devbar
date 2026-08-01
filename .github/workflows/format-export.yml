@@ -32,11 +32,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Export formatted workflow
+      - name: Export formatting diff
         run: |
           set -euo pipefail
           pnpm exec prettier --write .github/workflows/auto-release.workflow.yml
-          echo 'FORMATTED_WORKFLOW_BASE64_BEGIN'
-          base64 -w 0 .github/workflows/auto-release.workflow.yml
-          echo
-          echo 'FORMATTED_WORKFLOW_BASE64_END'
+          echo 'FORMATTING_DIFF_BEGIN'
+          git diff -- .github/workflows/auto-release.workflow.yml
+          echo 'FORMATTING_DIFF_END'
