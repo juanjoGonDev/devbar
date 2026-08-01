@@ -29,6 +29,7 @@ jobs:
       issues: write
       pull-requests: write
     env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
       PR_URL: ${{ github.event.pull_request.html_url }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
@@ -113,9 +114,12 @@ jobs:
             exit 0
           fi
 
-          gh pr review "$PR_URL" \
-            --approve \
-            --body "Approved automatically: patch or minor update."
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -f commit_id="$HEAD_SHA" \
+            -f event=APPROVE \
+            -f body="Approved automatically: patch or minor update." >/dev/null
 
       - name: Enable squash auto-merge
         if: steps.policy.outputs.eligible == 'true'
