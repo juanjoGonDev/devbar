@@ -2,92 +2,181 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       version:
-        description: Version from package.json to publish, for example 0.2.0
+        description: Exact package.json version to recover, for example 0.2.0
         required: true
         type: string
 
 permissions: read-all
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
   detect:
-    name: Resolve release version
+    name: Resolve version-introducing commit
     if: >-
       github.repository == 'juanjoGonDev/devbar' &&
-      github.ref == 'refs/heads/main'
+      github.event.repository.fork == false &&
+      github.ref_name == github.event.repository.default_branch &&
+      (github.event_name != 'workflow_dispatch' || github.actor == github.repository_owner)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     permissions:
       contents: read
     outputs:
       publish: ${{ steps.release.outputs.publish }}
       version: ${{ steps.release.outputs.version }}
+      release_sha: ${{ steps.release.outputs.release_sha }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      tag_exists: ${{ steps.release.outputs.tag_exists }}
     steps:
-      - name: Checkout trusted main
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Resolve version bump or recovery release
+      - name: Resolve version change or recovery release
         id: release
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          REQUESTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          REQUESTED_VERSION: ${{ inputs.version || '' }}
         run: |
           set -euo pipefail
 
-          current=$(node -p "require('./package.json').version")
-          publish=false
+          read_package_version() {
+            git show "$1:package.json" 2>/dev/null \
+              | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version" \
+              2>/dev/null || true
+          }
 
-          if [ "$EVENT_NAME" = 'workflow_dispatch' ]; then
-            requested=${REQUESTED_VERSION#v}
-            if ! printf '%s' "$requested" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-              echo '::error title=Invalid release version::Use a stable semantic version such as 0.2.0.'
-              exit 1
-            fi
-            if [ "$requested" != "$current" ]; then
-              echo "::error title=Version mismatch::Requested $requested but package.json contains $current."
-              exit 1
-            fi
-            if gh release view "v$current" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "::error title=Release already exists::GitHub Release v$current already exists."
-              exit 1
-            fi
-            publish=true
-          else
-            previous=$(git show HEAD~1:package.json 2>/dev/null \
-              | node -e "let data=''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => process.stdout.write(JSON.parse(data).version));" \
-              2>/dev/null || true)
-            if [ "$current" != "$previous" ]; then
-              publish=true
-            fi
+          current_version=$(node -p "require('./package.json').version")
+          if ! [[ "$current_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error title=Invalid release version::$current_version is not a stable semantic version."
+            exit 1
           fi
 
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
-          echo "version=$current" >> "$GITHUB_OUTPUT"
-          echo "Resolved release v$current; publish=$publish"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            requested_version="${REQUESTED_VERSION#v}"
+            if [[ "$requested_version" != "$current_version" ]]; then
+              echo "::error title=Version mismatch::Requested $requested_version but package.json contains $current_version."
+              exit 1
+            fi
+            release_range="$GITHUB_SHA"
+          else
+            zero_sha=0000000000000000000000000000000000000000
+            previous_version=
+            if [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "$zero_sha" ]]; then
+              previous_version=$(read_package_version "$BEFORE_SHA")
+            fi
+            if [[ -z "$previous_version" || "$previous_version" == "$current_version" ]]; then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "package.json version did not change on this push."
+              exit 0
+            fi
+            release_range="${BEFORE_SHA}..${GITHUB_SHA}"
+          fi
+
+          release_sha=
+          while IFS= read -r candidate_sha; do
+            candidate_version=$(read_package_version "$candidate_sha")
+            if [[ "$candidate_version" != "$current_version" ]]; then
+              continue
+            fi
+
+            parent_sha=$(git rev-parse "${candidate_sha}^1" 2>/dev/null || true)
+            parent_version=
+            if [[ -n "$parent_sha" ]]; then
+              parent_version=$(read_package_version "$parent_sha")
+            fi
+            if [[ "$parent_version" != "$current_version" ]]; then
+              release_sha="$candidate_sha"
+              break
+            fi
+          done < <(git rev-list --first-parent "$release_range" -- package.json)
+
+          if [[ -z "$release_sha" ]]; then
+            echo "::error title=Unresolved release commit::No default-branch commit introduced package version $current_version."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$release_sha" "$GITHUB_SHA"; then
+            echo "::error title=Invalid release commit::$release_sha is not an ancestor of $GITHUB_SHA."
+            exit 1
+          fi
+
+          release_tag="v${current_version}"
+          expected_assets=(
+            "DevBar-${current_version}-macos-arm64.dmg"
+            "DevBar-${current_version}-macos-arm64.zip"
+            "DevBar-${current_version}-macos-x64.dmg"
+            "DevBar-${current_version}-macos-x64.zip"
+            "SHA256SUMS.txt"
+          )
+
+          if release_json=$(gh release view "$release_tag" --json tagName,isDraft,isPrerelease,assets 2>/dev/null); then
+            git fetch --force origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
+            existing_sha=$(git rev-list -n 1 "$release_tag")
+            if [[ "$existing_sha" != "$release_sha" ]]; then
+              echo "::error title=Release target mismatch::$release_tag points to $existing_sha instead of $release_sha."
+              exit 1
+            fi
+            if [[ "$(jq -r .isDraft <<<"$release_json")" != "false" || "$(jq -r .isPrerelease <<<"$release_json")" != "false" ]]; then
+              echo "::error title=Release metadata mismatch::$release_tag must be a published stable release."
+              exit 1
+            fi
+
+            mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"$release_json" | sort)
+            mapfile -t sorted_expected_assets < <(printf '%s\n' "${expected_assets[@]}" | sort)
+            if [[ "${actual_assets[*]}" != "${sorted_expected_assets[*]}" ]]; then
+              echo "::error title=Release asset mismatch::$release_tag does not contain the exact expected installer set."
+              exit 1
+            fi
+
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "GitHub Release $release_tag already exists with the expected target and assets."
+            exit 0
+          fi
+
+          tag_exists=false
+          if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
+            existing_sha=$(git rev-list -n 1 "$release_tag")
+            if [[ "$existing_sha" != "$release_sha" ]]; then
+              echo "::error title=Release tag collision::$release_tag points to $existing_sha instead of $release_sha."
+              exit 1
+            fi
+            tag_exists=true
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "version=$current_version" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
 
   release:
     name: Build and publish macOS installers
     needs: detect
     if: needs.detect.outputs.publish == 'true'
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 35
+    environment: admin
     permissions:
       contents: write
     steps:
-      - name: Checkout release commit
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.detect.outputs.release_sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up pnpm
@@ -111,23 +200,79 @@ jobs:
       - name: Build and verify Intel and Apple Silicon installers
         run: pnpm run release:mac
 
-      - name: Create GitHub release
+      - name: Create immutable release tag
+        if: needs.detect.outputs.tag_exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.detect.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+            existing_sha=$(git rev-list -n 1 "$RELEASE_TAG")
+            [[ "$existing_sha" == "$RELEASE_SHA" ]]
+            exit 0
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${RELEASE_TAG}" \
+            -f sha="$RELEASE_SHA" >/dev/null
+
+      - name: Create or validate GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.detect.outputs.version }}
+          RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.detect.outputs.release_sha }}
         run: |
           set -euo pipefail
-          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error title=Release already exists::GitHub Release v$VERSION already exists."
-            exit 1
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --target "$RELEASE_SHA" \
+              --title "DevBar $RELEASE_TAG" \
+              --generate-notes \
+              "dist/release/DevBar-$VERSION-macos-arm64.dmg" \
+              "dist/release/DevBar-$VERSION-macos-arm64.zip" \
+              "dist/release/DevBar-$VERSION-macos-x64.dmg" \
+              "dist/release/DevBar-$VERSION-macos-x64.zip" \
+              "dist/release/SHA256SUMS.txt"
           fi
-          gh release create "v$VERSION" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "DevBar v$VERSION" \
-            --generate-notes \
-            "dist/release/DevBar-$VERSION-macos-arm64.dmg" \
-            "dist/release/DevBar-$VERSION-macos-arm64.zip" \
-            "dist/release/DevBar-$VERSION-macos-x64.dmg" \
-            "dist/release/DevBar-$VERSION-macos-x64.zip" \
-            "dist/release/SHA256SUMS.txt"
+
+      - name: Verify published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.detect.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          release_json=$(gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease,assets,url)
+          [[ "$(jq -r .tagName <<<"$release_json")" == "$RELEASE_TAG" ]]
+          [[ "$(jq -r .isDraft <<<"$release_json")" == "false" ]]
+          [[ "$(jq -r .isPrerelease <<<"$release_json")" == "false" ]]
+
+          expected_assets=(
+            "DevBar-${VERSION}-macos-arm64.dmg"
+            "DevBar-${VERSION}-macos-arm64.zip"
+            "DevBar-${VERSION}-macos-x64.dmg"
+            "DevBar-${VERSION}-macos-x64.zip"
+            "SHA256SUMS.txt"
+          )
+          mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"$release_json" | sort)
+          mapfile -t sorted_expected_assets < <(printf '%s\n' "${expected_assets[@]}" | sort)
+          [[ "${actual_assets[*]}" == "${sorted_expected_assets[*]}" ]]
+
+          git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          tag_sha=$(git rev-list -n 1 "$RELEASE_TAG")
+          [[ "$tag_sha" == "$RELEASE_SHA" ]]
+
+          release_url=$(jq -r .url <<<"$release_json")
+          {
+            echo "### DevBar release published"
+            echo "- Release: $release_url"
+            echo "- Tag: $RELEASE_TAG"
+            echo "- Commit: $RELEASE_SHA"
+            echo "- Assets: ${actual_assets[*]}"
+          } >> "$GITHUB_STEP_SUMMARY"
