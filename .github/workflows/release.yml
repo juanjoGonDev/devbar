@@ -122,14 +122,15 @@ jobs:
           )
 
           if release_json=$(gh release view "$release_tag" --json tagName,isDraft,isPrerelease,assets 2>/dev/null); then
+            if [[ "$(jq -r .isDraft <<<"$release_json")" != "false" || "$(jq -r .isPrerelease <<<"$release_json")" != "false" ]]; then
+              echo "::error title=Release metadata mismatch::$release_tag must be a published stable release."
+              exit 1
+            fi
+
             git fetch --force origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
             existing_sha=$(git rev-list -n 1 "$release_tag")
             if [[ "$existing_sha" != "$release_sha" ]]; then
               echo "::error title=Release target mismatch::$release_tag points to $existing_sha instead of $release_sha."
-              exit 1
-            fi
-            if [[ "$(jq -r .isDraft <<<"$release_json")" != "false" || "$(jq -r .isPrerelease <<<"$release_json")" != "false" ]]; then
-              echo "::error title=Release metadata mismatch::$release_tag must be a published stable release."
               exit 1
             fi
 
