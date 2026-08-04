@@ -1629,7 +1629,7 @@ async function loadSettings() {
   if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
   if (setNotifyAutoclose)
     setNotifyAutoclose.value =
-      s.notifyAutoCloseSecs != null ? s.notifyAutoCloseSecs : 0;
+      s.notifyAutoCloseSecs != null ? s.notifyAutoCloseSecs : 5;
 }
 
 if (testNotifyBtn) {

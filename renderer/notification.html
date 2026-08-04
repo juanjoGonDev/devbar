@@ -18,6 +18,8 @@
         user-select: none;
       }
       #banner {
+        position: relative;
+        overflow: hidden;
         display: flex;
         align-items: center;
         gap: 12px;
@@ -28,6 +30,23 @@
         border: 1px solid rgba(255, 255, 255, 0.12);
         box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
         color: #f2f2f2;
+      }
+      #progress {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        height: 3px;
+        width: 100%;
+        background: #4a9eff;
+        transform-origin: left center;
+      }
+      @keyframes devbar-shrink {
+        from {
+          transform: scaleX(1);
+        }
+        to {
+          transform: scaleX(0);
+        }
       }
       #logo {
         width: 30px;
@@ -75,6 +94,7 @@
         <div id="body"></div>
       </div>
       <button id="close" title="Cerrar">✕</button>
+      <div id="progress"></div>
     </div>
     <script src="notification.js"></script>
   </body>

@@ -348,6 +348,7 @@ function closeNotificationWindow() {
 
 function showBannerNotification(title, body) {
   closeNotificationWindow(); // replace any visible banner
+  const secs = configStore.getGlobalSettings().notifyAutoCloseSecs;
   const width = 360;
   const height = 76;
   const margin = 12;
@@ -378,7 +379,7 @@ function showBannerNotification(title, body) {
   });
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'notification.html'), {
-    query: { title, body, logo: getPrescriptConfirmLogo() },
+    query: { title, body, logo: getPrescriptConfirmLogo(), secs: String(secs) },
   });
   win.once('ready-to-show', () => win.showInactive()); // never steal focus
   win.on('closed', () => {
@@ -386,7 +387,7 @@ function showBannerNotification(title, body) {
   });
   notificationWindow = win;
 
-  const secs = configStore.getGlobalSettings().notifyAutoCloseSecs;
+  // Main owns the authoritative close timer; the renderer bar is cosmetic.
   if (secs > 0)
     notificationTimer = setTimeout(closeNotificationWindow, secs * 1000);
 }

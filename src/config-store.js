@@ -26,9 +26,8 @@ const DEFAULT_GLOBAL_SETTINGS = {
   maxLogLines: 2000,
   // Success notifications for pre-scripts and scheduled actions.
   notifySuccess: true,
-  // Auto-close the notification after N seconds. 0 = leave it to macOS
-  // (native notifications can't be forced permanent from the app).
-  notifyAutoCloseSecs: 0,
+  // Auto-close the banner after N seconds. 0 = permanent (until clicked).
+  notifyAutoCloseSecs: 5,
 };
 
 function clampMaxLogLines(v) {

@@ -12,6 +12,14 @@ const logo = q.get('logo');
 if (logo) logoEl.src = logo;
 else logoEl.style.display = 'none';
 
+// Cosmetic countdown bar: shrinks over the auto-close window. Main owns the
+// authoritative close timer. secs === 0 means permanent → no bar.
+const secs = Number(q.get('secs')) || 0;
+const progress = document.getElementById('progress');
+if (secs > 0)
+  progress.style.animation = `devbar-shrink ${secs}s linear forwards`;
+else progress.style.display = 'none';
+
 function dismiss() {
   if (window.api && window.api.dismissNotification)
     window.api.dismissNotification();
