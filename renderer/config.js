@@ -21,6 +21,7 @@ const setNotifyAutoclose = document.getElementById('set-notify-autoclose');
 const notifyPermissionRow = document.getElementById('notify-permission-row');
 const notifyPermissionHint = document.getElementById('notify-permission-hint');
 const requestNotifyBtn = document.getElementById('request-notify-permission');
+const testNotifyBtn = document.getElementById('test-notification');
 
 // Sub-dialog fields
 const sfIconBtn = document.getElementById('sf-icon-btn');
@@ -1650,6 +1651,21 @@ function updateNotifyPermissionUI() {
     perm === 'denied'
       ? 'macOS tiene las notificaciones bloqueadas. Ábrelas en Ajustes del Sistema › Notificaciones.'
       : 'Aún no has concedido permiso de notificaciones a la app.';
+}
+
+if (testNotifyBtn) {
+  testNotifyBtn.addEventListener('click', async () => {
+    const res = await window.api.testNotification();
+    if (res && res.ok) {
+      showToast(
+        'Notificación enviada. Si no aparece, revisa permisos o prueba el .app empaquetado (en desarrollo sale como «Electron»).',
+        'ok',
+      );
+    } else {
+      showToast('Este sistema no soporta notificaciones', 'error');
+    }
+    updateNotifyPermissionUI();
+  });
 }
 
 if (requestNotifyBtn) {
