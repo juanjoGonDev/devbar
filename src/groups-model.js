@@ -121,6 +121,24 @@ function normalizeSchedule(raw) {
   return { enabled: !!s.enabled, rules };
 }
 
+/**
+ * Normalize the confirmation-gate fields shared by pre-scripts, commands and
+ * actions → { confirm, confirmSecs, confirmOnTimeout }.
+ * confirmSecs MUST be null unless confirm===true. Default 60 ONLY when opting
+ * in AND the field is absent; explicit 0/''/null → null (wait indefinitely).
+ */
+function normalizeConfirm(raw) {
+  const confirm = raw.confirm === true;
+  const confirmSecs = !confirm
+    ? null
+    : raw.confirmSecs === undefined
+      ? 60
+      : clampConfirmSecsOrNull(raw.confirmSecs);
+  const confirmOnTimeout =
+    raw.confirmOnTimeout === 'confirm' ? 'confirm' : 'cancel';
+  return { confirm, confirmSecs, confirmOnTimeout };
+}
+
 // ─────────────────────── Env helpers ────────────────────────────────
 
 /**
@@ -232,6 +250,7 @@ function normalizeCommand(input) {
     autoStart: !!raw.autoStart,
     schedule: normalizeSchedule(raw.schedule),
     maxLogLines: clampMaxLogLinesOrNull(raw.maxLogLines),
+    ...normalizeConfirm(raw),
   };
 }
 
@@ -241,17 +260,6 @@ function normalizeCommand(input) {
  */
 function normalizePreScript(input) {
   const raw = input || {};
-  const confirm = raw.confirm === true;
-  // confirmSecs MUST be null unless confirm===true (spec requirement).
-  // Default 60 ONLY when opting in AND the field is entirely absent.
-  // Explicit 0/''/null -> null = indefinite (no countdown).
-  const confirmSecs = !confirm
-    ? null
-    : raw.confirmSecs === undefined
-      ? 60
-      : clampConfirmSecsOrNull(raw.confirmSecs);
-  const confirmOnTimeout =
-    raw.confirmOnTimeout === 'confirm' ? 'confirm' : 'cancel';
   return {
     id: raw.id || uuidv4(),
     name: (raw.name || '').trim() || 'Unnamed',
@@ -261,9 +269,7 @@ function normalizePreScript(input) {
     inheritGroupEnv:
       typeof raw.inheritGroupEnv === 'boolean' ? raw.inheritGroupEnv : false,
     timeoutMs: clampTimeoutOrNull(raw.timeoutMs),
-    confirm,
-    confirmSecs,
-    confirmOnTimeout,
+    ...normalizeConfirm(raw),
   };
 }
 
@@ -310,6 +316,7 @@ function normalizeAction(input) {
     env: envEntries,
     inheritGroupEnv,
     schedule: normalizeSchedule(raw.schedule),
+    ...normalizeConfirm(raw),
   };
 }
 

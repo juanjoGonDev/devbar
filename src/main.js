@@ -133,6 +133,29 @@ function confirmScript(script, group, groupId) {
   return result;
 }
 
+/**
+ * Gate a command/action start behind its optional confirmation modal.
+ * Returns true to proceed, false if the user (or the timeout default) declined.
+ * `target` is a normalized command or action carrying confirm/confirmSecs/
+ * confirmOnTimeout. Reuses the pre-script confirm modal + serial queue, so
+ * manual and scheduled starts share one dialog UX. For scheduled runs with
+ * nobody watching, confirmOnTimeout decides after the countdown.
+ */
+function confirmIfNeeded(target, group, groupId) {
+  if (!target || !target.confirm) return Promise.resolve(true);
+  return confirmScript(
+    {
+      name: target.name,
+      command: target.command,
+      args: target.args,
+      confirmSecs: target.confirmSecs,
+      confirmOnTimeout: target.confirmOnTimeout,
+    },
+    group,
+    groupId,
+  );
+}
+
 const preScriptRunner = createPreScriptRunner({
   processManager,
   configStore,
@@ -719,8 +742,14 @@ function registerIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle('actions:run', (_e, { groupId, actionId }) => {
+  ipcMain.handle('actions:run', async (_e, { groupId, actionId }) => {
     const pid = makeActionId(groupId, actionId);
+    const group = configStore.getGroup(groupId);
+    const action =
+      group && (group.actions || []).find((a) => a.id === actionId);
+    if (!(await confirmIfNeeded(action, group, groupId))) {
+      return { ok: false, cancelled: true, processId: pid };
+    }
     const res = processManager.start(pid);
     broadcast();
     return { ok: res.ok, processId: pid, error: res.error };
@@ -782,6 +811,16 @@ function registerIpc() {
     const parsed = parseProcessId(processId);
     if (parsed.kind === 'unknown')
       return { ok: false, error: 'Invalid process id' };
+
+    // Optional confirmation gate (commands only here; actions go via actions:run).
+    if (parsed.kind === 'command') {
+      const grp = configStore.getGroup(parsed.groupId);
+      const cmd =
+        grp && (grp.commands || []).find((c) => c.id === parsed.commandId);
+      if (!(await confirmIfNeeded(cmd, grp, parsed.groupId))) {
+        return { ok: false, cancelled: true };
+      }
+    }
 
     // Single-mode: stop other running commands in the same group first
     if (parsed.kind === 'command') {
@@ -1275,10 +1314,14 @@ async function evaluateSchedule(pid, sched, now, startFn) {
     return false;
   }
   if (!isDue(sched, last, now)) return false;
-  const alreadyRunning = processManager.getState(pid).status === 'running';
-  if (!alreadyRunning) await startFn();
+  let didStart = false;
+  if (processManager.getState(pid).status !== 'running') {
+    didStart = (await startFn()) === true;
+  }
+  // Advance the marker even on a declined confirmation, so we don't re-prompt
+  // for the same occurrence on every tick.
   configStore.setScheduleLastRun(pid, now.toISOString());
-  return !alreadyRunning;
+  return didStart;
 }
 
 async function checkSchedules(now) {
@@ -1288,6 +1331,7 @@ async function checkSchedules(now) {
     for (const cmd of group.commands || []) {
       const pid = makeCommandId(group.id, cmd.id);
       const ran = await evaluateSchedule(pid, cmd.schedule, now, async () => {
+        if (!(await confirmIfNeeded(cmd, group, group.id))) return false;
         // Single-mode groups: stop other running commands first (radio).
         if (group.mode === 'single') {
           const others = (group.commands || [])
@@ -1300,19 +1344,24 @@ async function checkSchedules(now) {
         }
         try {
           processManager.start(pid);
+          return true;
         } catch (err) {
           console.error(`schedule start ${group.name}/${cmd.name}:`, err);
+          return false;
         }
       });
       started = started || ran;
     }
     for (const act of group.actions || []) {
       const pid = makeActionId(group.id, act.id);
-      const ran = await evaluateSchedule(pid, act.schedule, now, () => {
+      const ran = await evaluateSchedule(pid, act.schedule, now, async () => {
+        if (!(await confirmIfNeeded(act, group, group.id))) return false;
         try {
           processManager.start(pid);
+          return true;
         } catch (err) {
           console.error(`schedule start ${group.name}/${act.name}:`, err);
+          return false;
         }
       });
       started = started || ran;

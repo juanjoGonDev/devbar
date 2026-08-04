@@ -1181,8 +1181,8 @@ function openSubDialog(item, kind, groupId, stepId) {
     sfTimeoutSecs.value =
       item && item.timeoutMs ? Math.round(item.timeoutMs / 1000) : '';
 
-  // PreScript-only: confirmation gate
-  if (sfConfirmRow) sfConfirmRow.style.display = isPreScript ? '' : 'none';
+  // Confirmation gate — available for commands, actions and pre-scripts.
+  if (sfConfirmRow) sfConfirmRow.style.display = '';
   if (sfConfirm) {
     sfConfirm.checked = !!(item && item.confirm);
     if (sfConfirmOnTimeout) {
@@ -1252,6 +1252,9 @@ function openSubDialog(item, kind, groupId, stepId) {
           // commands list now, not in this dialog.
           autoStart: item ? !!item.autoStart : false,
           schedule: data.schedule,
+          confirm: data.confirm,
+          confirmSecs: data.confirmSecs,
+          confirmOnTimeout: data.confirmOnTimeout,
           // Preserve silenced patterns
           silencedPatterns: item
             ? item.silencedPatterns
@@ -1268,6 +1271,9 @@ function openSubDialog(item, kind, groupId, stepId) {
           env: data.env,
           inheritGroupEnv: data.inheritGroupEnv,
           schedule: data.schedule,
+          confirm: data.confirm,
+          confirmSecs: data.confirmSecs,
+          confirmOnTimeout: data.confirmOnTimeout,
         };
         await window.api.saveAction(groupId, payload);
       }
