@@ -1578,9 +1578,9 @@ app.whenReady().then(() => {
     startScheduleLoop();
     powerMonitor.on('resume', () => checkSchedules(new Date()));
 
-    // Check GitHub for a newer release now and once a day after.
+    // Check GitHub for a newer release now and every 5 minutes after.
     runUpdateCheck();
-    setInterval(runUpdateCheck, 24 * 60 * 60 * 1000);
+    setInterval(runUpdateCheck, 5 * 60 * 1000);
   });
 
   mb.on('after-create-window', () => {
