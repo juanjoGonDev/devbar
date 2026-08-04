@@ -10,7 +10,6 @@ const {
   Menu,
   screen,
   dialog,
-  Notification,
   shell,
   powerMonitor,
 } = require('electron');
@@ -181,7 +180,9 @@ const repoWatcher = new RepoWatcher();
 
 // GitHub repo to check for newer releases, and the result once found.
 const UPDATE_REPO = { owner: 'juanjoGonDev', repo: 'devbar' };
-let availableUpdate = null; // { version, url } when a newer release exists
+let availableUpdate = null; // { version, url, dmgUrl, zipUrl } when newer exists
+let lastUpdateCheckAt = null; // ISO of the last completed release check
+let updateNotifiedThisLaunch = false; // banner shown at most once per launch
 
 // Group-level transient errors (not persisted)
 const groupErrors = new Map();
@@ -466,24 +467,40 @@ function buildTrayContextMenu() {
   return Menu.buildFromTemplate(items);
 }
 
-// Check GitHub for a newer release; on first discovery, notify the user.
-// The "Actualizar a vX" item lives in the tray right-click menu thereafter.
-async function runUpdateCheck() {
+function broadcastUpdateStatus() {
+  const payload = {
+    available: availableUpdate,
+    lastCheckAt: lastUpdateCheckAt,
+  };
+  for (const wc of rendererTargets()) wc.send('updates:status', payload);
+}
+
+/**
+ * Check GitHub for a newer release. Notifies via our own banner (native needs
+ * signing), kept NON-insistent: at most once per launch from the automatic
+ * loop, or on a manual check, and never while the config window is focused —
+ * a manual check surfaces its result inline in config instead.
+ */
+async function runUpdateCheck({ manual = false } = {}) {
   const found = await checkForUpdate({
     ...UPDATE_REPO,
     currentVersion: app.getVersion(),
   });
-  if (!found) return;
-  const isNew = !availableUpdate || availableUpdate.version !== found.version;
-  availableUpdate = found;
-  if (isNew && Notification.isSupported()) {
-    const n = new Notification({
-      title: 'DevBar — actualización disponible',
-      body: `v${found.version} está lista. Click para descargar.`,
-    });
-    n.on('click', () => shell.openExternal(found.url));
-    n.show();
+  lastUpdateCheckAt = new Date().toISOString();
+  availableUpdate = found || null;
+  if (found) {
+    const configFocused =
+      configWindow && !configWindow.isDestroyed() && configWindow.isFocused();
+    if ((manual || !updateNotifiedThisLaunch) && !configFocused) {
+      updateNotifiedThisLaunch = true;
+      showBannerNotification(
+        'DevBar — actualización',
+        `v${found.version} disponible. Ábrela en Configuración.`,
+      );
+    }
   }
+  broadcastUpdateStatus();
+  return { available: availableUpdate, lastCheckAt: lastUpdateCheckAt };
 }
 
 function ensureSilencedWindow(groupId, commandId) {
@@ -1129,6 +1146,14 @@ function registerIpc() {
     closeNotificationWindow();
     return { ok: true };
   });
+
+  // ── Updates ────────────────────────────────────────────────────────────
+  ipcMain.handle('updates:status', () => ({
+    available: availableUpdate,
+    lastCheckAt: lastUpdateCheckAt,
+    currentVersion: app.getVersion(),
+  }));
+  ipcMain.handle('updates:check', () => runUpdateCheck({ manual: true }));
 
   // ── Config Export / Import ────────────────────────────────────────────
 

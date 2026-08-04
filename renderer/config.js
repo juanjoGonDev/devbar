@@ -1791,6 +1791,49 @@ if (window.api.onConfigCloseRequested) {
   });
 }
 
+// ────────────────────── Updates ─────────────────────────────────────────
+
+const checkUpdatesBtn = document.getElementById('check-updates');
+const updateStatusEl = document.getElementById('update-status');
+let _currentVersion = '';
+
+function renderUpdateStatus(s) {
+  if (!s || !updateStatusEl) return;
+  if (s.currentVersion) _currentVersion = s.currentVersion;
+  const last = s.lastCheckAt
+    ? new Date(s.lastCheckAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'nunca';
+  updateStatusEl.textContent = s.available
+    ? `Actualización v${s.available.version} disponible · última búsqueda ${last}`
+    : `Al día${_currentVersion ? ` (v${_currentVersion})` : ''} · última búsqueda ${last}`;
+}
+
+if (checkUpdatesBtn) {
+  checkUpdatesBtn.addEventListener('click', async () => {
+    checkUpdatesBtn.disabled = true;
+    const prev = checkUpdatesBtn.textContent;
+    checkUpdatesBtn.textContent = 'Buscando…';
+    try {
+      renderUpdateStatus(await window.api.checkForUpdates());
+    } finally {
+      checkUpdatesBtn.textContent = prev;
+      checkUpdatesBtn.disabled = false;
+    }
+  });
+}
+
+if (window.api && window.api.getUpdateStatus) {
+  window.api
+    .getUpdateStatus()
+    .then(renderUpdateStatus)
+    .catch(() => {});
+  // Live refresh from the automatic 5-minute checks.
+  window.api.onUpdateStatus(renderUpdateStatus);
+}
+
 // ────────────────────── Init ───────────────────────────────────────────
 
 loadSettings();

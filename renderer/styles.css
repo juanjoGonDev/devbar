@@ -1268,6 +1268,14 @@ fieldset.schedule-group legend {
 #sf-schedule-add {
   margin-top: 10px;
 }
+.updates-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -4px 0 16px;
+}
+
 .day-chips {
   display: flex;
   gap: 6px;

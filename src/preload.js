@@ -99,6 +99,15 @@ contextBridge.exposeInMainWorld('api', {
   testNotification: () => ipcRenderer.invoke('notifications:test'),
   dismissNotification: () => ipcRenderer.invoke('notification:dismiss'),
 
+  // ── Updates ───────────────────────────────────────────────────────────
+  getUpdateStatus: () => ipcRenderer.invoke('updates:status'),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  onUpdateStatus: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('updates:status', handler);
+    return () => ipcRenderer.removeListener('updates:status', handler);
+  },
+
   // ── Icons ─────────────────────────────────────────────────────────────
   getIconBattery: () => ipcRenderer.invoke('icons:get'),
 
