@@ -1533,7 +1533,22 @@ async function evaluateSchedule(pid, sched, now, startFn) {
   return didStart;
 }
 
+let _schedulesInFlight = false;
+
+// Re-entrancy guard: a scheduled start may await an indefinite confirmation
+// modal, so a tick/resume mid-run must not re-evaluate the still-due target and
+// queue another modal (or double-start it). One run at a time.
 async function checkSchedules(now) {
+  if (_schedulesInFlight) return;
+  _schedulesInFlight = true;
+  try {
+    await runSchedulesOnce(now);
+  } finally {
+    _schedulesInFlight = false;
+  }
+}
+
+async function runSchedulesOnce(now) {
   const groups = configStore.listGroups();
   let started = false;
   for (const group of groups) {
