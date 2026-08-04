@@ -1321,6 +1321,20 @@ async function checkSchedules(now) {
   if (started) broadcast();
 }
 
+/**
+ * Run checkSchedules aligned to the wall-clock minute. A plain
+ * setInterval(60s) fires at an arbitrary phase (ready+1s, +61s, …), so a
+ * 13:02 schedule could fire anywhere up to 13:02:59. We wait until the next
+ * :00 second, then tick every 60s from there.
+ */
+function startScheduleLoop() {
+  const msToNextMinute = 60000 - (Date.now() % 60000);
+  setTimeout(() => {
+    checkSchedules(new Date());
+    setInterval(() => checkSchedules(new Date()), 60 * 1000);
+  }, msToNextMinute);
+}
+
 // ─────────────────────── App lifecycle ───────────────────────────────
 
 // Single-instance lock. DevBar is a menubar app backed by one electron-store
@@ -1400,10 +1414,11 @@ app.whenReady().then(() => {
     // Only commands are eligible — actions are one-shots and must not run at boot.
     setTimeout(() => autoStartAllMarkedCommands(), 300);
 
-    // Scheduled auto-run: seed/evaluate shortly after boot, then every minute,
-    // plus immediately whenever the Mac wakes so a missed slot catches up.
+    // Scheduled auto-run: seed/evaluate shortly after boot, then on every
+    // minute boundary (aligned so a 13:02 schedule fires at ~13:02:00, not up
+    // to 59s late), plus immediately on wake so a missed slot catches up.
     setTimeout(() => checkSchedules(new Date()), 1000);
-    setInterval(() => checkSchedules(new Date()), 60 * 1000);
+    startScheduleLoop();
     powerMonitor.on('resume', () => checkSchedules(new Date()));
 
     // Check GitHub for a newer release now and once a day after.
