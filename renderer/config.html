@@ -54,6 +54,27 @@
           reiniciar el proceso.</small
         >
       </div>
+      <label class="toggle" style="margin-top: 12px">
+        <input type="checkbox" id="set-notify-success" />
+        <span>Notificar al terminar pre-scripts y acciones programadas</span>
+      </label>
+      <div class="field" style="margin-top: 8px">
+        <label for="set-notify-autoclose"
+          >Cerrar notificación tras (segundos)</label
+        >
+        <input
+          type="number"
+          id="set-notify-autoclose"
+          min="0"
+          max="3600"
+          step="1"
+          style="width: 120px"
+        />
+        <small class="muted" style="display: block; margin-top: 4px"
+          >0 = lo gestiona macOS. La permanencia real se ajusta en Ajustes del
+          Sistema › Notificaciones › DevBar (estilo «alertas»).</small
+        >
+      </div>
     </section>
 
     <!-- Backup / Restore -->

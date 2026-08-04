@@ -97,3 +97,30 @@ describe('config-store — DEFAULT_GLOBAL_SETTINGS contract', () => {
     expect(DEFAULT_GLOBAL_SETTINGS).toHaveProperty('maxLogLines');
   });
 });
+
+// ─── Inline replica of clampNotifyAutoCloseSecs (mirrors src/config-store.js) ──
+// 0 = "leave it to macOS"; otherwise floor and clamp to [1, 3600].
+function clampNotifyAutoCloseSecs(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(3600, Math.floor(n));
+}
+
+describe('config-store — clampNotifyAutoCloseSecs helper (spec-level tests)', () => {
+  it('returns 0 for missing/empty/invalid/negative values', () => {
+    expect(clampNotifyAutoCloseSecs(undefined)).toBe(0);
+    expect(clampNotifyAutoCloseSecs('')).toBe(0);
+    expect(clampNotifyAutoCloseSecs('abc')).toBe(0);
+    expect(clampNotifyAutoCloseSecs(-5)).toBe(0);
+    expect(clampNotifyAutoCloseSecs(0)).toBe(0);
+  });
+
+  it('preserves a valid value and floors fractionals', () => {
+    expect(clampNotifyAutoCloseSecs(10)).toBe(10);
+    expect(clampNotifyAutoCloseSecs(12.9)).toBe(12);
+  });
+
+  it('clamps above the ceiling to 3600', () => {
+    expect(clampNotifyAutoCloseSecs(99999)).toBe(3600);
+  });
+});

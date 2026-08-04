@@ -16,6 +16,8 @@ const setAutostart = document.getElementById('set-autostart');
 const setSilenceWarnings = document.getElementById('set-silence-warnings');
 const setSilenceErrors = document.getElementById('set-silence-errors');
 const setMaxLogLines = document.getElementById('set-max-log-lines');
+const setNotifySuccess = document.getElementById('set-notify-success');
+const setNotifyAutoclose = document.getElementById('set-notify-autoclose');
 
 // Sub-dialog fields
 const sfIconBtn = document.getElementById('sf-icon-btn');
@@ -1623,17 +1625,26 @@ async function loadSettings() {
   setSilenceErrors.checked = !!s.silenceErrors;
   if (setMaxLogLines)
     setMaxLogLines.value = s.maxLogLines != null ? s.maxLogLines : 2000;
+  if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
+  if (setNotifyAutoclose)
+    setNotifyAutoclose.value =
+      s.notifyAutoCloseSecs != null ? s.notifyAutoCloseSecs : 0;
 }
 
 async function persistSettings() {
   const maxLogLinesRaw = setMaxLogLines ? setMaxLogLines.value : '';
   const maxLogLines =
     maxLogLinesRaw === '' ? 2000 : Number(maxLogLinesRaw) || 2000;
+  const autocloseRaw = setNotifyAutoclose ? setNotifyAutoclose.value : '';
+  const notifyAutoCloseSecs =
+    autocloseRaw === '' ? 0 : Number(autocloseRaw) || 0;
   await window.api.saveSettings({
     autostart: setAutostart.checked,
     silenceWarnings: setSilenceWarnings.checked,
     silenceErrors: setSilenceErrors.checked,
     maxLogLines,
+    notifySuccess: setNotifySuccess ? setNotifySuccess.checked : true,
+    notifyAutoCloseSecs,
   });
   showToast('Ajustes guardados', 'ok');
 }
@@ -1644,6 +1655,12 @@ setSilenceErrors.addEventListener('change', persistSettings);
 if (setMaxLogLines) {
   setMaxLogLines.addEventListener('change', persistSettings);
   setMaxLogLines.addEventListener('blur', persistSettings);
+}
+if (setNotifySuccess)
+  setNotifySuccess.addEventListener('change', persistSettings);
+if (setNotifyAutoclose) {
+  setNotifyAutoclose.addEventListener('change', persistSettings);
+  setNotifyAutoclose.addEventListener('blur', persistSettings);
 }
 
 // ────────────────────── Backup / Restore ───────────────────────────────

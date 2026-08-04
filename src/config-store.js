@@ -24,12 +24,23 @@ const DEFAULT_GLOBAL_SETTINGS = {
   silenceWarnings: false,
   silenceErrors: false,
   maxLogLines: 2000,
+  // Success notifications for pre-scripts and scheduled actions.
+  notifySuccess: true,
+  // Auto-close the notification after N seconds. 0 = leave it to macOS
+  // (native notifications can't be forced permanent from the app).
+  notifyAutoCloseSecs: 0,
 };
 
 function clampMaxLogLines(v) {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return 2000;
   return Math.min(50000, Math.max(100, Math.floor(n)));
+}
+
+function clampNotifyAutoCloseSecs(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(3600, Math.floor(n));
 }
 
 const schema = {
@@ -445,6 +456,8 @@ function saveGlobalSettings(patch) {
   next.silenceWarnings = !!next.silenceWarnings;
   next.silenceErrors = !!next.silenceErrors;
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
+  next.notifySuccess = !!next.notifySuccess;
+  next.notifyAutoCloseSecs = clampNotifyAutoCloseSecs(next.notifyAutoCloseSecs);
   store.set('globalSettings', next);
   return next;
 }

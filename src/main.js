@@ -163,6 +163,12 @@ const preScriptRunner = createPreScriptRunner({
   onError: (err, _ctx) => {
     broadcastToast('error', `Pre-scripts: ${err}`);
   },
+  onSuccess: ({ group }) => {
+    showCompletionNotification(
+      'DevBar — pre-scripts',
+      `${group ? group.name : 'Grupo'}: pre-scripts completados`,
+    );
+  },
   confirmScript,
   cancelConfirm,
 });
@@ -179,6 +185,10 @@ let availableUpdate = null; // { version, url } when a newer release exists
 
 // Group-level transient errors (not persisted)
 const groupErrors = new Map();
+
+// Action pids started by the scheduler, awaiting their action:done so we can
+// fire a completion notification (manual runs don't notify — you're watching).
+const scheduledActionPids = new Set();
 
 // Pending import payloads — keyed by opaque token (5-min TTL)
 // Prevents renderer from smuggling an unvalidated payload to applyImport.
@@ -312,6 +322,29 @@ function broadcastLog(payload) {
 function broadcastToast(kind, message) {
   for (const wc of rendererTargets()) {
     wc.send('groups:toast', { kind, message });
+  }
+}
+
+/**
+ * Native macOS completion notification for pre-scripts and scheduled actions,
+ * so an unattended run tells us when it finished. Gated by the global
+ * `notifySuccess` toggle. macOS controls native-notification persistence, so
+ * "permanent" is a system setting; `notifyAutoCloseSecs` (>0) lets us at least
+ * auto-dismiss after N seconds via close().
+ */
+function showCompletionNotification(title, body) {
+  const g = configStore.getGlobalSettings();
+  if (!g.notifySuccess || !Notification.isSupported()) return;
+  const n = new Notification({ title, body });
+  n.show();
+  if (g.notifyAutoCloseSecs > 0) {
+    setTimeout(() => {
+      try {
+        n.close();
+      } catch (_) {
+        // notification already dismissed — nothing to do
+      }
+    }, g.notifyAutoCloseSecs * 1000);
   }
 }
 
@@ -1358,6 +1391,7 @@ async function checkSchedules(now) {
         if (!(await confirmIfNeeded(act, group, group.id))) return false;
         try {
           processManager.start(pid);
+          scheduledActionPids.add(pid); // notify on its action:done
           return true;
         } catch (err) {
           console.error(`schedule start ${group.name}/${act.name}:`, err);
@@ -1424,6 +1458,15 @@ app.whenReady().then(() => {
     const kind = code === 0 ? 'ok' : 'error';
     const message = `${group ? group.name : '?'} · ${target ? target.name : '?'} exited ${code}`;
     broadcastToast(kind, message);
+    // Scheduled actions run unattended — notify natively when they finish.
+    if (scheduledActionPids.has(processId)) {
+      scheduledActionPids.delete(processId);
+      const name = `${group ? group.name : '?'} · ${target ? target.name : '?'}`;
+      showCompletionNotification(
+        'DevBar — acción programada',
+        code === 0 ? `${name}: completada` : `${name}: falló (código ${code})`,
+      );
+    }
     broadcast();
   });
   repoWatcher.on('change', (repoPath) => broadcastBranchesChanged(repoPath));
