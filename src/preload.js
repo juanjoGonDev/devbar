@@ -97,8 +97,7 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
   testNotification: () => ipcRenderer.invoke('notifications:test'),
-  openNotificationSettings: () =>
-    ipcRenderer.invoke('notifications:openSystemSettings'),
+  dismissNotification: () => ipcRenderer.invoke('notification:dismiss'),
 
   // ── Icons ─────────────────────────────────────────────────────────────
   getIconBattery: () => ipcRenderer.invoke('icons:get'),

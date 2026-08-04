@@ -71,25 +71,14 @@
           style="width: 120px"
         />
         <small class="muted" style="display: block; margin-top: 4px"
-          >0 = lo gestiona macOS. La permanencia real se ajusta en Ajustes del
-          Sistema › Notificaciones › DevBar (estilo «alertas»).</small
+          >0 = permanente (hasta que la cierres). Mayor que 0 = se cierra sola
+          tras N segundos.</small
         >
       </div>
       <div style="margin-top: 8px">
         <button type="button" id="test-notification" class="small-btn">
           Probar notificación
         </button>
-      </div>
-      <!-- Shown only when macOS has not granted notification permission. -->
-      <div id="notify-permission-row" style="display: none; margin-top: 8px">
-        <button type="button" id="request-notify-permission" class="small-btn">
-          Solicitar permiso de notificaciones a macOS
-        </button>
-        <small
-          class="muted"
-          id="notify-permission-hint"
-          style="display: block; margin-top: 4px"
-        ></small>
       </div>
     </section>
 

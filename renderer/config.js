@@ -18,9 +18,6 @@ const setSilenceErrors = document.getElementById('set-silence-errors');
 const setMaxLogLines = document.getElementById('set-max-log-lines');
 const setNotifySuccess = document.getElementById('set-notify-success');
 const setNotifyAutoclose = document.getElementById('set-notify-autoclose');
-const notifyPermissionRow = document.getElementById('notify-permission-row');
-const notifyPermissionHint = document.getElementById('notify-permission-hint');
-const requestNotifyBtn = document.getElementById('request-notify-permission');
 const testNotifyBtn = document.getElementById('test-notification');
 
 // Sub-dialog fields
@@ -1633,60 +1630,12 @@ async function loadSettings() {
   if (setNotifyAutoclose)
     setNotifyAutoclose.value =
       s.notifyAutoCloseSecs != null ? s.notifyAutoCloseSecs : 0;
-  updateNotifyPermissionUI();
-}
-
-// Show the "request permission" button only when macOS has not granted it —
-// permission is the practical signal for "notifications won't show".
-function updateNotifyPermissionUI() {
-  if (!notifyPermissionRow) return;
-  const perm =
-    typeof Notification !== 'undefined' ? Notification.permission : 'granted';
-  if (perm === 'granted') {
-    notifyPermissionRow.style.display = 'none';
-    return;
-  }
-  notifyPermissionRow.style.display = '';
-  notifyPermissionHint.textContent =
-    perm === 'denied'
-      ? 'macOS tiene las notificaciones bloqueadas. Ábrelas en Ajustes del Sistema › Notificaciones.'
-      : 'Aún no has concedido permiso de notificaciones a la app.';
 }
 
 if (testNotifyBtn) {
   testNotifyBtn.addEventListener('click', async () => {
-    const res = await window.api.testNotification();
-    if (res && res.ok) {
-      showToast(
-        'Notificación enviada. Si no aparece, revisa permisos o prueba el .app empaquetado (en desarrollo sale como «Electron»).',
-        'ok',
-      );
-    } else {
-      showToast('Este sistema no soporta notificaciones', 'error');
-    }
-    updateNotifyPermissionUI();
-  });
-}
-
-if (requestNotifyBtn) {
-  requestNotifyBtn.addEventListener('click', async () => {
-    let perm = Notification.permission;
-    if (perm === 'default') {
-      try {
-        perm = await Notification.requestPermission();
-      } catch (_) {
-        // requestPermission may reject on some platforms — treat as unchanged
-      }
-    }
-    if (perm === 'granted') {
-      await window.api.testNotification();
-      showToast('Notificaciones activadas', 'ok');
-    } else {
-      // Denied: macOS won't re-prompt, so send the user to System Settings.
-      await window.api.openNotificationSettings();
-      showToast('Actívalas en Ajustes del Sistema › Notificaciones', 'error');
-    }
-    updateNotifyPermissionUI();
+    await window.api.testNotification();
+    showToast('Banner de prueba mostrado', 'ok');
   });
 }
 

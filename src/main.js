@@ -325,27 +325,79 @@ function broadcastToast(kind, message) {
   }
 }
 
+// ── In-app completion banner ────────────────────────────────────────────
+// Native macOS notifications need a Developer-ID-signed app to register, which
+// this unsigned build is not — they silently never appear. So we draw our own
+// small always-on-top banner instead. No OS permission, works in dev and
+// packaged, and honours the duration setting natively could not:
+//   notifyAutoCloseSecs === 0 → permanent (until clicked)
+//   notifyAutoCloseSecs  >  0 → auto-dismiss after N seconds
+// ponytail: single-slot — a new banner replaces the current one; no stacking.
+let notificationWindow = null;
+let notificationTimer = null;
+
+function closeNotificationWindow() {
+  if (notificationTimer) {
+    clearTimeout(notificationTimer);
+    notificationTimer = null;
+  }
+  const win = notificationWindow;
+  notificationWindow = null;
+  if (win && !win.isDestroyed()) win.close();
+}
+
+function showBannerNotification(title, body) {
+  closeNotificationWindow(); // replace any visible banner
+  const width = 360;
+  const height = 76;
+  const margin = 12;
+  const wa = screen.getPrimaryDisplay().workArea;
+  const win = new BrowserWindow({
+    width,
+    height,
+    x: wa.x + wa.width - width - margin,
+    y: wa.y + margin,
+    frame: false,
+    resizable: false,
+    movable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    fullscreenable: false,
+    minimizable: false,
+    maximizable: false,
+    show: false,
+    transparent: true,
+    hasShadow: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'notification.html'), {
+    query: { title, body, logo: getPrescriptConfirmLogo() },
+  });
+  win.once('ready-to-show', () => win.showInactive()); // never steal focus
+  win.on('closed', () => {
+    if (notificationWindow === win) notificationWindow = null;
+  });
+  notificationWindow = win;
+
+  const secs = configStore.getGlobalSettings().notifyAutoCloseSecs;
+  if (secs > 0)
+    notificationTimer = setTimeout(closeNotificationWindow, secs * 1000);
+}
+
 /**
- * Native macOS completion notification for pre-scripts and scheduled actions,
- * so an unattended run tells us when it finished. Gated by the global
- * `notifySuccess` toggle. macOS controls native-notification persistence, so
- * "permanent" is a system setting; `notifyAutoCloseSecs` (>0) lets us at least
- * auto-dismiss after N seconds via close().
+ * Completion banner for pre-scripts and scheduled actions, gated by the global
+ * `notifySuccess` toggle.
  */
 function showCompletionNotification(title, body) {
-  const g = configStore.getGlobalSettings();
-  if (!g.notifySuccess || !Notification.isSupported()) return;
-  const n = new Notification({ title, body });
-  n.show();
-  if (g.notifyAutoCloseSecs > 0) {
-    setTimeout(() => {
-      try {
-        n.close();
-      } catch (_) {
-        // notification already dismissed — nothing to do
-      }
-    }, g.notifyAutoCloseSecs * 1000);
-  }
+  if (!configStore.getGlobalSettings().notifySuccess) return;
+  showBannerNotification(title, body);
 }
 
 function rendererTargets() {
@@ -1065,24 +1117,15 @@ function registerIpc() {
     return next;
   });
 
-  // Fire a real main-process notification so the user confirms the actual
-  // delivery path works (not just the renderer permission). Ungated by
-  // notifySuccess — it's an explicit test.
+  // Show a test banner (ungated by notifySuccess — it's an explicit test).
   ipcMain.handle('notifications:test', () => {
-    if (!Notification.isSupported()) return { ok: false };
-    new Notification({
-      title: 'DevBar',
-      body: 'Notificaciones activadas ✅',
-    }).show();
+    showBannerNotification('DevBar', 'Notificación de prueba ✅');
     return { ok: true };
   });
 
-  // Deep-link to the macOS notification settings (used when permission was
-  // denied — macOS won't re-prompt, so the user must toggle it there).
-  ipcMain.handle('notifications:openSystemSettings', () => {
-    shell.openExternal(
-      'x-apple.systempreferences:com.apple.preference.notifications',
-    );
+  // Dismiss the current completion banner (clicked in the banner renderer).
+  ipcMain.handle('notification:dismiss', () => {
+    closeNotificationWindow();
     return { ok: true };
   });
 
