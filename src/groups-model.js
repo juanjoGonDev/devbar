@@ -134,8 +134,10 @@ function normalizeConfirm(raw) {
     : raw.confirmSecs === undefined
       ? 60
       : clampConfirmSecsOrNull(raw.confirmSecs);
+  // Only meaningful when confirm is on; canonicalize to 'cancel' otherwise so
+  // a disabled gate never carries a stray 'confirm' (mirrors confirmSecs=null).
   const confirmOnTimeout =
-    raw.confirmOnTimeout === 'confirm' ? 'confirm' : 'cancel';
+    confirm && raw.confirmOnTimeout === 'confirm' ? 'confirm' : 'cancel';
   return { confirm, confirmSecs, confirmOnTimeout };
 }
 

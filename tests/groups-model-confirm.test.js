@@ -56,5 +56,14 @@ for (const [label, normalize] of [
       const x = normalize({ command: 'x', confirm: false, confirmSecs: 30 });
       expect(x.confirmSecs).toBe(null);
     });
+
+    it('canonicalizes confirmOnTimeout to cancel when confirm is false', () => {
+      const x = normalize({
+        command: 'x',
+        confirm: false,
+        confirmOnTimeout: 'confirm',
+      });
+      expect(x.confirmOnTimeout).toBe('cancel');
+    });
   });
 }
