@@ -3,6 +3,9 @@ dist/
 .DS_Store
 *.log
 
+# Local AI tooling state (skill registry cache) — not project config.
+.atl/
+
 # This project uses pnpm exclusively. Guard against a stray `npm install`
 # committing an npm/yarn lockfile alongside pnpm-lock.yaml.
 package-lock.json
