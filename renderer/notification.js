@@ -7,10 +7,12 @@ const q = new URLSearchParams(location.search);
 document.getElementById('title').textContent = q.get('title') || 'DevBar';
 document.getElementById('body').textContent = q.get('body') || '';
 
+// The logo is a static bundled asset (set in the HTML) — never a query value,
+// so no untrusted data reaches img.src. Hide it if it fails to load.
 const logoEl = document.getElementById('logo');
-const logo = q.get('logo');
-if (logo) logoEl.src = logo;
-else logoEl.style.display = 'none';
+logoEl.addEventListener('error', () => {
+  logoEl.style.display = 'none';
+});
 
 // Cosmetic countdown bar: shrinks over the auto-close window. Main owns the
 // authoritative close timer. secs === 0 means permanent → no bar.

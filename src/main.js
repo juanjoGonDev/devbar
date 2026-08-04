@@ -381,7 +381,7 @@ function showBannerNotification(title, body) {
   });
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'notification.html'), {
-    query: { title, body, logo: getPrescriptConfirmLogo(), secs: String(secs) },
+    query: { title, body, secs: String(secs) },
   });
   win.once('ready-to-show', () => win.showInactive()); // never steal focus
   win.on('closed', () => {
