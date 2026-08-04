@@ -1323,7 +1323,20 @@ async function checkSchedules(now) {
 
 // ─────────────────────── App lifecycle ───────────────────────────────
 
+// Single-instance lock. DevBar is a menubar app backed by one electron-store
+// file; a second launch (e.g. login item + manual open) would spawn a duelling
+// tray icon writing the same store. The second instance focuses config on the
+// primary and exits. `isPrimary` also guards the ready handlers, since a
+// second instance may still emit 'ready' before app.quit() takes effect.
+const isPrimary = app.requestSingleInstanceLock();
+if (!isPrimary) {
+  app.quit();
+} else {
+  app.on('second-instance', () => ensureConfigWindow());
+}
+
 app.on('ready', () => {
+  if (!isPrimary) return;
   if (process.platform === 'darwin' && app.dock) {
     app.dock.hide();
     updateDockVisibility();
@@ -1331,6 +1344,7 @@ app.on('ready', () => {
 });
 
 app.whenReady().then(() => {
+  if (!isPrimary) return;
   registerIpc();
   applyAutostart(configStore.getGlobalSettings().autostart);
   processManager.on('change', () => broadcast());
