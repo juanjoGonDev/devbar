@@ -75,6 +75,17 @@
           Sistema › Notificaciones › DevBar (estilo «alertas»).</small
         >
       </div>
+      <!-- Shown only when macOS has not granted notification permission. -->
+      <div id="notify-permission-row" style="display: none; margin-top: 8px">
+        <button type="button" id="request-notify-permission" class="small-btn">
+          Solicitar permiso de notificaciones a macOS
+        </button>
+        <small
+          class="muted"
+          id="notify-permission-hint"
+          style="display: block; margin-top: 4px"
+        ></small>
+      </div>
     </section>
 
     <!-- Backup / Restore -->

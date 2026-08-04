@@ -18,6 +18,9 @@ const setSilenceErrors = document.getElementById('set-silence-errors');
 const setMaxLogLines = document.getElementById('set-max-log-lines');
 const setNotifySuccess = document.getElementById('set-notify-success');
 const setNotifyAutoclose = document.getElementById('set-notify-autoclose');
+const notifyPermissionRow = document.getElementById('notify-permission-row');
+const notifyPermissionHint = document.getElementById('notify-permission-hint');
+const requestNotifyBtn = document.getElementById('request-notify-permission');
 
 // Sub-dialog fields
 const sfIconBtn = document.getElementById('sf-icon-btn');
@@ -1629,6 +1632,46 @@ async function loadSettings() {
   if (setNotifyAutoclose)
     setNotifyAutoclose.value =
       s.notifyAutoCloseSecs != null ? s.notifyAutoCloseSecs : 0;
+  updateNotifyPermissionUI();
+}
+
+// Show the "request permission" button only when macOS has not granted it —
+// permission is the practical signal for "notifications won't show".
+function updateNotifyPermissionUI() {
+  if (!notifyPermissionRow) return;
+  const perm =
+    typeof Notification !== 'undefined' ? Notification.permission : 'granted';
+  if (perm === 'granted') {
+    notifyPermissionRow.style.display = 'none';
+    return;
+  }
+  notifyPermissionRow.style.display = '';
+  notifyPermissionHint.textContent =
+    perm === 'denied'
+      ? 'macOS tiene las notificaciones bloqueadas. Ábrelas en Ajustes del Sistema › Notificaciones.'
+      : 'Aún no has concedido permiso de notificaciones a la app.';
+}
+
+if (requestNotifyBtn) {
+  requestNotifyBtn.addEventListener('click', async () => {
+    let perm = Notification.permission;
+    if (perm === 'default') {
+      try {
+        perm = await Notification.requestPermission();
+      } catch (_) {
+        // requestPermission may reject on some platforms — treat as unchanged
+      }
+    }
+    if (perm === 'granted') {
+      await window.api.testNotification();
+      showToast('Notificaciones activadas', 'ok');
+    } else {
+      // Denied: macOS won't re-prompt, so send the user to System Settings.
+      await window.api.openNotificationSettings();
+      showToast('Actívalas en Ajustes del Sistema › Notificaciones', 'error');
+    }
+    updateNotifyPermissionUI();
+  });
 }
 
 async function persistSettings() {

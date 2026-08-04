@@ -1065,6 +1065,27 @@ function registerIpc() {
     return next;
   });
 
+  // Fire a real main-process notification so the user confirms the actual
+  // delivery path works (not just the renderer permission). Ungated by
+  // notifySuccess — it's an explicit test.
+  ipcMain.handle('notifications:test', () => {
+    if (!Notification.isSupported()) return { ok: false };
+    new Notification({
+      title: 'DevBar',
+      body: 'Notificaciones activadas ✅',
+    }).show();
+    return { ok: true };
+  });
+
+  // Deep-link to the macOS notification settings (used when permission was
+  // denied — macOS won't re-prompt, so the user must toggle it there).
+  ipcMain.handle('notifications:openSystemSettings', () => {
+    shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.notifications',
+    );
+    return { ok: true };
+  });
+
   // ── Config Export / Import ────────────────────────────────────────────
 
   ipcMain.handle('config:export', async () => {
