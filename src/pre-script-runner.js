@@ -31,6 +31,7 @@ function createPreScriptRunner({
   configStore,
   broadcastUpdate,
   onError,
+  onSuccess,
   confirmScript,
   cancelConfirm,
 }) {
@@ -373,6 +374,7 @@ function createPreScriptRunner({
     // Keep done visible for 3 seconds
     setRecentResult(groupId, 'done', null, runId, 3000);
     broadcastUpdate();
+    if (onSuccess) onSuccess({ groupId, group, runId });
     return { ok: true, runId };
   }
 

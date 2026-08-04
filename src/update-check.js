@@ -31,10 +31,31 @@ function isNewerVersion(latest, current) {
 }
 
 /**
- * Resolve to { version, url } when GitHub's latest release is newer than
- * `currentVersion`, else null. Never rejects — any failure resolves null.
+ * Find a release asset's download URL by architecture and extension, e.g.
+ * DevBar-0.4.0-macos-arm64.dmg. Returns the browser_download_url or null.
  */
-function checkForUpdate({ owner, repo, currentVersion, timeoutMs = 8000 }) {
+function selectAssetUrl(assets, arch, ext) {
+  if (!Array.isArray(assets)) return null;
+  const suffix = `macos-${arch}.${ext}`;
+  const hit = assets.find(
+    (a) => a && typeof a.name === 'string' && a.name.endsWith(suffix),
+  );
+  return hit ? hit.browser_download_url : null;
+}
+
+/**
+ * Resolve to { version, url, dmgUrl, zipUrl } when GitHub's latest release is
+ * newer than `currentVersion`, else null. dmgUrl/zipUrl are for the running
+ * arch (may be null if the release lacks that asset). Never rejects — any
+ * failure resolves null.
+ */
+function checkForUpdate({
+  owner,
+  repo,
+  currentVersion,
+  arch = process.arch,
+  timeoutMs = 8000,
+}) {
   return new Promise((resolve) => {
     const req = https.get(
       {
@@ -59,7 +80,12 @@ function checkForUpdate({ owner, repo, currentVersion, timeoutMs = 8000 }) {
             const version = String(r.tag_name || '').replace(/^v/, '');
             resolve(
               version && isNewerVersion(version, currentVersion)
-                ? { version, url: r.html_url }
+                ? {
+                    version,
+                    url: r.html_url,
+                    dmgUrl: selectAssetUrl(r.assets, arch, 'dmg'),
+                    zipUrl: selectAssetUrl(r.assets, arch, 'zip'),
+                  }
                 : null,
             );
           } catch {
@@ -76,4 +102,4 @@ function checkForUpdate({ owner, repo, currentVersion, timeoutMs = 8000 }) {
   });
 }
 
-module.exports = { isNewerVersion, checkForUpdate };
+module.exports = { isNewerVersion, selectAssetUrl, checkForUpdate };

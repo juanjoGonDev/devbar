@@ -1227,6 +1227,85 @@ dialog h2 {
   color: #fff;
 }
 
+/* Schedule 🕐 badge in the commands list — informational; opens the editor. */
+.small-btn.schedule-badge.is-on {
+  font-size: 13px;
+  line-height: 1;
+  border-color: transparent;
+  background: rgba(0, 122, 255, 0.12);
+}
+.small-btn.schedule-badge.is-on:hover {
+  background: rgba(0, 122, 255, 0.22);
+}
+
+/* Schedule editor */
+fieldset.schedule-group {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 14px 12px;
+  margin: 8px 0 16px;
+}
+fieldset.schedule-group legend {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 6px;
+  font-weight: 500;
+}
+.schedule-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.schedule-rule:first-child {
+  padding-top: 0;
+}
+.schedule-rule .rule-remove {
+  margin-left: auto;
+}
+#sf-schedule-add {
+  margin-top: 10px;
+}
+.updates-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -4px 0 16px;
+}
+
+.day-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.day-chips.rule-days {
+  margin-top: 0;
+}
+.day-chip {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card-strong);
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.day-chip:hover {
+  background: var(--bg-row-hover);
+}
+.day-chip.is-on {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
+}
+
 .groups-list-nav {
   flex: 1;
   overflow-y: auto;

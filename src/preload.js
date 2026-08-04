@@ -96,6 +96,18 @@ contextBridge.exposeInMainWorld('api', {
   // ── Settings ──────────────────────────────────────────────────────────
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
+  testNotification: () => ipcRenderer.invoke('notifications:test'),
+  dismissNotification: () => ipcRenderer.invoke('notification:dismiss'),
+
+  // ── Updates ───────────────────────────────────────────────────────────
+  getUpdateStatus: () => ipcRenderer.invoke('updates:status'),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  applyUpdate: () => ipcRenderer.invoke('updates:apply'),
+  onUpdateStatus: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('updates:status', handler);
+    return () => ipcRenderer.removeListener('updates:status', handler);
+  },
 
   // ── Icons ─────────────────────────────────────────────────────────────
   getIconBattery: () => ipcRenderer.invoke('icons:get'),

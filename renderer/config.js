@@ -16,6 +16,9 @@ const setAutostart = document.getElementById('set-autostart');
 const setSilenceWarnings = document.getElementById('set-silence-warnings');
 const setSilenceErrors = document.getElementById('set-silence-errors');
 const setMaxLogLines = document.getElementById('set-max-log-lines');
+const setNotifySuccess = document.getElementById('set-notify-success');
+const setNotifyAutoclose = document.getElementById('set-notify-autoclose');
+const testNotifyBtn = document.getElementById('test-notification');
 
 // Sub-dialog fields
 const sfIconBtn = document.getElementById('sf-icon-btn');
@@ -34,6 +37,123 @@ const sfSilenceWarn = document.getElementById('sf-silence-warn');
 const sfSilenceErr = document.getElementById('sf-silence-err');
 const sfMaxLogLines = document.getElementById('sf-max-log-lines');
 const cmdOnlyFields = document.getElementById('cmd-only-fields');
+const sfScheduleGroup = document.getElementById('sf-schedule-group');
+const sfScheduleEnabled = document.getElementById('sf-schedule-enabled');
+const sfScheduleRules = document.getElementById('sf-schedule-rules');
+const sfScheduleAdd = document.getElementById('sf-schedule-add');
+const sfScheduleDetails = document.getElementById('sf-schedule-details');
+// Monday-first display order → weekday index (Sun=0..Sat=6).
+const DAY_CHIPS = [
+  { label: 'L', d: 1 },
+  { label: 'M', d: 2 },
+  { label: 'X', d: 3 },
+  { label: 'J', d: 4 },
+  { label: 'V', d: 5 },
+  { label: 'S', d: 6 },
+  { label: 'D', d: 0 },
+];
+
+/** Render the 7 weekday chips into `container`, selecting `days`. */
+function makeDayChips(container, selected) {
+  const chosen = new Set(selected || []);
+  container.innerHTML = '';
+  for (const { label, d } of DAY_CHIPS) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `day-chip${chosen.has(d) ? ' is-on' : ''}`;
+    chip.textContent = label;
+    chip.dataset.day = String(d);
+    chip.setAttribute('aria-pressed', chosen.has(d) ? 'true' : 'false');
+    chip.addEventListener('click', () => {
+      const on = chip.classList.toggle('is-on');
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    container.appendChild(chip);
+  }
+}
+
+/** Append one schedule-rule row (time + day chips + remove) to the editor. */
+function addScheduleRuleRow(rule) {
+  if (!sfScheduleRules) return;
+  const row = document.createElement('div');
+  row.className = 'schedule-rule';
+
+  const time = document.createElement('input');
+  time.type = 'time';
+  time.className = 'rule-time';
+  time.value = (rule && rule.time) || '09:00';
+  row.appendChild(time);
+
+  const days = document.createElement('div');
+  days.className = 'day-chips rule-days';
+  makeDayChips(days, (rule && rule.days) || []);
+  row.appendChild(days);
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'small-btn danger rule-remove';
+  remove.textContent = '🗑';
+  remove.title = 'Quitar este horario';
+  remove.addEventListener('click', () => row.remove());
+  row.appendChild(remove);
+
+  sfScheduleRules.appendChild(row);
+}
+
+/** Read all schedule-rule rows back into [{ time, days }]. */
+function readScheduleRules() {
+  if (!sfScheduleRules) return [];
+  return [...sfScheduleRules.querySelectorAll('.schedule-rule')].map((row) => ({
+    time: row.querySelector('.rule-time').value || '09:00',
+    days: [...row.querySelectorAll('.day-chip.is-on')]
+      .map((c) => Number(c.dataset.day))
+      .sort((a, b) => a - b),
+  }));
+}
+
+/** One-line human summary of a schedule, e.g. "09:00 LMXJV · 14:00 todos". */
+function summarizeSchedule(schedule) {
+  const rules = (schedule && schedule.rules) || [];
+  const name = (d) => ['D', 'L', 'M', 'X', 'J', 'V', 'S'][d];
+  return rules
+    .map((r) => {
+      const days =
+        r.days && r.days.length ? r.days.map(name).join('') : 'todos';
+      return `${r.time} ${days}`;
+    })
+    .join(' · ');
+}
+
+/**
+ * Show + populate the schedule editor. Available for commands and actions,
+ * hidden for pre-scripts (a prep step isn't a thing you run at a clock time).
+ */
+function setupSchedule(item, isPreScript) {
+  if (sfScheduleGroup)
+    sfScheduleGroup.style.display = isPreScript ? 'none' : '';
+  if (isPreScript) return;
+  const sched = (item && item.schedule) || {};
+  if (sfScheduleEnabled) sfScheduleEnabled.checked = !!sched.enabled;
+  if (sfScheduleRules) {
+    sfScheduleRules.innerHTML = '';
+    const rules = Array.isArray(sched.rules) ? sched.rules : [];
+    // Always show at least one row so there is something to fill in.
+    (rules.length ? rules : [{ time: '09:00', days: [] }]).forEach(
+      addScheduleRuleRow,
+    );
+  }
+  const sync = () => {
+    if (sfScheduleDetails)
+      sfScheduleDetails.style.display = sfScheduleEnabled.checked ? '' : 'none';
+  };
+  sync();
+  if (sfScheduleEnabled) sfScheduleEnabled.onchange = sync;
+}
+
+if (sfScheduleAdd)
+  sfScheduleAdd.addEventListener('click', () =>
+    addScheduleRuleRow({ time: '09:00', days: [] }),
+  );
 const sfTimeoutSecs = document.getElementById('sf-timeout-secs');
 const sfTimeoutRow = document.getElementById('sf-timeout-row');
 const sfConfirmRow = document.getElementById('sf-confirm-row');
@@ -969,6 +1089,25 @@ function buildSubItemRow(item, kind, groupId) {
     actions.appendChild(autoBtn);
   }
 
+  // Schedule indicator — commands and actions. Click opens the editor where the
+  // schedule lives.
+  if (
+    (kind === 'command' || kind === 'action') &&
+    item.schedule &&
+    item.schedule.enabled &&
+    (item.schedule.rules || []).length > 0
+  ) {
+    const schedBtn = document.createElement('button');
+    schedBtn.className = 'small-btn schedule-badge is-on';
+    schedBtn.textContent = '🕐';
+    schedBtn.title = `Programado: ${summarizeSchedule(item.schedule)} — click para editar`;
+    schedBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSubDialog(item, kind, groupId);
+    });
+    actions.appendChild(schedBtn);
+  }
+
   const editBtn = document.createElement('button');
   editBtn.textContent = '✎';
   editBtn.title = 'Editar';
@@ -1045,8 +1184,8 @@ function openSubDialog(item, kind, groupId, stepId) {
     sfTimeoutSecs.value =
       item && item.timeoutMs ? Math.round(item.timeoutMs / 1000) : '';
 
-  // PreScript-only: confirmation gate
-  if (sfConfirmRow) sfConfirmRow.style.display = isPreScript ? '' : 'none';
+  // Confirmation gate — available for commands, actions and pre-scripts.
+  if (sfConfirmRow) sfConfirmRow.style.display = '';
   if (sfConfirm) {
     sfConfirm.checked = !!(item && item.confirm);
     if (sfConfirmOnTimeout) {
@@ -1078,6 +1217,9 @@ function openSubDialog(item, kind, groupId, stepId) {
       sfMaxLogLines.value =
         item && item.maxLogLines != null ? item.maxLogLines : '';
   }
+
+  // Schedule editor — commands and actions, not pre-scripts.
+  setupSchedule(item, isPreScript);
 
   subDialogCallback = async (data) => {
     try {
@@ -1112,6 +1254,10 @@ function openSubDialog(item, kind, groupId, stepId) {
           // Preserve existing autoStart — the toggle for it lives in the
           // commands list now, not in this dialog.
           autoStart: item ? !!item.autoStart : false,
+          schedule: data.schedule,
+          confirm: data.confirm,
+          confirmSecs: data.confirmSecs,
+          confirmOnTimeout: data.confirmOnTimeout,
           // Preserve silenced patterns
           silencedPatterns: item
             ? item.silencedPatterns
@@ -1127,6 +1273,10 @@ function openSubDialog(item, kind, groupId, stepId) {
           args: data.args,
           env: data.env,
           inheritGroupEnv: data.inheritGroupEnv,
+          schedule: data.schedule,
+          confirm: data.confirm,
+          confirmSecs: data.confirmSecs,
+          confirmOnTimeout: data.confirmOnTimeout,
         };
         await window.api.saveAction(groupId, payload);
       }
@@ -1214,6 +1364,10 @@ subForm.addEventListener('submit', async (e) => {
     confirm: sfConfirm ? sfConfirm.checked : false,
     confirmSecs,
     confirmOnTimeout: sfConfirmOnTimeout ? sfConfirmOnTimeout.value : 'cancel',
+    schedule: {
+      enabled: sfScheduleEnabled ? sfScheduleEnabled.checked : false,
+      rules: readScheduleRules(),
+    },
   };
   subDialog.close();
   if (subDialogCallback) await subDialogCallback(data);
@@ -1472,17 +1626,33 @@ async function loadSettings() {
   setSilenceErrors.checked = !!s.silenceErrors;
   if (setMaxLogLines)
     setMaxLogLines.value = s.maxLogLines != null ? s.maxLogLines : 2000;
+  if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
+  if (setNotifyAutoclose)
+    setNotifyAutoclose.value =
+      s.notifyAutoCloseSecs != null ? s.notifyAutoCloseSecs : 5;
+}
+
+if (testNotifyBtn) {
+  testNotifyBtn.addEventListener('click', async () => {
+    await window.api.testNotification();
+    showToast('Banner de prueba mostrado', 'ok');
+  });
 }
 
 async function persistSettings() {
   const maxLogLinesRaw = setMaxLogLines ? setMaxLogLines.value : '';
   const maxLogLines =
     maxLogLinesRaw === '' ? 2000 : Number(maxLogLinesRaw) || 2000;
+  const autocloseRaw = setNotifyAutoclose ? setNotifyAutoclose.value : '';
+  const notifyAutoCloseSecs =
+    autocloseRaw === '' ? 0 : Number(autocloseRaw) || 0;
   await window.api.saveSettings({
     autostart: setAutostart.checked,
     silenceWarnings: setSilenceWarnings.checked,
     silenceErrors: setSilenceErrors.checked,
     maxLogLines,
+    notifySuccess: setNotifySuccess ? setNotifySuccess.checked : true,
+    notifyAutoCloseSecs,
   });
   showToast('Ajustes guardados', 'ok');
 }
@@ -1493,6 +1663,12 @@ setSilenceErrors.addEventListener('change', persistSettings);
 if (setMaxLogLines) {
   setMaxLogLines.addEventListener('change', persistSettings);
   setMaxLogLines.addEventListener('blur', persistSettings);
+}
+if (setNotifySuccess)
+  setNotifySuccess.addEventListener('change', persistSettings);
+if (setNotifyAutoclose) {
+  setNotifyAutoclose.addEventListener('change', persistSettings);
+  setNotifyAutoclose.addEventListener('blur', persistSettings);
 }
 
 // ────────────────────── Backup / Restore ───────────────────────────────
@@ -1613,6 +1789,75 @@ if (window.api.onConfigCloseRequested) {
     storedGroup = null;
     window.api.confirmCloseConfig();
   });
+}
+
+// ────────────────────── Updates ─────────────────────────────────────────
+
+const checkUpdatesBtn = document.getElementById('check-updates');
+const applyUpdateBtn = document.getElementById('apply-update');
+const updateStatusEl = document.getElementById('update-status');
+let _currentVersion = '';
+
+function renderUpdateStatus(s) {
+  if (!s || !updateStatusEl) return;
+  if (s.currentVersion) _currentVersion = s.currentVersion;
+  const last = s.lastCheckAt
+    ? new Date(s.lastCheckAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'nunca';
+  updateStatusEl.textContent = s.available
+    ? `Actualización v${s.available.version} disponible · última búsqueda ${last}`
+    : `Al día${_currentVersion ? ` (v${_currentVersion})` : ''} · última búsqueda ${last}`;
+  if (applyUpdateBtn) {
+    if (s.available) {
+      applyUpdateBtn.style.display = '';
+      applyUpdateBtn.textContent = `Actualizar a v${s.available.version}`;
+    } else {
+      applyUpdateBtn.style.display = 'none';
+    }
+  }
+}
+
+if (applyUpdateBtn) {
+  applyUpdateBtn.addEventListener('click', async () => {
+    applyUpdateBtn.disabled = true;
+    try {
+      const res = await window.api.applyUpdate();
+      if (res && res.ok) showToast('Descargando actualización…', 'ok');
+      else if (res && !res.cancelled)
+        showToast(
+          `No se pudo actualizar: ${res.error || 'desconocido'}`,
+          'error',
+        );
+    } finally {
+      applyUpdateBtn.disabled = false;
+    }
+  });
+}
+
+if (checkUpdatesBtn) {
+  checkUpdatesBtn.addEventListener('click', async () => {
+    checkUpdatesBtn.disabled = true;
+    const prev = checkUpdatesBtn.textContent;
+    checkUpdatesBtn.textContent = 'Buscando…';
+    try {
+      renderUpdateStatus(await window.api.checkForUpdates());
+    } finally {
+      checkUpdatesBtn.textContent = prev;
+      checkUpdatesBtn.disabled = false;
+    }
+  });
+}
+
+if (window.api && window.api.getUpdateStatus) {
+  window.api
+    .getUpdateStatus()
+    .then(renderUpdateStatus)
+    .catch(() => {});
+  // Live refresh from the automatic 5-minute checks.
+  window.api.onUpdateStatus(renderUpdateStatus);
 }
 
 // ────────────────────── Init ───────────────────────────────────────────

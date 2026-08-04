@@ -16,6 +16,19 @@
       <span id="app-version" class="app-version" title="DevBar version"></span>
     </h1>
 
+    <div class="updates-row">
+      <button type="button" id="check-updates" class="small-btn">
+        Buscar actualizaciones
+      </button>
+      <button
+        type="button"
+        id="apply-update"
+        class="small-btn primary"
+        style="display: none"
+      ></button>
+      <span id="update-status" class="muted small"></span>
+    </div>
+
     <!-- Global settings -->
     <section class="settings-card">
       <h2>General</h2>
@@ -53,6 +66,32 @@
           >Por defecto para todos los procesos (100–50000). El cambio aplica al
           reiniciar el proceso.</small
         >
+      </div>
+      <label class="toggle" style="margin-top: 12px">
+        <input type="checkbox" id="set-notify-success" />
+        <span>Notificar al terminar pre-scripts y acciones programadas</span>
+      </label>
+      <div class="field" style="margin-top: 8px">
+        <label for="set-notify-autoclose"
+          >Cerrar notificación tras (segundos)</label
+        >
+        <input
+          type="number"
+          id="set-notify-autoclose"
+          min="0"
+          max="3600"
+          step="1"
+          style="width: 120px"
+        />
+        <small class="muted" style="display: block; margin-top: 4px"
+          >0 = permanente (hasta que la cierres). Mayor que 0 = se cierra sola
+          tras N segundos.</small
+        >
+      </div>
+      <div style="margin-top: 8px">
+        <button type="button" id="test-notification" class="small-btn">
+          Probar notificación
+        </button>
       </div>
     </section>
 
@@ -206,6 +245,25 @@
             </div>
           </div>
         </div>
+
+        <!-- Schedule (commands and actions) -->
+        <fieldset class="schedule-group" id="sf-schedule-group">
+          <legend>Programación</legend>
+          <label class="toggle inline">
+            <input type="checkbox" id="sf-schedule-enabled" />
+            <span>Ejecutar a una hora programada</span>
+          </label>
+          <div id="sf-schedule-details" style="margin-top: 8px">
+            <div id="sf-schedule-rules"></div>
+            <button type="button" id="sf-schedule-add" class="small-btn">
+              + Añadir horario
+            </button>
+            <small class="muted" style="display: block; margin-top: 8px">
+              Cada horario tiene su hora y sus días (sin días = todos). Si el
+              equipo estaba suspendido a esa hora, se ejecuta al despertar.
+            </small>
+          </div>
+        </fieldset>
 
         <!-- Command-only fields -->
         <div id="cmd-only-fields">

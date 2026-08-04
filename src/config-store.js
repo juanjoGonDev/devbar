@@ -24,6 +24,10 @@ const DEFAULT_GLOBAL_SETTINGS = {
   silenceWarnings: false,
   silenceErrors: false,
   maxLogLines: 2000,
+  // Success notifications for pre-scripts and scheduled actions.
+  notifySuccess: true,
+  // Auto-close the banner after N seconds. 0 = permanent (until clicked).
+  notifyAutoCloseSecs: 5,
 };
 
 function clampMaxLogLines(v) {
@@ -32,11 +36,20 @@ function clampMaxLogLines(v) {
   return Math.min(50000, Math.max(100, Math.floor(n)));
 }
 
+function clampNotifyAutoCloseSecs(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(3600, Math.floor(n));
+}
+
 const schema = {
   version: { type: 'number', default: 3 },
   services: { type: 'array', default: [] }, // legacy mirror, dual-write
   groups: { type: 'array', default: [] }, // canonical
   globalSettings: { type: 'object', default: DEFAULT_GLOBAL_SETTINGS },
+  // Runtime schedule bookkeeping: compoundProcessId → ISO of last scheduled
+  // start. Kept out of groups[] so it never leaks into export/import.
+  scheduleState: { type: 'object', default: {} },
   _services_pre_v3_backup: { type: 'array', default: [] }, // written once on migration
 };
 
@@ -442,8 +455,25 @@ function saveGlobalSettings(patch) {
   next.silenceWarnings = !!next.silenceWarnings;
   next.silenceErrors = !!next.silenceErrors;
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
+  next.notifySuccess = !!next.notifySuccess;
+  next.notifyAutoCloseSecs = clampNotifyAutoCloseSecs(next.notifyAutoCloseSecs);
   store.set('globalSettings', next);
   return next;
+}
+
+// ─────────────────────── Schedule runtime state ──────────────────────
+
+/** Read the last scheduled-start ISO for a compound process id, or null. */
+function getScheduleLastRun(processId) {
+  const map = store.get('scheduleState', {}) || {};
+  return map[processId] || null;
+}
+
+/** Record the last scheduled-start ISO for a compound process id. */
+function setScheduleLastRun(processId, iso) {
+  const map = store.get('scheduleState', {}) || {};
+  map[processId] = iso;
+  store.set('scheduleState', map);
 }
 
 // ─────────────────────── Import / Export ─────────────────────────────────────
@@ -534,6 +564,9 @@ module.exports = {
   // Global settings
   getGlobalSettings,
   saveGlobalSettings,
+  // Schedule runtime state
+  getScheduleLastRun,
+  setScheduleLastRun,
   // Legacy (used by PM resolution and backward compat)
   listServices,
   DEFAULT_WARN_REGEX,
