@@ -12,8 +12,10 @@ const {
   dialog,
   Notification,
   shell,
+  powerMonitor,
 } = require('electron');
 const { menubar } = require('menubar');
+const { isDue } = require('./scheduler');
 
 const configStore = require('./config-store');
 const { validateImportedConfig, summarizeImport } = require('./config-io');
@@ -1246,6 +1248,79 @@ async function autoStartAllMarkedCommands() {
   );
 }
 
+// ─────────────────────── Scheduled auto-run ──────────────────────────
+
+/**
+ * Anacron-style scheduler. Runs on a 60s tick, on power resume, and shortly
+ * after startup. For each command with an enabled schedule:
+ *   - first time we ever see it → seed lastRun=now (never fire retroactively for
+ *     an occurrence that predates the user enabling the schedule).
+ *   - otherwise, if a scheduled occurrence has elapsed since lastRun → start it.
+ *
+ * The lastRun bookkeeping (config-store.scheduleState) survives sleep AND app
+ * restarts, so a machine asleep at 09:00 that wakes at 09:30 still catches up.
+ * Unlike boot auto-start, scheduled runs do NOT execute pre-scripts.
+ */
+/**
+ * Evaluate one schedulable target (command or action) at `now`.
+ * Seeds lastRun on first sight (no retroactive fire), otherwise fires `startFn`
+ * when a scheduled occurrence has elapsed since lastRun and it is not already
+ * running. `startFn` must swallow its own errors. Returns true if it started.
+ */
+async function evaluateSchedule(pid, sched, now, startFn) {
+  if (!sched || !sched.enabled) return false;
+  const last = configStore.getScheduleLastRun(pid);
+  if (last == null) {
+    configStore.setScheduleLastRun(pid, now.toISOString()); // seed only
+    return false;
+  }
+  if (!isDue(sched, last, now)) return false;
+  const alreadyRunning = processManager.getState(pid).status === 'running';
+  if (!alreadyRunning) await startFn();
+  configStore.setScheduleLastRun(pid, now.toISOString());
+  return !alreadyRunning;
+}
+
+async function checkSchedules(now) {
+  const groups = configStore.listGroups();
+  let started = false;
+  for (const group of groups) {
+    for (const cmd of group.commands || []) {
+      const pid = makeCommandId(group.id, cmd.id);
+      const ran = await evaluateSchedule(pid, cmd.schedule, now, async () => {
+        // Single-mode groups: stop other running commands first (radio).
+        if (group.mode === 'single') {
+          const others = (group.commands || [])
+            .map((c) => makeCommandId(group.id, c.id))
+            .filter(
+              (p) =>
+                p !== pid && processManager.getState(p).status === 'running',
+            );
+          for (const p of others) await processManager.stop(p);
+        }
+        try {
+          processManager.start(pid);
+        } catch (err) {
+          console.error(`schedule start ${group.name}/${cmd.name}:`, err);
+        }
+      });
+      started = started || ran;
+    }
+    for (const act of group.actions || []) {
+      const pid = makeActionId(group.id, act.id);
+      const ran = await evaluateSchedule(pid, act.schedule, now, () => {
+        try {
+          processManager.start(pid);
+        } catch (err) {
+          console.error(`schedule start ${group.name}/${act.name}:`, err);
+        }
+      });
+      started = started || ran;
+    }
+  }
+  if (started) broadcast();
+}
+
 // ─────────────────────── App lifecycle ───────────────────────────────
 
 app.on('ready', () => {
@@ -1310,6 +1385,12 @@ app.whenReady().then(() => {
     // Delay 300 ms so the renderer can paint its initial empty state first.
     // Only commands are eligible — actions are one-shots and must not run at boot.
     setTimeout(() => autoStartAllMarkedCommands(), 300);
+
+    // Scheduled auto-run: seed/evaluate shortly after boot, then every minute,
+    // plus immediately whenever the Mac wakes so a missed slot catches up.
+    setTimeout(() => checkSchedules(new Date()), 1000);
+    setInterval(() => checkSchedules(new Date()), 60 * 1000);
+    powerMonitor.on('resume', () => checkSchedules(new Date()));
 
     // Check GitHub for a newer release now and once a day after.
     runUpdateCheck();

@@ -77,6 +77,50 @@ function clampConfirmSecsOrNull(v) {
   return Math.min(3600, Math.max(3, Math.round(n)));
 }
 
+/**
+ * Normalize one schedule rule → { time: "HH:MM", days: number[] }.
+ * Invalid time → '09:00'; days filtered to unique sorted weekday ints
+ * (0=Sun..6=Sat), empty meaning "every day".
+ */
+function normalizeScheduleRule(raw) {
+  const s = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const m = /^(\d{1,2}):(\d{1,2})$/.exec(String(s.time || '').trim());
+  let time = '09:00';
+  if (m) {
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+      time = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    }
+  }
+  const days = Array.isArray(s.days)
+    ? [
+        ...new Set(
+          s.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6),
+        ),
+      ].sort((a, b) => a - b)
+    : [];
+  return { time, days };
+}
+
+/**
+ * Normalize a per-target schedule → { enabled, rules: [{ time, days }] }.
+ * Always returns a stable shape. A legacy single {time,days} schedule is
+ * migrated transparently into a one-element rules array.
+ */
+function normalizeSchedule(raw) {
+  const s = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  let rules;
+  if (Array.isArray(s.rules)) {
+    rules = s.rules.map(normalizeScheduleRule);
+  } else if (s.time !== undefined || s.days !== undefined) {
+    rules = [normalizeScheduleRule(s)]; // legacy single-rule shape
+  } else {
+    rules = [];
+  }
+  return { enabled: !!s.enabled, rules };
+}
+
 // ─────────────────────── Env helpers ────────────────────────────────
 
 /**
@@ -186,6 +230,7 @@ function normalizeCommand(input) {
       error: Array.isArray(sp.error) ? sp.error.slice() : [],
     },
     autoStart: !!raw.autoStart,
+    schedule: normalizeSchedule(raw.schedule),
     maxLogLines: clampMaxLogLinesOrNull(raw.maxLogLines),
   };
 }
@@ -264,6 +309,7 @@ function normalizeAction(input) {
     args: Array.isArray(raw.args) ? raw.args.slice() : [],
     env: envEntries,
     inheritGroupEnv,
+    schedule: normalizeSchedule(raw.schedule),
   };
 }
 
@@ -586,6 +632,7 @@ function validateGroupShape(group) {
 module.exports = {
   normalizeGroup,
   normalizeCommand,
+  normalizeSchedule,
   normalizeAction,
   normalizePreScript,
   normalizePreStep,

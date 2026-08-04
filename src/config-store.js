@@ -37,6 +37,9 @@ const schema = {
   services: { type: 'array', default: [] }, // legacy mirror, dual-write
   groups: { type: 'array', default: [] }, // canonical
   globalSettings: { type: 'object', default: DEFAULT_GLOBAL_SETTINGS },
+  // Runtime schedule bookkeeping: compoundProcessId → ISO of last scheduled
+  // start. Kept out of groups[] so it never leaks into export/import.
+  scheduleState: { type: 'object', default: {} },
   _services_pre_v3_backup: { type: 'array', default: [] }, // written once on migration
 };
 
@@ -446,6 +449,21 @@ function saveGlobalSettings(patch) {
   return next;
 }
 
+// ─────────────────────── Schedule runtime state ──────────────────────
+
+/** Read the last scheduled-start ISO for a compound process id, or null. */
+function getScheduleLastRun(processId) {
+  const map = store.get('scheduleState', {}) || {};
+  return map[processId] || null;
+}
+
+/** Record the last scheduled-start ISO for a compound process id. */
+function setScheduleLastRun(processId, iso) {
+  const map = store.get('scheduleState', {}) || {};
+  map[processId] = iso;
+  store.set('scheduleState', map);
+}
+
 // ─────────────────────── Import / Export ─────────────────────────────────────
 
 const { app } = require('electron');
@@ -534,6 +552,9 @@ module.exports = {
   // Global settings
   getGlobalSettings,
   saveGlobalSettings,
+  // Schedule runtime state
+  getScheduleLastRun,
+  setScheduleLastRun,
   // Legacy (used by PM resolution and backward compat)
   listServices,
   DEFAULT_WARN_REGEX,

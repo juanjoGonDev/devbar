@@ -207,6 +207,25 @@
           </div>
         </div>
 
+        <!-- Schedule (commands and actions) -->
+        <fieldset class="schedule-group" id="sf-schedule-group">
+          <legend>Programación</legend>
+          <label class="toggle inline">
+            <input type="checkbox" id="sf-schedule-enabled" />
+            <span>Ejecutar a una hora programada</span>
+          </label>
+          <div id="sf-schedule-details" style="margin-top: 8px">
+            <div id="sf-schedule-rules"></div>
+            <button type="button" id="sf-schedule-add" class="small-btn">
+              + Añadir horario
+            </button>
+            <small class="muted" style="display: block; margin-top: 8px">
+              Cada horario tiene su hora y sus días (sin días = todos). Si el
+              equipo estaba suspendido a esa hora, se ejecuta al despertar.
+            </small>
+          </div>
+        </fieldset>
+
         <!-- Command-only fields -->
         <div id="cmd-only-fields">
           <details>

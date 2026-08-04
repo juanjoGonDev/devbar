@@ -34,6 +34,123 @@ const sfSilenceWarn = document.getElementById('sf-silence-warn');
 const sfSilenceErr = document.getElementById('sf-silence-err');
 const sfMaxLogLines = document.getElementById('sf-max-log-lines');
 const cmdOnlyFields = document.getElementById('cmd-only-fields');
+const sfScheduleGroup = document.getElementById('sf-schedule-group');
+const sfScheduleEnabled = document.getElementById('sf-schedule-enabled');
+const sfScheduleRules = document.getElementById('sf-schedule-rules');
+const sfScheduleAdd = document.getElementById('sf-schedule-add');
+const sfScheduleDetails = document.getElementById('sf-schedule-details');
+// Monday-first display order → weekday index (Sun=0..Sat=6).
+const DAY_CHIPS = [
+  { label: 'L', d: 1 },
+  { label: 'M', d: 2 },
+  { label: 'X', d: 3 },
+  { label: 'J', d: 4 },
+  { label: 'V', d: 5 },
+  { label: 'S', d: 6 },
+  { label: 'D', d: 0 },
+];
+
+/** Render the 7 weekday chips into `container`, selecting `days`. */
+function makeDayChips(container, selected) {
+  const chosen = new Set(selected || []);
+  container.innerHTML = '';
+  for (const { label, d } of DAY_CHIPS) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `day-chip${chosen.has(d) ? ' is-on' : ''}`;
+    chip.textContent = label;
+    chip.dataset.day = String(d);
+    chip.setAttribute('aria-pressed', chosen.has(d) ? 'true' : 'false');
+    chip.addEventListener('click', () => {
+      const on = chip.classList.toggle('is-on');
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    container.appendChild(chip);
+  }
+}
+
+/** Append one schedule-rule row (time + day chips + remove) to the editor. */
+function addScheduleRuleRow(rule) {
+  if (!sfScheduleRules) return;
+  const row = document.createElement('div');
+  row.className = 'schedule-rule';
+
+  const time = document.createElement('input');
+  time.type = 'time';
+  time.className = 'rule-time';
+  time.value = (rule && rule.time) || '09:00';
+  row.appendChild(time);
+
+  const days = document.createElement('div');
+  days.className = 'day-chips rule-days';
+  makeDayChips(days, (rule && rule.days) || []);
+  row.appendChild(days);
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'small-btn danger rule-remove';
+  remove.textContent = '🗑';
+  remove.title = 'Quitar este horario';
+  remove.addEventListener('click', () => row.remove());
+  row.appendChild(remove);
+
+  sfScheduleRules.appendChild(row);
+}
+
+/** Read all schedule-rule rows back into [{ time, days }]. */
+function readScheduleRules() {
+  if (!sfScheduleRules) return [];
+  return [...sfScheduleRules.querySelectorAll('.schedule-rule')].map((row) => ({
+    time: row.querySelector('.rule-time').value || '09:00',
+    days: [...row.querySelectorAll('.day-chip.is-on')]
+      .map((c) => Number(c.dataset.day))
+      .sort((a, b) => a - b),
+  }));
+}
+
+/** One-line human summary of a schedule, e.g. "09:00 LMXJV · 14:00 todos". */
+function summarizeSchedule(schedule) {
+  const rules = (schedule && schedule.rules) || [];
+  const name = (d) => ['D', 'L', 'M', 'X', 'J', 'V', 'S'][d];
+  return rules
+    .map((r) => {
+      const days =
+        r.days && r.days.length ? r.days.map(name).join('') : 'todos';
+      return `${r.time} ${days}`;
+    })
+    .join(' · ');
+}
+
+/**
+ * Show + populate the schedule editor. Available for commands and actions,
+ * hidden for pre-scripts (a prep step isn't a thing you run at a clock time).
+ */
+function setupSchedule(item, isPreScript) {
+  if (sfScheduleGroup)
+    sfScheduleGroup.style.display = isPreScript ? 'none' : '';
+  if (isPreScript) return;
+  const sched = (item && item.schedule) || {};
+  if (sfScheduleEnabled) sfScheduleEnabled.checked = !!sched.enabled;
+  if (sfScheduleRules) {
+    sfScheduleRules.innerHTML = '';
+    const rules = Array.isArray(sched.rules) ? sched.rules : [];
+    // Always show at least one row so there is something to fill in.
+    (rules.length ? rules : [{ time: '09:00', days: [] }]).forEach(
+      addScheduleRuleRow,
+    );
+  }
+  const sync = () => {
+    if (sfScheduleDetails)
+      sfScheduleDetails.style.display = sfScheduleEnabled.checked ? '' : 'none';
+  };
+  sync();
+  if (sfScheduleEnabled) sfScheduleEnabled.onchange = sync;
+}
+
+if (sfScheduleAdd)
+  sfScheduleAdd.addEventListener('click', () =>
+    addScheduleRuleRow({ time: '09:00', days: [] }),
+  );
 const sfTimeoutSecs = document.getElementById('sf-timeout-secs');
 const sfTimeoutRow = document.getElementById('sf-timeout-row');
 const sfConfirmRow = document.getElementById('sf-confirm-row');
@@ -969,6 +1086,25 @@ function buildSubItemRow(item, kind, groupId) {
     actions.appendChild(autoBtn);
   }
 
+  // Schedule indicator — commands and actions. Click opens the editor where the
+  // schedule lives.
+  if (
+    (kind === 'command' || kind === 'action') &&
+    item.schedule &&
+    item.schedule.enabled &&
+    (item.schedule.rules || []).length > 0
+  ) {
+    const schedBtn = document.createElement('button');
+    schedBtn.className = 'small-btn schedule-badge is-on';
+    schedBtn.textContent = '🕐';
+    schedBtn.title = `Programado: ${summarizeSchedule(item.schedule)} — click para editar`;
+    schedBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSubDialog(item, kind, groupId);
+    });
+    actions.appendChild(schedBtn);
+  }
+
   const editBtn = document.createElement('button');
   editBtn.textContent = '✎';
   editBtn.title = 'Editar';
@@ -1079,6 +1215,9 @@ function openSubDialog(item, kind, groupId, stepId) {
         item && item.maxLogLines != null ? item.maxLogLines : '';
   }
 
+  // Schedule editor — commands and actions, not pre-scripts.
+  setupSchedule(item, isPreScript);
+
   subDialogCallback = async (data) => {
     try {
       if (isPreScript) {
@@ -1112,6 +1251,7 @@ function openSubDialog(item, kind, groupId, stepId) {
           // Preserve existing autoStart — the toggle for it lives in the
           // commands list now, not in this dialog.
           autoStart: item ? !!item.autoStart : false,
+          schedule: data.schedule,
           // Preserve silenced patterns
           silencedPatterns: item
             ? item.silencedPatterns
@@ -1127,6 +1267,7 @@ function openSubDialog(item, kind, groupId, stepId) {
           args: data.args,
           env: data.env,
           inheritGroupEnv: data.inheritGroupEnv,
+          schedule: data.schedule,
         };
         await window.api.saveAction(groupId, payload);
       }
@@ -1214,6 +1355,10 @@ subForm.addEventListener('submit', async (e) => {
     confirm: sfConfirm ? sfConfirm.checked : false,
     confirmSecs,
     confirmOnTimeout: sfConfirmOnTimeout ? sfConfirmOnTimeout.value : 'cancel',
+    schedule: {
+      enabled: sfScheduleEnabled ? sfScheduleEnabled.checked : false,
+      rules: readScheduleRules(),
+    },
   };
   subDialog.close();
   if (subDialogCallback) await subDialogCallback(data);
