@@ -1794,6 +1794,7 @@ if (window.api.onConfigCloseRequested) {
 // ────────────────────── Updates ─────────────────────────────────────────
 
 const checkUpdatesBtn = document.getElementById('check-updates');
+const applyUpdateBtn = document.getElementById('apply-update');
 const updateStatusEl = document.getElementById('update-status');
 let _currentVersion = '';
 
@@ -1809,6 +1810,31 @@ function renderUpdateStatus(s) {
   updateStatusEl.textContent = s.available
     ? `Actualización v${s.available.version} disponible · última búsqueda ${last}`
     : `Al día${_currentVersion ? ` (v${_currentVersion})` : ''} · última búsqueda ${last}`;
+  if (applyUpdateBtn) {
+    if (s.available) {
+      applyUpdateBtn.style.display = '';
+      applyUpdateBtn.textContent = `Actualizar a v${s.available.version}`;
+    } else {
+      applyUpdateBtn.style.display = 'none';
+    }
+  }
+}
+
+if (applyUpdateBtn) {
+  applyUpdateBtn.addEventListener('click', async () => {
+    applyUpdateBtn.disabled = true;
+    try {
+      const res = await window.api.applyUpdate();
+      if (res && res.ok) showToast('Descargando actualización…', 'ok');
+      else if (res && !res.cancelled)
+        showToast(
+          `No se pudo actualizar: ${res.error || 'desconocido'}`,
+          'error',
+        );
+    } finally {
+      applyUpdateBtn.disabled = false;
+    }
+  });
 }
 
 if (checkUpdatesBtn) {

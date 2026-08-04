@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 const crypto = require('crypto');
 const {
   app,
@@ -436,7 +437,7 @@ function buildTrayContextMenu() {
   if (availableUpdate) {
     items.push({
       label: `⬆︎ Actualizar a v${availableUpdate.version}…`,
-      click: () => shell.openExternal(availableUpdate.url),
+      click: () => applyUpdate(),
     });
     items.push({ type: 'separator' });
   }
@@ -501,6 +502,90 @@ async function runUpdateCheck({ manual = false } = {}) {
   }
   broadcastUpdateStatus();
   return { available: availableUpdate, lastCheckAt: lastUpdateCheckAt };
+}
+
+/** Stream a URL to `dest`, following GitHub's asset redirects. */
+function downloadFile(url, dest, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      url,
+      { headers: { 'User-Agent': 'DevBar-Updater' } },
+      (res) => {
+        const { statusCode, headers } = res;
+        if (
+          [301, 302, 303, 307, 308].includes(statusCode) &&
+          headers.location
+        ) {
+          res.resume();
+          if (redirects <= 0) return reject(new Error('too many redirects'));
+          return resolve(downloadFile(headers.location, dest, redirects - 1));
+        }
+        if (statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${statusCode}`));
+        }
+        const file = fs.createWriteStream(dest);
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve(dest)));
+        file.on('error', reject);
+      },
+    );
+    req.on('error', reject);
+    req.setTimeout(120000, () => req.destroy(new Error('download timeout')));
+  });
+}
+
+/**
+ * Assisted update: confirm (no timeout) → download the .dmg to Downloads →
+ * open it so the user drags DevBar to Applications. Falls back to opening the
+ * release page if there's no dmg asset or the download fails. The app is
+ * unsigned, so a fully silent swap isn't reliable — this is the robust path.
+ */
+async function applyUpdate() {
+  if (!availableUpdate) return { ok: false, error: 'no_update' };
+  const { version, dmgUrl, url } = availableUpdate;
+  const owner =
+    configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
+  let res;
+  try {
+    res = await dialog.showMessageBox(owner, {
+      type: 'question',
+      buttons: ['Cancelar', 'Actualizar'],
+      defaultId: 1,
+      cancelId: 0,
+      message: `Actualizar a DevBar v${version}`,
+      detail: dmgUrl
+        ? 'Se descargará el instalador y se abrirá. Arrastra DevBar a Aplicaciones (sustituyendo la anterior) para completar.'
+        : 'Se abrirá la página de la release para descargar la nueva versión.',
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  if (res.response !== 1) return { ok: false, cancelled: true };
+
+  if (!dmgUrl) {
+    shell.openExternal(url);
+    return { ok: true, opened: 'page' };
+  }
+
+  const dest = path.join(
+    app.getPath('downloads'),
+    `DevBar-${version}-macos-${process.arch}.dmg`,
+  );
+  showBannerNotification('DevBar — actualización', `Descargando v${version}…`);
+  try {
+    await downloadFile(dmgUrl, dest);
+  } catch (err) {
+    broadcastToast('error', `Descarga falló: ${err.message}`);
+    shell.openExternal(url); // fall back to the release page
+    return { ok: false, error: err.message, fellBack: true };
+  }
+  await shell.openPath(dest); // mount the dmg → Finder drag window
+  showBannerNotification(
+    'DevBar — actualización',
+    `v${version} descargada. Arrastra DevBar a Aplicaciones.`,
+  );
+  return { ok: true, path: dest };
 }
 
 function ensureSilencedWindow(groupId, commandId) {
@@ -1154,6 +1239,7 @@ function registerIpc() {
     currentVersion: app.getVersion(),
   }));
   ipcMain.handle('updates:check', () => runUpdateCheck({ manual: true }));
+  ipcMain.handle('updates:apply', () => applyUpdate());
 
   // ── Config Export / Import ────────────────────────────────────────────
 
