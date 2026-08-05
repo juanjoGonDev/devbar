@@ -70,6 +70,51 @@ import { ProcessManager } from '../src/process-manager.js';
 
 // ─── resolveTarget ────────────────────────────────────────────────────────────
 
+describe('ProcessManager.clearLogs', () => {
+  it('really empties the buffer (not just the view) and keeps the reference', () => {
+    const pm = new ProcessManager(makeConfigStoreStub());
+    const id = makeCommandId('g1', 'c1');
+    pm.pushLog(id, { line: 'a' });
+    pm.pushLog(id, { line: 'b' });
+    const bufRef = pm.getLogs(id);
+    expect(bufRef).toHaveLength(2);
+
+    expect(pm.clearLogs(id)).toBe(true);
+    expect(pm.getLogs(id)).toHaveLength(0);
+    expect(pm.getLogs(id)).toBe(bufRef); // same array → live pushes still land
+
+    // A subsequent live line lands in the now-empty buffer.
+    pm.pushLog(id, { line: 'c' });
+    expect(pm.getLogs(id).map((e) => e.line)).toEqual(['c']);
+  });
+
+  it('returns false when there is no buffer for the id', () => {
+    const pm = new ProcessManager(makeConfigStoreStub());
+    expect(pm.clearLogs('cmd:nope:nope')).toBe(false);
+  });
+});
+
+describe('ProcessManager.listLogBuffers', () => {
+  it('lists every retained buffer with its id and line count', () => {
+    const pm = new ProcessManager(makeConfigStoreStub());
+    pm.pushLog(makeCommandId('g1', 'c1'), { line: 'a' });
+    pm.pushLog(makeCommandId('g1', 'c1'), { line: 'b' });
+    pm.pushLog(makeActionId('g1', 'a1'), { line: 'x' });
+
+    const list = pm.listLogBuffers();
+    const byId = Object.fromEntries(list.map((e) => [e.id, e.lineCount]));
+    expect(byId[makeCommandId('g1', 'c1')]).toBe(2);
+    expect(byId[makeActionId('g1', 'a1')]).toBe(1);
+    expect(list).toHaveLength(2);
+  });
+
+  it('is empty before anything runs', () => {
+    expect(new ProcessManager(makeConfigStoreStub()).listLogBuffers()).toEqual(
+      [],
+    );
+  });
+});
+
 describe('ProcessManager.resolveTarget — all 4 pid kinds', () => {
   let pm;
 

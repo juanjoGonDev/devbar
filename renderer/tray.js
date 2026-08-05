@@ -282,62 +282,34 @@ function renderGroupRow(gs) {
         window.api.cancelPreScripts(groupId);
       });
       row.appendChild(cancelChip);
-
-      // Logs opener for the aggregator pid (shows pipeline boundary lines)
-      if (gs.preScriptsLastRunId) {
-        const logsBtn = document.createElement('button');
-        logsBtn.className = 'ghost prestep-logs-btn';
-        logsBtn.title = 'Ver logs del pipeline';
-        logsBtn.textContent = '📋';
-        logsBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          window.api.openLogs(
-            `pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`,
-          );
-        });
-        row.appendChild(logsBtn);
-      }
     } else if (prescriptStatus === 'done') {
       const badge = document.createElement('span');
       badge.className = 'prestep-badge ok';
       badge.textContent = '✓';
       row.appendChild(badge);
-
-      // Still allow opening logs for the last run
-      if (gs.preScriptsLastRunId) {
-        const logsBtn = document.createElement('button');
-        logsBtn.className = 'ghost prestep-logs-btn';
-        logsBtn.title = 'Ver logs del pipeline';
-        logsBtn.textContent = '📋';
-        logsBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          window.api.openLogs(
-            `pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`,
-          );
-        });
-        row.appendChild(logsBtn);
-      }
     } else if (prescriptStatus === 'error') {
       const badge = document.createElement('span');
       badge.className = 'prestep-badge err';
       badge.title = gs.preScriptsLastError || 'Error en el pipeline';
       badge.textContent = '✕';
       row.appendChild(badge);
+    }
 
-      // Still allow opening logs for the last run
-      if (gs.preScriptsLastRunId) {
-        const logsBtn = document.createElement('button');
-        logsBtn.className = 'ghost prestep-logs-btn';
-        logsBtn.title = 'Ver logs del pipeline';
-        logsBtn.textContent = '📋';
-        logsBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          window.api.openLogs(
-            `pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`,
-          );
-        });
-        row.appendChild(logsBtn);
-      }
+    // Pipeline log opener — shown whenever a run's log exists (it persists
+    // after the transient status badge clears), so a finished pipeline stays
+    // reviewable, not only during/just-after execution.
+    if (gs.preScriptsLastRunId) {
+      const logsBtn = document.createElement('button');
+      logsBtn.className = 'ghost prestep-logs-btn';
+      logsBtn.title = 'Ver logs del pipeline';
+      logsBtn.textContent = '📋';
+      logsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.api.openLogs(
+          `pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`,
+        );
+      });
+      row.appendChild(logsBtn);
     }
   }
 
@@ -627,6 +599,9 @@ function buildCommandSubRow(gs, cs, cmd) {
 // ─────────────────────── Action chip ─────────────────────────────────
 
 function buildActionChip(gs, as, act) {
+  const wrap = document.createElement('div');
+  wrap.className = 'action-chip-wrap';
+
   const chip = document.createElement('button');
   const isRunning = as.status === 'running';
   const isDone = as.status === 'done';
@@ -657,8 +632,24 @@ function buildActionChip(gs, as, act) {
     await window.api.runAction(gs.groupId, act.id);
     chip.disabled = false;
   });
+  wrap.appendChild(chip);
 
-  return chip;
+  // Once an action has run, its output stays in the log buffer — expose it so
+  // it can be reviewed after the fact (manual or scheduled runs alike).
+  const hasLog = isRunning || as.lastFinishedAt != null;
+  if (hasLog && as.processId) {
+    const logsBtn = document.createElement('button');
+    logsBtn.className = 'ghost action-logs-btn';
+    logsBtn.title = 'Ver log de la acción';
+    logsBtn.textContent = '📜';
+    logsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.api.openLogs(as.processId);
+    });
+    wrap.appendChild(logsBtn);
+  }
+
+  return wrap;
 }
 
 // ─────────────────────── Event wiring ────────────────────────────────
@@ -694,7 +685,12 @@ if (window.api.getAppVersion) {
     .getAppVersion()
     .then((v) => {
       const el = document.getElementById('app-version');
-      if (el && v) el.textContent = `v${v}`;
+      if (el && v) {
+        el.textContent = `v${v}`;
+        // The popover is too small for the modal — open config on "Acerca de"
+        // with the changelog instead.
+        el.addEventListener('click', () => window.api.openConfigChangelog());
+      }
     })
     .catch(() => {
       /* leave span empty on failure */

@@ -356,7 +356,10 @@ pausedEl.addEventListener('change', () => {
   if (!pausedEl.checked) flushQueue();
 });
 
-clearBtn.addEventListener('click', () => {
+clearBtn.addEventListener('click', async () => {
+  // Wipe the real retained buffer (main), not just the visible DOM — otherwise
+  // cleared lines reappear on the next live line or when the window reopens.
+  if (processId && window.api.clearLogs) await window.api.clearLogs(processId);
   linesEl.innerHTML = '';
   visibleCount = 0;
   countsEl.textContent = '0 líneas';

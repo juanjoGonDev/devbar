@@ -73,6 +73,29 @@ class ProcessManager extends EventEmitter {
     return this.logs.get(id) || [];
   }
 
+  /**
+   * Really empty a process's log buffer (not just the on-screen view). Keeps
+   * the same array reference so any live push keeps working. Returns true if a
+   * buffer existed.
+   */
+  clearLogs(id) {
+    const buf = this.logs.get(id);
+    if (!buf) return false;
+    buf.length = 0;
+    return true;
+  }
+
+  /**
+   * Every retained log buffer, as `{ id, lineCount }`. Used by the Logs browser
+   * to list everything captured since app start (naming/grouping is resolved by
+   * the caller via resolveTarget + parseProcessId).
+   */
+  listLogBuffers() {
+    const out = [];
+    for (const [id, buf] of this.logs) out.push({ id, lineCount: buf.length });
+    return out;
+  }
+
   pushLog(id, entry) {
     let buf = this.logs.get(id);
     if (!buf) {

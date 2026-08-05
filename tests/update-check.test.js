@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { isNewerVersion, selectAssetUrl } from '../src/update-check.js';
+import {
+  isNewerVersion,
+  selectAssetUrl,
+  parseReleases,
+} from '../src/update-check.js';
 
 describe('isNewerVersion', () => {
   it('detects a higher patch/minor/major', () => {
@@ -44,5 +48,32 @@ describe('selectAssetUrl', () => {
     expect(selectAssetUrl(assets, 'ppc', 'dmg')).toBe(null);
     expect(selectAssetUrl([], 'arm64', 'dmg')).toBe(null);
     expect(selectAssetUrl(null, 'arm64', 'dmg')).toBe(null);
+  });
+});
+
+describe('parseReleases', () => {
+  const raw = [
+    {
+      tag_name: 'v0.4.0',
+      name: '0.4.0',
+      body: 'notes',
+      html_url: 'u/4',
+      published_at: '2026-08-01T10:00:00Z',
+    },
+    { tag_name: '0.3.0', body: '', html_url: 'u/3', draft: true },
+    { tag_name: 'v0.2.0', html_url: 'u/2', prerelease: true },
+  ];
+
+  it('strips leading v, keeps fields, and flags prereleases', () => {
+    const out = parseReleases(raw);
+    expect(out.map((r) => r.version)).toEqual(['0.4.0', '0.2.0']); // draft skipped
+    expect(out[0]).toMatchObject({ body: 'notes', url: 'u/4' });
+    expect(out[1].prerelease).toBe(true);
+  });
+
+  it('respects the limit and tolerates junk', () => {
+    expect(parseReleases(raw, 1)).toHaveLength(1);
+    expect(parseReleases(null)).toEqual([]);
+    expect(parseReleases(undefined)).toEqual([]);
   });
 });
