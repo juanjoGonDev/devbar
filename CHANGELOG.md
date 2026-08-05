@@ -9,8 +9,9 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 - **Menú de configuración con barra lateral.** La configuración pasa de una
   única página larga a una barra lateral contraíble con secciones —
-  **General**, **Notificaciones**, **Grupos**, **Copias de seguridad** y
-  **Acerca de**— al estilo de Ajustes del sistema de macOS: iconos con color,
+  **General**, **Notificaciones**, **Grupos**, **Logs**, **Copias de
+  seguridad** y **Acerca de**— al estilo de Ajustes del sistema de macOS:
+  iconos con color,
   fila activa resaltada y estado recordado entre sesiones.
 - **Changelog integrado.** Un nuevo apartado muestra las últimas versiones
   publicadas en GitHub (aunque no estén instaladas), cada una en un panel

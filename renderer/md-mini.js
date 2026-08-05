@@ -31,7 +31,9 @@
   function inline(text) {
     const links = [];
     const stash = (url, label) => {
-      const i = links.push(`<a data-href="${url}">${label}</a>`) - 1;
+      // href="#" makes the anchor keyboard-focusable; the click handler
+      // preventDefault()s and routes activation through openExternal.
+      const i = links.push(`<a data-href="${url}" href="#">${label}</a>`) - 1;
       return `${SENT}${i}${SENT}`;
     };
     // [text](url) first, then bare URLs, so we never re-link inside an href.

@@ -82,6 +82,10 @@ class ProcessManager extends EventEmitter {
     const buf = this.logs.get(id);
     if (!buf) return false;
     buf.length = 0;
+    // Recompute warn/error counts from the (now empty) buffer and emit
+    // 'change' → the tray badge and group colour stop counting lines that no
+    // longer exist. Without this the tray stays stale until the process restarts.
+    this.recount(id);
     return true;
   }
 

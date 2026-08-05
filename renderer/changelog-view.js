@@ -33,7 +33,7 @@
         const notes = renderMarkdown(r.body || '_Sin notas._');
         const v = escapeHtml(r.version);
         const releaseBtn = r.url
-          ? `<a class="small-btn cl-rel-link" data-href="${escapeHtml(r.url)}">Ver release ↗</a>`
+          ? `<a class="small-btn cl-rel-link" href="#" data-href="${escapeHtml(r.url)}">Ver release ↗</a>`
           : '';
         // Only the latest (first) release is expanded by default.
         return `

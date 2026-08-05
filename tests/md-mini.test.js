@@ -19,9 +19,11 @@ describe('renderMarkdown', () => {
     const out = renderMarkdown(
       'see [PR #38](https://github.com/o/r/pull/38) and https://x.dev/a',
     );
-    expect(out).toContain('<a data-href="https://github.com/o/r/pull/38">');
+    expect(out).toContain('data-href="https://github.com/o/r/pull/38"');
+    expect(out).toContain('href="#"'); // keyboard-focusable
     expect(out).toContain('PR #38</a>');
-    expect(out).toContain('<a data-href="https://x.dev/a">https://x.dev/a</a>');
+    expect(out).toContain('data-href="https://x.dev/a"');
+    expect(out).toContain('>https://x.dev/a</a>');
   });
 
   it('escapes HTML so injected notes are safe', () => {

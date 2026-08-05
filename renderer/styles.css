@@ -1121,7 +1121,7 @@ dialog h2 {
   color: var(--accent);
   text-decoration: none;
   cursor: pointer;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 .cl-notes a:hover {
   text-decoration: underline;
