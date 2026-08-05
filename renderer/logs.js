@@ -363,6 +363,10 @@ clearBtn.addEventListener('click', async () => {
   linesEl.innerHTML = '';
   visibleCount = 0;
   countsEl.textContent = '0 líneas';
+  // Also drop lines queued while paused — otherwise resuming re-adds the very
+  // lines the user just cleared.
+  pendingQueue.length = 0;
+  if (pausedEl.checked) statusEl.textContent = 'Pausado';
 });
 
 copyBtn.addEventListener('click', async () => {
