@@ -13,6 +13,7 @@ const {
   dialog,
   shell,
   powerMonitor,
+  nativeTheme,
 } = require('electron');
 const { menubar } = require('menubar');
 const { isDue } = require('./scheduler');
@@ -23,7 +24,7 @@ const { ProcessManager, deriveColor } = require('./process-manager');
 const gitManager = require('./git-manager');
 const trayIcon = require('./tray-icon');
 const logger = require('./logger');
-const { checkForUpdate } = require('./update-check');
+const { checkForUpdate, fetchReleases } = require('./update-check');
 const { aggregateColor } = trayIcon;
 const { loadShellPath, expandTilde } = require('./path-helper');
 const { RepoWatcher } = require('./repo-watcher');
@@ -188,6 +189,10 @@ let updateNotifiedThisLaunch = false; // banner shown at most once per launch
 // Group-level transient errors (not persisted)
 const groupErrors = new Map();
 
+// Last pre-script pipeline run id per group. Kept beyond the recent-result
+// badge TTL so the tray can still open that run's (still-retained) log buffer.
+const lastPreScriptRunId = new Map();
+
 // Action pids started by the scheduler, awaiting their action:done so we can
 // fire a completion notification (manual runs don't notify — you're watching).
 const scheduledActionPids = new Set();
@@ -284,11 +289,17 @@ function snapshotGroupStates() {
       recentResult && recentResult.status === 'error'
         ? recentResult.error
         : null;
-    const preScriptsLastRunId = runState
+    // The live run id (running / within the recent-result TTL). Persist it per
+    // group so the tray's "ver logs del pipeline" button survives after the
+    // status badge clears — the aggregator log buffer itself outlives the badge.
+    const liveRunId = runState
       ? String(runState.runId)
       : recentResult
         ? String(recentResult.runId)
         : null;
+    if (liveRunId) lastPreScriptRunId.set(group.id, liveRunId);
+    const preScriptsLastRunId =
+      liveRunId || lastPreScriptRunId.get(group.id) || null;
 
     return {
       groupId: group.id,
@@ -348,13 +359,27 @@ function closeNotificationWindow() {
   if (win && !win.isDestroyed()) win.close();
 }
 
-function showBannerNotification(title, body) {
+/**
+ * Display the user is actually looking at: the focused window's screen, else
+ * the screen under the cursor. Using the PRIMARY display made banners always
+ * pop on the built-in screen and, worse, yanked the active Space away from a
+ * config window living on a second display.
+ */
+function activeDisplay() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) {
+    return screen.getDisplayMatching(focused.getBounds());
+  }
+  return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+}
+
+function showBannerNotification(title, body, { cta } = {}) {
   closeNotificationWindow(); // replace any visible banner
   const secs = configStore.getGlobalSettings().notifyAutoCloseSecs;
   const width = 360;
   const height = 76;
   const margin = 12;
-  const wa = screen.getPrimaryDisplay().workArea;
+  const wa = activeDisplay().workArea;
   const win = new BrowserWindow({
     width,
     height,
@@ -380,8 +405,13 @@ function showBannerNotification(title, body) {
     },
   });
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  const query = { title, body, secs: String(secs) };
+  if (cta && cta.label && cta.action) {
+    query.cta = cta.label;
+    query.action = cta.action;
+  }
   win.loadFile(path.join(__dirname, '..', 'renderer', 'notification.html'), {
-    query: { title, body, secs: String(secs) },
+    query,
   });
   win.once('ready-to-show', () => win.showInactive()); // never steal focus
   win.on('closed', () => {
@@ -496,7 +526,8 @@ async function runUpdateCheck({ manual = false } = {}) {
       updateNotifiedThisLaunch = true;
       showBannerNotification(
         'DevBar — actualización',
-        `v${found.version} disponible. Ábrela en Configuración.`,
+        `v${found.version} disponible.`,
+        { cta: { label: 'Ver', action: 'open-about' } },
       );
     }
   }
@@ -616,7 +647,8 @@ function ensureSilencedWindow(groupId, commandId) {
     },
   });
   win.setMenuBarVisibility(false);
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // NOT visible-on-all-workspaces (see logs/config): avoids the secondary-display
+  // minimize-everything quirk for accessory-app windows.
   win.loadFile(path.join(__dirname, '..', 'renderer', 'silenced.html'), {
     query: { groupId, commandId },
   });
@@ -644,11 +676,14 @@ function syncRepoWatchers() {
   repoWatcher.sync(paths);
 }
 
+let lastTrayColor = 'stopped'; // remembered so a theme flip can re-render
+
 function updateTrayTitle(payload) {
   if (!mb || !mb.tray) return;
   // Pass per-group color objects to aggregateColor
   const colorStubs = payload.map((gs) => ({ color: gs.color }));
   const overall = aggregateColor(colorStubs);
+  lastTrayColor = overall;
   try {
     mb.tray.setImage(trayIcon.loadIcon(overall));
   } catch (err) {
@@ -671,11 +706,18 @@ function updateTrayTitle(payload) {
 }
 
 function adaptiveSize(maxW, maxH, marginW = 60, marginH = 100) {
-  const display = screen.getPrimaryDisplay();
-  const wa = display.workArea;
+  // Size AND place on the active display (focused window's / cursor's screen),
+  // not the primary one — otherwise opening a window (e.g. a log viewer) from a
+  // config window living on a second display makes macOS jump Spaces and the
+  // config window seems to vanish.
+  const wa = activeDisplay().workArea;
+  const width = Math.max(420, Math.min(maxW, wa.width - marginW));
+  const height = Math.max(360, Math.min(maxH, wa.height - marginH));
   return {
-    width: Math.max(420, Math.min(maxW, wa.width - marginW)),
-    height: Math.max(360, Math.min(maxH, wa.height - marginH)),
+    width,
+    height,
+    x: Math.round(wa.x + (wa.width - width) / 2),
+    y: Math.round(wa.y + (wa.height - height) / 2),
   };
 }
 
@@ -697,6 +739,8 @@ function ensureLogsWindow(processId, { filter } = {}) {
   const win = new BrowserWindow({
     width: size.width,
     height: size.height,
+    x: size.x,
+    y: size.y,
     minWidth: 480,
     minHeight: 320,
     title: `Logs — ${titleName}`,
@@ -711,7 +755,8 @@ function ensureLogsWindow(processId, { filter } = {}) {
     },
   });
   win.setMenuBarVisibility(false);
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // NOT visible-on-all-workspaces: on a secondary display that made macOS
+  // minimize the other windows there (accessory-app + join-all-spaces quirk).
   const query = { id: processId };
   if (filter) query.filter = filter;
   win.loadFile(path.join(__dirname, '..', 'renderer', 'logs.html'), { query });
@@ -768,16 +813,19 @@ function ensurePrescriptConfirmWindow(token) {
   return win;
 }
 
-function ensureConfigWindow() {
+function ensureConfigWindow({ goto } = {}) {
   if (configWindow && !configWindow.isDestroyed()) {
     configWindow.show();
     configWindow.focus();
+    if (goto) configWindow.webContents.send('config:goto', goto);
     return;
   }
   const size = adaptiveSize(820, 640);
   configWindow = new BrowserWindow({
     width: size.width,
     height: size.height,
+    x: size.x,
+    y: size.y,
     minWidth: 460,
     minHeight: 380,
     title: 'DevBar — Configuración',
@@ -793,8 +841,20 @@ function ensureConfigWindow() {
     },
   });
   configWindow.setMenuBarVisibility(false);
-  configWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // NOTE: deliberately NOT setVisibleOnAllWorkspaces — as an accessory (menubar)
+  // app, a can-join-all-spaces window shown on a SECONDARY display makes macOS
+  // minimize the other windows there. Regular per-space behaviour avoids it.
   configWindow.loadFile(path.join(__dirname, '..', 'renderer', 'config.html'));
+  // A fresh window can't receive the deep-link until its renderer has loaded.
+  // Without this, the very first open (or any open after the window was closed)
+  // never navigates — only reused windows did. Fires once per creation.
+  if (goto) {
+    configWindow.webContents.once('did-finish-load', () => {
+      if (configWindow && !configWindow.isDestroyed()) {
+        configWindow.webContents.send('config:goto', goto);
+      }
+    });
+  }
   configWindow.on('close', (e) => {
     if (configWindow.__forceClose) return;
     e.preventDefault();
@@ -1151,9 +1211,57 @@ function registerIpc() {
     };
   });
 
+  // Really wipe a process's retained log buffer (not just the on-screen view).
+  ipcMain.handle('logs:clear', (_e, processId) => {
+    processManager.clearLogs(processId);
+    return { ok: true };
+  });
+
+  // Every retained log buffer since app start, grouped by group → type, for the
+  // Logs browser. Each item opens in the normal logs window via its processId.
+  ipcMain.handle('logs:list', () => {
+    const TYPE = {
+      command: 'command',
+      action: 'action',
+      prescript: 'prescript',
+      preAggregator: 'pipeline',
+    };
+    const groups = new Map(); // groupId -> { groupId, groupName, items: [] }
+    for (const { id, lineCount } of processManager.listLogBuffers()) {
+      const parsed = parseProcessId(id);
+      const type = TYPE[parsed.kind];
+      if (!type) continue; // skip unknown ids
+      const group = configStore.getGroup(parsed.groupId);
+      let entry = groups.get(parsed.groupId);
+      if (!entry) {
+        entry = {
+          groupId: parsed.groupId,
+          groupName: group ? group.name : '(grupo eliminado)',
+          items: [],
+        };
+        groups.set(parsed.groupId, entry);
+      }
+      const resolved = processManager.resolveTarget(id);
+      const name = resolved
+        ? resolved.target.name
+        : type === 'pipeline'
+          ? 'Pipeline de pre-scripts'
+          : id;
+      entry.items.push({ id, type, name, lineCount });
+    }
+    return [...groups.values()];
+  });
+
   // ── Window management ─────────────────────────────────────────────────
   ipcMain.handle('window:openConfig', () => {
     ensureConfigWindow();
+    if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
+    return { ok: true };
+  });
+
+  // Tray version chip: open config on "Acerca de" with the changelog modal.
+  ipcMain.handle('window:openConfigChangelog', () => {
+    ensureConfigWindow({ goto: 'about-changelog' });
     if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
     return { ok: true };
   });
@@ -1228,6 +1336,15 @@ function registerIpc() {
 
   // Dismiss the current completion banner (clicked in the banner renderer).
   ipcMain.handle('notification:dismiss', () => {
+    closeNotificationWindow();
+    return { ok: true };
+  });
+
+  // A banner CTA was clicked → run the mapped action, then dismiss.
+  ipcMain.handle('notification:action', (_e, action) => {
+    if (action === 'open-about') ensureConfigWindow({ goto: 'about' });
+    else if (action === 'open-changelog')
+      ensureConfigWindow({ goto: 'about-changelog' });
     closeNotificationWindow();
     return { ok: true };
   });
@@ -1348,7 +1465,8 @@ function registerIpc() {
     pendingImports.delete(token);
     try {
       const backupPath = configStore.writeImportBackup();
-      await processManager.stopAll();
+      await processManager.stopAll(); // wipes all log buffers…
+      lastPreScriptRunId.clear(); // …so stale run ids must not linger
       configStore.replaceConfig(payload);
       syncRepoWatchers();
       applyAutostart(configStore.getGlobalSettings().autostart);
@@ -1390,6 +1508,23 @@ function registerIpc() {
   });
 
   ipcMain.handle('app:version', () => app.getVersion());
+
+  // Last 5 releases from GitHub for the changelog modal, plus the repo's
+  // releases page for the "Ver en GitHub" button.
+  ipcMain.handle('updates:changelog', async () => ({
+    releases: await fetchReleases({ ...UPDATE_REPO, limit: 5 }),
+    repoUrl: `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}/releases`,
+  }));
+
+  // Open an external https URL in the default browser. https-only guard so a
+  // renderer bug can't fire arbitrary schemes (file:, javascript:, …).
+  ipcMain.handle('app:openExternal', (_e, url) => {
+    if (typeof url === 'string' && url.startsWith('https://')) {
+      shell.openExternal(url);
+      return { ok: true };
+    }
+    return { ok: false };
+  });
 
   // ── Config dirty-close helpers ─────────────────────────────────────────
   ipcMain.handle('config:confirmDirty', async (e, { context }) => {
@@ -1707,6 +1842,19 @@ app.whenReady().then(() => {
     // Check GitHub for a newer release now and every 5 minutes after.
     runUpdateCheck();
     setInterval(runUpdateCheck, 5 * 60 * 1000);
+
+    // Light/dark appearance flip → rebuild the tray dot with a contrasting
+    // ring so it stays visible on the new menubar background.
+    nativeTheme.on('updated', () => {
+      trayIcon.invalidateCache();
+      if (mb && mb.tray) {
+        try {
+          mb.tray.setImage(trayIcon.loadIcon(lastTrayColor));
+        } catch (err) {
+          console.error('tray theme refresh failed:', err);
+        }
+      }
+    });
   });
 
   mb.on('after-create-window', () => {

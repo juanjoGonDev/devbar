@@ -207,6 +207,30 @@ function updateSaveBar() {
   if (discardBtn) discardBtn.disabled = !dirty;
 }
 
+/**
+ * The single validated save path for the selected group's draft. Every place
+ * that persists a group (save bar, group-switch "guardar", window-close
+ * "guardar") MUST go through here so validation is consistent — otherwise the
+ * discard-dialog "guardar" would smuggle an invalid group past the checks the
+ * save bar enforces.
+ *
+ * Returns the saved group on success, or null if validation failed (the toast
+ * is already shown; callers must abort any follow-up like switching or closing).
+ * Throws only on an unexpected IPC error, which callers surface as a toast.
+ */
+async function saveDraft() {
+  if (!draftGroup) return null;
+  if (!draftGroup.path) {
+    showToast('El path no puede estar vacío', 'error');
+    return null;
+  }
+  const savedGroup = await window.api.saveGroup(draftGroup);
+  storedGroup = JSON.parse(JSON.stringify(savedGroup || draftGroup));
+  const idx = allGroups.findIndex((g) => g.id === storedGroup.id);
+  if (idx >= 0) allGroups[idx] = storedGroup;
+  return savedGroup || storedGroup;
+}
+
 // ────────────────────── Toast ──────────────────────────────────────────
 
 function showToast(msg, kind = 'ok') {
@@ -430,7 +454,8 @@ function buildGroupNavCard(group) {
       if (choice === 'cancel') return;
       if (choice === 'save') {
         try {
-          await window.api.saveGroup(draftGroup);
+          const saved = await saveDraft();
+          if (!saved) return; // empty path — abort switch, stay on this group
           await loadGroups();
         } catch (err) {
           showToast(`Error: ${err.message}`, 'error');
@@ -457,9 +482,11 @@ function renderGroupDetail() {
   }
 
   const group = draftGroup;
+  const saveBarHost = document.getElementById('group-save-bar');
   if (!group) {
     groupDetailEl.innerHTML =
       '<div class="detail-empty"><p class="muted">Selecciona un grupo para editarlo.</p></div>';
+    if (saveBarHost) saveBarHost.innerHTML = '';
     return;
   }
 
@@ -494,18 +521,12 @@ function renderGroupDetail() {
   saveBarBtn.disabled = true;
   saveBarBtn.addEventListener('click', async () => {
     if (!isDirty()) return;
-    if (!draftGroup.path) {
-      showToast('El path no puede estar vacío', 'error');
-      return;
-    }
     try {
-      const savedGroup = await window.api.saveGroup(draftGroup);
-      storedGroup = JSON.parse(JSON.stringify(savedGroup || draftGroup));
-      const idx = allGroups.findIndex((g) => g.id === storedGroup.id);
-      if (idx >= 0) allGroups[idx] = storedGroup;
+      const savedGroup = await saveDraft();
+      if (!savedGroup) return; // validation failed — toast already shown
       updateSaveBar();
       renderGroupsList();
-      if (savedGroup && savedGroup._autoStartEnforced) {
+      if (savedGroup._autoStartEnforced) {
         showToast(
           'Grupo guardado · Auto-arranque desactivado al cambiar a single',
           'ok',
@@ -713,9 +734,13 @@ function renderGroupDetail() {
 
   groupDetailEl.appendChild(btnRow);
 
-  // Append the sticky save bar AFTER all other pane content so its
-  // sticky-bottom anchoring sits at the bottom of the scrolling viewport.
-  groupDetailEl.appendChild(saveBar);
+  // The save bar lives OUTSIDE the editor pane (below the whole two-pane
+  // block) so it reads as a footer for the Grupos view, not part of the
+  // scrolling editor.
+  if (saveBarHost) {
+    saveBarHost.innerHTML = '';
+    saveBarHost.appendChild(saveBar);
+  }
 
   // Apply initial save bar state
   updateSaveBar();
@@ -1378,15 +1403,214 @@ document.getElementById('sub-cancel').addEventListener('click', (e) => {
   subDialog.close();
 });
 
-// Wire fake traffic-light close buttons on all <dialog> elements
-document
-  .querySelectorAll('.fake-traffic-lights .light.close')
-  .forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const d = btn.closest('dialog');
-      if (d && d.open) d.close();
-    });
+// Shared modal chrome (honest × / Esc / backdrop) for the command editor.
+wireModal(subDialog);
+
+// ────────────────────── Sidebar navigation ─────────────────────────────
+const configNav = document.getElementById('config-nav');
+const navItems = [...document.querySelectorAll('.nav-item')];
+const sections = [...document.querySelectorAll('.config-section')];
+
+function showSection(target) {
+  navItems.forEach((b) =>
+    b.classList.toggle('active', b.dataset.target === target),
+  );
+  sections.forEach((s) =>
+    s.classList.toggle('active', s.dataset.section === target),
+  );
+  if (target === 'logs') {
+    renderLogsTree();
+    startLogsAutoRefresh();
+  } else {
+    stopLogsAutoRefresh();
+  }
+  try {
+    localStorage.setItem('config-section', target);
+  } catch {
+    /* localStorage unavailable — session-only nav is fine */
+  }
+}
+
+// ────────────────────── Logs browser ───────────────────────────────────
+const LOG_TYPE_LABEL = {
+  command: 'Comandos',
+  action: 'Acciones',
+  prescript: 'Pre-scripts',
+  pipeline: 'Pipeline',
+};
+const LOG_TYPE_ORDER = ['command', 'action', 'prescript', 'pipeline'];
+// Remember which group panels the user collapsed so auto-refresh doesn't
+// re-open them under the cursor.
+const logsGroupOpen = new Map();
+
+function setLogsUpdatedNow() {
+  const el = document.getElementById('logs-updated');
+  if (el) el.textContent = `Actualizado ${new Date().toLocaleTimeString()}`;
+}
+
+async function renderLogsTree() {
+  const host = document.getElementById('logs-tree');
+  if (!host) return;
+  if (!host.children.length) {
+    host.innerHTML = '<p class="muted small">Cargando…</p>';
+  }
+  const groups = (await window.api.listLogs()) || [];
+  setLogsUpdatedNow();
+  if (!groups.length) {
+    host.innerHTML =
+      '<p class="muted small">Todavía no hay logs. Se registran al ejecutar comandos, acciones o pre-scripts.</p>';
+    return;
+  }
+  host.innerHTML = '';
+  for (const g of groups) {
+    const details = document.createElement('details');
+    details.className = 'logs-group';
+    details.open = logsGroupOpen.has(g.groupId)
+      ? logsGroupOpen.get(g.groupId)
+      : true;
+    details.addEventListener('toggle', () =>
+      logsGroupOpen.set(g.groupId, details.open),
+    );
+    const summary = document.createElement('summary');
+    summary.textContent = g.groupName;
+    details.appendChild(summary);
+
+    const byType = {};
+    for (const it of g.items) (byType[it.type] ||= []).push(it);
+    for (const type of LOG_TYPE_ORDER) {
+      const items = byType[type];
+      if (!items || !items.length) continue;
+      const label = document.createElement('div');
+      label.className = 'logs-type';
+      label.textContent = LOG_TYPE_LABEL[type];
+      details.appendChild(label);
+      for (const it of items) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'logs-item';
+        row.title = 'Abrir en el visor de logs';
+        const name = document.createElement('span');
+        name.className = 'logs-item-name';
+        name.textContent = it.name;
+        const count = document.createElement('span');
+        count.className = 'logs-item-count muted';
+        count.textContent = `${it.lineCount} línea${it.lineCount === 1 ? '' : 's'}`;
+        row.append(name, count);
+        row.addEventListener('click', () => window.api.openLogs(it.id));
+        details.appendChild(row);
+      }
+    }
+    host.appendChild(details);
+  }
+}
+
+const logsRefreshBtn = document.getElementById('logs-refresh');
+if (logsRefreshBtn) logsRefreshBtn.addEventListener('click', renderLogsTree);
+
+// Auto-refresh (Manual / 5s / 10s / 30s). Runs only while the Logs section is
+// open; the interval is torn down when leaving it (see showSection).
+let _logsRefreshTimer = null;
+const logsAutoSel = document.getElementById('logs-autorefresh');
+
+function stopLogsAutoRefresh() {
+  if (_logsRefreshTimer) {
+    clearInterval(_logsRefreshTimer);
+    _logsRefreshTimer = null;
+  }
+}
+function startLogsAutoRefresh() {
+  stopLogsAutoRefresh();
+  const ms = logsAutoSel ? Number(logsAutoSel.value) || 0 : 0;
+  if (ms > 0) _logsRefreshTimer = setInterval(renderLogsTree, ms);
+}
+if (logsAutoSel) {
+  try {
+    const saved = localStorage.getItem('logs-autorefresh');
+    if (saved !== null) logsAutoSel.value = saved;
+  } catch {
+    /* ignore */
+  }
+  logsAutoSel.addEventListener('change', () => {
+    try {
+      localStorage.setItem('logs-autorefresh', logsAutoSel.value);
+    } catch {
+      /* ignore */
+    }
+    startLogsAutoRefresh();
   });
+}
+navItems.forEach((b) =>
+  b.addEventListener('click', () => showSection(b.dataset.target)),
+);
+
+const navCollapse = document.getElementById('nav-collapse');
+function setNavCollapsed(on) {
+  configNav.classList.toggle('collapsed', on);
+  navCollapse.textContent = on ? '›' : '‹';
+  try {
+    localStorage.setItem('config-nav-collapsed', on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+navCollapse.addEventListener('click', () =>
+  setNavCollapsed(!configNav.classList.contains('collapsed')),
+);
+
+// Restore persisted nav state.
+try {
+  const saved = localStorage.getItem('config-section');
+  if (saved && navItems.some((b) => b.dataset.target === saved)) {
+    showSection(saved);
+  }
+  setNavCollapsed(localStorage.getItem('config-nav-collapsed') === '1');
+} catch {
+  /* ignore */
+}
+
+const aboutGithub = document.getElementById('about-github');
+if (aboutGithub) {
+  aboutGithub.addEventListener('click', () =>
+    window.api.openExternal('https://github.com/juanjoGonDev/devbar'),
+  );
+}
+
+// Collapsible groups list (focus the editor by hiding the list).
+const groupsCollapse = document.getElementById('groups-collapse');
+const groupsTwoPane = document.getElementById('groups-two-pane');
+function setGroupsListCollapsed(on) {
+  groupsTwoPane.classList.toggle('list-collapsed', on);
+  groupsCollapse.textContent = on ? '›' : '‹';
+  try {
+    localStorage.setItem('groups-list-collapsed', on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+if (groupsCollapse && groupsTwoPane) {
+  groupsCollapse.addEventListener('click', () =>
+    setGroupsListCollapsed(!groupsTwoPane.classList.contains('list-collapsed')),
+  );
+  try {
+    setGroupsListCollapsed(
+      localStorage.getItem('groups-list-collapsed') === '1',
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+// Deep-link from the tray version chip: jump to "Acerca de" + open changelog.
+if (window.api.onConfigGoto) {
+  window.api.onConfigGoto((target) => {
+    if (target === 'about' || target === 'about-changelog')
+      showSection('about');
+    if (target === 'about-changelog') {
+      const el = document.getElementById('app-version');
+      window.openChangelog(el ? el.textContent.replace(/^v/, '') : '');
+    }
+  });
+}
 
 // ────────────────────── Icon picker ────────────────────────────────────
 
@@ -1777,7 +2001,12 @@ if (window.api.onConfigCloseRequested) {
     }
     if (choice === 'save') {
       try {
-        await window.api.saveGroup(draftGroup);
+        const saved = await saveDraft();
+        if (!saved) {
+          // empty path — don't close; let the user fix it first
+          _closingGuard = false;
+          return;
+        }
       } catch (err) {
         showToast(`Error: ${err.message}`, 'error');
         _closingGuard = false;
@@ -1809,7 +2038,7 @@ function renderUpdateStatus(s) {
     : 'nunca';
   updateStatusEl.textContent = s.available
     ? `Actualización v${s.available.version} disponible · última búsqueda ${last}`
-    : `Al día${_currentVersion ? ` (v${_currentVersion})` : ''} · última búsqueda ${last}`;
+    : `Al día · última búsqueda ${last}`;
   if (applyUpdateBtn) {
     if (s.available) {
       applyUpdateBtn.style.display = '';
@@ -1871,7 +2100,10 @@ if (window.api && window.api.getAppVersion) {
     .getAppVersion()
     .then((v) => {
       const el = document.getElementById('app-version');
-      if (el && v) el.textContent = `v${v}`;
+      if (el && v) {
+        el.textContent = `v${v}`;
+        el.addEventListener('click', () => window.openChangelog(v));
+      }
     })
     .catch(() => {
       /* leave the label empty on failure */

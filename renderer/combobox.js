@@ -220,6 +220,12 @@ function createCombobox({ value, options, placeholder, onSelect }) {
   function closeList(revert = true) {
     if (!isOpen) return;
     isOpen = false;
+    // Any close (select, blur, Escape, outside-click) can leave the cursor over
+    // the tray row below, and the browser synthesizes a click there once the
+    // dropdown is display:none'd. Mark the interaction so the row's
+    // click-to-collapse handler ignores that stray click. (Was only set on
+    // select → clicking the branch box to dismiss collapsed the group.)
+    window.__comboboxSelectingAt = Date.now();
     list.style.display = 'none';
     if (revert) {
       input.value = labelFor(currentValue);

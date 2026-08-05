@@ -1,21 +1,51 @@
-const { nativeImage } = require('electron');
-const path = require('path');
+const { nativeImage, nativeTheme } = require('electron');
+const { drawDotBGRA } = require('./dot-bitmap');
 
 const STATES = ['stopped', 'running', 'warn', 'error'];
+
+// Core dot colour per state (RGB).
+const COLORS = {
+  stopped: [152, 152, 157], // neutral grey
+  running: [48, 209, 88], // green
+  warn: [255, 214, 10], // yellow
+  error: [255, 69, 58], // red
+};
+
+// Cache keyed by `state:dark?` so a theme flip rebuilds with the right ring.
 const iconCache = {};
 
-function iconPath(state) {
-  return path.join(__dirname, '..', 'assets', `icon-${state}.png`);
+function ringColor(dark) {
+  // Contrasting ring so the dot reads on any menubar background: a light ring
+  // on dark appearances, a dark ring on light ones.
+  return dark ? [255, 255, 255] : [40, 40, 42];
 }
 
 function loadIcon(state) {
-  if (iconCache[state]) return iconCache[state];
-  const img = nativeImage.createFromPath(iconPath(state));
-  // Mark NOT as template so the OS uses our literal colors (the whole
-  // point is to show green/yellow/red dots).
+  const dark = nativeTheme.shouldUseDarkColors;
+  const key = `${state}:${dark ? 'd' : 'l'}`;
+  if (iconCache[key]) return iconCache[key];
+
+  const rgb = COLORS[state] || COLORS.stopped;
+  const ring = ringColor(dark);
+  const img = nativeImage.createFromBitmap(drawDotBGRA(18, rgb, ring), {
+    width: 18,
+    height: 18,
+  });
+  img.addRepresentation({
+    scaleFactor: 2,
+    width: 36,
+    height: 36,
+    buffer: drawDotBGRA(36, rgb, ring),
+  });
+  // NOT a template image — we want the literal green/yellow/red colours.
   img.setTemplateImage(false);
-  iconCache[state] = img;
+  iconCache[key] = img;
   return img;
+}
+
+// Drop cached icons so the next loadIcon() rebuilds with the current theme.
+function invalidateCache() {
+  for (const k of Object.keys(iconCache)) delete iconCache[k];
 }
 
 function preload() {
@@ -52,6 +82,7 @@ module.exports = {
   loadIcon,
   defaultIcon,
   preload,
+  invalidateCache,
   STATUS_EMOJI,
   aggregateColor,
 };

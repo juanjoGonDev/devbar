@@ -102,4 +102,70 @@ function checkForUpdate({
   });
 }
 
-module.exports = { isNewerVersion, selectAssetUrl, checkForUpdate };
+/**
+ * Map GitHub's /releases array to the compact shape the changelog modal needs.
+ * Skips drafts, keeps the newest `limit` (GitHub returns newest-first).
+ */
+function parseReleases(arr, limit = 5) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((r) => r && !r.draft)
+    .slice(0, limit)
+    .map((r) => ({
+      version: String(r.tag_name || '').replace(/^v/, ''),
+      name: r.name || '',
+      body: r.body || '',
+      url: r.html_url || '',
+      publishedAt: r.published_at || '',
+      prerelease: Boolean(r.prerelease),
+    }));
+}
+
+/**
+ * Fetch the latest `limit` releases from GitHub for the changelog modal.
+ * Never rejects — any failure resolves to []. See ponytail note at top: the
+ * release `body` is raw markdown; the UI shows it as-is (pre-wrap), no parser.
+ */
+function fetchReleases({ owner, repo, limit = 5, timeoutMs = 8000 }) {
+  return new Promise((resolve) => {
+    const req = https.get(
+      {
+        hostname: 'api.github.com',
+        path: `/repos/${owner}/${repo}/releases?per_page=${limit}`,
+        headers: {
+          'User-Agent': 'DevBar-UpdateCheck',
+          Accept: 'application/vnd.github+json',
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          return resolve([]);
+        }
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          try {
+            resolve(parseReleases(JSON.parse(data), limit));
+          } catch {
+            resolve([]);
+          }
+        });
+      },
+    );
+    req.on('error', () => resolve([]));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve([]);
+    });
+  });
+}
+
+module.exports = {
+  isNewerVersion,
+  selectAssetUrl,
+  checkForUpdate,
+  parseReleases,
+  fetchReleases,
+};
