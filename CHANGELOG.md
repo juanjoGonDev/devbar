@@ -3,10 +3,15 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
-## [Sin publicar]
+## [0.4.2] - 2026-08-06
 
 ### Cambiado
 
+- La **actualización asistida** ahora cierra DevBar automáticamente tras
+  descargar el instalador. El modal de confirmación avisa de que la app se
+  cerrará (macOS no permite sustituir la app mientras está abierta) y, después
+  de abrir el `.dmg`, DevBar se cierra sola para que puedas **arrastrarla a
+  Aplicaciones sin el error de "app en uso"**. Instalación más fácil y rápida.
 - El icono de la **barra de menú** ya no es un círculo de color: ahora muestra la
   **marca de la app (`>|`) tintada** según el estado agregado (gris parado, verde
   en marcha, amarillo aviso, rojo error). Se dibuja en tiempo de ejecución desde

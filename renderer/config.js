@@ -2052,6 +2052,7 @@ function renderUpdateStatus(s) {
 if (applyUpdateBtn) {
   applyUpdateBtn.addEventListener('click', async () => {
     applyUpdateBtn.disabled = true;
+    let quitting = false;
     try {
       const res = await window.api.applyUpdate();
       if (res && res.ok) showToast('Descargando actualización…', 'ok');
@@ -2060,8 +2061,10 @@ if (applyUpdateBtn) {
           `No se pudo actualizar: ${res.error || 'desconocido'}`,
           'error',
         );
+      quitting = Boolean(res && res.quitting);
     } finally {
-      applyUpdateBtn.disabled = false;
+      // App is about to quit to install — leave the button disabled.
+      if (!quitting) applyUpdateBtn.disabled = false;
     }
   });
 }
