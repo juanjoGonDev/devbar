@@ -81,9 +81,17 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── Logs ──────────────────────────────────────────────────────────────
   getLogs: (processId) => ipcRenderer.invoke('logs:get', processId),
+  clearLogs: (processId) => ipcRenderer.invoke('logs:clear', processId),
+  listLogs: () => ipcRenderer.invoke('logs:list'),
 
   // ── Window management ─────────────────────────────────────────────────
   openConfig: () => ipcRenderer.invoke('window:openConfig'),
+  openConfigChangelog: () => ipcRenderer.invoke('window:openConfigChangelog'),
+  onConfigGoto: (cb) => {
+    const h = (_e, target) => cb(target);
+    ipcRenderer.on('config:goto', h);
+    return () => ipcRenderer.removeListener('config:goto', h);
+  },
   hideTray: () => ipcRenderer.invoke('window:hideTray'),
   // openLogs accepts either a processId string or { processId, filter? }
   openLogs: (arg) => ipcRenderer.invoke('window:openLogs', arg),
@@ -96,6 +104,20 @@ contextBridge.exposeInMainWorld('api', {
   // ── Settings ──────────────────────────────────────────────────────────
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
+  testNotification: () => ipcRenderer.invoke('notifications:test'),
+  dismissNotification: () => ipcRenderer.invoke('notification:dismiss'),
+  notificationAction: (action) =>
+    ipcRenderer.invoke('notification:action', action),
+
+  // ── Updates ───────────────────────────────────────────────────────────
+  getUpdateStatus: () => ipcRenderer.invoke('updates:status'),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  applyUpdate: () => ipcRenderer.invoke('updates:apply'),
+  onUpdateStatus: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('updates:status', handler);
+    return () => ipcRenderer.removeListener('updates:status', handler);
+  },
 
   // ── Icons ─────────────────────────────────────────────────────────────
   getIconBattery: () => ipcRenderer.invoke('icons:get'),
@@ -134,6 +156,8 @@ contextBridge.exposeInMainWorld('api', {
   // ── App ───────────────────────────────────────────────────────────────
   quit: () => ipcRenderer.invoke('app:quit'),
   getAppVersion: () => ipcRenderer.invoke('app:version'),
+  getChangelog: () => ipcRenderer.invoke('updates:changelog'),
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
 
   // ── Config dirty-close ────────────────────────────────────────────────
   confirmDirty: (context) =>

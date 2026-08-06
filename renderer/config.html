@@ -11,81 +11,267 @@
   </head>
   <body class="config">
     <div class="app-window-spacer"></div>
-    <h1>
-      Configuración
-      <span id="app-version" class="app-version" title="DevBar version"></span>
-    </h1>
-
-    <!-- Global settings -->
-    <section class="settings-card">
-      <h2>General</h2>
-      <label class="toggle">
-        <input type="checkbox" id="set-autostart" />
-        <span>Iniciar al arrancar el Mac</span>
-        <small
-          >Registra DevBar como Login Item. Solo aplica al .app
-          empaquetado.</small
-        >
-      </label>
-      <h2 style="margin-top: 16px">Filtros globales</h2>
-      <p class="muted small">
-        Silenciar afecta solo al color de la bolita y al icono de la barra.
-      </p>
-      <label class="toggle">
-        <input type="checkbox" id="set-silence-warnings" />
-        <span>Silenciar <strong>warnings</strong> en todos los grupos</span>
-      </label>
-      <label class="toggle">
-        <input type="checkbox" id="set-silence-errors" />
-        <span>Silenciar <strong>errors</strong> en todos los grupos</span>
-      </label>
-      <div class="field" style="margin-top: 12px">
-        <label for="set-max-log-lines">Líneas máximas de logs</label>
-        <input
-          type="number"
-          id="set-max-log-lines"
-          min="100"
-          max="50000"
-          step="100"
-          style="width: 120px"
-        />
-        <small class="muted" style="display: block; margin-top: 4px"
-          >Por defecto para todos los procesos (100–50000). El cambio aplica al
-          reiniciar el proceso.</small
-        >
-      </div>
-    </section>
-
-    <!-- Backup / Restore -->
-    <section class="settings-card">
-      <h2>Copia de seguridad</h2>
-      <p class="muted small">
-        Exporta toda la configuración a JSON o impórtala desde otra máquina.
-        Importar <strong>sobreescribe</strong> todo lo actual; se guarda un
-        backup automático.
-      </p>
-      <div class="copy-actions">
-        <button id="export-config">Exportar</button>
-        <button id="import-config">Importar</button>
-      </div>
-    </section>
-
-    <!-- Two-pane layout -->
-    <div class="config-two-pane">
-      <!-- Left pane: groups list -->
-      <div class="config-left-pane">
-        <div class="config-left-header">
-          <span class="muted pane-title">Grupos</span>
-          <button id="add-group" class="primary small-btn">+ Añadir</button>
+    <div class="config-shell">
+      <nav class="config-nav" id="config-nav">
+        <div class="nav-top">
+          <button
+            id="app-version"
+            class="app-version"
+            type="button"
+            title="Ver changelog"
+          ></button>
+          <span class="spacer"></span>
+          <button
+            type="button"
+            class="nav-collapse"
+            id="nav-collapse"
+            title="Contraer / expandir"
+            aria-label="Contraer menú"
+          >
+            ‹
+          </button>
         </div>
-        <div id="groups-list" class="groups-list-nav"></div>
-      </div>
+        <button
+          type="button"
+          class="nav-item active"
+          data-target="general"
+          aria-label="General"
+        >
+          <span class="nav-ico" aria-hidden="true">⚙️</span
+          ><span class="nav-label">General</span>
+        </button>
+        <button
+          type="button"
+          class="nav-item"
+          data-target="notifications"
+          aria-label="Notificaciones"
+        >
+          <span class="nav-ico" aria-hidden="true">🔔</span
+          ><span class="nav-label">Notificaciones</span>
+        </button>
+        <button
+          type="button"
+          class="nav-item"
+          data-target="groups"
+          aria-label="Grupos"
+        >
+          <span class="nav-ico" aria-hidden="true">📦</span
+          ><span class="nav-label">Grupos</span>
+        </button>
+        <button
+          type="button"
+          class="nav-item"
+          data-target="logs"
+          aria-label="Logs"
+        >
+          <span class="nav-ico" aria-hidden="true">🧾</span
+          ><span class="nav-label">Logs</span>
+        </button>
+        <button
+          type="button"
+          class="nav-item"
+          data-target="backup"
+          aria-label="Copias de seguridad"
+        >
+          <span class="nav-ico" aria-hidden="true">💾</span
+          ><span class="nav-label">Copias de seguridad</span>
+        </button>
+        <button
+          type="button"
+          class="nav-item"
+          data-target="about"
+          aria-label="Acerca de"
+        >
+          <span class="nav-ico" aria-hidden="true">ℹ️</span
+          ><span class="nav-label">Acerca de</span>
+        </button>
+      </nav>
 
-      <!-- Right pane: group detail editor -->
-      <div class="config-right-pane" id="group-detail">
-        <div class="detail-empty">
-          <p class="muted">Selecciona un grupo para editarlo.</p>
-        </div>
+      <div class="config-content">
+        <!-- ── General ────────────────────────────────────────────── -->
+        <section class="config-section active" data-section="general">
+          <h1 class="section-title">General</h1>
+          <section class="settings-card">
+            <label class="toggle">
+              <input type="checkbox" id="set-autostart" />
+              <span>Iniciar al arrancar el Mac</span>
+              <small
+                >Registra DevBar como Login Item. Solo aplica al .app
+                empaquetado.</small
+              >
+            </label>
+          </section>
+          <section class="settings-card">
+            <h2>Filtros globales</h2>
+            <p class="muted small">
+              Silenciar afecta solo al color de la bolita y al icono de la
+              barra.
+            </p>
+            <label class="toggle">
+              <input type="checkbox" id="set-silence-warnings" />
+              <span
+                >Silenciar <strong>warnings</strong> en todos los grupos</span
+              >
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="set-silence-errors" />
+              <span>Silenciar <strong>errors</strong> en todos los grupos</span>
+            </label>
+            <div class="field" style="margin-top: 12px">
+              <label for="set-max-log-lines">Líneas máximas de logs</label>
+              <input
+                type="number"
+                id="set-max-log-lines"
+                min="100"
+                max="50000"
+                step="100"
+                style="width: 120px"
+              />
+              <small class="muted" style="display: block; margin-top: 4px"
+                >Por defecto para todos los procesos (100–50000). El cambio
+                aplica al reiniciar el proceso.</small
+              >
+            </div>
+          </section>
+        </section>
+
+        <!-- ── Notificaciones ─────────────────────────────────────── -->
+        <section class="config-section" data-section="notifications">
+          <h1 class="section-title">Notificaciones</h1>
+          <section class="settings-card">
+            <label class="toggle">
+              <input type="checkbox" id="set-notify-success" />
+              <span
+                >Notificar al terminar pre-scripts y acciones programadas</span
+              >
+            </label>
+            <div class="field" style="margin-top: 8px">
+              <label for="set-notify-autoclose"
+                >Cerrar notificación tras (segundos)</label
+              >
+              <input
+                type="number"
+                id="set-notify-autoclose"
+                min="0"
+                max="3600"
+                step="1"
+                style="width: 120px"
+              />
+              <small class="muted" style="display: block; margin-top: 4px"
+                >0 = permanente (hasta que la cierres). Mayor que 0 = se cierra
+                sola tras N segundos.</small
+              >
+            </div>
+            <div style="margin-top: 8px">
+              <button type="button" id="test-notification" class="small-btn">
+                Probar notificación
+              </button>
+            </div>
+          </section>
+        </section>
+
+        <!-- ── Logs ───────────────────────────────────────────────── -->
+        <section class="config-section" data-section="logs">
+          <div class="section-head">
+            <h1 class="section-title">Logs</h1>
+            <span class="spacer"></span>
+            <span id="logs-updated" class="muted small"></span>
+            <select
+              id="logs-autorefresh"
+              class="logs-autorefresh"
+              title="Auto-actualizar"
+            >
+              <option value="0">Manual</option>
+              <option value="5000">Cada 5s</option>
+              <option value="10000">Cada 10s</option>
+              <option value="30000">Cada 30s</option>
+            </select>
+            <button
+              type="button"
+              id="logs-refresh"
+              class="ghost icon-only"
+              title="Actualizar"
+              aria-label="Actualizar"
+            >
+              🔄
+            </button>
+          </div>
+          <p class="muted small" style="margin: 0 0 12px">
+            Registros capturados desde que se inició la app, por grupo y tipo.
+            Pulsa uno para abrirlo en el visor.
+          </p>
+          <div id="logs-tree"></div>
+        </section>
+
+        <!-- ── Copias de seguridad ────────────────────────────────── -->
+        <section class="config-section" data-section="backup">
+          <h1 class="section-title">Copias de seguridad</h1>
+          <section class="settings-card">
+            <p class="muted small">
+              Exporta toda la configuración a JSON o impórtala desde otra
+              máquina. Importar <strong>sobreescribe</strong> todo lo actual; se
+              guarda un backup automático.
+            </p>
+            <div class="copy-actions">
+              <button id="export-config">Exportar</button>
+              <button id="import-config">Importar</button>
+            </div>
+          </section>
+        </section>
+
+        <!-- ── Grupos ─────────────────────────────────────────────── -->
+        <section class="config-section" data-section="groups">
+          <div class="section-head">
+            <button
+              type="button"
+              id="groups-collapse"
+              class="groups-collapse"
+              title="Ocultar / mostrar la lista"
+              aria-label="Ocultar la lista de grupos"
+            >
+              ‹
+            </button>
+            <h1 class="section-title">Grupos</h1>
+            <span class="spacer"></span>
+            <button id="add-group" class="primary small-btn">+ Añadir</button>
+          </div>
+          <div class="config-two-pane" id="groups-two-pane">
+            <div class="config-left-pane">
+              <div id="groups-list" class="groups-list-nav"></div>
+            </div>
+            <div class="config-right-pane" id="group-detail">
+              <div class="detail-empty">
+                <p class="muted">Selecciona un grupo para editarlo.</p>
+              </div>
+            </div>
+          </div>
+          <div id="group-save-bar" class="group-save-bar"></div>
+        </section>
+
+        <!-- ── Acerca de ──────────────────────────────────────────── -->
+        <section class="config-section" data-section="about">
+          <h1 class="section-title">Acerca de</h1>
+          <section class="settings-card about-card">
+            <h2>DevBar</h2>
+            <div class="copy-actions">
+              <button type="button" id="about-github" class="small-btn">
+                Ver en GitHub ↗
+              </button>
+            </div>
+            <div class="updates-row" style="margin-top: 16px">
+              <button type="button" id="check-updates" class="small-btn">
+                Buscar actualizaciones
+              </button>
+              <button
+                type="button"
+                id="apply-update"
+                class="small-btn primary"
+                style="display: none"
+              ></button>
+              <span id="update-status" class="muted small"></span>
+            </div>
+          </section>
+        </section>
       </div>
     </div>
 
@@ -101,175 +287,205 @@
       <div id="icon-grid" class="icon-grid-scroll"></div>
     </div>
 
-    <!-- Command/action dialog -->
-    <dialog id="sub-dialog">
-      <div class="fake-traffic-lights">
-        <span class="light close" data-close></span>
-        <span class="light min"></span>
-        <span class="light max"></span>
-      </div>
-      <form id="sub-form" method="dialog">
+    <!-- Command/action modal -->
+    <dialog id="sub-dialog" class="modal">
+      <header class="modal-header">
         <h2 id="sub-dialog-title">Comando</h2>
-
-        <div class="field sf-icon-field">
-          <label>Icono</label>
-          <div class="sf-icon-row">
-            <button type="button" id="sf-icon-btn" class="icon-btn sf-icon-btn">
-              ⚙️
-            </button>
-            <small class="muted">(opcional)</small>
+        <span class="spacer"></span>
+        <button
+          type="button"
+          class="modal-close"
+          data-close
+          aria-label="Cerrar"
+        >
+          ×
+        </button>
+      </header>
+      <form id="sub-form" method="dialog">
+        <div class="modal-body">
+          <div class="field sf-icon-field">
+            <label>Icono</label>
+            <div class="sf-icon-row">
+              <button
+                type="button"
+                id="sf-icon-btn"
+                class="icon-btn sf-icon-btn"
+              >
+                ⚙️
+              </button>
+              <small class="muted">(opcional)</small>
+            </div>
           </div>
-        </div>
 
-        <div class="field">
-          <label for="sf-name">Nombre</label>
-          <input id="sf-name" required />
-        </div>
-        <div class="field" id="sf-command-field">
-          <label for="sf-command">Comando</label>
-          <input id="sf-command" placeholder="pnpm dev" required />
-        </div>
-        <div class="field" id="sf-args-field">
-          <label for="sf-args">Argumentos (opcional, uno por línea)</label>
-          <textarea
-            id="sf-args"
-            placeholder="solo si no los pones arriba"
-          ></textarea>
-        </div>
-        <!-- Env editor — built dynamically by config.js -->
-        <div class="field" id="sf-env-field">
-          <label>Variables de entorno</label>
-          <!-- Action-only: inheritGroupEnv toggle (hidden for commands) -->
-          <div
-            id="sf-inherit-group-env-row"
-            style="display: none; margin-bottom: 8px"
-            class="env-section-header"
-          >
-            <label class="toggle inline">
-              <input type="checkbox" id="sf-inherit-group-env" />
-              <span>Heredar variables del grupo</span>
-            </label>
-            <p
-              id="sf-inherit-group-env-hint"
-              class="muted small"
-              style="margin: 2px 0 6px 42px"
+          <div class="field">
+            <label for="sf-name">Nombre</label>
+            <input id="sf-name" required />
+          </div>
+          <div class="field" id="sf-command-field">
+            <label for="sf-command">Comando</label>
+            <input id="sf-command" placeholder="pnpm dev" required />
+          </div>
+          <div class="field" id="sf-args-field">
+            <label for="sf-args">Argumentos (opcional, uno por línea)</label>
+            <textarea
+              id="sf-args"
+              placeholder="solo si no los pones arriba"
+            ></textarea>
+          </div>
+          <!-- Env editor — built dynamically by config.js -->
+          <div class="field" id="sf-env-field">
+            <label>Variables de entorno</label>
+            <!-- Action-only: inheritGroupEnv toggle (hidden for commands) -->
+            <div
+              id="sf-inherit-group-env-row"
+              style="display: none; margin-bottom: 8px"
+              class="env-section-header"
             >
-              Cuando está activo, las variables del grupo se aplican antes que
-              las de esta acción (las de aquí pueden sobreescribir).
-            </p>
-          </div>
-          <div id="sf-env-editor"></div>
-        </div>
-
-        <!-- PreScript-only: timeout field -->
-        <div class="field" id="sf-timeout-row" style="display: none">
-          <label for="sf-timeout-secs">Timeout (segundos, opcional)</label>
-          <input
-            id="sf-timeout-secs"
-            type="number"
-            min="1"
-            max="3600"
-            step="1"
-            placeholder="vacío = sin límite"
-          />
-        </div>
-
-        <!-- PreScript-only: confirmation gate -->
-        <div class="field" id="sf-confirm-row" style="display: none">
-          <label class="toggle inline">
-            <input type="checkbox" id="sf-confirm" />
-            <span>Pedir confirmación antes de ejecutar</span>
-          </label>
-          <div
-            id="sf-confirm-details"
-            style="display: none; margin: 6px 0 0 42px"
-          >
-            <div class="field">
-              <label for="sf-confirm-on-timeout">Si expira el contador</label>
-              <select id="sf-confirm-on-timeout">
-                <option value="cancel">Cancelar</option>
-                <option value="confirm">Ejecutar</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="sf-confirm-secs"
-                >Segundos para autodecisión (vacío = sin contador)</label
+              <label class="toggle inline">
+                <input type="checkbox" id="sf-inherit-group-env" />
+                <span>Heredar variables del grupo</span>
+              </label>
+              <p
+                id="sf-inherit-group-env-hint"
+                class="muted small"
+                style="margin: 2px 0 6px 42px"
               >
-              <input
-                id="sf-confirm-secs"
-                type="number"
-                min="3"
-                max="3600"
-                step="1"
-                placeholder="60"
-              />
+                Cuando está activo, las variables del grupo se aplican antes que
+                las de esta acción (las de aquí pueden sobreescribir).
+              </p>
             </div>
+            <div id="sf-env-editor"></div>
           </div>
-        </div>
 
-        <!-- Command-only fields -->
-        <div id="cmd-only-fields">
-          <details>
-            <summary class="muted small">
-              Avanzado (regex, silencio, cwd override)
-            </summary>
-            <div class="field" style="margin-top: 8px">
-              <label for="sf-cwd"
-                >Working directory override (vacío = usar el del grupo)</label
-              >
-              <div class="input-with-action">
-                <input id="sf-cwd" placeholder="/Users/yo/subproyecto" />
-                <button
-                  type="button"
-                  id="sf-cwd-pick"
-                  class="icon-action-btn"
-                  title="Seleccionar carpeta…"
+          <!-- PreScript-only: timeout field -->
+          <div class="field" id="sf-timeout-row" style="display: none">
+            <label for="sf-timeout-secs">Timeout (segundos, opcional)</label>
+            <input
+              id="sf-timeout-secs"
+              type="number"
+              min="1"
+              max="3600"
+              step="1"
+              placeholder="vacío = sin límite"
+            />
+          </div>
+
+          <!-- PreScript-only: confirmation gate -->
+          <div class="field" id="sf-confirm-row" style="display: none">
+            <label class="toggle inline">
+              <input type="checkbox" id="sf-confirm" />
+              <span>Pedir confirmación antes de ejecutar</span>
+            </label>
+            <div
+              id="sf-confirm-details"
+              style="display: none; margin: 6px 0 0 42px"
+            >
+              <div class="field">
+                <label for="sf-confirm-on-timeout">Si expira el contador</label>
+                <select id="sf-confirm-on-timeout">
+                  <option value="cancel">Cancelar</option>
+                  <option value="confirm">Ejecutar</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="sf-confirm-secs"
+                  >Segundos para autodecisión (vacío = sin contador)</label
                 >
-                  📁
-                </button>
+                <input
+                  id="sf-confirm-secs"
+                  type="number"
+                  min="3"
+                  max="3600"
+                  step="1"
+                  placeholder="60"
+                />
               </div>
             </div>
-            <div class="field-row">
-              <div class="field">
-                <label for="sf-warn">Regex warnings</label>
-                <input id="sf-warn" />
-              </div>
-              <div class="field">
-                <label for="sf-error">Regex errors</label>
-                <input id="sf-error" />
-              </div>
+          </div>
+
+          <!-- Schedule (commands and actions) -->
+          <fieldset class="schedule-group" id="sf-schedule-group">
+            <legend>Programación</legend>
+            <label class="toggle inline">
+              <input type="checkbox" id="sf-schedule-enabled" />
+              <span>Ejecutar a una hora programada</span>
+            </label>
+            <div id="sf-schedule-details" style="margin-top: 8px">
+              <div id="sf-schedule-rules"></div>
+              <button type="button" id="sf-schedule-add" class="small-btn">
+                + Añadir horario
+              </button>
+              <small class="muted" style="display: block; margin-top: 8px">
+                Cada horario tiene su hora y sus días (sin días = todos). Si el
+                equipo estaba suspendido a esa hora, se ejecuta al despertar.
+              </small>
             </div>
-            <fieldset class="silence-group">
-              <legend>Silenciar en este comando</legend>
-              <label class="toggle inline">
-                <input type="checkbox" id="sf-silence-warn" />
-                <span>Warnings no afectan al color</span>
-              </label>
-              <label class="toggle inline">
-                <input type="checkbox" id="sf-silence-err" />
-                <span>Errors no afectan al color</span>
-              </label>
-            </fieldset>
-            <div class="field" style="margin-top: 8px">
-              <label for="sf-max-log-lines">Líneas máximas (opcional)</label>
-              <input
-                type="number"
-                id="sf-max-log-lines"
-                min="100"
-                max="50000"
-                step="100"
-                placeholder="usar global"
-                style="width: 120px"
-              />
-              <small class="muted" style="display: block; margin-top: 4px"
-                >Vacío = usar el valor global. El cambio aplica al
-                reiniciar.</small
-              >
-            </div>
-          </details>
+          </fieldset>
+
+          <!-- Command-only fields -->
+          <div id="cmd-only-fields">
+            <details>
+              <summary class="muted small">
+                Avanzado (regex, silencio, cwd override)
+              </summary>
+              <div class="field" style="margin-top: 8px">
+                <label for="sf-cwd"
+                  >Working directory override (vacío = usar el del grupo)</label
+                >
+                <div class="input-with-action">
+                  <input id="sf-cwd" placeholder="/Users/yo/subproyecto" />
+                  <button
+                    type="button"
+                    id="sf-cwd-pick"
+                    class="icon-action-btn"
+                    title="Seleccionar carpeta…"
+                  >
+                    📁
+                  </button>
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="sf-warn">Regex warnings</label>
+                  <input id="sf-warn" />
+                </div>
+                <div class="field">
+                  <label for="sf-error">Regex errors</label>
+                  <input id="sf-error" />
+                </div>
+              </div>
+              <fieldset class="silence-group">
+                <legend>Silenciar en este comando</legend>
+                <label class="toggle inline">
+                  <input type="checkbox" id="sf-silence-warn" />
+                  <span>Warnings no afectan al color</span>
+                </label>
+                <label class="toggle inline">
+                  <input type="checkbox" id="sf-silence-err" />
+                  <span>Errors no afectan al color</span>
+                </label>
+              </fieldset>
+              <div class="field" style="margin-top: 8px">
+                <label for="sf-max-log-lines">Líneas máximas (opcional)</label>
+                <input
+                  type="number"
+                  id="sf-max-log-lines"
+                  min="100"
+                  max="50000"
+                  step="100"
+                  placeholder="usar global"
+                  style="width: 120px"
+                />
+                <small class="muted" style="display: block; margin-top: 4px"
+                  >Vacío = usar el valor global. El cambio aplica al
+                  reiniciar.</small
+                >
+              </div>
+            </details>
+          </div>
         </div>
 
-        <div class="dialog-buttons">
+        <div class="modal-actions">
           <button type="button" id="sub-cancel">Cancelar</button>
           <button type="submit" class="primary">Guardar</button>
         </div>
@@ -279,6 +495,10 @@
     <div id="toast" style="display: none" class="toast"></div>
 
     <script src="dnd-helper.js"></script>
+    <script src="md-mini.js"></script>
+    <script src="modal.js"></script>
+    <script src="changelog-view.js"></script>
+    <script src="changelog.js"></script>
     <script src="config.js"></script>
   </body>
 </html>

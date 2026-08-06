@@ -25,6 +25,13 @@ body {
   --bg-card: rgba(255, 255, 255, 0.72);
   --bg-card-strong: rgba(255, 255, 255, 0.92);
   --bg-row-hover: rgba(0, 0, 0, 0.04);
+  /* Bezeled button surfaces (macOS-style depth) */
+  --btn-bg: linear-gradient(180deg, #ffffff, #f2f2f4);
+  --btn-bg-primary: linear-gradient(180deg, #3d93ff, #0a7bff);
+  --btn-shadow:
+    0 1px 1.5px rgba(0, 0, 0, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --btn-shadow-primary:
+    0 1px 2px rgba(0, 122, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,6 +43,9 @@ body {
     --bg-card: rgba(40, 40, 42, 0.7);
     --bg-card-strong: rgba(50, 50, 52, 0.9);
     --bg-row-hover: rgba(255, 255, 255, 0.05);
+    --btn-bg: linear-gradient(180deg, #4b4b4e, #3a3a3d);
+    --btn-shadow:
+      0 1px 1.5px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
   html,
   body {
@@ -104,6 +114,18 @@ body.tray {
 }
 .tray-header button.ghost.danger:hover {
   background: rgba(255, 69, 58, 0.1);
+}
+/* Icon-only header buttons (minimalist — label lives in title/aria-label). */
+.tray-header button.ghost.icon-only {
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 6px;
+}
+.tray-header button.ghost.danger.icon-only {
+  color: inherit; /* ⏻ glyph reads better neutral; hover tints it red */
+}
+.tray-header button.ghost.danger.icon-only:hover {
+  color: var(--error);
 }
 
 .alerts-summary {
@@ -232,44 +254,51 @@ body.tray {
 
 button {
   font-size: 12px;
-  padding: 4px 11px;
+  padding: 5px 12px;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--bg-card-strong);
+  border-radius: 7px;
+  background: var(--btn-bg);
   color: inherit;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.12s ease;
+  font-weight: 500;
+  box-shadow: var(--btn-shadow);
+  transition:
+    filter 0.12s ease,
+    box-shadow 0.1s ease,
+    transform 0.06s ease;
 }
 button:hover {
-  background: var(--bg-row-hover);
+  filter: brightness(0.97);
 }
 button:active {
-  transform: scale(0.98);
+  transform: translateY(0.5px);
+  filter: brightness(0.94);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 button.primary {
-  background: var(--accent);
-  border-color: transparent;
+  background: var(--btn-bg-primary);
+  border-color: rgba(0, 0, 0, 0.06);
   color: #fff;
-  font-weight: 500;
-  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
+  box-shadow: var(--btn-shadow-primary);
 }
 button.primary:hover {
-  background: #0067db;
+  filter: brightness(1.05);
 }
 button.danger {
   color: var(--error);
 }
 button.danger:hover {
-  background: rgba(255, 69, 58, 0.08);
+  filter: none;
+  background: rgba(255, 69, 58, 0.1);
 }
-@media (prefers-color-scheme: dark) {
-  button {
-    background: rgba(255, 255, 255, 0.08);
-  }
-  button:hover {
-    background: rgba(255, 255, 255, 0.12);
-  }
+/* Chromeless/icon buttons opt out of the bezel (transparent, no shadow). */
+.tray-header button.ghost,
+.modal-close,
+.counter-btn,
+.icon-btn,
+button.icon-action-btn {
+  box-shadow: none;
 }
 
 select {
@@ -313,11 +342,15 @@ select:focus {
 
 /* ---------- Config window ---------- */
 body.config {
-  padding: 0 32px 32px;
-  max-width: 880px;
-  margin: 0 auto;
+  padding: 0;
+  max-width: none;
+  margin: 0;
   background: transparent;
   -webkit-app-region: no-drag;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .config h1 {
@@ -325,6 +358,260 @@ body.config {
   font-weight: 600;
   margin: 0 0 16px;
   letter-spacing: -0.3px;
+}
+
+/* ---------- Sidebar navigation ---------- */
+.config-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.config-nav {
+  width: 210px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 12px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  transition: width 0.15s ease;
+}
+.config-nav.collapsed {
+  width: 52px;
+}
+/* Top row: running version chip + collapse toggle. */
+.nav-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 8px;
+  margin-bottom: 4px;
+}
+.nav-top .spacer {
+  flex: 1;
+}
+.nav-collapse {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 15px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.nav-collapse:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.config-nav.collapsed .nav-top {
+  justify-content: center;
+}
+.config-nav.collapsed .app-version {
+  display: none;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.nav-item:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.nav-item.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
+}
+/* macOS-style rounded colour-tinted icon tile. */
+.nav-ico {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  background: rgba(142, 142, 147, 0.18);
+}
+.nav-item[data-target='notifications'] .nav-ico {
+  background: rgba(255, 69, 58, 0.16);
+}
+.nav-item[data-target='groups'] .nav-ico {
+  background: rgba(0, 122, 255, 0.16);
+}
+.nav-item[data-target='backup'] .nav-ico {
+  background: rgba(48, 209, 88, 0.18);
+}
+.nav-item[data-target='about'] .nav-ico {
+  background: rgba(94, 92, 230, 0.16);
+}
+.nav-item.active .nav-ico {
+  background: rgba(255, 255, 255, 0.25);
+}
+.config-nav.collapsed .nav-label {
+  display: none;
+}
+.config-nav.collapsed .nav-item {
+  justify-content: center;
+  padding: 6px 0;
+}
+
+/* ---------- Section content ---------- */
+.config-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 8px 28px 28px;
+}
+.config-section {
+  display: none;
+}
+.config-section.active {
+  display: block;
+}
+/* Groups fills the height so its two-pane scrolls internally. */
+.config-section[data-section='groups'].active {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.config-section[data-section='groups'] .config-two-pane {
+  flex: 1;
+  min-height: 0;
+}
+/* Section header row (title + inline actions), used by Grupos. */
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.section-head .section-title {
+  margin: 0;
+}
+.section-head .spacer {
+  flex: 1;
+}
+.groups-collapse {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.groups-collapse:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+/* Collapsed groups list → editor takes the full width. */
+.config-two-pane.list-collapsed .config-left-pane {
+  display: none;
+}
+/* Save bar sits below the two-pane block as a footer for the whole view. */
+.group-save-bar:empty {
+  display: none;
+}
+.group-save-bar {
+  margin-top: 12px;
+}
+
+/* ---------- Logs browser ---------- */
+.logs-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card-strong);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.logs-group > summary {
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.logs-group > summary::-webkit-details-marker {
+  display: none;
+}
+.logs-group > summary::before {
+  content: '›';
+  color: var(--muted);
+  margin-right: 8px;
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.logs-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+.logs-type {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  padding: 8px 14px 2px;
+}
+.logs-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 14px;
+  cursor: pointer;
+  border-radius: 0;
+  font-size: 13px;
+  color: inherit;
+}
+.logs-item:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.logs-item-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.logs-autorefresh {
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+#logs-refresh {
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 9px;
+}
+#logs-updated {
+  font-variant-numeric: tabular-nums;
 }
 
 .table-wrap {
@@ -656,75 +943,199 @@ dialog h2 {
   letter-spacing: -0.2px;
 }
 
-/* ── Fake macOS traffic lights inside <dialog> modals ────────────
-   Only the red dot is functional (closes the dialog). Yellow/green
-   are rendered in the macOS "disabled" style — solid muted grey,
-   no hover affordance, default cursor — to signal they're inert.
-   Red shows the canonical × glyph on hover (entire group hover so
-   the dots stay friendly without flicker).                         */
-.fake-traffic-lights {
-  position: absolute;
-  top: 16px;
-  left: 18px;
+/* ── Shared modal system (renderer/modal.js) ─────────────────────────
+   One look for every in-window modal: honest × close, sticky header,
+   scrolling body, optional sticky footer actions. No fake traffic lights
+   (an HTML <dialog> can't host the native ones). Used by the changelog
+   (renderer/changelog.js) and the command editor (#sub-dialog).          */
+.modal {
+  width: 560px;
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  overflow: hidden;
+}
+/* Only lay it out when open — otherwise the UA `display:none` for a closed
+   <dialog> must win, or it lingers in normal flow after Esc/close. */
+.modal[open] {
   display: flex;
-  gap: 8px;
-  z-index: 5;
+  flex-direction: column;
 }
-.fake-traffic-lights .light {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 0.5px solid rgba(0, 0, 0, 0.18);
-  position: relative;
-  cursor: default;
-  background: #cfcfd0; /* disabled default */
+/* The host window's top strip is a drag region (-webkit-app-region: drag);
+   without this the modal paints over it but its buttons don't get clicks. */
+.modal,
+.modal * {
+  -webkit-app-region: no-drag;
 }
-@media (prefers-color-scheme: dark) {
-  .fake-traffic-lights .light {
-    background: #5b5b5d;
-    border-color: rgba(0, 0, 0, 0.4);
-  }
-}
-
-/* Red close button — the only one that's actually active. */
-.fake-traffic-lights .light.close {
-  background: #ff5f57;
-  cursor: pointer;
-}
-.fake-traffic-lights .light.close:hover {
-  background: #ff4d44;
-}
-.fake-traffic-lights:hover .light.close::after {
-  content: '×';
-  position: absolute;
-  inset: 0;
+.modal-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card-strong);
+}
+.modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.modal-header .spacer {
+  flex: 1;
+}
+.modal-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
   line-height: 1;
-  color: rgba(75, 0, 0, 0.75);
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  cursor: pointer;
+}
+.modal-close:hover {
+  background: var(--bg-row-hover);
+  color: inherit;
+}
+/* The command editor wraps its body + actions in a <form>; make it the flex
+   column so the body scrolls and the actions stay pinned. */
+.modal > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+.modal-body {
+  flex: 1;
+  min-height: 0; /* let it shrink below content so overflow-y actually scrolls */
+  overflow-y: auto;
+  padding: 16px 18px 20px;
+}
+/* Optional footer action buttons (right-aligned, pinned to the bottom). */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-card-strong);
+}
+/* Changelog-specific: the collapsible release panels inside the shared body. */
+.modal-changelog .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cl-release {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-card-strong);
+  /* In the flex-column body, panels must keep their natural height instead of
+     being squished to fit — otherwise the body never overflows and can't
+     scroll, and mixed open/collapsed panels render unevenly. */
+  flex-shrink: 0;
+}
+.cl-rel-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
   user-select: none;
 }
-
-/* Yellow + green stay flat grey on hover — they don't do anything. */
-.fake-traffic-lights .light.min,
-.fake-traffic-lights .light.max {
-  background: #cfcfd0;
+.cl-rel-summary::-webkit-details-marker {
+  display: none;
 }
-.fake-traffic-lights .light.min:hover,
-.fake-traffic-lights .light.max:hover {
-  background: #cfcfd0;
+.cl-rel-summary::before {
+  content: '›';
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 0.15s ease;
 }
-@media (prefers-color-scheme: dark) {
-  .fake-traffic-lights .light.min,
-  .fake-traffic-lights .light.max,
-  .fake-traffic-lights .light.min:hover,
-  .fake-traffic-lights .light.max:hover {
-    background: #5b5b5d;
-  }
+.cl-release[open] > .cl-rel-summary::before {
+  transform: rotate(90deg);
+}
+.cl-rel-summary:hover {
+  background: var(--bg-row-hover);
+}
+.cl-version {
+  font-weight: 600;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.cl-rel-actions {
+  padding: 2px 14px 14px;
+}
+.cl-tag {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+}
+.cl-tag.pre {
+  background: var(--warn);
+  color: #000;
+}
+.cl-date {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Rendered markdown notes */
+.cl-notes {
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 0 14px 4px;
+}
+.cl-notes h2,
+.cl-notes h3,
+.cl-notes h4 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin: 14px 0 6px;
+}
+.cl-notes ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.cl-notes li {
+  margin: 3px 0;
+}
+.cl-notes p {
+  margin: 6px 0;
+}
+.cl-notes a {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+  overflow-wrap: break-word;
+}
+.cl-notes a:hover {
+  text-decoration: underline;
+}
+.cl-notes code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: var(--bg-row-hover);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.cl-empty {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .field {
@@ -1099,12 +1510,18 @@ dialog h2 {
   padding: 2px 6px;
 }
 
+.action-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
 .action-chip {
   padding: 2px 8px;
   font-size: 11px;
   border-radius: 12px;
   border: 1px solid var(--border-strong);
   background: var(--bg-card-strong);
+  box-shadow: none;
   color: inherit;
   cursor: pointer;
   height: 24px;
@@ -1114,6 +1531,23 @@ dialog h2 {
 }
 .action-chip:hover {
   background: var(--bg-row-hover);
+  filter: none;
+}
+.action-logs-btn {
+  padding: 2px 5px;
+  font-size: 11px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.action-logs-btn:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+  color: inherit;
 }
 .action-chip.running {
   border-color: var(--running);
@@ -1178,31 +1612,35 @@ dialog h2 {
 
 .small-btn {
   font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
   border: 1px solid var(--border-strong);
-  background: var(--bg-card-strong);
+  background: var(--btn-bg);
   color: inherit;
   cursor: pointer;
+  font-weight: 500;
   white-space: nowrap;
   flex-shrink: 0;
+  box-shadow: var(--btn-shadow);
 }
 .small-btn:hover {
-  background: var(--bg-row-hover);
+  filter: brightness(0.97);
 }
 .small-btn.primary {
-  background: var(--accent);
-  border-color: transparent;
+  background: var(--btn-bg-primary);
+  border-color: rgba(0, 0, 0, 0.06);
   color: #fff;
+  box-shadow: var(--btn-shadow-primary);
 }
 .small-btn.primary:hover {
-  background: #0067db;
+  filter: brightness(1.05);
 }
 .small-btn.danger {
   color: var(--error);
 }
 .small-btn.danger:hover {
-  background: rgba(255, 69, 58, 0.08);
+  filter: none;
+  background: rgba(255, 69, 58, 0.1);
 }
 
 /* Auto-start ⚡ toggle in the commands list. OFF = muted outline,
@@ -1225,6 +1663,85 @@ dialog h2 {
 .small-btn.autostart-toggle.is-on:hover {
   background: #0067db;
   color: #fff;
+}
+
+/* Schedule 🕐 badge in the commands list — informational; opens the editor. */
+.small-btn.schedule-badge.is-on {
+  font-size: 13px;
+  line-height: 1;
+  border-color: transparent;
+  background: rgba(0, 122, 255, 0.12);
+}
+.small-btn.schedule-badge.is-on:hover {
+  background: rgba(0, 122, 255, 0.22);
+}
+
+/* Schedule editor */
+fieldset.schedule-group {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 14px 12px;
+  margin: 8px 0 16px;
+}
+fieldset.schedule-group legend {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 6px;
+  font-weight: 500;
+}
+.schedule-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.schedule-rule:first-child {
+  padding-top: 0;
+}
+.schedule-rule .rule-remove {
+  margin-left: auto;
+}
+#sf-schedule-add {
+  margin-top: 10px;
+}
+.updates-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -4px 0 16px;
+}
+
+.day-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.day-chips.rule-days {
+  margin-top: 0;
+}
+.day-chip {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card-strong);
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.day-chip:hover {
+  background: var(--bg-row-hover);
+}
+.day-chip.is-on {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
 }
 
 .groups-list-nav {
@@ -1888,19 +2405,27 @@ dialog form {
 
 /* ── App version label (tray header + config title) ───────────────────── */
 .app-version {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
-  margin-left: 6px;
-  font-weight: 400;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
-/* Inside the config window's bigger title it deserves a slightly larger
-   size so the label doesn't disappear next to a 20-px heading. */
-.config h1 .app-version {
-  font-size: 12px;
-  margin-left: 10px;
-  vertical-align: middle;
+.app-version:hover {
+  filter: none;
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
 }
 
 /* ── Counter buttons (tray command sub-row) ───────────────────────────── */
@@ -1934,25 +2459,14 @@ dialog form {
 
 /* ── Config save bar (right pane sticky bar, anchored at the bottom) ──── */
 .save-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 20px;
-  margin: 16px -20px -16px; /* full-bleed to the edges of the pane */
+  padding: 10px 14px;
   background: var(--bg-card-strong);
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 10px 10px; /* match the rounded pane corners     */
-  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.05);
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
-}
-@media (prefers-color-scheme: dark) {
-  .save-bar {
-    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.25);
-  }
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 .save-bar .save-bar-message {
   font-size: 12px;

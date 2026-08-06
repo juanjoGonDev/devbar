@@ -16,6 +16,9 @@ const setAutostart = document.getElementById('set-autostart');
 const setSilenceWarnings = document.getElementById('set-silence-warnings');
 const setSilenceErrors = document.getElementById('set-silence-errors');
 const setMaxLogLines = document.getElementById('set-max-log-lines');
+const setNotifySuccess = document.getElementById('set-notify-success');
+const setNotifyAutoclose = document.getElementById('set-notify-autoclose');
+const testNotifyBtn = document.getElementById('test-notification');
 
 // Sub-dialog fields
 const sfIconBtn = document.getElementById('sf-icon-btn');
@@ -34,6 +37,123 @@ const sfSilenceWarn = document.getElementById('sf-silence-warn');
 const sfSilenceErr = document.getElementById('sf-silence-err');
 const sfMaxLogLines = document.getElementById('sf-max-log-lines');
 const cmdOnlyFields = document.getElementById('cmd-only-fields');
+const sfScheduleGroup = document.getElementById('sf-schedule-group');
+const sfScheduleEnabled = document.getElementById('sf-schedule-enabled');
+const sfScheduleRules = document.getElementById('sf-schedule-rules');
+const sfScheduleAdd = document.getElementById('sf-schedule-add');
+const sfScheduleDetails = document.getElementById('sf-schedule-details');
+// Monday-first display order → weekday index (Sun=0..Sat=6).
+const DAY_CHIPS = [
+  { label: 'L', d: 1 },
+  { label: 'M', d: 2 },
+  { label: 'X', d: 3 },
+  { label: 'J', d: 4 },
+  { label: 'V', d: 5 },
+  { label: 'S', d: 6 },
+  { label: 'D', d: 0 },
+];
+
+/** Render the 7 weekday chips into `container`, selecting `days`. */
+function makeDayChips(container, selected) {
+  const chosen = new Set(selected || []);
+  container.innerHTML = '';
+  for (const { label, d } of DAY_CHIPS) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `day-chip${chosen.has(d) ? ' is-on' : ''}`;
+    chip.textContent = label;
+    chip.dataset.day = String(d);
+    chip.setAttribute('aria-pressed', chosen.has(d) ? 'true' : 'false');
+    chip.addEventListener('click', () => {
+      const on = chip.classList.toggle('is-on');
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    container.appendChild(chip);
+  }
+}
+
+/** Append one schedule-rule row (time + day chips + remove) to the editor. */
+function addScheduleRuleRow(rule) {
+  if (!sfScheduleRules) return;
+  const row = document.createElement('div');
+  row.className = 'schedule-rule';
+
+  const time = document.createElement('input');
+  time.type = 'time';
+  time.className = 'rule-time';
+  time.value = (rule && rule.time) || '09:00';
+  row.appendChild(time);
+
+  const days = document.createElement('div');
+  days.className = 'day-chips rule-days';
+  makeDayChips(days, (rule && rule.days) || []);
+  row.appendChild(days);
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'small-btn danger rule-remove';
+  remove.textContent = '🗑';
+  remove.title = 'Quitar este horario';
+  remove.addEventListener('click', () => row.remove());
+  row.appendChild(remove);
+
+  sfScheduleRules.appendChild(row);
+}
+
+/** Read all schedule-rule rows back into [{ time, days }]. */
+function readScheduleRules() {
+  if (!sfScheduleRules) return [];
+  return [...sfScheduleRules.querySelectorAll('.schedule-rule')].map((row) => ({
+    time: row.querySelector('.rule-time').value || '09:00',
+    days: [...row.querySelectorAll('.day-chip.is-on')]
+      .map((c) => Number(c.dataset.day))
+      .sort((a, b) => a - b),
+  }));
+}
+
+/** One-line human summary of a schedule, e.g. "09:00 LMXJV · 14:00 todos". */
+function summarizeSchedule(schedule) {
+  const rules = (schedule && schedule.rules) || [];
+  const name = (d) => ['D', 'L', 'M', 'X', 'J', 'V', 'S'][d];
+  return rules
+    .map((r) => {
+      const days =
+        r.days && r.days.length ? r.days.map(name).join('') : 'todos';
+      return `${r.time} ${days}`;
+    })
+    .join(' · ');
+}
+
+/**
+ * Show + populate the schedule editor. Available for commands and actions,
+ * hidden for pre-scripts (a prep step isn't a thing you run at a clock time).
+ */
+function setupSchedule(item, isPreScript) {
+  if (sfScheduleGroup)
+    sfScheduleGroup.style.display = isPreScript ? 'none' : '';
+  if (isPreScript) return;
+  const sched = (item && item.schedule) || {};
+  if (sfScheduleEnabled) sfScheduleEnabled.checked = !!sched.enabled;
+  if (sfScheduleRules) {
+    sfScheduleRules.innerHTML = '';
+    const rules = Array.isArray(sched.rules) ? sched.rules : [];
+    // Always show at least one row so there is something to fill in.
+    (rules.length ? rules : [{ time: '09:00', days: [] }]).forEach(
+      addScheduleRuleRow,
+    );
+  }
+  const sync = () => {
+    if (sfScheduleDetails)
+      sfScheduleDetails.style.display = sfScheduleEnabled.checked ? '' : 'none';
+  };
+  sync();
+  if (sfScheduleEnabled) sfScheduleEnabled.onchange = sync;
+}
+
+if (sfScheduleAdd)
+  sfScheduleAdd.addEventListener('click', () =>
+    addScheduleRuleRow({ time: '09:00', days: [] }),
+  );
 const sfTimeoutSecs = document.getElementById('sf-timeout-secs');
 const sfTimeoutRow = document.getElementById('sf-timeout-row');
 const sfConfirmRow = document.getElementById('sf-confirm-row');
@@ -85,6 +205,30 @@ function updateSaveBar() {
   const discardBtn = document.getElementById('detail-discard');
   if (saveBtn) saveBtn.disabled = !dirty;
   if (discardBtn) discardBtn.disabled = !dirty;
+}
+
+/**
+ * The single validated save path for the selected group's draft. Every place
+ * that persists a group (save bar, group-switch "guardar", window-close
+ * "guardar") MUST go through here so validation is consistent — otherwise the
+ * discard-dialog "guardar" would smuggle an invalid group past the checks the
+ * save bar enforces.
+ *
+ * Returns the saved group on success, or null if validation failed (the toast
+ * is already shown; callers must abort any follow-up like switching or closing).
+ * Throws only on an unexpected IPC error, which callers surface as a toast.
+ */
+async function saveDraft() {
+  if (!draftGroup) return null;
+  if (!draftGroup.path) {
+    showToast('El path no puede estar vacío', 'error');
+    return null;
+  }
+  const savedGroup = await window.api.saveGroup(draftGroup);
+  storedGroup = JSON.parse(JSON.stringify(savedGroup || draftGroup));
+  const idx = allGroups.findIndex((g) => g.id === storedGroup.id);
+  if (idx >= 0) allGroups[idx] = storedGroup;
+  return savedGroup || storedGroup;
 }
 
 // ────────────────────── Toast ──────────────────────────────────────────
@@ -310,7 +454,8 @@ function buildGroupNavCard(group) {
       if (choice === 'cancel') return;
       if (choice === 'save') {
         try {
-          await window.api.saveGroup(draftGroup);
+          const saved = await saveDraft();
+          if (!saved) return; // empty path — abort switch, stay on this group
           await loadGroups();
         } catch (err) {
           showToast(`Error: ${err.message}`, 'error');
@@ -337,9 +482,11 @@ function renderGroupDetail() {
   }
 
   const group = draftGroup;
+  const saveBarHost = document.getElementById('group-save-bar');
   if (!group) {
     groupDetailEl.innerHTML =
       '<div class="detail-empty"><p class="muted">Selecciona un grupo para editarlo.</p></div>';
+    if (saveBarHost) saveBarHost.innerHTML = '';
     return;
   }
 
@@ -374,18 +521,12 @@ function renderGroupDetail() {
   saveBarBtn.disabled = true;
   saveBarBtn.addEventListener('click', async () => {
     if (!isDirty()) return;
-    if (!draftGroup.path) {
-      showToast('El path no puede estar vacío', 'error');
-      return;
-    }
     try {
-      const savedGroup = await window.api.saveGroup(draftGroup);
-      storedGroup = JSON.parse(JSON.stringify(savedGroup || draftGroup));
-      const idx = allGroups.findIndex((g) => g.id === storedGroup.id);
-      if (idx >= 0) allGroups[idx] = storedGroup;
+      const savedGroup = await saveDraft();
+      if (!savedGroup) return; // validation failed — toast already shown
       updateSaveBar();
       renderGroupsList();
-      if (savedGroup && savedGroup._autoStartEnforced) {
+      if (savedGroup._autoStartEnforced) {
         showToast(
           'Grupo guardado · Auto-arranque desactivado al cambiar a single',
           'ok',
@@ -593,9 +734,13 @@ function renderGroupDetail() {
 
   groupDetailEl.appendChild(btnRow);
 
-  // Append the sticky save bar AFTER all other pane content so its
-  // sticky-bottom anchoring sits at the bottom of the scrolling viewport.
-  groupDetailEl.appendChild(saveBar);
+  // The save bar lives OUTSIDE the editor pane (below the whole two-pane
+  // block) so it reads as a footer for the Grupos view, not part of the
+  // scrolling editor.
+  if (saveBarHost) {
+    saveBarHost.innerHTML = '';
+    saveBarHost.appendChild(saveBar);
+  }
 
   // Apply initial save bar state
   updateSaveBar();
@@ -969,6 +1114,25 @@ function buildSubItemRow(item, kind, groupId) {
     actions.appendChild(autoBtn);
   }
 
+  // Schedule indicator — commands and actions. Click opens the editor where the
+  // schedule lives.
+  if (
+    (kind === 'command' || kind === 'action') &&
+    item.schedule &&
+    item.schedule.enabled &&
+    (item.schedule.rules || []).length > 0
+  ) {
+    const schedBtn = document.createElement('button');
+    schedBtn.className = 'small-btn schedule-badge is-on';
+    schedBtn.textContent = '🕐';
+    schedBtn.title = `Programado: ${summarizeSchedule(item.schedule)} — click para editar`;
+    schedBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openSubDialog(item, kind, groupId);
+    });
+    actions.appendChild(schedBtn);
+  }
+
   const editBtn = document.createElement('button');
   editBtn.textContent = '✎';
   editBtn.title = 'Editar';
@@ -1045,8 +1209,8 @@ function openSubDialog(item, kind, groupId, stepId) {
     sfTimeoutSecs.value =
       item && item.timeoutMs ? Math.round(item.timeoutMs / 1000) : '';
 
-  // PreScript-only: confirmation gate
-  if (sfConfirmRow) sfConfirmRow.style.display = isPreScript ? '' : 'none';
+  // Confirmation gate — available for commands, actions and pre-scripts.
+  if (sfConfirmRow) sfConfirmRow.style.display = '';
   if (sfConfirm) {
     sfConfirm.checked = !!(item && item.confirm);
     if (sfConfirmOnTimeout) {
@@ -1078,6 +1242,9 @@ function openSubDialog(item, kind, groupId, stepId) {
       sfMaxLogLines.value =
         item && item.maxLogLines != null ? item.maxLogLines : '';
   }
+
+  // Schedule editor — commands and actions, not pre-scripts.
+  setupSchedule(item, isPreScript);
 
   subDialogCallback = async (data) => {
     try {
@@ -1112,6 +1279,10 @@ function openSubDialog(item, kind, groupId, stepId) {
           // Preserve existing autoStart — the toggle for it lives in the
           // commands list now, not in this dialog.
           autoStart: item ? !!item.autoStart : false,
+          schedule: data.schedule,
+          confirm: data.confirm,
+          confirmSecs: data.confirmSecs,
+          confirmOnTimeout: data.confirmOnTimeout,
           // Preserve silenced patterns
           silencedPatterns: item
             ? item.silencedPatterns
@@ -1127,6 +1298,10 @@ function openSubDialog(item, kind, groupId, stepId) {
           args: data.args,
           env: data.env,
           inheritGroupEnv: data.inheritGroupEnv,
+          schedule: data.schedule,
+          confirm: data.confirm,
+          confirmSecs: data.confirmSecs,
+          confirmOnTimeout: data.confirmOnTimeout,
         };
         await window.api.saveAction(groupId, payload);
       }
@@ -1214,6 +1389,10 @@ subForm.addEventListener('submit', async (e) => {
     confirm: sfConfirm ? sfConfirm.checked : false,
     confirmSecs,
     confirmOnTimeout: sfConfirmOnTimeout ? sfConfirmOnTimeout.value : 'cancel',
+    schedule: {
+      enabled: sfScheduleEnabled ? sfScheduleEnabled.checked : false,
+      rules: readScheduleRules(),
+    },
   };
   subDialog.close();
   if (subDialogCallback) await subDialogCallback(data);
@@ -1224,15 +1403,214 @@ document.getElementById('sub-cancel').addEventListener('click', (e) => {
   subDialog.close();
 });
 
-// Wire fake traffic-light close buttons on all <dialog> elements
-document
-  .querySelectorAll('.fake-traffic-lights .light.close')
-  .forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const d = btn.closest('dialog');
-      if (d && d.open) d.close();
-    });
+// Shared modal chrome (honest × / Esc / backdrop) for the command editor.
+wireModal(subDialog);
+
+// ────────────────────── Sidebar navigation ─────────────────────────────
+const configNav = document.getElementById('config-nav');
+const navItems = [...document.querySelectorAll('.nav-item')];
+const sections = [...document.querySelectorAll('.config-section')];
+
+function showSection(target) {
+  navItems.forEach((b) =>
+    b.classList.toggle('active', b.dataset.target === target),
+  );
+  sections.forEach((s) =>
+    s.classList.toggle('active', s.dataset.section === target),
+  );
+  if (target === 'logs') {
+    renderLogsTree();
+    startLogsAutoRefresh();
+  } else {
+    stopLogsAutoRefresh();
+  }
+  try {
+    localStorage.setItem('config-section', target);
+  } catch {
+    /* localStorage unavailable — session-only nav is fine */
+  }
+}
+
+// ────────────────────── Logs browser ───────────────────────────────────
+const LOG_TYPE_LABEL = {
+  command: 'Comandos',
+  action: 'Acciones',
+  prescript: 'Pre-scripts',
+  pipeline: 'Pipeline',
+};
+const LOG_TYPE_ORDER = ['command', 'action', 'prescript', 'pipeline'];
+// Remember which group panels the user collapsed so auto-refresh doesn't
+// re-open them under the cursor.
+const logsGroupOpen = new Map();
+
+function setLogsUpdatedNow() {
+  const el = document.getElementById('logs-updated');
+  if (el) el.textContent = `Actualizado ${new Date().toLocaleTimeString()}`;
+}
+
+async function renderLogsTree() {
+  const host = document.getElementById('logs-tree');
+  if (!host) return;
+  if (!host.children.length) {
+    host.innerHTML = '<p class="muted small">Cargando…</p>';
+  }
+  const groups = (await window.api.listLogs()) || [];
+  setLogsUpdatedNow();
+  if (!groups.length) {
+    host.innerHTML =
+      '<p class="muted small">Todavía no hay logs. Se registran al ejecutar comandos, acciones o pre-scripts.</p>';
+    return;
+  }
+  host.innerHTML = '';
+  for (const g of groups) {
+    const details = document.createElement('details');
+    details.className = 'logs-group';
+    details.open = logsGroupOpen.has(g.groupId)
+      ? logsGroupOpen.get(g.groupId)
+      : true;
+    details.addEventListener('toggle', () =>
+      logsGroupOpen.set(g.groupId, details.open),
+    );
+    const summary = document.createElement('summary');
+    summary.textContent = g.groupName;
+    details.appendChild(summary);
+
+    const byType = {};
+    for (const it of g.items) (byType[it.type] ||= []).push(it);
+    for (const type of LOG_TYPE_ORDER) {
+      const items = byType[type];
+      if (!items || !items.length) continue;
+      const label = document.createElement('div');
+      label.className = 'logs-type';
+      label.textContent = LOG_TYPE_LABEL[type];
+      details.appendChild(label);
+      for (const it of items) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'logs-item';
+        row.title = 'Abrir en el visor de logs';
+        const name = document.createElement('span');
+        name.className = 'logs-item-name';
+        name.textContent = it.name;
+        const count = document.createElement('span');
+        count.className = 'logs-item-count muted';
+        count.textContent = `${it.lineCount} línea${it.lineCount === 1 ? '' : 's'}`;
+        row.append(name, count);
+        row.addEventListener('click', () => window.api.openLogs(it.id));
+        details.appendChild(row);
+      }
+    }
+    host.appendChild(details);
+  }
+}
+
+const logsRefreshBtn = document.getElementById('logs-refresh');
+if (logsRefreshBtn) logsRefreshBtn.addEventListener('click', renderLogsTree);
+
+// Auto-refresh (Manual / 5s / 10s / 30s). Runs only while the Logs section is
+// open; the interval is torn down when leaving it (see showSection).
+let _logsRefreshTimer = null;
+const logsAutoSel = document.getElementById('logs-autorefresh');
+
+function stopLogsAutoRefresh() {
+  if (_logsRefreshTimer) {
+    clearInterval(_logsRefreshTimer);
+    _logsRefreshTimer = null;
+  }
+}
+function startLogsAutoRefresh() {
+  stopLogsAutoRefresh();
+  const ms = logsAutoSel ? Number(logsAutoSel.value) || 0 : 0;
+  if (ms > 0) _logsRefreshTimer = setInterval(renderLogsTree, ms);
+}
+if (logsAutoSel) {
+  try {
+    const saved = localStorage.getItem('logs-autorefresh');
+    if (saved !== null) logsAutoSel.value = saved;
+  } catch {
+    /* ignore */
+  }
+  logsAutoSel.addEventListener('change', () => {
+    try {
+      localStorage.setItem('logs-autorefresh', logsAutoSel.value);
+    } catch {
+      /* ignore */
+    }
+    startLogsAutoRefresh();
   });
+}
+navItems.forEach((b) =>
+  b.addEventListener('click', () => showSection(b.dataset.target)),
+);
+
+const navCollapse = document.getElementById('nav-collapse');
+function setNavCollapsed(on) {
+  configNav.classList.toggle('collapsed', on);
+  navCollapse.textContent = on ? '›' : '‹';
+  try {
+    localStorage.setItem('config-nav-collapsed', on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+navCollapse.addEventListener('click', () =>
+  setNavCollapsed(!configNav.classList.contains('collapsed')),
+);
+
+// Restore persisted nav state.
+try {
+  const saved = localStorage.getItem('config-section');
+  if (saved && navItems.some((b) => b.dataset.target === saved)) {
+    showSection(saved);
+  }
+  setNavCollapsed(localStorage.getItem('config-nav-collapsed') === '1');
+} catch {
+  /* ignore */
+}
+
+const aboutGithub = document.getElementById('about-github');
+if (aboutGithub) {
+  aboutGithub.addEventListener('click', () =>
+    window.api.openExternal('https://github.com/juanjoGonDev/devbar'),
+  );
+}
+
+// Collapsible groups list (focus the editor by hiding the list).
+const groupsCollapse = document.getElementById('groups-collapse');
+const groupsTwoPane = document.getElementById('groups-two-pane');
+function setGroupsListCollapsed(on) {
+  groupsTwoPane.classList.toggle('list-collapsed', on);
+  groupsCollapse.textContent = on ? '›' : '‹';
+  try {
+    localStorage.setItem('groups-list-collapsed', on ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+if (groupsCollapse && groupsTwoPane) {
+  groupsCollapse.addEventListener('click', () =>
+    setGroupsListCollapsed(!groupsTwoPane.classList.contains('list-collapsed')),
+  );
+  try {
+    setGroupsListCollapsed(
+      localStorage.getItem('groups-list-collapsed') === '1',
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+// Deep-link from the tray version chip: jump to "Acerca de" + open changelog.
+if (window.api.onConfigGoto) {
+  window.api.onConfigGoto((target) => {
+    if (target === 'about' || target === 'about-changelog')
+      showSection('about');
+    if (target === 'about-changelog') {
+      const el = document.getElementById('app-version');
+      window.openChangelog(el ? el.textContent.replace(/^v/, '') : '');
+    }
+  });
+}
 
 // ────────────────────── Icon picker ────────────────────────────────────
 
@@ -1472,17 +1850,33 @@ async function loadSettings() {
   setSilenceErrors.checked = !!s.silenceErrors;
   if (setMaxLogLines)
     setMaxLogLines.value = s.maxLogLines != null ? s.maxLogLines : 2000;
+  if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
+  if (setNotifyAutoclose)
+    setNotifyAutoclose.value =
+      s.notifyAutoCloseSecs != null ? s.notifyAutoCloseSecs : 5;
+}
+
+if (testNotifyBtn) {
+  testNotifyBtn.addEventListener('click', async () => {
+    await window.api.testNotification();
+    showToast('Banner de prueba mostrado', 'ok');
+  });
 }
 
 async function persistSettings() {
   const maxLogLinesRaw = setMaxLogLines ? setMaxLogLines.value : '';
   const maxLogLines =
     maxLogLinesRaw === '' ? 2000 : Number(maxLogLinesRaw) || 2000;
+  const autocloseRaw = setNotifyAutoclose ? setNotifyAutoclose.value : '';
+  const notifyAutoCloseSecs =
+    autocloseRaw === '' ? 0 : Number(autocloseRaw) || 0;
   await window.api.saveSettings({
     autostart: setAutostart.checked,
     silenceWarnings: setSilenceWarnings.checked,
     silenceErrors: setSilenceErrors.checked,
     maxLogLines,
+    notifySuccess: setNotifySuccess ? setNotifySuccess.checked : true,
+    notifyAutoCloseSecs,
   });
   showToast('Ajustes guardados', 'ok');
 }
@@ -1493,6 +1887,12 @@ setSilenceErrors.addEventListener('change', persistSettings);
 if (setMaxLogLines) {
   setMaxLogLines.addEventListener('change', persistSettings);
   setMaxLogLines.addEventListener('blur', persistSettings);
+}
+if (setNotifySuccess)
+  setNotifySuccess.addEventListener('change', persistSettings);
+if (setNotifyAutoclose) {
+  setNotifyAutoclose.addEventListener('change', persistSettings);
+  setNotifyAutoclose.addEventListener('blur', persistSettings);
 }
 
 // ────────────────────── Backup / Restore ───────────────────────────────
@@ -1601,7 +2001,12 @@ if (window.api.onConfigCloseRequested) {
     }
     if (choice === 'save') {
       try {
-        await window.api.saveGroup(draftGroup);
+        const saved = await saveDraft();
+        if (!saved) {
+          // empty path — don't close; let the user fix it first
+          _closingGuard = false;
+          return;
+        }
       } catch (err) {
         showToast(`Error: ${err.message}`, 'error');
         _closingGuard = false;
@@ -1615,6 +2020,75 @@ if (window.api.onConfigCloseRequested) {
   });
 }
 
+// ────────────────────── Updates ─────────────────────────────────────────
+
+const checkUpdatesBtn = document.getElementById('check-updates');
+const applyUpdateBtn = document.getElementById('apply-update');
+const updateStatusEl = document.getElementById('update-status');
+let _currentVersion = '';
+
+function renderUpdateStatus(s) {
+  if (!s || !updateStatusEl) return;
+  if (s.currentVersion) _currentVersion = s.currentVersion;
+  const last = s.lastCheckAt
+    ? new Date(s.lastCheckAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'nunca';
+  updateStatusEl.textContent = s.available
+    ? `Actualización v${s.available.version} disponible · última búsqueda ${last}`
+    : `Al día · última búsqueda ${last}`;
+  if (applyUpdateBtn) {
+    if (s.available) {
+      applyUpdateBtn.style.display = '';
+      applyUpdateBtn.textContent = `Actualizar a v${s.available.version}`;
+    } else {
+      applyUpdateBtn.style.display = 'none';
+    }
+  }
+}
+
+if (applyUpdateBtn) {
+  applyUpdateBtn.addEventListener('click', async () => {
+    applyUpdateBtn.disabled = true;
+    try {
+      const res = await window.api.applyUpdate();
+      if (res && res.ok) showToast('Descargando actualización…', 'ok');
+      else if (res && !res.cancelled)
+        showToast(
+          `No se pudo actualizar: ${res.error || 'desconocido'}`,
+          'error',
+        );
+    } finally {
+      applyUpdateBtn.disabled = false;
+    }
+  });
+}
+
+if (checkUpdatesBtn) {
+  checkUpdatesBtn.addEventListener('click', async () => {
+    checkUpdatesBtn.disabled = true;
+    const prev = checkUpdatesBtn.textContent;
+    checkUpdatesBtn.textContent = 'Buscando…';
+    try {
+      renderUpdateStatus(await window.api.checkForUpdates());
+    } finally {
+      checkUpdatesBtn.textContent = prev;
+      checkUpdatesBtn.disabled = false;
+    }
+  });
+}
+
+if (window.api && window.api.getUpdateStatus) {
+  window.api
+    .getUpdateStatus()
+    .then(renderUpdateStatus)
+    .catch(() => {});
+  // Live refresh from the automatic 5-minute checks.
+  window.api.onUpdateStatus(renderUpdateStatus);
+}
+
 // ────────────────────── Init ───────────────────────────────────────────
 
 loadSettings();
@@ -1626,7 +2100,10 @@ if (window.api && window.api.getAppVersion) {
     .getAppVersion()
     .then((v) => {
       const el = document.getElementById('app-version');
-      if (el && v) el.textContent = `v${v}`;
+      if (el && v) {
+        el.textContent = `v${v}`;
+        el.addEventListener('click', () => window.openChangelog(v));
+      }
     })
     .catch(() => {
       /* leave the label empty on failure */

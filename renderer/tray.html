@@ -13,21 +13,40 @@
     <div class="tray-header sticky">
       <div class="tray-header-row">
         <h1>DevBar</h1>
-        <span
+        <button
           id="app-version"
           class="app-version"
-          title="Versión DevBar"
-        ></span>
+          type="button"
+          title="Ver changelog"
+        ></button>
         <span id="alerts-summary" class="alerts-summary"></span>
         <span class="spacer"></span>
-        <button id="open-config" class="ghost">Configuración…</button>
-        <button id="quit-app" class="ghost danger">Salir</button>
+        <button
+          id="open-config"
+          class="ghost icon-only"
+          title="Configuración"
+          aria-label="Configuración"
+        >
+          ⚙️
+        </button>
+        <button
+          id="quit-app"
+          class="ghost danger icon-only"
+          title="Salir"
+          aria-label="Salir"
+        >
+          ⏻
+        </button>
       </div>
     </div>
     <div id="groups" class="groups-list"></div>
     <div id="toast" style="display: none" class="toast"></div>
     <script src="format-uptime.js"></script>
     <script src="combobox.js"></script>
+    <script src="md-mini.js"></script>
+    <script src="modal.js"></script>
+    <script src="changelog-view.js"></script>
+    <script src="changelog.js"></script>
     <script src="tray.js"></script>
   </body>
 </html>

@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 const crypto = require('crypto');
 const {
   app,
@@ -10,10 +11,12 @@ const {
   Menu,
   screen,
   dialog,
-  Notification,
   shell,
+  powerMonitor,
+  nativeTheme,
 } = require('electron');
 const { menubar } = require('menubar');
+const { isDue } = require('./scheduler');
 
 const configStore = require('./config-store');
 const { validateImportedConfig, summarizeImport } = require('./config-io');
@@ -21,7 +24,7 @@ const { ProcessManager, deriveColor } = require('./process-manager');
 const gitManager = require('./git-manager');
 const trayIcon = require('./tray-icon');
 const logger = require('./logger');
-const { checkForUpdate } = require('./update-check');
+const { checkForUpdate, fetchReleases } = require('./update-check');
 const { aggregateColor } = trayIcon;
 const { loadShellPath, expandTilde } = require('./path-helper');
 const { RepoWatcher } = require('./repo-watcher');
@@ -131,12 +134,41 @@ function confirmScript(script, group, groupId) {
   return result;
 }
 
+/**
+ * Gate a command/action start behind its optional confirmation modal.
+ * Returns true to proceed, false if the user (or the timeout default) declined.
+ * `target` is a normalized command or action carrying confirm/confirmSecs/
+ * confirmOnTimeout. Reuses the pre-script confirm modal + serial queue, so
+ * manual and scheduled starts share one dialog UX. For scheduled runs with
+ * nobody watching, confirmOnTimeout decides after the countdown.
+ */
+function confirmIfNeeded(target, group, groupId) {
+  if (!target || !target.confirm) return Promise.resolve(true);
+  return confirmScript(
+    {
+      name: target.name,
+      command: target.command,
+      args: target.args,
+      confirmSecs: target.confirmSecs,
+      confirmOnTimeout: target.confirmOnTimeout,
+    },
+    group,
+    groupId,
+  );
+}
+
 const preScriptRunner = createPreScriptRunner({
   processManager,
   configStore,
   broadcastUpdate: () => broadcast(),
   onError: (err, _ctx) => {
     broadcastToast('error', `Pre-scripts: ${err}`);
+  },
+  onSuccess: ({ group }) => {
+    showCompletionNotification(
+      'DevBar — pre-scripts',
+      `${group ? group.name : 'Grupo'}: pre-scripts completados`,
+    );
   },
   confirmScript,
   cancelConfirm,
@@ -150,10 +182,20 @@ const repoWatcher = new RepoWatcher();
 
 // GitHub repo to check for newer releases, and the result once found.
 const UPDATE_REPO = { owner: 'juanjoGonDev', repo: 'devbar' };
-let availableUpdate = null; // { version, url } when a newer release exists
+let availableUpdate = null; // { version, url, dmgUrl, zipUrl } when newer exists
+let lastUpdateCheckAt = null; // ISO of the last completed release check
+let updateNotifiedThisLaunch = false; // banner shown at most once per launch
 
 // Group-level transient errors (not persisted)
 const groupErrors = new Map();
+
+// Last pre-script pipeline run id per group. Kept beyond the recent-result
+// badge TTL so the tray can still open that run's (still-retained) log buffer.
+const lastPreScriptRunId = new Map();
+
+// Action pids started by the scheduler, awaiting their action:done so we can
+// fire a completion notification (manual runs don't notify — you're watching).
+const scheduledActionPids = new Set();
 
 // Pending import payloads — keyed by opaque token (5-min TTL)
 // Prevents renderer from smuggling an unvalidated payload to applyImport.
@@ -247,11 +289,17 @@ function snapshotGroupStates() {
       recentResult && recentResult.status === 'error'
         ? recentResult.error
         : null;
-    const preScriptsLastRunId = runState
+    // The live run id (running / within the recent-result TTL). Persist it per
+    // group so the tray's "ver logs del pipeline" button survives after the
+    // status badge clears — the aggregator log buffer itself outlives the badge.
+    const liveRunId = runState
       ? String(runState.runId)
       : recentResult
         ? String(recentResult.runId)
         : null;
+    if (liveRunId) lastPreScriptRunId.set(group.id, liveRunId);
+    const preScriptsLastRunId =
+      liveRunId || lastPreScriptRunId.get(group.id) || null;
 
     return {
       groupId: group.id,
@@ -290,6 +338,101 @@ function broadcastToast(kind, message) {
   }
 }
 
+// ── In-app completion banner ────────────────────────────────────────────
+// Native macOS notifications need a Developer-ID-signed app to register, which
+// this unsigned build is not — they silently never appear. So we draw our own
+// small always-on-top banner instead. No OS permission, works in dev and
+// packaged, and honours the duration setting natively could not:
+//   notifyAutoCloseSecs === 0 → permanent (until clicked)
+//   notifyAutoCloseSecs  >  0 → auto-dismiss after N seconds
+// ponytail: single-slot — a new banner replaces the current one; no stacking.
+let notificationWindow = null;
+let notificationTimer = null;
+
+function closeNotificationWindow() {
+  if (notificationTimer) {
+    clearTimeout(notificationTimer);
+    notificationTimer = null;
+  }
+  const win = notificationWindow;
+  notificationWindow = null;
+  if (win && !win.isDestroyed()) win.close();
+}
+
+/**
+ * Display the user is actually looking at: the focused window's screen, else
+ * the screen under the cursor. Using the PRIMARY display made banners always
+ * pop on the built-in screen and, worse, yanked the active Space away from a
+ * config window living on a second display.
+ */
+function activeDisplay() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) {
+    return screen.getDisplayMatching(focused.getBounds());
+  }
+  return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+}
+
+function showBannerNotification(title, body, { cta } = {}) {
+  closeNotificationWindow(); // replace any visible banner
+  const secs = configStore.getGlobalSettings().notifyAutoCloseSecs;
+  const width = 360;
+  const height = 76;
+  const margin = 12;
+  const wa = activeDisplay().workArea;
+  const win = new BrowserWindow({
+    width,
+    height,
+    x: wa.x + wa.width - width - margin,
+    y: wa.y + margin,
+    frame: false,
+    resizable: false,
+    movable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    fullscreenable: false,
+    minimizable: false,
+    maximizable: false,
+    show: false,
+    transparent: true,
+    hasShadow: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  const query = { title, body, secs: String(secs) };
+  if (cta && cta.label && cta.action) {
+    query.cta = cta.label;
+    query.action = cta.action;
+  }
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'notification.html'), {
+    query,
+  });
+  win.once('ready-to-show', () => win.showInactive()); // never steal focus
+  win.on('closed', () => {
+    if (notificationWindow === win) notificationWindow = null;
+  });
+  notificationWindow = win;
+
+  // Main owns the authoritative close timer; the renderer bar is cosmetic.
+  if (secs > 0)
+    notificationTimer = setTimeout(closeNotificationWindow, secs * 1000);
+}
+
+/**
+ * Completion banner for pre-scripts and scheduled actions, gated by the global
+ * `notifySuccess` toggle.
+ */
+function showCompletionNotification(title, body) {
+  if (!configStore.getGlobalSettings().notifySuccess) return;
+  showBannerNotification(title, body);
+}
+
 function rendererTargets() {
   const targets = [];
   if (mb && mb.window && !mb.window.isDestroyed())
@@ -324,7 +467,7 @@ function buildTrayContextMenu() {
   if (availableUpdate) {
     items.push({
       label: `⬆︎ Actualizar a v${availableUpdate.version}…`,
-      click: () => shell.openExternal(availableUpdate.url),
+      click: () => applyUpdate(),
     });
     items.push({ type: 'separator' });
   }
@@ -355,24 +498,125 @@ function buildTrayContextMenu() {
   return Menu.buildFromTemplate(items);
 }
 
-// Check GitHub for a newer release; on first discovery, notify the user.
-// The "Actualizar a vX" item lives in the tray right-click menu thereafter.
-async function runUpdateCheck() {
+function broadcastUpdateStatus() {
+  const payload = {
+    available: availableUpdate,
+    lastCheckAt: lastUpdateCheckAt,
+  };
+  for (const wc of rendererTargets()) wc.send('updates:status', payload);
+}
+
+/**
+ * Check GitHub for a newer release. Notifies via our own banner (native needs
+ * signing), kept NON-insistent: at most once per launch from the automatic
+ * loop, or on a manual check, and never while the config window is focused —
+ * a manual check surfaces its result inline in config instead.
+ */
+async function runUpdateCheck({ manual = false } = {}) {
   const found = await checkForUpdate({
     ...UPDATE_REPO,
     currentVersion: app.getVersion(),
   });
-  if (!found) return;
-  const isNew = !availableUpdate || availableUpdate.version !== found.version;
-  availableUpdate = found;
-  if (isNew && Notification.isSupported()) {
-    const n = new Notification({
-      title: 'DevBar — actualización disponible',
-      body: `v${found.version} está lista. Click para descargar.`,
-    });
-    n.on('click', () => shell.openExternal(found.url));
-    n.show();
+  lastUpdateCheckAt = new Date().toISOString();
+  availableUpdate = found || null;
+  if (found) {
+    const configFocused =
+      configWindow && !configWindow.isDestroyed() && configWindow.isFocused();
+    if ((manual || !updateNotifiedThisLaunch) && !configFocused) {
+      updateNotifiedThisLaunch = true;
+      showBannerNotification(
+        'DevBar — actualización',
+        `v${found.version} disponible.`,
+        { cta: { label: 'Ver', action: 'open-about' } },
+      );
+    }
   }
+  broadcastUpdateStatus();
+  return { available: availableUpdate, lastCheckAt: lastUpdateCheckAt };
+}
+
+/** Stream a URL to `dest`, following GitHub's asset redirects. */
+function downloadFile(url, dest, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      url,
+      { headers: { 'User-Agent': 'DevBar-Updater' } },
+      (res) => {
+        const { statusCode, headers } = res;
+        if (
+          [301, 302, 303, 307, 308].includes(statusCode) &&
+          headers.location
+        ) {
+          res.resume();
+          if (redirects <= 0) return reject(new Error('too many redirects'));
+          return resolve(downloadFile(headers.location, dest, redirects - 1));
+        }
+        if (statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${statusCode}`));
+        }
+        const file = fs.createWriteStream(dest);
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve(dest)));
+        file.on('error', reject);
+      },
+    );
+    req.on('error', reject);
+    req.setTimeout(120000, () => req.destroy(new Error('download timeout')));
+  });
+}
+
+/**
+ * Assisted update: confirm (no timeout) → download the .dmg to Downloads →
+ * open it so the user drags DevBar to Applications. Falls back to opening the
+ * release page if there's no dmg asset or the download fails. The app is
+ * unsigned, so a fully silent swap isn't reliable — this is the robust path.
+ */
+async function applyUpdate() {
+  if (!availableUpdate) return { ok: false, error: 'no_update' };
+  const { version, dmgUrl, url } = availableUpdate;
+  const owner =
+    configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
+  let res;
+  try {
+    res = await dialog.showMessageBox(owner, {
+      type: 'question',
+      buttons: ['Cancelar', 'Actualizar'],
+      defaultId: 1,
+      cancelId: 0,
+      message: `Actualizar a DevBar v${version}`,
+      detail: dmgUrl
+        ? 'Se descargará el instalador y se abrirá. Arrastra DevBar a Aplicaciones (sustituyendo la anterior) para completar.'
+        : 'Se abrirá la página de la release para descargar la nueva versión.',
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  if (res.response !== 1) return { ok: false, cancelled: true };
+
+  if (!dmgUrl) {
+    shell.openExternal(url);
+    return { ok: true, opened: 'page' };
+  }
+
+  const dest = path.join(
+    app.getPath('downloads'),
+    `DevBar-${version}-macos-${process.arch}.dmg`,
+  );
+  showBannerNotification('DevBar — actualización', `Descargando v${version}…`);
+  try {
+    await downloadFile(dmgUrl, dest);
+  } catch (err) {
+    broadcastToast('error', `Descarga falló: ${err.message}`);
+    shell.openExternal(url); // fall back to the release page
+    return { ok: false, error: err.message, fellBack: true };
+  }
+  await shell.openPath(dest); // mount the dmg → Finder drag window
+  showBannerNotification(
+    'DevBar — actualización',
+    `v${version} descargada. Arrastra DevBar a Aplicaciones.`,
+  );
+  return { ok: true, path: dest };
 }
 
 function ensureSilencedWindow(groupId, commandId) {
@@ -403,7 +647,8 @@ function ensureSilencedWindow(groupId, commandId) {
     },
   });
   win.setMenuBarVisibility(false);
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // NOT visible-on-all-workspaces (see logs/config): avoids the secondary-display
+  // minimize-everything quirk for accessory-app windows.
   win.loadFile(path.join(__dirname, '..', 'renderer', 'silenced.html'), {
     query: { groupId, commandId },
   });
@@ -431,11 +676,14 @@ function syncRepoWatchers() {
   repoWatcher.sync(paths);
 }
 
+let lastTrayColor = 'stopped'; // remembered so a theme flip can re-render
+
 function updateTrayTitle(payload) {
   if (!mb || !mb.tray) return;
   // Pass per-group color objects to aggregateColor
   const colorStubs = payload.map((gs) => ({ color: gs.color }));
   const overall = aggregateColor(colorStubs);
+  lastTrayColor = overall;
   try {
     mb.tray.setImage(trayIcon.loadIcon(overall));
   } catch (err) {
@@ -458,11 +706,18 @@ function updateTrayTitle(payload) {
 }
 
 function adaptiveSize(maxW, maxH, marginW = 60, marginH = 100) {
-  const display = screen.getPrimaryDisplay();
-  const wa = display.workArea;
+  // Size AND place on the active display (focused window's / cursor's screen),
+  // not the primary one — otherwise opening a window (e.g. a log viewer) from a
+  // config window living on a second display makes macOS jump Spaces and the
+  // config window seems to vanish.
+  const wa = activeDisplay().workArea;
+  const width = Math.max(420, Math.min(maxW, wa.width - marginW));
+  const height = Math.max(360, Math.min(maxH, wa.height - marginH));
   return {
-    width: Math.max(420, Math.min(maxW, wa.width - marginW)),
-    height: Math.max(360, Math.min(maxH, wa.height - marginH)),
+    width,
+    height,
+    x: Math.round(wa.x + (wa.width - width) / 2),
+    y: Math.round(wa.y + (wa.height - height) / 2),
   };
 }
 
@@ -484,6 +739,8 @@ function ensureLogsWindow(processId, { filter } = {}) {
   const win = new BrowserWindow({
     width: size.width,
     height: size.height,
+    x: size.x,
+    y: size.y,
     minWidth: 480,
     minHeight: 320,
     title: `Logs — ${titleName}`,
@@ -498,7 +755,8 @@ function ensureLogsWindow(processId, { filter } = {}) {
     },
   });
   win.setMenuBarVisibility(false);
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // NOT visible-on-all-workspaces: on a secondary display that made macOS
+  // minimize the other windows there (accessory-app + join-all-spaces quirk).
   const query = { id: processId };
   if (filter) query.filter = filter;
   win.loadFile(path.join(__dirname, '..', 'renderer', 'logs.html'), { query });
@@ -555,16 +813,19 @@ function ensurePrescriptConfirmWindow(token) {
   return win;
 }
 
-function ensureConfigWindow() {
+function ensureConfigWindow({ goto } = {}) {
   if (configWindow && !configWindow.isDestroyed()) {
     configWindow.show();
     configWindow.focus();
+    if (goto) configWindow.webContents.send('config:goto', goto);
     return;
   }
   const size = adaptiveSize(820, 640);
   configWindow = new BrowserWindow({
     width: size.width,
     height: size.height,
+    x: size.x,
+    y: size.y,
     minWidth: 460,
     minHeight: 380,
     title: 'DevBar — Configuración',
@@ -580,8 +841,20 @@ function ensureConfigWindow() {
     },
   });
   configWindow.setMenuBarVisibility(false);
-  configWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // NOTE: deliberately NOT setVisibleOnAllWorkspaces — as an accessory (menubar)
+  // app, a can-join-all-spaces window shown on a SECONDARY display makes macOS
+  // minimize the other windows there. Regular per-space behaviour avoids it.
   configWindow.loadFile(path.join(__dirname, '..', 'renderer', 'config.html'));
+  // A fresh window can't receive the deep-link until its renderer has loaded.
+  // Without this, the very first open (or any open after the window was closed)
+  // never navigates — only reused windows did. Fires once per creation.
+  if (goto) {
+    configWindow.webContents.once('did-finish-load', () => {
+      if (configWindow && !configWindow.isDestroyed()) {
+        configWindow.webContents.send('config:goto', goto);
+      }
+    });
+  }
   configWindow.on('close', (e) => {
     if (configWindow.__forceClose) return;
     e.preventDefault();
@@ -717,8 +990,14 @@ function registerIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle('actions:run', (_e, { groupId, actionId }) => {
+  ipcMain.handle('actions:run', async (_e, { groupId, actionId }) => {
     const pid = makeActionId(groupId, actionId);
+    const group = configStore.getGroup(groupId);
+    const action =
+      group && (group.actions || []).find((a) => a.id === actionId);
+    if (!(await confirmIfNeeded(action, group, groupId))) {
+      return { ok: false, cancelled: true, processId: pid };
+    }
     const res = processManager.start(pid);
     broadcast();
     return { ok: res.ok, processId: pid, error: res.error };
@@ -780,6 +1059,16 @@ function registerIpc() {
     const parsed = parseProcessId(processId);
     if (parsed.kind === 'unknown')
       return { ok: false, error: 'Invalid process id' };
+
+    // Optional confirmation gate (commands only here; actions go via actions:run).
+    if (parsed.kind === 'command') {
+      const grp = configStore.getGroup(parsed.groupId);
+      const cmd =
+        grp && (grp.commands || []).find((c) => c.id === parsed.commandId);
+      if (!(await confirmIfNeeded(cmd, grp, parsed.groupId))) {
+        return { ok: false, cancelled: true };
+      }
+    }
 
     // Single-mode: stop other running commands in the same group first
     if (parsed.kind === 'command') {
@@ -922,9 +1211,57 @@ function registerIpc() {
     };
   });
 
+  // Really wipe a process's retained log buffer (not just the on-screen view).
+  ipcMain.handle('logs:clear', (_e, processId) => {
+    processManager.clearLogs(processId);
+    return { ok: true };
+  });
+
+  // Every retained log buffer since app start, grouped by group → type, for the
+  // Logs browser. Each item opens in the normal logs window via its processId.
+  ipcMain.handle('logs:list', () => {
+    const TYPE = {
+      command: 'command',
+      action: 'action',
+      prescript: 'prescript',
+      preAggregator: 'pipeline',
+    };
+    const groups = new Map(); // groupId -> { groupId, groupName, items: [] }
+    for (const { id, lineCount } of processManager.listLogBuffers()) {
+      const parsed = parseProcessId(id);
+      const type = TYPE[parsed.kind];
+      if (!type) continue; // skip unknown ids
+      const group = configStore.getGroup(parsed.groupId);
+      let entry = groups.get(parsed.groupId);
+      if (!entry) {
+        entry = {
+          groupId: parsed.groupId,
+          groupName: group ? group.name : '(grupo eliminado)',
+          items: [],
+        };
+        groups.set(parsed.groupId, entry);
+      }
+      const resolved = processManager.resolveTarget(id);
+      const name = resolved
+        ? resolved.target.name
+        : type === 'pipeline'
+          ? 'Pipeline de pre-scripts'
+          : id;
+      entry.items.push({ id, type, name, lineCount });
+    }
+    return [...groups.values()];
+  });
+
   // ── Window management ─────────────────────────────────────────────────
   ipcMain.handle('window:openConfig', () => {
     ensureConfigWindow();
+    if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
+    return { ok: true };
+  });
+
+  // Tray version chip: open config on "Acerca de" with the changelog modal.
+  ipcMain.handle('window:openConfigChangelog', () => {
+    ensureConfigWindow({ goto: 'about-changelog' });
     if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
     return { ok: true };
   });
@@ -990,6 +1327,36 @@ function registerIpc() {
     broadcast();
     return next;
   });
+
+  // Show a test banner (ungated by notifySuccess — it's an explicit test).
+  ipcMain.handle('notifications:test', () => {
+    showBannerNotification('DevBar', 'Notificación de prueba ✅');
+    return { ok: true };
+  });
+
+  // Dismiss the current completion banner (clicked in the banner renderer).
+  ipcMain.handle('notification:dismiss', () => {
+    closeNotificationWindow();
+    return { ok: true };
+  });
+
+  // A banner CTA was clicked → run the mapped action, then dismiss.
+  ipcMain.handle('notification:action', (_e, action) => {
+    if (action === 'open-about') ensureConfigWindow({ goto: 'about' });
+    else if (action === 'open-changelog')
+      ensureConfigWindow({ goto: 'about-changelog' });
+    closeNotificationWindow();
+    return { ok: true };
+  });
+
+  // ── Updates ────────────────────────────────────────────────────────────
+  ipcMain.handle('updates:status', () => ({
+    available: availableUpdate,
+    lastCheckAt: lastUpdateCheckAt,
+    currentVersion: app.getVersion(),
+  }));
+  ipcMain.handle('updates:check', () => runUpdateCheck({ manual: true }));
+  ipcMain.handle('updates:apply', () => applyUpdate());
 
   // ── Config Export / Import ────────────────────────────────────────────
 
@@ -1098,7 +1465,8 @@ function registerIpc() {
     pendingImports.delete(token);
     try {
       const backupPath = configStore.writeImportBackup();
-      await processManager.stopAll();
+      await processManager.stopAll(); // wipes all log buffers…
+      lastPreScriptRunId.clear(); // …so stale run ids must not linger
       configStore.replaceConfig(payload);
       syncRepoWatchers();
       applyAutostart(configStore.getGlobalSettings().autostart);
@@ -1140,6 +1508,23 @@ function registerIpc() {
   });
 
   ipcMain.handle('app:version', () => app.getVersion());
+
+  // Last 5 releases from GitHub for the changelog modal, plus the repo's
+  // releases page for the "Ver en GitHub" button.
+  ipcMain.handle('updates:changelog', async () => ({
+    releases: await fetchReleases({ ...UPDATE_REPO, limit: 5 }),
+    repoUrl: `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}/releases`,
+  }));
+
+  // Open an external https URL in the default browser. https-only guard so a
+  // renderer bug can't fire arbitrary schemes (file:, javascript:, …).
+  ipcMain.handle('app:openExternal', (_e, url) => {
+    if (typeof url === 'string' && url.startsWith('https://')) {
+      shell.openExternal(url);
+      return { ok: true };
+    }
+    return { ok: false };
+  });
 
   // ── Config dirty-close helpers ─────────────────────────────────────────
   ipcMain.handle('config:confirmDirty', async (e, { context }) => {
@@ -1246,9 +1631,135 @@ async function autoStartAllMarkedCommands() {
   );
 }
 
+// ─────────────────────── Scheduled auto-run ──────────────────────────
+
+/**
+ * Anacron-style scheduler. Runs on a 60s tick, on power resume, and shortly
+ * after startup. For each command with an enabled schedule:
+ *   - first time we ever see it → seed lastRun=now (never fire retroactively for
+ *     an occurrence that predates the user enabling the schedule).
+ *   - otherwise, if a scheduled occurrence has elapsed since lastRun → start it.
+ *
+ * The lastRun bookkeeping (config-store.scheduleState) survives sleep AND app
+ * restarts, so a machine asleep at 09:00 that wakes at 09:30 still catches up.
+ * Unlike boot auto-start, scheduled runs do NOT execute pre-scripts.
+ */
+/**
+ * Evaluate one schedulable target (command or action) at `now`.
+ * Seeds lastRun on first sight (no retroactive fire), otherwise fires `startFn`
+ * when a scheduled occurrence has elapsed since lastRun and it is not already
+ * running. `startFn` must swallow its own errors. Returns true if it started.
+ */
+async function evaluateSchedule(pid, sched, now, startFn) {
+  if (!sched || !sched.enabled) return false;
+  const last = configStore.getScheduleLastRun(pid);
+  if (last == null) {
+    configStore.setScheduleLastRun(pid, now.toISOString()); // seed only
+    return false;
+  }
+  if (!isDue(sched, last, now)) return false;
+  let didStart = false;
+  if (processManager.getState(pid).status !== 'running') {
+    didStart = (await startFn()) === true;
+  }
+  // Advance the marker even on a declined confirmation, so we don't re-prompt
+  // for the same occurrence on every tick.
+  configStore.setScheduleLastRun(pid, now.toISOString());
+  return didStart;
+}
+
+let _schedulesInFlight = false;
+
+// Re-entrancy guard: a scheduled start may await an indefinite confirmation
+// modal, so a tick/resume mid-run must not re-evaluate the still-due target and
+// queue another modal (or double-start it). One run at a time.
+async function checkSchedules(now) {
+  if (_schedulesInFlight) return;
+  _schedulesInFlight = true;
+  try {
+    await runSchedulesOnce(now);
+  } finally {
+    _schedulesInFlight = false;
+  }
+}
+
+async function runSchedulesOnce(now) {
+  const groups = configStore.listGroups();
+  let started = false;
+  for (const group of groups) {
+    for (const cmd of group.commands || []) {
+      const pid = makeCommandId(group.id, cmd.id);
+      const ran = await evaluateSchedule(pid, cmd.schedule, now, async () => {
+        if (!(await confirmIfNeeded(cmd, group, group.id))) return false;
+        // Single-mode groups: stop other running commands first (radio).
+        if (group.mode === 'single') {
+          const others = (group.commands || [])
+            .map((c) => makeCommandId(group.id, c.id))
+            .filter(
+              (p) =>
+                p !== pid && processManager.getState(p).status === 'running',
+            );
+          for (const p of others) await processManager.stop(p);
+        }
+        try {
+          processManager.start(pid);
+          return true;
+        } catch (err) {
+          console.error(`schedule start ${group.name}/${cmd.name}:`, err);
+          return false;
+        }
+      });
+      started = started || ran;
+    }
+    for (const act of group.actions || []) {
+      const pid = makeActionId(group.id, act.id);
+      const ran = await evaluateSchedule(pid, act.schedule, now, async () => {
+        if (!(await confirmIfNeeded(act, group, group.id))) return false;
+        try {
+          processManager.start(pid);
+          scheduledActionPids.add(pid); // notify on its action:done
+          return true;
+        } catch (err) {
+          console.error(`schedule start ${group.name}/${act.name}:`, err);
+          return false;
+        }
+      });
+      started = started || ran;
+    }
+  }
+  if (started) broadcast();
+}
+
+/**
+ * Run checkSchedules aligned to the wall-clock minute. A plain
+ * setInterval(60s) fires at an arbitrary phase (ready+1s, +61s, …), so a
+ * 13:02 schedule could fire anywhere up to 13:02:59. We wait until the next
+ * :00 second, then tick every 60s from there.
+ */
+function startScheduleLoop() {
+  const msToNextMinute = 60000 - (Date.now() % 60000);
+  setTimeout(() => {
+    checkSchedules(new Date());
+    setInterval(() => checkSchedules(new Date()), 60 * 1000);
+  }, msToNextMinute);
+}
+
 // ─────────────────────── App lifecycle ───────────────────────────────
 
+// Single-instance lock. DevBar is a menubar app backed by one electron-store
+// file; a second launch (e.g. login item + manual open) would spawn a duelling
+// tray icon writing the same store. The second instance focuses config on the
+// primary and exits. `isPrimary` also guards the ready handlers, since a
+// second instance may still emit 'ready' before app.quit() takes effect.
+const isPrimary = app.requestSingleInstanceLock();
+if (!isPrimary) {
+  app.quit();
+} else {
+  app.on('second-instance', () => ensureConfigWindow());
+}
+
 app.on('ready', () => {
+  if (!isPrimary) return;
   if (process.platform === 'darwin' && app.dock) {
     app.dock.hide();
     updateDockVisibility();
@@ -1256,6 +1767,7 @@ app.on('ready', () => {
 });
 
 app.whenReady().then(() => {
+  if (!isPrimary) return;
   registerIpc();
   applyAutostart(configStore.getGlobalSettings().autostart);
   processManager.on('change', () => broadcast());
@@ -1272,6 +1784,15 @@ app.whenReady().then(() => {
     const kind = code === 0 ? 'ok' : 'error';
     const message = `${group ? group.name : '?'} · ${target ? target.name : '?'} exited ${code}`;
     broadcastToast(kind, message);
+    // Scheduled actions run unattended — notify natively when they finish.
+    if (scheduledActionPids.has(processId)) {
+      scheduledActionPids.delete(processId);
+      const name = `${group ? group.name : '?'} · ${target ? target.name : '?'}`;
+      showCompletionNotification(
+        'DevBar — acción programada',
+        code === 0 ? `${name}: completada` : `${name}: falló (código ${code})`,
+      );
+    }
     broadcast();
   });
   repoWatcher.on('change', (repoPath) => broadcastBranchesChanged(repoPath));
@@ -1311,9 +1832,29 @@ app.whenReady().then(() => {
     // Only commands are eligible — actions are one-shots and must not run at boot.
     setTimeout(() => autoStartAllMarkedCommands(), 300);
 
-    // Check GitHub for a newer release now and once a day after.
+    // Scheduled auto-run: seed/evaluate shortly after boot, then on every
+    // minute boundary (aligned so a 13:02 schedule fires at ~13:02:00, not up
+    // to 59s late), plus immediately on wake so a missed slot catches up.
+    setTimeout(() => checkSchedules(new Date()), 1000);
+    startScheduleLoop();
+    powerMonitor.on('resume', () => checkSchedules(new Date()));
+
+    // Check GitHub for a newer release now and every 5 minutes after.
     runUpdateCheck();
-    setInterval(runUpdateCheck, 24 * 60 * 60 * 1000);
+    setInterval(runUpdateCheck, 5 * 60 * 1000);
+
+    // Light/dark appearance flip → rebuild the tray dot with a contrasting
+    // ring so it stays visible on the new menubar background.
+    nativeTheme.on('updated', () => {
+      trayIcon.invalidateCache();
+      if (mb && mb.tray) {
+        try {
+          mb.tray.setImage(trayIcon.loadIcon(lastTrayColor));
+        } catch (err) {
+          console.error('tray theme refresh failed:', err);
+        }
+      }
+    });
   });
 
   mb.on('after-create-window', () => {

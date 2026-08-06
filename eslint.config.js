@@ -36,6 +36,7 @@ const rendererSharedGlobals = {
   formatUptime: 'readonly',
   createCombobox: 'readonly',
   attachDragHandlers: 'readonly',
+  wireModal: 'readonly',
 };
 
 module.exports = [
@@ -84,6 +85,17 @@ module.exports = [
       ecmaVersion: 'latest',
       sourceType: 'script',
       globals: { ...globals.browser, ...rendererSharedGlobals },
+    },
+    rules: { ...baseRules },
+  },
+
+  // ── Dual-use UMD modules (browser global + CommonJS for tests) ──────
+  {
+    files: ['renderer/md-mini.js', 'renderer/changelog-view.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'script',
+      globals: { ...globals.browser, module: 'readonly' },
     },
     rules: { ...baseRules },
   },

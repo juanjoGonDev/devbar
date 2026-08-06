@@ -45,7 +45,10 @@ verify_architecture() {
   hdiutil verify "$dmg" >/dev/null
   unzip -tq "$zip" >/dev/null
   zip_entries=$(unzip -Z1 "$zip")
-  printf '%s\n' "$zip_entries" | grep -q '^DevBar\.app/Contents/MacOS/DevBar$' ||
+  # here-string, not `printf | grep -q`: under `set -o pipefail`, grep -q closes
+  # the pipe on first match and printf dies with SIGPIPE (141), failing the
+  # pipeline even though the entry WAS found — a timing-dependent false negative.
+  grep -q '^DevBar\.app/Contents/MacOS/DevBar$' <<<"$zip_entries" ||
     fail "ZIP does not contain the DevBar executable for $architecture."
 
   mount_output=$(hdiutil attach "$dmg" -nobrowse -readonly)
@@ -58,7 +61,7 @@ verify_architecture() {
     fail "DMG Applications link is incorrect for $architecture."
 
   executable_archs=$(lipo -archs "$MOUNT_POINT/DevBar.app/Contents/MacOS/DevBar")
-  printf '%s\n' "$executable_archs" | grep -qw "$expected_mach_arch" ||
+  grep -qw "$expected_mach_arch" <<<"$executable_archs" ||
     fail "Expected $expected_mach_arch executable for $architecture, found: $executable_archs"
 
   [ -s "$MOUNT_POINT/DevBar.app/Contents/Resources/icon.icns" ] ||
