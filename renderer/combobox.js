@@ -229,7 +229,13 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     requestAnimationFrame(requestHostHeight);
   }
 
-  function closeList(revert = true) {
+  function flushPendingRender() {
+    if (typeof window.__flushPendingRender === 'function') {
+      window.__flushPendingRender();
+    }
+  }
+
+  function closeList(revert = true, deferFlush = false) {
     if (!isOpen) return;
     isOpen = false;
     window.__comboboxOpenCount = Math.max(
@@ -247,11 +253,11 @@ function createCombobox({ value, options, placeholder, onSelect }) {
       input.value = labelFor(currentValue);
     }
     // Any state update that arrived while we were open was deferred by the
-    // host (see render() guard). Flush it now, then shrink back to the
-    // natural content size. Flush first so its own resize is the last word.
-    if (typeof window.__flushPendingRender === 'function') {
-      window.__flushPendingRender();
-    }
+    // host (see render() guard). Flush it now — UNLESS this is a selection:
+    // the flush rebuilds the tray and would detach THIS combobox before its
+    // async onSelect runs, leaving loadBranchesIntoCombo() updating a dead
+    // instance. selectOption() defers the flush until onSelect settles.
+    if (!deferFlush) flushPendingRender();
     if (typeof window.__scheduleTrayResize === 'function') {
       window.__scheduleTrayResize();
     }
@@ -265,8 +271,12 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     // that browsers synthesize when mouseup lands on the row below after
     // closeList() hides the dropdown under the cursor.
     window.__comboboxSelectingAt = Date.now();
-    closeList(false);
-    if (onSelect) onSelect(val);
+    // Defer the pending-render flush: keep this combobox mounted through the
+    // (async) onSelect so its loadBranchesIntoCombo() updates the LIVE combo,
+    // then replay any deferred state update once the callback settles.
+    closeList(false, true);
+    const result = onSelect ? onSelect(val) : undefined;
+    Promise.resolve(result).finally(flushPendingRender);
   }
 
   // ── Input events ──────────────────────────────────────────────────────
