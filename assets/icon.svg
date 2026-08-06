@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- DevBar app icon. Transparent outside the tile so macOS renders clean
+       rounded corners (the old PNG had an opaque white square). Big Sur grid:
+       824 tile centred in the 1024 box. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#FEFEFE"/>
+  <!-- The ">|" mark. Geometry matches the original raster (measured bboxes). -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="360,344 505,512 360,680" stroke="#1D2433" stroke-width="88"/>
+    <line x1="642" y1="344" x2="642" y2="680" stroke="#167AFE" stroke-width="78"/>
+  </g>
+</svg>

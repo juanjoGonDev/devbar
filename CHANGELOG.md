@@ -3,6 +3,22 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [Sin publicar]
+
+### Cambiado
+
+- El icono de la **barra de menú** ya no es un círculo de color: ahora muestra la
+  **marca de la app (`>|`) tintada** según el estado agregado (gris parado, verde
+  en marcha, amarillo aviso, rojo error). Se dibuja en tiempo de ejecución desde
+  la geometría de `assets/icon.svg`, con anti-aliasing y sin depender del tema.
+
+### Corregido
+
+- El **icono de la app** (`icon.icns` / `icon.png`) no tenía canal alfa: el fondo
+  blanco rellenaba todo el cuadrado y macOS mostraba **esquinas cuadradas** en el
+  Dock y el Finder. Se regeneró con esquinas transparentes (rejilla Big Sur) a
+  partir del nuevo `assets/icon.svg`.
+
 ## [0.4.1]
 
 ### Corregido
