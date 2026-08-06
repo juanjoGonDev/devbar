@@ -582,7 +582,7 @@ async function applyUpdate() {
   try {
     res = await dialog.showMessageBox(owner, {
       type: 'question',
-      buttons: ['Cancelar', 'Descargar y cerrar'],
+      buttons: ['Cancelar', dmgUrl ? 'Descargar y cerrar' : 'Descargar'],
       defaultId: 1,
       cancelId: 0,
       message: `Actualizar a DevBar v${version}`,
@@ -612,7 +612,13 @@ async function applyUpdate() {
     shell.openExternal(url); // fall back to the release page
     return { ok: false, error: err.message, fellBack: true };
   }
-  await shell.openPath(dest); // mount the dmg → Finder drag window
+  const openErr = await shell.openPath(dest); // mount the dmg → Finder window
+  if (openErr) {
+    // Mount failed — don't quit and strand the user; open the release page.
+    broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
+    shell.openExternal(url);
+    return { ok: false, error: openErr, fellBack: true };
+  }
   // Quit so the .app can be replaced. The DMG mount is an OS-owned Finder
   // volume that outlives us; the single-instance lock means this is the only
   // instance. Small delay lets the Finder window surface before we vanish.
