@@ -3,6 +3,18 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.4.1]
+
+### Corregido
+
+- El selector de rama ya no **empequeñece la barra** al abrir el desplegable.
+  Antes, un desplegable corto anclado arriba (pocas ramas en el primer grupo)
+  recortaba la barra a la altura del propio desplegable y ocultaba el resto de
+  grupos. Ahora la barra solo crece para acomodar el desplegable y recupera su
+  altura natural al cerrarlo; además, si llega un refresco de estado con el
+  desplegable abierto, se pospone hasta cerrarlo para no dejar la lista
+  huérfana.
+
 ## [0.4.0]
 
 ### Añadido

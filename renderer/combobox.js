@@ -115,7 +115,15 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     if (!window.api || !window.api.setTrayHeight) return;
     const listRect = list.getBoundingClientRect();
     if (!Number.isFinite(listRect.bottom) || listRect.bottom <= 0) return;
-    const desired = Math.ceil(listRect.bottom + 12);
+    // Only ever GROW: fit the dropdown when it spills past the current
+    // window, but never below the height already showing the groups.
+    // Otherwise a short dropdown anchored high (few branches on the first
+    // group) shrinks the popover down to the dropdown and clips the rest.
+    // The shrink-back to natural content height happens in closeList().
+    const desired = Math.max(
+      window.innerHeight,
+      Math.ceil(listRect.bottom + 12),
+    );
     window.api.setTrayHeight(desired);
   }
 
@@ -205,9 +213,14 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     });
   }
 
+  /** Open the dropdown, render its options and grow the host to fit them. */
   function openList() {
     if (isOpen) return;
     isOpen = true;
+    // Global open-count so the host tray knows a dropdown is live and must
+    // not shrink itself or re-render (which would destroy this combo mid-use
+    // and orphan the list — the "shrinking popover" bug).
+    window.__comboboxOpenCount = (window.__comboboxOpenCount || 0) + 1;
     highlightIndex = -1;
     positionList();
     renderList();
@@ -217,9 +230,27 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     requestAnimationFrame(requestHostHeight);
   }
 
-  function closeList(revert = true) {
+  /** Ask the host to replay any tray render it deferred while we were open. */
+  function flushPendingRender() {
+    if (typeof window.__flushPendingRender === 'function') {
+      window.__flushPendingRender();
+    }
+  }
+
+  /**
+   * Close the dropdown and let the host shrink back to its content height.
+   * @param {boolean} revert     - restore the input text to the selected value
+   * @param {boolean} deferFlush - skip replaying deferred host state now;
+   *   selectOption() flushes it after its async onSelect settles so this
+   *   combobox is not detached mid-selection
+   */
+  function closeList(revert = true, deferFlush = false) {
     if (!isOpen) return;
     isOpen = false;
+    window.__comboboxOpenCount = Math.max(
+      0,
+      (window.__comboboxOpenCount || 1) - 1,
+    );
     // Any close (select, blur, Escape, outside-click) can leave the cursor over
     // the tray row below, and the browser synthesizes a click there once the
     // dropdown is display:none'd. Mark the interaction so the row's
@@ -230,13 +261,23 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     if (revert) {
       input.value = labelFor(currentValue);
     }
-    // Tell the tray window to shrink back to its natural content size
-    // now that the dropdown no longer needs the extra real estate.
+    // Any state update that arrived while we were open was deferred by the
+    // host (see render() guard). Flush it now — UNLESS this is a selection:
+    // the flush rebuilds the tray and would detach THIS combobox before its
+    // async onSelect runs, leaving loadBranchesIntoCombo() updating a dead
+    // instance. selectOption() defers the flush until onSelect settles.
+    if (!deferFlush) flushPendingRender();
     if (typeof window.__scheduleTrayResize === 'function') {
       window.__scheduleTrayResize();
     }
   }
 
+  /**
+   * Commit a choice: update the input, close, invoke onSelect, then replay any
+   * host render deferred during the interaction (once onSelect settles).
+   * @param {string} val
+   * @param {string} label
+   */
   function selectOption(val, label) {
     currentValue = val;
     input.value = label || labelFor(val);
@@ -245,8 +286,12 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     // that browsers synthesize when mouseup lands on the row below after
     // closeList() hides the dropdown under the cursor.
     window.__comboboxSelectingAt = Date.now();
-    closeList(false);
-    if (onSelect) onSelect(val);
+    // Defer the pending-render flush: keep this combobox mounted through the
+    // (async) onSelect so its loadBranchesIntoCombo() updates the LIVE combo,
+    // then replay any deferred state update once the callback settles.
+    closeList(false, true);
+    const result = onSelect ? onSelect(val) : undefined;
+    Promise.resolve(result).finally(flushPendingRender);
   }
 
   // ── Input events ──────────────────────────────────────────────────────
