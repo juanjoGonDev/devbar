@@ -32,6 +32,8 @@ if (document.readyState !== 'loading') {
 
 // Keyed by groupId
 let lastGroupStates = [];
+// State update that arrived while a branch dropdown was open; replayed on close.
+let _pendingStates = null;
 // Branch cache: groupId → { branches: string[], current: string|null }
 const branchCache = new Map();
 // Expanded/collapsed state: groupId → boolean
@@ -80,6 +82,13 @@ function renderAlertsSummary(groupStates) {
 
 function render(groupStates) {
   lastGroupStates = groupStates;
+  // A branch dropdown is open: wiping the groups list here would destroy the
+  // combobox mid-interaction and orphan its (body-level) dropdown, while the
+  // resize below would shrink the popover under it. Defer until it closes.
+  if (window.__comboboxOpenCount > 0) {
+    _pendingStates = groupStates;
+    return;
+  }
   groupsEl.innerHTML = '';
   renderAlertsSummary(groupStates);
 
@@ -137,10 +146,21 @@ function scheduleTrayResize() {
   if (_resizeRaf) cancelAnimationFrame(_resizeRaf);
   _resizeRaf = requestAnimationFrame(() => {
     _resizeRaf = 0;
+    // While a dropdown is open the combobox owns the height (requestHostHeight
+    // grows to fit it); shrinking here would clip it. closeList() re-runs this
+    // once the count hits 0.
+    if (window.__comboboxOpenCount > 0) return;
     if (!window.api || !window.api.setTrayHeight) return;
     window.api.setTrayHeight(measureContentHeight());
   });
 }
+// Replay a state update that was deferred while a dropdown was open.
+window.__flushPendingRender = function () {
+  if (!_pendingStates) return;
+  const s = _pendingStates;
+  _pendingStates = null;
+  render(s);
+};
 // Exposed so the branch combobox (which lives in its own module and
 // inflates the popover when opened) can request a shrink-back when
 // it closes.

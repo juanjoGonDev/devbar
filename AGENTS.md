@@ -26,6 +26,21 @@ Rules:
 5. Do not hand-create git tags or GitHub releases — merging a version-changing
    commit to `main` triggers the release pipeline.
 
+## Branches & commits (feed the release notes)
+
+Because release notes are generated from merged PR titles / commit messages
+(see rule 4 above), the branch name and commit message are not throwaway — they
+end up in the in-app changelog. So:
+
+1. Never work on `main`. Create a descriptive branch first, kebab-case, prefixed
+   by intent: `fix/…`, `feat/…`, `refactor/…`, `docs/…`
+   (e.g. `fix/branch-selector-shrink`).
+2. Use Conventional Commits, written for a human reading release notes — not a
+   diff summary (e.g. `fix: la barra ya no se encoge con el selector de ramas
+abierto`). No AI attribution / `Co-Authored-By` lines.
+3. The commit subject and PR title must describe the user-visible change, so the
+   generated notes and the hand-written `CHANGELOG.md` entry tell the same story.
+
 ## Quality gate
 
 Before considering a change done, run `pnpm quality`
