@@ -1,4 +1,4 @@
-const { nativeImage } = require('electron');
+const { nativeImage, nativeTheme } = require('electron');
 const { drawGlyphBGRA } = require('./glyph-bitmap');
 
 const STATES = ['stopped', 'running', 'warn', 'error'];
@@ -12,15 +12,24 @@ const COLORS = {
   error: [255, 69, 58], // red
 };
 
-// Cache keyed by state. The glyph colour is theme-independent, so no rebuild on
-// appearance change is needed (the tint carries the meaning, not the shape).
+// Cache keyed by `state:dark?` so a theme flip rebuilds with the right outline.
 const iconCache = {};
 
+function outlineColor(dark) {
+  // Contrast edge so the coloured glyph reads on any menubar background — a
+  // dark outline on light appearances, a light one on dark. This is what makes
+  // the idle grey (and the colours over busy wallpapers) stay legible.
+  return dark ? [235, 235, 240] : [28, 28, 30];
+}
+
 function loadIcon(state) {
-  if (iconCache[state]) return iconCache[state];
+  const dark = nativeTheme.shouldUseDarkColors;
+  const key = `${state}:${dark ? 'd' : 'l'}`;
+  if (iconCache[key]) return iconCache[key];
 
   const rgb = COLORS[state] || COLORS.stopped;
-  const img = nativeImage.createFromBitmap(drawGlyphBGRA(18, rgb), {
+  const out = outlineColor(dark);
+  const img = nativeImage.createFromBitmap(drawGlyphBGRA(18, rgb, out), {
     width: 18,
     height: 18,
   });
@@ -28,11 +37,12 @@ function loadIcon(state) {
     scaleFactor: 2,
     width: 36,
     height: 36,
-    buffer: drawGlyphBGRA(36, rgb),
+    buffer: drawGlyphBGRA(36, rgb, out),
   });
-  // NOT a template image — we want the literal green/yellow/red colours.
+  // NOT a template image — we want the literal green/yellow/red colours, with
+  // our own outline supplying the contrast a template would otherwise give.
   img.setTemplateImage(false);
-  iconCache[state] = img;
+  iconCache[key] = img;
   return img;
 }
 

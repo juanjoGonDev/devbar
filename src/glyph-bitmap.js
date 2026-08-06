@@ -62,32 +62,53 @@ function markSDF(px, py, size) {
   return db < best ? db : best;
 }
 
+// Outline band width, as a fraction of the icon size. Wide enough to read as a
+// ~1px contrast edge at 18px.
+const OUTLINE = 0.06;
+
 /**
  * @param {number} size  square side in px (e.g. 18 @1x, 36 @2x)
- * @param {[number,number,number]} rgb  tint colour
+ * @param {[number,number,number]} rgb  fill (tint) colour
+ * @param {[number,number,number]} [outlineRgb]  contrast outline colour; when
+ *   omitted the mark is drawn fill-only. The outline lets a coloured (non-
+ *   template) menubar icon stay legible on any background — the caller picks a
+ *   dark outline for light appearances and a light one for dark.
  * @returns {Buffer} size*size*4 premultiplied BGRA bytes
  */
-function drawGlyphBGRA(size, rgb) {
+function drawGlyphBGRA(size, rgb, outlineRgb) {
   const buf = Buffer.alloc(size * size * 4); // zeroed → transparent
   const step = 1 / SS;
   const base = step / 2;
-  const inv = 1 / (SS * SS);
+  const N = SS * SS;
+  const outW = outlineRgb ? size * OUTLINE : 0;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      let hits = 0;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let cnt = 0;
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
-          if (markSDF(x + base + sx * step, y + base + sy * step, size) <= 0)
-            hits++;
+          const d = markSDF(x + base + sx * step, y + base + sy * step, size);
+          let col = null;
+          if (d <= 0) col = rgb;
+          else if (d <= outW) col = outlineRgb;
+          if (col) {
+            r += col[0];
+            g += col[1];
+            b += col[2];
+            cnt++;
+          }
         }
       }
-      if (!hits) continue;
-      const cov = hits * inv; // 0..1 coverage
+      if (!cnt) continue;
+      // Averaging over ALL N samples (empties contribute 0) yields premultiplied
+      // channels directly, so each channel stays <= alpha (no halo).
       const i = (y * size + x) * 4;
-      buf[i] = Math.round(rgb[2] * cov); // B (premultiplied)
-      buf[i + 1] = Math.round(rgb[1] * cov); // G
-      buf[i + 2] = Math.round(rgb[0] * cov); // R
-      buf[i + 3] = Math.round(255 * cov); // A
+      buf[i] = Math.round(b / N); // B
+      buf[i + 1] = Math.round(g / N); // G
+      buf[i + 2] = Math.round(r / N); // R
+      buf[i + 3] = Math.round((255 * cnt) / N); // A
     }
   }
   return buf;

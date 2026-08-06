@@ -10,7 +10,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - El icono de la **barra de menú** ya no es un círculo de color: ahora muestra la
   **marca de la app (`>|`) tintada** según el estado agregado (gris parado, verde
   en marcha, amarillo aviso, rojo error). Se dibuja en tiempo de ejecución desde
-  la geometría de `assets/icon.svg`, con anti-aliasing y sin depender del tema.
+  la geometría de `assets/icon.svg`, con anti-aliasing y un **contorno de
+  contraste que se adapta al tema** (oscuro en barra clara, claro en barra
+  oscura) para que se distinga sobre cualquier fondo, incluidos fondos de
+  pantalla claros.
 
 ### Corregido
 

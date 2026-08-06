@@ -51,6 +51,37 @@ describe('drawGlyphBGRA', () => {
   });
 });
 
+describe('drawGlyphBGRA with outline', () => {
+  const size = 36;
+  const green = [48, 209, 88];
+  const outline = [28, 28, 30];
+  const buf = drawGlyphBGRA(size, green, outline);
+
+  it('rings the mark with the outline colour just outside the fill', () => {
+    // Step outward from the bar edge until we leave the fill; the first opaque
+    // band there must be the (dark) outline, not the (green) fill.
+    let found = false;
+    const y = Math.round(0.5 * size);
+    for (let x = Math.round(0.7 * size); x < size; x++) {
+      const [r, g, b, a] = px(buf, size, x, y);
+      if (a === 255 && g < 120 && r < 120 && b < 120) {
+        found = true;
+        break;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('still keeps premultiplied channels <= alpha', () => {
+    for (let i = 0; i < buf.length; i += 4) {
+      const a = buf[i + 3];
+      expect(buf[i]).toBeLessThanOrEqual(a);
+      expect(buf[i + 1]).toBeLessThanOrEqual(a);
+      expect(buf[i + 2]).toBeLessThanOrEqual(a);
+    }
+  });
+});
+
 describe('markSDF', () => {
   it('is negative inside the mark and positive well outside', () => {
     expect(markSDF(0.5 * 36, 0.5 * 36, 36)).toBeGreaterThan(-100); // sanity
