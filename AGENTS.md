@@ -36,10 +36,14 @@ end up in the in-app changelog. So:
    by intent: `fix/…`, `feat/…`, `refactor/…`, `docs/…`
    (e.g. `fix/branch-selector-shrink`).
 2. Use Conventional Commits, written for a human reading release notes — not a
-   diff summary (e.g. `fix: la barra ya no se encoge con el selector de ramas
-abierto`). No AI attribution / `Co-Authored-By` lines.
+   diff summary (e.g. `fix: keep the bar from shrinking when the branch selector
+opens`). No AI attribution / `Co-Authored-By` lines.
 3. The commit subject and PR title must describe the user-visible change, so the
    generated notes and the hand-written `CHANGELOG.md` entry tell the same story.
+4. **Commits and PRs (title + body) are always written in English**, regardless
+   of the language of the conversation — they are the shared, public history of
+   the repo. `CHANGELOG.md` is the exception: it stays in Spanish (see the
+   Versioning section) because it is the user-facing release note.
 
 ## Quality gate
 
