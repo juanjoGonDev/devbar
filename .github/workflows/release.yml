@@ -261,7 +261,7 @@ jobs:
             "DevBar-${VERSION}-macos-x64.zip"
             "SHA256SUMS.txt"
           )
-          # `read -a` loop, not `mapfile`: this job runs on macOS, whose
+          # `while IFS= read -r` loop, not `mapfile`: this job runs on macOS, whose
           # default bash 3.2 has no mapfile/readarray builtin (exit 127).
           actual_assets=()
           while IFS= read -r asset; do actual_assets+=("$asset"); done \
