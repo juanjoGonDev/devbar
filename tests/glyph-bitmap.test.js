@@ -84,7 +84,7 @@ describe('drawGlyphBGRA with outline', () => {
 
 describe('markSDF', () => {
   it('is negative inside the mark and positive well outside', () => {
-    expect(markSDF(0.5 * 36, 0.5 * 36, 36)).toBeGreaterThan(-100); // sanity
+    expect(markSDF(0.5 * 36, 0.5 * 36, 36)).toBeLessThanOrEqual(0); // centre is inside
     expect(markSDF(0.7 * 36, 0.5 * 36, 36)).toBeLessThanOrEqual(0); // on the bar
     expect(markSDF(0, 0, 36)).toBeGreaterThan(0); // corner is outside
   });
