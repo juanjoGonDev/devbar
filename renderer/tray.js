@@ -80,6 +80,12 @@ function renderAlertsSummary(groupStates) {
 
 // ─────────────────────── Main render ─────────────────────────────────
 
+/**
+ * Render every group row from the given state and resize the tray to fit.
+ * While a branch dropdown is open the rebuild is deferred (see guard) because
+ * wiping the list would detach the live combobox mid-interaction.
+ * @param {Array} groupStates - per-group view state from the main process
+ */
 function render(groupStates) {
   lastGroupStates = groupStates;
   // A branch dropdown is open: wiping the groups list here would destroy the
@@ -142,6 +148,11 @@ function measureContentHeight() {
 }
 
 let _resizeRaf = 0;
+/**
+ * Resize the tray window to its natural content height, debounced to one
+ * animation frame. No-ops while a dropdown is open (the combobox owns the
+ * height then); closeList() re-runs it once the dropdown count hits 0.
+ */
 function scheduleTrayResize() {
   if (_resizeRaf) cancelAnimationFrame(_resizeRaf);
   _resizeRaf = requestAnimationFrame(() => {
@@ -154,7 +165,7 @@ function scheduleTrayResize() {
     window.api.setTrayHeight(measureContentHeight());
   });
 }
-// Replay a state update that was deferred while a dropdown was open.
+/** Replay a state update that was deferred while a dropdown was open. */
 window.__flushPendingRender = function () {
   if (!_pendingStates) return;
   const s = _pendingStates;

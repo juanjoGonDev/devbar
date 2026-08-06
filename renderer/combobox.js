@@ -213,6 +213,7 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     });
   }
 
+  /** Open the dropdown, render its options and grow the host to fit them. */
   function openList() {
     if (isOpen) return;
     isOpen = true;
@@ -229,12 +230,20 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     requestAnimationFrame(requestHostHeight);
   }
 
+  /** Ask the host to replay any tray render it deferred while we were open. */
   function flushPendingRender() {
     if (typeof window.__flushPendingRender === 'function') {
       window.__flushPendingRender();
     }
   }
 
+  /**
+   * Close the dropdown and let the host shrink back to its content height.
+   * @param {boolean} revert     - restore the input text to the selected value
+   * @param {boolean} deferFlush - skip replaying deferred host state now;
+   *   selectOption() flushes it after its async onSelect settles so this
+   *   combobox is not detached mid-selection
+   */
   function closeList(revert = true, deferFlush = false) {
     if (!isOpen) return;
     isOpen = false;
@@ -263,6 +272,12 @@ function createCombobox({ value, options, placeholder, onSelect }) {
     }
   }
 
+  /**
+   * Commit a choice: update the input, close, invoke onSelect, then replay any
+   * host render deferred during the interaction (once onSelect settles).
+   * @param {string} val
+   * @param {string} label
+   */
   function selectOption(val, label) {
     currentValue = val;
     input.value = label || labelFor(val);
