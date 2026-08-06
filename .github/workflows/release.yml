@@ -261,8 +261,14 @@ jobs:
             "DevBar-${VERSION}-macos-x64.zip"
             "SHA256SUMS.txt"
           )
-          mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"$release_json" | sort)
-          mapfile -t sorted_expected_assets < <(printf '%s\n' "${expected_assets[@]}" | sort)
+          # `while IFS= read -r` loop, not `mapfile`: this job runs on macOS, whose
+          # default bash 3.2 has no mapfile/readarray builtin (exit 127).
+          actual_assets=()
+          while IFS= read -r asset; do actual_assets+=("$asset"); done \
+            < <(jq -r '.assets[].name' <<<"$release_json" | sort)
+          sorted_expected_assets=()
+          while IFS= read -r asset; do sorted_expected_assets+=("$asset"); done \
+            < <(printf '%s\n' "${expected_assets[@]}" | sort)
           [[ "${actual_assets[*]}" == "${sorted_expected_assets[*]}" ]]
 
           git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
