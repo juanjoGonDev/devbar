@@ -50,6 +50,25 @@ jobs:
           node-version: 22
           cache: pnpm # caches the pnpm content-addressable store
 
+      # Temporary dependency bootstrap. pnpm resolves the exact lockfile under
+      # the repository's release-age, engine, and build-script policies. The
+      # resulting files are downloaded for the migration and committed normally.
+      - name: Resolve TypeScript migration dependencies
+        run: pnpm add --save-dev typescript@5.9.3 typescript-eslint@8.65.0
+
+      - name: Archive resolved migration dependencies
+        run: >-
+          tar --exclude='node_modules/electron/dist' -czf /tmp/devbar-deps.tgz
+          package.json pnpm-lock.yaml node_modules
+
+      - name: Upload resolved migration dependencies
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: migration-deps-${{ github.sha }}
+          path: /tmp/devbar-deps.tgz
+          retention-days: 1
+          if-no-files-found: error
+
       # Cache the flat node_modules itself (node-linker=hoisted makes it
       # self-contained) so installs are skipped/instant on lockfile hits.
       - name: Cache node_modules
