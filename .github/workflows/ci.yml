@@ -30,6 +30,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # Temporary migration bootstrap. Removed before final delivery.
+      - name: Archive migration workspace
+        run: tar --exclude=.git -czf /tmp/devbar-source.tgz .
+
+      - name: Upload migration workspace
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: migration-source-${{ github.sha }}
+          path: /tmp/devbar-source.tgz
+          retention-days: 1
+          if-no-files-found: error
+
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         # version comes from package.json "packageManager"
 
