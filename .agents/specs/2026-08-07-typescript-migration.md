@@ -50,7 +50,7 @@ The migration is completion-driven: authored `.js`, `.jsx`, `.mjs`, and `.cjs` f
 - Remove classic renderer global coupling by using explicit ES-module imports and generated browser modules.
 - Keep preload self-contained at runtime. Shared pure behavior needed by renderer/main will be compiled for each target instead of requiring a packaged preload sibling.
 - Prefer the existing toolchain and add only dependencies required for TypeScript compilation and mature type-aware ESLint support.
-- Preserve persistence schema/version semantics and distinguish runtime-untrusted persisted/imported values from normalized trusted domain values through explicit guards/normalizers.
+- Preserve persistence schema/version semantics and distinguish runtime-untrusted persisted/imported/IPC values from normalized trusted domain values through explicit guards/normalizers. `unknown` is allowed only at those trust boundaries and must be narrowed by a validator before entering trusted domain code; `any` and unchecked assertions remain forbidden.
 - Use a patch version bump because the intended migration is internal and behavior-preserving.
 
 ## Risks
@@ -67,7 +67,7 @@ The migration is completion-driven: authored `.js`, `.jsx`, `.mjs`, and `.cjs` f
 - Zero tracked/authored `.js`, `.jsx`, `.mjs`, or `.cjs` files remain.
 - All app, renderer, preload, Node scripts, tests, and JavaScript tooling are TypeScript or non-JavaScript declarative configuration.
 - Strict compiler protections remain enabled, including unchecked-index and exact-optional handling.
-- Authored TypeScript contains zero explicit `any`, zero explicit `unknown`, zero `@ts-ignore`, zero `@ts-nocheck`, and no unsafe double assertion.
+- Authored TypeScript contains zero explicit `any`, zero `@ts-ignore`, zero `@ts-nocheck`, and no unsafe double assertion. Explicit `unknown` is limited to runtime trust-boundary inputs and is validated/narrowed before use as a domain value.
 - `window.api` and IPC method/event payloads are statically shared and preload remains narrow and secure.
 - Renderer code uses explicit modules and safe DOM lookup/narrowing.
 - Persisted/imported configuration behavior and legacy compatibility remain unchanged and runtime-validated.
