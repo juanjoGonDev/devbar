@@ -118,21 +118,21 @@ jobs:
             const defaultBranch = context.payload.repository.default_branch;
             const repository = await github.rest.repos.get({ owner, repo });
             const autoMergeAllowed = repository.data.allow_auto_merge === true;
+            const hasRequiredQaLabel = (pullRequest) =>
+              pullRequest.labels.some(
+                (label) => label.name === 'requires-manual-qa',
+              );
+            const isTrustedCandidate = (pullRequest) =>
+              pullRequest.user?.login === 'dependabot[bot]' &&
+              pullRequest.base.ref === defaultBranch &&
+              pullRequest.head.repo?.full_name === `${owner}/${repo}` &&
+              hasRequiredQaLabel(pullRequest);
             const pullRequests = await github.paginate(
               github.rest.pulls.list,
               { owner, repo, state: 'open', per_page: 100 },
             );
 
-            const candidates = pullRequests.filter(
-              (pullRequest) =>
-                pullRequest.user?.login === 'dependabot[bot]' &&
-                pullRequest.base.ref === defaultBranch &&
-                pullRequest.head.repo?.full_name === `${owner}/${repo}` &&
-                pullRequest.labels.some(
-                  (label) => label.name === 'requires-manual-qa',
-                ),
-            );
-
+            const candidates = pullRequests.filter(isTrustedCandidate);
             const permissionCache = new Map();
             const decisiveReviewStates = new Set([
               'APPROVED',
@@ -250,6 +250,15 @@ jobs:
                 });
                 const currentHeadSha = current.data.head.sha;
 
+                if (!isTrustedCandidate(current.data)) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: 'candidate trust contract changed',
+                  });
+                  continue;
+                }
+
                 if (current.data.mergeable_state === 'behind') {
                   const workflowChanges = await hasWorkflowChanges(candidate.number);
                   if (workflowChanges) {
@@ -322,6 +331,14 @@ jobs:
                   repo,
                   pull_number: candidate.number,
                 });
+                if (!isTrustedCandidate(verified.data)) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: 'candidate trust contract changed during validation',
+                  });
+                  continue;
+                }
                 if (verified.data.head.sha !== currentHeadSha) {
                   results.push({
                     number: candidate.number,
@@ -442,6 +459,7 @@ jobs:
                       currentHeadSha,
                     );
                     if (
+                      !isTrustedCandidate(clean.data) ||
                       clean.data.head.sha !== currentHeadSha ||
                       clean.data.mergeable_state !== 'clean' ||
                       !cleanApproval.approved ||
