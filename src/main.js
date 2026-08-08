@@ -568,9 +568,10 @@ function downloadFile(url, dest, redirects = 5) {
 
 /**
  * Assisted update: confirm (no timeout) → download the .dmg to Downloads →
- * open it so the user drags DevBar to Applications. Falls back to opening the
- * release page if there's no dmg asset or the download fails. The app is
- * unsigned, so a fully silent swap isn't reliable — this is the robust path.
+ * open it → QUIT DevBar so the drag-into-Applications isn't blocked by the
+ * running app. Falls back to opening the release page if there's no dmg asset
+ * or the download fails. The app is unsigned, so a fully silent swap isn't
+ * reliable — this is the robust path.
  */
 async function applyUpdate() {
   if (!availableUpdate) return { ok: false, error: 'no_update' };
@@ -581,12 +582,12 @@ async function applyUpdate() {
   try {
     res = await dialog.showMessageBox(owner, {
       type: 'question',
-      buttons: ['Cancelar', 'Actualizar'],
+      buttons: ['Cancelar', dmgUrl ? 'Descargar y cerrar' : 'Descargar'],
       defaultId: 1,
       cancelId: 0,
       message: `Actualizar a DevBar v${version}`,
       detail: dmgUrl
-        ? 'Se descargará el instalador y se abrirá. Arrastra DevBar a Aplicaciones (sustituyendo la anterior) para completar.'
+        ? 'Se descargará el instalador y DevBar se CERRARÁ para que puedas sustituirla (macOS no deja reemplazar la app mientras está abierta).\n\nSe abrirá una ventana del Finder: arrastra DevBar a Aplicaciones y vuelve a abrirla.'
         : 'Se abrirá la página de la release para descargar la nueva versión.',
     });
   } catch (err) {
@@ -611,12 +612,19 @@ async function applyUpdate() {
     shell.openExternal(url); // fall back to the release page
     return { ok: false, error: err.message, fellBack: true };
   }
-  await shell.openPath(dest); // mount the dmg → Finder drag window
-  showBannerNotification(
-    'DevBar — actualización',
-    `v${version} descargada. Arrastra DevBar a Aplicaciones.`,
-  );
-  return { ok: true, path: dest };
+  const openErr = await shell.openPath(dest); // mount the dmg → Finder window
+  if (openErr) {
+    // Mount failed — don't quit and strand the user; open the release page.
+    broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
+    shell.openExternal(url);
+    return { ok: false, error: openErr, fellBack: true };
+  }
+  // Quit so the .app can be replaced. The DMG mount is an OS-owned Finder
+  // volume that outlives us; the single-instance lock means this is the only
+  // instance. Small delay lets the Finder window surface before we vanish.
+  // ponytail: fixed 1.2s delay, not a mount-completion watch.
+  setTimeout(() => app.quit(), 1200);
+  return { ok: true, path: dest, quitting: true };
 }
 
 function ensureSilencedWindow(groupId, commandId) {
