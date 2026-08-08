@@ -1,9 +1,10 @@
 const { nativeImage, nativeTheme } = require('electron');
-const { drawDotBGRA } = require('./dot-bitmap');
+const { drawGlyphBGRA } = require('./glyph-bitmap');
 
 const STATES = ['stopped', 'running', 'warn', 'error'];
 
-// Core dot colour per state (RGB).
+// Mark colour per state (RGB). The menubar shows the app's ">|" glyph tinted
+// with these instead of a plain coloured dot.
 const COLORS = {
   stopped: [152, 152, 157], // neutral grey
   running: [48, 209, 88], // green
@@ -11,13 +12,14 @@ const COLORS = {
   error: [255, 69, 58], // red
 };
 
-// Cache keyed by `state:dark?` so a theme flip rebuilds with the right ring.
+// Cache keyed by `state:dark?` so a theme flip rebuilds with the right outline.
 const iconCache = {};
 
-function ringColor(dark) {
-  // Contrasting ring so the dot reads on any menubar background: a light ring
-  // on dark appearances, a dark ring on light ones.
-  return dark ? [255, 255, 255] : [40, 40, 42];
+function outlineColor(dark) {
+  // Contrast edge so the coloured glyph reads on any menubar background — a
+  // dark outline on light appearances, a light one on dark. This is what makes
+  // the idle grey (and the colours over busy wallpapers) stay legible.
+  return dark ? [235, 235, 240] : [28, 28, 30];
 }
 
 function loadIcon(state) {
@@ -26,8 +28,8 @@ function loadIcon(state) {
   if (iconCache[key]) return iconCache[key];
 
   const rgb = COLORS[state] || COLORS.stopped;
-  const ring = ringColor(dark);
-  const img = nativeImage.createFromBitmap(drawDotBGRA(18, rgb, ring), {
+  const out = outlineColor(dark);
+  const img = nativeImage.createFromBitmap(drawGlyphBGRA(18, rgb, out), {
     width: 18,
     height: 18,
   });
@@ -35,9 +37,10 @@ function loadIcon(state) {
     scaleFactor: 2,
     width: 36,
     height: 36,
-    buffer: drawDotBGRA(36, rgb, ring),
+    buffer: drawGlyphBGRA(36, rgb, out),
   });
-  // NOT a template image — we want the literal green/yellow/red colours.
+  // NOT a template image — we want the literal green/yellow/red colours, with
+  // our own outline supplying the contrast a template would otherwise give.
   img.setTemplateImage(false);
   iconCache[key] = img;
   return img;

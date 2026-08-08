@@ -3,6 +3,30 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.4.2] - 2026-08-06
+
+### Cambiado
+
+- La **actualización asistida** ahora cierra DevBar automáticamente tras
+  descargar el instalador. El modal de confirmación avisa de que la app se
+  cerrará (macOS no permite sustituir la app mientras está abierta) y, después
+  de abrir el `.dmg`, DevBar se cierra sola para que puedas **arrastrarla a
+  Aplicaciones sin el error de "app en uso"**. Instalación más fácil y rápida.
+- El icono de la **barra de menú** ya no es un círculo de color: ahora muestra la
+  **marca de la app (`>|`) tintada** según el estado agregado (gris parado, verde
+  en marcha, amarillo aviso, rojo error). Se dibuja en tiempo de ejecución desde
+  la geometría de `assets/icon.svg`, con anti-aliasing y un **contorno de
+  contraste que se adapta al tema** (oscuro en barra clara, claro en barra
+  oscura) para que se distinga sobre cualquier fondo, incluidos fondos de
+  pantalla claros.
+
+### Corregido
+
+- El **icono de la app** (`icon.icns` / `icon.png`) no tenía canal alfa: el fondo
+  blanco rellenaba todo el cuadrado y macOS mostraba **esquinas cuadradas** en el
+  Dock y el Finder. Se regeneró con esquinas transparentes (rejilla Big Sur) a
+  partir del nuevo `assets/icon.svg`.
+
 ## [0.4.1]
 
 ### Corregido

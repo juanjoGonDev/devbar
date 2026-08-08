@@ -1,6 +1,6 @@
 {
   "name": "devbar",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Menu bar service launcher for Mac (WAMP-style)",
   "main": "src/main.js",
   "packageManager": "pnpm@10.32.1",
