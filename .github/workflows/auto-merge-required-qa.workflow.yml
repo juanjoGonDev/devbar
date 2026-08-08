@@ -39,17 +39,52 @@ jobs:
             const dryRun = process.env.DRY_RUN === 'true';
             const { owner, repo } = context.repo;
             const labels = [
-              { name: 'requires-manual-qa', color: 'E99695', description: 'Needs manual quality assurance testing before merging' },
-              { name: 'auto-release', color: 'FEF2C0', description: 'Automatically prepares a version bump and GitHub release' },
+              {
+                name: 'requires-manual-qa',
+                color: 'E99695',
+                description: 'Needs manual quality assurance testing before merging',
+              },
+              {
+                name: 'auto-release',
+                color: 'FEF2C0',
+                description: 'Automatically prepares a version bump and GitHub release',
+              },
             ];
-            const updateLabel = (label) => github.rest.issues.updateLabel({ owner, repo, name: label.name, new_name: label.name, color: label.color, description: label.description });
+
+            const updateLabel = (label) =>
+              github.rest.issues.updateLabel({
+                owner,
+                repo,
+                name: label.name,
+                new_name: label.name,
+                color: label.color,
+                description: label.description,
+              });
+
             for (const label of labels) {
-              if (dryRun) { core.info(`Would synchronize label ${label.name}.`); continue; }
-              try { await updateLabel(label); } catch (error) {
-                if (error.status !== 404) throw error;
-                try { await github.rest.issues.createLabel({ owner, repo, ...label }); } catch (createError) {
-                  const duplicate = createError.status === 422 && createError.response?.data?.errors?.some((entry) => entry.code === 'already_exists');
-                  if (!duplicate) throw createError;
+              if (dryRun) {
+                core.info(`Would synchronize label ${label.name}.`);
+                continue;
+              }
+
+              try {
+                await updateLabel(label);
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+
+                try {
+                  await github.rest.issues.createLabel({ owner, repo, ...label });
+                } catch (createError) {
+                  const duplicate =
+                    createError.status === 422 &&
+                    createError.response?.data?.errors?.some(
+                      (entry) => entry.code === 'already_exists',
+                    );
+                  if (!duplicate) {
+                    throw createError;
+                  }
                   await updateLabel(label);
                 }
               }
@@ -83,87 +118,358 @@ jobs:
             const defaultBranch = context.payload.repository.default_branch;
             const repository = await github.rest.repos.get({ owner, repo });
             const autoMergeAllowed = repository.data.allow_auto_merge === true;
-            const pullRequests = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
-            const candidates = pullRequests.filter((pullRequest) => pullRequest.user?.login === 'dependabot[bot]' && pullRequest.base.ref === defaultBranch && pullRequest.head.repo?.full_name === `${owner}/${repo}` && pullRequest.labels.some((label) => label.name === 'requires-manual-qa'));
+            const pullRequests = await github.paginate(
+              github.rest.pulls.list,
+              { owner, repo, state: 'open', per_page: 100 },
+            );
+
+            const candidates = pullRequests.filter(
+              (pullRequest) =>
+                pullRequest.user?.login === 'dependabot[bot]' &&
+                pullRequest.base.ref === defaultBranch &&
+                pullRequest.head.repo?.full_name === `${owner}/${repo}` &&
+                pullRequest.labels.some(
+                  (label) => label.name === 'requires-manual-qa',
+                ),
+            );
+
             const permissionCache = new Map();
+
             const hasWritePermission = async (login) => {
-              if (permissionCache.has(login)) return permissionCache.get(login);
+              if (permissionCache.has(login)) {
+                return permissionCache.get(login);
+              }
+
               try {
-                const response = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: login });
-                const allowed = ['admin', 'maintain', 'write'].includes(response.data.permission);
+                const response =
+                  await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner,
+                    repo,
+                    username: login,
+                  });
+                const allowed = ['admin', 'maintain', 'write'].includes(
+                  response.data.permission,
+                );
                 permissionCache.set(login, allowed);
                 return allowed;
               } catch (error) {
-                if (error.status === 404) { permissionCache.set(login, false); return false; }
+                if (error.status === 404) {
+                  permissionCache.set(login, false);
+                  return false;
+                }
                 throw error;
               }
             };
+
             const readApprovalState = async (pullNumber, headSha) => {
-              const reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: pullNumber, per_page: 100 });
+              const reviews = await github.paginate(
+                github.rest.pulls.listReviews,
+                { owner, repo, pull_number: pullNumber, per_page: 100 },
+              );
               const latestReviewByUser = new Map();
+
               for (const review of reviews) {
                 const login = review.user?.login;
                 const submittedAt = Date.parse(review.submitted_at ?? '');
-                if (!login || !Number.isFinite(submittedAt) || review.commit_id !== headSha) continue;
+                if (
+                  !login ||
+                  !Number.isFinite(submittedAt) ||
+                  review.commit_id !== headSha
+                ) {
+                  continue;
+                }
+
                 const previous = latestReviewByUser.get(login);
-                if (!previous || submittedAt > previous.submittedAt) latestReviewByUser.set(login, { state: review.state, submittedAt });
+                if (!previous || submittedAt > previous.submittedAt) {
+                  latestReviewByUser.set(login, {
+                    state: review.state,
+                    submittedAt,
+                  });
+                }
               }
+
               let approved = false;
               let changesRequested = false;
               for (const [login, review] of latestReviewByUser) {
-                if (login.endsWith('[bot]') || !(await hasWritePermission(login))) continue;
+                if (
+                  login.endsWith('[bot]') ||
+                  !(await hasWritePermission(login))
+                ) {
+                  continue;
+                }
                 approved ||= review.state === 'APPROVED';
                 changesRequested ||= review.state === 'CHANGES_REQUESTED';
               }
+
               return { approved, changesRequested };
             };
+
             const hasWorkflowChanges = async (pullNumber) => {
-              const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: pullNumber, per_page: 100 });
-              return files.some((file) => file.filename.startsWith('.github/workflows/'));
+              const files = await github.paginate(
+                github.rest.pulls.listFiles,
+                { owner, repo, pull_number: pullNumber, per_page: 100 },
+              );
+              return files.some((file) =>
+                file.filename.startsWith('.github/workflows/'),
+              );
             };
+
             const mergeCleanPullRequest = async (pullNumber, headSha) => {
-              const merge = await github.rest.pulls.merge({ owner, repo, pull_number: pullNumber, merge_method: 'squash', sha: headSha });
-              if (!merge.data.merged) throw new Error(`GitHub did not merge #${pullNumber}: ${merge.data.message}`);
+              const merge = await github.rest.pulls.merge({
+                owner,
+                repo,
+                pull_number: pullNumber,
+                merge_method: 'squash',
+                sha: headSha,
+              });
+              if (!merge.data.merged) {
+                throw new Error(
+                  `GitHub did not merge #${pullNumber}: ${merge.data.message}`,
+                );
+              }
             };
+
             const results = [];
+
             for (const candidate of candidates) {
-              const current = await github.rest.pulls.get({ owner, repo, pull_number: candidate.number });
+              const current = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: candidate.number,
+              });
               const currentHeadSha = current.data.head.sha;
+
               if (current.data.mergeable_state === 'behind') {
-                if (await hasWorkflowChanges(candidate.number)) { results.push({ number: candidate.number, action: 'manual-branch-update-required', reason: 'branch is behind and changes workflow files; automation will not request workflows permission' }); continue; }
-                if (dryRun) { results.push({ number: candidate.number, action: 'would-update-branch', reason: 'fresh approval required after the update' }); continue; }
-                try { await github.rest.pulls.updateBranch({ owner, repo, pull_number: candidate.number, expected_head_sha: currentHeadSha }); } catch (error) {
-                  const workflowPermissionFailure = error.status === 403 && String(error.message).includes('workflows permission');
-                  if (!workflowPermissionFailure) throw error;
-                  results.push({ number: candidate.number, action: 'manual-branch-update-required', reason: 'GitHub refused the branch update because workflow-file changes require workflows permission' });
+                const workflowChanges = await hasWorkflowChanges(candidate.number);
+                if (workflowChanges) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'manual-branch-update-required',
+                    reason:
+                      'branch is behind and changes workflow files; automation will not request workflows permission',
+                  });
                   continue;
                 }
-                results.push({ number: candidate.number, action: 'branch-update-requested', reason: 'fresh approval required for the new head commit' });
+
+                if (dryRun) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'would-update-branch',
+                    reason: 'fresh approval required after the update',
+                  });
+                  continue;
+                }
+
+                try {
+                  await github.rest.pulls.updateBranch({
+                    owner,
+                    repo,
+                    pull_number: candidate.number,
+                    expected_head_sha: currentHeadSha,
+                  });
+                } catch (error) {
+                  const workflowPermissionFailure =
+                    error.status === 403 &&
+                    String(error.message).includes('workflows permission');
+                  if (!workflowPermissionFailure) {
+                    throw error;
+                  }
+                  results.push({
+                    number: candidate.number,
+                    action: 'manual-branch-update-required',
+                    reason:
+                      'GitHub refused the branch update because workflow-file changes require workflows permission',
+                  });
+                  continue;
+                }
+
+                results.push({
+                  number: candidate.number,
+                  action: 'branch-update-requested',
+                  reason: 'fresh approval required for the new head commit',
+                });
                 continue;
               }
-              const approval = await readApprovalState(candidate.number, currentHeadSha);
-              if (!approval.approved || approval.changesRequested) { results.push({ number: candidate.number, action: 'skipped', reason: approval.changesRequested ? 'current maintainer review requests changes' : 'no maintainer approval for the current head commit' }); continue; }
-              const verified = await github.rest.pulls.get({ owner, repo, pull_number: candidate.number });
-              if (verified.data.head.sha !== currentHeadSha) { results.push({ number: candidate.number, action: 'skipped', reason: 'head commit changed during validation' }); continue; }
-              const verifiedApproval = await readApprovalState(candidate.number, currentHeadSha);
-              if (!verifiedApproval.approved || verifiedApproval.changesRequested) { results.push({ number: candidate.number, action: 'skipped', reason: 'maintainer approval changed during validation' }); continue; }
-              if (verified.data.mergeable_state === 'behind') { results.push({ number: candidate.number, action: 'skipped', reason: 'branch became outdated during validation' }); continue; }
-              if (verified.data.mergeable_state === 'dirty' || verified.data.mergeable_state === 'unknown') { results.push({ number: candidate.number, action: 'skipped', reason: `merge state is ${verified.data.mergeable_state}` }); continue; }
-              if (dryRun) { results.push({ number: candidate.number, action: verified.data.mergeable_state === 'clean' ? 'would-merge' : autoMergeAllowed ? 'would-enable-auto-merge' : 'would-wait-for-requirements' }); continue; }
-              if (verified.data.mergeable_state === 'clean') { await mergeCleanPullRequest(candidate.number, currentHeadSha); results.push({ number: candidate.number, action: 'merged' }); continue; }
-              if (!autoMergeAllowed) { results.push({ number: candidate.number, action: 'waiting-for-requirements', reason: 'repository auto-merge is disabled; a later run will merge once GitHub reports clean' }); continue; }
+
+              const approval = await readApprovalState(
+                candidate.number,
+                currentHeadSha,
+              );
+              if (!approval.approved || approval.changesRequested) {
+                results.push({
+                  number: candidate.number,
+                  action: 'skipped',
+                  reason: approval.changesRequested
+                    ? 'current maintainer review requests changes'
+                    : 'no maintainer approval for the current head commit',
+                });
+                continue;
+              }
+
+              const verified = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: candidate.number,
+              });
+              if (verified.data.head.sha !== currentHeadSha) {
+                results.push({
+                  number: candidate.number,
+                  action: 'skipped',
+                  reason: 'head commit changed during validation',
+                });
+                continue;
+              }
+
+              const verifiedApproval = await readApprovalState(
+                candidate.number,
+                currentHeadSha,
+              );
+              if (
+                !verifiedApproval.approved ||
+                verifiedApproval.changesRequested
+              ) {
+                results.push({
+                  number: candidate.number,
+                  action: 'skipped',
+                  reason: 'maintainer approval changed during validation',
+                });
+                continue;
+              }
+
+              if (verified.data.mergeable_state === 'behind') {
+                results.push({
+                  number: candidate.number,
+                  action: 'skipped',
+                  reason: 'branch became outdated during validation',
+                });
+                continue;
+              }
+
+              if (
+                verified.data.mergeable_state === 'dirty' ||
+                verified.data.mergeable_state === 'unknown'
+              ) {
+                results.push({
+                  number: candidate.number,
+                  action: 'skipped',
+                  reason: `merge state is ${verified.data.mergeable_state}`,
+                });
+                continue;
+              }
+
+              if (dryRun) {
+                results.push({
+                  number: candidate.number,
+                  action:
+                    verified.data.mergeable_state === 'clean'
+                      ? 'would-merge'
+                      : autoMergeAllowed
+                        ? 'would-enable-auto-merge'
+                        : 'would-wait-for-requirements',
+                });
+                continue;
+              }
+
+              if (verified.data.mergeable_state === 'clean') {
+                await mergeCleanPullRequest(candidate.number, currentHeadSha);
+                results.push({
+                  number: candidate.number,
+                  action: 'merged',
+                });
+                continue;
+              }
+
+              if (!autoMergeAllowed) {
+                results.push({
+                  number: candidate.number,
+                  action: 'waiting-for-requirements',
+                  reason:
+                    'repository auto-merge is disabled; a later run will merge once GitHub reports clean',
+                });
+                continue;
+              }
+
               if (!verified.data.auto_merge) {
-                try { await github.graphql(`mutation EnableAutoMerge($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) { enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId mergeMethod: SQUASH expectedHeadOid: $expectedHeadOid }) { pullRequest { number } } }`, { pullRequestId: verified.data.node_id, expectedHeadOid: currentHeadSha }); } catch (error) {
-                  const becameClean = error.errors?.some((entry) => String(entry.message).includes('clean status'));
-                  if (!becameClean) throw error;
-                  const clean = await github.rest.pulls.get({ owner, repo, pull_number: candidate.number });
-                  const cleanApproval = await readApprovalState(candidate.number, currentHeadSha);
-                  if (clean.data.head.sha !== currentHeadSha || clean.data.mergeable_state !== 'clean' || !cleanApproval.approved || cleanApproval.changesRequested) { results.push({ number: candidate.number, action: 'skipped', reason: 'pull request changed while enabling auto-merge' }); continue; }
+                try {
+                  await github.graphql(
+                    `mutation EnableAutoMerge(
+                      $pullRequestId: ID!
+                      $expectedHeadOid: GitObjectID!
+                    ) {
+                      enablePullRequestAutoMerge(
+                        input: {
+                          pullRequestId: $pullRequestId
+                          mergeMethod: SQUASH
+                          expectedHeadOid: $expectedHeadOid
+                        }
+                      ) {
+                        pullRequest {
+                          number
+                        }
+                      }
+                    }`,
+                    {
+                      pullRequestId: verified.data.node_id,
+                      expectedHeadOid: currentHeadSha,
+                    },
+                  );
+                } catch (error) {
+                  const becameClean = error.errors?.some((entry) =>
+                    String(entry.message).includes('clean status'),
+                  );
+                  if (!becameClean) {
+                    throw error;
+                  }
+
+                  const clean = await github.rest.pulls.get({
+                    owner,
+                    repo,
+                    pull_number: candidate.number,
+                  });
+                  const cleanApproval = await readApprovalState(
+                    candidate.number,
+                    currentHeadSha,
+                  );
+                  if (
+                    clean.data.head.sha !== currentHeadSha ||
+                    clean.data.mergeable_state !== 'clean' ||
+                    !cleanApproval.approved ||
+                    cleanApproval.changesRequested
+                  ) {
+                    results.push({
+                      number: candidate.number,
+                      action: 'skipped',
+                      reason: 'pull request changed while enabling auto-merge',
+                    });
+                    continue;
+                  }
+
                   await mergeCleanPullRequest(candidate.number, currentHeadSha);
-                  results.push({ number: candidate.number, action: 'merged-after-clean-race' });
+                  results.push({
+                    number: candidate.number,
+                    action: 'merged-after-clean-race',
+                  });
                   continue;
                 }
               }
-              results.push({ number: candidate.number, action: 'auto-merge-enabled' });
+
+              results.push({
+                number: candidate.number,
+                action: 'auto-merge-enabled',
+              });
             }
-            await core.summary.addHeading('Required QA auto-merge').addRaw(results.length === 0 ? 'No eligible Dependabot pull requests found.' : results.map((result) => `- #${result.number}: ${result.action}${result.reason ? ` — ${result.reason}` : ''}`).join('\n')).write();
+
+            await core.summary
+              .addHeading('Required QA auto-merge')
+              .addRaw(
+                results.length === 0
+                  ? 'No eligible Dependabot pull requests found.'
+                  : results
+                      .map(
+                        (result) =>
+                          `- #${result.number}: ${result.action}` +
+                          `${result.reason ? ` — ${result.reason}` : ''}`,
+                      )
+                      .join('\n'),
+              )
+              .write();
