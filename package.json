@@ -1,6 +1,6 @@
 {
   "name": "devbar",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Menu bar service launcher for Mac (WAMP-style)",
   "main": "src/main.js",
   "packageManager": "pnpm@10.32.1",
@@ -28,30 +28,18 @@
     "quality": "pnpm lint:strict && pnpm deadcode && pnpm deps:check && pnpm test",
     "postinstall": "node scripts/install-hooks.js"
   },
+  "dependencies": {},
   "devDependencies": {
-    "@electron/packager": "20.0.3",
-    "dependency-cruiser": "18.1.0",
-    "electron": "43.2.0",
-    "eslint": "10.7.0",
-    "globals": "17.7.0",
-    "knip": "6.29.0",
-    "lefthook": "2.1.10",
-    "prettier": "3.9.6",
-    "vitest": "4.1.10"
-  },
-  "dependencies": {
-    "electron-store": "11.0.2",
-    "menubar": "9.5.2",
-    "uuid": "14.0.1"
-  },
-  "pnpm": {
-    "overrides": {
-      "fast-uri": "3.1.5",
-      "js-yaml": "4.3.0",
-      "brace-expansion@>=4.0.0 <5.0.9": ">=5.0.9"
-    },
-    "onlyBuiltDependencies": [
-      "lefthook"
-    ]
+    "@eslint/js": "9.39.2",
+    "@vitest/coverage-v8": "4.0.17",
+    "dependency-cruiser": "17.3.6",
+    "electron": "40.2.1",
+    "eslint": "9.39.2",
+    "eslint-plugin-security": "3.0.1",
+    "globals": "16.5.0",
+    "knip": "5.83.2",
+    "lefthook": "2.1.1",
+    "prettier": "3.8.2",
+    "vitest": "4.0.17"
   }
 }
