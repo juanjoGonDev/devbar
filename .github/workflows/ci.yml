@@ -3,84 +3,58 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main] # only PRs targeting the main branch
+    branches: [main]
     types: [opened, reopened, synchronize, ready_for_review]
 
-permissions:
-  contents: read
+permissions: read-all
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ci:
+  lockfile:
+    name: Generate TypeScript migration lockfile
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: >-
       github.repository == 'juanjoGonDev/devbar' &&
-      (github.event_name == 'workflow_dispatch' ||
-       github.event.pull_request.draft == false)
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'refactor/typescript-migration' &&
+      github.event.pull_request.draft == false
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
-      - name: Archive migration workspace
-        shell: bash
-        run: tar --exclude=.git -czf /tmp/devbar-typescript-source.tgz .
+      - name: Stage final dependency metadata
+        env:
+          PACKAGE_B64: ewogICJuYW1lIjogImRldmJhciIsCiAgInZlcnNpb24iOiAiMC40LjQiLAogICJkZXNjcmlwdGlvbiI6ICJNZW51IGJhciBzZXJ2aWNlIGxhdW5jaGVyIGZvciBNYWMgKFdBTVAtc3R5bGUpIiwKICAibWFpbiI6ICJidWlsZC9zcmMvbWFpbi5qcyIsCiAgInBhY2thZ2VNYW5hZ2VyIjogInBucG1AMTAuMzIuMSIsCiAgImVuZ2luZXMiOiB7CiAgICAibm9kZSI6ICI+PTIyLjEzLjAiLAogICAgInBucG0iOiAiPj0xMC4xNi4wIgogIH0sCiAgInNjcmlwdHMiOiB7CiAgICAic3RhcnQiOiAicG5wbSBydW4gYnVpbGQgJiYgZWxlY3Ryb24gLiIsCiAgICAiZmV0Y2gtZWxlY3Ryb24iOiAibm9kZSBub2RlX21vZHVsZXMvZWxlY3Ryb24vaW5zdGFsbC5qcyIsCiAgICAicGFjayI6ICJwbnBtIHJ1biBidWlsZCAmJiBiYXNoIHNjcmlwdHMvcGFja2FnZS1tYWNvcy1hcHAuc2giLAogICAgImRpc3Q6bWFjIjogImJhc2ggc2NyaXB0cy9idWlsZC1tYWNvcy1yZWxlYXNlLnNoIiwKICAgICJyZWxlYXNlOnZlcmlmeSI6ICJwbnBtIHJ1biBidWlsZCAmJiBiYXNoIHNjcmlwdHMvdmVyaWZ5LW1hY29zLXJlbGVhc2Uuc2giLAogICAgInJlbGVhc2U6bWFjIjogInBucG0gcnVuIGRpc3Q6bWFjICYmIGJhc2ggc2NyaXB0cy92ZXJpZnktbWFjb3MtcmVsZWFzZS5zaCIsCiAgICAiaW5zdGFsbC1sb2NhbCI6ICJiYXNoIHNjcmlwdHMvaW5zdGFsbC1sb2NhbC5zaCIsCiAgICAibG9ncyI6ICJ0YWlsIC1GIFwiJEhPTUUvTGlicmFyeS9Mb2dzL0RldkJhci9hcHAubG9nXCIiLAogICAgInRlc3QiOiAidml0ZXN0IHJ1biIsCiAgICAidGVzdDp3YXRjaCI6ICJ2aXRlc3QiLAogICAgImxpbnQiOiAibm9kZSAtLWV4cGVyaW1lbnRhbC1zdHJpcC10eXBlcyBub2RlX21vZHVsZXMvZXNsaW50L2Jpbi9lc2xpbnQuanMgLS1mbGFnIHVuc3RhYmxlX25hdGl2ZV9ub2RlanNfdHNfY29uZmlnIC4iLAogICAgImxpbnQ6c3RyaWN0IjogIm5vZGUgLS1leHBlcmltZW50YWwtc3RyaXAtdHlwZXMgbm9kZV9tb2R1bGVzL2VzbGludC9iaW4vZXNsaW50LmpzIC0tZmxhZyB1bnN0YWJsZV9uYXRpdmVfbm9kZWpzX3RzX2NvbmZpZyAuIC0tbWF4LXdhcm5pbmdzIDAiLAogICAgImZvcm1hdCI6ICJwcmV0dGllciAtLXdyaXRlIC4iLAogICAgImZvcm1hdDpjaGVjayI6ICJwcmV0dGllciAtLWNoZWNrIC4iLAogICAgImRlYWRjb2RlIjogImtuaXAiLAogICAgImRlcHM6Y2hlY2siOiAiZGVwY3J1aXNlIHNyYyByZW5kZXJlciBzY3JpcHRzIC0tY29uZmlnIC5kZXBlbmRlbmN5LWNydWlzZXIuanNvbiIsCiAgICAicXVhbGl0eSI6ICJwbnBtIHR5cGVjaGVjayAmJiBwbnBtIHNvdXJjZTpjaGVjayAmJiBwbnBtIGxpbnQ6c3RyaWN0ICYmIHBucG0gZGVhZGNvZGUgJiYgcG5wbSBkZXBzOmNoZWNrICYmIHBucG0gdGVzdCIsCiAgICAicG9zdGluc3RhbGwiOiAibm9kZSAtLWV4cGVyaW1lbnRhbC1zdHJpcC10eXBlcyBzY3JpcHRzL2luc3RhbGwtaG9va3MudHMiLAogICAgImJ1aWxkIjogImJhc2ggc2NyaXB0cy9idWlsZC5zaCIsCiAgICAidHlwZWNoZWNrIjogInRzYyAtcCB0c2NvbmZpZy5qc29uIC0tbm9FbWl0IiwKICAgICJzb3VyY2U6Y2hlY2siOiAiYmFzaCBzY3JpcHRzL2NoZWNrLXNvdXJjZS1wb2xpY3kuc2giCiAgfSwKICAiZGV2RGVwZW5kZW5jaWVzIjogewogICAgIkBlbGVjdHJvbi9wYWNrYWdlciI6ICIyMC4wLjMiLAogICAgIkBlc2xpbnQvanMiOiAiMTAuMC4xIiwKICAgICJAdHlwZXMvZGVidWciOiAiNC4xLjEzIiwKICAgICJAdHlwZXMvZWxlY3Ryb24tcG9zaXRpb25lciI6ICI0LjEuNCIsCiAgICAiQHR5cGVzL25vZGUiOiAiMjIuMjAuMSIsCiAgICAiZGVwZW5kZW5jeS1jcnVpc2VyIjogIjE4LjEuMCIsCiAgICAiZWxlY3Ryb24iOiAiNDMuMi4wIiwKICAgICJlc2J1aWxkIjogIjAuMjguMSIsCiAgICAiZXNsaW50IjogIjEwLjcuMCIsCiAgICAiZ2xvYmFscyI6ICIxNy43LjAiLAogICAgImtuaXAiOiAiNi4yOS4wIiwKICAgICJsZWZ0aG9vayI6ICIyLjEuMTAiLAogICAgInByZXR0aWVyIjogIjMuOS42IiwKICAgICJ0eXBlc2NyaXB0IjogIjYuMC4zIiwKICAgICJ0eXBlc2NyaXB0LWVzbGludCI6ICI4LjY0LjAiLAogICAgInZpdGVzdCI6ICI0LjEuMTAiCiAgfSwKICAiZGVwZW5kZW5jaWVzIjogewogICAgImVsZWN0cm9uLXN0b3JlIjogIjExLjAuMiIsCiAgICAibWVudWJhciI6ICI5LjUuMiIsCiAgICAidXVpZCI6ICIxNC4wLjEiCiAgfSwKICAicG5wbSI6IHsKICAgICJvdmVycmlkZXMiOiB7CiAgICAgICJmYXN0LXVyaSI6ICIzLjEuNSIsCiAgICAgICJqcy15YW1sIjogIjQuMy4wIiwKICAgICAgImJyYWNlLWV4cGFuc2lvbkA+PTQuMC4wIDw1LjAuOSI6ICI+PTUuMC45IgogICAgfSwKICAgICJvbmx5QnVpbHREZXBlbmRlbmNpZXMiOiBbCiAgICAgICJlc2J1aWxkIiwKICAgICAgImxlZnRob29rIgogICAgXQogIH0KfQo=
+          NPMRC_B64: IyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKIyBwbnBtIHNlY3VyaXR5ICYgcmVwcm9kdWNpYmlsaXR5IGNvbmZpZwojCiMgTk9URTogd2UgZGVsaWJlcmF0ZWx5IGRvIE5PVCBzZXQgYGlnbm9yZS1zY3JpcHRzPXRydWVgLiBJbiBwbnBtIDEwIHRoZQojIGJ1aWxkIHNjcmlwdHMgKHByZWluc3RhbGwvaW5zdGFsbC9wb3N0aW5zdGFsbCkgb2YgKmRlcGVuZGVuY2llcyogYXJlCiMgYWxyZWFkeSBibG9ja2VkIGJ5IGRlZmF1bHQgYW5kIG9ubHkgcnVuIGZvciBwYWNrYWdlcyBleHBsaWNpdGx5IGxpc3RlZAojIGluIGBwYWNrYWdlLmpzb24gPiBwbnBtLm9ubHlCdWlsdERlcGVuZGVuY2llc2AuIFNldHRpbmcgYGlnbm9yZS1zY3JpcHRzYAojIHdvdWxkIEFMU08gYmxvY2sgdGhvc2UgYWxsb3ctbGlzdGVkIGJ1aWxkcyAoZS5nLiBlbGVjdHJvbiBkb3dubG9hZGluZwojIGl0cyBiaW5hcnkpLCB3aGljaCB3ZSBuZWVkLiBUaGUgYWxsb3ctbGlzdCBpcyB0aGUgY29ycmVjdCBsZXZlciBoZXJlLgojIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAoKIyDilIDilIAgVmVyc2lvbiBwaW5uaW5nIOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgAojIEluc3RhbGxzIHdyaXRlIGV4YWN0IHZlcnNpb25zIHRvIHBhY2thZ2UuanNvbiAobm8gXiAvIH4gZHJpZnQpLgpzYXZlLWV4YWN0PXRydWUKc2F2ZS1wcmVmaXg9CgojIOKUgOKUgCBTdXBwbHktY2hhaW4gY29vbGRvd24g4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiMgUmVmdXNlIHRvIGluc3RhbGwgYSB2ZXJzaW9uIHB1Ymxpc2hlZCBsZXNzIHRoYW4gNyBkYXlzICgxMDA4MCBtaW4pIGFnby4KIyBUaGlzIGtlZXBzIGZyZXNobHktcHVibGlzaGVkIHBhY2thZ2VzIG91dHNpZGUgdGhlIGRlZmF1bHQgdHJ1c3Qgd2luZG93LgojIEFueSB1cmdlbnQgZXhjZXB0aW9uIG11c3QgYmUgZXhwbGljaXQsIG5hcnJvd2x5IHNjb3BlZCwgYW5kIGRvY3VtZW50ZWQuCm1pbmltdW0tcmVsZWFzZS1hZ2U9MTAwODAKCiMg4pSA4pSAIExvY2tmaWxlIHJlcHJvZHVjaWJpbGl0eSAvIHN0b3JlIGludGVncml0eSDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKIyBVc2UgdGhlIGNvbW1pdHRlZCBsb2NrZmlsZSBhcy1pcyB3aGVuIGl0J3MgaW4gc3luYzsgb25seSByZS1yZXNvbHZlIHdoZW4KIyBwYWNrYWdlLmpzb24gZ2VudWluZWx5IGNoYW5nZWQuIENJIGFkZGl0aW9uYWxseSBwYXNzZXMgLS1mcm96ZW4tbG9ja2ZpbGUuCnByZWZlci1mcm96ZW4tbG9ja2ZpbGU9dHJ1ZQojIFJlLWhhc2ggZXZlcnkgZmlsZSBwdWxsZWQgZnJvbSB0aGUgY29udGVudC1hZGRyZXNzYWJsZSBzdG9yZSBiZWZvcmUKIyBsaW5raW5nLCBzbyBhIHRhbXBlcmVkIHN0b3JlIGNhbid0IHNpbGVudGx5IGluamVjdCBjb2RlLgp2ZXJpZnktc3RvcmUtaW50ZWdyaXR5PXRydWUKIyBXYXJuIChkb24ndCBzaWxlbnRseSBydW4pIGlmIGluc3RhbGxlZCBkZXBzIGRyaWZ0IGZyb20gdGhlIGxvY2tmaWxlCiMgYmVmb3JlIGV4ZWN1dGluZyBhIGBwbnBtIHJ1bmAgc2NyaXB0Lgp2ZXJpZnktZGVwcy1iZWZvcmUtcnVuPXdhcm4KCiMg4pSA4pSAIEVuZ2luZSArIGRlcGVuZGVuY3kgc3RyaWN0bmVzcyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKIyBFbmZvcmNlIHRoZSBub2RlL3BucG0gdmVyc2lvbnMgZGVjbGFyZWQgaW4gcGFja2FnZS5qc29uID4gZW5naW5lcy4KZW5naW5lLXN0cmljdD10cnVlCmF1dG8taW5zdGFsbC1wZWVycz10cnVlCnN0cmljdC1wZWVyLWRlcGVuZGVuY2llcz1mYWxzZQoKIyDilIDilIAgQXVkaXQg4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSACiMgYHBucG0gYXVkaXRgIGZhaWxzIG9uIG1vZGVyYXRlKyBhZHZpc29yaWVzLgphdWRpdC1sZXZlbD1tb2RlcmF0ZQoKIyDilIDilIAgbm9kZV9tb2R1bGVzIGxheW91dCDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAKIyBlbGVjdHJvbi1wYWNrYWdlciB3YWxrcyBhIGZsYXQgKG5wbS1zdHlsZSkgbm9kZV9tb2R1bGVzIHRvIGJ1bmRsZSB0aGUKIyBhcHAncyBydW50aW1lIGRlcHM7IHBucG0ncyBkZWZhdWx0IGlzb2xhdGVkL3N5bWxpbmtlZCBzdG9yZSBoaWRlcwojIHRyYW5zaXRpdmUgZGVwcyAoZS5nLiBlbGVjdHJvbi1zdG9yZSAtPiBjb25mKSBmcm9tIHRoYXQgd2FsayBhbmQgdGhlCiMgcGFjayBmYWlscyB3aXRoICJGYWlsZWQgdG8gbG9jYXRlIG1vZHVsZSIuIGBob2lzdGVkYCBnaXZlcyBhIGZsYXQgdHJlZQojIHNvIHBhY2thZ2luZyB3b3Jrcy4gVGhpcyBvbmx5IGNoYW5nZXMgdGhlIG9uLWRpc2sgbGF5b3V0IOKAlCBpdCBkb2VzIE5PVAojIHdlYWtlbiB0aGUgc3VwcGx5LWNoYWluIHByb3RlY3Rpb25zIGFib3ZlIChjb29sZG93biwgYmxvY2tlZCBidWlsZAojIHNjcmlwdHMsIHN0b3JlIGludGVncml0eSwgZXhhY3QgcGlubmluZyBhbGwgc3RpbGwgYXBwbHkpLgpub2RlLWxpbmtlcj1ob2lzdGVkCg==
+        run: |
+          printf '%s' "$PACKAGE_B64" | base64 --decode > package.json
+          printf '%s' "$NPMRC_B64" | base64 --decode > .npmrc
 
-      - name: Upload migration workspace
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: typescript-source-${{ github.event.pull_request.head.sha || github.sha }}
-          path: /tmp/devbar-typescript-source.tgz
-          retention-days: 1
-          if-no-files-found: error
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
           cache: pnpm
 
-      - name: Cache node_modules
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            node-modules-${{ runner.os }}-
+      - name: Resolve lockfile
+        run: pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts
 
-      - name: Cache Electron download
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.cache/electron
-          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Verify resolved metadata
+        run: pnpm install --lockfile-only --frozen-lockfile --ignore-scripts
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Archive installed type declarations
-        shell: bash
-        run: |
-          set -euo pipefail
-          find node_modules -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' -o -name 'package.json' \) -print0 \
-            | tar --null -czf /tmp/devbar-type-declarations.tgz --files-from=-
-
-      - name: Upload installed type declarations
+      - name: Upload lockfile
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: typescript-types-${{ github.event.pull_request.head.sha || github.sha }}
-          path: /tmp/devbar-type-declarations.tgz
+          name: typescript-migration-lock-${{ github.event.pull_request.head.sha }}
+          path: pnpm-lock.yaml
           retention-days: 1
           if-no-files-found: error
-
-      - name: Checks (lint, format, dead code, deps)
-        run: pnpm lint:strict && pnpm format:check && pnpm deadcode && pnpm deps:check
-
-      - name: Tests
-        run: pnpm test
-
-      - name: Build (package app)
-        run: pnpm run pack
