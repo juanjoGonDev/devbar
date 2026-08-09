@@ -3,6 +3,12 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.4.3] - 2026-08-08
+
+### Corregido
+
+- La automatización de **QA requerida para actualizaciones mayores de Dependabot** ya no falla cuando la rama está lista para fusionarse ni intenta elevar permisos para reescribir workflows. Las aprobaciones siguen ligadas al commit exacto y las fusiones automatizadas usan la identidad de confianza para conservar los eventos posteriores de GitHub Actions.
+
 ## [0.4.2] - 2026-08-06
 
 ### Cambiado
