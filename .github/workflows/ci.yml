@@ -61,6 +61,21 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Archive installed type declarations
+        shell: bash
+        run: |
+          set -euo pipefail
+          find node_modules -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' -o -name 'package.json' \) -print0 \
+            | tar --null -czf /tmp/devbar-type-declarations.tgz --files-from=-
+
+      - name: Upload installed type declarations
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: typescript-types-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/devbar-type-declarations.tgz
+          retention-days: 1
+          if-no-files-found: error
+
       - name: Checks (lint, format, dead code, deps)
         run: pnpm lint:strict && pnpm format:check && pnpm deadcode && pnpm deps:check
 
