@@ -40,29 +40,79 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
+
+          # Work on the actual PR branch, not GitHub's synthetic pull/merge ref.
+          git checkout -B refactor/typescript-migration origin/refactor/typescript-migration
 
           # Remove this temporary CI instrumentation from the working tree before
           # applying the real migration so it cannot survive in the published PR.
           git show HEAD^:.github/workflows/ci.yml > .github/workflows/ci.yml
           git add .github/workflows/ci.yml
 
-          payload_parts=(.migration-transport/data-*)
-          if (( ${#payload_parts[@]} == 0 )); then
-            echo '::error::No data-* migration payload parts found.'
-            exit 1
-          fi
+          python3 <<'PY'
+          from __future__ import annotations
 
-          cat "${payload_parts[@]}" | tr -d '\r\n ' > /tmp/typescript-migration.b64
-          base64 --decode /tmp/typescript-migration.b64 > /tmp/typescript-migration.xz
-          xz -t /tmp/typescript-migration.xz
-          xz -dc /tmp/typescript-migration.xz > /tmp/typescript-migration.patch
+          import base64
+          import itertools
+          import lzma
+          from pathlib import Path
 
-          if ! grep -q '^diff --git ' /tmp/typescript-migration.patch; then
-            echo '::error::Decoded payload is not a Git patch.'
-            head -c 200 /tmp/typescript-migration.patch || true
-            exit 1
-          fi
+          parts = sorted(Path('.migration-transport').iterdir())
+          if not parts:
+              raise SystemExit('No migration transport parts found')
+
+          texts = {part: ''.join(part.read_text().split()) for part in parts}
+          print('Transport parts:')
+          for part in parts:
+              text = texts[part]
+              print(f'  {part.name}: {len(text)} base64 chars, start={text[:12]!r}, end={text[-12:]!r}')
+
+          starts: list[Path] = []
+          for part in parts:
+              text = texts[part]
+              try:
+                  prefix = base64.b64decode(text[:16] + '===')
+              except Exception:
+                  continue
+              if prefix.startswith(b'\xfd7zXZ\x00'):
+                  starts.append(part)
+
+          if not starts:
+              raise SystemExit('No transport part starts with an XZ header')
+
+          found: tuple[Path, ...] | None = None
+          decoded_patch: bytes | None = None
+
+          for start in starts:
+              remaining = [part for part in parts if part != start]
+              for count in range(len(remaining) + 1):
+                  for suffix in itertools.permutations(remaining, count):
+                      order = (start, *suffix)
+                      payload = ''.join(texts[part] for part in order)
+                      try:
+                          compressed = base64.b64decode(payload, validate=True)
+                      except Exception:
+                          continue
+                      try:
+                          candidate = lzma.decompress(compressed)
+                      except lzma.LZMAError:
+                          continue
+                      if not candidate.startswith(b'diff --git '):
+                          continue
+                      found = order
+                      decoded_patch = candidate
+                      break
+                  if found is not None:
+                      break
+              if found is not None:
+                  break
+
+          if found is None or decoded_patch is None:
+              raise SystemExit('No valid XZ Git patch could be reconstructed from transport parts')
+
+          print('Reconstructed payload order:', ' -> '.join(part.name for part in found))
+          Path('/tmp/typescript-migration.patch').write_bytes(decoded_patch)
+          PY
 
           if git apply --check /tmp/typescript-migration.patch; then
             git apply --index /tmp/typescript-migration.patch
