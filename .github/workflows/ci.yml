@@ -6,10 +6,8 @@ on:
     branches: [main] # only PRs targeting the main branch
     types: [opened, reopened, synchronize, ready_for_review]
 
-# Temporary write access is restricted by the guarded migration step below.
-# The finalized commit restores the permanent CI permissions before publication.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -25,186 +23,21 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          persist-credentials: true
-          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Recover and publish strict TypeScript migration
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.head_ref == 'refactor/typescript-migration' &&
-          github.event.pull_request.head.repo.full_name == github.repository
+      - name: Archive migration workspace
         shell: bash
-        run: |
-          set -euo pipefail
-          git checkout -B refactor/typescript-migration origin/refactor/typescript-migration
+        run: tar --exclude=.git -czf /tmp/devbar-typescript-source.tgz .
 
-          # Restore permanent CI before applying the prepared migration patch.
-          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
-          git add .github/workflows/ci.yml
-
-          python3 <<'PY'
-          from __future__ import annotations
-
-          import base64
-          import gzip
-          import lzma
-          import re
-          import subprocess
-          from pathlib import Path
-
-          REFS = (
-              'origin/refactor/typescript-migration',
-              'origin/refactor/typescript-migration-delivery',
-          )
-          DIRECTORIES = ('.transport/', '.delivery/', '.migration-transport/')
-
-          def git(*args: str) -> str:
-              return subprocess.check_output(('git', *args), text=True)
-
-          def read_blob(commit: str, path: str) -> str:
-              return git('show', f'{commit}:{path}')
-
-          def decode_variants(text: str) -> list[tuple[str, bytes]]:
-              compact = ''.join(text.split())
-              variants: list[tuple[str, bytes]] = []
-              if compact and re.fullmatch(r'[0-9A-Fa-f]+', compact) and len(compact) % 2 == 0:
-                  try:
-                      variants.append(('hex', bytes.fromhex(compact)))
-                  except ValueError:
-                      pass
-              if compact and re.fullmatch(r'[A-Za-z0-9+/=]+', compact):
-                  try:
-                      variants.append(('base64', base64.b64decode(compact, validate=True)))
-                  except Exception:
-                      pass
-              return variants
-
-          def decompress(data: bytes) -> list[tuple[str, bytes]]:
-              out: list[tuple[str, bytes]] = []
-              try:
-                  out.append(('xz', lzma.decompress(data)))
-              except lzma.LZMAError:
-                  pass
-              try:
-                  out.append(('gzip', gzip.decompress(data)))
-              except (gzip.BadGzipFile, EOFError, OSError):
-                  pass
-              return out
-
-          def family(path: str) -> str:
-              name = path.rsplit('/', 1)[-1]
-              return re.sub(r'[-_.]?\d+$', '', name)
-
-          seen_snapshots: set[tuple[str, ...]] = set()
-          found: tuple[str, str, list[str], str, str, bytes] | None = None
-
-          for ref in REFS:
-              commits = git('rev-list', '--reverse', ref).splitlines()
-              for commit in commits:
-                  paths = [
-                      path
-                      for path in git('ls-tree', '-r', '--name-only', commit).splitlines()
-                      if path.startswith(DIRECTORIES)
-                  ]
-                  groups: dict[tuple[str, str], list[str]] = {}
-                  for path in paths:
-                      directory = path.split('/', 1)[0]
-                      groups.setdefault((directory, family(path)), []).append(path)
-
-                  for (_directory, _family), group_paths in groups.items():
-                      ordered = sorted(group_paths)
-                      snapshot_key = tuple(
-                          f'{path}:{git("rev-parse", f"{commit}:{path}").strip()}'
-                          for path in ordered
-                      )
-                      if snapshot_key in seen_snapshots:
-                          continue
-                      seen_snapshots.add(snapshot_key)
-
-                      joined = ''.join(read_blob(commit, path) for path in ordered)
-                      for encoding, binary in decode_variants(joined):
-                          for compression, candidate in decompress(binary):
-                              if not candidate.startswith(b'diff --git '):
-                                  continue
-                              found = (ref, commit, ordered, encoding, compression, candidate)
-                              break
-                          if found:
-                              break
-                      if found:
-                          break
-                  if found:
-                      break
-              if found:
-                  break
-
-          if found is None:
-              print('No complete migration archive found. Historical transport snapshots:')
-              for ref in REFS:
-                  print(f'-- {ref}')
-                  commits = git('rev-list', '--reverse', ref).splitlines()
-                  for commit in commits:
-                      paths = [
-                          path
-                          for path in git('ls-tree', '-r', '--name-only', commit).splitlines()
-                          if path.startswith(DIRECTORIES)
-                      ]
-                      if paths:
-                          subject = git('show', '-s', '--format=%s', commit).strip()
-                          print(commit[:12], subject, ', '.join(paths))
-              raise SystemExit('Unable to recover a complete migration patch from Git history')
-
-          ref, commit, paths, encoding, compression, patch = found
-          print(f'Recovered migration from {ref} at {commit}')
-          print(f'Encoding={encoding}, compression={compression}, files={paths}')
-          print(f'Patch bytes={len(patch)}')
-          Path('/tmp/typescript-migration.patch').write_bytes(patch)
-          PY
-
-          # The original verified finalizer established these six renames before
-          # applying the patch. Keep that exact precondition when the legacy paths exist.
-          rename_if_needed() {
-            local source=$1
-            local target=$2
-            if [[ -e "$source" && ! -e "$target" ]]; then
-              git mv "$source" "$target"
-            fi
-          }
-          rename_if_needed renderer/config.js renderer/config.ts
-          rename_if_needed renderer/tray.js renderer/tray.ts
-          rename_if_needed src/icon-battery.js src/icon-battery.ts
-          rename_if_needed src/main.js src/main.ts
-          rename_if_needed tests/groups-model.test.js tests/groups-model.test.ts
-          rename_if_needed tests/pre-script-runner.test.js tests/pre-script-runner.test.ts
-
-          if git apply --check /tmp/typescript-migration.patch; then
-            git apply /tmp/typescript-migration.patch
-          else
-            git apply --3way /tmp/typescript-migration.patch
-          fi
-          git add -A
-
-          # Remove every migration-only transport/debug artifact from the final tree.
-          rm -rf .migration-transport .transport .delivery
-          rm -f .agents/_probe-do-not-create
-          rm -f .github/workflows/finalize-typescript-payload.yml
-          git add -A
-
-          if [[ -n "$(git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs')" ]]; then
-            echo '::error::Authored JavaScript-family files remain after migration.'
-            git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs'
-            exit 1
-          fi
-
-          git diff --cached --check
-          git status --short
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'refactor(typescript): publish strict TypeScript migration'
-          git push origin HEAD:refactor/typescript-migration
+      - name: Upload migration workspace
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: typescript-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/devbar-typescript-source.tgz
+          retention-days: 1
+          if-no-files-found: error
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
-        # version comes from package.json "packageManager"
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
