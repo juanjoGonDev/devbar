@@ -27,6 +27,8 @@ jobs:
           fetch-depth: 0
 
       - name: Recover and verify overlay
+        id: recover
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -63,7 +65,15 @@ jobs:
           expected_b64_len = 231_680
           expected_sha = 'e623b48cdcf56703dea5b71567be34d0183ed2d3514271f7856d8d6bea2bfc01'
           known = Path('/tmp/known.b64').read_text()
-          assert len(known) == 180_000
+          diagnostics: list[str] = [f'known_length={len(known)}']
+
+          def fail(message: str) -> None:
+              diagnostics.append(f'failure={message}')
+              Path('/tmp/recovery-diagnostic.txt').write_text('\n'.join(diagnostics) + '\n')
+              raise SystemExit(message)
+
+          if len(known) != 180_000:
+              fail('known prefix length mismatch')
 
           paths = [
               Path('.migration-final/part-00'), Path('.migration-final/part-01'),
@@ -82,8 +92,11 @@ jobs:
               if all(name in raw for name in names):
                   candidates[prefix] = ''.join(raw[name] for name in names)
 
-          def try_extend(current: str, candidate: str) -> str | None:
+          diagnostics.extend(f'candidate[{name}]={len(value)}' for name, value in sorted(candidates.items()))
+
+          def try_extend(current: str, candidate: str) -> tuple[str | None, int]:
               best: str | None = None
+              best_overlap = 0
               for anchor_len in (4096, 2048, 1024, 512, 256, 128):
                   if len(current) < anchor_len:
                       continue
@@ -100,41 +113,73 @@ jobs:
                           extended = current + candidate[idx + anchor_len:]
                           if len(extended) > len(current) and (best is None or len(extended) > len(best)):
                               best = extended
+                              best_overlap = overlap
                       start = idx + 1
                   if best is not None:
-                      return best
-              return None
+                      return best, best_overlap
+              return None, 0
 
           assembled = known
           used: list[str] = []
           while len(assembled) < expected_b64_len:
-              options: list[tuple[int, str, str]] = []
+              options: list[tuple[int, str, str, int]] = []
               for name, candidate in candidates.items():
-                  extended = try_extend(assembled, candidate)
+                  extended, overlap = try_extend(assembled, candidate)
+                  diagnostics.append(f'probe[{len(assembled)}][{name}]=extended:{len(extended) if extended else 0}:overlap:{overlap}')
                   if extended is not None:
-                      options.append((len(extended), name, extended))
+                      options.append((len(extended), name, extended, overlap))
               if not options:
                   break
-              _, name, assembled = max(options)
+              _, name, assembled, overlap = max(options)
               used.append(name)
+              diagnostics.append(f'use={name}:length={len(assembled)}:overlap={overlap}')
               candidates.pop(name, None)
-              print(f'extended via {name}: {len(assembled)} chars')
 
+          diagnostics.append(f'assembled_length={len(assembled)}')
+          diagnostics.append(f'used={",".join(used)}')
           if len(assembled) < expected_b64_len:
-              raise SystemExit(f'Could not recover full overlay: {len(assembled)}/{expected_b64_len} chars; used={used}')
+              fail(f'incomplete overlay {len(assembled)}/{expected_b64_len}')
+
           assembled = assembled[:expected_b64_len]
-          payload = base64.b64decode(assembled, validate=True)
+          try:
+              payload = base64.b64decode(assembled, validate=True)
+          except Exception as exc:
+              fail(f'base64 validation failed: {type(exc).__name__}')
           actual = hashlib.sha256(payload).hexdigest()
+          diagnostics.append(f'payload_sha256={actual}')
           if actual != expected_sha:
-              raise SystemExit(f'Overlay checksum mismatch: {actual}')
-          lzma.decompress(payload)
+              fail(f'overlay checksum mismatch {actual}')
+          try:
+              lzma.decompress(payload)
+          except Exception as exc:
+              fail(f'xz validation failed: {type(exc).__name__}')
           Path('/tmp/devbar-overlay.b64').write_text(assembled)
           Path('/tmp/devbar-overlay.tar.xz').write_bytes(payload)
+          Path('/tmp/recovery-diagnostic.txt').write_text('\n'.join(diagnostics) + '\n')
           print(f'verified overlay sha256={actual}; recovery={used}')
           PY
           xz -t /tmp/devbar-overlay.tar.xz
 
+      - name: Publish recovery diagnostic
+        if: steps.recover.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agents/.verify
+          if [[ -f /tmp/recovery-diagnostic.txt ]]; then
+            cp /tmp/recovery-diagnostic.txt .agents/.verify/recovery-diagnostic.txt
+          else
+            printf 'failure=recovery stopped before Python diagnostic\n' > .agents/.verify/recovery-diagnostic.txt
+          fi
+          git add -- .agents/.verify/recovery-diagnostic.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(typescript): record recovery diagnostic'
+          git push origin HEAD:refactor/typescript-migration
+          exit 1
+
       - name: Materialize strict TypeScript tree
+        if: steps.recover.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
