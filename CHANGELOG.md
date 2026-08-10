@@ -3,6 +3,18 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.4.4] - 2026-08-10
+
+### Cambiado
+
+- Todo el código JavaScript mantenido en el repositorio se ha migrado a **TypeScript estricto**: proceso principal de Electron, preload, renderer, scripts de soporte/release, tests y configuración ejecutable. El JavaScript de runtime pasa a ser únicamente salida generada de `build/`.
+- El renderer usa módulos ES explícitos y comparte un único contrato tipado de IPC con main/preload; el preload se empaqueta de forma autocontenida en CommonJS para mantener el aislamiento de Electron.
+- CI incorpora type-check de los cuatro targets y rechaza de forma permanente cualquier nuevo `.js`, `.jsx`, `.mjs` o `.cjs` authored.
+
+### Seguridad
+
+- Los argumentos IPC procedentes del renderer se tratan como datos no confiables (`unknown`) y se validan antes de entrar en la lógica de dominio, evitando que los tipos de Electron propaguen `any` implícito a través de la frontera de confianza.
+
 ## [0.4.3] - 2026-08-08
 
 ### Corregido

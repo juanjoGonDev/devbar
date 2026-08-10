@@ -1,20 +1,20 @@
 {
   "name": "devbar",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Menu bar service launcher for Mac (WAMP-style)",
-  "main": "src/main.js",
+  "main": "build/src/main.js",
   "packageManager": "pnpm@10.32.1",
   "engines": {
     "node": ">=22.13.0",
     "pnpm": ">=10.16.0"
   },
   "scripts": {
-    "start": "electron .",
+    "start": "pnpm run build && electron .",
     "fetch-electron": "node node_modules/electron/install.js",
-    "pack": "bash scripts/package-macos-app.sh",
-    "dist:mac": "bash scripts/build-macos-release.sh",
-    "release:verify": "bash scripts/verify-macos-release.sh",
-    "release:mac": "pnpm run dist:mac && pnpm run release:verify",
+    "pack": "pnpm run build && bash scripts/package-macos-app.sh",
+    "dist:mac": "pnpm run build && bash scripts/build-macos-release.sh",
+    "release:verify": "pnpm run build && bash scripts/verify-macos-release.sh",
+    "release:mac": "pnpm run dist:mac && bash scripts/verify-macos-release.sh",
     "install-local": "bash scripts/install-local.sh",
     "logs": "tail -F \"$HOME/Library/Logs/DevBar/app.log\"",
     "test": "vitest run",
@@ -24,19 +24,30 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "deadcode": "knip",
-    "deps:check": "depcruise src renderer scripts --config .dependency-cruiser.cjs",
-    "quality": "pnpm lint:strict && pnpm deadcode && pnpm deps:check && pnpm test",
-    "postinstall": "node scripts/install-hooks.js"
+    "deps:check": "depcruise src renderer scripts --config .dependency-cruiser.json --ts-config tsconfig.node.json",
+    "quality": "pnpm typecheck && pnpm lint:strict && pnpm deadcode && pnpm deps:check && pnpm test",
+    "postinstall": "node --experimental-strip-types scripts/install-hooks.ts",
+    "build": "bash scripts/build.sh",
+    "typecheck": "pnpm typecheck:node && pnpm typecheck:preload && pnpm typecheck:renderer && pnpm typecheck:tests",
+    "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
+    "typecheck:preload": "tsc -p tsconfig.preload.json --noEmit",
+    "typecheck:renderer": "tsc -p tsconfig.renderer.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit"
   },
   "devDependencies": {
     "@electron/packager": "20.0.3",
+    "@types/debug": "4.1.13",
+    "@types/electron-positioner": "4.1.4",
+    "@types/node": "22.20.1",
     "dependency-cruiser": "18.1.0",
     "electron": "43.2.0",
+    "esbuild": "0.28.1",
     "eslint": "10.7.0",
-    "globals": "17.7.0",
     "knip": "6.29.0",
     "lefthook": "2.1.10",
     "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.64.0",
     "vitest": "4.1.10"
   },
   "dependencies": {
@@ -48,10 +59,12 @@
     "overrides": {
       "fast-uri": "3.1.5",
       "js-yaml": "4.3.0",
-      "brace-expansion@>=4.0.0 <5.0.9": ">=5.0.9"
+      "brace-expansion@>=4.0.0 <5.0.9": ">=5.0.9",
+      "@types/electron-positioner>electron": "43.2.0"
     },
     "onlyBuiltDependencies": [
       "lefthook"
     ]
-  }
+  },
+  "type": "module"
 }

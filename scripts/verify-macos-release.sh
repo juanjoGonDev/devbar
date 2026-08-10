@@ -25,7 +25,7 @@ if [ "$(uname -s)" != 'Darwin' ]; then
   fail 'macOS release artifacts must be verified on macOS.'
 fi
 
-node "$ROOT_DIR/scripts/verify-release-artifacts.js" "$OUTPUT_DIR" "$VERSION"
+node "$ROOT_DIR/build/scripts/verify-release-artifacts.js" "$OUTPUT_DIR" "$VERSION"
 
 verify_architecture() {
   local architecture=$1

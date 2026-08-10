@@ -8,10 +8,10 @@ The migration is completion-driven: authored `.js`, `.jsx`, `.mjs`, and `.cjs` f
 
 ## Evidence
 
-- Baseline commit: `04301259ac4579c83eec27a632eea23817225521` on `main`.
-- Baseline package version: `0.4.2`.
+- Original migration baseline: `04301259ac4579c83eec27a632eea23817225521` (`0.4.2`).
+- Branch synchronized against current `main` baseline `21dc43e781d095f95d699b2c1c21a31617d738c6` (`0.4.3`) before final delivery.
 - Runtime/tooling: Node.js 22+, pnpm 10, Electron 43, Vitest 4, ESLint 10, Knip 6, dependency-cruiser 18, electron-store, menubar, and custom macOS packaging/release scripts.
-- `package.json#main` currently points to `src/main.js`.
+- Pre-migration `package.json#main` pointed to `src/main.js`; the migrated runtime entry is `build/src/main.js`.
 - Authored JavaScript exists in the Electron main process, preload, renderer, tests, Node utility/release scripts, and root tooling configuration.
 - Renderer lint configuration currently models classic-script cross-file globals, confirming accidental global coupling that must be removed rather than preserved.
 - Preload currently duplicates silence-pattern logic because requiring a sibling module from the packaged preload previously broke `contextBridge` initialization.
@@ -104,10 +104,20 @@ Revert the migration pull request. Generated build output is ignored and no tag,
 ## Delivery
 
 - Branch: `refactor/typescript-migration`
-- Commit: pending completion
-- Pull request: pending completion
+- Commit: final remote delivery pending
+- Pull request: #44 (`refactor: migrate DevBar to strict TypeScript`)
 - Merge/release: explicitly excluded without owner approval
 
 ## Status
 
-Implementation in progress.
+Implementation and local validation complete; remote publication and authoritative GitHub validation remain pending.
+
+Local evidence from the final candidate tree:
+
+- TypeScript typecheck passes for Node/main, preload, renderer, and tests.
+- ESLint type-aware strict mode, Prettier, Knip, and dependency-cruiser pass.
+- Vitest passes 20/20 files and 429/429 tests without skips.
+- Clean build succeeds, including bundled `build/src/preload.cjs`.
+- Authored JavaScript-family audit reports zero files outside ignored generated/dependency output.
+- Unsafe TypeScript escape audit reports zero explicit `any`, `@ts-ignore`, or `@ts-nocheck`.
+- Full Electron/macOS packaging remains an authoritative GitHub/macOS gate because this Linux sandbox cannot provide the release runtime/tooling environment.
