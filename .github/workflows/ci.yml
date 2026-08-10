@@ -13,18 +13,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  migration-toolchain:
-    name: Export TypeScript migration toolchain
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: >-
       github.repository == 'juanjoGonDev/devbar' &&
-      github.event_name == 'pull_request' &&
-      github.head_ref == 'refactor/typescript-migration' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.draft == false)
+    permissions:
+      contents: read
     steps:
-      - name: Checkout
+      - name: Checkout candidate commit
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
@@ -38,34 +37,32 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Resolve migration dependencies
-        run: >-
-          pnpm add --save-dev
-          typescript@6.0.3
-          typescript-eslint@8.64.0
-          @types/node@22.20.1
-          @types/debug@4.1.13
-          @types/electron-positioner@4.1.4
-          esbuild@0.28.1
-
-      - name: Archive toolchain
-        run: >-
-          tar --exclude='node_modules/electron/dist' --exclude='node_modules/.cache'
-          -czf /tmp/typescript-toolchain.tgz package.json pnpm-lock.yaml node_modules
-
-      - name: Upload toolchain
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - name: Cache Electron downloads
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          name: typescript-toolchain-${{ github.event.pull_request.head.sha }}
-          path: /tmp/typescript-toolchain.tgz
-          retention-days: 1
-          if-no-files-found: error
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - name: Upload final migration payload
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: typescript-final-payload-${{ github.event.pull_request.head.sha }}
-          path: .migration-final/part-*
-          include-hidden-files: true
-          retention-days: 1
-          if-no-files-found: error
+      - name: Install reproducibly
+        run: pnpm install --frozen-lockfile
+
+      - name: Type safety and authored-source policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm typecheck
+          authored_js=$(git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs')
+          if [[ -n "$authored_js" ]]; then
+            echo '::error::Repository-authored JavaScript-family files are forbidden after the TypeScript migration.'
+            printf '%s\n' "$authored_js"
+            exit 1
+          fi
+
+      - name: Static quality
+        run: pnpm lint:strict && pnpm format:check && pnpm deadcode && pnpm deps:check
+
+      - name: Tests
+        run: pnpm test
+
+      - name: Build and package smoke
+        run: pnpm run pack
