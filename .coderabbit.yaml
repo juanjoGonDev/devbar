@@ -3,7 +3,7 @@ reviews:
   path_filters:
     # Authored JavaScript-family files are forbidden by CI after this migration.
     # Excluding their legacy deletions keeps reviews focused on the TypeScript replacements.
-    - "!**/*.js"
-    - "!**/*.jsx"
-    - "!**/*.mjs"
-    - "!**/*.cjs"
+    - '!**/*.js'
+    - '!**/*.jsx'
+    - '!**/*.mjs'
+    - '!**/*.cjs'
