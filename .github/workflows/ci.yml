@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  inspect-migration:
-    name: Inspect final TypeScript migration archive
+  export-migration:
+    name: Export final TypeScript migration parts
     if: >-
       github.repository == 'juanjoGonDev/devbar' &&
       github.event_name == 'pull_request' &&
@@ -28,20 +28,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Decode migration archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat .migration-final/part-* | tr -d '\r\n ' > /tmp/migration-final.b64
-          base64 --decode /tmp/migration-final.b64 > /tmp/migration-final.xz
-          xz -t /tmp/migration-final.xz
-          xz -dc /tmp/migration-final.xz > /tmp/migration-final.tar
-          tar -tf /tmp/migration-final.tar
-
-      - name: Upload decoded migration archive
+      - name: Upload raw migration parts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: typescript-migration-final-${{ github.event.pull_request.head.sha }}
-          path: /tmp/migration-final.tar
+          name: typescript-migration-parts-${{ github.event.pull_request.head.sha }}
+          path: .migration-final/part-*
           retention-days: 1
           if-no-files-found: error
