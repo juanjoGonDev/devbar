@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - refactor/typescript-migration
+  pull_request:
+    branches:
+      - main
+    types:
+      - synchronize
 
 permissions:
   contents: write
@@ -14,7 +19,11 @@ concurrency:
 
 jobs:
   materialize:
-    if: github.repository == 'juanjoGonDev/devbar' && github.actor != 'github-actions[bot]'
+    if: >-
+      github.repository == 'juanjoGonDev/devbar' &&
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name == 'push' || github.head_ref == 'refactor/typescript-migration')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
