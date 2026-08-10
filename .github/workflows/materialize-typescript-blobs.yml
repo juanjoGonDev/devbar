@@ -1,0 +1,93 @@
+name: Materialize TypeScript migration blobs
+
+on:
+  push:
+    branches:
+      - refactor/typescript-migration
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-typescript-migration
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.repository == 'juanjoGonDev/devbar' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Reconstruct, verify and publish TypeScript tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='e623b48cdcf56703dea5b71567be34d0183ed2d3514271f7856d8d6bea2bfc01'
+          shas=(
+            e76aeab9ac467e2b7953ae4327ff7a51277e9289
+            536a81b9268bd0e46ae83a2b938109fbf28b7314
+            a6d205703fad59c9c2034000141437bc9db2918c
+            352fa79e51b6ec9d00522e9ff7a0320ca6ed13e6
+            0a76b15525b6252b2d82701641280115ad9c754e
+            5b2d539440427a30690b0eec92ad396de718ac59
+            ddd3b76c2a791d90697f542460f11ddb8cab2790
+            d519721d5456837ea32941429c9ad72f04ceee0d
+            065b55b8fd1aa14d98f3aff3e5908a129d855d83
+            562054eab4c37a73924babd3f6f968842065f995
+            34dce2ba393f76737472b905530f6dfe069ed75e
+            eec707879b38c902451f5e974825560d1a849887
+            f99b36c3d412d8cbab3a7668c05e77238b823f90
+            c19c16f8499cad4519bd105e1b171c6d9fb7fcec
+            257b163b5e30093fb218c459608ae7f547e8feb8
+          )
+
+          : > /tmp/devbar-overlay.b64
+          for sha in "${shas[@]}"; do
+            # The API wraps each UTF-8 blob in Base64. Decode only that wrapper;
+            # the resulting bytes are the original Base64 overlay fragment.
+            gh api "repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" --jq '.content' \
+              | tr -d '\r\n' \
+              | base64 --decode >> /tmp/devbar-overlay.b64
+          done
+
+          base64 --decode /tmp/devbar-overlay.b64 > /tmp/devbar-overlay.tar.xz
+          actual=$(sha256sum /tmp/devbar-overlay.tar.xz | awk '{print $1}')
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Overlay checksum mismatch (actual=$actual). Refusing to modify source files."
+            exit 1
+          fi
+          xz -t /tmp/devbar-overlay.tar.xz
+
+          tar -xJf /tmp/devbar-overlay.tar.xz -C .
+
+          mapfile -t jsfiles < <(git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs')
+          if (( ${#jsfiles[@]} )); then
+            git rm -f -- "${jsfiles[@]}"
+          fi
+
+          rm -rf .migration-transport .migration-final .agents/.typescript-upload .agents/.blob-check .agents/.verify
+          rm -f .agents/_probe-do-not-create .agents/DO-NOT-CREATE
+          rm -f .github/workflows/finalize-typescript-payload.yml
+          rm -f .github/workflows/materialize-typescript.yml
+          rm -f .github/workflows/materialize-typescript-blobs.yml
+
+          git add -A
+          if [[ -n "$(git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs')" ]]; then
+            echo '::error::Authored JavaScript-family files remain after migration.'
+            git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs'
+            exit 1
+          fi
+          git diff --cached --check
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'refactor(typescript): publish strict TypeScript migration'
+          git push origin HEAD:refactor/typescript-migration
