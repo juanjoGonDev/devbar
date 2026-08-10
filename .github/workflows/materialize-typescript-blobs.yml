@@ -1,4 +1,4 @@
-name: Recover verified TypeScript migration
+name: Materialize verified TypeScript migration
 
 on:
   push:
@@ -9,11 +9,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: recover-typescript-migration
+  group: materialize-verified-typescript-migration
   cancel-in-progress: false
 
 jobs:
-  recover:
+  materialize:
     if: github.repository == 'juanjoGonDev/devbar' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -26,164 +26,90 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: Recover and verify overlay
-        id: recover
-        continue-on-error: true
+      - name: Reconstruct and verify final overlay
         shell: bash
         run: |
           set -euo pipefail
+          expected_length=227372
+          expected_sha='57d21d1c7038f3c3f1928889690b89a64f2ae30dc07498a34bf58bbf2eef33cc'
           shas=(
-            e76aeab9ac467e2b7953ae4327ff7a51277e9289
-            536a81b9268bd0e46ae83a2b938109fbf28b7314
-            a6d205703fad59c9c2034000141437bc9db2918c
-            352fa79e51b6ec9d00522e9ff7a0320ca6ed13e6
-            0a76b15525b6252b2d82701641280115ad9c754e
-            5b2d539440427a30690b0eec92ad396de718ac59
-            ddd3b76c2a791d90697f542460f11ddb8cab2790
-            d519721d5456837ea32941429c9ad72f04ceee0d
-            065b55b8fd1aa14d98f3aff3e5908a129d855d83
-            562054eab4c37a73924babd3f6f968842065f995
-            86b5034bae42f657bea93cba614ac2cd0b311483
-            c295161ac28cecd2a3dcb3eecfba6e16cd37b54b
-            d4764ce79b08aba4b3ae0be4abd53883b5c80f7b
-            5915513a0896b94d66f8413b4a1cda82f69a05d1
+            7adcd09285aabe2345b1effeb0466079c40e1362
+            cc51116faf8bbd7287a57af3389b9ec3543c20b5
+            025c0a0bc862fe37e92fe0092e3e4c565c9629c4
+            9a64c471c366a1222366655ea78f7d2a7eb867f9
+            a5c75454bcdf5be714e1312be3b1f2911c577a9e
+            33b86e038ecce07a09aaad950775cdf4f3b244c3
+            5f50f1aac1600ba5b5283d1e50e4065c10d261db
+            534b2be591b7fdd39e7d036b7e020f2d7434953a
+            38641791ad8205b82365a0fc78ce30c7ada223b8
+            0f3bdd716202ab235513f09e79487aeea8d0d7de
+            d79732086ecb42f11e609f459a5a887bbf3603f7
+            26fdea6569439a0c18ec76f5043ddebd5c2096d4
+            88c361ddef06fdfaf3ac9599258ebbeaeff90ca5
+            fb64ccd8e08aebafc97bef40a52696b787abf81f
+            f6962711662ae2f836d94efe30b118b98c20f49f
+            305fd6b1237d5993afc30f17b27d67bcd2875586
+            906ce2e18e319b5ef6f9ecf4178a68b4a9a6eae0
+            69cf71a8c72e486b87583dd53c243d2907b32b35
+            3e8203b793a01f2be8e86461dbd191e24dd23e00
+            8b9451a43698998613d3112a709f0485c0c80af1
+            05884d0e1e73c87561dd552d62bbb5eaa3e338d4
+            a774bf6ca5a7fa75ac735424632966255fed364d
+            32dcce1f8e666766eb192ba09a2d6e33a5cbd3d6
+            6a8d5f6a9a902e76ff6e6d04376379ad2fde1605
+            ca17feb9567296a6349738f6176ce8d4803f435b
+            338896c705eee6c18bccf2194890759c553dadc2
+            abb77a2b882e8069cfbc36eff7e16c9825bebdcd
+            7e45daae16cf3194f846daeb1c1d29d651536607
+            4082192f1c8c58bd10d9ac4093dc978303e6cb4d
+            b284296eaf60ce349e52f3caab02dc88e69a4ab6
+            a6519e2cd83fb063700eb948905a1dd7933f719c
+            b3ccf211ac0606496736f767ea669070094100fc
+            0b1b0d28b29d45f8eece3f7c3af4dcad4e750417
+            82384dd75f5b331aac633e7058f34e283b2f5982
+            650824938b6e0f0495b9ef4e3db6147135331038
+            0003da444ee364a87f101c34e0d92acec24b3e91
+            0789ddc4af397f58cb32c9b5f45f3cfb0e6521e5
+            1352ad7fcdbbb2047277b99d10228d4aa488dcf8
+            1113e5f473c8597fdb00bda49681397e09d713ac
+            9e6fb437b239bf43cbc57183a6b79aaf88603d79
+            011833b49abec4f112aafe7e4f7e652641b76aef
+            eae9c2b39c9c07811e95f4e25a8b6021265c2a15
+            63186f1181abd117e4c46a6e4d134aa372ca3d75
+            e2230f8bd2a98890e79d5718db5b76ae745229d3
+            be6eecb24696057e21c4f99c82da3a4bdc3689f5
+            d912090877da182b2ddffda882b26a756a00af76
+            a731bebe676857a26075f6b21a6c1257f2fe64db
+            6ac673e4e44ef888c1ae2cb30c5b6cca3c330f70
+            af4f528d9cc1c55b34a289d93321293be60d3d4f
           )
-          : > /tmp/known.b64
+
+          : > /tmp/devbar-overlay.b64
           for sha in "${shas[@]}"; do
             gh api "repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" --jq '.content' \
-              | tr -d '\r\n' | base64 --decode >> /tmp/known.b64
+              | tr -d '\r\n' \
+              | base64 --decode >> /tmp/devbar-overlay.b64
           done
-          test "$(wc -c < /tmp/known.b64)" -eq 180000
 
-          python <<'PY'
-          from __future__ import annotations
-          from pathlib import Path
-          import base64
-          import hashlib
-          import lzma
-
-          expected_b64_len = 231_680
-          expected_sha = 'e623b48cdcf56703dea5b71567be34d0183ed2d3514271f7856d8d6bea2bfc01'
-          known = Path('/tmp/known.b64').read_text()
-          diagnostics: list[str] = [f'known_length={len(known)}']
-
-          def fail(message: str) -> None:
-              diagnostics.append(f'failure={message}')
-              Path('/tmp/recovery-diagnostic.txt').write_text('\n'.join(diagnostics) + '\n')
-              raise SystemExit(message)
-
-          if len(known) != 180_000:
-              fail('known prefix length mismatch')
-
-          paths = [
-              Path('.migration-final/part-00'), Path('.migration-final/part-01'),
-              Path('.migration-transport/block-000'), Path('.migration-transport/block-001'),
-              Path('.migration-transport/chunk-00'),
-              Path('.migration-transport/data-000'), Path('.migration-transport/data-001'),
-              Path('.migration-transport/data-002'), Path('.migration-transport/data-003'),
-          ]
-          raw = {p.as_posix(): ''.join(p.read_text().split()) for p in paths if p.exists()}
-          candidates = dict(raw)
-          for prefix, names in {
-              'final': ['.migration-final/part-00', '.migration-final/part-01'],
-              'blocks': ['.migration-transport/block-000', '.migration-transport/block-001'],
-              'data': [f'.migration-transport/data-{i:03d}' for i in range(4)],
-          }.items():
-              if all(name in raw for name in names):
-                  candidates[prefix] = ''.join(raw[name] for name in names)
-
-          diagnostics.extend(f'candidate[{name}]={len(value)}' for name, value in sorted(candidates.items()))
-
-          def try_extend(current: str, candidate: str) -> tuple[str | None, int]:
-              best: str | None = None
-              best_overlap = 0
-              for anchor_len in (4096, 2048, 1024, 512, 256, 128):
-                  if len(current) < anchor_len:
-                      continue
-                  anchor = current[-anchor_len:]
-                  start = 0
-                  while True:
-                      idx = candidate.find(anchor, start)
-                      if idx < 0:
-                          break
-                      overlap = min(len(current), idx + anchor_len)
-                      current_start = len(current) - overlap
-                      candidate_start = idx + anchor_len - overlap
-                      if candidate[candidate_start:idx + anchor_len] == current[current_start:]:
-                          extended = current + candidate[idx + anchor_len:]
-                          if len(extended) > len(current) and (best is None or len(extended) > len(best)):
-                              best = extended
-                              best_overlap = overlap
-                      start = idx + 1
-                  if best is not None:
-                      return best, best_overlap
-              return None, 0
-
-          assembled = known
-          used: list[str] = []
-          while len(assembled) < expected_b64_len:
-              options: list[tuple[int, str, str, int]] = []
-              for name, candidate in candidates.items():
-                  extended, overlap = try_extend(assembled, candidate)
-                  diagnostics.append(f'probe[{len(assembled)}][{name}]=extended:{len(extended) if extended else 0}:overlap:{overlap}')
-                  if extended is not None:
-                      options.append((len(extended), name, extended, overlap))
-              if not options:
-                  break
-              _, name, assembled, overlap = max(options)
-              used.append(name)
-              diagnostics.append(f'use={name}:length={len(assembled)}:overlap={overlap}')
-              candidates.pop(name, None)
-
-          diagnostics.append(f'assembled_length={len(assembled)}')
-          diagnostics.append(f'used={",".join(used)}')
-          if len(assembled) < expected_b64_len:
-              fail(f'incomplete overlay {len(assembled)}/{expected_b64_len}')
-
-          assembled = assembled[:expected_b64_len]
-          try:
-              payload = base64.b64decode(assembled, validate=True)
-          except Exception as exc:
-              fail(f'base64 validation failed: {type(exc).__name__}')
-          actual = hashlib.sha256(payload).hexdigest()
-          diagnostics.append(f'payload_sha256={actual}')
-          if actual != expected_sha:
-              fail(f'overlay checksum mismatch {actual}')
-          try:
-              lzma.decompress(payload)
-          except Exception as exc:
-              fail(f'xz validation failed: {type(exc).__name__}')
-          Path('/tmp/devbar-overlay.b64').write_text(assembled)
-          Path('/tmp/devbar-overlay.tar.xz').write_bytes(payload)
-          Path('/tmp/recovery-diagnostic.txt').write_text('\n'.join(diagnostics) + '\n')
-          print(f'verified overlay sha256={actual}; recovery={used}')
-          PY
-          xz -t /tmp/devbar-overlay.tar.xz
-
-      - name: Publish recovery diagnostic
-        if: steps.recover.outcome == 'failure'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .agents/.verify
-          if [[ -f /tmp/recovery-diagnostic.txt ]]; then
-            cp /tmp/recovery-diagnostic.txt .agents/.verify/recovery-diagnostic.txt
-          else
-            printf 'failure=recovery stopped before Python diagnostic\n' > .agents/.verify/recovery-diagnostic.txt
+          actual_length=$(wc -c < /tmp/devbar-overlay.b64)
+          if [[ "$actual_length" -ne "$expected_length" ]]; then
+            echo "::error::Overlay Base64 length mismatch (actual=$actual_length expected=$expected_length)."
+            exit 1
           fi
-          git add -- .agents/.verify/recovery-diagnostic.txt
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'ci(typescript): record recovery diagnostic'
-          git push origin HEAD:refactor/typescript-migration
-          exit 1
+
+          base64 --decode /tmp/devbar-overlay.b64 > /tmp/devbar-overlay.tar.xz
+          actual_sha=$(sha256sum /tmp/devbar-overlay.tar.xz | awk '{print $1}')
+          if [[ "$actual_sha" != "$expected_sha" ]]; then
+            echo "::error::Overlay checksum mismatch (actual=$actual_sha expected=$expected_sha)."
+            exit 1
+          fi
+          xz -t /tmp/devbar-overlay.tar.xz
+          echo "Verified overlay sha256=$actual_sha"
 
       - name: Materialize strict TypeScript tree
-        if: steps.recover.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
-          tar -xJf /tmp/devbar-overlay.tar.xz -C .
 
           mapfile -t jsfiles < <(git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs')
           if (( ${#jsfiles[@]} )); then
@@ -191,12 +117,14 @@ jobs:
           fi
 
           git rm -rf --ignore-unmatch \
-            .migration-transport .migration-final \
+            .migration-final .migration-transport .migration-delivery-v2 \
             .agents/.typescript-upload .agents/.blob-check .agents/.verify \
             .agents/_probe-do-not-create .agents/DO-NOT-CREATE \
             .github/workflows/finalize-typescript-payload.yml \
             .github/workflows/materialize-typescript.yml \
             .github/workflows/materialize-typescript-blobs.yml
+
+          tar -xJf /tmp/devbar-overlay.tar.xz -C .
 
           git add -u -- .
           while IFS= read -r path; do
@@ -208,10 +136,12 @@ jobs:
             git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs'
             exit 1
           fi
-          if git ls-files | grep -Eq '^(\.migration-|\.agents/(\.verify|_probe-do-not-create|DO-NOT-CREATE))'; then
+          if git ls-files | grep -Eq '^(\.migration-|\.agents/(\.verify|\.typescript-upload|\.blob-check|_probe-do-not-create|DO-NOT-CREATE)|\.github/workflows/(finalize-typescript-payload|materialize-typescript|materialize-typescript-blobs)\.yml$)'; then
             echo '::error::Temporary migration/probe files remain tracked.'
+            git ls-files | grep -E '^(\.migration-|\.agents/(\.verify|\.typescript-upload|\.blob-check|_probe-do-not-create|DO-NOT-CREATE)|\.github/workflows/(finalize-typescript-payload|materialize-typescript|materialize-typescript-blobs)\.yml$)' || true
             exit 1
           fi
+
           git diff --cached --check
           git status --short
           git diff --cached --stat
