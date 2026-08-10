@@ -1,4 +1,4 @@
-name: Materialize TypeScript migration blobs
+name: Recover verified TypeScript migration
 
 on:
   push:
@@ -9,11 +9,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: materialize-typescript-migration
+  group: recover-typescript-migration
   cancel-in-progress: false
 
 jobs:
-  materialize:
+  recover:
     if: github.repository == 'juanjoGonDev/devbar' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -26,11 +26,10 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: Reconstruct, verify and publish TypeScript tree
+      - name: Recover and verify overlay
         shell: bash
         run: |
           set -euo pipefail
-          expected='e623b48cdcf56703dea5b71567be34d0183ed2d3514271f7856d8d6bea2bfc01'
           shas=(
             e76aeab9ac467e2b7953ae4327ff7a51277e9289
             536a81b9268bd0e46ae83a2b938109fbf28b7314
@@ -42,30 +41,103 @@ jobs:
             d519721d5456837ea32941429c9ad72f04ceee0d
             065b55b8fd1aa14d98f3aff3e5908a129d855d83
             562054eab4c37a73924babd3f6f968842065f995
-            34dce2ba393f76737472b905530f6dfe069ed75e
-            eec707879b38c902451f5e974825560d1a849887
-            f99b36c3d412d8cbab3a7668c05e77238b823f90
-            c19c16f8499cad4519bd105e1b171c6d9fb7fcec
-            257b163b5e30093fb218c459608ae7f547e8feb8
+            86b5034bae42f657bea93cba614ac2cd0b311483
+            c295161ac28cecd2a3dcb3eecfba6e16cd37b54b
+            d4764ce79b08aba4b3ae0be4abd53883b5c80f7b
+            5915513a0896b94d66f8413b4a1cda82f69a05d1
           )
-
-          : > /tmp/devbar-overlay.b64
+          : > /tmp/known.b64
           for sha in "${shas[@]}"; do
-            # The API wraps each UTF-8 blob in Base64. Decode only that wrapper;
-            # the resulting bytes are the original Base64 overlay fragment.
             gh api "repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" --jq '.content' \
-              | tr -d '\r\n' \
-              | base64 --decode >> /tmp/devbar-overlay.b64
+              | tr -d '\r\n' | base64 --decode >> /tmp/known.b64
           done
+          test "$(wc -c < /tmp/known.b64)" -eq 180000
 
-          base64 --decode /tmp/devbar-overlay.b64 > /tmp/devbar-overlay.tar.xz
-          actual=$(sha256sum /tmp/devbar-overlay.tar.xz | awk '{print $1}')
-          if [[ "$actual" != "$expected" ]]; then
-            echo "::error::Overlay checksum mismatch (actual=$actual). Refusing to modify source files."
-            exit 1
-          fi
+          python <<'PY'
+          from __future__ import annotations
+          from pathlib import Path
+          import base64
+          import hashlib
+          import lzma
+
+          expected_b64_len = 231_680
+          expected_sha = 'e623b48cdcf56703dea5b71567be34d0183ed2d3514271f7856d8d6bea2bfc01'
+          known = Path('/tmp/known.b64').read_text()
+          assert len(known) == 180_000
+
+          paths = [
+              Path('.migration-final/part-00'), Path('.migration-final/part-01'),
+              Path('.migration-transport/block-000'), Path('.migration-transport/block-001'),
+              Path('.migration-transport/chunk-00'),
+              Path('.migration-transport/data-000'), Path('.migration-transport/data-001'),
+              Path('.migration-transport/data-002'), Path('.migration-transport/data-003'),
+          ]
+          raw = {p.as_posix(): ''.join(p.read_text().split()) for p in paths if p.exists()}
+          candidates = dict(raw)
+          for prefix, names in {
+              'final': ['.migration-final/part-00', '.migration-final/part-01'],
+              'blocks': ['.migration-transport/block-000', '.migration-transport/block-001'],
+              'data': [f'.migration-transport/data-{i:03d}' for i in range(4)],
+          }.items():
+              if all(name in raw for name in names):
+                  candidates[prefix] = ''.join(raw[name] for name in names)
+
+          def try_extend(current: str, candidate: str) -> str | None:
+              best: str | None = None
+              for anchor_len in (4096, 2048, 1024, 512, 256, 128):
+                  if len(current) < anchor_len:
+                      continue
+                  anchor = current[-anchor_len:]
+                  start = 0
+                  while True:
+                      idx = candidate.find(anchor, start)
+                      if idx < 0:
+                          break
+                      overlap = min(len(current), idx + anchor_len)
+                      current_start = len(current) - overlap
+                      candidate_start = idx + anchor_len - overlap
+                      if candidate[candidate_start:idx + anchor_len] == current[current_start:]:
+                          extended = current + candidate[idx + anchor_len:]
+                          if len(extended) > len(current) and (best is None or len(extended) > len(best)):
+                              best = extended
+                      start = idx + 1
+                  if best is not None:
+                      return best
+              return None
+
+          assembled = known
+          used: list[str] = []
+          while len(assembled) < expected_b64_len:
+              options: list[tuple[int, str, str]] = []
+              for name, candidate in candidates.items():
+                  extended = try_extend(assembled, candidate)
+                  if extended is not None:
+                      options.append((len(extended), name, extended))
+              if not options:
+                  break
+              _, name, assembled = max(options)
+              used.append(name)
+              candidates.pop(name, None)
+              print(f'extended via {name}: {len(assembled)} chars')
+
+          if len(assembled) < expected_b64_len:
+              raise SystemExit(f'Could not recover full overlay: {len(assembled)}/{expected_b64_len} chars; used={used}')
+          assembled = assembled[:expected_b64_len]
+          payload = base64.b64decode(assembled, validate=True)
+          actual = hashlib.sha256(payload).hexdigest()
+          if actual != expected_sha:
+              raise SystemExit(f'Overlay checksum mismatch: {actual}')
+          lzma.decompress(payload)
+          Path('/tmp/devbar-overlay.b64').write_text(assembled)
+          Path('/tmp/devbar-overlay.tar.xz').write_bytes(payload)
+          print(f'verified overlay sha256={actual}; recovery={used}')
+          PY
           xz -t /tmp/devbar-overlay.tar.xz
 
+      - name: Materialize strict TypeScript tree
+        shell: bash
+        run: |
+          set -euo pipefail
           tar -xJf /tmp/devbar-overlay.tar.xz -C .
 
           mapfile -t jsfiles < <(git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs')
@@ -73,19 +145,31 @@ jobs:
             git rm -f -- "${jsfiles[@]}"
           fi
 
-          rm -rf .migration-transport .migration-final .agents/.typescript-upload .agents/.blob-check .agents/.verify
-          rm -f .agents/_probe-do-not-create .agents/DO-NOT-CREATE
-          rm -f .github/workflows/finalize-typescript-payload.yml
-          rm -f .github/workflows/materialize-typescript.yml
-          rm -f .github/workflows/materialize-typescript-blobs.yml
+          git rm -rf --ignore-unmatch \
+            .migration-transport .migration-final \
+            .agents/.typescript-upload .agents/.blob-check .agents/.verify \
+            .agents/_probe-do-not-create .agents/DO-NOT-CREATE \
+            .github/workflows/finalize-typescript-payload.yml \
+            .github/workflows/materialize-typescript.yml \
+            .github/workflows/materialize-typescript-blobs.yml
 
-          git add -A
+          git add -u -- .
+          while IFS= read -r path; do
+            git add -- "$path"
+          done < <(tar -tJf /tmp/devbar-overlay.tar.xz)
+
           if [[ -n "$(git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs')" ]]; then
             echo '::error::Authored JavaScript-family files remain after migration.'
             git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs'
             exit 1
           fi
+          if git ls-files | grep -Eq '^(\.migration-|\.agents/(\.verify|_probe-do-not-create|DO-NOT-CREATE))'; then
+            echo '::error::Temporary migration/probe files remain tracked.'
+            exit 1
+          fi
           git diff --cached --check
+          git status --short
+          git diff --cached --stat
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
