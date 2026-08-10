@@ -32,6 +32,7 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: refactor/typescript-migration
           persist-credentials: true
           fetch-depth: 0
 
@@ -140,14 +141,19 @@ jobs:
             git add -- "$path"
           done < <(tar -tJf /tmp/devbar-overlay.tar.xz)
 
+          # This Actions token cannot update workflow files. Keep the current
+          # workflow directory unchanged; the connected GitHub app publishes the
+          # permanent workflow set atomically after this source commit lands.
+          git restore --source=HEAD --staged --worktree -- .github/workflows
+
           if [[ -n "$(git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs')" ]]; then
             echo '::error::Authored JavaScript-family files remain after migration.'
             git ls-files '*.js' '*.jsx' '*.mjs' '*.cjs'
             exit 1
           fi
-          if git ls-files | grep -Eq '^(\.migration-|\.agents/(\.verify|\.typescript-upload|\.blob-check|_probe-do-not-create|DO-NOT-CREATE)|\.github/workflows/(finalize-typescript-payload|materialize-typescript|materialize-typescript-blobs)\.yml$)'; then
-            echo '::error::Temporary migration/probe files remain tracked.'
-            git ls-files | grep -E '^(\.migration-|\.agents/(\.verify|\.typescript-upload|\.blob-check|_probe-do-not-create|DO-NOT-CREATE)|\.github/workflows/(finalize-typescript-payload|materialize-typescript|materialize-typescript-blobs)\.yml$)' || true
+          if git ls-files | grep -Eq '^(\.migration-|\.agents/(\.verify|\.typescript-upload|\.blob-check|_probe-do-not-create|DO-NOT-CREATE))'; then
+            echo '::error::Temporary migration/probe files remain tracked outside workflows.'
+            git ls-files | grep -E '^(\.migration-|\.agents/(\.verify|\.typescript-upload|\.blob-check|_probe-do-not-create|DO-NOT-CREATE))' || true
             exit 1
           fi
 
