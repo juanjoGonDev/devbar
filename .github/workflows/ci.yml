@@ -13,26 +13,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  export-migration:
-    name: Export final TypeScript migration parts
+  migration-toolchain:
+    name: Export TypeScript migration toolchain
     if: >-
       github.repository == 'juanjoGonDev/devbar' &&
       github.event_name == 'pull_request' &&
       github.head_ref == 'refactor/typescript-migration' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
-      - name: Upload raw migration parts
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Resolve migration dependencies
+        run: >-
+          pnpm add --save-dev
+          typescript@6.0.3
+          typescript-eslint@8.64.0
+          @types/node@22.20.1
+          @types/debug@4.1.13
+          @types/electron-positioner@4.1.4
+          esbuild@0.28.1
+
+      - name: Archive toolchain
+        run: >-
+          tar --exclude='node_modules/electron/dist' --exclude='node_modules/.cache'
+          -czf /tmp/typescript-toolchain.tgz package.json pnpm-lock.yaml node_modules
+
+      - name: Upload toolchain
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: typescript-migration-parts-${{ github.event.pull_request.head.sha }}
-          path: .migration-final/part-*
-          include-hidden-files: true
+          name: typescript-toolchain-${{ github.event.pull_request.head.sha }}
+          path: /tmp/typescript-toolchain.tgz
           retention-days: 1
           if-no-files-found: error
