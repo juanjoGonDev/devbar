@@ -11,12 +11,12 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'scripts/build-macos-release.sh'
-      - 'scripts/package-electron.js'
+      - 'scripts/package-electron.ts'
       - 'scripts/package-macos-app.sh'
-      - 'scripts/release-artifacts.js'
-      - 'scripts/verify-release-artifacts.js'
+      - 'scripts/release-artifacts.ts'
+      - 'scripts/verify-release-artifacts.ts'
       - 'scripts/verify-macos-release.sh'
-      - 'tests/release-artifacts.test.js'
+      - 'tests/release-artifacts.test.ts'
 
 permissions: read-all
 
@@ -63,7 +63,7 @@ jobs:
         run: pnpm audit --audit-level=moderate
 
       - name: Run release artifact regression tests
-        run: pnpm exec vitest run tests/release-artifacts.test.js
+        run: pnpm exec vitest run tests/release-artifacts.test.ts
 
       - name: Build and verify release without publishing
         run: pnpm run release:mac
