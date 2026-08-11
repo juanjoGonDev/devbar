@@ -1,15 +1,22 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "src/preload.js",
-    "renderer/*.js",
-    "scripts/*.js",
-    "tests/**/*.test.js"
+    "src/main.ts",
+    "src/preload.ts",
+    "renderer/*.ts",
+    "scripts/*.ts",
+    "tests/**/*.test.ts"
   ],
-  "project": ["src/**/*.js", "renderer/**/*.js", "scripts/**/*.js"],
+  "project": [
+    "src/**/*.ts",
+    "renderer/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts"
+  ],
   "ignoreBinaries": ["tail"],
-  "rules": {
-    "exports": "off",
-    "nsExports": "off"
-  }
+  "ignoreDependencies": [
+    "@types/debug",
+    "@types/electron-positioner",
+    "esbuild"
+  ]
 }

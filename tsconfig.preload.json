@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": [
+    "src/preload.ts",
+    "src/ipc-contract.ts",
+    "src/domain-types.ts",
+    "src/silence-pattern.ts"
+  ]
+}

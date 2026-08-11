@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node", "vitest/globals"],
+    "noEmit": true,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": [
+    "tests/**/*.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "renderer/md-mini.ts",
+    "renderer/changelog-view.ts"
+  ]
+}

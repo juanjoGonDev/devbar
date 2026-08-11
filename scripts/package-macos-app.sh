@@ -18,7 +18,7 @@ esac
 
 [ -s "$ICON_PATH" ] || fail "macOS icon not found at $ICON_PATH."
 
-node "$ROOT_DIR/scripts/package-electron.js" "$ARCH" "$OUT_DIR"
+node "$ROOT_DIR/build/scripts/package-electron.js" "$ARCH" "$OUT_DIR"
 
 app=$(find "$OUT_DIR" -maxdepth 2 -name 'DevBar.app' -type d | head -n 1)
 [ -n "$app" ] || fail "DevBar.app was not generated for $ARCH."
