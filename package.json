@@ -29,12 +29,12 @@
     "postinstall": "node scripts/install-hooks.js"
   },
   "devDependencies": {
-    "@electron/packager": "20.0.3",
-    "dependency-cruiser": "18.1.0",
+    "@electron/packager": "20.1.1",
+    "dependency-cruiser": "18.1.1",
     "electron": "43.2.0",
-    "eslint": "10.7.0",
-    "globals": "17.7.0",
-    "knip": "6.29.0",
+    "eslint": "10.8.0",
+    "globals": "17.9.0",
+    "knip": "6.31.0",
     "lefthook": "2.1.10",
     "prettier": "3.9.6",
     "vitest": "4.1.10"
