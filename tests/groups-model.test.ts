@@ -1518,3 +1518,131 @@ describe('normalizeGroup — preSteps field', () => {
     expect(g.preSteps).toEqual([]);
   });
 });
+
+// ─── Legacy configs the pre-TypeScript versions accepted ───────────────
+
+describe('stringArray coercion — legacy numeric args', () => {
+  it('preserves numeric args as strings instead of dropping them', () => {
+    const c = normalizeCommand({
+      id: 'c1',
+      name: 'Serve',
+      command: 'http-server',
+      args: ['--port', 3000, '-c', 0],
+    });
+    expect(c.args).toEqual(['--port', '3000', '-c', '0']);
+  });
+
+  it('drops values that were never spawnable (objects, null, NaN)', () => {
+    const c = normalizeCommand({
+      id: 'c1',
+      name: 'Serve',
+      command: 'x',
+      args: ['ok', null, { a: 1 }, Number.NaN, Infinity],
+    });
+    expect(c.args).toEqual(['ok']);
+  });
+
+  it('coerces numeric silencedPatterns entries', () => {
+    const c = normalizeCommand({
+      id: 'c1',
+      name: 'Serve',
+      command: 'x',
+      silencedPatterns: { warn: [404, 'timeout'], error: [] },
+    });
+    expect(c.silencedPatterns.warn).toEqual(['404', 'timeout']);
+  });
+});
+
+describe('migrateServicesToGroups — id repair is persisted (v3 state)', () => {
+  const v3Group = (overrides: Record<string, unknown>) => ({
+    version: 3,
+    groups: [
+      {
+        id: 'g1',
+        name: 'G',
+        path: '/p',
+        mode: 'multi',
+        order: 0,
+        silenceWarnings: false,
+        silenceErrors: false,
+        env: [],
+        commands: [],
+        actions: [],
+        ...overrides,
+      },
+    ],
+    services: [],
+  });
+
+  const command = (overrides: Record<string, unknown>) => ({
+    id: 'c1',
+    name: 'Dev',
+    command: 'pnpm dev',
+    args: [],
+    env: [],
+    autoStart: false,
+    silencedPatterns: { warn: [], error: [] },
+    ...overrides,
+  });
+
+  it('reports changed when a command has no id, so the repaired id is written back', () => {
+    const result = migrateServicesToGroups(
+      v3Group({ commands: [command({ id: undefined })] }),
+    );
+    expect(result.changed).toBe(true);
+    expect(result.state.groups[0].commands[0].id).toBe('test-uuid-fixed');
+  });
+
+  it('reports changed for a non-string group id', () => {
+    const result = migrateServicesToGroups(v3Group({ id: 42 }));
+    expect(result.changed).toBe(true);
+    expect(result.state.groups[0].id).toBe('test-uuid-fixed');
+  });
+
+  it('reports changed for an action without id', () => {
+    const result = migrateServicesToGroups(
+      v3Group({
+        actions: [
+          {
+            name: 'Lint',
+            command: 'pnpm lint',
+            env: [],
+            inheritGroupEnv: false,
+          },
+        ],
+      }),
+    );
+    expect(result.changed).toBe(true);
+  });
+
+  it('reports changed for a preScript without id', () => {
+    const result = migrateServicesToGroups(
+      v3Group({
+        preSteps: [
+          {
+            id: 's1',
+            mode: 'parallel',
+            scripts: [{ name: 'Prep', command: 'true' }],
+          },
+        ],
+      }),
+    );
+    expect(result.changed).toBe(true);
+  });
+
+  it('stays canonical (changed:false) when every id is a non-empty string', () => {
+    const result = migrateServicesToGroups(
+      v3Group({
+        commands: [command({})],
+        preSteps: [
+          {
+            id: 's1',
+            mode: 'parallel',
+            scripts: [{ id: 'sc1', name: 'Prep', command: 'true', env: [] }],
+          },
+        ],
+      }),
+    );
+    expect(result.changed).toBe(false);
+  });
+});

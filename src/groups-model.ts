@@ -32,9 +32,16 @@ function stringValue(value: unknown, fallback = ''): string {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
+  if (!Array.isArray(value)) return [];
+  const result: string[] = [];
+  for (const item of value) {
+    // Configs written by the pre-TypeScript versions (or hand-edited) may
+    // carry numeric args like ["--port", 3000]; coerce instead of dropping.
+    if (typeof item === 'string') result.push(item);
+    else if (typeof item === 'number' && Number.isFinite(item))
+      result.push(String(item));
+  }
+  return result;
 }
 
 function expandTilde(value: string): string {
@@ -297,25 +304,44 @@ export function migrateServicesToGroups(value: unknown): {
   const version = typeof raw.version === 'number' ? raw.version : 1;
   if (version === 3 && Array.isArray(raw.groups)) {
     const groups = raw.groups.map(normalizeGroup);
+    // Ids feed compound process ids and scheduleState keys, so a missing or
+    // non-string id must be repaired AND persisted here — normalizeGroup
+    // would otherwise mint a different uuid on every read.
+    const hasStableId = (item: UnknownRecord): boolean =>
+      typeof item.id === 'string' && item.id !== '';
     const canonical = raw.groups.every((candidate, index) => {
       const item = record(candidate);
       const normalized = groups[index];
       return (
         normalized !== undefined &&
+        hasStableId(item) &&
         Array.isArray(item.env) &&
         Array.isArray(item.commands) &&
         item.commands.every(
           (command) =>
+            hasStableId(record(command)) &&
             Array.isArray(record(command).env) &&
             typeof record(command).autoStart === 'boolean',
         ) &&
         Array.isArray(item.actions) &&
         item.actions.every(
           (action) =>
+            hasStableId(record(action)) &&
             Array.isArray(record(action).env) &&
             typeof record(action).inheritGroupEnv === 'boolean' &&
             !('useEnvs' in record(action)),
-        )
+        ) &&
+        (!Array.isArray(item.preSteps) ||
+          item.preSteps.every((step) => {
+            const stepRecord = record(step);
+            return (
+              hasStableId(stepRecord) &&
+              (!Array.isArray(stepRecord.scripts) ||
+                stepRecord.scripts.every((script) =>
+                  hasStableId(record(script)),
+                ))
+            );
+          }))
       );
     });
     const state: MigratedState = {
