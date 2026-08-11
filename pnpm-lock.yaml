@@ -49,6 +49,9 @@ importers:
       eslint:
         specifier: 10.7.0
         version: 10.7.0(jiti@2.7.0)
+      jiti:
+        specifier: 2.7.0
+        version: 2.7.0
       knip:
         specifier: 6.29.0
         version: 6.29.0
