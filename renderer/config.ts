@@ -55,7 +55,7 @@ function errorMessage(value: unknown): string {
 const groupsListEl = byId<HTMLElement>('groups-list', HTMLElement);
 const groupDetailEl = byId<HTMLElement>('group-detail', HTMLElement);
 const addGroupBtn = byId<HTMLButtonElement>('add-group', HTMLButtonElement);
-const iconPickerEl = byId<HTMLDialogElement>('icon-picker', HTMLDialogElement);
+const iconPickerEl = byId<HTMLDivElement>('icon-picker', HTMLDivElement);
 const iconSearchEl = byId<HTMLInputElement>('icon-search', HTMLInputElement);
 const iconGridEl = byId<HTMLElement>('icon-grid', HTMLElement);
 const subDialog = byId<HTMLDialogElement>('sub-dialog', HTMLDialogElement);
@@ -93,7 +93,7 @@ const testNotifyBtn = byId<HTMLButtonElement>(
 const sfIconBtn = byId<HTMLButtonElement>('sf-icon-btn', HTMLButtonElement);
 const sfName = byId<HTMLInputElement>('sf-name', HTMLInputElement);
 const sfCommand = byId<HTMLInputElement>('sf-command', HTMLInputElement);
-const sfArgs = byId<HTMLInputElement>('sf-args', HTMLInputElement);
+const sfArgs = byId<HTMLTextAreaElement>('sf-args', HTMLTextAreaElement);
 const sfEnvEditor = byId<HTMLElement>('sf-env-editor', HTMLElement);
 const sfInheritGroupEnvRow = byId<HTMLElement>(
   'sf-inherit-group-env-row',
