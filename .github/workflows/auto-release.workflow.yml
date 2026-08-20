@@ -57,10 +57,15 @@ jobs:
       DRY_RUN: ${{ inputs.dry_run || false }}
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5b1630ceea73d27597364c9af683 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Set up policy Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
 
       - name: Attach exact default-branch commit
         run: git checkout -B "$DEFAULT_BRANCH" "$GITHUB_SHA"
@@ -162,7 +167,7 @@ jobs:
             git diff --unified=0 --no-ext-diff "$parent_sha" "$candidate_sha" -- \
               .github/workflows/release.yml \
               .github/workflows/auto-release.workflow.yml > "$release_patch"
-            impacting=$(node scripts/release-impact-policy.mjs "$changed_paths" "$release_patch")
+            impacting=$(node --experimental-strip-types scripts/release-impact-policy.ts "$changed_paths" "$release_patch")
             if [[ "$impacting" == "true" ]]; then
               echo "$candidate_sha" >> "$impact_shas"
             elif [[ "$impacting" != "false" ]]; then
