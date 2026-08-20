@@ -12,9 +12,12 @@ describe('automatic release impact gating', () => {
     expect(workflow).toContain(
       'git rev-list --first-parent --reverse "${current_tag}..HEAD"',
     );
-    expect(workflow).toContain('release-impact-policy.mjs');
+    expect(workflow).toContain(
+      'node --experimental-strip-types scripts/release-impact-policy.ts',
+    );
     expect(workflow).toContain('git diff --name-only -z --no-renames');
     expect(workflow).toContain('release-impact-shas.txt');
+    expect(workflow).toContain('node-version: 22');
   });
 
   it('uses release-impacting commit count for the threshold', () => {
