@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-const policyPath = resolve(process.cwd(), 'scripts/release-impact-policy.mjs');
+const policyPath = resolve(process.cwd(), 'scripts/release-impact-policy.ts');
 const temporaryDirectories: string[] = [];
 
 function classify(paths: string[], releaseWorkflowPatch = ''): boolean {
@@ -16,10 +16,11 @@ function classify(paths: string[], releaseWorkflowPatch = ''): boolean {
   writeFileSync(pathsFile, `${paths.join('\0')}\0`, 'utf8');
   writeFileSync(patchFile, releaseWorkflowPatch, 'utf8');
 
-  const result = spawnSync(process.execPath, [policyPath, pathsFile, patchFile], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-  });
+  const result = spawnSync(
+    process.execPath,
+    ['--experimental-strip-types', policyPath, pathsFile, patchFile],
+    { cwd: process.cwd(), encoding: 'utf8' },
+  );
   if (result.status !== 0) {
     throw new Error(result.stderr || 'Release impact policy failed');
   }
