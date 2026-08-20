@@ -147,10 +147,35 @@ jobs:
             exit 0
           fi
 
-          commit_count=$(git rev-list --count "${current_tag}..HEAD")
+          impact_shas="$RUNNER_TEMP/release-impact-shas.txt"
+          : > "$impact_shas"
+          while IFS= read -r candidate_sha; do
+            parent_sha=$(git rev-parse "${candidate_sha}^1" 2>/dev/null || true)
+            if [[ -z "$parent_sha" ]]; then
+              echo "$candidate_sha" >> "$impact_shas"
+              continue
+            fi
+
+            changed_paths="$RUNNER_TEMP/release-impact-${candidate_sha}.bin"
+            release_patch="$RUNNER_TEMP/release-impact-${candidate_sha}.patch"
+            git diff --name-only -z --no-renames "$parent_sha" "$candidate_sha" -- > "$changed_paths"
+            git diff --unified=0 --no-ext-diff "$parent_sha" "$candidate_sha" -- \
+              .github/workflows/release.yml \
+              .github/workflows/auto-release.workflow.yml > "$release_patch"
+            impacting=$(node scripts/release-impact-policy.mjs "$changed_paths" "$release_patch")
+            if [[ "$impacting" == "true" ]]; then
+              echo "$candidate_sha" >> "$impact_shas"
+            elif [[ "$impacting" != "false" ]]; then
+              echo "::error title=Invalid release impact decision::$candidate_sha returned $impacting"
+              exit 1
+            fi
+          done < <(git rev-list --first-parent --reverse "${current_tag}..HEAD")
+
+          commit_count=$(wc -l < "$impact_shas" | tr -d ' ')
+          total_count=$(git rev-list --count --first-parent "${current_tag}..HEAD")
           if [[ "$FORCE_RELEASE" != "true" && "$commit_count" -lt "$MINIMUM_COMMITS" ]]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Only $commit_count commits since $current_tag; at least $MINIMUM_COMMITS are required."
+            echo "Only $commit_count release-impacting commits since $current_tag ($total_count total); at least $MINIMUM_COMMITS are required."
             exit 0
           fi
 
@@ -158,6 +183,7 @@ jobs:
           echo "current_tag=$current_tag" >> "$GITHUB_OUTPUT"
           echo "current_version=$current_version" >> "$GITHUB_OUTPUT"
           echo "commit_count=$commit_count" >> "$GITHUB_OUTPUT"
+          echo "total_commit_count=$total_count" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm
         if: steps.baseline.outputs.ready == 'true'
@@ -185,16 +211,23 @@ jobs:
       - name: Resolve release strategy
         if: steps.baseline.outputs.ready == 'true'
         id: strategy
-        env:
-          CURRENT_TAG: ${{ steps.baseline.outputs.current_tag }}
         run: |
           set -euo pipefail
           strategy="$RELEASE_STRATEGY"
           if [[ "$strategy" == "auto" ]]; then
             strategy=patch
-            if git log "${CURRENT_TAG}..HEAD" --format='%s%n%b' | grep -Eq '(^[a-z]+(\([^)]*\))?!:|^BREAKING CHANGE:)'; then
+            messages="$RUNNER_TEMP/release-impact-messages.txt"
+            subjects="$RUNNER_TEMP/release-impact-subjects.txt"
+            : > "$messages"
+            : > "$subjects"
+            while IFS= read -r candidate_sha; do
+              [[ -n "$candidate_sha" ]] || continue
+              git show -s --format='%s%n%b' "$candidate_sha" >> "$messages"
+              git show -s --format='%s' "$candidate_sha" >> "$subjects"
+            done < "$RUNNER_TEMP/release-impact-shas.txt"
+            if grep -Eq '(^[a-z]+(\([^)]*\))?!:|^BREAKING CHANGE:)' "$messages"; then
               strategy=major
-            elif git log "${CURRENT_TAG}..HEAD" --format='%s' | grep -Eq '^feat(\([^)]*\))?:'; then
+            elif grep -Eq '^feat(\([^)]*\))?:' "$subjects"; then
               strategy=minor
             fi
           fi
@@ -231,7 +264,7 @@ jobs:
             echo "### Release pull request dry run"
             echo "- Version: v$VERSION"
             echo "- Strategy: $STRATEGY"
-            echo "- Commits: $COMMIT_COUNT"
+            echo "- Release-impacting commits: $COMMIT_COUNT"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create version bump pull request
@@ -277,7 +310,7 @@ jobs:
             --title "chore(release): prepare ${release_tag}" \
             --label auto-release \
             --assignee "$ACTOR_LOGIN" \
-            --body "Automated **${STRATEGY}** release from ${COMMIT_COUNT} commits. The trusted release workflow validates this exact head, then repository requirements control squash auto-merge. A version-changing merge builds and publishes the macOS installers in GitHub Releases.")
+            --body "Automated **${STRATEGY}** release from ${COMMIT_COUNT} release-impacting commits. The trusted release workflow validates this exact head, then repository requirements control squash auto-merge. A version-changing merge builds and publishes the macOS installers in GitHub Releases.")
 
           echo "url=$pr_url" >> "$GITHUB_OUTPUT"
           echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
