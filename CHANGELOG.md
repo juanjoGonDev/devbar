@@ -3,6 +3,13 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.4.5] - 2026-08-20
+
+### Corregido
+
+- La automatización de release ahora cuenta únicamente commits que pueden cambiar la aplicación empaquetada o la lógica sustantiva de publicación. Actualizaciones mecánicas de GitHub Actions, tests, documentación y mantenimiento ya no acumulan por sí solas hacia el umbral de release automático.
+- Las actualizaciones de dependencias y los cambios en código, renderer, assets, configuración de build o scripts de empaquetado continúan contando porque pueden modificar los instaladores macOS.
+
 ## [0.4.4] - 2026-08-10
 
 ### Cambiado
