@@ -3,7 +3,7 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
-## [Unreleased]
+## [0.6.0] - 2026-08-21
 
 ### Añadido
 
