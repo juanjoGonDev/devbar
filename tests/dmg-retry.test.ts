@@ -1,5 +1,12 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile, readFile, chmod } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,52 +21,90 @@ const repositoryRoot = path.resolve(
 const script = path.join(repositoryRoot, 'scripts', 'build-macos-release.sh');
 const temporaryDirectories: string[] = [];
 
+interface Fixture {
+  binDirectory: string;
+  log: string;
+  counter: string;
+  root: string;
+  output: string;
+  failures: number;
+}
+
 /**
- * Stands in for hdiutil: fails the first `failures` invocations, then succeeds.
- * Every call appends its arguments to a log so the test can inspect them.
+ * Stands in for hdiutil: fails the first `DMG_TEST_FAILURES` invocations, then
+ * succeeds. Every call appends its arguments to a log the test can inspect.
+ * Paths reach it through the environment, so nothing is interpolated into a
+ * shell command.
  */
-async function fakeHdiutil(failures: number): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), 'devbar-dmg-'));
-  temporaryDirectories.push(directory);
-  const binDirectory = path.join(directory, 'bin');
-  const log = path.join(directory, 'calls.log');
-  const counter = path.join(directory, 'count');
-  await execFileAsync('mkdir', ['-p', binDirectory]);
-  await writeFile(counter, '0');
-  const stub = `#!/usr/bin/env bash
-printf '%s\\n' "$*" >> ${JSON.stringify(log)}
-count=$(cat ${JSON.stringify(counter)})
+const HDIUTIL_STUB = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$DMG_TEST_LOG"
+count=$(cat "$DMG_TEST_COUNT")
 count=$((count + 1))
-printf '%s' "$count" > ${JSON.stringify(counter)}
-if [ "$count" -le ${failures} ]; then
+printf '%s' "$count" > "$DMG_TEST_COUNT"
+if [ "$count" -le "$DMG_TEST_FAILURES" ]; then
   echo "hdiutil: create failed - Resource busy" >&2
   exit 1
 fi
 exit 0
 `;
-  await writeFile(path.join(binDirectory, 'hdiutil'), stub);
+
+// $0 is deliberately not the script path: the entrypoint guard compares it with
+// BASH_SOURCE, and they must differ so sourcing does not run a real build.
+const HARNESS = `set -uo pipefail
+export PATH="$1:$PATH"
+source "$2"
+create_dmg arm64 "$3" "$4"
+`;
+
+async function fakeHdiutil(failures: number): Promise<Fixture> {
+  const directory = await mkdtemp(path.join(tmpdir(), 'devbar-dmg-'));
+  temporaryDirectories.push(directory);
+  const binDirectory = path.join(directory, 'bin');
+  await mkdir(binDirectory, { recursive: true });
+  const fixture: Fixture = {
+    binDirectory,
+    log: path.join(directory, 'calls.log'),
+    counter: path.join(directory, 'count'),
+    root: path.join(directory, 'root'),
+    output: path.join(directory, 'out.dmg'),
+    failures,
+  };
+  await writeFile(fixture.counter, '0');
+  await writeFile(path.join(binDirectory, 'hdiutil'), HDIUTIL_STUB);
   await chmod(path.join(binDirectory, 'hdiutil'), 0o755);
-  return directory;
+  return fixture;
 }
 
 async function runCreateDmg(
-  fixture: string,
+  fixture: Fixture,
 ): Promise<{ code: number; calls: string[] }> {
-  const harness = `set -uo pipefail
-export PATH=${JSON.stringify(path.join(fixture, 'bin'))}:"$PATH"
-export DMG_RETRY_DELAY=0
-source ${JSON.stringify(script)}
-create_dmg arm64 ${JSON.stringify(path.join(fixture, 'root'))} ${JSON.stringify(path.join(fixture, 'out.dmg'))}
-`;
   let code = 0;
   try {
-    await execFileAsync('bash', ['-c', harness]);
+    await execFileAsync(
+      'bash',
+      [
+        '-c',
+        HARNESS,
+        'devbar-dmg-harness',
+        fixture.binDirectory,
+        script,
+        fixture.root,
+        fixture.output,
+      ],
+      {
+        env: {
+          ...process.env,
+          DMG_RETRY_DELAY: '0',
+          DMG_TEST_LOG: fixture.log,
+          DMG_TEST_COUNT: fixture.counter,
+          DMG_TEST_FAILURES: String(fixture.failures),
+        },
+      },
+    );
   } catch (error: unknown) {
     code = Number((error as { code?: number }).code ?? 1);
   }
-  const log = await readFile(path.join(fixture, 'calls.log'), 'utf8').catch(
-    () => '',
-  );
+  const log = await readFile(fixture.log, 'utf8').catch(() => '');
   return { code, calls: log.split('\n').filter(Boolean) };
 }
 
