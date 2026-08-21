@@ -147,10 +147,11 @@ jobs:
             exit 0
           fi
 
-          commit_count=$(git rev-list --count "${current_tag}..HEAD")
+          impact_json=$(node scripts/release-impact-policy.mjs pending "$current_tag" HEAD)
+          commit_count=$(jq -r '.commitCount' <<<"$impact_json")
           if [[ "$FORCE_RELEASE" != "true" && "$commit_count" -lt "$MINIMUM_COMMITS" ]]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Only $commit_count commits since $current_tag; at least $MINIMUM_COMMITS are required."
+            echo "Only $commit_count release-impacting commits since $current_tag; at least $MINIMUM_COMMITS are required."
             exit 0
           fi
 
@@ -192,9 +193,15 @@ jobs:
           strategy="$RELEASE_STRATEGY"
           if [[ "$strategy" == "auto" ]]; then
             strategy=patch
-            if git log "${CURRENT_TAG}..HEAD" --format='%s%n%b' | grep -Eq '(^[a-z]+(\([^)]*\))?!:|^BREAKING CHANGE:)'; then
+            impact_json=$(node scripts/release-impact-policy.mjs pending "$CURRENT_TAG" HEAD)
+            mapfile -t release_commits < <(jq -r '.commits[]' <<<"$impact_json")
+            release_log=
+            for sha in "${release_commits[@]}"; do
+              release_log+="$(git show -s --format='%s%n%b' "$sha")"$'\n'
+            done
+            if grep -Eq '(^[a-z]+(\([^)]*\))?!:|^BREAKING CHANGE:)' <<<"$release_log"; then
               strategy=major
-            elif git log "${CURRENT_TAG}..HEAD" --format='%s' | grep -Eq '^feat(\([^)]*\))?:'; then
+            elif grep -Eq '^feat(\([^)]*\))?:' <<<"$release_log"; then
               strategy=minor
             fi
           fi
@@ -231,7 +238,7 @@ jobs:
             echo "### Release pull request dry run"
             echo "- Version: v$VERSION"
             echo "- Strategy: $STRATEGY"
-            echo "- Commits: $COMMIT_COUNT"
+            echo "- Release-impacting commits: $COMMIT_COUNT"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create version bump pull request
@@ -277,7 +284,7 @@ jobs:
             --title "chore(release): prepare ${release_tag}" \
             --label auto-release \
             --assignee "$ACTOR_LOGIN" \
-            --body "Automated **${STRATEGY}** release from ${COMMIT_COUNT} commits. The trusted release workflow validates this exact head, then repository requirements control squash auto-merge. A version-changing merge builds and publishes the macOS installers in GitHub Releases.")
+            --body "Automated **${STRATEGY}** release from ${COMMIT_COUNT} release-impacting commits. The trusted release workflow validates this exact head, then repository requirements control squash auto-merge. A version-changing merge with pending artifact impact builds and publishes the macOS installers in GitHub Releases.")
 
           echo "url=$pr_url" >> "$GITHUB_OUTPUT"
           echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

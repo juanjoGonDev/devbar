@@ -146,6 +146,28 @@ jobs:
             exit 0
           fi
 
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            latest_release_tag=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+            if [[ -n "$latest_release_tag" ]]; then
+              if [[ "$latest_release_tag" == "$release_tag" ]]; then
+                echo "::error title=Release state mismatch::$release_tag is listed as the latest stable release but could not be resolved by tag."
+                exit 1
+              fi
+              git fetch --force origin "refs/tags/${latest_release_tag}:refs/tags/${latest_release_tag}"
+              latest_release_sha=$(git rev-list -n 1 "$latest_release_tag")
+              if ! git merge-base --is-ancestor "$latest_release_sha" "$release_sha"; then
+                echo "::error title=Invalid release impact baseline::$latest_release_tag is not an ancestor of $release_sha."
+                exit 1
+              fi
+              impact_json=$(node scripts/release-impact-policy.mjs pending "$latest_release_tag" "$release_sha")
+              if [[ "$(jq -r .publish <<<"$impact_json")" != "true" ]]; then
+                echo "publish=false" >> "$GITHUB_OUTPUT"
+                echo "No release-impacting commits exist between $latest_release_tag and $release_sha; installer build skipped."
+                exit 0
+              fi
+            fi
+          fi
+
           tag_exists=false
           if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then
             git fetch --force origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
