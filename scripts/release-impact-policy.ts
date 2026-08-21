@@ -48,13 +48,26 @@ function parsePackageJson(text: string, label: string): JsonObject | null {
   }
 }
 
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeJson(item));
+  }
+  if (!isJsonObject(value)) return value;
+
+  const canonical: JsonObject = {};
+  for (const key of Object.keys(value).sort()) {
+    canonical[key] = canonicalizeJson(value[key]);
+  }
+  return canonical;
+}
+
 function packageFingerprint(text: string, label: string): string | null {
   const packageJson = parsePackageJson(text, label);
   if (packageJson === null) return null;
 
   const buildRelevantPackage: JsonObject = { ...packageJson };
   delete buildRelevantPackage.version;
-  return JSON.stringify(buildRelevantPackage);
+  return JSON.stringify(canonicalizeJson(buildRelevantPackage));
 }
 
 export function packageChangeAffectsBuild(
