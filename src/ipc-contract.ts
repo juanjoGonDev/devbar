@@ -71,11 +71,18 @@ export interface LogListItem {
   id: string;
   type: 'command' | 'action' | 'prescript' | 'pipeline';
   name: string;
+  icon: string | null;
   lineCount: number;
+  status: ProcessStatus;
+  warnCount: number;
+  errorCount: number;
+  startedAt: number | null;
+  lastFinishedAt: number | null;
 }
-interface LogListGroup {
+export interface LogListGroup {
   groupId: string;
   groupName: string;
+  groupIcon: string;
   items: LogListItem[];
 }
 export interface IconBatteryItem {
@@ -209,7 +216,7 @@ export interface DevBarApi {
   hideTray(): Promise<SimpleResult>;
   onConfigGoto(callback: (target: string) => void): () => void;
   openLogs(
-    arg: string | { processId: string; filter?: string },
+    arg: string | { processId: string; filter?: string; detached?: boolean },
   ): Promise<SimpleResult>;
   openSilenced(groupId: string, commandId: string): Promise<SimpleResult>;
   getSilencedForCommand(
@@ -287,8 +294,8 @@ export interface DevBarApi {
   onLog(
     callback: (payload: { id: string; entry: LogEntry }) => void,
   ): () => void;
-  onLogsSetFilter(
-    callback: (payload: { processId: string; filter: string }) => void,
+  onLogsSelect(
+    callback: (payload: { processId: string; filter?: string }) => void,
   ): () => void;
   onBranchesChanged(
     callback: (payload: { repoPath: string }) => void,

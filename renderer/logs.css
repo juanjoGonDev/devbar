@@ -2,9 +2,10 @@
   box-sizing: border-box;
 }
 
-/* Shared top spacer for hiddenInset windows */
+/* Top spacer for hiddenInset windows: just tall enough to clear the traffic
+   lights (placed at y=14), so the content starts as high as possible. */
 .app-window-spacer {
-  height: 64px;
+  height: 36px;
   -webkit-app-region: drag;
   flex-shrink: 0;
 }
@@ -31,12 +32,252 @@ body {
   flex-direction: column;
 }
 
+/* ── Shell: sidebar + log pane ─────────────────────────────────── */
+.shell {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+#sidebar {
+  width: 244px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 28, 30, 0.96);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  min-height: 0;
+}
+body.detached #sidebar,
+body.sidebar-collapsed #sidebar {
+  display: none;
+}
+body.detached #detach,
+body.detached #toggle-sidebar {
+  display: none;
+}
+body.sidebar-collapsed #toggle-sidebar {
+  color: #8e8e93;
+}
+
+.side-head {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+.side-head input[type='search'] {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e5e7;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.side-head input[type='search']:focus {
+  outline: 2px solid rgba(0, 122, 255, 0.5);
+  outline-offset: -1px;
+  border-color: #0a84ff;
+}
+
+#side-tree {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 8px 14px;
+}
+#side-tree .empty {
+  color: #8e8e93;
+  font-size: 11px;
+  padding: 10px 6px;
+}
+
+.side-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  margin-top: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  color: #98989d;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.side-group > summary::-webkit-details-marker {
+  display: none;
+}
+.side-group > summary:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.side-group > summary .chevron {
+  font-size: 9px;
+  width: 9px;
+  flex-shrink: 0;
+  color: #6e6e73;
+  transition: transform 0.15s ease;
+}
+.side-group[open] > summary .chevron {
+  transform: rotate(90deg);
+}
+.side-group > summary .g-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 6px 8px;
+  margin: 1px 0;
+  color: #e5e5e7;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.side-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.side-item.active {
+  background: rgba(10, 132, 255, 0.22);
+  border-color: rgba(10, 132, 255, 0.45);
+}
+.side-item .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #5a5a5f;
+}
+.side-item .dot.running {
+  background: #30d158;
+}
+.side-item .dot.warn {
+  background: #ffd60a;
+}
+.side-item .dot.error {
+  background: #ff453a;
+}
+.side-item .dot.starting,
+.side-item .dot.stopping {
+  background: #0a84ff;
+}
+.side-item .s-ico {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.side-item .s-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.side-item .s-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side-item .s-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #8e8e93;
+  font-variant-numeric: tabular-nums;
+}
+.side-item .s-badges .b {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.side-item .s-badges .b.warn {
+  color: #ffd60a;
+}
+.side-item .s-badges .b.err {
+  color: #ff6961;
+}
+.side-item .s-badges .b.time.live {
+  color: #7eea9f;
+}
+.side-item .s-run {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #c8c8cc;
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 5px;
+  cursor: pointer;
+  visibility: hidden;
+}
+.side-item:hover .s-run,
+.side-item .s-run.on {
+  visibility: visible;
+}
+.side-item .s-run:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.side-item.hidden {
+  display: none;
+}
+.side-group.hidden {
+  display: none;
+}
+
+/* ── Header run button / uptime ─────────────────────────────────── */
+.run-btn {
+  min-width: 28px;
+}
+header .icon-btn {
+  padding: 4px 7px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+.run-btn.on {
+  background: rgba(255, 69, 58, 0.18);
+  border-color: rgba(255, 69, 58, 0.4);
+  color: #ff8a8a;
+}
+.uptime-badge {
+  display: none;
+  font-size: 11px;
+  color: #98989d;
+  font-variant-numeric: tabular-nums;
+  font-weight: normal;
+}
+.uptime-badge.visible {
+  display: inline;
+}
+
 header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   row-gap: 6px;
-  padding: 10px 16px;
+  padding: 9px 14px;
   background: rgba(36, 36, 38, 0.92);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -54,9 +295,13 @@ header strong {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.1px;
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 header input[type='search'] {
-  flex: 1;
+  flex: 1 1 120px;
   background: rgba(255, 255, 255, 0.06);
   color: #e5e5e7;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -76,7 +321,7 @@ header button {
   color: #e5e5e7;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
-  padding: 4px 11px;
+  padding: 4px 9px;
   cursor: pointer;
   font-size: 12px;
   font-family: inherit;
@@ -91,7 +336,7 @@ header button:active {
 header .check {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   user-select: none;
   cursor: pointer;
   font-size: 11px;
@@ -219,6 +464,15 @@ main {
 }
 .line.hidden {
   display: none;
+}
+
+/* After the level backgrounds so a selected error line still reads selected. */
+.line.selected,
+.line.selected:hover {
+  background: rgba(10, 132, 255, 0.3);
+}
+.line.selected .ts {
+  color: #c8d8ff;
 }
 
 .line.silenced {

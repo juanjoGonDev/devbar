@@ -11,60 +11,107 @@
   </head>
   <body>
     <div class="app-window-spacer"></div>
-    <header>
-      <strong id="title">Logs</strong
-      ><span
-        id="uptime-badge"
-        style="
-          display: none;
-          margin-left: 8px;
-          font-size: 11px;
-          color: var(--muted);
-          font-variant-numeric: tabular-nums;
-          font-weight: normal;
-        "
-      ></span>
-      <input id="filter" type="search" placeholder="Filtrar (texto o regex)…" />
-      <label class="check"
-        ><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label
-      >
-      <label class="check"><input type="checkbox" id="paused" /> Pausa</label>
-      <label
-        class="check"
-        title="Silencia todos los warnings detectados en este servicio (no afecta al color)"
-        ><input type="checkbox" id="mute-warn" /> 🔕 warns</label
-      >
-      <label
-        class="check"
-        title="Silencia todos los errors detectados en este servicio (no afecta al color)"
-        ><input type="checkbox" id="mute-err" /> 🔕 errors</label
-      >
-      <button id="clear">Limpiar</button>
-      <button id="copy">Copiar</button>
-      <button
-        id="toggle-silenced"
-        title="Mostrar / ocultar patrones silenciados"
-      >
-        Silenciados
-      </button>
-    </header>
-    <div class="log-container">
-      <main>
-        <div id="lines"></div>
-      </main>
-      <button
-        id="scroll-bottom"
-        class="scroll-bottom-btn"
-        type="button"
-        aria-label="Ir al final"
-      >
-        ↓
-      </button>
+    <div class="shell">
+      <aside id="sidebar">
+        <div class="side-head">
+          <input
+            id="side-filter"
+            type="search"
+            placeholder="Buscar servicio…"
+          />
+        </div>
+        <div id="side-tree"></div>
+      </aside>
+      <div class="pane">
+        <header>
+          <button
+            id="toggle-sidebar"
+            class="icon-btn"
+            type="button"
+            title="Ocultar / mostrar el panel lateral"
+            aria-label="Ocultar / mostrar el panel lateral"
+          >
+            ◧
+          </button>
+          <button
+            id="run-toggle"
+            class="run-btn"
+            type="button"
+            title="Arrancar / parar"
+          >
+            ▶
+          </button>
+          <strong id="title">Logs</strong>
+          <span id="uptime-badge" class="uptime-badge"></span>
+          <input
+            id="filter"
+            type="search"
+            placeholder="Filtrar (texto o regex)…"
+          />
+          <label class="check"
+            ><input type="checkbox" id="autoscroll" checked />
+            Auto-scroll</label
+          >
+          <label class="check"
+            ><input type="checkbox" id="paused" /> Pausa</label
+          >
+          <label
+            class="check"
+            title="Silencia todos los warnings detectados en este servicio (no afecta al color)"
+            ><input type="checkbox" id="mute-warn" /> warns</label
+          >
+          <label
+            class="check"
+            title="Silencia todos los errors detectados en este servicio (no afecta al color)"
+            ><input type="checkbox" id="mute-err" /> errors</label
+          >
+          <button
+            id="clear"
+            class="icon-btn"
+            title="Limpiar"
+            aria-label="Limpiar"
+          >
+            🗑
+          </button>
+          <button id="copy" class="icon-btn" title="Copiar" aria-label="Copiar">
+            📋
+          </button>
+          <button
+            id="toggle-silenced"
+            class="icon-btn"
+            title="Patrones silenciados"
+            aria-label="Patrones silenciados"
+          >
+            🔕
+          </button>
+          <button
+            id="detach"
+            class="icon-btn"
+            title="Abrir este log en una ventana aparte"
+            aria-label="Abrir en ventana aparte"
+          >
+            ⧉
+          </button>
+        </header>
+        <div class="log-container">
+          <main>
+            <div id="lines"></div>
+          </main>
+          <button
+            id="scroll-bottom"
+            class="scroll-bottom-btn"
+            type="button"
+            aria-label="Ir al final"
+          >
+            ↓
+          </button>
+        </div>
+        <footer>
+          <span id="counts">0 líneas</span>
+          <span id="status"></span>
+        </footer>
+      </div>
     </div>
-    <footer>
-      <span id="counts">0 líneas</span>
-      <span id="status"></span>
-    </footer>
     <script type="module" src="logs.js"></script>
   </body>
 </html>

@@ -125,7 +125,7 @@ const api: DevBarApi = {
   buildSilencePattern,
   onUpdate: (cb) => subscribe('groups:update', cb),
   onLog: (cb) => subscribe('logs:line', cb),
-  onLogsSetFilter: (cb) => subscribe('logs:setFilter', cb),
+  onLogsSelect: (cb) => subscribe('logs:select', cb),
   onBranchesChanged: (cb) => subscribe('branches:changed', cb),
   onActionDone: (cb) => subscribe('action:done', cb),
   onToast: (cb) => subscribe('groups:toast', cb),

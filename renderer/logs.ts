@@ -1,7 +1,17 @@
-import { formatUptime } from './format-uptime.js';
-import { byId, requireElement } from './dom.js';
+import { byId, closestElement, requireElement } from './dom.js';
+import { canRun, dotClass, isRunning, runtimeOf } from './log-status.js';
+import {
+  applySelection,
+  selectModeFor,
+  type Selection,
+} from './line-selection.js';
 import type { LogEntry } from '../src/domain-types.js';
-import type { LogsTarget, SilenceLevel } from '../src/ipc-contract.js';
+import type {
+  LogListGroup,
+  LogListItem,
+  LogsTarget,
+  SilenceLevel,
+} from '../src/ipc-contract.js';
 
 type AnsiStyle = {
   fg: string | null;
@@ -176,8 +186,10 @@ function stripAnsi(s: string): string {
 
 // ────────────────────────── DOM refs ─────────────────────────────
 const params = new URLSearchParams(location.search);
-// Support both old --service-id= and new --process-id= argument
-const processId = params.get('id');
+// A detached window shows a single log and hides the sidebar; the shared
+// window keeps the sidebar and swaps the visible log in place.
+const isDetached = params.get('detached') === '1';
+if (isDetached) document.body.classList.add('detached');
 // Pre-set filter if passed as a query param (e.g. from counter-button click)
 const initialFilter = params.get('filter') || '';
 
@@ -199,43 +211,41 @@ const togglePanelBtn = byId<HTMLButtonElement>(
   HTMLButtonElement,
 );
 const scrollBtn = byId<HTMLButtonElement>('scroll-bottom', HTMLButtonElement);
+const runBtn = byId<HTMLButtonElement>('run-toggle', HTMLButtonElement);
+const detachBtn = byId<HTMLButtonElement>('detach', HTMLButtonElement);
+const sideTreeEl = byId<HTMLElement>('side-tree', HTMLElement);
+const sideFilterEl = byId<HTMLInputElement>('side-filter', HTMLInputElement);
+const toggleSidebarBtn = byId<HTMLButtonElement>(
+  'toggle-sidebar',
+  HTMLButtonElement,
+);
 
-// ────────────────────── Uptime for logs window ───────────────────
-// startedAt: timestamp (ms) of the running process, or null if stopped
-let _logsStartedAt: number | null = null;
-let _logsDisplayName = '';
-let _logsGroupName = '';
-
-function updateLogsUptime(): void {
-  if (!_logsStartedAt) return;
-  const elapsed = Date.now() - _logsStartedAt;
-  const text = formatUptime(elapsed);
-  if (uptimeBadgeEl) {
-    uptimeBadgeEl.textContent = text;
-    uptimeBadgeEl.style.display = 'inline';
-  }
-  const base = _logsGroupName
-    ? `Logs — ${_logsGroupName} · ${_logsDisplayName}`
-    : `Logs — ${_logsDisplayName}`;
-  document.title = `${base} · ${text}`;
-  titleEl.textContent = base;
-}
-
-// Single top-level interval — started once the script loads
-const _logsUptimeInterval = setInterval(updateLogsUptime, 1000);
-
-// ─────────────────────────────────────────────────────────────────
-
+// ─────────────────────────── State ───────────────────────────────
+let processId = params.get('id');
 // Current resolved target (group + command/action)
 let currentTarget: LogsTarget | null = null;
 // groupId + commandId extracted from processId for silence ops
 let currentGroupId: string | null = null;
 let currentCommandId: string | null = null;
-
+let globalMaxLogLines = 2000;
 let RENDER_LIMIT = 2000;
 let visibleCount = 0;
 const pendingQueue: LogEntry[] = [];
 let filterRe: RegExp | null = null;
+// Last sidebar snapshot — also the source of truth for the header's run
+// button and uptime, so commands, actions and pre-scripts all work the same.
+let sideData: LogListGroup[] = [];
+
+function itemById(id: string): LogListItem | null {
+  for (const group of sideData) {
+    for (const item of group.items) if (item.id === id) return item;
+  }
+  return null;
+}
+
+function currentItem(): LogListItem | null {
+  return processId ? itemById(processId) : null;
+}
 
 function fmtTime(ts: number): string {
   const d = new Date(ts);
@@ -386,24 +396,131 @@ clearBtn.addEventListener('click', async () => {
   if (pausedEl.checked) statusEl.textContent = 'Pausado';
 });
 
-copyBtn.addEventListener('click', async () => {
-  const text = Array.from(linesEl.children)
-    .filter((n) => !n.classList.contains('hidden'))
+// ─────────────────────── Line selection & copy ───────────────────
+// Selection lives in the DOM (`.line.selected`) so trimming the buffer or
+// re-filtering can never leave it pointing at rows that are gone.
+let anchorRow: HTMLElement | null = null;
+
+function visibleRows(): HTMLElement[] {
+  return Array.from(linesEl.children).filter(
+    (n): n is HTMLElement =>
+      n instanceof HTMLElement && !n.classList.contains('hidden'),
+  );
+}
+
+function selectedRows(): HTMLElement[] {
+  return visibleRows().filter((r) => r.classList.contains('selected'));
+}
+
+function paintSelection(rows: HTMLElement[], next: Selection): void {
+  rows.forEach((row, i) =>
+    row.classList.toggle('selected', next.selected.has(i)),
+  );
+  anchorRow = next.anchor === null ? null : (rows[next.anchor] ?? null);
+  reportSelection();
+}
+
+function reportSelection(): void {
+  const count = selectedRows().length;
+  copyBtn.title = count ? `Copiar ${count} línea(s) seleccionada(s)` : 'Copiar';
+  if (count) statusEl.textContent = `${count} seleccionada(s)`;
+  else if (pausedEl.checked) statusEl.textContent = 'Pausado';
+  else statusEl.textContent = '';
+}
+
+function clearSelection(): void {
+  for (const row of Array.from(linesEl.children)) {
+    if (row instanceof HTMLElement) row.classList.remove('selected');
+  }
+  anchorRow = null;
+  reportSelection();
+}
+
+function selectAllVisible(): void {
+  const rows = visibleRows();
+  for (const row of rows) row.classList.add('selected');
+  anchorRow = rows[0] ?? null;
+  reportSelection();
+}
+
+// Shift-click would otherwise extend the browser's text selection instead.
+linesEl.addEventListener('mousedown', (ev) => {
+  if (ev.shiftKey) ev.preventDefault();
+});
+
+linesEl.addEventListener('click', (ev) => {
+  // A drag that selected text is a text selection, not a row click.
+  if (!window.getSelection()?.isCollapsed) return;
+  const row = closestElement(ev.target, '.line');
+  if (!row) return;
+  const rows = visibleRows();
+  const index = rows.indexOf(row);
+  if (index < 0) return;
+  const anchorIndex = anchorRow ? rows.indexOf(anchorRow) : -1;
+  const prev: Selection = {
+    selected: new Set(
+      rows.flatMap((r, i) => (r.classList.contains('selected') ? [i] : [])),
+    ),
+    anchor: anchorIndex < 0 ? null : anchorIndex,
+  };
+  paintSelection(rows, applySelection(prev, index, selectModeFor(ev)));
+});
+
+// Clicking the empty space under the last line drops the selection.
+mainEl.addEventListener('click', (ev) => {
+  if (!closestElement(ev.target, '.line')) clearSelection();
+});
+
+function rowsToText(rows: HTMLElement[]): string {
+  return rows
     .map((node) => {
       const ts = node.querySelector<HTMLElement>('.ts')?.textContent ?? '';
       const body = node.querySelector<HTMLElement>('.body')?.textContent ?? '';
       return `${ts} ${body}`;
     })
     .join('\n');
+}
+
+async function copyRows(rows: HTMLElement[]): Promise<void> {
   try {
-    await navigator.clipboard.writeText(text);
-    statusEl.textContent = 'Copiado ✓';
-    setTimeout(() => {
-      if (!pausedEl.checked) statusEl.textContent = '';
-    }, 1500);
+    await navigator.clipboard.writeText(rowsToText(rows));
+    statusEl.textContent = `Copiado ✓ (${rows.length})`;
+    setTimeout(reportSelection, 1500);
   } catch (err) {
     statusEl.textContent = 'Error al copiar';
   }
+}
+
+// With a selection the button copies just that; with none, everything visible.
+copyBtn.addEventListener('click', () => {
+  const selected = selectedRows();
+  void copyRows(selected.length ? selected : visibleRows());
+});
+
+detachBtn.addEventListener('click', () => {
+  if (processId) window.api.openLogs({ processId, detached: true });
+});
+
+// ── Sidebar visibility (remembered across sessions) ───────────────
+const SIDEBAR_KEY = 'devbar.logs.sidebar';
+
+function applySidebarVisibility(collapsed: boolean): void {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  toggleSidebarBtn.title = collapsed
+    ? 'Mostrar el panel lateral'
+    : 'Ocultar el panel lateral';
+  toggleSidebarBtn.setAttribute('aria-pressed', String(collapsed));
+}
+
+applySidebarVisibility(
+  !isDetached && localStorage.getItem(SIDEBAR_KEY) === 'collapsed',
+);
+
+toggleSidebarBtn.addEventListener('click', () => {
+  const collapsed = !document.body.classList.contains('sidebar-collapsed');
+  localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'open');
+  applySidebarVisibility(collapsed);
+  updateScrollButton();
 });
 
 const SCROLL_THRESHOLD = 4;
@@ -434,22 +551,306 @@ mainEl.addEventListener('scroll', () => {
 
 window.addEventListener('resize', updateScrollButton);
 
-if (scrollBtn) {
-  scrollBtn.addEventListener('click', () => {
-    mainEl.scrollTop = mainEl.scrollHeight;
-    autoscrollEl.checked = true;
-    updateScrollButton();
-  });
-}
+scrollBtn.addEventListener('click', () => {
+  mainEl.scrollTop = mainEl.scrollHeight;
+  autoscrollEl.checked = true;
+  updateScrollButton();
+});
 
 document.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+  const accel = e.metaKey || e.ctrlKey;
+  if (accel && (e.key === 'f' || e.key === 'F')) {
     e.preventDefault();
     filterEl.focus();
     filterEl.select();
+    return;
   }
+  // Leave the shortcuts alone while typing in the filter or the search box.
+  if (document.activeElement instanceof HTMLInputElement) return;
+  if (accel && (e.key === 'a' || e.key === 'A')) {
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    selectAllVisible();
+    return;
+  }
+  if (accel && (e.key === 'c' || e.key === 'C')) {
+    // A real text selection wins — let the browser copy exactly that.
+    if (!window.getSelection()?.isCollapsed) return;
+    const selected = selectedRows();
+    if (!selected.length) return;
+    e.preventDefault();
+    void copyRows(selected);
+    return;
+  }
+  if (e.key === 'Escape') clearSelection();
 });
 
+// ───────────────────── Start / stop the shown log ────────────────
+async function toggleRun(item: LogListItem): Promise<void> {
+  if (isRunning(item)) {
+    await window.api.stopProcess(item.id);
+    return;
+  }
+  // Actions go through actions:run so their confirmation gate still applies.
+  if (item.type === 'action') {
+    const parts = item.id.split(':');
+    const groupId = parts[1];
+    const actionId = parts.slice(2).join(':');
+    if (groupId && actionId) await window.api.runAction(groupId, actionId);
+    return;
+  }
+  await window.api.startProcess(item.id);
+}
+
+runBtn.addEventListener('click', () => {
+  const item = currentItem();
+  if (item && canRun(item)) void toggleRun(item);
+});
+
+function renderHeaderRunState(): void {
+  if (!processId || !_logsDisplayName) return;
+  const item = currentItem();
+  const runnable = canRun(item);
+  runBtn.style.display = runnable ? '' : 'none';
+  if (runnable) {
+    const running = isRunning(item);
+    runBtn.textContent = running ? '■' : '▶';
+    runBtn.title = running ? 'Parar' : 'Arrancar';
+    runBtn.classList.toggle('on', running);
+  }
+  const runtime = runtimeOf(item);
+  const base = _logsGroupName
+    ? `Logs — ${_logsGroupName} · ${_logsDisplayName}`
+    : `Logs — ${_logsDisplayName}`;
+  titleEl.textContent = base;
+  if (runtime) {
+    uptimeBadgeEl.textContent = runtime.live
+      ? runtime.text
+      : `último: ${runtime.text}`;
+    uptimeBadgeEl.classList.add('visible');
+    document.title = `${base} · ${runtime.text}`;
+  } else {
+    uptimeBadgeEl.textContent = '';
+    uptimeBadgeEl.classList.remove('visible');
+    document.title = base;
+  }
+}
+
+let _logsDisplayName = '';
+let _logsGroupName = '';
+
+// ─────────────────────────── Sidebar ─────────────────────────────
+const TYPE_ICON: Record<LogListItem['type'], string> = {
+  command: '⚙️',
+  action: '⚡️',
+  prescript: '🧪',
+  pipeline: '🧩',
+};
+
+function groupOpenKey(groupId: string): string {
+  return `devbar.logs.group.${groupId}`;
+}
+
+function renderBadges(host: HTMLElement, item: LogListItem): void {
+  host.textContent = '';
+  if (item.warnCount > 0) {
+    const b = document.createElement('span');
+    b.className = 'b warn';
+    b.title = `${item.warnCount} warning(s)`;
+    b.textContent = `⚠ ${item.warnCount}`;
+    host.appendChild(b);
+  }
+  if (item.errorCount > 0) {
+    const b = document.createElement('span');
+    b.className = 'b err';
+    b.title = `${item.errorCount} error(es)`;
+    b.textContent = `⛔ ${item.errorCount}`;
+    host.appendChild(b);
+  }
+  const runtime = runtimeOf(item);
+  if (runtime) {
+    const b = document.createElement('span');
+    b.className = runtime.live ? 'b time live' : 'b time';
+    b.title = runtime.live
+      ? 'Tiempo en ejecución'
+      : 'Duración de la última ejecución';
+    b.textContent = `⏱ ${runtime.text}`;
+    host.appendChild(b);
+  }
+  if (!host.childElementCount) {
+    const b = document.createElement('span');
+    b.className = 'b';
+    b.textContent = `${item.lineCount} líneas`;
+    host.appendChild(b);
+  }
+}
+
+function buildSideItem(item: LogListItem): HTMLElement {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'side-item';
+  row.dataset.id = item.id;
+
+  const dot = document.createElement('span');
+  dot.className = 'dot';
+  row.appendChild(dot);
+
+  const ico = document.createElement('span');
+  ico.className = 's-ico';
+  ico.textContent = item.icon || TYPE_ICON[item.type];
+  row.appendChild(ico);
+
+  const mainCol = document.createElement('span');
+  mainCol.className = 's-main';
+  const name = document.createElement('span');
+  name.className = 's-name';
+  const badges = document.createElement('span');
+  badges.className = 's-badges';
+  mainCol.append(name, badges);
+  row.appendChild(mainCol);
+
+  const run = document.createElement('button');
+  run.type = 'button';
+  run.className = 's-run';
+  run.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    // Rows are repainted in place, so resolve the current state on click
+    // instead of the snapshot this row was built from.
+    const fresh = itemById(item.id);
+    if (fresh) void toggleRun(fresh);
+  });
+  row.appendChild(run);
+
+  row.addEventListener('click', () => void selectLog(item.id));
+  return row;
+}
+
+function paintSideItem(row: HTMLElement, item: LogListItem): void {
+  const dot = row.querySelector<HTMLElement>('.dot');
+  if (dot) dot.className = `dot ${dotClass(item)}`.trim();
+  const name = row.querySelector<HTMLElement>('.s-name');
+  if (name) {
+    name.textContent = item.name;
+    name.title = item.name;
+  }
+  const badges = row.querySelector<HTMLElement>('.s-badges');
+  if (badges) renderBadges(badges, item);
+  const run = row.querySelector<HTMLButtonElement>('.s-run');
+  if (run) {
+    const runnable = canRun(item);
+    run.style.display = runnable ? '' : 'none';
+    const running = isRunning(item);
+    run.textContent = running ? '■' : '▶';
+    run.title = running ? 'Parar' : 'Arrancar';
+    run.classList.toggle('on', running);
+  }
+  row.classList.toggle('active', item.id === processId);
+}
+
+function renderSidebar(): void {
+  sideTreeEl.textContent = '';
+  if (!sideData.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'No hay grupos configurados.';
+    sideTreeEl.appendChild(empty);
+    return;
+  }
+  for (const group of sideData) {
+    const details = document.createElement('details');
+    details.className = 'side-group';
+    details.open =
+      localStorage.getItem(groupOpenKey(group.groupId)) !== 'closed';
+    details.addEventListener('toggle', () =>
+      localStorage.setItem(
+        groupOpenKey(group.groupId),
+        details.open ? 'open' : 'closed',
+      ),
+    );
+    const summary = document.createElement('summary');
+    const chevron = document.createElement('span');
+    chevron.className = 'chevron';
+    chevron.textContent = '▶';
+    const gIco = document.createElement('span');
+    gIco.textContent = group.groupIcon || '📁';
+    const gName = document.createElement('span');
+    gName.className = 'g-name';
+    gName.textContent = group.groupName;
+    summary.append(chevron, gIco, gName);
+    details.appendChild(summary);
+    for (const item of group.items) {
+      const row = buildSideItem(item);
+      paintSideItem(row, item);
+      details.appendChild(row);
+    }
+    sideTreeEl.appendChild(details);
+  }
+  applySideFilter();
+}
+
+/** Repaint in place when only the live numbers changed — keeps scroll & focus. */
+function repaintSidebar(): boolean {
+  for (const group of sideData) {
+    for (const item of group.items) {
+      const row = sideTreeEl.querySelector<HTMLElement>(
+        `.side-item[data-id="${CSS.escape(item.id)}"]`,
+      );
+      if (!row) return false;
+      paintSideItem(row, item);
+    }
+  }
+  return true;
+}
+
+function sideSignature(): string {
+  return sideData
+    .map((g) => `${g.groupId}:${g.items.map((i) => i.id).join(',')}`)
+    .join('|');
+}
+
+function applySideFilter(): void {
+  const needle = sideFilterEl.value.trim().toLowerCase();
+  for (const details of Array.from(
+    sideTreeEl.querySelectorAll<HTMLElement>('.side-group'),
+  )) {
+    let visible = 0;
+    for (const row of Array.from(
+      details.querySelectorAll<HTMLElement>('.side-item'),
+    )) {
+      const name = row.querySelector<HTMLElement>('.s-name')?.textContent ?? '';
+      const ok = !needle || name.toLowerCase().includes(needle);
+      row.classList.toggle('hidden', !ok);
+      if (ok) visible += 1;
+    }
+    details.classList.toggle('hidden', visible === 0);
+    if (needle && visible > 0 && details instanceof HTMLDetailsElement)
+      details.open = true;
+  }
+}
+
+sideFilterEl.addEventListener('input', applySideFilter);
+
+let lastSignature = '';
+
+async function refreshSidebar(): Promise<void> {
+  sideData = (await window.api.listLogs()) || [];
+  if (!isDetached) {
+    const signature = sideSignature();
+    if (signature !== lastSignature || !repaintSidebar()) {
+      lastSignature = signature;
+      renderSidebar();
+    }
+  }
+  renderHeaderRunState();
+}
+
+// One ticker for every live duration on screen (header + sidebar rows).
+setInterval(() => {
+  if (!isDetached) repaintSidebar();
+  renderHeaderRunState();
+}, 1000);
+
+// ─────────────────────── Silence / target state ──────────────────
 function applyTargetSnapshot(target: LogsTarget): void {
   if (!target) return;
   currentTarget = target;
@@ -521,80 +922,84 @@ muteErrEl.addEventListener('change', () => {
   }
 });
 
-if (togglePanelBtn) {
-  togglePanelBtn.addEventListener('click', () => {
-    if (!currentGroupId || !currentCommandId) return;
-    window.api.openSilenced(currentGroupId, currentCommandId);
-  });
-}
+togglePanelBtn.addEventListener('click', () => {
+  if (!currentGroupId || !currentCommandId) return;
+  window.api.openSilenced(currentGroupId, currentCommandId);
+});
 
-(async () => {
-  if (!processId) {
-    titleEl.textContent = 'Logs (sin proceso)';
-    return;
-  }
+// ─────────────────────── Switching between logs ──────────────────
+async function selectLog(id: string, filter?: string): Promise<void> {
+  processId = id;
+  linesEl.textContent = '';
+  visibleCount = 0;
+  pendingQueue.length = 0;
+  countsEl.textContent = '0 líneas';
+  statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
+  currentTarget = null;
+  currentGroupId = null;
+  currentCommandId = null;
+  anchorRow = null;
+  muteWarnEl.checked = false;
+  muteErrEl.checked = false;
+  if (filter !== undefined) filterEl.value = filter;
+  filterRe = buildFilter(filterEl.value);
 
-  const [res, settings] = await Promise.all([
-    window.api.getLogs(processId),
-    window.api.getSettings(),
-  ]);
-
-  // Resolve render limit: per-command override → global setting → fallback 2000
+  // getLogs also points main's live stream at this buffer, atomically.
+  const res = await window.api.getLogs(id);
+  if (processId !== id) return; // a newer switch won the race
+  // Render limit: per-command override → global setting → fallback 2000
   const cmdLimit =
     res.target.kind === 'command' ? res.target.target.maxLogLines : null;
-  RENDER_LIMIT =
-    cmdLimit != null ? cmdLimit : (settings && settings.maxLogLines) || 2000;
+  RENDER_LIMIT = cmdLimit != null ? cmdLimit : globalMaxLogLines;
 
-  // res.target = { kind, group, target: command|action }
   const target = res.target;
   if (target && target.group && target.target) {
     applyTargetSnapshot(target);
-    const displayName = target.target.name || processId;
-    _logsDisplayName = displayName;
+    _logsDisplayName = target.target.name || id;
     _logsGroupName = target.group.name;
-
-    const baseTitle = `Logs — ${target.group.name} · ${displayName}`;
-    titleEl.textContent = baseTitle;
-    document.title = baseTitle;
-
-    // Set silence op ids
     if (target.kind === 'command') {
       currentGroupId = target.group.id;
       currentCommandId = target.target.id;
     }
-
-    // Check if process is running and has a startedAt timestamp
-    // getLogs returns the command state snapshot in res.commandState
-    if (
-      res.commandState &&
-      res.commandState.status === 'running' &&
-      res.commandState.startedAt
-    ) {
-      _logsStartedAt = res.commandState.startedAt;
-      updateLogsUptime();
-    }
   } else {
-    titleEl.textContent = `Logs — ${processId}`;
-  }
-
-  // Apply initial filter before rendering buffered lines so appendLine's
-  // matchesFilter check already uses it.
-  if (initialFilter) {
-    filterEl.value = initialFilter;
-    filterRe = buildFilter(initialFilter);
+    _logsDisplayName = id;
+    _logsGroupName = '';
   }
 
   for (const entry of res.lines) appendLine(entry);
+  if (!isDetached) {
+    for (const row of Array.from(
+      sideTreeEl.querySelectorAll<HTMLElement>('.side-item'),
+    )) {
+      row.classList.toggle('active', row.dataset.id === id);
+    }
+  }
+  renderHeaderRunState();
+}
+
+// ─────────────────────────── Bootstrap ───────────────────────────
+(async () => {
+  const settings = await window.api.getSettings();
+  globalMaxLogLines = (settings && settings.maxLogLines) || 2000;
+  if (initialFilter) filterEl.value = initialFilter;
+  await refreshSidebar();
+  if (processId) {
+    await selectLog(processId, initialFilter || undefined);
+  } else {
+    titleEl.textContent = 'Logs (sin proceso)';
+  }
 })();
 
-// Subscribe to filter push from main (already-open window scenario)
-{
-  window.api.onLogsSetFilter(({ processId: pid, filter }) => {
-    if (pid !== processId) return;
+// Main asks the shared window to switch (or a detached one to re-filter).
+window.api.onLogsSelect(({ processId: pid, filter }) => {
+  if (isDetached) {
+    if (pid !== processId || filter === undefined) return;
     filterEl.value = filter;
-    filterEl.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-}
+    applyFilter();
+    return;
+  }
+  void selectLog(pid, filter);
+});
 
 window.api.onLog((payload) => {
   if (!payload || payload.id !== processId) return;
@@ -606,33 +1011,13 @@ window.api.onLog((payload) => {
   appendLine(payload.entry);
 });
 
-window.api.onUpdate((groupStates) => {
-  // Find our command/action in the updated state
-  if (!processId || !currentGroupId) return;
-  for (const gs of groupStates || []) {
-    if (gs.groupId !== currentGroupId) continue;
-
-    // Update uptime tracking based on live command state
-    if (currentCommandId) {
-      const cs = (gs.commands || []).find(
-        (c) => c.commandId === currentCommandId,
-      );
-      if (cs) {
-        if (cs.status === 'running' && cs.startedAt) {
-          _logsStartedAt = cs.startedAt;
-        } else {
-          // Process stopped — clear uptime
-          _logsStartedAt = null;
-          if (uptimeBadgeEl) {
-            uptimeBadgeEl.style.display = 'none';
-            uptimeBadgeEl.textContent = '';
-          }
-          const baseTitle = `Logs — ${_logsGroupName} · ${_logsDisplayName}`;
-          titleEl.textContent = baseTitle;
-          document.title = baseTitle;
-        }
-      }
-      rerenderExistingLines();
-    }
-  }
+// Any state change (start, stop, new warn/error) → refresh the live numbers.
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+window.api.onUpdate(() => {
+  rerenderExistingLines();
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    void refreshSidebar();
+  }, 250);
 });

@@ -3,6 +3,44 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [Unreleased]
+
+### Añadido
+
+- La ventana de **logs** pasa a ser un visor único con **panel lateral**: todos
+  los comandos y acciones aparecen agrupados por grupo, y cada grupo se pliega y
+  despliega (el estado se recuerda entre sesiones). Un buscador filtra la lista
+  por nombre.
+- Cada entrada del panel muestra de un vistazo su estado: punto de color,
+  número de **warnings** y **errores**, y el **tiempo** que lleva en ejecución o
+  lo que duró la última.
+- Botón de **arrancar / parar** tanto en la barra superior del log como en cada
+  fila del panel lateral, sin tener que volver a la barra de menú.
+- Botón **⧉** para abrir el log actual en una **ventana aparte**, de modo que se
+  pueden vigilar varios servicios a la vez mientras la ventana principal sigue
+  navegando entre logs.
+- Botón **◧** que **oculta el panel lateral por completo** para dejar todo el
+  ancho al log. La preferencia se recuerda entre sesiones.
+- El panel se actualiza **en tiempo real**: los grupos, comandos y acciones que
+  se añaden, renombran o borran desde la configuración aparecen y desaparecen
+  al instante, sin reabrir la ventana.
+- **Selección de líneas** en el log, con el comportamiento habitual del
+  explorador de archivos: clic selecciona una, `cmd`/`ctrl`+clic añade o quita
+  sueltas y `mayús`+clic marca un rango. `cmd`/`ctrl`+`A` selecciona todo lo
+  visible y `Esc` limpia la selección.
+- **Copiar** (botón o `cmd`/`ctrl`+`C`) copia lo seleccionado; si no hay nada
+  seleccionado, copia todas las líneas visibles con el filtro aplicado.
+  Seleccionar texto arrastrando con el ratón sigue funcionando igual.
+
+### Cambiado
+
+- Abrir un log desde la barra de menú reutiliza la ventana compartida en lugar
+  de abrir una ventana nueva por servicio.
+- La barra superior del visor es más compacta: limpiar, copiar, silenciados y
+  abrir en ventana pasan a ser botones de icono.
+- El hueco superior de la ventana se reduce a lo justo para despejar los
+  botones de la barra de título, de modo que el contenido empieza más arriba.
+
 ## [0.4.4] - 2026-08-10
 
 ### Cambiado
