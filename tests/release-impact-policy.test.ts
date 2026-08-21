@@ -143,6 +143,40 @@ describe('release impact policy', () => {
     ).toEqual({ publish: false, paths: [] });
   });
 
+  it('skips a top-level package.json key reorder', () => {
+    const reorderedPackageJson = {
+      dependencies: { menubar: '9.5.2' },
+      version: '1.0.0',
+      name: 'devbar',
+    };
+
+    expect(
+      classify(['package.json'], packageJson, reorderedPackageJson),
+    ).toEqual({ publish: false, paths: [] });
+  });
+
+  it('skips a nested dependency key reorder', () => {
+    const beforePackage = {
+      ...packageJson,
+      dependencies: {
+        menubar: '9.5.2',
+        'electron-store': '11.0.2',
+      },
+    };
+    const afterPackage = {
+      ...packageJson,
+      dependencies: {
+        'electron-store': '11.0.2',
+        menubar: '9.5.2',
+      },
+    };
+
+    expect(classify(['package.json'], beforePackage, afterPackage)).toEqual({
+      publish: false,
+      paths: [],
+    });
+  });
+
   it('publishes for a semantic package.json dependency change', () => {
     expect(
       classify(['package.json'], packageJson, {
