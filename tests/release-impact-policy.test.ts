@@ -34,14 +34,11 @@ function runPolicy(
   args: string[],
   cwd = process.cwd(),
 ): Classification | PendingImpact {
-  const result = spawnSync(
-    process.execPath,
-    ['--experimental-strip-types', policyPath, ...args],
-    {
-      cwd,
-      encoding: 'utf8',
-    },
-  );
+  const policyArgs = ['--experimental-strip-types', policyPath, ...args];
+  const result = spawnSync(process.execPath, policyArgs, {
+    cwd,
+    encoding: 'utf8',
+  });
   if (result.status !== 0) {
     throw new Error(result.stderr || 'release impact policy failed');
   }

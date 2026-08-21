@@ -7,13 +7,11 @@ const autoReleaseWorkflow = readFileSync(
   'utf8',
 );
 const releaseWorkflow = readFileSync('.github/workflows/release.yml', 'utf8');
-const policyCommand =
-  'node --experimental-strip-types scripts/release-impact-policy.ts';
 
 describe('release impact workflow integration', () => {
   it('counts only release-impacting commits toward automatic releases', () => {
     expect(autoReleaseWorkflow).toContain(
-      `${policyCommand} pending "$current_tag" HEAD`,
+      'node --experimental-strip-types scripts/release-impact-policy.ts pending "$current_tag" HEAD',
     );
     expect(autoReleaseWorkflow).toContain(
       "commit_count=$(jq -r '.commitCount' <<<\"$impact_json\")",
@@ -43,7 +41,7 @@ describe('release impact workflow integration', () => {
       'if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then',
     );
     expect(releaseWorkflow).toContain(
-      `${policyCommand} pending "$latest_release_tag" "$release_sha"`,
+      'node --experimental-strip-types scripts/release-impact-policy.ts pending "$latest_release_tag" "$release_sha"',
     );
     expect(releaseWorkflow).toContain(
       'No release-impacting commits exist between $latest_release_tag and $release_sha; installer build skipped.',
