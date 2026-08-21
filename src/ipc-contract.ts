@@ -160,6 +160,21 @@ interface ApplyImportResult {
 }
 type NotificationAction = string;
 
+/**
+ * Simulation hooks for events that are painful to reproduce by hand. The
+ * invokers always exist; the handlers behind them only in development, so each
+ * call rejects in a packaged build.
+ */
+interface DevSimulationApi {
+  simulateUpdate(version?: string): Promise<{ ok: boolean; version: string }>;
+  clearUpdate(): Promise<SimpleResult>;
+  simulateTrayColor(color: TrayColor | null): Promise<SimpleResult>;
+  simulateBanner(withCta: boolean): Promise<SimpleResult>;
+  simulateSuccess(): Promise<SimpleResult>;
+  simulatePrescriptConfirm(): Promise<SimpleResult>;
+  simulateToast(kind: 'ok' | 'error'): Promise<SimpleResult>;
+}
+
 export interface DevBarApi {
   listGroups(): Promise<Group[]>;
   getGroupStates(): Promise<GroupState[]>;
@@ -281,6 +296,10 @@ export interface DevBarApi {
     decision: 'confirm' | 'cancel',
   ): Promise<SimpleResult>;
   quit(): Promise<SimpleResult>;
+  /** False in packaged builds; gates loading the dev simulation panel. */
+  isDev(): Promise<boolean>;
+  /** Dev-only: handlers exist solely while running unpackaged (src/dev). */
+  dev: DevSimulationApi;
   getAppVersion(): Promise<string>;
   getChangelog(): Promise<ChangelogPayload>;
   openExternal(url: string): Promise<SimpleResult>;
