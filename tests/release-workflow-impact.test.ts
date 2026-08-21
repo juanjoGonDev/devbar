@@ -31,9 +31,7 @@ describe('release impact workflow integration', () => {
     expect(autoReleaseWorkflow).toContain(
       'git show -s --format=\'%s%n%b\' "$sha"',
     );
-    expect(autoReleaseWorkflow).not.toContain(
-      'git log "${CURRENT_TAG}..HEAD"',
-    );
+    expect(autoReleaseWorkflow).not.toContain('git log "${CURRENT_TAG}..HEAD"');
   });
 
   it('skips automatic installer publication without pending artifact impact', () => {
