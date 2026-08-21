@@ -14,7 +14,7 @@ describe('release impact workflow integration', () => {
       'node --experimental-strip-types scripts/release-impact-policy.ts pending "$current_tag" HEAD',
     );
     expect(autoReleaseWorkflow).toContain(
-      "commit_count=$(jq -r '.commitCount' <<<\"$impact_json\")",
+      'commit_count=$(jq -r \'.commitCount\' <<<"$impact_json")',
     );
     expect(autoReleaseWorkflow).toContain(
       'Only $commit_count release-impacting commits since $current_tag',
@@ -26,7 +26,7 @@ describe('release impact workflow integration', () => {
 
   it('derives automatic SemVer only from release-impacting commits', () => {
     expect(autoReleaseWorkflow).toContain(
-      "mapfile -t release_commits < <(jq -r '.commits[]' <<<\"$impact_json\")",
+      'mapfile -t release_commits < <(jq -r \'.commits[]\' <<<"$impact_json")',
     );
     expect(autoReleaseWorkflow).toContain(
       'git show -s --format=\'%s%n%b\' "$sha"',

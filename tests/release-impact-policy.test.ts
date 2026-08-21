@@ -136,25 +136,20 @@ describe('release impact policy', () => {
 
   it('skips a package.json version-only change', () => {
     expect(
-      classify(
-        ['package.json'],
-        packageJson,
-        { ...packageJson, version: '1.0.1' },
-      ),
+      classify(['package.json'], packageJson, {
+        ...packageJson,
+        version: '1.0.1',
+      }),
     ).toEqual({ publish: false, paths: [] });
   });
 
   it('publishes for a semantic package.json dependency change', () => {
     expect(
-      classify(
-        ['package.json'],
-        packageJson,
-        {
-          ...packageJson,
-          version: '1.0.1',
-          dependencies: { menubar: '9.6.0' },
-        },
-      ),
+      classify(['package.json'], packageJson, {
+        ...packageJson,
+        version: '1.0.1',
+        dependencies: { menubar: '9.6.0' },
+      }),
     ).toEqual({ publish: true, paths: ['package.json'] });
   });
 
