@@ -5,7 +5,7 @@ live in `README.md`; user-facing release notes live in `CHANGELOG.md`.
 
 ## Versioning (MANDATORY for release-impacting changes)
 
-`scripts/release-impact-policy.mjs` is the single source of truth for whether a
+`scripts/release-impact-policy.ts` is the single source of truth for whether a
 change requires a new application build/release.
 
 Release-impacting product/build changes bump the version. Release-neutral
@@ -23,7 +23,7 @@ For release-impacting changes, follow semantic versioning:
 Rules:
 
 1. Before changing version metadata, evaluate the change against
-   `scripts/release-impact-policy.mjs`; do not duplicate the path policy.
+   `scripts/release-impact-policy.ts`; do not duplicate the path policy.
 2. For a release-impacting change that is versioned directly, bump `version` in
    `package.json` in the same change. The trusted auto-release workflow may also
    prepare version-only release PRs after its release-impacting commit threshold.
