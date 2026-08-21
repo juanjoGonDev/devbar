@@ -3,6 +3,19 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+type JsonObject = Record<string, unknown>;
+
+type Classification = {
+  publish: boolean;
+  paths: string[];
+};
+
+type PendingImpact = {
+  publish: boolean;
+  commitCount: number;
+  commits: string[];
+};
+
 const RELEASE_PREFIXES = ['assets/', 'renderer/', 'src/'];
 
 const RELEASE_EXACT_PATHS = new Set([
@@ -16,24 +29,38 @@ const RELEASE_EXACT_PATHS = new Set([
   'tsconfig.renderer.json',
 ]);
 
-function parsePackageJson(text, label) {
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parsePackageJson(text: string, label: string): JsonObject | null {
   if (!text) return null;
+
   try {
-    return JSON.parse(text);
-  } catch (error) {
+    const parsed: unknown = JSON.parse(text);
+    if (!isJsonObject(parsed)) {
+      throw new Error('root value must be an object');
+    }
+    return parsed;
+  } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`${label} package.json is invalid: ${message}`);
   }
 }
 
-function packageFingerprint(text, label) {
+function packageFingerprint(text: string, label: string): string | null {
   const packageJson = parsePackageJson(text, label);
   if (packageJson === null) return null;
-  const { version: _version, ...buildRelevantPackage } = packageJson;
+
+  const buildRelevantPackage: JsonObject = { ...packageJson };
+  delete buildRelevantPackage.version;
   return JSON.stringify(buildRelevantPackage);
 }
 
-export function packageChangeAffectsBuild(beforeText, afterText) {
+export function packageChangeAffectsBuild(
+  beforeText: string,
+  afterText: string,
+): boolean {
   const before = packageFingerprint(beforeText, 'Previous');
   const after = packageFingerprint(afterText, 'Current');
   if (before === null || after === null) return true;
@@ -41,13 +68,13 @@ export function packageChangeAffectsBuild(beforeText, afterText) {
 }
 
 export function classifyReleaseImpact(
-  paths,
+  paths: readonly string[],
   beforePackageText = '',
   afterPackageText = '',
-) {
-  const impactedPaths = [];
+): Classification {
+  const impactedPaths: string[] = [];
   const uniquePaths = new Set(
-    paths.map((path) => String(path).trim()).filter(Boolean),
+    paths.map((path) => path.trim()).filter((path) => path.length > 0),
   );
 
   for (const path of uniquePaths) {
@@ -72,14 +99,14 @@ export function classifyReleaseImpact(
   };
 }
 
-function git(args) {
+function git(args: readonly string[]): string {
   return execFileSync('git', args, {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
 
-function packageAt(ref) {
+function packageAt(ref: string): string {
   try {
     return git(['show', `${ref}:package.json`]);
   } catch {
@@ -87,13 +114,13 @@ function packageAt(ref) {
   }
 }
 
-function changedPaths(base, head) {
+function changedPaths(base: string, head: string): string[] {
   return git(['diff', '--name-only', '-z', '--no-renames', base, head])
     .split('\0')
-    .filter(Boolean);
+    .filter((path) => path.length > 0);
 }
 
-export function classifyGitRange(base, head) {
+export function classifyGitRange(base: string, head: string): Classification {
   const paths = changedPaths(base, head);
   const packageChanged = paths.includes('package.json');
   return classifyReleaseImpact(
@@ -103,8 +130,11 @@ export function classifyGitRange(base, head) {
   );
 }
 
-export function pendingReleaseImpact(base, head) {
-  const commits = [];
+export function pendingReleaseImpact(
+  base: string,
+  head: string,
+): PendingImpact {
+  const commits: string[] = [];
   const candidateCommits = git([
     'rev-list',
     '--first-parent',
@@ -112,7 +142,7 @@ export function pendingReleaseImpact(base, head) {
     `${base}..${head}`,
   ])
     .split(/\r?\n/u)
-    .filter(Boolean);
+    .filter((sha) => sha.length > 0);
 
   for (const sha of candidateCommits) {
     const parent = git(['rev-parse', `${sha}^1`]).trim();
@@ -126,17 +156,19 @@ export function pendingReleaseImpact(base, head) {
   };
 }
 
-function parseNullDelimitedPaths(filePath) {
-  return readFileSync(filePath, 'utf8').split('\0').filter(Boolean);
+function parseNullDelimitedPaths(filePath: string): string[] {
+  return readFileSync(filePath, 'utf8')
+    .split('\0')
+    .filter((path) => path.length > 0);
 }
 
-function main(argv) {
+function main(argv: readonly string[]): Classification | PendingImpact {
   const [mode, first, second, third] = argv;
 
   if (mode === 'classify') {
     if (first === undefined || second === undefined || third === undefined) {
       throw new Error(
-        'Usage: release-impact-policy.mjs classify <paths-file> <before-package> <after-package>',
+        'Usage: release-impact-policy.ts classify <paths-file> <before-package> <after-package>',
       );
     }
     return classifyReleaseImpact(
@@ -148,14 +180,14 @@ function main(argv) {
 
   if (mode === 'range') {
     if (first === undefined || second === undefined) {
-      throw new Error('Usage: release-impact-policy.mjs range <base> <head>');
+      throw new Error('Usage: release-impact-policy.ts range <base> <head>');
     }
     return classifyGitRange(first, second);
   }
 
   if (mode === 'pending') {
     if (first === undefined || second === undefined) {
-      throw new Error('Usage: release-impact-policy.mjs pending <base> <head>');
+      throw new Error('Usage: release-impact-policy.ts pending <base> <head>');
     }
     return pendingReleaseImpact(first, second);
   }
@@ -163,14 +195,15 @@ function main(argv) {
   throw new Error('Expected mode: classify, range, or pending');
 }
 
+const entrypointPath = process.argv[1];
 const isEntrypoint =
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
+  entrypointPath !== undefined &&
+  import.meta.url === pathToFileURL(entrypointPath).href;
 
 if (isEntrypoint) {
   try {
     process.stdout.write(`${JSON.stringify(main(process.argv.slice(2)))}\n`);
-  } catch (error) {
+  } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);
     process.exitCode = 1;

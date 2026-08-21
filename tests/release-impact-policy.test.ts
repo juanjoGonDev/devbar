@@ -10,7 +10,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-const policyPath = resolve(process.cwd(), 'scripts/release-impact-policy.mjs');
+const policyPath = resolve(process.cwd(), 'scripts/release-impact-policy.ts');
 const temporaryDirectories: string[] = [];
 
 type Classification = {
@@ -34,10 +34,14 @@ function runPolicy(
   args: string[],
   cwd = process.cwd(),
 ): Classification | PendingImpact {
-  const result = spawnSync(process.execPath, [policyPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-  });
+  const result = spawnSync(
+    process.execPath,
+    ['--experimental-strip-types', policyPath, ...args],
+    {
+      cwd,
+      encoding: 'utf8',
+    },
+  );
   if (result.status !== 0) {
     throw new Error(result.stderr || 'release impact policy failed');
   }
@@ -128,7 +132,7 @@ describe('release impact policy', () => {
     '.agents/specs/release.md',
     '.github/workflows/release.yml',
     '.github/workflows/dependabot-auto-merge.workflow.yml',
-    'scripts/release-impact-policy.mjs',
+    'scripts/release-impact-policy.ts',
     'scripts/verify-macos-release.sh',
     'tsconfig.tests.json',
   ])('skips release-neutral path %s', (path) => {

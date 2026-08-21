@@ -16,7 +16,7 @@ on:
       - 'scripts/package-electron.ts'
       - 'scripts/package-macos-app.sh'
       - 'scripts/release-artifacts.ts'
-      - 'scripts/release-impact-policy.mjs'
+      - 'scripts/release-impact-policy.ts'
       - 'scripts/verify-release-artifacts.ts'
       - 'scripts/verify-macos-release.sh'
       - 'tests/release-artifacts.test.ts'

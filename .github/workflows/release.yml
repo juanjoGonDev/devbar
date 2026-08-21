@@ -159,7 +159,7 @@ jobs:
                 echo "::error title=Invalid release impact baseline::$latest_release_tag is not an ancestor of $release_sha."
                 exit 1
               fi
-              impact_json=$(node scripts/release-impact-policy.mjs pending "$latest_release_tag" "$release_sha")
+              impact_json=$(node --experimental-strip-types scripts/release-impact-policy.ts pending "$latest_release_tag" "$release_sha")
               if [[ "$(jq -r .publish <<<"$impact_json")" != "true" ]]; then
                 echo "publish=false" >> "$GITHUB_OUTPUT"
                 echo "No release-impacting commits exist between $latest_release_tag and $release_sha; installer build skipped."

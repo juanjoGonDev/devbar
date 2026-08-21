@@ -147,7 +147,7 @@ jobs:
             exit 0
           fi
 
-          impact_json=$(node scripts/release-impact-policy.mjs pending "$current_tag" HEAD)
+          impact_json=$(node --experimental-strip-types scripts/release-impact-policy.ts pending "$current_tag" HEAD)
           commit_count=$(jq -r '.commitCount' <<<"$impact_json")
           if [[ "$FORCE_RELEASE" != "true" && "$commit_count" -lt "$MINIMUM_COMMITS" ]]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
@@ -193,7 +193,7 @@ jobs:
           strategy="$RELEASE_STRATEGY"
           if [[ "$strategy" == "auto" ]]; then
             strategy=patch
-            impact_json=$(node scripts/release-impact-policy.mjs pending "$CURRENT_TAG" HEAD)
+            impact_json=$(node --experimental-strip-types scripts/release-impact-policy.ts pending "$CURRENT_TAG" HEAD)
             mapfile -t release_commits < <(jq -r '.commits[]' <<<"$impact_json")
             release_log=
             for sha in "${release_commits[@]}"; do
