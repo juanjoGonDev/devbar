@@ -89,4 +89,10 @@ Revert the implementation PR. Existing tags, releases, and installers are never 
 
 ## Status
 
-Implementation complete; final PR validation in progress.
+Validation complete on implementation head `198d8d87142863318528b3165ee0953c91d76bc7`:
+
+- CI run `32486699033`: success.
+- Release validation run `32486698984`: success, including audit and non-publishing macOS build verification.
+- CodeQL run `32486698915`: success for Actions and JavaScript/TypeScript analysis.
+
+This status-only commit does not change runtime, release classification, dependencies, or workflows.
