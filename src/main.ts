@@ -713,7 +713,8 @@ async function runUpdateCheck({ manual = false } = {}) {
     currentVersion: app.getVersion(),
   });
   lastUpdateCheckAt = new Date().toISOString();
-  availableUpdate = found || null;
+  // A simulated update owns the slot until the dev panel releases it.
+  if (!devUpdateSimulated) availableUpdate = found || null;
   refreshTrayIcon();
   if (found) {
     const configFocused =
@@ -890,6 +891,11 @@ function syncRepoWatchers() {
 
 let lastTrayColor: TrayColor = 'stopped'; // remembered so a theme flip can re-render
 
+// Dev-only overrides, driven by the simulation panel (src/dev, excluded from
+// packaged builds). Both stay null in a real run.
+let devTrayColor: TrayColor | null = null;
+let devUpdateSimulated = false;
+
 /**
  * Repaint the menubar mark for the current state. The mark carries a small red
  * badge while an update is pending — the same "there is something new" cue the
@@ -898,7 +904,9 @@ let lastTrayColor: TrayColor = 'stopped'; // remembered so a theme flip can re-r
 function refreshTrayIcon(): void {
   if (!mb || !mb.tray) return;
   try {
-    mb.tray.setImage(trayIcon.loadIcon(lastTrayColor, !!availableUpdate));
+    mb.tray.setImage(
+      trayIcon.loadIcon(devTrayColor ?? lastTrayColor, !!availableUpdate),
+    );
   } catch (err) {
     console.error('setImage failed:', err);
   }
@@ -2001,6 +2009,51 @@ function registerIpc() {
       return { ok: true, path: res.filePaths[0] };
     },
   );
+
+  // Lets the renderer decide whether to load the dev-only simulation panel.
+  ipcMain.handle('app:isDev', () => !app.isPackaged);
+
+  // ── Dev simulation panel ──────────────────────────────────────────────
+  // Only in development: src/dev and renderer/dev are stripped from packaged
+  // builds, so the import is guarded and its failure is not an error.
+  if (!app.isPackaged) {
+    void import('./dev/dev-ipc.js')
+      .then(({ registerDevIpc }) => {
+        registerDevIpc({
+          currentVersion: () => app.getVersion(),
+          setSimulatedUpdate: (update) => {
+            devUpdateSimulated = update !== null;
+            availableUpdate = update;
+            refreshTrayIcon();
+            broadcastUpdateStatus();
+          },
+          setSimulatedTrayColor: (color) => {
+            devTrayColor = color;
+            refreshTrayIcon();
+          },
+          showBanner: (title, body, options) =>
+            showBannerNotification(title, body, options),
+          showCompletionNotification: (title, body) =>
+            showCompletionNotification(title, body),
+          openPrescriptConfirm: (name, command) => {
+            void showConfirmModal(
+              {
+                name,
+                command,
+                args: [],
+                confirmSecs: null,
+                confirmOnTimeout: 'cancel',
+              },
+              'dev',
+            );
+          },
+          toast: (kind, message) => broadcastToast(kind, message),
+        });
+      })
+      .catch(() => {
+        /* dev panel absent (packaged build) — nothing to register */
+      });
+  }
 
   // ── App ───────────────────────────────────────────────────────────────
   ipcMain.handle('app:quit', () => {

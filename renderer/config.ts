@@ -1724,6 +1724,23 @@ navItems.forEach((b) =>
   b.addEventListener('click', () => showSection(b.dataset.target)),
 );
 
+// Dev-only simulation panel. Both the module and its IPC handlers are stripped
+// from packaged builds, so this stays inert there.
+void (async () => {
+  if (!(await window.api.isDev())) return;
+  const content = document.querySelector<HTMLElement>('.config-content');
+  if (!content) return;
+  try {
+    const { mountDevPanel } = await import('./dev/dev-panel.js');
+    const { navButton, section } = mountDevPanel(configNav, content);
+    navItems.push(navButton);
+    sections.push(section);
+    navButton.addEventListener('click', () => showSection('dev'));
+  } catch {
+    /* panel absent — nothing to mount */
+  }
+})();
+
 const navCollapse = byId<HTMLButtonElement>('nav-collapse', HTMLButtonElement);
 function setNavCollapsed(on: boolean): void {
   configNav.classList.toggle('collapsed', on);

@@ -1,9 +1,19 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { packager } from '@electron/packager';
 
 const SUPPORTED_ARCHITECTURES = new Set(['arm64', 'x64'] as const);
 type Architecture = 'arm64' | 'x64';
+
+/**
+ * Paths kept out of the shipped app. The second pattern drops
+ * `build/{src,renderer}/dev` — the development-only simulation panel and its
+ * IPC handlers, which must never reach a packaged build.
+ */
+export const PACKAGE_IGNORE: readonly RegExp[] = [
+  /^\/(?:dist|tests|\.agents|\.github|src|renderer|scripts|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.ts|vitest\.config\.ts|knip\.json|\.dependency-cruiser\.json)(?:$|\/)/,
+  /^\/build\/(?:src|renderer)\/dev(?:$|\/)/,
+];
 
 async function main(): Promise<void> {
   const [architectureValue, outputDirectory] = process.argv.slice(2);
@@ -26,12 +36,18 @@ async function main(): Promise<void> {
     arch: architecture,
     out: path.resolve(outputDirectory),
     overwrite: true,
-    ignore:
-      /^\/(?:dist|tests|\.agents|\.github|src|renderer|scripts|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.ts|vitest\.config\.ts|knip\.json|\.dependency-cruiser\.json)(?:$|\/)/,
+    ignore: [...PACKAGE_IGNORE],
   });
 }
 
-void main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+const entrypointPath = process.argv[1];
+const isEntrypoint =
+  entrypointPath !== undefined &&
+  import.meta.url === pathToFileURL(entrypointPath).href;
+
+if (isEntrypoint) {
+  void main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

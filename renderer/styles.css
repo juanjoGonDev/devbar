@@ -2789,3 +2789,16 @@ body.prescript-confirm {
 /* ================================================================
    SERVICE/LEGACY CLASSES KEPT FOR COMPATIBILITY (used in dist/ only)
    ================================================================ */
+
+/* ── Dev simulation panel (development builds only) ──────────────────── */
+.dev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.dev-version {
+  width: 150px;
+  font-variant-numeric: tabular-nums;
+}

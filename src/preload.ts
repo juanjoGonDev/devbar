@@ -64,6 +64,21 @@ const api: DevBarApi = {
   getLogs: (processId) => ipcRenderer.invoke('logs:get', processId),
   clearLogs: (processId) => ipcRenderer.invoke('logs:clear', processId),
   listLogs: () => ipcRenderer.invoke('logs:list'),
+  isDev: () => ipcRenderer.invoke('app:isDev'),
+  // Thin invokers; the simulation logic lives in src/dev, which packaged
+  // builds do not ship, so these reject there.
+  dev: {
+    simulateUpdate: (version) =>
+      ipcRenderer.invoke('dev:simulateUpdate', { version }),
+    clearUpdate: () => ipcRenderer.invoke('dev:clearUpdate'),
+    simulateTrayColor: (color) =>
+      ipcRenderer.invoke('dev:simulateTrayColor', { color }),
+    simulateBanner: (cta) => ipcRenderer.invoke('dev:simulateBanner', { cta }),
+    simulateSuccess: () => ipcRenderer.invoke('dev:simulateSuccess'),
+    simulatePrescriptConfirm: () =>
+      ipcRenderer.invoke('dev:simulatePrescriptConfirm'),
+    simulateToast: (kind) => ipcRenderer.invoke('dev:simulateToast', { kind }),
+  },
   openConfig: () => ipcRenderer.invoke('window:openConfig'),
   openConfigChangelog: () => ipcRenderer.invoke('window:openConfigChangelog'),
   onConfigGoto: (cb) => subscribe('config:goto', cb),
