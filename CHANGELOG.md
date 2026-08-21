@@ -31,6 +31,14 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - **Copiar** (botón o `cmd`/`ctrl`+`C`) copia lo seleccionado; si no hay nada
   seleccionado, copia todas las líneas visibles con el filtro aplicado.
   Seleccionar texto arrastrando con el ratón sigue funcionando igual.
+- Cuando hay una **actualización disponible**, un pequeño **punto rojo** marca
+  el chip de versión, tanto en el menú de la barra como en el panel de
+  configuración, y el propio **icono de la barra de menús** lleva el mismo
+  punto. Es el aviso discreto que usan los juegos para señalar que hay algo
+  nuevo en una sección: no interrumpe, pero se ve. El tooltip del chip indica
+  qué versión está disponible.
+- El punto desaparece solo en cuanto se instala la actualización o deja de
+  haber una versión más nueva.
 
 ### Cambiado
 

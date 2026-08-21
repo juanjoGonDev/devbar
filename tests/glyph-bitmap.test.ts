@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { drawGlyphBGRA, markSDF } from '../src/glyph-bitmap.js';
+import { badgeSDF, drawGlyphBGRA, markSDF } from '../src/glyph-bitmap.js';
 type RGB = readonly [number, number, number];
 
 // Helper: read premultiplied BGRA at (x,y) → [r,g,b,a].
@@ -93,5 +93,84 @@ describe('markSDF', () => {
     expect(markSDF(0.5 * 36, 0.5 * 36, 36)).toBeLessThanOrEqual(0); // centre is inside
     expect(markSDF(0.7 * 36, 0.5 * 36, 36)).toBeLessThanOrEqual(0); // on the bar
     expect(markSDF(0, 0, 36)).toBeGreaterThan(0); // corner is outside
+  });
+});
+
+describe('badgeSDF', () => {
+  const size = 36;
+
+  it('is negative at the badge centre and positive at the mark', () => {
+    expect(badgeSDF(0.79 * size, 0.21 * size, size)).toBeLessThan(0);
+    // The chevron's top-left arm must sit well outside the dot.
+    expect(badgeSDF(0.32 * size, 0.33 * size, size)).toBeGreaterThan(0);
+  });
+
+  it('scales with the icon size', () => {
+    expect(badgeSDF(0.79 * 18, 0.21 * 18, 18)).toBeLessThan(0);
+    expect(badgeSDF(0.79 * 72, 0.21 * 72, 72)).toBeLessThan(0);
+  });
+});
+
+describe('drawGlyphBGRA with an update badge', () => {
+  const size = 36;
+  const grey: RGB = [152, 152, 157];
+  const outline: RGB = [28, 28, 30];
+  const badge: RGB = [255, 59, 48];
+  const plain = drawGlyphBGRA(size, grey, outline);
+  const badged = drawGlyphBGRA(size, grey, outline, badge);
+
+  it('paints the badge colour at the badge centre', () => {
+    const [r, g, b, a] = px(
+      badged,
+      size,
+      Math.round(0.79 * size),
+      Math.round(0.21 * size),
+    );
+    expect(a).toBe(255);
+    expect([r, g, b]).toEqual(badge);
+  });
+
+  it('paints a corner that the badge-less mark leaves empty', () => {
+    // Inside the dot but clear of the mark and its outline ring, so the only
+    // thing that can put ink here is the badge.
+    const x = Math.round(0.86 * size);
+    const y = Math.round(0.12 * size);
+    expect(px(plain, size, x, y)[3]).toBe(0);
+    expect(px(badged, size, x, y)[3]).toBe(255);
+  });
+
+  it('keeps the mark itself intact', () => {
+    const [, , , a] = px(
+      badged,
+      size,
+      Math.round(0.32 * size),
+      Math.round(0.33 * size),
+    );
+    expect(a).toBe(255);
+  });
+
+  it('stays visible on an error-red mark thanks to the outline ring', () => {
+    // Between the red mark and the red dot there must be a dark outline band.
+    const red: RGB = [255, 69, 58];
+    const buf = drawGlyphBGRA(size, red, outline, badge);
+    let sawOutline = false;
+    const x = Math.round(0.79 * size);
+    for (let y = Math.round(0.21 * size); y < size; y++) {
+      const [r, g, b, a] = px(buf, size, x, y);
+      if (a === 255 && r < 120 && g < 120 && b < 120) {
+        sawOutline = true;
+        break;
+      }
+    }
+    expect(sawOutline).toBe(true);
+  });
+
+  it('still keeps premultiplied channels <= alpha', () => {
+    for (let i = 0; i < badged.length; i += 4) {
+      const a = badged[i + 3];
+      expect(badged[i]).toBeLessThanOrEqual(a);
+      expect(badged[i + 1]).toBeLessThanOrEqual(a);
+      expect(badged[i + 2]).toBeLessThanOrEqual(a);
+    }
   });
 });

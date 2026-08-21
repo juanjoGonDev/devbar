@@ -11,6 +11,7 @@ import type {
   ActionRuntimeState,
   CommandRuntimeState,
   GroupState,
+  UpdateStatus,
 } from '../src/ipc-contract.js';
 import type { Command, Action } from '../src/domain-types.js';
 import { byId } from './dom.js';
@@ -762,4 +763,24 @@ if (window.api.getAppVersion) {
     .catch(() => {
       /* leave span empty on failure */
     });
+}
+
+// A pending update puts a small red dot on the version chip — same cue as the
+// menubar mark and the one in config, so the user knows where to click.
+function markVersionUpdate(status: UpdateStatus): void {
+  const el = document.getElementById('app-version');
+  if (!el) return;
+  const version = status && status.available ? status.available.version : null;
+  el.classList.toggle('has-update', !!version);
+  el.title = version
+    ? `v${version} disponible — ver changelog`
+    : 'Ver changelog';
+}
+
+if (window.api.getUpdateStatus) {
+  window.api
+    .getUpdateStatus()
+    .then(markVersionUpdate)
+    .catch(() => {});
+  window.api.onUpdateStatus(markVersionUpdate);
 }
