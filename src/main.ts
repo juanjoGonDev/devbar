@@ -49,6 +49,8 @@ import type {
 import type {
   GroupState,
   ImportPreview,
+  LogListGroup,
+  LogListItem,
   PrescriptConfirmContext,
   SilenceLevel,
   TrayColor,
@@ -355,7 +357,13 @@ const preScriptRunner = createPreScriptRunner({
 let mb: Menubar | null = null;
 let configWindow: BrowserWindow | null = null;
 let forceCloseConfig = false;
+// Key '@main' is the shared multi-log window (sidebar + one visible log);
+// any other key is a processId detached into its own window.
+const MAIN_LOGS_KEY = '@main';
 const logsWindows = new Map<string, BrowserWindow>();
+// Which log the shared window is currently showing — it only receives lines
+// for that one, so N running services don't flood it with N streams.
+let mainLogsWatching: string | null = null;
 const silencedWindows = new Map<string, BrowserWindow>();
 const repoWatcher = new RepoWatcher();
 
@@ -505,9 +513,13 @@ function broadcast() {
 }
 
 function broadcastLog(payload: { id: string; entry: LogEntry }): void {
-  const win = logsWindows.get(payload.id);
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('logs:line', payload);
+  const detached = logsWindows.get(payload.id);
+  if (detached && !detached.isDestroyed()) {
+    detached.webContents.send('logs:line', payload);
+  }
+  const main = logsWindows.get(MAIN_LOGS_KEY);
+  if (main && !main.isDestroyed() && mainLogsWatching === payload.id) {
+    main.webContents.send('logs:line', payload);
   }
 }
 
@@ -922,10 +934,17 @@ function adaptiveSize(maxW: number, maxH: number, marginW = 60, marginH = 100) {
 
 function ensureLogsWindow(
   processId: string,
-  { filter }: { filter?: string } = {},
+  { filter, detached }: { filter?: string; detached?: boolean } = {},
 ): BrowserWindow {
-  const existing = logsWindows.get(processId);
+  const key = detached ? processId : MAIN_LOGS_KEY;
+  const existing = logsWindows.get(key);
   if (existing && !existing.isDestroyed()) {
+    // Re-selecting the log already on screen would clear and refetch it for
+    // nothing; only tell the renderer when something actually changes.
+    if (detached || processId !== mainLogsWatching || filter) {
+      existing.webContents.send('logs:select', { processId, filter });
+    }
+    if (!detached) mainLogsWatching = processId;
     existing.show();
     existing.focus();
     return existing;
@@ -937,13 +956,13 @@ function ensureLogsWindow(
       ? resolved.target.name
       : resolved.target.name
     : processId;
-  const size = adaptiveSize(960, 600);
+  const size = adaptiveSize(detached ? 960 : 1180, 640);
   const win = new BrowserWindow({
     width: size.width,
     height: size.height,
     x: size.x,
     y: size.y,
-    minWidth: 480,
+    minWidth: detached ? 480 : 720,
     minHeight: 320,
     title: `Logs — ${titleName}`,
     backgroundColor: '#1e1e1e',
@@ -961,12 +980,15 @@ function ensureLogsWindow(
   // minimize the other windows there (accessory-app + join-all-spaces quirk).
   const query: Record<string, string> = { id: processId };
   if (filter) query.filter = filter;
+  if (detached) query.detached = '1';
+  else mainLogsWatching = processId;
   win.loadFile(path.join(__dirname, '..', 'renderer', 'logs.html'), { query });
   win.on('closed', () => {
-    logsWindows.delete(processId);
+    logsWindows.delete(key);
+    if (!detached) mainLogsWatching = null;
     updateDockVisibility();
   });
-  logsWindows.set(processId, win);
+  logsWindows.set(key, win);
   logger.attachWindowConsole(win, `logs:${processId}`);
   updateDockVisibility();
   return win;
@@ -1537,8 +1559,15 @@ function registerIpc() {
   // ── Logs ─────────────────────────────────────────────────────────────
   ipcMain.handle(
     'logs:get',
-    (_e: IpcMainInvokeEvent, rawProcessId: unknown) => {
+    (event: IpcMainInvokeEvent, rawProcessId: unknown) => {
       const processId = ipcString(rawProcessId, 'processId');
+      // Reading the buffer and subscribing to it happen in the same tick, so a
+      // line emitted mid-switch cannot land in both the snapshot and the live
+      // stream (which would render it twice).
+      const main = logsWindows.get(MAIN_LOGS_KEY);
+      if (main && !main.isDestroyed() && main.webContents === event.sender) {
+        mainLogsWatching = processId;
+      }
       const resolved = processManager.resolveTarget(processId);
       const cmdState = processManager.getState(processId);
       return {
@@ -1568,47 +1597,86 @@ function registerIpc() {
 
   // Every retained log buffer since app start, grouped by group → type, for the
   // Logs browser. Each item opens in the normal logs window via its processId.
-  ipcMain.handle('logs:list', () => {
-    const TYPE = {
-      command: 'command',
-      action: 'action',
-      prescript: 'prescript',
-      preAggregator: 'pipeline',
-    };
-    const groups = new Map<
-      string,
-      {
-        groupId: string;
-        groupName: string;
-        items: Array<{
-          id: string;
-          type: string;
-          name: string;
-          lineCount: number;
-        }>;
-      }
-    >();
-    for (const { id, lineCount } of processManager.listLogBuffers()) {
-      const parsed = parseProcessId(id);
-      if (parsed.kind === 'unknown') continue;
-      const type = TYPE[parsed.kind];
-      const group = configStore.getGroup(parsed.groupId);
-      let entry = groups.get(parsed.groupId);
+  ipcMain.handle('logs:list', (): LogListGroup[] => {
+    const lineCounts = new Map(
+      processManager
+        .listLogBuffers()
+        .map(({ id, lineCount }) => [id, lineCount] as const),
+    );
+    const groups = new Map<string, LogListGroup>();
+    const groupEntry = (groupId: string): LogListGroup => {
+      let entry = groups.get(groupId);
       if (!entry) {
+        const group = configStore.getGroup(groupId);
         entry = {
-          groupId: parsed.groupId,
+          groupId,
           groupName: group ? group.name : '(grupo eliminado)',
+          groupIcon: group ? group.icon : '📁',
           items: [],
         };
-        groups.set(parsed.groupId, entry);
+        groups.set(groupId, entry);
       }
-      const resolved = processManager.resolveTarget(id);
-      const name = resolved
-        ? resolved.target.name
-        : type === 'pipeline'
-          ? 'Pipeline de pre-scripts'
-          : id;
-      entry.items.push({ id, type, name, lineCount });
+      return entry;
+    };
+    const item = (
+      id: string,
+      type: LogListItem['type'],
+      name: string,
+      icon: string | null,
+    ): LogListItem => {
+      const state = processManager.getState(id);
+      return {
+        id,
+        type,
+        name,
+        icon,
+        lineCount: lineCounts.get(id) ?? 0,
+        status: state.status,
+        warnCount: state.warnCount,
+        errorCount: state.errorCount,
+        startedAt: state.startedAt,
+        lastFinishedAt: state.lastFinishedAt,
+      };
+    };
+
+    // Everything configured, whether or not it has ever run — the logs window
+    // doubles as a launcher, so a command with no buffer still needs a row.
+    for (const group of configStore.listGroups()) {
+      const entry = groupEntry(group.id);
+      for (const command of group.commands) {
+        entry.items.push(
+          item(
+            makeCommandId(group.id, command.id),
+            'command',
+            command.name,
+            command.icon,
+          ),
+        );
+      }
+      for (const action of group.actions) {
+        entry.items.push(
+          item(
+            makeActionId(group.id, action.id),
+            'action',
+            action.name,
+            action.icon,
+          ),
+        );
+      }
+    }
+    // Pre-script and pipeline buffers only exist once they have run.
+    for (const id of lineCounts.keys()) {
+      const parsed = parseProcessId(id);
+      if (parsed.kind === 'prescript') {
+        const resolved = processManager.resolveTarget(id);
+        groupEntry(parsed.groupId).items.push(
+          item(id, 'prescript', resolved ? resolved.target.name : id, null),
+        );
+      } else if (parsed.kind === 'preAggregator') {
+        groupEntry(parsed.groupId).items.push(
+          item(id, 'pipeline', 'Pipeline de pre-scripts', null),
+        );
+      }
     }
     return [...groups.values()];
   });
@@ -1666,13 +1734,14 @@ function registerIpc() {
         typeof payload === 'string' ? undefined : ipcRecord(payload).filter;
       const filter =
         rawFilter === undefined ? undefined : ipcString(rawFilter, 'filter');
-      const existed = !!logsWindows.get(processId);
-      const win = ensureLogsWindow(
-        processId,
-        filter === undefined ? {} : { filter },
-      );
-      if (existed && filter)
-        win.webContents.send('logs:setFilter', { processId, filter });
+      const detached =
+        typeof payload === 'string'
+          ? false
+          : ipcRecord(payload).detached === true;
+      ensureLogsWindow(processId, {
+        ...(filter === undefined ? {} : { filter }),
+        ...(detached ? { detached: true } : {}),
+      });
       if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
       return { ok: true };
     },

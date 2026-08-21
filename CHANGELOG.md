@@ -3,6 +3,30 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.5.0] - 2026-08-21
+
+### Añadido
+
+- La ventana de **logs** pasa a ser un visor único con **panel lateral**: todos
+  los comandos y acciones aparecen agrupados por grupo, y cada grupo se pliega y
+  despliega (el estado se recuerda entre sesiones). Un buscador filtra la lista
+  por nombre.
+- Cada entrada del panel muestra de un vistazo su estado: punto de color,
+  número de **warnings** y **errores**, y el **tiempo** que lleva en ejecución o
+  lo que duró la última.
+- Botón de **arrancar / parar** tanto en la barra superior del log como en cada
+  fila del panel lateral, sin tener que volver a la barra de menú.
+- Botón **⧉** para abrir el log actual en una **ventana aparte**, de modo que se
+  pueden vigilar varios servicios a la vez mientras la ventana principal sigue
+  navegando entre logs.
+
+### Cambiado
+
+- Abrir un log desde la barra de menú reutiliza la ventana compartida en lugar
+  de abrir una ventana nueva por servicio.
+- La barra superior del visor es más compacta: limpiar, copiar, silenciados y
+  abrir en ventana pasan a ser botones de icono.
+
 ## [0.4.4] - 2026-08-10
 
 ### Cambiado

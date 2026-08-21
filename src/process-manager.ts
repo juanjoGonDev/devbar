@@ -407,6 +407,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
             : code !== 0
               ? `exited with code ${code}`
               : null,
+          lastFinishedAt: Date.now(),
           child: null,
         });
     });

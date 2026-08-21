@@ -1630,7 +1630,11 @@ async function renderLogsTree() {
   if (!host.children.length) {
     host.innerHTML = '<p class="muted small">Cargando…</p>';
   }
-  const groups = (await window.api.listLogs()) || [];
+  // logs:list also reports commands and actions that never ran (the logs
+  // window uses them as a launcher); this browser only lists real buffers.
+  const groups = ((await window.api.listLogs()) || [])
+    .map((g) => ({ ...g, items: g.items.filter((it) => it.lineCount > 0) }))
+    .filter((g) => g.items.length > 0);
   setLogsUpdatedNow();
   if (!groups.length) {
     host.innerHTML =
