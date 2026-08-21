@@ -2428,6 +2428,26 @@ dialog form {
   color: #fff;
 }
 
+/* "There is something new here" dot, the way games flag an unvisited section.
+   Deliberately quiet: no animation, no colour change to the label itself. */
+.app-version {
+  position: relative;
+}
+.app-version.has-update {
+  border-color: var(--accent);
+}
+.app-version.has-update::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff3b30;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
 /* ── Counter buttons (tray command sub-row) ───────────────────────────── */
 .counter-btn {
   font-size: 10px;

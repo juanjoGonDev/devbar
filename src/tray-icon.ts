@@ -8,18 +8,22 @@ const COLORS: Record<TrayColor, readonly [number, number, number]> = {
   warn: [255, 214, 10],
   error: [255, 69, 58],
 };
+// macOS-style "there is something new" red, kept separate from the error tint
+// so the badge still reads as a badge on an already-red mark.
+const BADGE_RGB: readonly [number, number, number] = [255, 59, 48];
 const iconCache: Partial<Record<string, NativeImage>> = {};
 function outlineColor(dark: boolean): readonly [number, number, number] {
   return dark ? [235, 235, 240] : [28, 28, 30];
 }
-export function loadIcon(state: TrayColor): NativeImage {
+export function loadIcon(state: TrayColor, hasUpdate = false): NativeImage {
   const dark = nativeTheme.shouldUseDarkColors,
-    key = `${state}:${dark ? 'd' : 'l'}`,
+    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}`,
     cached = iconCache[key];
   if (cached) return cached;
   const rgb = COLORS[state] ?? COLORS.stopped,
     out = outlineColor(dark),
-    image = nativeImage.createFromBitmap(drawGlyphBGRA(18, rgb, out), {
+    badge = hasUpdate ? BADGE_RGB : undefined,
+    image = nativeImage.createFromBitmap(drawGlyphBGRA(18, rgb, out, badge), {
       width: 18,
       height: 18,
     });
@@ -27,7 +31,7 @@ export function loadIcon(state: TrayColor): NativeImage {
     scaleFactor: 2,
     width: 36,
     height: 36,
-    buffer: drawGlyphBGRA(36, rgb, out),
+    buffer: drawGlyphBGRA(36, rgb, out, badge),
   });
   image.setTemplateImage(false);
   iconCache[key] = image;

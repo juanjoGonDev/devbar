@@ -15,6 +15,12 @@ const CHEVRON_HW = 0.085,
   BAR_HW = 0.075,
   SS = 3,
   OUTLINE = 0.06;
+// "Something new" dot, parked in the top-right corner clear of the chevron.
+// Kept inside the box with room for its outline ring (cx + r + OUTLINE <= 1),
+// otherwise the ring clips against the edge and the dot reads as a wedge.
+const BADGE_CX = 0.79,
+  BADGE_CY = 0.21,
+  BADGE_R = 0.14;
 function distToSeg(
   px: number,
   py: number,
@@ -53,10 +59,18 @@ export function markSDF(px: number, py: number, size: number): number {
     BAR_HW * size;
   return db < best ? db : best;
 }
+/** Signed distance to the update badge; negative inside the dot. */
+export function badgeSDF(px: number, py: number, size: number): number {
+  return (
+    Math.hypot(px - BADGE_CX * size, py - BADGE_CY * size) - BADGE_R * size
+  );
+}
+
 export function drawGlyphBGRA(
   size: number,
   rgb: RGB,
   outlineRgb?: RGB,
+  badgeRgb?: RGB,
 ): Buffer {
   const buf = Buffer.alloc(size * size * 4),
     step = 1 / SS,
@@ -71,8 +85,22 @@ export function drawGlyphBGRA(
         count = 0;
       for (let sy = 0; sy < SS; sy++)
         for (let sx = 0; sx < SS; sx++) {
-          const d = markSDF(x + base + sx * step, y + base + sy * step, size);
-          const color = d <= 0 ? rgb : d <= outW ? outlineRgb : undefined;
+          const px = x + base + sx * step,
+            py = y + base + sy * step;
+          const d = markSDF(px, py, size);
+          // The badge sits on top of the mark, keeping its outline ring, so it
+          // stays legible even when the mark itself is tinted red.
+          const bd = badgeRgb ? badgeSDF(px, py, size) : Infinity;
+          const color =
+            bd <= 0
+              ? badgeRgb
+              : bd <= outW
+                ? outlineRgb
+                : d <= 0
+                  ? rgb
+                  : d <= outW
+                    ? outlineRgb
+                    : undefined;
           if (color) {
             r += color[0];
             g += color[1];

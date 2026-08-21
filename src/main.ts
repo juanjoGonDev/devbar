@@ -714,6 +714,7 @@ async function runUpdateCheck({ manual = false } = {}) {
   });
   lastUpdateCheckAt = new Date().toISOString();
   availableUpdate = found || null;
+  refreshTrayIcon();
   if (found) {
     const configFocused =
       configWindow && !configWindow.isDestroyed() && configWindow.isFocused();
@@ -889,17 +890,27 @@ function syncRepoWatchers() {
 
 let lastTrayColor: TrayColor = 'stopped'; // remembered so a theme flip can re-render
 
+/**
+ * Repaint the menubar mark for the current state. The mark carries a small red
+ * badge while an update is pending — the same "there is something new" cue the
+ * version chips show in the popover and in config.
+ */
+function refreshTrayIcon(): void {
+  if (!mb || !mb.tray) return;
+  try {
+    mb.tray.setImage(trayIcon.loadIcon(lastTrayColor, !!availableUpdate));
+  } catch (err) {
+    console.error('setImage failed:', err);
+  }
+}
+
 function updateTrayTitle(payload: GroupState[]): void {
   if (!mb || !mb.tray) return;
   // Pass per-group color objects to aggregateColor
   const colorStubs = payload.map((gs) => ({ color: gs.color }));
   const overall = aggregateColor(colorStubs);
   lastTrayColor = overall;
-  try {
-    mb.tray.setImage(trayIcon.loadIcon(overall));
-  } catch (err) {
-    console.error('setImage failed:', err);
-  }
+  refreshTrayIcon();
   // Count non-silenced warns/errors across all command states
   let warns = 0;
   let errs = 0;
@@ -2343,13 +2354,7 @@ app.whenReady().then(() => {
     // ring so it stays visible on the new menubar background.
     nativeTheme.on('updated', () => {
       trayIcon.invalidateCache();
-      if (mb && mb.tray) {
-        try {
-          mb.tray.setImage(trayIcon.loadIcon(lastTrayColor));
-        } catch (err) {
-          console.error('tray theme refresh failed:', err);
-        }
-      }
+      refreshTrayIcon();
     });
   });
 

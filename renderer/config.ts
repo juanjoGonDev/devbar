@@ -2252,6 +2252,14 @@ function renderUpdateStatus(s: UpdateStatus): void {
       applyUpdateBtn.style.display = 'none';
     }
   }
+  // Same red dot as the tray, on the version chip in the sidebar.
+  const versionEl = document.getElementById('app-version');
+  if (versionEl) {
+    versionEl.classList.toggle('has-update', !!s.available);
+    versionEl.title = s.available
+      ? `v${s.available.version} disponible — ver changelog`
+      : 'Ver changelog';
+  }
 }
 
 if (applyUpdateBtn) {
