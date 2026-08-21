@@ -2,9 +2,10 @@
   box-sizing: border-box;
 }
 
-/* Shared top spacer for hiddenInset windows */
+/* Top spacer for hiddenInset windows: just tall enough to clear the traffic
+   lights (placed at y=14), so the content starts as high as possible. */
 .app-window-spacer {
-  height: 64px;
+  height: 36px;
   -webkit-app-region: drag;
   flex-shrink: 0;
 }
@@ -55,11 +56,16 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   min-height: 0;
 }
-body.detached #sidebar {
+body.detached #sidebar,
+body.sidebar-collapsed #sidebar {
   display: none;
 }
-body.detached #detach {
+body.detached #detach,
+body.detached #toggle-sidebar {
   display: none;
+}
+body.sidebar-collapsed #toggle-sidebar {
+  color: #8e8e93;
 }
 
 .side-head {
@@ -458,6 +464,15 @@ main {
 }
 .line.hidden {
   display: none;
+}
+
+/* After the level backgrounds so a selected error line still reads selected. */
+.line.selected,
+.line.selected:hover {
+  background: rgba(10, 132, 255, 0.3);
+}
+.line.selected .ts {
+  color: #c8d8ff;
 }
 
 .line.silenced {

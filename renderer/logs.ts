@@ -1,5 +1,10 @@
-import { byId, requireElement } from './dom.js';
+import { byId, closestElement, requireElement } from './dom.js';
 import { canRun, dotClass, isRunning, runtimeOf } from './log-status.js';
+import {
+  applySelection,
+  selectModeFor,
+  type Selection,
+} from './line-selection.js';
 import type { LogEntry } from '../src/domain-types.js';
 import type {
   LogListGroup,
@@ -210,6 +215,10 @@ const runBtn = byId<HTMLButtonElement>('run-toggle', HTMLButtonElement);
 const detachBtn = byId<HTMLButtonElement>('detach', HTMLButtonElement);
 const sideTreeEl = byId<HTMLElement>('side-tree', HTMLElement);
 const sideFilterEl = byId<HTMLInputElement>('side-filter', HTMLInputElement);
+const toggleSidebarBtn = byId<HTMLButtonElement>(
+  'toggle-sidebar',
+  HTMLButtonElement,
+);
 
 // ─────────────────────────── State ───────────────────────────────
 let processId = params.get('id');
@@ -387,28 +396,131 @@ clearBtn.addEventListener('click', async () => {
   if (pausedEl.checked) statusEl.textContent = 'Pausado';
 });
 
-copyBtn.addEventListener('click', async () => {
-  const text = Array.from(linesEl.children)
-    .filter((n) => !n.classList.contains('hidden'))
+// ─────────────────────── Line selection & copy ───────────────────
+// Selection lives in the DOM (`.line.selected`) so trimming the buffer or
+// re-filtering can never leave it pointing at rows that are gone.
+let anchorRow: HTMLElement | null = null;
+
+function visibleRows(): HTMLElement[] {
+  return Array.from(linesEl.children).filter(
+    (n): n is HTMLElement =>
+      n instanceof HTMLElement && !n.classList.contains('hidden'),
+  );
+}
+
+function selectedRows(): HTMLElement[] {
+  return visibleRows().filter((r) => r.classList.contains('selected'));
+}
+
+function paintSelection(rows: HTMLElement[], next: Selection): void {
+  rows.forEach((row, i) =>
+    row.classList.toggle('selected', next.selected.has(i)),
+  );
+  anchorRow = next.anchor === null ? null : (rows[next.anchor] ?? null);
+  reportSelection();
+}
+
+function reportSelection(): void {
+  const count = selectedRows().length;
+  copyBtn.title = count ? `Copiar ${count} línea(s) seleccionada(s)` : 'Copiar';
+  if (count) statusEl.textContent = `${count} seleccionada(s)`;
+  else if (pausedEl.checked) statusEl.textContent = 'Pausado';
+  else statusEl.textContent = '';
+}
+
+function clearSelection(): void {
+  for (const row of Array.from(linesEl.children)) {
+    if (row instanceof HTMLElement) row.classList.remove('selected');
+  }
+  anchorRow = null;
+  reportSelection();
+}
+
+function selectAllVisible(): void {
+  const rows = visibleRows();
+  for (const row of rows) row.classList.add('selected');
+  anchorRow = rows[0] ?? null;
+  reportSelection();
+}
+
+// Shift-click would otherwise extend the browser's text selection instead.
+linesEl.addEventListener('mousedown', (ev) => {
+  if (ev.shiftKey) ev.preventDefault();
+});
+
+linesEl.addEventListener('click', (ev) => {
+  // A drag that selected text is a text selection, not a row click.
+  if (!window.getSelection()?.isCollapsed) return;
+  const row = closestElement(ev.target, '.line');
+  if (!row) return;
+  const rows = visibleRows();
+  const index = rows.indexOf(row);
+  if (index < 0) return;
+  const anchorIndex = anchorRow ? rows.indexOf(anchorRow) : -1;
+  const prev: Selection = {
+    selected: new Set(
+      rows.flatMap((r, i) => (r.classList.contains('selected') ? [i] : [])),
+    ),
+    anchor: anchorIndex < 0 ? null : anchorIndex,
+  };
+  paintSelection(rows, applySelection(prev, index, selectModeFor(ev)));
+});
+
+// Clicking the empty space under the last line drops the selection.
+mainEl.addEventListener('click', (ev) => {
+  if (!closestElement(ev.target, '.line')) clearSelection();
+});
+
+function rowsToText(rows: HTMLElement[]): string {
+  return rows
     .map((node) => {
       const ts = node.querySelector<HTMLElement>('.ts')?.textContent ?? '';
       const body = node.querySelector<HTMLElement>('.body')?.textContent ?? '';
       return `${ts} ${body}`;
     })
     .join('\n');
+}
+
+async function copyRows(rows: HTMLElement[]): Promise<void> {
   try {
-    await navigator.clipboard.writeText(text);
-    statusEl.textContent = 'Copiado ✓';
-    setTimeout(() => {
-      if (!pausedEl.checked) statusEl.textContent = '';
-    }, 1500);
+    await navigator.clipboard.writeText(rowsToText(rows));
+    statusEl.textContent = `Copiado ✓ (${rows.length})`;
+    setTimeout(reportSelection, 1500);
   } catch (err) {
     statusEl.textContent = 'Error al copiar';
   }
+}
+
+// With a selection the button copies just that; with none, everything visible.
+copyBtn.addEventListener('click', () => {
+  const selected = selectedRows();
+  void copyRows(selected.length ? selected : visibleRows());
 });
 
 detachBtn.addEventListener('click', () => {
   if (processId) window.api.openLogs({ processId, detached: true });
+});
+
+// ── Sidebar visibility (remembered across sessions) ───────────────
+const SIDEBAR_KEY = 'devbar.logs.sidebar';
+
+function applySidebarVisibility(collapsed: boolean): void {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  toggleSidebarBtn.title = collapsed
+    ? 'Mostrar el panel lateral'
+    : 'Ocultar el panel lateral';
+  toggleSidebarBtn.setAttribute('aria-pressed', String(collapsed));
+}
+
+applySidebarVisibility(
+  !isDetached && localStorage.getItem(SIDEBAR_KEY) === 'collapsed',
+);
+
+toggleSidebarBtn.addEventListener('click', () => {
+  const collapsed = !document.body.classList.contains('sidebar-collapsed');
+  localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'open');
+  applySidebarVisibility(collapsed);
+  updateScrollButton();
 });
 
 const SCROLL_THRESHOLD = 4;
@@ -446,11 +558,31 @@ scrollBtn.addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+  const accel = e.metaKey || e.ctrlKey;
+  if (accel && (e.key === 'f' || e.key === 'F')) {
     e.preventDefault();
     filterEl.focus();
     filterEl.select();
+    return;
   }
+  // Leave the shortcuts alone while typing in the filter or the search box.
+  if (document.activeElement instanceof HTMLInputElement) return;
+  if (accel && (e.key === 'a' || e.key === 'A')) {
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    selectAllVisible();
+    return;
+  }
+  if (accel && (e.key === 'c' || e.key === 'C')) {
+    // A real text selection wins — let the browser copy exactly that.
+    if (!window.getSelection()?.isCollapsed) return;
+    const selected = selectedRows();
+    if (!selected.length) return;
+    e.preventDefault();
+    void copyRows(selected);
+    return;
+  }
+  if (e.key === 'Escape') clearSelection();
 });
 
 // ───────────────────── Start / stop the shown log ────────────────
@@ -806,6 +938,7 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   currentTarget = null;
   currentGroupId = null;
   currentCommandId = null;
+  anchorRow = null;
   muteWarnEl.checked = false;
   muteErrEl.checked = false;
   if (filter !== undefined) filterEl.value = filter;

@@ -19,6 +19,18 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - Botón **⧉** para abrir el log actual en una **ventana aparte**, de modo que se
   pueden vigilar varios servicios a la vez mientras la ventana principal sigue
   navegando entre logs.
+- Botón **◧** que **oculta el panel lateral por completo** para dejar todo el
+  ancho al log. La preferencia se recuerda entre sesiones.
+- El panel se actualiza **en tiempo real**: los grupos, comandos y acciones que
+  se añaden, renombran o borran desde la configuración aparecen y desaparecen
+  al instante, sin reabrir la ventana.
+- **Selección de líneas** en el log, con el comportamiento habitual del
+  explorador de archivos: clic selecciona una, `cmd`/`ctrl`+clic añade o quita
+  sueltas y `mayús`+clic marca un rango. `cmd`/`ctrl`+`A` selecciona todo lo
+  visible y `Esc` limpia la selección.
+- **Copiar** (botón o `cmd`/`ctrl`+`C`) copia lo seleccionado; si no hay nada
+  seleccionado, copia todas las líneas visibles con el filtro aplicado.
+  Seleccionar texto arrastrando con el ratón sigue funcionando igual.
 
 ### Cambiado
 
@@ -26,6 +38,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
   de abrir una ventana nueva por servicio.
 - La barra superior del visor es más compacta: limpiar, copiar, silenciados y
   abrir en ventana pasan a ser botones de icono.
+- El hueco superior de la ventana se reduce a lo justo para despejar los
+  botones de la barra de título, de modo que el contenido empieza más arriba.
 
 ## [0.4.4] - 2026-08-10
 
