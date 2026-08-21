@@ -15,6 +15,8 @@ Preserve explicit manual recovery and the existing immutable tag, exact release 
 - The build boundary consumes application sources under `src/`, renderer inputs under `renderer/`, assets under `assets/`, dependency manifests/lockfile, TypeScript build configuration, and the macOS packaging/build scripts.
 - CI enforces a repository-wide strict-TypeScript authored-source policy, so the release-impact owner must be `scripts/release-impact-policy.ts`, not a JavaScript-family file.
 - Release validation exposed `GHSA-2v37-7h3g-55p8` through the pinned `nanoid@3.3.17` override. The override and lockfile were regenerated to patched `nanoid@3.3.18`; the audit gate was preserved rather than suppressed.
+- CodeRabbit review identified two bounded correctness gaps: the TypeScript policy could execute before Node.js 22 was installed in two release workflows, and package fingerprints treated object key reordering as a semantic package change.
+- Test-only head `2997fd5788be23c8186872313ac59eb055f5d6fd` reproduced both review findings in CI run `32491029720`: the workflow-order contract failed and both top-level and nested package-key reorder cases were falsely classified as release-impacting.
 
 ## Decision
 
@@ -39,6 +41,10 @@ Documentation, tests, agent specs, ordinary workflow maintenance, release-policy
 
 The policy evaluates real Git diffs. For automatic release preparation it counts only release-impacting first-parent commits since the current release tag. Automatic SemVer strategy is derived only from those impactful commit messages. Manual `force` continues to override the threshold.
 
+Semantic package comparison recursively sorts object keys before fingerprinting while preserving array order, so formatting/key-order changes do not create release impact while actual dependency or manifest-value changes still do.
+
+Every workflow path that invokes the strict-TypeScript policy explicitly installs Node.js 22 first. Later pnpm-aware Node setup remains in the full quality/build path where its dependency-cache integration is required.
+
 The publication workflow verifies that a version-introducing commit has at least one release-impacting commit since the latest stable release before building installers. `workflow_dispatch` remains an explicit recovery path and is not suppressed by automatic impact gating.
 
 Root agent guidance is updated so release-neutral changes do not bump `package.json` or `CHANGELOG.md`; release-impacting user/product changes retain semantic versioning and human changelog requirements. The `nanoid` remediation is a dependency-security change discovered by validation and therefore remains visible to the conservative dependency-impact policy; this PR does not directly prepare a version, leaving threshold-based version preparation to the trusted auto-release workflow.
@@ -47,9 +53,11 @@ Root agent guidance is updated so release-neutral changes do not bump `package.j
 
 - README-only, test-only, spec-only, and GitHub Actions/workflow-only changes do not count toward the automatic release threshold.
 - A `package.json` change that only changes `version` is not release-impacting by itself.
+- Reordering top-level or nested object keys in `package.json` is release-neutral; array order remains semantic.
 - Product source, renderer, asset, dependency, build-config, or packaging changes are release-impacting.
 - Mixed changes are release-impacting when any canonical build input changes.
 - Automatic release strategy ignores non-impacting commit messages.
+- Every workflow executes the TypeScript policy only after Node.js 22 setup.
 - A version-changing merge with no pending release-impacting commits exits successfully without building or publishing installers.
 - A version-changing merge with pending release-impacting commits preserves exact-commit build, immutable tag, asset verification, and GitHub Release behavior.
 - Manual recovery remains available for the exact current version.
@@ -62,16 +70,18 @@ Root agent guidance is updated so release-neutral changes do not bump `package.j
 
 - `pnpm format:check`
 - `pnpm quality`
-- policy regression tests
-- workflow contract tests
+- policy regression tests, including semantic package-key ordering
+- workflow contract tests, including Node-before-policy ordering
 - `pnpm audit --audit-level=moderate`
 - PR CI and release-validation checks
 - CodeQL
+- CodeRabbit re-review after review-driven fixes
 
 ## Risks
 
 - **False negative:** missing a real build input could delay a release. The allowlist is derived from the current build/package scripts and is regression-tested.
-- **False positive:** an overly broad path would still waste macOS build budget. Verification-only and workflow-only paths are intentionally excluded from publication impact.
+- **False positive:** an overly broad path would still waste macOS build budget. Verification-only and workflow-only paths are intentionally excluded from publication impact, and package object key ordering is canonicalized.
+- **Runtime availability:** the policy depends on Node's TypeScript stripping support, so release workflows establish Node.js 22 before every policy call.
 - **Dependency conservatism:** semantic dependency/lockfile changes are treated as release-impacting even when validation discovers them through dev tooling; this favors correctness over silently missing a shipped dependency change.
 - **Version drift from legacy automation:** an old maintenance-only version bump may create a skipped version. Future guidance prevents this; manual recovery remains explicit.
 - **History topology:** first-parent counting represents changes that actually landed on the protected default branch and avoids counting internal PR commits multiple times.
@@ -89,10 +99,11 @@ Revert the implementation PR. Existing tags, releases, and installers are never 
 
 ## Status
 
-Validation complete on implementation head `198d8d87142863318528b3165ee0953c91d76bc7`:
+Review fixes validated on implementation head `092ffa57c851b11aa896afd65ae718e8dca86482`:
 
-- CI run `32486699033`: success.
-- Release validation run `32486698984`: success, including audit and non-publishing macOS build verification.
-- CodeQL run `32486698915`: success for Actions and JavaScript/TypeScript analysis.
+- Reproduction CI run `32491029720`: failed exactly the three new review regressions before the fixes.
+- CI run `32491290024`: success, including both package-order regressions, Node-before-policy workflow contract, quality checks, tests, and package smoke.
+- Release validation run `32491290178`: success, including dependency audit, release regression tests, and non-publishing macOS build verification.
+- CodeQL run `32491290042`: success.
 
-This status-only commit does not change runtime, release classification, dependencies, or workflows.
+The two concrete CodeRabbit findings are implemented and independently regression-tested. A re-review is required on the final PR head before merge consideration.
