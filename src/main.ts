@@ -1892,6 +1892,29 @@ function registerIpc() {
           });
       }
 
+      // Pre-scripts and their pipeline only exist once they have run, so they
+      // come from the retained buffers rather than from config — the same way
+      // `logs:list` finds them for the sidebar. Without this the sidebar lists
+      // a pre-script row while the merged views show none of its lines.
+      const wanted = new Map(groups.map((group) => [group.id, group.name]));
+      for (const { id } of processManager.listLogBuffers()) {
+        const parsed = parseProcessId(id);
+        if (parsed.kind !== 'prescript' && parsed.kind !== 'preAggregator')
+          continue;
+        const groupName = wanted.get(parsed.groupId);
+        if (groupName === undefined) continue;
+        const resolved = processManager.resolveTarget(id);
+        sources.push({
+          id,
+          name:
+            parsed.kind === 'preAggregator'
+              ? 'Pipeline de pre-scripts'
+              : (resolved?.target.name ?? id),
+          groupId: parsed.groupId,
+          groupName,
+        });
+      }
+
       const main = logsWindows.get(MAIN_LOGS_KEY);
       if (main && !main.isDestroyed() && main.webContents === event.sender) {
         mainLogsWatching = null;
