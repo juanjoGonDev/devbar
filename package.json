@@ -54,7 +54,7 @@
   },
   "dependencies": {
     "electron-store": "11.0.2",
-    "menubar": "9.5.2",
+    "menubar": "9.5.3",
     "uuid": "14.0.1"
   },
   "pnpm": {
