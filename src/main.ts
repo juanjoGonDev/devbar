@@ -1947,10 +1947,19 @@ function registerIpc() {
         mainLogsGroupIds = new Set(sources.map((source) => source.id));
       }
 
+      // Take each buffer's tail BEFORE merging. The old order — copy every
+      // retained line of every source, sort the lot, then keep the last 2000 —
+      // ran on the main thread: in the `all` scope that is every command and
+      // action of every group, each retaining up to maxLogLines (now 10 000 by
+      // default). A handful of long-running services meant allocating hundreds
+      // of thousands of objects on every view open, blocking IPC and the tray.
+      // No line is lost that would have survived: the result is capped anyway,
+      // and nothing older than a source's own tail can make the cut.
       const lines = sources
         .flatMap((source) =>
           processManager
             .getLogs(source.id)
+            .slice(-GROUP_LOG_SNAPSHOT_LIMIT)
             .map((entry) => ({ ...entry, srcId: source.id })),
         )
         .sort((a, b) => a.ts - b.ts)

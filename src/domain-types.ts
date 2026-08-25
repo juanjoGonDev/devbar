@@ -103,6 +103,13 @@ export interface LegacyService {
   silencedPatterns: SilencedPatterns;
 }
 
+/**
+ * Default log retention, shared by the store and the settings UI. Lives here
+ * because this module has no imports: the renderer can read it without pulling
+ * electron-store in through config-store.
+ */
+export const DEFAULT_MAX_LOG_LINES = 10_000;
+
 export interface GlobalSettings {
   autostart: boolean;
   silenceWarnings: boolean;

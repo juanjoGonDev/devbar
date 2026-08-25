@@ -255,17 +255,31 @@ export function createCombobox({
       positionList();
     });
   });
+  /**
+   * A programmatic re-render changes the list's height, so the host has to be
+   * re-measured. Without this, branches finishing loading (or a result set
+   * emptying) while the list is open leaves the tray at the previous list's
+   * height — clipped, or padded with dead space — until the user types again.
+   */
+  function reflowIfOpen(): void {
+    if (isOpen) requestAnimationFrame(requestHostHeight);
+  }
+
   root.setOptions = (next) => {
     currentOptions = next;
     input.value = labelFor(currentValue);
     if (isOpen) {
       highlightIndex = -1;
       renderList();
+      reflowIfOpen();
     }
   };
   root.setLoading = (loading) => {
     isLoading = loading;
-    if (isOpen) renderList();
+    if (isOpen) {
+      renderList();
+      reflowIfOpen();
+    }
   };
   root.setValue = (next) => {
     currentValue = next;

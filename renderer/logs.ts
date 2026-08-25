@@ -883,6 +883,20 @@ function levelCountButton(
 }
 
 function renderBadges(host: HTMLElement, item: LogListItem): void {
+  // Guard the rebuild. This runs on every sidebar repaint, including the
+  // one-second uptime tick, and the counters are BUTTONS: replacing one between
+  // mousedown and mouseup means the browser never fires the click, so pressing
+  // a counter silently does nothing. It also drops any pending tooltip anchor.
+  // The runtime text changes every second, so the signature has to cover it.
+  const runtimeNow = runtimeOf(item);
+  const signature = [
+    item.warnCount,
+    item.errorCount,
+    item.lineCount,
+    runtimeNow ? `${runtimeNow.text}/${runtimeNow.live}` : '',
+  ].join('|');
+  if (host.dataset.signature === signature) return;
+  host.dataset.signature = signature;
   host.textContent = '';
   if (item.warnCount > 0) {
     host.appendChild(
@@ -1492,7 +1506,17 @@ for (const [input, button, level] of [
 }
 
 drawerCloseBtn.addEventListener('click', () => setDrawer(false));
-togglePanelBtn.addEventListener('click', () => setDrawer(!drawerOpen()));
+togglePanelBtn.addEventListener('click', () => {
+  // Silencing is per service. In a merged scope there is no single command to
+  // act on: patterns would list empty (reading as "nothing is silenced") and a
+  // typed pattern would be cleared from the input and dropped without a word.
+  if (groupSources) {
+    statusEl.textContent = 'Los silenciados son por servicio: elige uno';
+    setTimeout(reportSelection, 2500);
+    return;
+  }
+  setDrawer(!drawerOpen());
+});
 
 // ─────────────────────── Switching between logs ──────────────────
 /**
@@ -1509,6 +1533,8 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   linesEl.textContent = '';
   visibleCount = 0;
   pendingQueue.length = 0;
+  // The queue just emptied, so a stale "Pausado (+N)" would be a lie.
+  statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
   currentTarget = null;
   currentGroupId = null;
   currentCommandId = null;

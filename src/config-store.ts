@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import Store from 'electron-store';
+import { DEFAULT_MAX_LOG_LINES } from './domain-types.js';
 import type {
   Action,
   Command,
@@ -27,7 +28,7 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   autostart: false,
   silenceWarnings: false,
   silenceErrors: false,
-  maxLogLines: 10_000,
+  maxLogLines: DEFAULT_MAX_LOG_LINES,
   notifySuccess: true,
 };
 
@@ -42,7 +43,8 @@ type StoreState = {
 
 function clampMaxLogLines(value: unknown): number {
   const numberValue = Number(value);
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return 10_000;
+  if (!Number.isFinite(numberValue) || numberValue <= 0)
+    return DEFAULT_MAX_LOG_LINES;
   return Math.min(50_000, Math.max(100, Math.floor(numberValue)));
 }
 

@@ -12,6 +12,7 @@ import type {
   Schedule,
   ScheduleRule,
 } from '../src/domain-types.js';
+import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 import type { IconBatteryItem, UpdateStatus } from '../src/ipc-contract.js';
 import { installTooltips } from './tooltip.js';
 
@@ -1949,7 +1950,9 @@ async function loadSettings() {
   setSilenceWarnings.checked = !!s.silenceWarnings;
   setSilenceErrors.checked = !!s.silenceErrors;
   if (setMaxLogLines)
-    setMaxLogLines.value = String(s.maxLogLines != null ? s.maxLogLines : 2000);
+    setMaxLogLines.value = String(
+      s.maxLogLines != null ? s.maxLogLines : DEFAULT_MAX_LOG_LINES,
+    );
   if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
 }
 
@@ -1963,7 +1966,9 @@ if (testNotifyBtn) {
 async function persistSettings() {
   const maxLogLinesRaw = setMaxLogLines ? setMaxLogLines.value : '';
   const maxLogLines =
-    maxLogLinesRaw === '' ? 2000 : Number(maxLogLinesRaw) || 2000;
+    maxLogLinesRaw === ''
+      ? DEFAULT_MAX_LOG_LINES
+      : Number(maxLogLinesRaw) || DEFAULT_MAX_LOG_LINES;
   await window.api.saveSettings({
     autostart: setAutostart.checked,
     silenceWarnings: setSilenceWarnings.checked,
