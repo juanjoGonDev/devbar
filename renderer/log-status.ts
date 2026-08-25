@@ -27,6 +27,34 @@ export function dotClass(item: LogListItem): string {
   return 'running';
 }
 
+/** Loudest state first — a group is only as healthy as its worst member. */
+const DOT_SEVERITY: Readonly<Record<string, number>> = {
+  starting: 1,
+  stopping: 1,
+  running: 2,
+  warn: 3,
+  error: 4,
+};
+
+/**
+ * The dot a group header shows: the worst state among its items. This is what
+ * keeps a COLLAPSED group honest — a failing service can't hide behind a
+ * folded header.
+ */
+export function groupDotClass(items: readonly LogListItem[]): string {
+  let worst = '';
+  let severity = 0;
+  for (const item of items) {
+    const candidate = dotClass(item);
+    const rank = DOT_SEVERITY[candidate] ?? 0;
+    if (rank > severity) {
+      severity = rank;
+      worst = candidate;
+    }
+  }
+  return worst;
+}
+
 /**
  * How long an item has been running, or how long its last run lasted.
  * `live` marks a still-ticking duration; a finished run is frozen.

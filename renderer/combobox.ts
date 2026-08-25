@@ -17,12 +17,32 @@ interface ComboboxOptions {
 interface HostHooks {
   flushPendingRender?: () => void;
   scheduleTrayResize?: () => void;
+  /** Natural height of the host's own content, independent of window size. */
+  measureContentHeight?: () => number;
 }
 let openCount = 0;
 let selectingAt = 0;
 let hostHooks: HostHooks = {};
 export function setComboboxHostHooks(hooks: HostHooks): void {
   hostHooks = hooks;
+}
+
+/**
+ * Height the host window needs so an open dropdown fits: whichever is taller,
+ * the host's own content or the bottom edge of the list.
+ *
+ * The floor MUST be a content measurement. Flooring on the window's current
+ * height instead turns this into a ratchet — the host can then only ever grow,
+ * and since the main process applies a few pixels of padding on top, every
+ * single call inflates the window a little further. That is what made the tray
+ * popover creep taller on each keystroke in the branch search and never come
+ * back down while a dropdown with no matches stayed open.
+ */
+export function hostHeightFor(
+  contentHeight: number,
+  listBottom: number,
+): number {
+  return Math.max(contentHeight, Math.ceil(listBottom + 12));
 }
 export function isComboboxOpen(): boolean {
   return openCount > 0;
@@ -97,7 +117,7 @@ export function createCombobox({
     const rect = list.getBoundingClientRect();
     if (!Number.isFinite(rect.bottom) || rect.bottom <= 0) return;
     void window.api.setTrayHeight(
-      Math.max(window.innerHeight, Math.ceil(rect.bottom + 12)),
+      hostHeightFor(hostHooks.measureContentHeight?.() ?? 0, rect.bottom),
     );
   }
   function renderList(): void {

@@ -27,7 +27,7 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   autostart: false,
   silenceWarnings: false,
   silenceErrors: false,
-  maxLogLines: 2000,
+  maxLogLines: 10_000,
   notifySuccess: true,
   notifyAutoCloseSecs: 5,
 };
@@ -43,7 +43,7 @@ type StoreState = {
 
 function clampMaxLogLines(value: unknown): number {
   const numberValue = Number(value);
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return 2000;
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return 10_000;
   return Math.min(50_000, Math.max(100, Math.floor(numberValue)));
 }
 

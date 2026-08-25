@@ -3,6 +3,61 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [Unreleased]
+
+### Añadido
+
+- **Actualizaciones automáticas de verdad.** Cuando DevBar detecta una versión
+  nueva ya no te manda a la página de la release: se descarga el `.zip` en
+  segundo plano, lo descomprime y lo deja preparado. Solo entonces avisa, y el
+  aviso pide una única cosa: **reiniciar**. Al aceptar, DevBar se cierra, se
+  sustituye a sí misma y se vuelve a abrir sola. Se acabó montar el DMG y
+  arrastrar a Aplicaciones.
+- Si la copia falla a medias, la versión anterior se restaura y se vuelve a
+  abrir: nunca te quedas sin app.
+- El menú de la barra y el panel de configuración distinguen entre «hay una
+  actualización» y «ya está descargada, lista para instalar».
+
+### Cambiado
+
+- **El panel lateral de la ventana de logs distingue de un vistazo los grupos
+  de su contenido.** Antes el nombre del grupo era un texto gris pequeño
+  perdido en la misma columna que los servicios. Ahora cada grupo es una
+  **banda** a todo el ancho, con su nombre en claro, que además queda **fija
+  arriba** mientras recorres su lista: con diez servicios abiertos siempre
+  sabes de quién son los logs que estás mirando.
+- Los servicios de un grupo cuelgan de un **raíl vertical** que los agrupa
+  visualmente, en lugar de compartir columna con la cabecera.
+- Cada cabecera de grupo lleva el **número de servicios** que contiene y un
+  **punto con el peor estado** de su interior. Un grupo plegado ya no puede
+  esconder un servicio caído.
+
+- **Las notificaciones ahora son las nativas de macOS**, no el banner propio.
+  El banner sólo aparece como reserva cuando el sistema las rechaza (por
+  ejemplo, ejecutando en desarrollo sin empaquetar). Como contrapartida, las
+  notificaciones nativas respetan el modo **No molestar**; el banner no lo
+  hacía.
+- La app se firma **ad-hoc** al empaquetarla, con el identificador de firma
+  igual al `CFBundleIdentifier`. Sin esto macOS rechazaba toda notificación
+  nativa con `UNErrorDomain 1`. No requiere cuenta de desarrollador de Apple ni
+  certificado: `codesign --sign -` es gratis.
+
+### Corregido
+
+- **DevBar no se cerraba** al pedirle que se actualizara —ni al pulsar
+  «Salir»— si la ventana de **configuración** estaba abierta. Esa ventana veta
+  su propio cierre para preguntar por cambios sin guardar, y ese veto abortaba
+  en silencio el apagado entero. Ahora el veto se levanta en cuanto la decisión
+  de salir ya está tomada.
+- **El menú de la barra crecía solo al escribir en el buscador de ramas.** Al
+  calcular el alto necesario para el desplegable se tomaba como suelo el alto
+  actual de la ventana, de modo que sólo podía crecer; como el proceso
+  principal añade unos píxeles de margen, cada pulsación lo inflaba un poco
+  más y no volvía a encogerse mientras el desplegable siguiera abierto sin
+  resultados. Ahora el suelo es la altura real del contenido, así que el menú
+  se ajusta al desplegable y vuelve a su tamaño en cuanto deja de haber
+  coincidencias.
+
 ## [0.6.0] - 2026-08-21
 
 ### Añadido

@@ -10,7 +10,15 @@
     <title>Logs</title>
   </head>
   <body>
-    <div class="app-window-spacer"></div>
+    <!--
+      The titlebar is `hiddenInset`, so macOS paints no title of its own and
+      this strip was 36px of dead space. It now carries the window title, which
+      frees the header row below for controls.
+    -->
+    <div class="app-window-spacer">
+      <strong id="title">Logs</strong>
+      <span id="uptime-badge" class="uptime-badge"></span>
+    </div>
     <div class="shell">
       <aside id="sidebar">
         <div class="side-head">
@@ -41,29 +49,26 @@
           >
             ▶
           </button>
-          <strong id="title">Logs</strong>
-          <span id="uptime-badge" class="uptime-badge"></span>
           <input
             id="filter"
             type="search"
             placeholder="Filtrar (texto o regex)…"
           />
-          <label class="check"
+          <!--
+            The level filter is driven from the nav (per service, per group) and
+            from the tray. This pill is only its escape hatch: it appears when a
+            filter is active and clicking it clears it.
+          -->
+          <button id="level-pill" class="level-pill" type="button" hidden>
+            <span id="level-pill-text"></span>
+            <span class="level-pill-x">✕</span>
+          </button>
+          <label class="check spaced"
             ><input type="checkbox" id="autoscroll" checked />
             Auto-scroll</label
           >
           <label class="check"
             ><input type="checkbox" id="paused" /> Pausa</label
-          >
-          <label
-            class="check"
-            title="Silencia todos los warnings detectados en este servicio (no afecta al color)"
-            ><input type="checkbox" id="mute-warn" /> warns</label
-          >
-          <label
-            class="check"
-            title="Silencia todos los errors detectados en este servicio (no afecta al color)"
-            ><input type="checkbox" id="mute-err" /> errors</label
           >
           <button
             id="clear"
@@ -111,6 +116,91 @@
           <span id="status"></span>
         </footer>
       </div>
+      <!--
+        Silenced drawer. Lives inside the logs window instead of a separate
+        window so the rules and the lines they swallow are visible together:
+        you can see what a pattern is actually eating, and unsilence straight
+        from the feed.
+      -->
+      <aside id="silenced-drawer" class="drawer" hidden>
+        <div class="drawer-head">
+          <div class="drawer-title">
+            <strong>Silenciados</strong>
+            <span id="drawer-target" class="drawer-sub"></span>
+          </div>
+          <button
+            id="drawer-close"
+            class="drawer-x"
+            type="button"
+            title="Cerrar"
+            aria-label="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="drawer-scroll">
+          <!--
+            One section per level, each foldable. Inside a level live both its
+            rules and the lines they are actually swallowing — identical lines
+            collapse into one row with a counter, so a chatty pattern does not
+            bury the rest.
+          -->
+          <details class="drawer-lvl" data-level="warn" open>
+            <summary>
+              <span class="chevron">▶</span>
+              <span class="lvl-tag warn">warn</span>
+              <span class="lvl-name">Warnings</span>
+              <span class="drawer-count" data-count="warn">0</span>
+            </summary>
+            <div class="drawer-lvl-body">
+              <label class="switch-row">
+                <input type="checkbox" id="mute-warn" />
+                <span>Silenciar <strong>todos</strong> los warnings</span>
+              </label>
+              <ul id="warn-list" class="pattern-list"></ul>
+              <div class="add-row">
+                <input
+                  id="warn-input"
+                  type="text"
+                  placeholder="Patrón o regex…"
+                />
+                <button id="warn-add" class="ghost-btn" type="button">
+                  Añadir
+                </button>
+              </div>
+              <div id="warn-feed" class="muted-feed"></div>
+            </div>
+          </details>
+
+          <details class="drawer-lvl" data-level="error" open>
+            <summary>
+              <span class="chevron">▶</span>
+              <span class="lvl-tag err">error</span>
+              <span class="lvl-name">Errores</span>
+              <span class="drawer-count" data-count="error">0</span>
+            </summary>
+            <div class="drawer-lvl-body">
+              <label class="switch-row">
+                <input type="checkbox" id="mute-err" />
+                <span>Silenciar <strong>todos</strong> los errores</span>
+              </label>
+              <ul id="err-list" class="pattern-list"></ul>
+              <div class="add-row">
+                <input
+                  id="err-input"
+                  type="text"
+                  placeholder="Patrón o regex…"
+                />
+                <button id="err-add" class="ghost-btn" type="button">
+                  Añadir
+                </button>
+              </div>
+              <div id="err-feed" class="muted-feed"></div>
+            </div>
+          </details>
+        </div>
+      </aside>
     </div>
     <script type="module" src="logs.js"></script>
   </body>

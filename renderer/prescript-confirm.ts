@@ -1,4 +1,5 @@
 import { byId } from './dom.js';
+import { installTooltips } from './tooltip.js';
 const token = new URLSearchParams(window.location.search).get('token');
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
 let decided = false;
@@ -55,3 +56,5 @@ window.addEventListener('keydown', (event) => {
   else if (event.key === 'Escape') decide('cancel');
 });
 void init();
+
+installTooltips();

@@ -12,11 +12,8 @@ import type {
   Schedule,
   ScheduleRule,
 } from '../src/domain-types.js';
-import type {
-  IconBatteryItem,
-  LogListItem,
-  UpdateStatus,
-} from '../src/ipc-contract.js';
+import type { IconBatteryItem, UpdateStatus } from '../src/ipc-contract.js';
+import { installTooltips } from './tooltip.js';
 
 type EditableItem = Command | Action | PreScript;
 type SubKind = 'command' | 'action' | 'prescript';
@@ -520,6 +517,14 @@ function renderGroupsList(): void {
     empty.textContent = 'Sin grupos. Pulsa + Añadir.';
     groupsListEl.appendChild(empty);
     return;
+  }
+
+  // Land on something editable instead of an empty panel telling you to pick.
+  // Only when nothing is selected and nothing is half-edited, so a refresh
+  // mid-edit never yanks the user off their own draft.
+  if (!selectedGroupId && !isDirty() && allGroups[0]) {
+    selectedGroupId = allGroups[0].id;
+    loadDraftFromStored(selectedGroupId);
   }
 
   for (const group of allGroups) {
@@ -1581,6 +1586,8 @@ const configNav = byId<HTMLElement>('config-nav', HTMLElement);
 const navItems = [...document.querySelectorAll<HTMLElement>('.nav-item')];
 const sections = [...document.querySelectorAll<HTMLElement>('.config-section')];
 
+const windowTitleEl = byId<HTMLElement>('window-title', HTMLElement);
+
 function showSection(target: string | undefined): void {
   navItems.forEach((b) =>
     b.classList.toggle('active', b.dataset.target === target),
@@ -1588,11 +1595,14 @@ function showSection(target: string | undefined): void {
   sections.forEach((s) =>
     s.classList.toggle('active', s.dataset.section === target),
   );
-  if (target === 'logs') {
-    renderLogsTree();
-    startLogsAutoRefresh();
-  } else {
-    stopLogsAutoRefresh();
+  // The section name lives in the title bar now. Take it from the nav item so
+  // there is exactly one place where a section is named.
+  const active = navItems.find((b) => b.dataset.target === target);
+  const label =
+    active?.querySelector<HTMLElement>('.nav-label')?.textContent?.trim() ?? '';
+  if (label) {
+    windowTitleEl.textContent = label;
+    document.title = `DevBar — ${label}`;
   }
   try {
     if (target) localStorage.setItem('config-section', target);
@@ -1601,125 +1611,6 @@ function showSection(target: string | undefined): void {
   }
 }
 
-// ────────────────────── Logs browser ───────────────────────────────────
-type LogType = LogListItem['type'];
-const LOG_TYPE_LABEL: Record<LogType, string> = {
-  command: 'Comandos',
-  action: 'Acciones',
-  prescript: 'Pre-scripts',
-  pipeline: 'Pipeline',
-};
-const LOG_TYPE_ORDER: readonly LogType[] = [
-  'command',
-  'action',
-  'prescript',
-  'pipeline',
-];
-// Remember which group panels the user collapsed so auto-refresh doesn't
-// re-open them under the cursor.
-const logsGroupOpen = new Map<string, boolean>();
-
-function setLogsUpdatedNow() {
-  const el = document.getElementById('logs-updated');
-  if (el) el.textContent = `Actualizado ${new Date().toLocaleTimeString()}`;
-}
-
-async function renderLogsTree() {
-  const host = document.getElementById('logs-tree');
-  if (!host) return;
-  if (!host.children.length) {
-    host.innerHTML = '<p class="muted small">Cargando…</p>';
-  }
-  // logs:list also reports commands and actions that never ran (the logs
-  // window uses them as a launcher); this browser only lists real buffers.
-  const groups = ((await window.api.listLogs()) || [])
-    .map((g) => ({ ...g, items: g.items.filter((it) => it.lineCount > 0) }))
-    .filter((g) => g.items.length > 0);
-  setLogsUpdatedNow();
-  if (!groups.length) {
-    host.innerHTML =
-      '<p class="muted small">Todavía no hay logs. Se registran al ejecutar comandos, acciones o pre-scripts.</p>';
-    return;
-  }
-  host.innerHTML = '';
-  for (const g of groups) {
-    const details = document.createElement('details');
-    details.className = 'logs-group';
-    details.open = logsGroupOpen.get(g.groupId) ?? true;
-    details.addEventListener('toggle', () =>
-      logsGroupOpen.set(g.groupId, details.open),
-    );
-    const summary = document.createElement('summary');
-    summary.textContent = g.groupName;
-    details.appendChild(summary);
-
-    const byType: Partial<Record<LogType, LogListItem[]>> = {};
-    for (const it of g.items) (byType[it.type] ??= []).push(it);
-    for (const type of LOG_TYPE_ORDER) {
-      const items = byType[type];
-      if (!items || !items.length) continue;
-      const label = document.createElement('div');
-      label.className = 'logs-type';
-      label.textContent = LOG_TYPE_LABEL[type];
-      details.appendChild(label);
-      for (const it of items) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = 'logs-item';
-        row.title = 'Abrir en el visor de logs';
-        const name = document.createElement('span');
-        name.className = 'logs-item-name';
-        name.textContent = it.name;
-        const count = document.createElement('span');
-        count.className = 'logs-item-count muted';
-        count.textContent = `${it.lineCount} línea${it.lineCount === 1 ? '' : 's'}`;
-        row.append(name, count);
-        row.addEventListener('click', () => window.api.openLogs(it.id));
-        details.appendChild(row);
-      }
-    }
-    host.appendChild(details);
-  }
-}
-
-const logsRefreshBtn = document.getElementById('logs-refresh');
-if (logsRefreshBtn) logsRefreshBtn.addEventListener('click', renderLogsTree);
-
-// Auto-refresh (Manual / 5s / 10s / 30s). Runs only while the Logs section is
-// open; the interval is torn down when leaving it (see showSection).
-let _logsRefreshTimer: ReturnType<typeof setInterval> | null = null;
-const logsAutoSel = byId<HTMLSelectElement>(
-  'logs-autorefresh',
-  HTMLSelectElement,
-);
-
-function stopLogsAutoRefresh() {
-  if (_logsRefreshTimer) {
-    clearInterval(_logsRefreshTimer);
-    _logsRefreshTimer = null;
-  }
-}
-function startLogsAutoRefresh() {
-  stopLogsAutoRefresh();
-  const ms = logsAutoSel ? Number(logsAutoSel.value) || 0 : 0;
-  if (ms > 0) _logsRefreshTimer = setInterval(renderLogsTree, ms);
-}
-if (logsAutoSel) {
-  try {
-    const saved = localStorage.getItem('logs-autorefresh');
-    if (saved !== null) logsAutoSel.value = saved;
-  } catch {
-    /* ignore */
-  }
-  logsAutoSel.addEventListener('change', () => {
-    try {
-      localStorage.setItem('logs-autorefresh', logsAutoSel.value);
-    } catch {
-      /* ignore */
-    }
-    startLogsAutoRefresh();
-  });
-}
 navItems.forEach((b) =>
   b.addEventListener('click', () => showSection(b.dataset.target)),
 );
@@ -1744,7 +1635,7 @@ void (async () => {
 const navCollapse = byId<HTMLButtonElement>('nav-collapse', HTMLButtonElement);
 function setNavCollapsed(on: boolean): void {
   configNav.classList.toggle('collapsed', on);
-  navCollapse.textContent = on ? '›' : '‹';
+  navCollapse.textContent = on ? '▨' : '◧';
   try {
     localStorage.setItem('config-nav-collapsed', on ? '1' : '0');
   } catch {
@@ -1781,7 +1672,9 @@ const groupsCollapse = byId<HTMLButtonElement>(
 const groupsTwoPane = byId<HTMLElement>('groups-two-pane', HTMLElement);
 function setGroupsListCollapsed(on: boolean): void {
   groupsTwoPane.classList.toggle('list-collapsed', on);
-  groupsCollapse.textContent = on ? '›' : '‹';
+  // Same glyph and same semantics as the logs window's sidebar toggle: it
+  // shows which side is folded rather than which way you are travelling.
+  groupsCollapse.textContent = on ? '▨' : '◧';
   try {
     localStorage.setItem('groups-list-collapsed', on ? '1' : '0');
   } catch {
@@ -2258,13 +2151,20 @@ function renderUpdateStatus(s: UpdateStatus): void {
         minute: '2-digit',
       })
     : 'nunca';
-  updateStatusEl.textContent = s.available
-    ? `Actualización v${s.available.version} disponible · última búsqueda ${last}`
-    : `Al día · última búsqueda ${last}`;
+  const ready = Boolean(
+    s.available && s.staged && s.staged.version === s.available.version,
+  );
+  updateStatusEl.textContent = !s.available
+    ? `Al día · última búsqueda ${last}`
+    : ready
+      ? `v${s.available.version} descargada, lista para instalar · última búsqueda ${last}`
+      : `Actualización v${s.available.version} disponible · última búsqueda ${last}`;
   if (applyUpdateBtn) {
     if (s.available) {
       applyUpdateBtn.style.display = '';
-      applyUpdateBtn.textContent = `Actualizar a v${s.available.version}`;
+      applyUpdateBtn.textContent = ready
+        ? `Reiniciar e instalar v${s.available.version}`
+        : `Actualizar a v${s.available.version}`;
     } else {
       applyUpdateBtn.style.display = 'none';
     }
@@ -2285,7 +2185,13 @@ if (applyUpdateBtn) {
     let quitting = false;
     try {
       const res = await window.api.applyUpdate();
-      if (res && res.ok) showToast('Descargando actualización…', 'ok');
+      if (res && res.ok)
+        showToast(
+          res.inPlace
+            ? 'Instalando y reiniciando…'
+            : 'Descargando actualización…',
+          'ok',
+        );
       else if (res && !res.cancelled)
         showToast(
           `No se pudo actualizar: ${res.error || 'desconocido'}`,
@@ -2342,3 +2248,5 @@ if (window.api && window.api.getAppVersion) {
       /* leave the label empty on failure */
     });
 }
+
+installTooltips();

@@ -31,6 +31,20 @@ if [ "$(uname -s)" = 'Darwin' ]; then
   if ! /usr/libexec/PlistBuddy -c 'Set :CFBundleIconFile icon.icns' "$INFO_PLIST"; then
     /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string icon.icns' "$INFO_PLIST"
   fi
+
+  # Ad-hoc re-sign so the code-signing identifier matches CFBundleIdentifier.
+  # Electron ships linker-signed as "Electron"; UNUserNotificationCenter matches
+  # notifications against that identifier, so a mismatch makes every native
+  # notification fail with UNErrorDomain 1 ("not allowed for this application").
+  # `--sign -` is ad-hoc: no Apple Developer account, no certificate, no cost.
+  # It must run AFTER the plist edits, which invalidate the previous signature.
+  bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")
+  [ -n "$bundle_id" ] || fail 'CFBundleIdentifier is missing; cannot sign.'
+  codesign --force --deep --sign - --identifier "$bundle_id" "$app" ||
+    fail "Ad-hoc signing failed for $ARCH."
+  codesign --verify --deep --strict "$app" ||
+    fail "Ad-hoc signature did not verify for $ARCH."
+
   touch "$app"
 fi
 

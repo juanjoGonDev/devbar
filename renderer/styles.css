@@ -132,11 +132,48 @@ body.tray {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+/*
+ * The totals are clickable now, but they must still READ as the small text
+ * badges they were — strip every trace of button chrome and let only the hover
+ * hint that they do something.
+ */
+.alerts-summary .warn-count,
+.alerts-summary .error-count {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  margin: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.alerts-summary .warn-count + .error-count {
+  margin-left: 6px;
+}
 .alerts-summary .warn-count {
   color: #b58105;
 }
 .alerts-summary .error-count {
   color: #b32420;
+}
+.alerts-summary .warn-count:hover,
+.alerts-summary .error-count:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* Group-level log button: same 📜 as the per-command ones, kept quiet until
+   the row is under the cursor so it does not compete with the group name. */
+.group-row .group-logs-btn {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 2px 5px;
+  opacity: 0.55;
+}
+.group-row:hover .group-logs-btn {
+  opacity: 1;
 }
 
 .empty-state {
@@ -331,13 +368,35 @@ select:focus {
 /* ---------- Shared top spacer for hiddenInset windows ---------- */
 /* Provides a draggable region with enough vertical room for the
    macOS traffic lights to sit comfortably above the content.     */
+/*
+ * hiddenInset windows paint no title, so this strip used to be 64px of nothing.
+ * It now carries the window/section name on the traffic lights' optical centre:
+ * they are 12px tall at trafficLightPosition.y = 14, so their middle sits 20px
+ * down — centring inside the bare 36px box would land at 18px and read high.
+ */
 .app-window-spacer {
-  height: 64px;
+  height: 36px;
   -webkit-app-region: drag;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 0 82px;
+  font-size: 13px;
+  font-weight: 600;
+  /* Inherit rather than pick a colour: the body already flips for dark mode
+     and there is no text token to reach for. */
+  color: inherit;
 }
-.app-window-spacer * {
+/* The title is a label, not a control: only real controls leave the drag area. */
+.app-window-spacer button,
+.app-window-spacer input {
   -webkit-app-region: no-drag;
+}
+.app-window-spacer #window-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- Config window ---------- */
@@ -391,20 +450,29 @@ body.config {
 .nav-top .spacer {
   flex: 1;
 }
-.nav-collapse {
-  width: 24px;
-  height: 24px;
+/*
+ * One collapse control for the whole app: the config nav and the groups list
+ * use the same glyph, size and placement, so folding a panel always looks and
+ * sits the same. Chromeless on purpose — `.icon-btn` is a 40px bezelled box,
+ * far too loud for a control that lives inside a panel.
+ */
+.pane-collapse {
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: none;
   background: transparent;
   box-shadow: none;
   color: var(--muted);
-  font-size: 15px;
-  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 5px;
   cursor: pointer;
+  flex-shrink: 0;
 }
-.nav-collapse:hover {
+.pane-collapse:hover {
   background: var(--bg-row-hover);
+  color: var(--accent);
   filter: none;
 }
 .config-nav.collapsed .nav-top {
@@ -482,7 +550,9 @@ body.config {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 8px 28px 28px;
+  /* The heading moved to the title bar, so the content starts right away
+     instead of under a band of empty space. */
+  padding: 14px 28px 28px;
 }
 .config-section {
   display: none;
@@ -507,9 +577,6 @@ body.config {
   gap: 8px;
   margin-bottom: 14px;
 }
-.section-head .section-title {
-  margin: 0;
-}
 .section-head .spacer {
   flex: 1;
 }
@@ -529,9 +596,28 @@ body.config {
   background: var(--bg-row-hover);
   filter: none;
 }
-/* Collapsed groups list → editor takes the full width. */
+/*
+ * Collapsed groups list → the editor takes the width, but the pane keeps a
+ * narrow rail so its own toggle survives. Hiding the pane outright would take
+ * the only way back with it.
+ */
 .config-two-pane.list-collapsed .config-left-pane {
+  width: auto;
+  min-width: 0;
+}
+.config-two-pane.list-collapsed .groups-list-nav {
   display: none;
+}
+
+/* Header strip of a pane, holding the control that acts on that pane. The
+   button sits at the trailing edge, matching the config nav's own toggle. */
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 /* Save bar sits below the two-pane block as a footer for the whole view. */
 .group-save-bar:empty {

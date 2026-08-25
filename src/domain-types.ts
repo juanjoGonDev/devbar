@@ -143,6 +143,13 @@ export interface AvailableUpdate {
   zipUrl: string | null;
 }
 
+/** A release already downloaded and unpacked, waiting for a restart. */
+export interface StagedUpdate {
+  version: string;
+  /** Extracted `DevBar.app` that will replace the installed bundle. */
+  appPath: string;
+}
+
 export interface ReleaseSummary {
   version: string;
   name: string;

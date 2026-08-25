@@ -10,6 +10,7 @@ import type {
   ProcessStatus,
   ReleaseSummary,
   SilencedPatterns,
+  StagedUpdate,
 } from './domain-types.js';
 
 export type SilenceLevel = 'warn' | 'error';
@@ -67,6 +68,21 @@ interface LogsSnapshot {
   lines: LogEntry[];
   commandState: { status: ProcessStatus; startedAt: number | null };
 }
+/** A log line that knows which service in the group produced it. */
+export type SourcedLogEntry = LogEntry & { srcId: string };
+/** One source in a merged stream, and the group it belongs to. */
+export interface LogSource {
+  id: string;
+  name: string;
+  groupId: string;
+  groupName: string;
+}
+/** Several services merged into a single chronological stream. */
+interface GroupLogsSnapshot {
+  groupName: string;
+  sources: LogSource[];
+  lines: SourcedLogEntry[];
+}
 export interface LogListItem {
   id: string;
   type: 'command' | 'action' | 'prescript' | 'pipeline';
@@ -93,6 +109,8 @@ export interface IconBatteryItem {
 }
 export interface UpdateStatus {
   available: AvailableUpdate | null;
+  /** Downloaded and unpacked — applying it is just a restart. */
+  staged: StagedUpdate | null;
   lastCheckAt: string | null;
   currentVersion: string;
 }
@@ -224,6 +242,7 @@ export interface DevBarApi {
     enabled: boolean,
   ): Promise<{ ok: boolean; group: Group | null }>;
   getLogs(processId: string): Promise<LogsSnapshot>;
+  getMergedLogs(groupId: string | null): Promise<GroupLogsSnapshot>;
   clearLogs(processId: string): Promise<SimpleResult>;
   listLogs(): Promise<LogListGroup[]>;
   openConfig(): Promise<SimpleResult>;
@@ -231,7 +250,11 @@ export interface DevBarApi {
   hideTray(): Promise<SimpleResult>;
   onConfigGoto(callback: (target: string) => void): () => void;
   openLogs(
-    arg: string | { processId: string; filter?: string; detached?: boolean },
+    arg:
+      | string
+      | { processId: string; filter?: string; detached?: boolean }
+      | { scope: 'all'; level?: SilenceLevel }
+      | { scope: 'group'; groupId: string; level?: SilenceLevel },
   ): Promise<SimpleResult>;
   openSilenced(groupId: string, commandId: string): Promise<SimpleResult>;
   getSilencedForCommand(
@@ -314,7 +337,13 @@ export interface DevBarApi {
     callback: (payload: { id: string; entry: LogEntry }) => void,
   ): () => void;
   onLogsSelect(
-    callback: (payload: { processId: string; filter?: string }) => void,
+    callback: (payload: {
+      processId?: string;
+      filter?: string;
+      scope?: 'all' | 'group';
+      groupId?: string | null;
+      level?: SilenceLevel | null;
+    }) => void,
   ): () => void;
   onBranchesChanged(
     callback: (payload: { repoPath: string }) => void,
