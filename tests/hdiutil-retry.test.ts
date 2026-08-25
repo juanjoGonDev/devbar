@@ -39,16 +39,26 @@ fi
 exit 0
 `;
 
-// $0 must differ from the script path: the entrypoint guard compares the two,
-// and they have to disagree so sourcing does not verify a real release.
+/*
+ * The harness is written to a FILE and handed to bash as an argument, never as
+ * a `bash -c` program. Building that program out of absolute paths — which
+ * come from `import.meta.url` and `tmpdir()` — is what CodeQL flags as
+ * js/shell-command-injection-from-environment. Paths arrive as environment
+ * values the script reads, quoted, so none of them is ever interpreted.
+ *
+ * Invoking the script by path also keeps $0 different from the script under
+ * test, which its entrypoint guard compares against BASH_SOURCE — they have to
+ * disagree so sourcing does not verify a real release.
+ */
 const HARNESS = `set -uo pipefail
-export PATH="$1:$PATH"
-source "$2"
+export PATH="$HARNESS_BIN:$PATH"
+source "$HARNESS_SCRIPT"
 hdiutil_retry "test verify" hdiutil verify /nowhere.dmg
 `;
 
 interface Fixture {
   binDirectory: string;
+  harness: string;
   log: string;
   counter: string;
 }
@@ -60,9 +70,11 @@ async function fakeHdiutil(): Promise<Fixture> {
   await mkdir(binDirectory, { recursive: true });
   const fixture: Fixture = {
     binDirectory,
+    harness: path.join(directory, 'harness.sh'),
     log: path.join(directory, 'calls.log'),
     counter: path.join(directory, 'count'),
   };
+  await writeFile(fixture.harness, HARNESS);
   await writeFile(fixture.counter, '0');
   await writeFile(path.join(binDirectory, 'hdiutil'), HDIUTIL_STUB);
   await chmod(path.join(binDirectory, 'hdiutil'), 0o755);
@@ -75,19 +87,17 @@ async function runRetry(
 ): Promise<{ code: number; calls: string[] }> {
   let code = 0;
   try {
-    await execFileAsync(
-      'bash',
-      ['-c', HARNESS, 'devbar-hdiutil-harness', fixture.binDirectory, script],
-      {
-        env: {
-          ...process.env,
-          HDIUTIL_RETRY_DELAY: '0',
-          HD_TEST_LOG: fixture.log,
-          HD_TEST_COUNT: fixture.counter,
-          HD_TEST_FAILURES: String(failures),
-        },
+    await execFileAsync('bash', [fixture.harness], {
+      env: {
+        ...process.env,
+        HARNESS_BIN: fixture.binDirectory,
+        HARNESS_SCRIPT: script,
+        HDIUTIL_RETRY_DELAY: '0',
+        HD_TEST_LOG: fixture.log,
+        HD_TEST_COUNT: fixture.counter,
+        HD_TEST_FAILURES: String(failures),
       },
-    );
+    });
   } catch (error: unknown) {
     code = Number((error as { code?: number }).code ?? 1);
   }
