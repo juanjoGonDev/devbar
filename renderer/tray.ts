@@ -289,16 +289,16 @@ function renderGroupRow(gs: GroupState): HTMLElement {
 
   // Same 📜 as the per-command log buttons — one mark means "logs" at every
   // scope. The row itself toggles open, so this swallows its own click.
-  const logsBtn = document.createElement('button');
-  logsBtn.type = 'button';
-  logsBtn.className = 'ghost group-logs-btn';
-  logsBtn.textContent = '📜';
-  logsBtn.title = `Ver todos los logs de ${group.name || 'este grupo'}`;
-  logsBtn.addEventListener('click', (event) => {
+  const groupLogsBtn = document.createElement('button');
+  groupLogsBtn.type = 'button';
+  groupLogsBtn.className = 'ghost group-logs-btn';
+  groupLogsBtn.textContent = '📜';
+  groupLogsBtn.title = `Ver todos los logs de ${group.name || 'este grupo'}`;
+  groupLogsBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     void window.api.openLogs({ scope: 'group', groupId });
   });
-  row.appendChild(logsBtn);
+  row.appendChild(groupLogsBtn);
 
   // Branch selector — always at the end of the row.
   const branchSel = buildBranchSelector(gs);

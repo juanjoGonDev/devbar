@@ -364,38 +364,6 @@ header .icon-btn {
   display: inline;
 }
 
-/* Level chips: a count you can read and a filter you can press, in one control.
-   Pressing pins the view to that level; pressing both shows warnings + errors. */
-.lvl-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: #9a9aa0;
-  font-family: inherit;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  line-height: 1.4;
-}
-.lvl-chip:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-.lvl-chip.warn.on {
-  background: rgba(255, 214, 10, 0.18);
-  border-color: rgba(255, 214, 10, 0.55);
-  color: #ffd60a;
-}
-.lvl-chip.err.on {
-  background: rgba(255, 69, 58, 0.18);
-  border-color: rgba(255, 69, 58, 0.55);
-  color: #ff6961;
-}
-
 header {
   display: flex;
   align-items: center;
@@ -733,27 +701,6 @@ footer {
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.drawer-block {
-  padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.drawer-h {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 8px;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: #98989d;
-}
-.drawer-hint {
-  margin: 0 0 8px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: #8e8e93;
 }
 .drawer-count {
   margin-left: auto;

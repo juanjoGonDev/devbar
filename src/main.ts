@@ -778,10 +778,14 @@ function buildTrayContextMenu() {
 }
 
 function broadcastUpdateStatus() {
+  // Same shape as the `updates:status` handler. `UpdateStatus` declares
+  // currentVersion as required, so omitting it here typed it as `string` in the
+  // renderer while arriving `undefined`.
   const payload = {
     available: availableUpdate,
     staged: stagedUpdate,
     lastCheckAt: lastUpdateCheckAt,
+    currentVersion: app.getVersion(),
   };
   for (const wc of rendererTargets()) wc.send('updates:status', payload);
 }
