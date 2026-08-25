@@ -33,14 +33,19 @@ Todas las novedades relevantes de DevBar. El formato sigue
   esconder un servicio caído.
 
 - **Las notificaciones ahora son las nativas de macOS**, no el banner propio.
-  El banner sólo aparece como reserva cuando el sistema las rechaza (por
-  ejemplo, ejecutando en desarrollo sin empaquetar). Como contrapartida, las
-  notificaciones nativas respetan el modo **No molestar**; el banner no lo
-  hacía.
-- La app se firma **ad-hoc** al empaquetarla, con el identificador de firma
-  igual al `CFBundleIdentifier`. Sin esto macOS rechazaba toda notificación
-  nativa con `UNErrorDomain 1`. No requiere cuenta de desarrollador de Apple ni
-  certificado: `codesign --sign -` es gratis.
+  El banner queda de reserva para cuando el sistema las rechaza (por ejemplo en
+  desarrollo, sin empaquetar). Contrapartida: las nativas respetan el modo **No
+  molestar**; el banner no lo hacía.
+- La app se firma **ad-hoc** al empaquetarla, y cada bundle anidado con **su
+  propio** identificador. Sin cuenta de desarrollador de Apple ni certificado:
+  `codesign --sign -` es gratis. Es lo que exige `UNUserNotificationCenter`
+  para entregar notificaciones, y de paso permite al instalador automático
+  verificar el sello del bundle descargado antes de sustituir la app.
+- La app pasa a identificarse como **`io.github.juanjogondev.devbar`**. Antes
+  usaba `com.electron.devbar`, el valor por defecto de packager — el espacio de
+  nombres de Electron, no el nuestro. Tus ajustes se conservan: viven bajo el
+  nombre de la app, no bajo el identificador. La primera vez que arranque,
+  macOS pedirá permiso para mostrar notificaciones.
 
 ### Corregido
 

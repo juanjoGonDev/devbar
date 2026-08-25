@@ -382,7 +382,17 @@ select:focus {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 14px 0 82px;
+  /*
+   * Centred like a real macOS window title, with the left inset reserved so a
+   * long name can never reach the traffic lights.
+   *
+   * The vertical nudge is window-specific: THIS window places its lights at
+   * trafficLightPosition.y = 16 (the logs window uses 14), so their 12px height
+   * puts the optical centre at 22px. Centring inside the bare 36px box lands at
+   * 18px, which is what read as misaligned.
+   */
+  justify-content: center;
+  padding: 8px 88px 0;
   font-size: 13px;
   font-weight: 600;
   /* Inherit rather than pick a colour: the body already flips for dark mode

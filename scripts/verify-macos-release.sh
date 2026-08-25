@@ -64,9 +64,9 @@ verify_architecture() {
   grep -qw "$expected_mach_arch" <<<"$executable_archs" ||
     fail "Expected $expected_mach_arch executable for $architecture, found: $executable_archs"
 
-  [ -s "$MOUNT_POINT/DevBar.app/Contents/Resources/icon.icns" ] ||
+  [ -s "$MOUNT_POINT/DevBar.app/Contents/Resources/electron.icns" ] ||
     fail "Application icon is missing for $architecture."
-  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$MOUNT_POINT/DevBar.app/Contents/Info.plist")" = 'icon.icns' ] ||
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$MOUNT_POINT/DevBar.app/Contents/Info.plist")" = 'electron.icns' ] ||
     fail "CFBundleIconFile is incorrect for $architecture."
   plutil -lint "$MOUNT_POINT/DevBar.app/Contents/Info.plist" >/dev/null
 

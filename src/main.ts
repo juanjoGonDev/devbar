@@ -595,28 +595,41 @@ function runNotificationAction(action: string): void {
 }
 
 /**
- * Prefer the real macOS notification. It only works when the bundle's
- * code-signing identifier matches CFBundleIdentifier (see
- * `scripts/package-macos-app.sh`); everywhere else — unpackaged dev runs, or a
- * build that skipped the ad-hoc re-sign — macOS answers with `failed` and we
- * fall back to the in-app banner. Native notifications obey Do Not Disturb;
- * the banner never did.
+ * Prefer the real macOS notification, fall back to our own banner.
+ *
+ * Two things have to hold, and both are free — no Apple Developer account:
+ *  - every bundle ad-hoc signed as ITSELF (scripts/package-electron.ts), and
+ *  - a bundle id macOS has not already recorded a "deny" against.
+ *
+ * The second one is the trap. Authorisation is stored per bundle id and the
+ * system asks exactly once; a rejected early build poisons the id forever
+ * after, and from then on every notification is accepted and none is drawn —
+ * silently, since `failed` does not fire on a drop and `show` only means the
+ * payload was accepted, never that anything appeared.
+ *
+ * Unpackaged dev runs keep Electron's own identity, so `failed` fires there and
+ * the banner takes over. Native notifications obey Do Not Disturb; the banner
+ * never did.
  */
 function showBannerNotification(
   title: string,
   body: string,
   options: { cta?: { label: string; action: string } } = {},
 ): void {
-  if (!Notification.isSupported())
+  if (!Notification.isSupported()) {
+    console.log('[notify] sistema no soportado → banner propio');
     return showCustomBanner(title, body, options);
+  }
   let delivered = false;
   const notification = new Notification({ title, body });
   const action = options.cta && options.cta.action;
   if (action) notification.on('click', () => runNotificationAction(action));
   notification.on('show', () => {
     delivered = true;
+    console.log('[notify] aceptada por el sistema');
   });
-  notification.on('failed', () => {
+  notification.on('failed', (_event, error) => {
+    console.warn(`[notify] el sistema la rechazó (${error}) → banner propio`);
     if (!delivered) showCustomBanner(title, body, options);
   });
   notification.show();
