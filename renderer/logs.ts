@@ -318,9 +318,15 @@ type Scope =
  * Doubles as the "am I merged" flag.
  */
 let groupSources: Map<string, LogSource> | null = null;
-let currentGroupView: string | null = null;
 /** Distinguishes the generic view from a single-group one; both are merged. */
 let mergedIsAll = false;
+/**
+ * Ticket for the in-flight log load. Identity is not enough to detect a lost
+ * race: two overlapping loads of the SAME scope share it, so both would pass
+ * the guard and each would append its own snapshot — duplicating the history.
+ * A counter makes every call distinguishable, including from itself.
+ */
+let loadSeq = 0;
 
 /** Open any scope, optionally pinned to the levels the caller cares about. */
 async function openScope(
@@ -1529,7 +1535,6 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   processId = null;
   clearMutedFeeds(); // rows from the previous scope would target the wrong command
   mergedIsAll = groupId === null;
-  currentGroupView = groupId ?? '*';
   linesEl.textContent = '';
   visibleCount = 0;
   pendingQueue.length = 0;
@@ -1542,9 +1547,9 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   setDrawer(false); // silencing is per-service; it has no meaning here
   RENDER_LIMIT = globalMaxLogLines;
 
-  const token = currentGroupView;
+  const token = ++loadSeq;
   const res = await window.api.getMergedLogs(groupId);
-  if (currentGroupView !== token) return; // a newer switch won the race
+  if (token !== loadSeq) return; // a newer load won the race
   groupSources = new Map(res.sources.map((s) => [s.id, s]));
   _logsDisplayName = groupId ? 'todos' : '';
   _logsGroupName = res.groupName;
@@ -1574,7 +1579,6 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   processId = id;
   groupSources = null;
   clearMutedFeeds(); // rows from the previous scope would target the wrong command
-  currentGroupView = null;
   mergedIsAll = false;
   for (const summary of Array.from(
     sideTreeEl.querySelectorAll<HTMLElement>('.side-group'),
@@ -1598,8 +1602,9 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   filterRe = buildFilter(filterEl.value);
 
   // getLogs also points main's live stream at this buffer, atomically.
+  const token = ++loadSeq;
   const res = await window.api.getLogs(id);
-  if (processId !== id) return; // a newer switch won the race
+  if (token !== loadSeq) return; // a newer load won the race
   // Render limit: per-command override → global setting → fallback 2000
   const cmdLimit =
     res.target.kind === 'command' ? res.target.target.maxLogLines : null;

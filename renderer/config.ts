@@ -1956,6 +1956,16 @@ async function loadSettings() {
   if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
 }
 
+const openNotifSettingsBtn = byId<HTMLButtonElement>(
+  'open-notification-settings',
+  HTMLButtonElement,
+);
+if (openNotifSettingsBtn) {
+  openNotifSettingsBtn.addEventListener('click', () => {
+    void window.api.openNotificationSettings();
+  });
+}
+
 if (testNotifyBtn) {
   testNotifyBtn.addEventListener('click', async () => {
     await window.api.testNotification();

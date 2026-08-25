@@ -332,6 +332,8 @@ export interface DevBarApi {
   getAppVersion(): Promise<string>;
   getChangelog(): Promise<ChangelogPayload>;
   openExternal(url: string): Promise<SimpleResult>;
+  /** macOS notification settings, aimed at this app's own row. */
+  openNotificationSettings(): Promise<SimpleResult>;
   confirmDirty(
     context: string,
   ): Promise<{ choice: 'cancel' | 'discard' | 'save' }>;

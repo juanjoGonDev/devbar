@@ -833,6 +833,28 @@ function notifyUpdateAvailable(update: AvailableUpdate, manual: boolean): void {
   );
 }
 
+/**
+ * This build's CFBundleIdentifier, read from the bundle it is running out of.
+ * Null in a dev run, which has no bundle of ours. Reading it beats repeating
+ * the literal from scripts/package-electron.ts, which could then disagree with
+ * what was packaged.
+ */
+function installedBundleId(): string | null {
+  const bundle = installedBundlePath();
+  if (!bundle) return null;
+  try {
+    const plist = fs.readFileSync(
+      path.join(bundle, 'Contents', 'Info.plist'),
+      'utf8',
+    );
+    const match =
+      /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(plist);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The installed `.app` we would replace, or null when that isn't our shape. */
 function installedBundlePath(): string | null {
   return app.isPackaged ? bundlePathFromExecutable(app.getPath('exe')) : null;
@@ -2452,6 +2474,30 @@ function registerIpc() {
     releases: await fetchReleases({ ...UPDATE_REPO, limit: 5 }),
     repoUrl: `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}/releases`,
   }));
+
+  /**
+   * Open the macOS Notifications pane. Separate from `app:openExternal`, which
+   * is deliberately https-only so a renderer bug cannot fire arbitrary schemes
+   * — this URL is a constant built in main and never comes from the renderer.
+   *
+   * The `?id=` form deep-links to this app's own row. The id is read back from
+   * the running bundle rather than repeated here, so it cannot drift from what
+   * was actually packaged; without a bundle to read (a dev run) the plain pane
+   * is opened instead, which is still where the user needs to be. System
+   * Settings reports success either way, so a wrong id degrades quietly rather
+   * than failing.
+   */
+  ipcMain.handle('app:openNotificationSettings', async () => {
+    const pane =
+      'x-apple.systempreferences:com.apple.Notifications-Settings.extension';
+    const bundleId = installedBundleId();
+    try {
+      await shell.openExternal(bundleId ? `${pane}?id=${bundleId}` : pane);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  });
 
   // Open an external https URL in the default browser. https-only guard so a
   // renderer bug can't fire arbitrary schemes (file:, javascript:, …).

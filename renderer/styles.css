@@ -2883,3 +2883,18 @@ body.prescript-confirm {
   width: 150px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Inline text button that reads as a link, for pointing at system settings. */
+.linkish {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.linkish:hover {
+  text-decoration: underline;
+}
