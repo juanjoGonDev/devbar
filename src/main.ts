@@ -8,6 +8,7 @@ import {
   BrowserWindow,
   ipcMain,
   Menu,
+  Notification,
   screen,
   dialog,
   shell,
@@ -32,6 +33,12 @@ import * as gitManager from './git-manager.js';
 import * as trayIcon from './tray-icon.js';
 import * as logger from './logger.js';
 import { checkForUpdate, fetchReleases } from './update-check.js';
+import {
+  bundlePathFromExecutable,
+  canInstallInPlace,
+  extractUpdate,
+  spawnSwap,
+} from './self-update.js';
 import { loadShellPath, expandTilde } from './path-helper.js';
 import { RepoWatcher } from './repo-watcher.js';
 import { makeCommandId, makeActionId, parseProcessId } from './compound-id.js';
@@ -45,6 +52,7 @@ import type {
   PreScript,
   Schedule,
   LogEntry,
+  StagedUpdate,
 } from './domain-types.js';
 import type {
   GroupState,
@@ -57,6 +65,14 @@ import type {
 } from './ipc-contract.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Whether the development-only simulation panel shipped with this build. One
+ * source of truth: the files are either in the bundle or they are not.
+ */
+const devPanelAvailable = fs.existsSync(
+  path.join(__dirname, 'dev', 'dev-ipc.js'),
+);
 const { aggregateColor } = trayIcon;
 
 function errorMessage(value: unknown): string {
@@ -154,7 +170,7 @@ function ipcGlobalSettingsPatch(
       patch[field] = raw[field];
     }
   }
-  for (const field of ['maxLogLines', 'notifyAutoCloseSecs'] as const) {
+  for (const field of ['maxLogLines'] as const) {
     if (raw[field] !== undefined) patch[field] = ipcNumber(raw[field], field);
   }
   return patch;
@@ -364,6 +380,11 @@ const logsWindows = new Map<string, BrowserWindow>();
 // Which log the shared window is currently showing — it only receives lines
 // for that one, so N running services don't flood it with N streams.
 let mainLogsWatching: string | null = null;
+// Non-empty when the shared window is showing a whole group merged into one
+// stream; every id in here is forwarded to that window, tagged by source.
+let mainLogsGroupIds = new Set<string>();
+/** Merged snapshots span N services, so they are capped harder than one buffer. */
+const GROUP_LOG_SNAPSHOT_LIMIT = 2000;
 const silencedWindows = new Map<string, BrowserWindow>();
 const repoWatcher = new RepoWatcher();
 
@@ -372,6 +393,9 @@ const UPDATE_REPO = { owner: 'juanjoGonDev', repo: 'devbar' };
 let availableUpdate: AvailableUpdate | null = null; // { version, url, dmgUrl, zipUrl } when newer exists
 let lastUpdateCheckAt: string | null = null; // ISO of the last completed release check
 let updateNotifiedThisLaunch = false; // banner shown at most once per launch
+let stagedUpdate: StagedUpdate | null = null; // downloaded, waiting for a restart
+let stagingVersion: string | null = null; // download in flight, to avoid duplicates
+const stagingFailedVersions = new Set<string>(); // don't retry a bad download all session
 
 // Group-level transient errors (not persisted)
 const groupErrors = new Map<string, string | null>();
@@ -518,7 +542,11 @@ function broadcastLog(payload: { id: string; entry: LogEntry }): void {
     detached.webContents.send('logs:line', payload);
   }
   const main = logsWindows.get(MAIN_LOGS_KEY);
-  if (main && !main.isDestroyed() && mainLogsWatching === payload.id) {
+  if (
+    main &&
+    !main.isDestroyed() &&
+    (mainLogsWatching === payload.id || mainLogsGroupIds.has(payload.id))
+  ) {
     main.webContents.send('logs:line', payload);
   }
 }
@@ -530,13 +558,14 @@ function broadcastToast(kind: string, message: string): void {
 }
 
 // ── In-app completion banner ────────────────────────────────────────────
-// Native macOS notifications need a Developer-ID-signed app to register, which
-// this unsigned build is not — they silently never appear. So we draw our own
-// small always-on-top banner instead. No OS permission, works in dev and
-// packaged, and honours the duration setting natively could not:
-//   notifyAutoCloseSecs === 0 → permanent (until clicked)
-//   notifyAutoCloseSecs  >  0 → auto-dismiss after N seconds
+// The fallback for when macOS refuses a native notification — chiefly an
+// unpackaged dev run, whose bundle keeps Electron's own identity. Duration is
+// fixed here rather than configurable: on the path users actually see, macOS
+// owns it through the app's notification style (Banners auto-dismiss, Alerts
+// stay), and a setting that governs only the fallback would be claiming more
+// than it does.
 // ponytail: single-slot — a new banner replaces the current one; no stacking.
+const BANNER_AUTOCLOSE_SECS = 5;
 let notificationWindow: BrowserWindow | null = null;
 let notificationTimer: NodeJS.Timeout | null = null;
 
@@ -564,13 +593,64 @@ function activeDisplay() {
   return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
 }
 
+/**
+ * A CTA from either notification path (native click or banner button).
+ */
+function runNotificationAction(action: string): void {
+  if (action === 'open-about') ensureConfigWindow({ goto: 'about' });
+  else if (action === 'open-changelog')
+    ensureConfigWindow({ goto: 'about-changelog' });
+  else if (action === 'install-update') void applyUpdate();
+}
+
+/**
+ * Prefer the real macOS notification, fall back to our own banner.
+ *
+ * Two things have to hold, and both are free — no Apple Developer account:
+ *  - every bundle ad-hoc signed as ITSELF (scripts/package-electron.ts), and
+ *  - a bundle id macOS has not already recorded a "deny" against.
+ *
+ * The second one is the trap. Authorisation is stored per bundle id and the
+ * system asks exactly once; a rejected early build poisons the id forever
+ * after, and from then on every notification is accepted and none is drawn —
+ * silently, since `failed` does not fire on a drop and `show` only means the
+ * payload was accepted, never that anything appeared.
+ *
+ * Unpackaged dev runs keep Electron's own identity, so `failed` fires there and
+ * the banner takes over. Native notifications obey Do Not Disturb; the banner
+ * never did.
+ */
 function showBannerNotification(
+  title: string,
+  body: string,
+  options: { cta?: { label: string; action: string } } = {},
+): void {
+  if (!Notification.isSupported()) {
+    console.log('[notify] sistema no soportado → banner propio');
+    return showCustomBanner(title, body, options);
+  }
+  let delivered = false;
+  const notification = new Notification({ title, body });
+  const action = options.cta && options.cta.action;
+  if (action) notification.on('click', () => runNotificationAction(action));
+  notification.on('show', () => {
+    delivered = true;
+    console.log('[notify] aceptada por el sistema');
+  });
+  notification.on('failed', (_event, error) => {
+    console.warn(`[notify] el sistema la rechazó (${error}) → banner propio`);
+    if (!delivered) showCustomBanner(title, body, options);
+  });
+  notification.show();
+}
+
+function showCustomBanner(
   title: string,
   body: string,
   { cta }: { cta?: { label: string; action: string } } = {},
 ): void {
   closeNotificationWindow(); // replace any visible banner
-  const secs = configStore.getGlobalSettings().notifyAutoCloseSecs;
+  const secs = BANNER_AUTOCLOSE_SECS;
   const width = 360;
   const height = 76;
   const margin = 12;
@@ -660,8 +740,12 @@ function updateDockVisibility() {
 function buildTrayContextMenu() {
   const items: MenuItemConstructorOptions[] = [];
   if (availableUpdate) {
+    const ready =
+      stagedUpdate && stagedUpdate.version === availableUpdate.version;
     items.push({
-      label: `⬆︎ Actualizar a v${availableUpdate.version}…`,
+      label: ready
+        ? `⬆︎ Reiniciar e instalar v${availableUpdate.version}`
+        : `⬆︎ Actualizar a v${availableUpdate.version}…`,
       click: () => applyUpdate(),
     });
     items.push({ type: 'separator' });
@@ -694,18 +778,23 @@ function buildTrayContextMenu() {
 }
 
 function broadcastUpdateStatus() {
+  // Same shape as the `updates:status` handler. `UpdateStatus` declares
+  // currentVersion as required, so omitting it here typed it as `string` in the
+  // renderer while arriving `undefined`.
   const payload = {
     available: availableUpdate,
+    staged: stagedUpdate,
     lastCheckAt: lastUpdateCheckAt,
+    currentVersion: app.getVersion(),
   };
   for (const wc of rendererTargets()) wc.send('updates:status', payload);
 }
 
 /**
- * Check GitHub for a newer release. Notifies via our own banner (native needs
- * signing), kept NON-insistent: at most once per launch from the automatic
- * loop, or on a manual check, and never while the config window is focused —
- * a manual check surfaces its result inline in config instead.
+ * Check GitHub for a newer release. Kept NON-insistent: at most one notice per
+ * launch from the automatic loop, or on a manual check, and never while the
+ * config window is focused — a manual check surfaces its result inline in
+ * config instead.
  */
 async function runUpdateCheck({ manual = false } = {}) {
   const found = await checkForUpdate({
@@ -716,20 +805,120 @@ async function runUpdateCheck({ manual = false } = {}) {
   // A simulated update owns the slot until the dev panel releases it.
   if (!devUpdateSimulated) availableUpdate = found || null;
   refreshTrayIcon();
-  if (found) {
-    const configFocused =
-      configWindow && !configWindow.isDestroyed() && configWindow.isFocused();
-    if ((manual || !updateNotifiedThisLaunch) && !configFocused) {
-      updateNotifiedThisLaunch = true;
-      showBannerNotification(
-        'DevBar — actualización',
-        `v${found.version} disponible.`,
-        { cta: { label: 'Ver', action: 'open-about' } },
-      );
-    }
+  if (found && !devUpdateSimulated) {
+    // When we can swap the bundle ourselves, stay quiet until the download is
+    // on disk — one notice ("reinicia") beats two ("hay una" / "ya está").
+    if (found.zipUrl && canInstallInPlace(installedBundlePath()))
+      void stageUpdate(found);
+    else notifyUpdateAvailable(found, manual);
   }
   broadcastUpdateStatus();
-  return { available: availableUpdate, lastCheckAt: lastUpdateCheckAt };
+  return {
+    available: availableUpdate,
+    staged: stagedUpdate,
+    lastCheckAt: lastUpdateCheckAt,
+  };
+}
+
+/** Non-insistent notice for the manual (DMG) route. */
+function notifyUpdateAvailable(update: AvailableUpdate, manual: boolean): void {
+  const configFocused =
+    configWindow && !configWindow.isDestroyed() && configWindow.isFocused();
+  if ((!manual && updateNotifiedThisLaunch) || configFocused) return;
+  updateNotifiedThisLaunch = true;
+  showBannerNotification(
+    'DevBar — actualización',
+    `v${update.version} disponible.`,
+    { cta: { label: 'Ver', action: 'open-about' } },
+  );
+}
+
+/**
+ * This build's CFBundleIdentifier, read from the bundle it is running out of.
+ * Null in a dev run, which has no bundle of ours. Reading it beats repeating
+ * the literal from scripts/package-electron.ts, which could then disagree with
+ * what was packaged.
+ */
+function installedBundleId(): string | null {
+  const bundle = installedBundlePath();
+  if (!bundle) return null;
+  try {
+    const plist = fs.readFileSync(
+      path.join(bundle, 'Contents', 'Info.plist'),
+      'utf8',
+    );
+    const match =
+      /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(plist);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** The installed `.app` we would replace, or null when that isn't our shape. */
+function installedBundlePath(): string | null {
+  return app.isPackaged ? bundlePathFromExecutable(app.getPath('exe')) : null;
+}
+
+/**
+ * Download the release .zip in the background and unpack it next to our config,
+ * so applying the update later is just a swap-and-relaunch. Any failure falls
+ * back to the old "grab the DMG yourself" notice rather than going silent.
+ */
+async function stageUpdate(update: AvailableUpdate): Promise<void> {
+  if (!update.zipUrl) return;
+  if (stagedUpdate && stagedUpdate.version === update.version) return;
+  if (stagingVersion === update.version) return;
+  // The check loop runs every 5 minutes; without this, a version that fails to
+  // download would re-pull ~100 MB on every tick.
+  if (stagingFailedVersions.has(update.version)) return;
+  stagingVersion = update.version;
+  const updatesDir = path.join(app.getPath('userData'), 'updates');
+  const zipPath = path.join(updatesDir, `DevBar-${update.version}.zip`);
+  try {
+    fs.mkdirSync(updatesDir, { recursive: true });
+    await downloadFile(update.zipUrl, zipPath);
+    stagedUpdate = await extractUpdate({
+      zipPath,
+      destDir: path.join(updatesDir, update.version),
+      version: update.version,
+    });
+    console.log(`[updates] v${update.version} descargada, lista para instalar`);
+    broadcastUpdateStatus();
+    refreshTrayIcon();
+    showBannerNotification(
+      'DevBar — actualización',
+      `v${update.version} lista. Reinicia para instalarla.`,
+      { cta: { label: 'Reiniciar', action: 'install-update' } },
+    );
+  } catch (err) {
+    stagingFailedVersions.add(update.version);
+    console.warn(
+      `[updates] no se pudo preparar v${update.version}: ${errorMessage(err)}`,
+    );
+    notifyUpdateAvailable(update, false);
+  } finally {
+    fs.rmSync(zipPath, { force: true });
+    stagingVersion = null;
+    // Housekeeping, deliberately outside the try: a prune that trips over a
+    // dangling entry must not mark a perfectly good download as failed and
+    // swallow the "restart to install" notice for the rest of the session.
+    if (stagedUpdate) pruneStagedUpdates(updatesDir, stagedUpdate.version);
+  }
+}
+
+/** Drop previously staged versions — each one is a full copy of the app. */
+function pruneStagedUpdates(updatesDir: string, keep: string): void {
+  try {
+    for (const entry of fs.readdirSync(updatesDir)) {
+      if (entry === keep) continue;
+      const candidate = path.join(updatesDir, entry);
+      if (!fs.statSync(candidate).isDirectory()) continue;
+      fs.rmSync(candidate, { recursive: true, force: true });
+    }
+  } catch (err) {
+    console.warn(`[updates] no se pudo limpiar: ${errorMessage(err)}`);
+  }
 }
 
 /** Stream a URL to `dest`, following GitHub's asset redirects. */
@@ -769,15 +958,60 @@ function downloadFile(
 }
 
 /**
+ * Install the already-downloaded update: confirm → hand the bundle swap to a
+ * detached script → quit. The script waits for us to exit, replaces the .app
+ * and reopens it, so the user never touches the Finder. Only the confirmation
+ * is asked of them, and only once.
+ */
+async function installStagedUpdate(staged: StagedUpdate, target: string) {
+  const owner =
+    configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
+  let res;
+  try {
+    res = await showMessageBox(owner, {
+      type: 'question',
+      buttons: ['Ahora no', 'Reiniciar e instalar'],
+      defaultId: 1,
+      cancelId: 0,
+      message: `DevBar v${staged.version} está lista`,
+      detail:
+        'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
+    });
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+  if (res.response !== 1) return { ok: false, cancelled: true };
+
+  try {
+    spawnSwap({
+      scriptPath: path.join(app.getPath('userData'), 'updates', 'swap.sh'),
+      pid: process.pid,
+      target,
+      staged: staged.appPath,
+    });
+  } catch (err) {
+    broadcastToast('error', `No se pudo instalar: ${errorMessage(err)}`);
+    return { ok: false, error: errorMessage(err) };
+  }
+  // The script polls for our exit, so a short delay is enough to let this IPC
+  // reply reach the renderer before we go.
+  setTimeout(() => app.quit(), 200);
+  return { ok: true, quitting: true, inPlace: true };
+}
+
+/**
  * Assisted update: confirm (no timeout) → download the .dmg to Downloads →
  * open it → QUIT DevBar so the drag-into-Applications isn't blocked by the
- * running app. Falls back to opening the release page if there's no dmg asset
- * or the download fails. The app is unsigned, so a fully silent swap isn't
- * reliable — this is the robust path.
+ * running app. Only reached when the in-place swap isn't possible (no zip
+ * asset, or the bundle lives somewhere we can't write).
  */
 async function applyUpdate() {
   if (!availableUpdate) return { ok: false, error: 'no_update' };
   const { version, dmgUrl, url } = availableUpdate;
+  const staged = stagedUpdate;
+  const target = installedBundlePath();
+  if (staged && staged.version === version && canInstallInPlace(target))
+    return installStagedUpdate(staged, target);
   const owner =
     configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
   let res;
@@ -827,6 +1061,82 @@ async function applyUpdate() {
   // ponytail: fixed 1.2s delay, not a mount-completion watch.
   setTimeout(() => app.quit(), 1200);
   return { ok: true, path: dest, quitting: true };
+}
+
+/**
+ * Open the shared logs window straight onto a merged scope. A live window is
+ * told to switch; a cold one carries the scope in its query string so it opens
+ * already showing it, with no single-service flash in between.
+ */
+function ensureLogsScopeWindow(
+  scope: 'all' | 'group',
+  groupId: string | null,
+  level: 'warn' | 'error' | null,
+): BrowserWindow {
+  const existing = logsWindows.get(MAIN_LOGS_KEY);
+  if (existing && !existing.isDestroyed()) {
+    existing.webContents.send('logs:select', { scope, groupId, level });
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+  const query: Record<string, string> = { scope };
+  if (groupId) query.groupId = groupId;
+  if (level) query.level = level;
+  const win = buildLogsWindow({
+    title: scope === 'all' ? 'DevBar — Telemetría' : 'DevBar — Logs',
+    detached: false,
+    processId: '',
+    query,
+  });
+  logsWindows.set(MAIN_LOGS_KEY, win);
+  win.on('closed', () => {
+    logsWindows.delete(MAIN_LOGS_KEY);
+    mainLogsWatching = null;
+    mainLogsGroupIds = new Set();
+    updateDockVisibility();
+  });
+  logger.attachWindowConsole(win, `logs:${scope}`);
+  updateDockVisibility();
+  return win;
+}
+
+/** The BrowserWindow itself, shared by the single-log and merged entry points. */
+function buildLogsWindow({
+  title,
+  detached,
+  processId,
+  query,
+}: {
+  title: string;
+  detached: boolean;
+  processId: string;
+  query: Record<string, string>;
+}): BrowserWindow {
+  const size = adaptiveSize(detached ? 960 : 1180, 640);
+  const win = new BrowserWindow({
+    width: size.width,
+    height: size.height,
+    x: size.x,
+    y: size.y,
+    minWidth: detached ? 480 : 720,
+    minHeight: 320,
+    title,
+    backgroundColor: '#1e1e1e',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 12, y: 14 },
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      additionalArguments: [`--process-id=${processId}`],
+    },
+  });
+  win.setMenuBarVisibility(false);
+  // NOT visible-on-all-workspaces: on a secondary display that made macOS
+  // minimize the other windows there (accessory-app + join-all-spaces quirk).
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'logs.html'), { query });
+  return win;
 }
 
 function ensureSilencedWindow(
@@ -975,33 +1285,16 @@ function ensureLogsWindow(
       ? resolved.target.name
       : resolved.target.name
     : processId;
-  const size = adaptiveSize(detached ? 960 : 1180, 640);
-  const win = new BrowserWindow({
-    width: size.width,
-    height: size.height,
-    x: size.x,
-    y: size.y,
-    minWidth: detached ? 480 : 720,
-    minHeight: 320,
-    title: `Logs — ${titleName}`,
-    backgroundColor: '#1e1e1e',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 12, y: 14 },
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      additionalArguments: [`--process-id=${processId}`],
-    },
-  });
-  win.setMenuBarVisibility(false);
-  // NOT visible-on-all-workspaces: on a secondary display that made macOS
-  // minimize the other windows there (accessory-app + join-all-spaces quirk).
   const query: Record<string, string> = { id: processId };
   if (filter) query.filter = filter;
   if (detached) query.detached = '1';
   else mainLogsWatching = processId;
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'logs.html'), { query });
+  const win = buildLogsWindow({
+    title: `Logs — ${titleName}`,
+    detached: Boolean(detached),
+    processId,
+    query,
+  });
   win.on('closed', () => {
     logsWindows.delete(key);
     if (!detached) mainLogsWatching = null;
@@ -1586,6 +1879,7 @@ function registerIpc() {
       const main = logsWindows.get(MAIN_LOGS_KEY);
       if (main && !main.isDestroyed() && main.webContents === event.sender) {
         mainLogsWatching = processId;
+        mainLogsGroupIds = new Set(); // leaving the merged group view
       }
       const resolved = processManager.resolveTarget(processId);
       const cmdState = processManager.getState(processId);
@@ -1601,6 +1895,99 @@ function registerIpc() {
           startedAt: cmdState.startedAt,
         },
       };
+    },
+  );
+
+  /**
+   * Every retained line of every service in one group, merged into a single
+   * chronological stream and tagged with its source — the shape telemetry
+   * tools use, where the row itself tells you who emitted it. Subscribing and
+   * snapshotting happen in the same tick so no line is both replayed and
+   * streamed.
+   */
+  ipcMain.handle(
+    'logs:getMerged',
+    (event: IpcMainInvokeEvent, rawGroupId: unknown) => {
+      // null → every group (the generic telemetry view); otherwise one group.
+      const groupId =
+        rawGroupId === null || rawGroupId === undefined
+          ? null
+          : ipcString(rawGroupId, 'groupId');
+      const groups = groupId
+        ? [configStore.getGroup(groupId)].filter((g) => g !== null)
+        : configStore.listGroups();
+
+      const sources: {
+        id: string;
+        name: string;
+        groupId: string;
+        groupName: string;
+      }[] = [];
+      for (const group of groups) {
+        for (const command of group.commands || [])
+          sources.push({
+            id: makeCommandId(group.id, command.id),
+            name: command.name,
+            groupId: group.id,
+            groupName: group.name,
+          });
+        for (const action of group.actions || [])
+          sources.push({
+            id: makeActionId(group.id, action.id),
+            name: action.name,
+            groupId: group.id,
+            groupName: group.name,
+          });
+      }
+
+      // Pre-scripts and their pipeline only exist once they have run, so they
+      // come from the retained buffers rather than from config — the same way
+      // `logs:list` finds them for the sidebar. Without this the sidebar lists
+      // a pre-script row while the merged views show none of its lines.
+      const wanted = new Map(groups.map((group) => [group.id, group.name]));
+      for (const { id } of processManager.listLogBuffers()) {
+        const parsed = parseProcessId(id);
+        if (parsed.kind !== 'prescript' && parsed.kind !== 'preAggregator')
+          continue;
+        const groupName = wanted.get(parsed.groupId);
+        if (groupName === undefined) continue;
+        const resolved = processManager.resolveTarget(id);
+        sources.push({
+          id,
+          name:
+            parsed.kind === 'preAggregator'
+              ? 'Pipeline de pre-scripts'
+              : (resolved?.target.name ?? id),
+          groupId: parsed.groupId,
+          groupName,
+        });
+      }
+
+      const main = logsWindows.get(MAIN_LOGS_KEY);
+      if (main && !main.isDestroyed() && main.webContents === event.sender) {
+        mainLogsWatching = null;
+        mainLogsGroupIds = new Set(sources.map((source) => source.id));
+      }
+
+      // Take each buffer's tail BEFORE merging. The old order — copy every
+      // retained line of every source, sort the lot, then keep the last 2000 —
+      // ran on the main thread: in the `all` scope that is every command and
+      // action of every group, each retaining up to maxLogLines (now 10 000 by
+      // default). A handful of long-running services meant allocating hundreds
+      // of thousands of objects on every view open, blocking IPC and the tray.
+      // No line is lost that would have survived: the result is capped anyway,
+      // and nothing older than a source's own tail can make the cut.
+      const lines = sources
+        .flatMap((source) =>
+          processManager
+            .getLogs(source.id)
+            .slice(-GROUP_LOG_SNAPSHOT_LIMIT)
+            .map((entry) => ({ ...entry, srcId: source.id })),
+        )
+        .sort((a, b) => a.ts - b.ts)
+        .slice(-GROUP_LOG_SNAPSHOT_LIMIT);
+      const scopeName = groupId ? (groups[0]?.name ?? '?') : 'Telemetría';
+      return { groupName: scopeName, sources, lines };
     },
   );
 
@@ -1745,6 +2132,21 @@ function registerIpc() {
   ipcMain.handle(
     'window:openLogs',
     (_e: IpcMainInvokeEvent, payload: unknown) => {
+      // Scope form: open the shared window on a merged view instead of one
+      // service. Used by the tray's telemetry button and its alert totals.
+      const record = typeof payload === 'string' ? {} : ipcRecord(payload);
+      if (typeof record.scope === 'string') {
+        const scope = record.scope === 'group' ? 'group' : 'all';
+        const groupId =
+          scope === 'group' ? ipcStringField(payload, 'groupId') : null;
+        const level =
+          record.level === 'warn' || record.level === 'error'
+            ? record.level
+            : null;
+        ensureLogsScopeWindow(scope, groupId, level);
+        if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
+        return { ok: true };
+      }
       const processId =
         typeof payload === 'string'
           ? payload
@@ -1829,10 +2231,7 @@ function registerIpc() {
   ipcMain.handle(
     'notification:action',
     (_e: IpcMainInvokeEvent, rawAction: unknown) => {
-      const action = ipcString(rawAction, 'notification action');
-      if (action === 'open-about') ensureConfigWindow({ goto: 'about' });
-      else if (action === 'open-changelog')
-        ensureConfigWindow({ goto: 'about-changelog' });
+      runNotificationAction(ipcString(rawAction, 'notification action'));
       closeNotificationWindow();
       return { ok: true };
     },
@@ -1841,6 +2240,7 @@ function registerIpc() {
   // ── Updates ────────────────────────────────────────────────────────────
   ipcMain.handle('updates:status', () => ({
     available: availableUpdate,
+    staged: stagedUpdate,
     lastCheckAt: lastUpdateCheckAt,
     currentVersion: app.getVersion(),
   }));
@@ -2011,12 +2411,15 @@ function registerIpc() {
   );
 
   // Lets the renderer decide whether to load the dev-only simulation panel.
-  ipcMain.handle('app:isDev', () => !app.isPackaged);
+  ipcMain.handle('app:isDev', () => devPanelAvailable);
 
   // ── Dev simulation panel ──────────────────────────────────────────────
-  // Only in development: src/dev and renderer/dev are stripped from packaged
-  // builds, so the import is guarded and its failure is not an error.
-  if (!app.isPackaged) {
+  // Presence of the files IS the switch, rather than `!app.isPackaged`. A
+  // normal build strips src/dev and renderer/dev, so this is off; a build made
+  // with DEVBAR_DEV_PANEL=1 keeps them, which is how the panel can be exercised
+  // inside a REAL installed bundle — the only place notifications and the
+  // updater behave for real.
+  if (devPanelAvailable) {
     void import('./dev/dev-ipc.js')
       .then(({ registerDevIpc }) => {
         registerDevIpc({
@@ -2033,6 +2436,8 @@ function registerIpc() {
           },
           showBanner: (title, body, options) =>
             showBannerNotification(title, body, options),
+          showFallbackBanner: (title, body, options) =>
+            showCustomBanner(title, body, options),
           showCompletionNotification: (title, body) =>
             showCompletionNotification(title, body),
           openPrescriptConfirm: (name, command) => {
@@ -2069,6 +2474,30 @@ function registerIpc() {
     releases: await fetchReleases({ ...UPDATE_REPO, limit: 5 }),
     repoUrl: `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}/releases`,
   }));
+
+  /**
+   * Open the macOS Notifications pane. Separate from `app:openExternal`, which
+   * is deliberately https-only so a renderer bug cannot fire arbitrary schemes
+   * — this URL is a constant built in main and never comes from the renderer.
+   *
+   * The `?id=` form deep-links to this app's own row. The id is read back from
+   * the running bundle rather than repeated here, so it cannot drift from what
+   * was actually packaged; without a bundle to read (a dev run) the plain pane
+   * is opened instead, which is still where the user needs to be. System
+   * Settings reports success either way, so a wrong id degrades quietly rather
+   * than failing.
+   */
+  ipcMain.handle('app:openNotificationSettings', async () => {
+    const pane =
+      'x-apple.systempreferences:com.apple.Notifications-Settings.extension';
+    const bundleId = installedBundleId();
+    try {
+      await shell.openExternal(bundleId ? `${pane}?id=${bundleId}` : pane);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  });
 
   // Open an external https URL in the default browser. https-only guard so a
   // renderer bug can't fire arbitrary schemes (file:, javascript:, …).
@@ -2424,6 +2853,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  // The config window vetoes its own `close` to ask about unsaved changes.
+  // During a quit that veto silently ABORTS the whole shutdown — "Salir" and
+  // the update install both did nothing while config was open. By the time
+  // `before-quit` fires the decision to quit is already made, so drop the veto.
+  forceCloseConfig = true;
   repoWatcher.closeAll();
   // Cancel any running pre-script pipelines
   for (const groupId of preScriptRunner.running.keys()) {

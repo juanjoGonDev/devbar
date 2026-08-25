@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { PACKAGE_IGNORE } from '../scripts/package-electron.js';
+import {
+  PACKAGE_IGNORE,
+  packageIgnoreFor,
+} from '../scripts/package-electron.js';
 
 // electron-packager tests each path (leading slash, relative to the project
 // root) against every pattern; a match keeps the file out of the .app.
@@ -48,5 +51,34 @@ describe('packaged app contents', () => {
   it('does not catch unrelated paths that merely contain "dev"', () => {
     expect(isIgnored('/build/renderer/devbar-extra.js')).toBe(false);
     expect(isIgnored('/build/src/device-info.js')).toBe(false);
+  });
+});
+
+describe('dev-panel opt-in packaging', () => {
+  function isIgnoredWithDev(pathname: string): boolean {
+    return packageIgnoreFor(true).some((pattern) => pattern.test(pathname));
+  }
+
+  it('keeps the simulation panel when it is asked for', () => {
+    for (const kept of [
+      '/build/renderer/dev/dev-panel.js',
+      '/build/src/dev/dev-ipc.js',
+    ]) {
+      expect(isIgnoredWithDev(kept), kept).toBe(false);
+    }
+  });
+
+  it('still drops everything else that never ships', () => {
+    for (const dropped of ['/src/main.ts', '/tests/foo.test.ts', '/dist']) {
+      expect(isIgnoredWithDev(dropped), dropped).toBe(true);
+    }
+  });
+
+  it('defaults to excluding the panel', () => {
+    // The opt-in must be explicit: a normal build never carries it.
+    expect(packageIgnoreFor(false)).toEqual(PACKAGE_IGNORE);
+    expect(
+      packageIgnoreFor(false).some((p) => p.test('/build/src/dev/dev-ipc.js')),
+    ).toBe(true);
   });
 });

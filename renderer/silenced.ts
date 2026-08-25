@@ -1,6 +1,7 @@
 import { renderPatternList, wireAddPattern } from './silence-ui.js';
 import { byId } from './dom.js';
 import type { SilencedPatterns } from '../src/domain-types.js';
+import { installTooltips } from './tooltip.js';
 const params = new URLSearchParams(window.location.search);
 const groupId = params.get('groupId');
 const commandId = params.get('commandId');
@@ -79,3 +80,5 @@ document.addEventListener('click', (event) => {
     window.close();
 });
 void load();
+
+installTooltips();

@@ -103,13 +103,19 @@ export interface LegacyService {
   silencedPatterns: SilencedPatterns;
 }
 
+/**
+ * Default log retention, shared by the store and the settings UI. Lives here
+ * because this module has no imports: the renderer can read it without pulling
+ * electron-store in through config-store.
+ */
+export const DEFAULT_MAX_LOG_LINES = 10_000;
+
 export interface GlobalSettings {
   autostart: boolean;
   silenceWarnings: boolean;
   silenceErrors: boolean;
   maxLogLines: number;
   notifySuccess: boolean;
-  notifyAutoCloseSecs: number;
 }
 
 export type ProcessStatus =
@@ -141,6 +147,13 @@ export interface AvailableUpdate {
   url: string;
   dmgUrl: string | null;
   zipUrl: string | null;
+}
+
+/** A release already downloaded and unpacked, waiting for a restart. */
+export interface StagedUpdate {
+  version: string;
+  /** Extracted `DevBar.app` that will replace the installed bundle. */
+  appPath: string;
 }
 
 export interface ReleaseSummary {

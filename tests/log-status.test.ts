@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   canRun,
   dotClass,
+  groupDotClass,
   isRunning,
   runtimeOf,
 } from '../renderer/log-status.js';
@@ -86,5 +87,46 @@ describe('runtimeOf', () => {
         99_000,
       ),
     ).toBeNull();
+  });
+});
+
+describe('groupDotClass', () => {
+  it('is empty when nothing in the group is running', () => {
+    expect(groupDotClass([item(), item({ status: 'stopped' })])).toBe('');
+  });
+
+  it('reports running when a member is up and clean', () => {
+    expect(groupDotClass([item(), item({ status: 'running' })])).toBe(
+      'running',
+    );
+  });
+
+  it('lets an error outrank warnings and healthy members', () => {
+    expect(
+      groupDotClass([
+        item({ status: 'running' }),
+        item({ status: 'running', warnCount: 3 }),
+        item({ status: 'running', errorCount: 1 }),
+      ]),
+    ).toBe('error');
+  });
+
+  it('lets a warning outrank a healthy member regardless of order', () => {
+    expect(
+      groupDotClass([
+        item({ status: 'running', warnCount: 2 }),
+        item({ status: 'running' }),
+      ]),
+    ).toBe('warn');
+  });
+
+  it('falls back to a transitional state when nothing louder is present', () => {
+    expect(groupDotClass([item(), item({ status: 'starting' })])).toBe(
+      'starting',
+    );
+  });
+
+  it('handles an empty group', () => {
+    expect(groupDotClass([])).toBe('');
   });
 });

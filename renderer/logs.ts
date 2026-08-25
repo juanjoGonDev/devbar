@@ -1,17 +1,27 @@
 import { byId, closestElement, requireElement } from './dom.js';
-import { canRun, dotClass, isRunning, runtimeOf } from './log-status.js';
+import {
+  canRun,
+  dotClass,
+  groupDotClass,
+  isRunning,
+  runtimeOf,
+} from './log-status.js';
 import {
   applySelection,
   selectModeFor,
   type Selection,
 } from './line-selection.js';
+import { renderPatternList, wireAddPattern } from './silence-ui.js';
 import type { LogEntry } from '../src/domain-types.js';
 import type {
   LogListGroup,
   LogListItem,
+  LogSource,
   LogsTarget,
   SilenceLevel,
+  SourcedLogEntry,
 } from '../src/ipc-contract.js';
+import { installTooltips } from './tooltip.js';
 
 type AnsiStyle = {
   fg: string | null;
@@ -192,6 +202,18 @@ const isDetached = params.get('detached') === '1';
 if (isDetached) document.body.classList.add('detached');
 // Pre-set filter if passed as a query param (e.g. from counter-button click)
 const initialFilter = params.get('filter') || '';
+// Opened straight onto a merged scope (tray telemetry button / alert totals).
+const rawScope = params.get('scope');
+const rawGroupId = params.get('groupId');
+const initialScope: Scope | null =
+  rawScope === 'group' && rawGroupId
+    ? { kind: 'group', groupId: rawGroupId }
+    : rawScope === 'all'
+      ? { kind: 'all' }
+      : null;
+const rawLevel = params.get('level');
+const initialLevel: SilenceLevel | null =
+  rawLevel === 'warn' || rawLevel === 'error' ? rawLevel : null;
 
 const titleEl = byId<HTMLElement>('title', HTMLElement);
 const uptimeBadgeEl = byId<HTMLElement>('uptime-badge', HTMLElement);
@@ -210,6 +232,8 @@ const togglePanelBtn = byId<HTMLButtonElement>(
   'toggle-silenced',
   HTMLButtonElement,
 );
+const levelPillEl = byId<HTMLButtonElement>('level-pill', HTMLButtonElement);
+const levelPillTextEl = byId<HTMLElement>('level-pill-text', HTMLElement);
 const scrollBtn = byId<HTMLButtonElement>('scroll-bottom', HTMLButtonElement);
 const runBtn = byId<HTMLButtonElement>('run-toggle', HTMLButtonElement);
 const detachBtn = byId<HTMLButtonElement>('detach', HTMLButtonElement);
@@ -227,7 +251,7 @@ let currentTarget: LogsTarget | null = null;
 // groupId + commandId extracted from processId for silence ops
 let currentGroupId: string | null = null;
 let currentCommandId: string | null = null;
-let globalMaxLogLines = 2000;
+let globalMaxLogLines = 10_000;
 let RENDER_LIMIT = 2000;
 let visibleCount = 0;
 const pendingQueue: LogEntry[] = [];
@@ -271,9 +295,128 @@ function buildFilter(value: string): RegExp | null {
   }
 }
 
+/**
+ * Levels the view is pinned to. Empty means "show everything"; otherwise only
+ * lines of the selected levels survive. Combines with the text filter — both
+ * must pass.
+ */
+const levelFilter = new Set<SilenceLevel>();
+
+/**
+ * The three scopes the window can show. Every entry point — nav counters, tray
+ * icons, a line's own tags — resolves to one of these, optionally pinned to a
+ * level. Keeping it one type is what makes the level filter behave identically
+ * everywhere instead of once per view.
+ */
+type Scope =
+  | { kind: 'all' }
+  | { kind: 'group'; groupId: string }
+  | { kind: 'single'; processId: string };
+
+/**
+ * srcId → source while the window shows a merged stream; null in single mode.
+ * Doubles as the "am I merged" flag.
+ */
+let groupSources: Map<string, LogSource> | null = null;
+/** Distinguishes the generic view from a single-group one; both are merged. */
+let mergedIsAll = false;
+/**
+ * Ticket for the in-flight log load. Identity is not enough to detect a lost
+ * race: two overlapping loads of the SAME scope share it, so both would pass
+ * the guard and each would append its own snapshot — duplicating the history.
+ * A counter makes every call distinguishable, including from itself.
+ */
+let loadSeq = 0;
+
+/** Open any scope, optionally pinned to the levels the caller cares about. */
+async function openScope(
+  scope: Scope,
+  levels: readonly SilenceLevel[] = [],
+): Promise<void> {
+  setLevelFilter(levels);
+  if (scope.kind === 'single') await selectLog(scope.processId);
+  else await selectMergedLog(scope.kind === 'group' ? scope.groupId : null);
+}
+
+/**
+ * Jump from a merged row into that service's own view, landing on the same
+ * line. The timestamp is the handle: it survives the switch, the row does not.
+ */
+async function jumpToLine(srcId: string, ts: number): Promise<void> {
+  await openScope({ kind: 'single', processId: srcId }, [...levelFilter]);
+  const row = Array.from(linesEl.children).find(
+    (node) => node instanceof HTMLElement && node.dataset.ts === String(ts),
+  );
+  if (!(row instanceof HTMLElement)) return;
+  autoscrollEl.checked = false;
+  row.scrollIntoView({ block: 'center' });
+  row.classList.add('flash');
+  setTimeout(() => row.classList.remove('flash'), 1600);
+}
+
+/** Stable per-name hue, so one service keeps its tag colour between runs. */
+function sourceColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1)
+    hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return `hsl(${Math.abs(hash) % 360} 70% 68%)`;
+}
+
+/** The level a line counts as, ignoring whether it was silenced. */
+function levelOf(entry: LogEntry): string {
+  return entry.originalLevel ?? entry.level ?? '';
+}
+
+function matchesLevel(level: string): boolean {
+  if (!levelFilter.size) return true;
+  return levelFilter.has(level as SilenceLevel);
+}
+
 function matchesFilter(entry: LogEntry): boolean {
+  if (!matchesLevel(levelOf(entry))) return false;
   if (!filterRe) return true;
   return filterRe.test(stripAnsi(entry.line));
+}
+
+/** Show the escape hatch only while a level filter is actually narrowing things. */
+function renderLevelChips(_item?: LogListItem | null): void {
+  const active = [...levelFilter];
+  levelPillEl.hidden = active.length === 0;
+  if (!active.length) return;
+  const label = active
+    .map((level) => (level === 'warn' ? '⚠ warnings' : '⛔ errores'))
+    .join(' + ');
+  setText(levelPillTextEl, `sólo ${label}`);
+  levelPillEl.title = 'Quitar el filtro de nivel';
+  levelPillEl.className = `level-pill ${active.includes('error') ? 'err' : 'warn'}`;
+}
+
+/**
+ * Drop every filter and land on this line, in sequence with everything around
+ * it. Filtering only ever hides rows — it never removes them — so putting a
+ * warning back among its neighbours costs nothing but a repaint and a scroll.
+ * That context is usually where the cause is: the line before the failure.
+ */
+function showInContext(row: HTMLElement): void {
+  filterEl.value = '';
+  setLevelFilter([]);
+  // Always respond, even when nothing was filtered. A control that looks
+  // pressable and answers with silence teaches you to stop pressing it; with
+  // no filter on, centring and flashing the line is still a real answer.
+  autoscrollEl.checked = false; // otherwise the tail yanks us away again
+  row.scrollIntoView({ block: 'center' });
+  row.classList.remove('flash');
+  void row.offsetWidth; // restart the animation if it is already running
+  row.classList.add('flash');
+  setTimeout(() => row.classList.remove('flash'), 1600);
+}
+
+/** Replace the level pin outright — entry points set what they want to see. */
+function setLevelFilter(levels: readonly SilenceLevel[]): void {
+  levelFilter.clear();
+  for (const level of levels) levelFilter.add(level);
+  renderLevelChips();
+  applyFilter();
 }
 
 function appendLine(entry: LogEntry): void {
@@ -283,12 +426,71 @@ function appendLine(entry: LogEntry): void {
   if (entry.silenced) classes.push('silenced');
   div.className = classes.join(' ');
   div.dataset.line = entry.line;
+  div.dataset.level = levelOf(entry);
+  div.dataset.ts = String(entry.ts); // handle for jumping between views
   if (entry.originalLevel) div.dataset.originalLevel = entry.originalLevel;
 
   const ts = document.createElement('span');
   ts.className = 'ts';
   ts.textContent = fmtTime(entry.ts);
+  // Plain `title`: installTooltips() takes it over and draws the styled bubble.
+  ts.title = 'Ver en contexto · quita los filtros y centra esta línea';
+  ts.addEventListener('click', (event) => {
+    event.stopPropagation(); // don't disturb the line-selection handler
+    showInContext(div);
+  });
   div.appendChild(ts);
+  // Right-click anywhere on the row does the same — but NOT ctrl+click. macOS
+  // routes ctrl+click to `contextmenu`, and this list already spends ctrl on
+  // toggling a row's selection (see selectModeFor). Without this guard the two
+  // fire together: the row gets selected, then the flash animation paints over
+  // its highlight and fades it out, so the selection looks like it vanished.
+  // A real secondary click (right button, two-finger tap) leaves ctrlKey false.
+  div.addEventListener('contextmenu', (event) => {
+    if (event.ctrlKey) return;
+    event.preventDefault();
+    showInContext(div);
+  });
+
+  // Merged views: every row says where it came from, the way telemetry tools
+  // label a mixed stream. Both tags are doors — the group tag opens that
+  // group's merged view, the service tag drops into its own view on this very
+  // line. Colour is derived from the name so a service keeps its tag.
+  const srcId = (entry as SourcedLogEntry).srcId;
+  const source = groupSources && srcId ? groupSources.get(srcId) : undefined;
+  if (source) {
+    div.dataset.src = source.name;
+    div.dataset.group = source.groupName;
+    // The group tag is redundant inside a single group's view.
+    if (mergedIsAll) {
+      const grp = document.createElement('button');
+      grp.type = 'button';
+      grp.className = 'src grp';
+      // Brackets are part of the text, not decoration, so a copied line keeps
+      // them: `11:47:56.340 [Back] [Normal] …`
+      grp.textContent = `[${source.groupName}]`;
+      grp.title = `Ver todo ${source.groupName}`;
+      grp.style.color = sourceColor(source.groupName);
+      grp.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void openScope({ kind: 'group', groupId: source.groupId }, [
+          ...levelFilter,
+        ]);
+      });
+      div.appendChild(grp);
+    }
+    const src = document.createElement('button');
+    src.type = 'button';
+    src.className = 'src';
+    src.textContent = `[${source.name}]`;
+    src.title = `Ir a esta línea en ${source.name}`;
+    src.style.color = sourceColor(source.name);
+    src.addEventListener('click', (event) => {
+      event.stopPropagation();
+      void jumpToLine(srcId, entry.ts);
+    });
+    div.appendChild(src);
+  }
 
   const body = document.createElement('span');
   body.className = 'body';
@@ -340,6 +542,8 @@ function appendLine(entry: LogEntry): void {
     div.appendChild(btn);
   }
 
+  if (entry.silenced) pushMutedLine(entry);
+
   if (!matchesFilter(entry)) div.classList.add('hidden');
   linesEl.appendChild(div);
   visibleCount += 1;
@@ -361,7 +565,9 @@ function applyFilter(): void {
   for (const node of Array.from(linesEl.children)) {
     if (!(node instanceof HTMLElement)) continue;
     const text = stripAnsi(node.dataset.line || '');
-    const ok = !filterRe || filterRe.test(text);
+    const ok =
+      matchesLevel(node.dataset.level || '') &&
+      (!filterRe || filterRe.test(text));
     node.classList.toggle('hidden', !ok);
   }
   if (autoscrollEl.checked) {
@@ -378,6 +584,7 @@ function flushQueue(): void {
 }
 
 filterEl.addEventListener('input', applyFilter);
+levelPillEl.addEventListener('click', () => setLevelFilter([]));
 pausedEl.addEventListener('change', () => {
   statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
   if (!pausedEl.checked) flushQueue();
@@ -622,18 +829,24 @@ function renderHeaderRunState(): void {
   const base = _logsGroupName
     ? `Logs — ${_logsGroupName} · ${_logsDisplayName}`
     : `Logs — ${_logsDisplayName}`;
-  titleEl.textContent = base;
-  if (runtime) {
-    uptimeBadgeEl.textContent = runtime.live
+  const uptime = runtime
+    ? runtime.live
       ? runtime.text
-      : `último: ${runtime.text}`;
-    uptimeBadgeEl.classList.add('visible');
-    document.title = `${base} · ${runtime.text}`;
-  } else {
-    uptimeBadgeEl.textContent = '';
-    uptimeBadgeEl.classList.remove('visible');
-    document.title = base;
-  }
+      : `último: ${runtime.text}`
+    : '';
+  // This runs once a second for the ticking uptime. Writing the same string
+  // back would still dirty the text node, so only touch what actually changed.
+  setText(titleEl, base);
+  setText(uptimeBadgeEl, uptime);
+  uptimeBadgeEl.classList.toggle('visible', Boolean(runtime));
+  const fullTitle = runtime ? `${base} · ${runtime.text}` : base;
+  if (document.title !== fullTitle) document.title = fullTitle;
+  renderLevelChips(item);
+}
+
+/** Write only when the content differs — keeps per-second updates flicker-free. */
+function setText(node: HTMLElement, value: string): void {
+  if (node.textContent !== value) node.textContent = value;
 }
 
 let _logsDisplayName = '';
@@ -651,21 +864,65 @@ function groupOpenKey(groupId: string): string {
   return `devbar.logs.group.${groupId}`;
 }
 
+/**
+ * A count that is also the way in: pressing it opens that scope already
+ * filtered to the level you pressed. Same control everywhere — service row,
+ * group header, tray — only the destination changes.
+ */
+function levelCountButton(
+  level: SilenceLevel,
+  count: number,
+  label: string,
+  open: () => void,
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = `b ${level === 'warn' ? 'warn' : 'err'} clickable`;
+  btn.title = label;
+  btn.textContent = `${level === 'warn' ? '⚠' : '⛔'} ${count}`;
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    open();
+  });
+  return btn;
+}
+
 function renderBadges(host: HTMLElement, item: LogListItem): void {
+  // Guard the rebuild. This runs on every sidebar repaint, including the
+  // one-second uptime tick, and the counters are BUTTONS: replacing one between
+  // mousedown and mouseup means the browser never fires the click, so pressing
+  // a counter silently does nothing. It also drops any pending tooltip anchor.
+  // The runtime text changes every second, so the signature has to cover it.
+  const runtimeNow = runtimeOf(item);
+  const signature = [
+    item.warnCount,
+    item.errorCount,
+    item.lineCount,
+    runtimeNow ? `${runtimeNow.text}/${runtimeNow.live}` : '',
+  ].join('|');
+  if (host.dataset.signature === signature) return;
+  host.dataset.signature = signature;
   host.textContent = '';
   if (item.warnCount > 0) {
-    const b = document.createElement('span');
-    b.className = 'b warn';
-    b.title = `${item.warnCount} warning(s)`;
-    b.textContent = `⚠ ${item.warnCount}`;
-    host.appendChild(b);
+    host.appendChild(
+      levelCountButton(
+        'warn',
+        item.warnCount,
+        `Ver los ${item.warnCount} warning(s) de ${item.name}`,
+        () => void openScope({ kind: 'single', processId: item.id }, ['warn']),
+      ),
+    );
   }
   if (item.errorCount > 0) {
-    const b = document.createElement('span');
-    b.className = 'b err';
-    b.title = `${item.errorCount} error(es)`;
-    b.textContent = `⛔ ${item.errorCount}`;
-    host.appendChild(b);
+    host.appendChild(
+      levelCountButton(
+        'error',
+        item.errorCount,
+        `Ver los ${item.errorCount} error(es) de ${item.name}`,
+        () => void openScope({ kind: 'single', processId: item.id }, ['error']),
+      ),
+    );
   }
   const runtime = runtimeOf(item);
   if (runtime) {
@@ -747,6 +1004,31 @@ function paintSideItem(row: HTMLElement, item: LogListItem): void {
   row.classList.toggle('active', item.id === processId);
 }
 
+/**
+ * The root of the scope hierarchy, pinned above the groups: everything, from
+ * everywhere. Without it the sidebar could walk you down (group → service) but
+ * never back up to the whole picture.
+ */
+function buildAllRow(): HTMLElement {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'side-all';
+  row.classList.toggle('active', mergedIsAll);
+  const ico = document.createElement('span');
+  ico.className = 'a-ico';
+  ico.textContent = '📜';
+  const name = document.createElement('span');
+  name.className = 'a-name';
+  name.textContent = 'Todo';
+  const badges = document.createElement('span');
+  badges.className = 'a-badges';
+  row.append(ico, name, badges);
+  paintAllRow(row);
+  row.title = 'Todos los logs de todos los grupos';
+  row.addEventListener('click', () => void openScope({ kind: 'all' }));
+  return row;
+}
+
 function renderSidebar(): void {
   sideTreeEl.textContent = '';
   if (!sideData.length) {
@@ -756,9 +1038,11 @@ function renderSidebar(): void {
     sideTreeEl.appendChild(empty);
     return;
   }
+  sideTreeEl.appendChild(buildAllRow());
   for (const group of sideData) {
     const details = document.createElement('details');
     details.className = 'side-group';
+    details.dataset.groupId = group.groupId;
     details.open =
       localStorage.getItem(groupOpenKey(group.groupId)) !== 'closed';
     details.addEventListener('toggle', () =>
@@ -772,24 +1056,131 @@ function renderSidebar(): void {
     chevron.className = 'chevron';
     chevron.textContent = '▶';
     const gIco = document.createElement('span');
+    gIco.className = 'g-ico';
     gIco.textContent = group.groupIcon || '📁';
+    // Name on top, its group-wide warn/error totals underneath — the same
+    // two-line shape the service rows use, so the eye reads them as a column.
+    const gMain = document.createElement('span');
+    gMain.className = 'g-main';
     const gName = document.createElement('span');
     gName.className = 'g-name';
     gName.textContent = group.groupName;
-    summary.append(chevron, gIco, gName);
+    const gBadges = document.createElement('span');
+    gBadges.className = 'g-badges';
+    gMain.append(gName, gBadges);
+    // Rollup: how many services live here, and the worst state among them.
+    const gDot = document.createElement('span');
+    gDot.className = 'g-dot';
+    const gCount = document.createElement('span');
+    gCount.className = 'g-count';
+    // Opens the merged view for the whole group. It lives inside <summary>, so
+    // it must swallow the click — otherwise <details> would just fold shut.
+    const gAll = document.createElement('button');
+    gAll.type = 'button';
+    gAll.className = 'g-all';
+    gAll.textContent = '📜'; // same mark as every other "open logs" control
+    gAll.title = `Ver todos los logs de ${group.groupName} juntos`;
+    gAll.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void openScope({ kind: 'group', groupId: group.groupId });
+    });
+    summary.append(chevron, gIco, gMain, gDot, gCount, gAll);
     details.appendChild(summary);
+    // Items live in their own box so the guide rail can hang off it.
+    const box = document.createElement('div');
+    box.className = 'side-items';
     for (const item of group.items) {
       const row = buildSideItem(item);
       paintSideItem(row, item);
-      details.appendChild(row);
+      box.appendChild(row);
     }
+    details.appendChild(box);
+    paintGroupSummary(details, group);
     sideTreeEl.appendChild(details);
   }
   applySideFilter();
 }
 
+/**
+ * Refresh a group header: the rollup dot, and the warn/error totals of
+ * everything inside it. Those totals are buttons — they open the group's
+ * merged view already pinned to that level.
+ */
+function paintAllRow(row: HTMLElement): void {
+  const badges = row.querySelector<HTMLElement>('.a-badges');
+  if (!badges) return;
+  const items = sideData.flatMap((group) => group.items);
+  const warns = items.reduce((sum, item) => sum + item.warnCount, 0);
+  const errors = items.reduce((sum, item) => sum + item.errorCount, 0);
+  const signature = `${warns}/${errors}`;
+  if (badges.dataset.signature === signature) return;
+  badges.dataset.signature = signature;
+  badges.textContent = '';
+  if (warns > 0)
+    badges.appendChild(
+      levelCountButton(
+        'warn',
+        warns,
+        `Ver los ${warns} warning(s) de todo`,
+        () => void openScope({ kind: 'all' }, ['warn']),
+      ),
+    );
+  if (errors > 0)
+    badges.appendChild(
+      levelCountButton(
+        'error',
+        errors,
+        `Ver los ${errors} error(es) de todo`,
+        () => void openScope({ kind: 'all' }, ['error']),
+      ),
+    );
+}
+
+function paintGroupSummary(details: HTMLElement, group: LogListGroup): void {
+  const dot = details.querySelector<HTMLElement>('.g-dot');
+  if (dot) {
+    const state = groupDotClass(group.items);
+    dot.className = `g-dot ${state}`.trim();
+    dot.title = state ? `Estado del grupo: ${state}` : '';
+  }
+  const host = details.querySelector<HTMLElement>('.g-badges');
+  if (!host) return;
+  const warns = group.items.reduce((sum, item) => sum + item.warnCount, 0);
+  const errors = group.items.reduce((sum, item) => sum + item.errorCount, 0);
+  // Cheap guard against rebuilding these buttons on every one-second tick.
+  const signature = `${warns}/${errors}`;
+  if (host.dataset.signature === signature) return;
+  host.dataset.signature = signature;
+  host.textContent = '';
+  if (warns > 0)
+    host.appendChild(
+      levelCountButton(
+        'warn',
+        warns,
+        `Ver los ${warns} warning(s) de ${group.groupName}`,
+        () =>
+          void openScope({ kind: 'group', groupId: group.groupId }, ['warn']),
+      ),
+    );
+  if (errors > 0)
+    host.appendChild(
+      levelCountButton(
+        'error',
+        errors,
+        `Ver los ${errors} error(es) de ${group.groupName}`,
+        () =>
+          void openScope({ kind: 'group', groupId: group.groupId }, ['error']),
+      ),
+    );
+}
+
 /** Repaint in place when only the live numbers changed — keeps scroll & focus. */
 function repaintSidebar(): boolean {
+  // The root row's totals track live counts too, and no signature change ever
+  // rebuilds it — so the fast path has to refresh it explicitly.
+  const allRow = sideTreeEl.querySelector<HTMLElement>('.side-all');
+  if (allRow) paintAllRow(allRow);
   for (const group of sideData) {
     for (const item of group.items) {
       const row = sideTreeEl.querySelector<HTMLElement>(
@@ -798,6 +1189,11 @@ function repaintSidebar(): boolean {
       if (!row) return false;
       paintSideItem(row, item);
     }
+    // The rollup tracks live counts too, or a collapsed group would go stale.
+    const details = sideTreeEl.querySelector<HTMLElement>(
+      `.side-group[data-group-id="${CSS.escape(group.groupId)}"]`,
+    );
+    if (details) paintGroupSummary(details, group);
   }
   return true;
 }
@@ -822,6 +1218,8 @@ function applySideFilter(): void {
       row.classList.toggle('hidden', !ok);
       if (ok) visible += 1;
     }
+    const count = details.querySelector<HTMLElement>('.g-count');
+    if (count) count.textContent = String(visible);
     details.classList.toggle('hidden', visible === 0);
     if (needle && visible > 0 && details instanceof HTMLDetailsElement)
       details.open = true;
@@ -922,14 +1320,273 @@ muteErrEl.addEventListener('change', () => {
   }
 });
 
+// ─────────────────────── Silenced drawer ─────────────────────────
+
+const drawerEl = byId<HTMLElement>('silenced-drawer', HTMLElement);
+const drawerTargetEl = byId<HTMLElement>('drawer-target', HTMLElement);
+const drawerCloseBtn = byId<HTMLButtonElement>(
+  'drawer-close',
+  HTMLButtonElement,
+);
+const warnListEl = byId<HTMLUListElement>('warn-list', HTMLUListElement);
+const errListEl = byId<HTMLUListElement>('err-list', HTMLUListElement);
+const warnInputEl = byId<HTMLInputElement>('warn-input', HTMLInputElement);
+const errInputEl = byId<HTMLInputElement>('err-input', HTMLInputElement);
+const warnAddBtn = byId<HTMLButtonElement>('warn-add', HTMLButtonElement);
+const errAddBtn = byId<HTMLButtonElement>('err-add', HTMLButtonElement);
+const warnFeedEl = byId<HTMLElement>('warn-feed', HTMLElement);
+const errFeedEl = byId<HTMLElement>('err-feed', HTMLElement);
+
+/** Distinct swallowed lines kept per level before the oldest is dropped. */
+const MUTED_FEED_LIMIT = 60;
+
+/**
+ * Collapse a line to the shape it shares with its repeats: numbers, hex ids and
+ * UUIDs vary run to run, the skeleton does not. Two lines with the same
+ * skeleton are the same event happening twice.
+ */
+function mutedKey(line: string): string {
+  return stripAnsi(line)
+    .trim()
+    .replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '§')
+    .replace(/0x[0-9a-f]+/gi, '§')
+    .replace(/\d+/g, '§')
+    .slice(0, 200);
+}
+
+function drawerOpen(): boolean {
+  return !drawerEl.hidden;
+}
+
+/** Repaint the drawer's pattern lists and target label from current state. */
+function renderDrawer(): void {
+  if (!drawerOpen()) return;
+  const target = currentTarget;
+  const patterns =
+    target && target.kind === 'command' && target.target
+      ? target.target.silencedPatterns || { warn: [], error: [] }
+      : { warn: [], error: [] };
+  setText(
+    drawerTargetEl,
+    _logsDisplayName
+      ? _logsGroupName
+        ? `${_logsGroupName} · ${_logsDisplayName}`
+        : _logsDisplayName
+      : '',
+  );
+  const groupId = currentGroupId;
+  const commandId = currentCommandId;
+  const remove = (level: SilenceLevel) => (pattern: string) => {
+    if (!groupId || !commandId) return;
+    void window.api.removeSilencePattern(groupId, commandId, level, pattern);
+  };
+  renderPatternList(warnListEl, patterns.warn || [], 'warn', {
+    onRemove: remove('warn'),
+  });
+  renderPatternList(errListEl, patterns.error || [], 'error', {
+    onRemove: remove('error'),
+  });
+}
+
+/**
+ * Mirror a swallowed line into the drawer feed. Seeing WHAT a pattern eats is
+ * the point — a rule you cannot inspect is a rule you stop trusting.
+ */
+/** Wipe both feeds — called on every scope switch, see pushMutedLine. */
+function clearMutedFeeds(): void {
+  warnFeedEl.textContent = '';
+  errFeedEl.textContent = '';
+  renderMutedCounts();
+}
+
+function pushMutedLine(entry: LogEntry): void {
+  const level = entry.originalLevel;
+  if (level !== 'warn' && level !== 'error') return;
+  // Silencing is per-service, and unsilenceLine acts on the CURRENT selection.
+  // A merged scope mixes many services, so a row here would remove a pattern
+  // from whichever command happened to be selected — the wrong one.
+  if (groupSources) return;
+  const feed = level === 'warn' ? warnFeedEl : errFeedEl;
+  const key = mutedKey(entry.line);
+
+  const existing = feed.querySelector<HTMLElement>(
+    `.muted-line[data-key="${CSS.escape(key)}"]`,
+  );
+  if (existing) {
+    const next = Number(existing.dataset.count ?? '1') + 1;
+    existing.dataset.count = String(next);
+    const badge = existing.querySelector<HTMLElement>('.rep');
+    if (badge) {
+      badge.textContent = `×${next}`;
+      badge.hidden = false;
+    }
+    const ts = existing.querySelector<HTMLElement>('.ts');
+    if (ts) ts.textContent = fmtTime(entry.ts); // most recent sighting
+    feed.appendChild(existing); // float the noisy one back to the bottom
+  } else {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `muted-line ${level}`;
+    row.dataset.key = key;
+    row.dataset.count = '1';
+    row.title = 'Dejar de silenciar este patrón';
+    const ts = document.createElement('span');
+    ts.className = 'ts';
+    ts.textContent = fmtTime(entry.ts);
+    const body = document.createElement('span');
+    body.className = 'body';
+    body.textContent = stripAnsi(entry.line);
+    const rep = document.createElement('span');
+    rep.className = 'rep';
+    rep.hidden = true;
+    row.append(ts, body, rep);
+    row.addEventListener('click', () => void unsilenceLine(entry));
+    feed.appendChild(row);
+    while (feed.childElementCount > MUTED_FEED_LIMIT && feed.firstChild)
+      feed.removeChild(feed.firstChild);
+  }
+  renderMutedCounts();
+}
+
+/** Header counts are total sightings, not distinct rows. */
+function renderMutedCounts(): void {
+  for (const [feed, level] of [
+    [warnFeedEl, 'warn'],
+    [errFeedEl, 'error'],
+  ] as const) {
+    const total = Array.from(feed.children).reduce(
+      (sum, node) =>
+        sum +
+        (node instanceof HTMLElement ? Number(node.dataset.count ?? '1') : 0),
+      0,
+    );
+    const badge = drawerEl.querySelector<HTMLElement>(
+      `.drawer-count[data-count="${level}"]`,
+    );
+    if (badge) setText(badge, String(total));
+  }
+}
+
+/** One click from the feed drops whichever rule is swallowing that line. */
+async function unsilenceLine(entry: LogEntry): Promise<void> {
+  const level = entry.originalLevel;
+  if (!level || !currentGroupId || !currentCommandId) return;
+  const cleaned = stripAnsi(entry.line).trim();
+  const built = cleaned ? window.api.buildSilencePattern(cleaned) : cleaned;
+  if (built && built !== cleaned)
+    await window.api.removeSilencePattern(
+      currentGroupId,
+      currentCommandId,
+      level,
+      built,
+    );
+  await window.api.removeSilencePattern(
+    currentGroupId,
+    currentCommandId,
+    level,
+    cleaned,
+  );
+}
+
+function setDrawer(open: boolean): void {
+  drawerEl.hidden = !open;
+  togglePanelBtn.classList.toggle('on', open);
+  if (open) renderDrawer();
+}
+
+for (const [input, button, level] of [
+  [warnInputEl, warnAddBtn, 'warn'],
+  [errInputEl, errAddBtn, 'error'],
+] as const) {
+  wireAddPattern(input, button, level, {
+    onAdd: (pattern) => {
+      if (!currentGroupId || !currentCommandId) return;
+      void window.api.addSilencePattern(
+        currentGroupId,
+        currentCommandId,
+        level,
+        pattern,
+      );
+    },
+  });
+}
+
+drawerCloseBtn.addEventListener('click', () => setDrawer(false));
 togglePanelBtn.addEventListener('click', () => {
-  if (!currentGroupId || !currentCommandId) return;
-  window.api.openSilenced(currentGroupId, currentCommandId);
+  // Silencing is per service. In a merged scope there is no single command to
+  // act on: patterns would list empty (reading as "nothing is silenced") and a
+  // typed pattern would be cleared from the input and dropped without a word.
+  if (groupSources) {
+    statusEl.textContent = 'Los silenciados son por servicio: elige uno';
+    setTimeout(reportSelection, 2500);
+    return;
+  }
+  setDrawer(!drawerOpen());
 });
 
 // ─────────────────────── Switching between logs ──────────────────
+/**
+ * Merge several services into one stream: a whole group, or every group when
+ * `groupId` is null (the generic telemetry view). Each row is tagged with its
+ * source, so a mixed feed stays readable without splitting the window.
+ * Selecting an individual service afterwards drops back to single mode.
+ */
+async function selectMergedLog(groupId: string | null): Promise<void> {
+  processId = null;
+  clearMutedFeeds(); // rows from the previous scope would target the wrong command
+  mergedIsAll = groupId === null;
+  linesEl.textContent = '';
+  visibleCount = 0;
+  pendingQueue.length = 0;
+  // The queue just emptied, so a stale "Pausado (+N)" would be a lie.
+  statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
+  currentTarget = null;
+  currentGroupId = null;
+  currentCommandId = null;
+  anchorRow = null;
+  setDrawer(false); // silencing is per-service; it has no meaning here
+  RENDER_LIMIT = globalMaxLogLines;
+
+  const token = ++loadSeq;
+  const res = await window.api.getMergedLogs(groupId);
+  if (token !== loadSeq) return; // a newer load won the race
+  groupSources = new Map(res.sources.map((s) => [s.id, s]));
+  _logsDisplayName = groupId ? 'todos' : '';
+  _logsGroupName = res.groupName;
+  const heading = groupId ? `Logs — ${res.groupName} · todos` : 'Telemetría';
+  setText(titleEl, heading);
+  document.title = heading;
+  uptimeBadgeEl.classList.remove('visible');
+  runBtn.style.display = 'none';
+  renderLevelChips();
+
+  for (const entry of res.lines) appendLine(entry);
+  countsEl.textContent = `${linesEl.childElementCount} líneas`;
+  for (const row of Array.from(
+    sideTreeEl.querySelectorAll<HTMLElement>('.side-item'),
+  ))
+    row.classList.remove('active');
+  for (const summary of Array.from(
+    sideTreeEl.querySelectorAll<HTMLElement>('.side-group'),
+  ))
+    summary.classList.toggle('viewing', summary.dataset.groupId === groupId);
+  sideTreeEl
+    .querySelector<HTMLElement>('.side-all')
+    ?.classList.toggle('active', mergedIsAll);
+}
+
 async function selectLog(id: string, filter?: string): Promise<void> {
   processId = id;
+  groupSources = null;
+  clearMutedFeeds(); // rows from the previous scope would target the wrong command
+  mergedIsAll = false;
+  for (const summary of Array.from(
+    sideTreeEl.querySelectorAll<HTMLElement>('.side-group'),
+  ))
+    summary.classList.remove('viewing');
+  sideTreeEl
+    .querySelector<HTMLElement>('.side-all')
+    ?.classList.remove('active');
   linesEl.textContent = '';
   visibleCount = 0;
   pendingQueue.length = 0;
@@ -945,8 +1602,9 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   filterRe = buildFilter(filterEl.value);
 
   // getLogs also points main's live stream at this buffer, atomically.
+  const token = ++loadSeq;
   const res = await window.api.getLogs(id);
-  if (processId !== id) return; // a newer switch won the race
+  if (token !== loadSeq) return; // a newer load won the race
   // Render limit: per-command override → global setting → fallback 2000
   const cmdLimit =
     res.target.kind === 'command' ? res.target.target.maxLogLines : null;
@@ -980,10 +1638,12 @@ async function selectLog(id: string, filter?: string): Promise<void> {
 // ─────────────────────────── Bootstrap ───────────────────────────
 (async () => {
   const settings = await window.api.getSettings();
-  globalMaxLogLines = (settings && settings.maxLogLines) || 2000;
+  globalMaxLogLines = (settings && settings.maxLogLines) || 10_000;
   if (initialFilter) filterEl.value = initialFilter;
   await refreshSidebar();
-  if (processId) {
+  if (initialScope) {
+    await openScope(initialScope, initialLevel ? [initialLevel] : []);
+  } else if (processId) {
     await selectLog(processId, initialFilter || undefined);
   } else {
     titleEl.textContent = 'Logs (sin proceso)';
@@ -991,18 +1651,43 @@ async function selectLog(id: string, filter?: string): Promise<void> {
 })();
 
 // Main asks the shared window to switch (or a detached one to re-filter).
-window.api.onLogsSelect(({ processId: pid, filter }) => {
+window.api.onLogsSelect((payload) => {
+  if (payload.scope) {
+    void openScope(
+      payload.scope === 'group' && payload.groupId
+        ? { kind: 'group', groupId: payload.groupId }
+        : { kind: 'all' },
+      payload.level ? [payload.level] : [],
+    );
+    return;
+  }
+  const pid = payload.processId;
+  if (!pid) return;
   if (isDetached) {
-    if (pid !== processId || filter === undefined) return;
-    filterEl.value = filter;
+    if (pid !== processId || payload.filter === undefined) return;
+    filterEl.value = payload.filter;
     applyFilter();
     return;
   }
-  void selectLog(pid, filter);
+  void selectLog(pid, payload.filter);
 });
 
 window.api.onLog((payload) => {
-  if (!payload || payload.id !== processId) return;
+  if (!payload) return;
+  // In group mode any member's line belongs here; tag it with its source so
+  // appendLine can label the row.
+  if (groupSources) {
+    if (!groupSources.has(payload.id)) return;
+    const sourced = { ...payload.entry, srcId: payload.id };
+    if (pausedEl.checked) {
+      pendingQueue.push(sourced);
+      statusEl.textContent = `Pausado (+${pendingQueue.length})`;
+      return;
+    }
+    appendLine(sourced);
+    return;
+  }
+  if (payload.id !== processId) return;
   if (pausedEl.checked) {
     pendingQueue.push(payload.entry);
     statusEl.textContent = `Pausado (+${pendingQueue.length})`;
@@ -1015,9 +1700,12 @@ window.api.onLog((payload) => {
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 window.api.onUpdate(() => {
   rerenderExistingLines();
+  renderDrawer(); // patterns may have just been added or removed
   if (refreshTimer) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
     void refreshSidebar();
   }, 250);
 });
+
+installTooltips();

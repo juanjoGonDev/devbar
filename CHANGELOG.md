@@ -3,6 +3,78 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [Unreleased]
+
+### Añadido
+
+- **Actualizaciones automáticas de verdad.** Cuando DevBar detecta una versión
+  nueva ya no te manda a la página de la release: se descarga el `.zip` en
+  segundo plano, lo descomprime y lo deja preparado. Solo entonces avisa, y el
+  aviso pide una única cosa: **reiniciar**. Al aceptar, DevBar se cierra, se
+  sustituye a sí misma y se vuelve a abrir sola. Se acabó montar el DMG y
+  arrastrar a Aplicaciones.
+- Si la copia falla a medias, la versión anterior se restaura y se vuelve a
+  abrir: nunca te quedas sin app.
+- El menú de la barra y el panel de configuración distinguen entre «hay una
+  actualización» y «ya está descargada, lista para instalar».
+
+### Cambiado
+
+- **El panel lateral de la ventana de logs distingue de un vistazo los grupos
+  de su contenido.** Antes el nombre del grupo era un texto gris pequeño
+  perdido en la misma columna que los servicios. Ahora cada grupo es una
+  **banda** a todo el ancho, con su nombre en claro, que además queda **fija
+  arriba** mientras recorres su lista: con diez servicios abiertos siempre
+  sabes de quién son los logs que estás mirando.
+- Los servicios de un grupo cuelgan de un **raíl vertical** que los agrupa
+  visualmente, en lugar de compartir columna con la cabecera.
+- Cada cabecera de grupo lleva el **número de servicios** que contiene y un
+  **punto con el peor estado** de su interior. Un grupo plegado ya no puede
+  esconder un servicio caído.
+
+- **Las notificaciones ahora son las nativas de macOS**, no el banner propio.
+  El banner queda de reserva para cuando el sistema las rechaza (por ejemplo en
+  desarrollo, sin empaquetar). Contrapartida: las nativas respetan el modo **No
+  molestar**; el banner no lo hacía.
+- La app se firma **ad-hoc** al empaquetarla, y cada bundle anidado con **su
+  propio** identificador. Sin cuenta de desarrollador de Apple ni certificado:
+  `codesign --sign -` es gratis. Es lo que exige `UNUserNotificationCenter`
+  para entregar notificaciones, y de paso permite al instalador automático
+  verificar el sello del bundle descargado antes de sustituir la app.
+- En **Configuración → Notificaciones**, un enlace que abre **Ajustes del
+  sistema directamente en la ficha de DevBar**. macOS pide permiso para
+  notificar una sola vez por app, así que si se denegó no vuelve a preguntar y
+  no hay pista de por qué no se ve nada: ese enlace es el atajo a la única
+  pantalla donde se arregla.
+- **Fuera el ajuste «Cerrar notificación tras N segundos».** Con notificaciones
+  nativas esa duración la manda macOS, a través del estilo de notificación de
+  la app en Ajustes del sistema: **Avisos** se cierran solos, **Alertas** se
+  quedan hasta que las cierras. El ajuste sólo gobernaba ya el aviso de
+  reserva, así que prometía más de lo que hacía.
+- La app pasa a identificarse como **`io.github.juanjogondev.devbar`**. Antes
+  usaba `com.electron.devbar`, el valor por defecto de packager — el espacio de
+  nombres de Electron, no el nuestro. Tus ajustes se conservan: viven bajo el
+  nombre de la app, no bajo el identificador. La primera vez que arranque,
+  macOS pedirá permiso para mostrar notificaciones.
+
+### Corregido
+
+- **DevBar no se cerraba** al pedirle que se actualizara —ni al pulsar
+  «Salir»— si la ventana de **configuración** estaba abierta. Esa ventana veta
+  su propio cierre para preguntar por cambios sin guardar, y ese veto abortaba
+  en silencio el apagado entero. Ahora el veto se levanta en cuanto la decisión
+  de salir ya está tomada. Contrapartida: al salir —o al instalar una
+  actualización— los cambios de configuración sin guardar se descartan sin
+  preguntar.
+- **El menú de la barra crecía solo al escribir en el buscador de ramas.** Al
+  calcular el alto necesario para el desplegable se tomaba como suelo el alto
+  actual de la ventana, de modo que sólo podía crecer; como el proceso
+  principal añade unos píxeles de margen, cada pulsación lo inflaba un poco
+  más y no volvía a encogerse mientras el desplegable siguiera abierto sin
+  resultados. Ahora el suelo es la altura real del contenido, así que el menú
+  se ajusta al desplegable y vuelve a su tamaño en cuanto deja de haber
+  coincidencias.
+
 ## [0.6.0] - 2026-08-21
 
 ### Añadido

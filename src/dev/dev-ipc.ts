@@ -12,7 +12,14 @@ export interface DevHooks {
   setSimulatedUpdate(update: AvailableUpdate | null): void;
   /** null releases the override and repaints from the real aggregated state. */
   setSimulatedTrayColor(color: TrayColor | null): void;
+  /** The real path: native when macOS accepts it, in-app banner otherwise. */
   showBanner(
+    title: string,
+    body: string,
+    options?: { cta?: { label: string; action: string } },
+  ): void;
+  /** Straight to the in-app banner, bypassing the native attempt. */
+  showFallbackBanner(
     title: string,
     body: string,
     options?: { cta?: { label: string; action: string } },
@@ -95,9 +102,25 @@ export function registerDevIpc(hooks: DevHooks): void {
       const withCta = raw.cta === true;
       hooks.showBanner(
         'DevBar — prueba',
-        withCta
-          ? 'Banner de prueba con acción.'
-          : 'Banner de prueba sin acción.',
+        withCta ? 'Aviso de prueba con acción.' : 'Aviso de prueba sin acción.',
+        withCta ? { cta: { label: 'Ver', action: 'open-about' } } : undefined,
+      );
+      return { ok: true };
+    },
+  );
+
+  // The fallback on its own. Worth simulating separately: in a signed bundle
+  // the normal path takes the native route, so the in-app banner would never
+  // be exercised otherwise — and it is still what dev runs and rejected
+  // notifications land on.
+  ipcMain.handle(
+    'dev:simulateFallbackBanner',
+    (_e: IpcMainInvokeEvent, payload: unknown) => {
+      const raw = asRecord(payload);
+      const withCta = raw.cta === true;
+      hooks.showFallbackBanner(
+        'DevBar — reserva',
+        withCta ? 'Banner propio con acción.' : 'Banner propio sin acción.',
         withCta ? { cta: { label: 'Ver', action: 'open-about' } } : undefined,
       );
       return { ok: true };

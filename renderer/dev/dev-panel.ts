@@ -53,10 +53,18 @@ function buildGroups(version: HTMLInputElement, api = window.api): Group[] {
     },
     {
       title: 'Notificaciones',
-      note: 'El banner propio de la app (macOS no deja usar las nativas sin firmar). El de éxito pasa por el ajuste «avisar de acciones completadas», así que sirve para comprobar si está activo.',
+      note: 'Los avisos siguen la ruta real: nativa de macOS cuando el sistema la acepta, banner propio si no. En un bundle empaquetado y firmado verás la nativa; en desarrollo, el banner. «Reserva» fuerza el banner propio para poder probarlo también donde la nativa funciona. El de éxito pasa por el ajuste «avisar de acciones completadas», así que sirve para comprobar si está activo.',
       actions: [
-        { label: 'Banner simple', run: () => api.dev.simulateBanner(false) },
-        { label: 'Banner con acción', run: () => api.dev.simulateBanner(true) },
+        { label: 'Aviso simple', run: () => api.dev.simulateBanner(false) },
+        { label: 'Aviso con acción', run: () => api.dev.simulateBanner(true) },
+        {
+          label: 'Reserva (banner propio)',
+          run: () => api.dev.simulateFallbackBanner(false),
+        },
+        {
+          label: 'Reserva con acción',
+          run: () => api.dev.simulateFallbackBanner(true),
+        },
         {
           label: 'Notificación de éxito',
           run: () => api.dev.simulateSuccess(),

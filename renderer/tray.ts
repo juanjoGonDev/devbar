@@ -15,6 +15,7 @@ import type {
 } from '../src/ipc-contract.js';
 import type { Command, Action } from '../src/domain-types.js';
 import { byId } from './dom.js';
+import { installTooltips } from './tooltip.js';
 const groupsEl = byId('groups', HTMLElement);
 const toastEl = byId('toast', HTMLElement);
 
@@ -93,11 +94,33 @@ function renderAlertsSummary(groupStates: GroupState[]): void {
     return;
   }
   summary.style.display = '';
-  summary.innerHTML =
-    (warns > 0 ? `<span class="warn-count">⚠ ${warns}</span>` : '') +
-    (errs > 0
-      ? `<span class="error-count" style="margin-left:8px">✕ ${errs}</span>`
-      : '');
+  summary.textContent = '';
+  // The totals across every group — pressing one opens the generic telemetry
+  // view already pinned to that level.
+  if (warns > 0)
+    summary.appendChild(
+      alertButton('warn', `⚠ ${warns}`, `Ver los ${warns} warning(s) de todo`),
+    );
+  if (errs > 0)
+    summary.appendChild(
+      alertButton('error', `✕ ${errs}`, `Ver los ${errs} error(es) de todo`),
+    );
+}
+
+function alertButton(
+  level: 'warn' | 'error',
+  label: string,
+  title: string,
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = level === 'warn' ? 'warn-count' : 'error-count';
+  btn.textContent = label;
+  btn.title = title;
+  btn.addEventListener('click', () => {
+    void window.api.openLogs({ scope: 'all', level });
+  });
+  return btn;
 }
 
 // ─────────────────────── Main render ─────────────────────────────────
@@ -194,7 +217,11 @@ function flushPendingRender(): void {
   _pendingStates = null;
   render(states);
 }
-setComboboxHostHooks({ flushPendingRender, scheduleTrayResize });
+setComboboxHostHooks({
+  flushPendingRender,
+  scheduleTrayResize,
+  measureContentHeight,
+});
 
 // ─────────────────────── Group row ───────────────────────────────────
 
@@ -217,7 +244,8 @@ function renderGroupRow(gs: GroupState): HTMLElement {
   dot.className = `dot ${gs.color || 'stopped'}`;
   row.appendChild(dot);
 
-  // Group icon
+  // Group icon stays a plain label — it identifies the group, it is not a
+  // control. Opening the logs gets its own terminal button further along.
   const icon = document.createElement('span');
   icon.className = 'group-icon';
   icon.textContent = group.icon || '📦';
@@ -258,6 +286,19 @@ function renderGroupRow(gs: GroupState): HTMLElement {
   const spacer = document.createElement('span');
   spacer.className = 'group-row-spacer';
   row.appendChild(spacer);
+
+  // Same 📜 as the per-command log buttons — one mark means "logs" at every
+  // scope. The row itself toggles open, so this swallows its own click.
+  const groupLogsBtn = document.createElement('button');
+  groupLogsBtn.type = 'button';
+  groupLogsBtn.className = 'ghost group-logs-btn';
+  groupLogsBtn.textContent = '📜';
+  groupLogsBtn.title = `Ver todos los logs de ${group.name || 'este grupo'}`;
+  groupLogsBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    void window.api.openLogs({ scope: 'group', groupId });
+  });
+  row.appendChild(groupLogsBtn);
 
   // Branch selector — always at the end of the row.
   const branchSel = buildBranchSelector(gs);
@@ -722,6 +763,9 @@ function buildActionChip(
 
 // ─────────────────────── Event wiring ────────────────────────────────
 
+byId('open-telemetry', HTMLButtonElement).addEventListener('click', () => {
+  void window.api.openLogs({ scope: 'all' });
+});
 byId('open-config', HTMLButtonElement).addEventListener('click', () => {
   window.api.openConfig();
 });
@@ -784,3 +828,5 @@ if (window.api.getUpdateStatus) {
     .catch(() => {});
   window.api.onUpdateStatus(markVersionUpdate);
 }
+
+installTooltips();

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import Store from 'electron-store';
+import { DEFAULT_MAX_LOG_LINES } from './domain-types.js';
 import type {
   Action,
   Command,
@@ -27,9 +28,8 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   autostart: false,
   silenceWarnings: false,
   silenceErrors: false,
-  maxLogLines: 2000,
+  maxLogLines: DEFAULT_MAX_LOG_LINES,
   notifySuccess: true,
-  notifyAutoCloseSecs: 5,
 };
 
 type StoreState = {
@@ -43,14 +43,9 @@ type StoreState = {
 
 function clampMaxLogLines(value: unknown): number {
   const numberValue = Number(value);
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return 2000;
+  if (!Number.isFinite(numberValue) || numberValue <= 0)
+    return DEFAULT_MAX_LOG_LINES;
   return Math.min(50_000, Math.max(100, Math.floor(numberValue)));
-}
-
-function clampNotifyAutoCloseSecs(value: unknown): number {
-  const numberValue = Number(value);
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return 0;
-  return Math.min(3600, Math.floor(numberValue));
 }
 
 const schema = {
@@ -367,7 +362,6 @@ export function saveGlobalSettings(
   next.silenceErrors = Boolean(next.silenceErrors);
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
   next.notifySuccess = Boolean(next.notifySuccess);
-  next.notifyAutoCloseSecs = clampNotifyAutoCloseSecs(next.notifyAutoCloseSecs);
   store.set('globalSettings', next);
   return next;
 }

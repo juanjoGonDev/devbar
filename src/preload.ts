@@ -62,6 +62,7 @@ const api: DevBarApi = {
   setGroupSilence: (groupId, level, enabled) =>
     ipcRenderer.invoke('silence:setGroup', { groupId, level, enabled }),
   getLogs: (processId) => ipcRenderer.invoke('logs:get', processId),
+  getMergedLogs: (groupId) => ipcRenderer.invoke('logs:getMerged', groupId),
   clearLogs: (processId) => ipcRenderer.invoke('logs:clear', processId),
   listLogs: () => ipcRenderer.invoke('logs:list'),
   isDev: () => ipcRenderer.invoke('app:isDev'),
@@ -74,6 +75,8 @@ const api: DevBarApi = {
     simulateTrayColor: (color) =>
       ipcRenderer.invoke('dev:simulateTrayColor', { color }),
     simulateBanner: (cta) => ipcRenderer.invoke('dev:simulateBanner', { cta }),
+    simulateFallbackBanner: (cta) =>
+      ipcRenderer.invoke('dev:simulateFallbackBanner', { cta }),
     simulateSuccess: () => ipcRenderer.invoke('dev:simulateSuccess'),
     simulatePrescriptConfirm: () =>
       ipcRenderer.invoke('dev:simulatePrescriptConfirm'),
@@ -129,6 +132,8 @@ const api: DevBarApi = {
   getAppVersion: () => ipcRenderer.invoke('app:version'),
   getChangelog: () => ipcRenderer.invoke('updates:changelog'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
+  openNotificationSettings: () =>
+    ipcRenderer.invoke('app:openNotificationSettings'),
   confirmDirty: (context) =>
     ipcRenderer.invoke('config:confirmDirty', { context }),
   confirmCloseConfig: () => ipcRenderer.invoke('window:confirmCloseConfig'),

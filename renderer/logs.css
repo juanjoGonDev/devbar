@@ -8,9 +8,31 @@
   height: 36px;
   -webkit-app-region: drag;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /*
+   * Clear the inset traffic lights, and sit on their optical centre: they are
+   * 12px tall at trafficLightPosition.y = 14, so their middle is 20px down.
+   * Centring inside the bare 36px box would land at 18px and read as 2px high.
+   */
+  padding: 4px 12px 0 82px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #d0d0d4;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
-.app-window-spacer * {
+/* Children stay draggable: the title is a label, not a control. Only real
+   controls opt out of the drag region. */
+.app-window-spacer button,
+.app-window-spacer input {
   -webkit-app-region: no-drag;
+}
+.app-window-spacer #title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 html,
@@ -92,45 +114,67 @@ body.sidebar-collapsed #toggle-sidebar {
 #side-tree {
   flex: 1;
   overflow: auto;
-  padding: 6px 8px 14px;
+  /* No side padding: group headers are full-bleed bands. Rows re-inset below. */
+  padding: 0 0 14px;
 }
 #side-tree .empty {
   color: #8e8e93;
   font-size: 11px;
-  padding: 10px 6px;
+  padding: 10px 14px;
 }
 
+.side-group + .side-group {
+  margin-top: 2px;
+}
+
+/*
+ * Group headers read as bands, not as rows: full width, own background,
+ * hairlines above and below. Sticky so the group you are scrolling through
+ * stays named at the top of the list — with ten services open, that label is
+ * the only thing telling you whose logs you are looking at.
+ */
 .side-group > summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 6px;
-  margin-top: 4px;
-  border-radius: 6px;
+  padding: 6px 10px;
   cursor: pointer;
   user-select: none;
   list-style: none;
-  color: #98989d;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
+  color: #e8e8ea;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
   text-transform: uppercase;
+  background: #35353a;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+}
+.side-group:first-child > summary {
+  border-top-color: transparent;
 }
 .side-group > summary::-webkit-details-marker {
   display: none;
 }
 .side-group > summary:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: #3f3f45;
 }
 .side-group > summary .chevron {
   font-size: 9px;
   width: 9px;
   flex-shrink: 0;
-  color: #6e6e73;
+  color: #8e8e93;
   transition: transform 0.15s ease;
 }
 .side-group[open] > summary .chevron {
   transform: rotate(90deg);
+}
+.side-group > summary .g-ico {
+  font-size: 11px;
+  flex-shrink: 0;
 }
 .side-group > summary .g-name {
   flex: 1;
@@ -138,18 +182,66 @@ body.sidebar-collapsed #toggle-sidebar {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Worst state inside the group — the only health cue left once it is folded. */
+.side-group > summary .g-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+}
+.side-group > summary .g-dot.running {
+  background: #30d158;
+}
+.side-group > summary .g-dot.warn {
+  background: #ffd60a;
+}
+.side-group > summary .g-dot.error {
+  background: #ff453a;
+}
+.side-group > summary .g-dot.starting,
+.side-group > summary .g-dot.stopping {
+  background: #0a84ff;
+}
+.side-group > summary .g-count {
+  flex-shrink: 0;
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #9a9aa0;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The rail is the "these belong to the group above" cue: every item hangs off
+ * one vertical line, indented past the header's own text.
+ */
+.side-items {
+  padding: 4px 8px 7px 0;
+  margin-left: 18px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+.side-group[open] > summary {
+  /* Let the rail meet the header instead of floating below it. */
+  border-bottom-color: rgba(0, 0, 0, 0.25);
+}
 
 .side-item {
   display: flex;
   align-items: center;
   gap: 7px;
-  width: 100%;
+  width: calc(100% - 6px);
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 7px;
   padding: 6px 8px;
-  margin: 1px 0;
+  margin: 1px 0 1px 6px;
   color: #e5e5e7;
   font-family: inherit;
   font-size: 12px;
@@ -301,7 +393,9 @@ header strong {
   white-space: nowrap;
 }
 header input[type='search'] {
-  flex: 1 1 120px;
+  /* Capped: a search box wider than its query is wasted header. */
+  flex: 0 1 240px;
+  max-width: 300px;
   background: rgba(255, 255, 255, 0.06);
   color: #e5e5e7;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -424,10 +518,16 @@ main {
 .line {
   padding: 1px 16px;
   display: flex;
-  gap: 10px;
+  gap: 6px;
   line-height: 1.55;
   border-left: 3px solid transparent;
   min-width: 0;
+  /* Anchor for the hover tip positioned against the row. */
+  position: relative;
+}
+/* The timestamp keeps its old breathing room; the tags pack in after it. */
+.line .ts + * {
+  margin-left: 4px;
 }
 .line:hover {
   background: rgba(255, 255, 255, 0.04);
@@ -437,7 +537,15 @@ main {
   flex-shrink: 0;
   user-select: none;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
+/* The timestamp is the "where am I in the stream" handle: pressing it drops
+   the filters and puts this line back among its neighbours. */
+.line .ts:hover {
+  color: #b8bec6;
+  text-decoration: underline;
+}
+
 .line .body {
   flex: 1;
   white-space: pre-wrap;
@@ -540,4 +648,508 @@ footer {
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 11px;
   flex-shrink: 0;
+}
+
+/* ================================================================
+   SILENCED DRAWER — in-window panel, replaces the old separate window
+   ================================================================ */
+
+.drawer {
+  width: 330px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: rgba(30, 30, 32, 0.98);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #e5e5e7;
+}
+.drawer[hidden] {
+  display: none;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+.drawer-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.drawer-title strong {
+  font-size: 13px;
+}
+.drawer-sub {
+  font-size: 11px;
+  color: #8e8e93;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.drawer-count {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #9a9aa0;
+  font-size: 9.5px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.lvl-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.lvl-tag.warn {
+  background: rgba(255, 214, 10, 0.16);
+  color: #ffd60a;
+}
+.lvl-tag.err {
+  background: rgba(255, 69, 58, 0.16);
+  color: #ff6961;
+}
+
+/* Master switches, one row each — the whole row is the hit target. */
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.switch-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.switch-row input {
+  flex-shrink: 0;
+  accent-color: #0a84ff;
+}
+
+.pattern-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pattern-list .empty {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #6e6e73;
+  font-size: 11px;
+}
+.pattern-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.pattern-list-item .pattern {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: #d0d0d4;
+}
+.pattern-list-item .unsilence {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #8e8e93;
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 3px 6px;
+  cursor: pointer;
+  /* Revealed on hover: the list is for reading, removal is the rarer act. */
+  opacity: 0;
+}
+.pattern-list-item:hover .unsilence {
+  opacity: 1;
+}
+.pattern-list-item .unsilence:hover {
+  background: rgba(255, 69, 58, 0.2);
+  color: #ff6961;
+}
+
+.add-row {
+  display: flex;
+  gap: 6px;
+}
+.add-row input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e5e7;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-family: inherit;
+  font-size: 11px;
+}
+.add-row input:focus {
+  outline: 2px solid rgba(0, 122, 255, 0.5);
+  outline-offset: -1px;
+  border-color: #0a84ff;
+}
+.ghost-btn {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #e5e5e7;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.ghost-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.muted-feed {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 6px;
+}
+.muted-feed:empty {
+  display: none;
+}
+.muted-line {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  padding: 3px 5px;
+  color: #7a7a80;
+  font-family: 'SF Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.muted-line:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #c8c8cc;
+}
+.muted-line .ts {
+  flex-shrink: 0;
+  color: #5a5a5f;
+  font-variant-numeric: tabular-nums;
+}
+.muted-line .body {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.muted-line.warn .ts {
+  color: #8a7a2a;
+}
+.muted-line.error .ts {
+  color: #8a3a34;
+}
+
+/* Merged group view: open-all button + per-row source tag */
+.side-group > summary .g-all {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #8e8e93;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 4px;
+  cursor: pointer;
+  opacity: 0;
+}
+.side-group > summary:hover .g-all,
+.side-group.viewing > summary .g-all {
+  opacity: 1;
+}
+.side-group > summary .g-all:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #e5e5e7;
+}
+.side-group.viewing > summary {
+  background: rgba(10, 132, 255, 0.28);
+  color: #fff;
+}
+
+/* ── Level filter escape hatch ──────────────────────────────────── */
+/* Breathing room where the old warn/error checkboxes used to sit. */
+header .check.spaced {
+  margin-left: auto;
+}
+.level-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.level-pill[hidden] {
+  display: none;
+}
+.level-pill.warn {
+  background: rgba(255, 214, 10, 0.18);
+  border: 1px solid rgba(255, 214, 10, 0.55);
+  color: #ffd60a;
+}
+.level-pill.err {
+  background: rgba(255, 69, 58, 0.18);
+  border: 1px solid rgba(255, 69, 58, 0.55);
+  color: #ff6961;
+}
+.level-pill-x {
+  opacity: 0.7;
+}
+.level-pill:hover .level-pill-x {
+  opacity: 1;
+}
+
+/* ── Counters that are also doors ───────────────────────────────── */
+.b.clickable {
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 4px;
+  margin: -1px 0;
+  cursor: pointer;
+}
+.b.clickable:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Group header: name over its group-wide counters. */
+.side-group > summary .g-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.side-group > summary .g-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #8e8e93;
+  font-variant-numeric: tabular-nums;
+}
+.side-group > summary .g-badges:empty {
+  display: none;
+}
+
+/* ── Source tags on merged rows ─────────────────────────────────── */
+/*
+ * Tags sit inline and size to their own text. A fixed-width column looked tidy
+ * on one-line rows but opened a gulf before the message and fell out of
+ * alignment the moment a line wrapped. Brackets carry the grouping instead of
+ * whitespace, so the row reads as one sentence: [Back] [Normal] …
+ */
+.line .src {
+  flex-shrink: 0;
+  align-self: flex-start;
+  white-space: nowrap;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  cursor: pointer;
+}
+.line .src:hover {
+  text-decoration: underline;
+}
+.line .src.grp {
+  opacity: 0.85;
+}
+
+/* Landing highlight after jumping from a merged row to its own view. */
+.line.flash {
+  animation: flash-row 1.6s ease-out;
+}
+@keyframes flash-row {
+  0%,
+  40% {
+    background: rgba(10, 132, 255, 0.35);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* ── Drawer: foldable level sections ────────────────────────────── */
+/* A real close control, sized to the header instead of borrowing the
+   toolbar's icon-button look. */
+.drawer-x {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9a9aa0;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.drawer-x:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #e5e5e7;
+}
+
+.drawer-lvl {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.drawer-lvl > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: #d0d0d4;
+}
+.drawer-lvl > summary::-webkit-details-marker {
+  display: none;
+}
+.drawer-lvl > summary:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.drawer-lvl > summary .chevron {
+  font-size: 8px;
+  width: 8px;
+  flex-shrink: 0;
+  color: #8e8e93;
+  transition: transform 0.15s ease;
+}
+.drawer-lvl[open] > summary .chevron {
+  transform: rotate(90deg);
+}
+.drawer-lvl > summary .lvl-name {
+  flex: 1;
+}
+.drawer-lvl-body {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.muted-line .rep {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 0 5px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #c8c8cc;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+.muted-line .rep[hidden] {
+  display: none;
+}
+
+/* ── Root scope row: "Todo", above every group ──────────────────── */
+.side-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+  background: #2b2b30;
+  color: #e8e8ea;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.side-all:hover {
+  background: #35353a;
+}
+.side-all.active {
+  background: rgba(10, 132, 255, 0.28);
+  color: #fff;
+}
+.side-all .a-ico {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.side-all .a-name {
+  flex: 1;
+}
+.side-all .a-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #8e8e93;
+  font-variant-numeric: tabular-nums;
 }

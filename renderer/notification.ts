@@ -1,4 +1,5 @@
 import { byId } from './dom.js';
+import { installTooltips } from './tooltip.js';
 const query = new URLSearchParams(location.search);
 byId('title', HTMLElement).textContent = query.get('title') || 'DevBar';
 byId('body', HTMLElement).textContent = query.get('body') || '';
@@ -30,3 +31,5 @@ if (ctaLabel && ctaAction) {
     void window.api.notificationAction(ctaAction);
   });
 }
+
+installTooltips();

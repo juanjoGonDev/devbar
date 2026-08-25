@@ -10,6 +10,7 @@ import type {
   ProcessStatus,
   ReleaseSummary,
   SilencedPatterns,
+  StagedUpdate,
 } from './domain-types.js';
 
 export type SilenceLevel = 'warn' | 'error';
@@ -67,6 +68,21 @@ interface LogsSnapshot {
   lines: LogEntry[];
   commandState: { status: ProcessStatus; startedAt: number | null };
 }
+/** A log line that knows which service in the group produced it. */
+export type SourcedLogEntry = LogEntry & { srcId: string };
+/** One source in a merged stream, and the group it belongs to. */
+export interface LogSource {
+  id: string;
+  name: string;
+  groupId: string;
+  groupName: string;
+}
+/** Several services merged into a single chronological stream. */
+interface GroupLogsSnapshot {
+  groupName: string;
+  sources: LogSource[];
+  lines: SourcedLogEntry[];
+}
 export interface LogListItem {
   id: string;
   type: 'command' | 'action' | 'prescript' | 'pipeline';
@@ -93,6 +109,8 @@ export interface IconBatteryItem {
 }
 export interface UpdateStatus {
   available: AvailableUpdate | null;
+  /** Downloaded and unpacked — applying it is just a restart. */
+  staged: StagedUpdate | null;
   lastCheckAt: string | null;
   currentVersion: string;
 }
@@ -162,14 +180,16 @@ type NotificationAction = string;
 
 /**
  * Simulation hooks for events that are painful to reproduce by hand. The
- * invokers always exist; the handlers behind them only in development, so each
- * call rejects in a packaged build.
+ * invokers always exist; the handlers behind them ship only when the dev panel
+ * does — any dev run, or a `DEVBAR_DEV_PANEL=1` package — so each call rejects
+ * in a normal build.
  */
 interface DevSimulationApi {
   simulateUpdate(version?: string): Promise<{ ok: boolean; version: string }>;
   clearUpdate(): Promise<SimpleResult>;
   simulateTrayColor(color: TrayColor | null): Promise<SimpleResult>;
   simulateBanner(withCta: boolean): Promise<SimpleResult>;
+  simulateFallbackBanner(withCta: boolean): Promise<SimpleResult>;
   simulateSuccess(): Promise<SimpleResult>;
   simulatePrescriptConfirm(): Promise<SimpleResult>;
   simulateToast(kind: 'ok' | 'error'): Promise<SimpleResult>;
@@ -224,6 +244,7 @@ export interface DevBarApi {
     enabled: boolean,
   ): Promise<{ ok: boolean; group: Group | null }>;
   getLogs(processId: string): Promise<LogsSnapshot>;
+  getMergedLogs(groupId: string | null): Promise<GroupLogsSnapshot>;
   clearLogs(processId: string): Promise<SimpleResult>;
   listLogs(): Promise<LogListGroup[]>;
   openConfig(): Promise<SimpleResult>;
@@ -231,7 +252,11 @@ export interface DevBarApi {
   hideTray(): Promise<SimpleResult>;
   onConfigGoto(callback: (target: string) => void): () => void;
   openLogs(
-    arg: string | { processId: string; filter?: string; detached?: boolean },
+    arg:
+      | string
+      | { processId: string; filter?: string; detached?: boolean }
+      | { scope: 'all'; level?: SilenceLevel }
+      | { scope: 'group'; groupId: string; level?: SilenceLevel },
   ): Promise<SimpleResult>;
   openSilenced(groupId: string, commandId: string): Promise<SimpleResult>;
   getSilencedForCommand(
@@ -296,13 +321,19 @@ export interface DevBarApi {
     decision: 'confirm' | 'cancel',
   ): Promise<SimpleResult>;
   quit(): Promise<SimpleResult>;
-  /** False in packaged builds; gates loading the dev simulation panel. */
+  /**
+   * Whether this build shipped the dev simulation panel — true for any dev run
+   * and for a `DEVBAR_DEV_PANEL=1` package, false for a normal build. Gates
+   * loading the panel.
+   */
   isDev(): Promise<boolean>;
   /** Dev-only: handlers exist solely while running unpackaged (src/dev). */
   dev: DevSimulationApi;
   getAppVersion(): Promise<string>;
   getChangelog(): Promise<ChangelogPayload>;
   openExternal(url: string): Promise<SimpleResult>;
+  /** macOS notification settings, aimed at this app's own row. */
+  openNotificationSettings(): Promise<SimpleResult>;
   confirmDirty(
     context: string,
   ): Promise<{ choice: 'cancel' | 'discard' | 'save' }>;
@@ -314,7 +345,13 @@ export interface DevBarApi {
     callback: (payload: { id: string; entry: LogEntry }) => void,
   ): () => void;
   onLogsSelect(
-    callback: (payload: { processId: string; filter?: string }) => void,
+    callback: (payload: {
+      processId?: string;
+      filter?: string;
+      scope?: 'all' | 'group';
+      groupId?: string | null;
+      level?: SilenceLevel | null;
+    }) => void,
   ): () => void;
   onBranchesChanged(
     callback: (payload: { repoPath: string }) => void,

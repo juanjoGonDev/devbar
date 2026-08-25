@@ -23,6 +23,7 @@ const temporaryDirectories: string[] = [];
 
 interface Fixture {
   binDirectory: string;
+  harness: string;
   log: string;
   counter: string;
   root: string;
@@ -48,12 +49,21 @@ fi
 exit 0
 `;
 
-// $0 is deliberately not the script path: the entrypoint guard compares it with
-// BASH_SOURCE, and they must differ so sourcing does not run a real build.
+/*
+ * Written to a FILE and handed to bash as an argument, never as a `bash -c`
+ * program: building that program out of absolute paths (from `import.meta.url`
+ * and `tmpdir()`) is what CodeQL flags as
+ * js/shell-command-injection-from-environment. Paths arrive as environment
+ * values the script reads, quoted, so none is ever interpreted.
+ *
+ * Invoking by path also keeps $0 different from the script under test, whose
+ * entrypoint guard compares it with BASH_SOURCE — they must differ so sourcing
+ * does not run a real build.
+ */
 const HARNESS = `set -uo pipefail
-export PATH="$1:$PATH"
-source "$2"
-create_dmg arm64 "$3" "$4"
+export PATH="$HARNESS_BIN:$PATH"
+source "$HARNESS_SCRIPT"
+create_dmg arm64 "$HARNESS_ROOT" "$HARNESS_OUT"
 `;
 
 async function fakeHdiutil(failures: number): Promise<Fixture> {
@@ -63,12 +73,14 @@ async function fakeHdiutil(failures: number): Promise<Fixture> {
   await mkdir(binDirectory, { recursive: true });
   const fixture: Fixture = {
     binDirectory,
+    harness: path.join(directory, 'harness.sh'),
     log: path.join(directory, 'calls.log'),
     counter: path.join(directory, 'count'),
     root: path.join(directory, 'root'),
     output: path.join(directory, 'out.dmg'),
     failures,
   };
+  await writeFile(fixture.harness, HARNESS);
   await writeFile(fixture.counter, '0');
   await writeFile(path.join(binDirectory, 'hdiutil'), HDIUTIL_STUB);
   await chmod(path.join(binDirectory, 'hdiutil'), 0o755);
@@ -80,27 +92,19 @@ async function runCreateDmg(
 ): Promise<{ code: number; calls: string[] }> {
   let code = 0;
   try {
-    await execFileAsync(
-      'bash',
-      [
-        '-c',
-        HARNESS,
-        'devbar-dmg-harness',
-        fixture.binDirectory,
-        script,
-        fixture.root,
-        fixture.output,
-      ],
-      {
-        env: {
-          ...process.env,
-          DMG_RETRY_DELAY: '0',
-          DMG_TEST_LOG: fixture.log,
-          DMG_TEST_COUNT: fixture.counter,
-          DMG_TEST_FAILURES: String(fixture.failures),
-        },
+    await execFileAsync('bash', [fixture.harness], {
+      env: {
+        ...process.env,
+        HARNESS_BIN: fixture.binDirectory,
+        HARNESS_SCRIPT: script,
+        HARNESS_ROOT: fixture.root,
+        HARNESS_OUT: fixture.output,
+        DMG_RETRY_DELAY: '0',
+        DMG_TEST_LOG: fixture.log,
+        DMG_TEST_COUNT: fixture.counter,
+        DMG_TEST_FAILURES: String(fixture.failures),
       },
-    );
+    });
   } catch (error: unknown) {
     code = Number((error as { code?: number }).code ?? 1);
   }

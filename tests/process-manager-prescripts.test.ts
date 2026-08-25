@@ -64,7 +64,6 @@ const GLOBAL_SETTINGS: GlobalSettings = {
   silenceErrors: false,
   maxLogLines: 2000,
   notifySuccess: true,
-  notifyAutoCloseSecs: 5,
 };
 
 function makeConfigStoreStub(group: Group = GROUP) {

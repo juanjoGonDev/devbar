@@ -89,8 +89,8 @@ build_architecture() {
   printf '%s\n' "$executable_archs" | grep -qw "$expected_mach_arch" ||
     fail "Expected $expected_mach_arch executable for $arch, found: $executable_archs"
 
-  [ -s "$app/Contents/Resources/icon.icns" ] || fail "Application icon is missing for $arch."
-  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")" = 'icon.icns' ] ||
+  [ -s "$app/Contents/Resources/electron.icns" ] || fail "Application icon is missing for $arch."
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")" = 'electron.icns' ] ||
     fail "CFBundleIconFile is incorrect for $arch."
 
   ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
