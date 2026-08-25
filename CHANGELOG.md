@@ -41,6 +41,11 @@ Todas las novedades relevantes de DevBar. El formato sigue
   `codesign --sign -` es gratis. Es lo que exige `UNUserNotificationCenter`
   para entregar notificaciones, y de paso permite al instalador automático
   verificar el sello del bundle descargado antes de sustituir la app.
+- **Fuera el ajuste «Cerrar notificación tras N segundos».** Con notificaciones
+  nativas esa duración la manda macOS, a través del estilo de notificación de
+  la app en Ajustes del sistema: **Avisos** se cierran solos, **Alertas** se
+  quedan hasta que las cierras. El ajuste sólo gobernaba ya el aviso de
+  reserva, así que prometía más de lo que hacía.
 - La app pasa a identificarse como **`io.github.juanjogondev.devbar`**. Antes
   usaba `com.electron.devbar`, el valor por defecto de packager — el espacio de
   nombres de Electron, no el nuestro. Tus ajustes se conservan: viven bajo el

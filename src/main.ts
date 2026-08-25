@@ -65,6 +65,14 @@ import type {
 } from './ipc-contract.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Whether the development-only simulation panel shipped with this build. One
+ * source of truth: the files are either in the bundle or they are not.
+ */
+const devPanelAvailable = fs.existsSync(
+  path.join(__dirname, 'dev', 'dev-ipc.js'),
+);
 const { aggregateColor } = trayIcon;
 
 function errorMessage(value: unknown): string {
@@ -162,7 +170,7 @@ function ipcGlobalSettingsPatch(
       patch[field] = raw[field];
     }
   }
-  for (const field of ['maxLogLines', 'notifyAutoCloseSecs'] as const) {
+  for (const field of ['maxLogLines'] as const) {
     if (raw[field] !== undefined) patch[field] = ipcNumber(raw[field], field);
   }
   return patch;
@@ -550,13 +558,14 @@ function broadcastToast(kind: string, message: string): void {
 }
 
 // ── In-app completion banner ────────────────────────────────────────────
-// Native macOS notifications need a Developer-ID-signed app to register, which
-// this unsigned build is not — they silently never appear. So we draw our own
-// small always-on-top banner instead. No OS permission, works in dev and
-// packaged, and honours the duration setting natively could not:
-//   notifyAutoCloseSecs === 0 → permanent (until clicked)
-//   notifyAutoCloseSecs  >  0 → auto-dismiss after N seconds
+// The fallback for when macOS refuses a native notification — chiefly an
+// unpackaged dev run, whose bundle keeps Electron's own identity. Duration is
+// fixed here rather than configurable: on the path users actually see, macOS
+// owns it through the app's notification style (Banners auto-dismiss, Alerts
+// stay), and a setting that governs only the fallback would be claiming more
+// than it does.
 // ponytail: single-slot — a new banner replaces the current one; no stacking.
+const BANNER_AUTOCLOSE_SECS = 5;
 let notificationWindow: BrowserWindow | null = null;
 let notificationTimer: NodeJS.Timeout | null = null;
 
@@ -641,7 +650,7 @@ function showCustomBanner(
   { cta }: { cta?: { label: string; action: string } } = {},
 ): void {
   closeNotificationWindow(); // replace any visible banner
-  const secs = configStore.getGlobalSettings().notifyAutoCloseSecs;
+  const secs = BANNER_AUTOCLOSE_SECS;
   const width = 360;
   const height = 76;
   const margin = 12;
@@ -2367,12 +2376,15 @@ function registerIpc() {
   );
 
   // Lets the renderer decide whether to load the dev-only simulation panel.
-  ipcMain.handle('app:isDev', () => !app.isPackaged);
+  ipcMain.handle('app:isDev', () => devPanelAvailable);
 
   // ── Dev simulation panel ──────────────────────────────────────────────
-  // Only in development: src/dev and renderer/dev are stripped from packaged
-  // builds, so the import is guarded and its failure is not an error.
-  if (!app.isPackaged) {
+  // Presence of the files IS the switch, rather than `!app.isPackaged`. A
+  // normal build strips src/dev and renderer/dev, so this is off; a build made
+  // with DEVBAR_DEV_PANEL=1 keeps them, which is how the panel can be exercised
+  // inside a REAL installed bundle — the only place notifications and the
+  // updater behave for real.
+  if (devPanelAvailable) {
     void import('./dev/dev-ipc.js')
       .then(({ registerDevIpc }) => {
         registerDevIpc({

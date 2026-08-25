@@ -29,7 +29,6 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   silenceErrors: false,
   maxLogLines: 10_000,
   notifySuccess: true,
-  notifyAutoCloseSecs: 5,
 };
 
 type StoreState = {
@@ -45,12 +44,6 @@ function clampMaxLogLines(value: unknown): number {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue) || numberValue <= 0) return 10_000;
   return Math.min(50_000, Math.max(100, Math.floor(numberValue)));
-}
-
-function clampNotifyAutoCloseSecs(value: unknown): number {
-  const numberValue = Number(value);
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return 0;
-  return Math.min(3600, Math.floor(numberValue));
 }
 
 const schema = {
@@ -367,7 +360,6 @@ export function saveGlobalSettings(
   next.silenceErrors = Boolean(next.silenceErrors);
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
   next.notifySuccess = Boolean(next.notifySuccess);
-  next.notifyAutoCloseSecs = clampNotifyAutoCloseSecs(next.notifyAutoCloseSecs);
   store.set('globalSettings', next);
   return next;
 }

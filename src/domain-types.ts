@@ -109,7 +109,6 @@ export interface GlobalSettings {
   silenceErrors: boolean;
   maxLogLines: number;
   notifySuccess: boolean;
-  notifyAutoCloseSecs: number;
 }
 
 export type ProcessStatus =

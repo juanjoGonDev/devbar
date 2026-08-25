@@ -77,10 +77,6 @@ const setNotifySuccess = byId<HTMLInputElement>(
   'set-notify-success',
   HTMLInputElement,
 );
-const setNotifyAutoclose = byId<HTMLInputElement>(
-  'set-notify-autoclose',
-  HTMLInputElement,
-);
 const testNotifyBtn = byId<HTMLButtonElement>(
   'test-notification',
   HTMLButtonElement,
@@ -1955,10 +1951,6 @@ async function loadSettings() {
   if (setMaxLogLines)
     setMaxLogLines.value = String(s.maxLogLines != null ? s.maxLogLines : 2000);
   if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
-  if (setNotifyAutoclose)
-    setNotifyAutoclose.value = String(
-      s.notifyAutoCloseSecs != null ? s.notifyAutoCloseSecs : 5,
-    );
 }
 
 if (testNotifyBtn) {
@@ -1972,16 +1964,12 @@ async function persistSettings() {
   const maxLogLinesRaw = setMaxLogLines ? setMaxLogLines.value : '';
   const maxLogLines =
     maxLogLinesRaw === '' ? 2000 : Number(maxLogLinesRaw) || 2000;
-  const autocloseRaw = setNotifyAutoclose ? setNotifyAutoclose.value : '';
-  const notifyAutoCloseSecs =
-    autocloseRaw === '' ? 0 : Number(autocloseRaw) || 0;
   await window.api.saveSettings({
     autostart: setAutostart.checked,
     silenceWarnings: setSilenceWarnings.checked,
     silenceErrors: setSilenceErrors.checked,
     maxLogLines,
     notifySuccess: setNotifySuccess ? setNotifySuccess.checked : true,
-    notifyAutoCloseSecs,
   });
   showToast('Ajustes guardados', 'ok');
 }
@@ -1995,10 +1983,6 @@ if (setMaxLogLines) {
 }
 if (setNotifySuccess)
   setNotifySuccess.addEventListener('change', persistSettings);
-if (setNotifyAutoclose) {
-  setNotifyAutoclose.addEventListener('change', persistSettings);
-  setNotifyAutoclose.addEventListener('blur', persistSettings);
-}
 
 // ────────────────────── Backup / Restore ───────────────────────────────
 

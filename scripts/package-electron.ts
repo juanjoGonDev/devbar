@@ -10,10 +10,26 @@ type Architecture = 'arm64' | 'x64';
  * `build/{src,renderer}/dev` — the development-only simulation panel and its
  * IPC handlers, which must never reach a packaged build.
  */
-export const PACKAGE_IGNORE: readonly RegExp[] = [
-  /^\/(?:dist|tests|\.agents|\.github|src|renderer|scripts|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.ts|vitest\.config\.ts|knip\.json|\.dependency-cruiser\.json)(?:$|\/)/,
-  /^\/build\/(?:src|renderer)\/dev(?:$|\/)/,
-];
+/** Paths that never belong in a shipped app. */
+const ALWAYS_IGNORED =
+  /^\/(?:dist|tests|\.agents|\.github|src|renderer|scripts|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.ts|vitest\.config\.ts|knip\.json|\.dependency-cruiser\.json)(?:$|\/)/;
+/** The development-only simulation panel and its IPC handlers. */
+const DEV_PANEL = /^\/build\/(?:src|renderer)\/dev(?:$|\/)/;
+
+export const PACKAGE_IGNORE: readonly RegExp[] = [ALWAYS_IGNORED, DEV_PANEL];
+
+/**
+ * Same list, minus the dev panel — for `DEVBAR_DEV_PANEL=1`, which packages an
+ * app that keeps the simulation panel. That is the only way to exercise things
+ * you cannot trigger on demand (a pending update, a notification CTA that has
+ * to open a particular pane) in a REAL installed bundle, where notifications
+ * and the updater actually work. A normal build never includes it.
+ */
+export const PACKAGE_IGNORE_WITH_DEV: readonly RegExp[] = [ALWAYS_IGNORED];
+
+export function packageIgnoreFor(includeDevPanel: boolean): readonly RegExp[] {
+  return includeDevPanel ? PACKAGE_IGNORE_WITH_DEV : PACKAGE_IGNORE;
+}
 
 async function main(): Promise<void> {
   const [architectureValue, outputDirectory] = process.argv.slice(2);
@@ -52,7 +68,7 @@ async function main(): Promise<void> {
     appBundleId: 'io.github.juanjogondev.devbar',
     out: path.resolve(outputDirectory),
     overwrite: true,
-    ignore: [...PACKAGE_IGNORE],
+    ignore: [...packageIgnoreFor(process.env.DEVBAR_DEV_PANEL === '1')],
     // The icon has to be set here rather than patched into Info.plist
     // afterwards: any edit to the plist invalidates the signature applied
     // below, and re-signing by hand is what broke the helpers before.
