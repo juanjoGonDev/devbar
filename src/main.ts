@@ -2401,6 +2401,8 @@ function registerIpc() {
           },
           showBanner: (title, body, options) =>
             showBannerNotification(title, body, options),
+          showFallbackBanner: (title, body, options) =>
+            showCustomBanner(title, body, options),
           showCompletionNotification: (title, body) =>
             showCompletionNotification(title, body),
           openPrescriptConfirm: (name, command) => {

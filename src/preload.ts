@@ -75,6 +75,8 @@ const api: DevBarApi = {
     simulateTrayColor: (color) =>
       ipcRenderer.invoke('dev:simulateTrayColor', { color }),
     simulateBanner: (cta) => ipcRenderer.invoke('dev:simulateBanner', { cta }),
+    simulateFallbackBanner: (cta) =>
+      ipcRenderer.invoke('dev:simulateFallbackBanner', { cta }),
     simulateSuccess: () => ipcRenderer.invoke('dev:simulateSuccess'),
     simulatePrescriptConfirm: () =>
       ipcRenderer.invoke('dev:simulatePrescriptConfirm'),
