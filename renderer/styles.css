@@ -172,7 +172,8 @@ body.tray {
   padding: 2px 5px;
   opacity: 0.55;
 }
-.group-row:hover .group-logs-btn {
+.group-row:hover .group-logs-btn,
+.group-row .group-logs-btn:focus-visible {
   opacity: 1;
 }
 
@@ -579,22 +580,6 @@ body.config {
 }
 .section-head .spacer {
   flex: 1;
-}
-.groups-collapse {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  color: var(--muted);
-  font-size: 16px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.groups-collapse:hover {
-  background: var(--bg-row-hover);
-  filter: none;
 }
 /*
  * Collapsed groups list → the editor takes the width, but the pane keeps a

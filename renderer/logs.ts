@@ -1002,28 +1002,8 @@ function buildAllRow(): HTMLElement {
   name.textContent = 'Todo';
   const badges = document.createElement('span');
   badges.className = 'a-badges';
-  const items = sideData.flatMap((group) => group.items);
-  const warns = items.reduce((sum, item) => sum + item.warnCount, 0);
-  const errors = items.reduce((sum, item) => sum + item.errorCount, 0);
-  if (warns > 0)
-    badges.appendChild(
-      levelCountButton(
-        'warn',
-        warns,
-        `Ver los ${warns} warning(s) de todo`,
-        () => void openScope({ kind: 'all' }, ['warn']),
-      ),
-    );
-  if (errors > 0)
-    badges.appendChild(
-      levelCountButton(
-        'error',
-        errors,
-        `Ver los ${errors} error(es) de todo`,
-        () => void openScope({ kind: 'all' }, ['error']),
-      ),
-    );
   row.append(ico, name, badges);
+  paintAllRow(row);
   row.title = 'Todos los logs de todos los grupos';
   row.addEventListener('click', () => void openScope({ kind: 'all' }));
   return row;
@@ -1107,6 +1087,36 @@ function renderSidebar(): void {
  * everything inside it. Those totals are buttons — they open the group's
  * merged view already pinned to that level.
  */
+function paintAllRow(row: HTMLElement): void {
+  const badges = row.querySelector<HTMLElement>('.a-badges');
+  if (!badges) return;
+  const items = sideData.flatMap((group) => group.items);
+  const warns = items.reduce((sum, item) => sum + item.warnCount, 0);
+  const errors = items.reduce((sum, item) => sum + item.errorCount, 0);
+  const signature = `${warns}/${errors}`;
+  if (badges.dataset.signature === signature) return;
+  badges.dataset.signature = signature;
+  badges.textContent = '';
+  if (warns > 0)
+    badges.appendChild(
+      levelCountButton(
+        'warn',
+        warns,
+        `Ver los ${warns} warning(s) de todo`,
+        () => void openScope({ kind: 'all' }, ['warn']),
+      ),
+    );
+  if (errors > 0)
+    badges.appendChild(
+      levelCountButton(
+        'error',
+        errors,
+        `Ver los ${errors} error(es) de todo`,
+        () => void openScope({ kind: 'all' }, ['error']),
+      ),
+    );
+}
+
 function paintGroupSummary(details: HTMLElement, group: LogListGroup): void {
   const dot = details.querySelector<HTMLElement>('.g-dot');
   if (dot) {
@@ -1147,6 +1157,10 @@ function paintGroupSummary(details: HTMLElement, group: LogListGroup): void {
 
 /** Repaint in place when only the live numbers changed — keeps scroll & focus. */
 function repaintSidebar(): boolean {
+  // The root row's totals track live counts too, and no signature change ever
+  // rebuilds it — so the fast path has to refresh it explicitly.
+  const allRow = sideTreeEl.querySelector<HTMLElement>('.side-all');
+  if (allRow) paintAllRow(allRow);
   for (const group of sideData) {
     for (const item of group.items) {
       const row = sideTreeEl.querySelector<HTMLElement>(
@@ -1358,9 +1372,20 @@ function renderDrawer(): void {
  * Mirror a swallowed line into the drawer feed. Seeing WHAT a pattern eats is
  * the point — a rule you cannot inspect is a rule you stop trusting.
  */
+/** Wipe both feeds — called on every scope switch, see pushMutedLine. */
+function clearMutedFeeds(): void {
+  warnFeedEl.textContent = '';
+  errFeedEl.textContent = '';
+  renderMutedCounts();
+}
+
 function pushMutedLine(entry: LogEntry): void {
   const level = entry.originalLevel;
   if (level !== 'warn' && level !== 'error') return;
+  // Silencing is per-service, and unsilenceLine acts on the CURRENT selection.
+  // A merged scope mixes many services, so a row here would remove a pattern
+  // from whichever command happened to be selected — the wrong one.
+  if (groupSources) return;
   const feed = level === 'warn' ? warnFeedEl : errFeedEl;
   const key = mutedKey(entry.line);
 
@@ -1478,6 +1503,7 @@ togglePanelBtn.addEventListener('click', () => setDrawer(!drawerOpen()));
  */
 async function selectMergedLog(groupId: string | null): Promise<void> {
   processId = null;
+  clearMutedFeeds(); // rows from the previous scope would target the wrong command
   mergedIsAll = groupId === null;
   currentGroupView = groupId ?? '*';
   linesEl.textContent = '';
@@ -1521,6 +1547,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
 async function selectLog(id: string, filter?: string): Promise<void> {
   processId = id;
   groupSources = null;
+  clearMutedFeeds(); // rows from the previous scope would target the wrong command
   currentGroupView = null;
   mergedIsAll = false;
   for (const summary of Array.from(

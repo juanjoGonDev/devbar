@@ -835,7 +835,6 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
       destDir: path.join(updatesDir, update.version),
       version: update.version,
     });
-    pruneStagedUpdates(updatesDir, update.version);
     console.log(`[updates] v${update.version} descargada, lista para instalar`);
     broadcastUpdateStatus();
     refreshTrayIcon();
@@ -853,16 +852,24 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
   } finally {
     fs.rmSync(zipPath, { force: true });
     stagingVersion = null;
+    // Housekeeping, deliberately outside the try: a prune that trips over a
+    // dangling entry must not mark a perfectly good download as failed and
+    // swallow the "restart to install" notice for the rest of the session.
+    if (stagedUpdate) pruneStagedUpdates(updatesDir, stagedUpdate.version);
   }
 }
 
 /** Drop previously staged versions — each one is a full copy of the app. */
 function pruneStagedUpdates(updatesDir: string, keep: string): void {
-  for (const entry of fs.readdirSync(updatesDir)) {
-    if (entry === keep) continue;
-    const candidate = path.join(updatesDir, entry);
-    if (!fs.statSync(candidate).isDirectory()) continue;
-    fs.rmSync(candidate, { recursive: true, force: true });
+  try {
+    for (const entry of fs.readdirSync(updatesDir)) {
+      if (entry === keep) continue;
+      const candidate = path.join(updatesDir, entry);
+      if (!fs.statSync(candidate).isDirectory()) continue;
+      fs.rmSync(candidate, { recursive: true, force: true });
+    }
+  } catch (err) {
+    console.warn(`[updates] no se pudo limpiar: ${errorMessage(err)}`);
   }
 }
 

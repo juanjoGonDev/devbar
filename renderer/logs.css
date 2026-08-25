@@ -554,6 +554,8 @@ main {
   line-height: 1.55;
   border-left: 3px solid transparent;
   min-width: 0;
+  /* Anchor for the hover tip positioned against the row. */
+  position: relative;
 }
 /* The timestamp keeps its old breathing room; the tags pack in after it. */
 .line .ts + * {
@@ -576,9 +578,6 @@ main {
   text-decoration: underline;
 }
 
-.line {
-  position: relative;
-}
 .line .body {
   flex: 1;
   white-space: pre-wrap;
@@ -890,8 +889,7 @@ footer {
 }
 
 .muted-feed {
-  flex: 1;
-  min-height: 0;
+  max-height: 260px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -899,6 +897,9 @@ footer {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.28);
   padding: 6px;
+}
+.muted-feed:empty {
+  display: none;
 }
 .muted-line {
   display: flex;
@@ -1147,19 +1148,6 @@ header .check.spaced {
   gap: 8px;
 }
 
-.muted-feed {
-  max-height: 260px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.28);
-  padding: 6px;
-}
-.muted-feed:empty {
-  display: none;
-}
 .muted-line .rep {
   flex-shrink: 0;
   align-self: flex-start;

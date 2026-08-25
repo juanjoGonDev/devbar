@@ -48,7 +48,9 @@ Todas las novedades relevantes de DevBar. El formato sigue
   «Salir»— si la ventana de **configuración** estaba abierta. Esa ventana veta
   su propio cierre para preguntar por cambios sin guardar, y ese veto abortaba
   en silencio el apagado entero. Ahora el veto se levanta en cuanto la decisión
-  de salir ya está tomada.
+  de salir ya está tomada. Contrapartida: al salir —o al instalar una
+  actualización— los cambios de configuración sin guardar se descartan sin
+  preguntar.
 - **El menú de la barra crecía solo al escribir en el buscador de ramas.** Al
   calcular el alto necesario para el desplegable se tomaba como suelo el alto
   actual de la ventana, de modo que sólo podía crecer; como el proceso

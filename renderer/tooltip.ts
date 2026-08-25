@@ -41,6 +41,10 @@ function ensureBubble(): HTMLDivElement {
     // Undo the UA popover defaults (inset:0 + margin:auto centre it).
     'inset:auto',
     'margin:0',
+    // Self-contained on purpose: most windows set this globally, but
+    // notification.html loads no stylesheet at all, and under content-box the
+    // size caps below would exclude padding and border and overflow anyway.
+    'box-sizing:border-box',
     'padding:5px 9px',
     'border-radius:6px',
     'border:1px solid rgba(255,255,255,0.14)',
@@ -183,7 +187,14 @@ export function installTooltips(): void {
   document.addEventListener('mouseout', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (anchor && target.closest('[title],[data-tip]') === anchor) hide();
+    if (!anchor || target.closest('[title],[data-tip]') !== anchor) return;
+    // Moving between children of the same control still fires mouseout. Hiding
+    // there would cancel the pending timer, and the follow-up mouseover would
+    // restart the delay from zero — so crossing a button's own icon and label
+    // could keep the tip from ever appearing.
+    const to = event.relatedTarget;
+    if (to instanceof Node && anchor.contains(to)) return;
+    hide();
   });
 
   // Anything that moves the page out from under the bubble dismisses it: a

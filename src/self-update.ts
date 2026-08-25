@@ -69,6 +69,13 @@ export async function extractUpdate({
   if (found !== version)
     throw new Error(`la descarga dice v${found}, se esperaba v${version}`);
 
+  // We are about to overwrite the user's installed app, and the only trust
+  // anchor so far is the HTTPS transfer. Releases are ad-hoc signed, so this
+  // seal covers every file in the bundle: a truncated or partially rewritten
+  // download fails here instead of at the swap. It proves integrity, not
+  // authorship — an ad-hoc signature carries no identity.
+  await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath]);
+
   return { version, appPath };
 }
 
