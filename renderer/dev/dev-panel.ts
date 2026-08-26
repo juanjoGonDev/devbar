@@ -52,6 +52,17 @@ function buildGroups(version: HTMLInputElement, api = window.api): Group[] {
       ],
     },
     {
+      title: 'Actualización real (end to end)',
+      note: 'Construye una copia de ESTE bundle con la versión un minor por encima, la vuelve a firmar y la pasa por el mismo staging que una release: verificación del sello, desempaquetado y aviso de «reinicia para instalar». Después, «Reiniciar» en el aviso o en «Acerca de» ejecuta el intercambio real y la app vuelve con la versión nueva. Solo funciona en una app instalada; deja el bundle instalado en la versión simulada, así que reinstala con install-local:dev cuando termines.',
+      actions: [
+        {
+          label: 'Simular actualización real',
+          hint: 'Tarda unos segundos: copia el bundle entero.',
+          run: () => api.dev.simulateRealUpdate(),
+        },
+      ],
+    },
+    {
       title: 'Notificaciones',
       note: 'Los avisos siguen la ruta real: nativa de macOS cuando el sistema la acepta, banner propio si no. En un bundle empaquetado y firmado verás la nativa; en desarrollo, el banner. «Reserva» fuerza el banner propio para poder probarlo también donde la nativa funciona. El de éxito pasa por el ajuste «avisar de acciones completadas», así que sirve para comprobar si está activo.',
       actions: [
@@ -141,6 +152,8 @@ function buildSection(version: HTMLInputElement): HTMLElement {
       button.type = 'button';
       button.className = action.danger ? 'danger' : '';
       button.textContent = action.label;
+      // installTooltips() takes `title` over and draws the styled bubble.
+      if (action.hint) button.title = action.hint;
       button.addEventListener('click', () => {
         button.disabled = true;
         void action
