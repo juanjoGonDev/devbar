@@ -757,6 +757,19 @@ function growBottom(): void {
   updateScrollButton();
 }
 
+/**
+ * Forget lines queued while paused. They describe the buffer we are about to
+ * replace, so they go BEFORE we ask main for the new one — never after: main
+ * snapshots and resubscribes in the same tick, so a line is in one or the
+ * other and never both. Dropping the queue once the snapshot lands would throw
+ * away everything that arrived in between.
+ */
+function dropPendingQueue(): void {
+  pendingQueue.length = 0;
+  // A "Pausado (+N)" counting a queue that no longer exists would be a lie.
+  statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
+}
+
 /** Point the view at a fresh set of lines (a scope switch or a snapshot). */
 function resetBuffer(next: LogEntry[]): void {
   entries = next;
@@ -891,10 +904,7 @@ clearBtn.addEventListener('click', async () => {
   // cleared lines reappear on the next live line or when the window reopens.
   if (processId) await window.api.clearLogs(processId);
   resetBuffer([]);
-  // Also drop lines queued while paused — otherwise resuming re-adds the very
-  // lines the user just cleared.
-  pendingQueue.length = 0;
-  if (pausedEl.checked) statusEl.textContent = 'Pausado';
+  dropPendingQueue(); // resuming would re-add the very lines just cleared
 });
 
 // ─────────────────────── Line selection & copy ───────────────────
@@ -1861,9 +1871,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   mergedIsAll = groupId === null;
   mergedGroupId = groupId;
   resetBuffer([]);
-  pendingQueue.length = 0;
-  // The queue just emptied, so a stale "Pausado (+N)" would be a lie.
-  statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
+  dropPendingQueue();
   currentTarget = null;
   currentGroupId = null;
   currentCommandId = null;
@@ -1912,8 +1920,7 @@ async function selectLog(id: string, filter?: string): Promise<void> {
     .querySelector<HTMLElement>('.side-all')
     ?.classList.remove('active');
   resetBuffer([]);
-  pendingQueue.length = 0;
-  statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
+  dropPendingQueue();
   currentTarget = null;
   currentGroupId = null;
   currentCommandId = null;
@@ -2044,6 +2051,9 @@ function syncWatched(): void {
 async function reloadWatched(): Promise<void> {
   const id = processId;
   if (!id) return;
+  // The queue holds the finished run's lines, and the '▶ start' of the new one
+  // if it landed before we got here — the snapshot carries that one already.
+  dropPendingQueue();
   const token = ++loadSeq;
   const res = await window.api.getLogs(id);
   // The view may have moved on, and a reload must not outlive its target.
