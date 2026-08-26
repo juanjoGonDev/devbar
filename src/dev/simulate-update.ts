@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { patchAsarVersion, readAsarVersion } from './patch-asar-version.js';
 
 const exec = promisify(execFile);
 
@@ -14,6 +15,21 @@ const exec = promisify(execFile);
  *
  * Lives under src/dev, which packaged builds drop, so none of this ships.
  */
+/**
+ * Keep Info.plist's hash of app.asar true. Older bundles were built without
+ * the key at all, so a missing one is not an error — there is just nothing
+ * claiming anything to keep true.
+ */
+async function setIntegrityHash(plist: string, hash: string): Promise<void> {
+  const key = ':ElectronAsarIntegrity:Resources/app.asar:hash';
+  try {
+    await exec('/usr/libexec/PlistBuddy', ['-c', `Print ${key}`, plist]);
+  } catch {
+    return;
+  }
+  await exec('/usr/libexec/PlistBuddy', ['-c', `Set ${key} ${hash}`, plist]);
+}
+
 export async function buildSimulatedUpdate({
   bundlePath,
   workDir,
@@ -36,6 +52,19 @@ export async function buildSimulatedUpdate({
         `Set :${key} ${version}`,
         plist,
       ]);
+
+    // Info.plist is not where the app reads its own version from: that is the
+    // package.json inside app.asar. Editing only the plist produces a bundle
+    // that installs cleanly and still calls itself the old version.
+    const asarPath = path.join(appPath, 'Contents', 'Resources', 'app.asar');
+    const headerHash = patchAsarVersion(asarPath, version);
+    // Patching the archive invalidates the bundle's own claim about it, and a
+    // build whose ElectronAsarIntegrity no longer matches refuses to start.
+    await setIntegrityHash(plist, headerHash);
+
+    const reported = readAsarVersion(asarPath);
+    if (reported !== version)
+      throw new Error(`el asar sigue diciendo v${reported}`);
 
     // Editing Info.plist breaks the bundle's seal, and staging refuses an
     // unverifiable download. Re-sign the OUTER bundle only: --deep would
