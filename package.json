@@ -36,21 +36,21 @@
     "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit"
   },
   "devDependencies": {
-    "@electron/packager": "20.0.3",
+    "@electron/packager": "20.3.0",
     "@types/debug": "4.1.13",
     "@types/electron-positioner": "4.1.4",
     "@types/node": "22.20.1",
-    "dependency-cruiser": "18.1.0",
-    "electron": "43.2.0",
-    "esbuild": "0.28.1",
-    "eslint": "10.7.0",
+    "dependency-cruiser": "18.2.0",
+    "electron": "43.4.1",
+    "esbuild": "0.28.2",
+    "eslint": "10.8.1",
     "jiti": "2.7.0",
-    "knip": "6.29.0",
+    "knip": "6.32.2",
     "lefthook": "2.1.10",
     "prettier": "3.9.6",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.64.0",
-    "vitest": "4.1.10"
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.11"
   },
   "dependencies": {
     "electron-store": "11.0.2",
