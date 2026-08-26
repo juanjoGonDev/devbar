@@ -328,8 +328,12 @@ let mergedIsAll = false;
 /** The merged scope on screen, so unknown sources can be looked up again. */
 let mergedGroupId: string | null = null;
 let refreshingSources = false;
-/** Lines whose source was unknown, waiting on the lookup that will name it. */
-const unknownSourceQueue: SourcedLogEntry[] = [];
+/**
+ * Lines whose source was unknown, waiting on the lookup that will name it.
+ * Each is stamped with the scope it arrived in: a lookup that resolves after
+ * the view moved on must not deliver another scope's lines.
+ */
+const unknownSourceQueue: { entry: SourcedLogEntry; scope: number }[] = [];
 /**
  * Ticket for the in-flight log load. Identity is not enough to detect a lost
  * race: two overlapping loads of the SAME scope share it, so both would pass
@@ -371,20 +375,35 @@ async function learnSource(entry: SourcedLogEntry): Promise<void> {
   // Hold the line that triggered this, and any that arrive while the lookup is
   // in flight. Dropping them would lose a service that logs once and falls
   // quiet — and lose it from the filter and from copy too, not just the view.
-  unknownSourceQueue.push(entry);
+  unknownSourceQueue.push({ entry, scope: loadSeq });
   if (refreshingSources || !groupSources) return;
   refreshingSources = true;
   try {
-    const sources = await window.api.getMergedSources(mergedGroupId);
-    if (!groupSources) return;
-    for (const source of sources) groupSources.set(source.id, source);
+    for (;;) {
+      const scope = loadSeq;
+      const sources = await window.api.getMergedSources(mergedGroupId);
+      if (!groupSources) return;
+      if (scope === loadSeq) {
+        for (const source of sources) groupSources.set(source.id, source);
+        break;
+      }
+      // The view moved on while we waited. These names belong to a scope that
+      // is no longer on screen: writing them into the current map would label
+      // live rows with another group's services. The lines they were fetched
+      // for go with them — the new scope's snapshot supersedes that buffer.
+      const waiting = unknownSourceQueue.filter((q) => q.scope === loadSeq);
+      unknownSourceQueue.length = 0;
+      if (!waiting.length) return;
+      unknownSourceQueue.push(...waiting); // arrived after the switch: still ours
+    }
   } finally {
     refreshingSources = false;
   }
   const held = unknownSourceQueue.splice(0);
   for (const queued of held) {
     // Anything still unknown after a refresh really is not ours.
-    if (groupSources?.has(queued.srcId)) deliverMerged(queued);
+    if (queued.scope === loadSeq && groupSources?.has(queued.entry.srcId))
+      deliverMerged(queued.entry);
   }
 }
 
@@ -631,8 +650,15 @@ const EDGE_PX = 500;
 /** Selection survives re-rendering because it is keyed by entry, not by row. */
 const selected = new Set<number>();
 let anchorEntry: number | null = null;
-/** Lines held in memory. Retention is main's number; this mirrors it. */
+/**
+ * Lines held in memory. Mirrors what ProcessManager actually keeps, which is
+ * the per-command override when a command has one and the global setting
+ * otherwise (see `resolveLogLimit`). Holding more than main does would let the
+ * viewer filter and copy lines the process buffer has already dropped.
+ */
 let memoryCap = 20_000;
+/** The global setting, for views with no override of their own. */
+let globalRetention = 20_000;
 
 function passesFilter(entry: LogEntry): boolean {
   return matchesFilter(entry);
@@ -1836,6 +1862,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   currentCommandId = null;
   setDrawer(false); // silencing is per-service; it has no meaning here
 
+  memoryCap = globalRetention; // merged snapshots are capped globally
   const token = ++loadSeq;
   const res = await window.api.getMergedLogs(groupId);
   if (token !== loadSeq) return; // a newer load won the race
@@ -1892,6 +1919,12 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   const token = ++loadSeq;
   const res = await window.api.getLogs(id);
   if (token !== loadSeq) return; // a newer load won the race
+  // Match main's retention for THIS target before any line is held.
+  memoryCap =
+    res.target.kind === 'command' && res.target.target.maxLogLines != null
+      ? res.target.target.maxLogLines
+      : globalRetention;
+
   const target = res.target;
   if (target && target.group && target.target) {
     applyTargetSnapshot(target);
@@ -1921,7 +1954,8 @@ async function selectLog(id: string, filter?: string): Promise<void> {
 (async () => {
   // Retention bounds what the renderer HOLDS; the window decides what it draws.
   const settings = await window.api.getSettings();
-  memoryCap = settings?.maxLogLines || DEFAULT_MAX_LOG_LINES;
+  globalRetention = settings?.maxLogLines || DEFAULT_MAX_LOG_LINES;
+  memoryCap = globalRetention;
   if (initialFilter) filterEl.value = initialFilter;
   await refreshSidebar();
   if (initialScope) {
