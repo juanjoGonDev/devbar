@@ -91,6 +91,23 @@ describe('getLogLimit', () => {
   });
 });
 
+describe('a new run starts from an empty buffer', () => {
+  it("drops the previous run's lines, so a viewer holding them is stale", () => {
+    const pm = manager();
+    push(pm, 20);
+    expect(pm.getLogs(CMD_ID)).toHaveLength(20);
+
+    pm.start(CMD_ID);
+
+    // Only the '▶ start' line start() writes itself. Anything the log viewer
+    // still holds from before this belongs to a run that no longer exists,
+    // which is why it reloads on a startedAt change.
+    expect(pm.getLogs(CMD_ID)).toHaveLength(1);
+    expect(pm.getLogs(CMD_ID)[0]?.line).toContain('start:');
+    expect(pm.getState(CMD_ID).startedAt).not.toBeNull();
+  });
+});
+
 describe('the buffer honours the same number', () => {
   it('trims a running process to its frozen limit, not the new config', () => {
     const pm = manager();

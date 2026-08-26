@@ -660,6 +660,11 @@ let anchorEntry: number | null = null;
 let memoryCap = 20_000;
 /** The global setting, for views with no override of their own. */
 let globalRetention = 20_000;
+/**
+ * The run our buffer belongs to. `start()` empties main's buffer, so a restart
+ * makes every line we hold history that no longer exists behind it.
+ */
+let watchedStartedAt: number | null = null;
 
 function passesFilter(entry: LogEntry): boolean {
   return matchesFilter(entry);
@@ -1548,7 +1553,7 @@ let lastSignature = '';
 
 async function refreshSidebar(): Promise<void> {
   sideData = (await window.api.listLogs()) || [];
-  syncMemoryCap();
+  syncWatched();
   if (!isDetached) {
     const signature = sideSignature();
     if (signature !== lastSignature || !repaintSidebar()) {
@@ -1922,6 +1927,7 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   const res = await window.api.getLogs(id);
   if (token !== loadSeq) return; // a newer load won the race
   memoryCap = res.logLimit; // whatever main kept for it, not what config says now
+  watchedStartedAt = res.commandState.startedAt;
 
   const target = res.target;
   if (target && target.group && target.target) {
@@ -2014,19 +2020,37 @@ window.api.onLog((payload) => {
 });
 
 /**
- * Follow the watched process's retention as it changes. Restarting a command
- * re-freezes its limit, so a view opened before that would otherwise keep
- * holding to the old number — over the new one, that means offering lines main
- * has already dropped.
+ * Follow the watched process across a restart and across a retention change.
+ * Both leave the viewer holding lines main has already dropped — offering them
+ * to the filter and to copy — and neither announces itself as anything more
+ * than a state change.
  */
-function syncMemoryCap(): void {
+function syncWatched(): void {
   if (!processId) return;
   const item = sideData
     .flatMap((group) => group.items)
     .find((candidate) => candidate.id === processId);
-  if (!item || item.logLimit === memoryCap) return;
+  if (!item) return;
+  if (item.startedAt !== watchedStartedAt && item.startedAt !== null) {
+    void reloadWatched(); // a new run: the previous one's lines are gone
+    return;
+  }
+  if (item.logLimit === memoryCap) return;
   memoryCap = item.logLimit;
   if (entries.length > memoryCap + EDGE_CHUNK) trimMemory();
+}
+
+/** Replace the buffer with main's, for when ours describes a run that ended. */
+async function reloadWatched(): Promise<void> {
+  const id = processId;
+  if (!id) return;
+  const token = ++loadSeq;
+  const res = await window.api.getLogs(id);
+  // The view may have moved on, and a reload must not outlive its target.
+  if (token !== loadSeq || processId !== id) return;
+  watchedStartedAt = res.commandState.startedAt;
+  memoryCap = res.logLimit;
+  resetBuffer([...res.lines]);
 }
 
 // Any state change (start, stop, new warn/error) → refresh the live numbers.
