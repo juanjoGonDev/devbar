@@ -51,6 +51,34 @@ unregister_bundle() {
   "$LSREGISTER" -u "$bundle" >/dev/null 2>&1 || true
 }
 
+# Every bundle the build leaves under a directory, withdrawn before the
+# directory goes. Deleting the files first would strand the records.
+withdraw_bundles_under() {
+  local dir=$1
+  [ -d "$dir" ] || return 0
+  local bundle
+  while IFS= read -r bundle; do
+    [ -n "$bundle" ] || continue
+    unregister_bundle "$bundle"
+  done < <(find "$dir" -maxdepth 4 -name 'DevBar.app' -type d 2>/dev/null)
+}
+
+finish_work_dir() {
+  withdraw_bundles_under "$WORK_DIR"
+  rm -rf "$WORK_DIR"
+}
+
+# A build that dies half way must not leak what a finished one cleans up: the
+# copies are registered as soon as they exist, and `fail` exits before any
+# tidying. Runs on every exit, so the records go whatever the outcome.
+release_cleanup() {
+  local arch
+  for arch in arm64 x64; do
+    unregister_bundle "/Volumes/DevBar $VERSION ($arch)/DevBar.app"
+  done
+  finish_work_dir
+}
+
 detach_volume() {
   local volname=$1
   local mount_point="/Volumes/$volname"
@@ -121,10 +149,6 @@ build_architecture() {
 
   [ -s "$zip" ] || fail "ZIP artifact is empty for $arch."
   [ -s "$dmg" ] || fail "DMG artifact is empty for $arch."
-
-  # Both copies are about to be deleted with the work dir.
-  unregister_bundle "$app"
-  unregister_bundle "$dmg_root/DevBar.app"
 }
 
 main() {
@@ -136,7 +160,11 @@ main() {
     fail "package.json version '$VERSION' is not a stable semantic version."
   fi
 
-  rm -rf "$OUTPUT_DIR" "$WORK_DIR"
+  # From here on, every copy this build registers is withdrawn on the way out.
+  trap release_cleanup EXIT
+
+  rm -rf "$OUTPUT_DIR"
+  finish_work_dir # a previous run may have died holding registrations
   mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
 
   build_architecture arm64
@@ -152,7 +180,7 @@ main() {
       > SHA256SUMS.txt
   )
 
-  rm -rf "$WORK_DIR"
+  finish_work_dir
   printf 'macOS release artifacts created in %s\n' "$OUTPUT_DIR"
 }
 
