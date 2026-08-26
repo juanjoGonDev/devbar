@@ -647,13 +647,16 @@ function renderWindow(from: number, to: number): void {
   linesEl.textContent = '';
   linesEl.appendChild(fragment);
   renderCounts();
-  updateScrollButton();
+  // Deliberately no updateScrollButton() here: growTop compensates scrollTop
+  // right after rendering, so judging position mid-flight would briefly read
+  // "at bottom" and switch auto-scroll back on, yanking the reader to the tail.
 }
 
 function renderAtBottom(): void {
   const win = initialWindow(visible.length, WINDOW_ROWS);
   renderWindow(win.start, win.end);
   mainEl.scrollTop = mainEl.scrollHeight;
+  updateScrollButton();
 }
 
 /** Render around one entry, for landing on a specific line after a jump. */
@@ -682,6 +685,7 @@ function growTop(): void {
   // Measured rather than computed: rows wrap, so their heights are not known
   // ahead of time. The delta is exactly how far the content moved down.
   mainEl.scrollTop += mainEl.scrollHeight - before;
+  updateScrollButton();
 }
 
 /** Extend downward, dropping from the top if the DOM budget is spent. */
@@ -697,6 +701,7 @@ function growBottom(): void {
   const droppingTop = win.start > winStart;
   renderWindow(win.start, win.end);
   if (droppingTop) mainEl.scrollTop -= before - mainEl.scrollHeight;
+  updateScrollButton();
 }
 
 /** Point the view at a fresh set of lines (a scope switch or a snapshot). */
@@ -716,7 +721,13 @@ function resetBuffer(next: LogEntry[]): void {
  */
 function pushEntry(entry: LogEntry): void {
   if (entry.silenced) pushMutedLine(entry);
-  const wasAtEnd = winEnd >= visible.length - 1;
+  // A selection detaches the view from the tail. Otherwise every arriving line
+  // slides the window and drops rows off the top — with the DOM budget down
+  // from the old 20 000 to a few hundred that happens constantly, so a
+  // selection visibly ate itself row by row while its owner watched.
+  // The lines still accumulate in the buffer; ↓ or clearing the selection
+  // returns to following them.
+  const wasAtEnd = winEnd >= visible.length - 1 && selected.size === 0;
   entries.push(entry);
   if (entries.length > memoryCap + EDGE_CHUNK) trimMemory();
   const entryIndex = entries.length - 1;
@@ -865,6 +876,7 @@ function clearSelection(): void {
   selected.clear();
   anchorEntry = null;
   repaintSelection();
+  updateScrollButton(); // following may resume now
 }
 
 function selectAllVisible(): void {
@@ -954,7 +966,13 @@ toggleSidebarBtn.addEventListener('click', () => {
 
 const SCROLL_THRESHOLD = 4;
 
+/**
+ * At the end of the LOG, not merely at the end of what is drawn. With a window
+ * over the buffer those stopped being the same thing: scrolled back, the bottom
+ * of the DOM is the bottom of the window, and there are newer lines past it.
+ */
 function isAtBottom(): boolean {
+  if (winEnd < visible.length - 1) return false;
   return (
     mainEl.scrollTop + mainEl.clientHeight >=
     mainEl.scrollHeight - SCROLL_THRESHOLD
@@ -965,7 +983,9 @@ function updateScrollButton(): void {
   if (!scrollBtn) return;
   const atBottom = isAtBottom();
   scrollBtn.classList.toggle('visible', !atBottom);
-  if (atBottom && !autoscrollEl.checked) {
+  // Never resume following while lines are selected: that is the one moment
+  // the reader has said, by picking rows, that they are not watching the tail.
+  if (atBottom && !autoscrollEl.checked && selected.size === 0) {
     autoscrollEl.checked = true;
   }
 }
@@ -981,7 +1001,9 @@ mainEl.addEventListener('scroll', () => {
 window.addEventListener('resize', updateScrollButton);
 
 scrollBtn.addEventListener('click', () => {
-  mainEl.scrollTop = mainEl.scrollHeight;
+  // Move the WINDOW to the tail first. Scrolling the container alone would stop
+  // at the end of the drawn slice, which is what this button appeared to do.
+  renderAtBottom();
   autoscrollEl.checked = true;
   updateScrollButton();
 });
@@ -1515,7 +1537,10 @@ function rerenderExistingLines(): void {
     entry.level = isSilenced ? null : orig;
     changed = true;
   }
-  if (changed) renderWindow(winStart, winEnd);
+  if (changed) {
+    renderWindow(winStart, winEnd);
+    updateScrollButton();
+  }
 }
 
 muteWarnEl.addEventListener('change', () => {

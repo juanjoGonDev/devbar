@@ -79,10 +79,14 @@ Todas las novedades relevantes de DevBar. El formato sigue
   historial completo como si fuera continuo. El filtro busca en **todo** lo
   retenido, no sólo en lo dibujado, y copiar sin selección copia el resultado
   entero del filtro.
+- **Seleccionar líneas desengancha la vista de la cola.** Al elegir filas has
+  dicho que no estás mirando el final, así que las nuevas se acumulan sin
+  arrastrarte: la selección se queda quieta hasta que pulses ↓ o la limpies.
 - Un servicio que arranca **después** de abrir una vista combinada ya aparece
   en ella. Antes el reenvío se decidía con una foto de identificadores tomada
   al abrir, así que un pre-script en su primera ejecución no existía para esa
   vista hasta reabrirla; ahora se decide por ámbito.
+- El botón **↓** llevaba al final de lo dibujado, no del log.
 - **El límite de líneas no se aplicaba a las vistas combinadas** (grupo y
   telemetría general): usaban un tope fijo que ignoraba tu ajuste.
 - Los contadores de warnings, errores y tiempo del panel lateral se partían en
