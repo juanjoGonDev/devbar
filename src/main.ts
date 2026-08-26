@@ -58,6 +58,7 @@ import type {
 import type {
   GroupState,
   ImportPreview,
+  LogSource,
   LogListGroup,
   LogListItem,
   PrescriptConfirmContext,
@@ -381,9 +382,15 @@ const logsWindows = new Map<string, BrowserWindow>();
 // Which log the shared window is currently showing — it only receives lines
 // for that one, so N running services don't flood it with N streams.
 let mainLogsWatching: string | null = null;
-// Non-empty when the shared window is showing a whole group merged into one
-// stream; every id in here is forwarded to that window, tagged by source.
-let mainLogsGroupIds = new Set<string>();
+/*
+ * The merged scope the shared window is showing, or null when it shows one
+ * service. `{ groupId: null }` means every group.
+ *
+ * Gating by SCOPE rather than by a snapshot of ids is what lets a pre-script
+ * whose first run starts after the view opened still stream into it — its id
+ * cannot be in a set captured beforehand, but its group is known.
+ */
+let mainLogsScope: { groupId: string | null } | null = null;
 /**
  * Cap for a merged snapshot. Follows the user's retention setting, like a
  * single log does — a hardcoded number here meant the global view silently
@@ -549,10 +556,16 @@ function broadcastLog(payload: { id: string; entry: LogEntry }): void {
     detached.webContents.send('logs:line', payload);
   }
   const main = logsWindows.get(MAIN_LOGS_KEY);
+  const parsed = parseProcessId(payload.id);
+  const inScope =
+    mainLogsScope !== null &&
+    (mainLogsScope.groupId === null ||
+      // `unknown` carries no group, so it belongs to no merged scope.
+      (parsed.kind !== 'unknown' && parsed.groupId === mainLogsScope.groupId));
   if (
     main &&
     !main.isDestroyed() &&
-    (mainLogsWatching === payload.id || mainLogsGroupIds.has(payload.id))
+    (mainLogsWatching === payload.id || inScope)
   ) {
     main.webContents.send('logs:line', payload);
   }
@@ -1100,7 +1113,7 @@ function ensureLogsScopeWindow(
   win.on('closed', () => {
     logsWindows.delete(MAIN_LOGS_KEY);
     mainLogsWatching = null;
-    mainLogsGroupIds = new Set();
+    mainLogsScope = null;
     updateDockVisibility();
   });
   logger.attachWindowConsole(win, `logs:${scope}`);
@@ -1886,7 +1899,7 @@ function registerIpc() {
       const main = logsWindows.get(MAIN_LOGS_KEY);
       if (main && !main.isDestroyed() && main.webContents === event.sender) {
         mainLogsWatching = processId;
-        mainLogsGroupIds = new Set(); // leaving the merged group view
+        mainLogsScope = null; // leaving the merged view
       }
       const resolved = processManager.resolveTarget(processId);
       const cmdState = processManager.getState(processId);
@@ -1912,6 +1925,64 @@ function registerIpc() {
    * snapshotting happen in the same tick so no line is both replayed and
    * streamed.
    */
+  /** Sources of a merged scope: null groupId means every group. */
+  const collectMergedSources = (groupId: string | null): LogSource[] => {
+    const groups = groupId
+      ? [configStore.getGroup(groupId)].filter((g) => g !== null)
+      : configStore.listGroups();
+    const sources: LogSource[] = [];
+    for (const group of groups) {
+      for (const command of group.commands || [])
+        sources.push({
+          id: makeCommandId(group.id, command.id),
+          name: command.name,
+          groupId: group.id,
+          groupName: group.name,
+        });
+      for (const action of group.actions || [])
+        sources.push({
+          id: makeActionId(group.id, action.id),
+          name: action.name,
+          groupId: group.id,
+          groupName: group.name,
+        });
+    }
+    // Pre-scripts and their pipeline only exist once they have run, so they
+    // come from the retained buffers rather than from config — the same way
+    // `logs:list` finds them for the sidebar.
+    const wanted = new Map(groups.map((group) => [group.id, group.name]));
+    for (const { id } of processManager.listLogBuffers()) {
+      const parsed = parseProcessId(id);
+      if (parsed.kind !== 'prescript' && parsed.kind !== 'preAggregator')
+        continue;
+      const groupName = wanted.get(parsed.groupId);
+      if (groupName === undefined) continue;
+      const resolved = processManager.resolveTarget(id);
+      sources.push({
+        id,
+        name:
+          parsed.kind === 'preAggregator'
+            ? 'Pipeline de pre-scripts'
+            : (resolved?.target.name ?? id),
+        groupId: parsed.groupId,
+        groupName,
+      });
+    }
+    return sources;
+  };
+
+  // Just the sources, for a merged view that saw a line from a service it did
+  // not know about — a pre-script running for the first time since it opened.
+  ipcMain.handle(
+    'logs:getMergedSources',
+    (_e: IpcMainInvokeEvent, rawGroupId: unknown) =>
+      collectMergedSources(
+        rawGroupId === null || rawGroupId === undefined
+          ? null
+          : ipcString(rawGroupId, 'groupId'),
+      ),
+  );
+
   ipcMain.handle(
     'logs:getMerged',
     (event: IpcMainInvokeEvent, rawGroupId: unknown) => {
@@ -1920,60 +1991,12 @@ function registerIpc() {
         rawGroupId === null || rawGroupId === undefined
           ? null
           : ipcString(rawGroupId, 'groupId');
-      const groups = groupId
-        ? [configStore.getGroup(groupId)].filter((g) => g !== null)
-        : configStore.listGroups();
-
-      const sources: {
-        id: string;
-        name: string;
-        groupId: string;
-        groupName: string;
-      }[] = [];
-      for (const group of groups) {
-        for (const command of group.commands || [])
-          sources.push({
-            id: makeCommandId(group.id, command.id),
-            name: command.name,
-            groupId: group.id,
-            groupName: group.name,
-          });
-        for (const action of group.actions || [])
-          sources.push({
-            id: makeActionId(group.id, action.id),
-            name: action.name,
-            groupId: group.id,
-            groupName: group.name,
-          });
-      }
-
-      // Pre-scripts and their pipeline only exist once they have run, so they
-      // come from the retained buffers rather than from config — the same way
-      // `logs:list` finds them for the sidebar. Without this the sidebar lists
-      // a pre-script row while the merged views show none of its lines.
-      const wanted = new Map(groups.map((group) => [group.id, group.name]));
-      for (const { id } of processManager.listLogBuffers()) {
-        const parsed = parseProcessId(id);
-        if (parsed.kind !== 'prescript' && parsed.kind !== 'preAggregator')
-          continue;
-        const groupName = wanted.get(parsed.groupId);
-        if (groupName === undefined) continue;
-        const resolved = processManager.resolveTarget(id);
-        sources.push({
-          id,
-          name:
-            parsed.kind === 'preAggregator'
-              ? 'Pipeline de pre-scripts'
-              : (resolved?.target.name ?? id),
-          groupId: parsed.groupId,
-          groupName,
-        });
-      }
+      const sources = collectMergedSources(groupId);
 
       const main = logsWindows.get(MAIN_LOGS_KEY);
       if (main && !main.isDestroyed() && main.webContents === event.sender) {
         mainLogsWatching = null;
-        mainLogsGroupIds = new Set(sources.map((source) => source.id));
+        mainLogsScope = { groupId };
       }
 
       // Bounded k-way merge, not concatenate-then-sort: this runs on the main
@@ -1986,7 +2009,9 @@ function registerIpc() {
         })),
         mergedSnapshotLimit(),
       );
-      const scopeName = groupId ? (groups[0]?.name ?? '?') : 'Telemetría';
+      const scopeName = groupId
+        ? (configStore.getGroup(groupId)?.name ?? '?')
+        : 'Telemetría';
       // An empty merged view has no way to explain itself from the renderer:
       // no sources and no buffers look identical on screen.
       console.log(

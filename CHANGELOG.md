@@ -68,8 +68,21 @@ Todas las novedades relevantes de DevBar. El formato sigue
   preguntar.
 - **La ventana de logs se congelaba** con un límite de líneas alto. Retención y
   renderizado eran la misma cifra, así que un ajuste de 20 000 líneas
-  significaba 20 000 filas en el DOM. Ahora son dos cosas distintas: se
-  conservan las que pidas, se dibujan como máximo 2000.
+  significaba 20 000 filas en el DOM.
+
+### Añadido
+
+- **El visor carga por tramos según te desplazas.** Las líneas se guardan en
+  memoria y sólo unos cientos están dibujadas: al acercarte a un borde se
+  extiende por ahí, arriba o abajo. Sin indicadores de carga y sin saltos —
+  ya están en memoria, sólo se decide qué se pinta—, así que se recorre el
+  historial completo como si fuera continuo. El filtro busca en **todo** lo
+  retenido, no sólo en lo dibujado, y copiar sin selección copia el resultado
+  entero del filtro.
+- Un servicio que arranca **después** de abrir una vista combinada ya aparece
+  en ella. Antes el reenvío se decidía con una foto de identificadores tomada
+  al abrir, así que un pre-script en su primera ejecución no existía para esa
+  vista hasta reabrirla; ahora se decide por ámbito.
 - **El límite de líneas no se aplicaba a las vistas combinadas** (grupo y
   telemetría general): usaban un tope fijo que ignoraba tu ajuste.
 - Los contadores de warnings, errores y tiempo del panel lateral se partían en

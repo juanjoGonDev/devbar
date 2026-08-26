@@ -245,6 +245,8 @@ export interface DevBarApi {
   ): Promise<{ ok: boolean; group: Group | null }>;
   getLogs(processId: string): Promise<LogsSnapshot>;
   getMergedLogs(groupId: string | null): Promise<GroupLogsSnapshot>;
+  /** Sources only, to learn about a service that started after the view. */
+  getMergedSources(groupId: string | null): Promise<LogSource[]>;
   clearLogs(processId: string): Promise<SimpleResult>;
   listLogs(): Promise<LogListGroup[]>;
   openConfig(): Promise<SimpleResult>;

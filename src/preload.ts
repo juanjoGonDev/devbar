@@ -63,6 +63,8 @@ const api: DevBarApi = {
     ipcRenderer.invoke('silence:setGroup', { groupId, level, enabled }),
   getLogs: (processId) => ipcRenderer.invoke('logs:get', processId),
   getMergedLogs: (groupId) => ipcRenderer.invoke('logs:getMerged', groupId),
+  getMergedSources: (groupId) =>
+    ipcRenderer.invoke('logs:getMergedSources', groupId),
   clearLogs: (processId) => ipcRenderer.invoke('logs:clear', processId),
   listLogs: () => ipcRenderer.invoke('logs:list'),
   isDev: () => ipcRenderer.invoke('app:isDev'),

@@ -12,6 +12,13 @@ import {
   type Selection,
 } from './line-selection.js';
 import { renderPatternList, wireAddPattern } from './silence-ui.js';
+import {
+  extendBottom,
+  extendTop,
+  initialWindow,
+  windowAround,
+} from './log-window.js';
+import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 import type { LogEntry } from '../src/domain-types.js';
 import type {
   LogListGroup,
@@ -251,14 +258,6 @@ let currentTarget: LogsTarget | null = null;
 // groupId + commandId extracted from processId for silence ops
 let currentGroupId: string | null = null;
 let currentCommandId: string | null = null;
-/**
- * How many lines may sit in the DOM at once — deliberately NOT the retention
- * setting. Those were the same number, so raising retention to 10 000 (20 000
- * on this machine) meant that many rows, each with children, and the window
- * froze. Retention is how much is KEPT; this is how much is DRAWN.
- */
-const DOM_LINE_CAP = 2000;
-let visibleCount = 0;
 const pendingQueue: LogEntry[] = [];
 let filterRe: RegExp | null = null;
 // Last sidebar snapshot — also the source of truth for the header's run
@@ -325,6 +324,9 @@ type Scope =
 let groupSources: Map<string, LogSource> | null = null;
 /** Distinguishes the generic view from a single-group one; both are merged. */
 let mergedIsAll = false;
+/** The merged scope on screen, so unknown sources can be looked up again. */
+let mergedGroupId: string | null = null;
+let refreshingSources = false;
 /**
  * Ticket for the in-flight log load. Identity is not enough to detect a lost
  * race: two overlapping loads of the SAME scope share it, so both would pass
@@ -349,12 +351,39 @@ async function openScope(
  */
 async function jumpToLine(srcId: string, ts: number): Promise<void> {
   await openScope({ kind: 'single', processId: srcId }, [...levelFilter]);
-  const row = Array.from(linesEl.children).find(
-    (node) => node instanceof HTMLElement && node.dataset.ts === String(ts),
-  );
-  if (!(row instanceof HTMLElement)) return;
+  // Search the BUFFER, not the DOM: after the switch the line is almost
+  // certainly outside the drawn window, so the window is moved to it.
+  const entryIndex = entries.findIndex((entry) => entry.ts === ts);
+  if (entryIndex < 0) return;
   autoscrollEl.checked = false;
+  flashEntry(entryIndex);
+}
+
+/**
+ * Refresh the merged source list after a line from a service we did not know
+ * about. Guarded: a burst of lines from a new pre-script must not fire one
+ * lookup each. The line that triggered it is dropped; the next one is tagged.
+ */
+async function learnSource(srcId: string): Promise<void> {
+  if (refreshingSources || !groupSources) return;
+  refreshingSources = true;
+  try {
+    const sources = await window.api.getMergedSources(mergedGroupId);
+    if (!groupSources) return;
+    for (const source of sources) groupSources.set(source.id, source);
+    if (!groupSources.has(srcId)) return; // genuinely not ours
+  } finally {
+    refreshingSources = false;
+  }
+}
+
+/** Draw the window around an entry, scroll to it and mark it. */
+function flashEntry(entryIndex: number): void {
+  const row = renderAroundEntry(entryIndex);
+  if (!row) return;
   row.scrollIntoView({ block: 'center' });
+  row.classList.remove('flash');
+  void row.offsetWidth; // restart the animation if it is already running
   row.classList.add('flash');
   setTimeout(() => row.classList.remove('flash'), 1600);
 }
@@ -403,17 +432,16 @@ function renderLevelChips(_item?: LogListItem | null): void {
  * That context is usually where the cause is: the line before the failure.
  */
 function showInContext(row: HTMLElement): void {
+  const entryIndex = Number(row.dataset.eidx);
   filterEl.value = '';
+  // Clearing the filter re-renders, so the row handed in here is discarded —
+  // the entry index is what survives, and the window is rebuilt around it.
   setLevelFilter([]);
   // Always respond, even when nothing was filtered. A control that looks
   // pressable and answers with silence teaches you to stop pressing it; with
   // no filter on, centring and flashing the line is still a real answer.
   autoscrollEl.checked = false; // otherwise the tail yanks us away again
-  row.scrollIntoView({ block: 'center' });
-  row.classList.remove('flash');
-  void row.offsetWidth; // restart the animation if it is already running
-  row.classList.add('flash');
-  setTimeout(() => row.classList.remove('flash'), 1600);
+  if (Number.isFinite(entryIndex)) flashEntry(entryIndex);
 }
 
 /** Replace the level pin outright — entry points set what they want to see. */
@@ -424,7 +452,12 @@ function setLevelFilter(levels: readonly SilenceLevel[]): void {
   applyFilter();
 }
 
-function appendLine(entry: LogEntry): void {
+/**
+ * Build one row. Pure construction: it neither appends nor trims, so the
+ * window layer can render any slice of the buffer, repeatedly, without the
+ * side effects that used to be tangled in here.
+ */
+function buildRow(entry: LogEntry, entryIndex: number): HTMLElement {
   const div = document.createElement('div');
   const classes = ['line', entry.stream];
   if (entry.level) classes.push(entry.level);
@@ -433,6 +466,7 @@ function appendLine(entry: LogEntry): void {
   div.dataset.line = entry.line;
   div.dataset.level = levelOf(entry);
   div.dataset.ts = String(entry.ts); // handle for jumping between views
+  div.dataset.eidx = String(entryIndex); // position in `entries`
   if (entry.originalLevel) div.dataset.originalLevel = entry.originalLevel;
 
   const ts = document.createElement('span');
@@ -547,46 +581,214 @@ function appendLine(entry: LogEntry): void {
     div.appendChild(btn);
   }
 
-  if (entry.silenced) pushMutedLine(entry);
+  if (selected.has(entryIndex)) div.classList.add('selected');
+  return div;
+}
 
-  if (!matchesFilter(entry)) div.classList.add('hidden');
-  linesEl.appendChild(div);
-  visibleCount += 1;
+// ─────────────────── Log buffer and render window ────────────────
+/*
+ * Lines live in `entries`; only a window of them is ever in the DOM.
+ *
+ * Before, every retained line was a row, so the retention setting doubled as a
+ * DOM budget and 20 000 lines locked the window up. Now retention is memory —
+ * cheap — and the DOM holds a few hundred rows around where you are looking,
+ * extended at whichever edge you approach. `visible` is the filtered view of
+ * `entries`, so filtering searches everything held rather than only what
+ * happens to be drawn.
+ */
+let entries: LogEntry[] = [];
+/** Indices into `entries` that pass the current filters, in order. */
+let visible: number[] = [];
+/** Rendered slice of `visible`, inclusive; -1/-2 means nothing rendered. */
+let winStart = 0;
+let winEnd = -1;
+/** Rows rendered on a fresh view, and added per edge as you scroll. */
+const WINDOW_ROWS = 600;
+const EDGE_CHUNK = 300;
+/** How close to an edge counts as approaching it. */
+const EDGE_PX = 500;
+/** Selection survives re-rendering because it is keyed by entry, not by row. */
+const selected = new Set<number>();
+let anchorEntry: number | null = null;
+/** Lines held in memory. Retention is main's number; this mirrors it. */
+let memoryCap = 20_000;
 
-  while (visibleCount > DOM_LINE_CAP && linesEl.firstChild) {
-    linesEl.removeChild(linesEl.firstChild);
-    visibleCount -= 1;
+function passesFilter(entry: LogEntry): boolean {
+  return matchesFilter(entry);
+}
+
+function recomputeVisible(): void {
+  visible = [];
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (entry && passesFilter(entry)) visible.push(i);
   }
+}
 
-  if (autoscrollEl.checked) {
-    mainEl.scrollTop = mainEl.scrollHeight;
+function renderCounts(): void {
+  const total = entries.length;
+  countsEl.textContent =
+    visible.length === total
+      ? `${total} líneas`
+      : `${visible.length} de ${total} líneas`;
+}
+
+/** Replace the DOM with `visible[from..to]`, clamped to what exists. */
+function renderWindow(from: number, to: number): void {
+  winStart = Math.max(0, from);
+  winEnd = Math.min(visible.length - 1, to);
+  const fragment = document.createDocumentFragment();
+  for (let pos = winStart; pos <= winEnd; pos += 1) {
+    const entryIndex = visible[pos];
+    if (entryIndex === undefined) continue;
+    const entry = entries[entryIndex];
+    if (entry) fragment.appendChild(buildRow(entry, entryIndex));
   }
-  countsEl.textContent = `${linesEl.childElementCount} líneas`;
+  linesEl.textContent = '';
+  linesEl.appendChild(fragment);
+  renderCounts();
   updateScrollButton();
+}
+
+function renderAtBottom(): void {
+  const win = initialWindow(visible.length, WINDOW_ROWS);
+  renderWindow(win.start, win.end);
+  mainEl.scrollTop = mainEl.scrollHeight;
+}
+
+/** Render around one entry, for landing on a specific line after a jump. */
+function renderAroundEntry(entryIndex: number): HTMLElement | null {
+  const pos = visible.indexOf(entryIndex);
+  if (pos < 0) return null;
+  const win = windowAround(pos, visible.length, WINDOW_ROWS);
+  renderWindow(win.start, win.end);
+  return (
+    linesEl.querySelector<HTMLElement>(`.line[data-eidx="${entryIndex}"]`) ??
+    null
+  );
+}
+
+/** Extend upward, holding the viewport still. */
+function growTop(): void {
+  if (winStart === 0) return;
+  const before = mainEl.scrollHeight;
+  const win = extendTop(
+    { start: winStart, end: winEnd },
+    visible.length,
+    EDGE_CHUNK,
+    WINDOW_ROWS,
+  );
+  renderWindow(win.start, win.end);
+  // Measured rather than computed: rows wrap, so their heights are not known
+  // ahead of time. The delta is exactly how far the content moved down.
+  mainEl.scrollTop += mainEl.scrollHeight - before;
+}
+
+/** Extend downward, dropping from the top if the DOM budget is spent. */
+function growBottom(): void {
+  if (winEnd >= visible.length - 1) return;
+  const before = mainEl.scrollHeight;
+  const win = extendBottom(
+    { start: winStart, end: winEnd },
+    visible.length,
+    EDGE_CHUNK,
+    WINDOW_ROWS,
+  );
+  const droppingTop = win.start > winStart;
+  renderWindow(win.start, win.end);
+  if (droppingTop) mainEl.scrollTop -= before - mainEl.scrollHeight;
+}
+
+/** Point the view at a fresh set of lines (a scope switch or a snapshot). */
+function resetBuffer(next: LogEntry[]): void {
+  entries = next;
+  selected.clear();
+  anchorEntry = null;
+  recomputeVisible();
+  renderAtBottom();
+  reportSelection();
+}
+
+/**
+ * A line that just arrived. It only reaches the DOM when the view is already
+ * at the bottom: scrolled back, you are reading history and must not be
+ * yanked forward.
+ */
+function pushEntry(entry: LogEntry): void {
+  if (entry.silenced) pushMutedLine(entry);
+  const wasAtEnd = winEnd >= visible.length - 1;
+  entries.push(entry);
+  if (entries.length > memoryCap + EDGE_CHUNK) trimMemory();
+  const entryIndex = entries.length - 1;
+  if (!passesFilter(entry)) {
+    renderCounts();
+    return;
+  }
+  visible.push(entryIndex);
+  if (!wasAtEnd) {
+    renderCounts();
+    return;
+  }
+  linesEl.appendChild(buildRow(entry, entryIndex));
+  winEnd = visible.length - 1;
+  while (
+    linesEl.childElementCount > WINDOW_ROWS + EDGE_CHUNK &&
+    linesEl.firstChild
+  ) {
+    linesEl.removeChild(linesEl.firstChild);
+    winStart += 1;
+  }
+  if (autoscrollEl.checked) mainEl.scrollTop = mainEl.scrollHeight;
+  renderCounts();
+  updateScrollButton();
+}
+
+/**
+ * Drop the oldest lines once memory is past its cap, in one batch so the
+ * re-indexing below is rare. Every index in `visible`, in the selection and in
+ * the window shifts, so they are all rebased together.
+ */
+function trimMemory(): void {
+  const drop = entries.length - memoryCap;
+  if (drop <= 0) return;
+  entries = entries.slice(drop);
+  const rebased = new Set<number>();
+  for (const index of selected) {
+    if (index - drop >= 0) rebased.add(index - drop);
+  }
+  selected.clear();
+  for (const index of rebased) selected.add(index);
+  anchorEntry =
+    anchorEntry === null || anchorEntry - drop < 0 ? null : anchorEntry - drop;
+  recomputeVisible();
+  renderAtBottom();
 }
 
 function applyFilter(): void {
   filterRe = buildFilter(filterEl.value);
-  for (const node of Array.from(linesEl.children)) {
-    if (!(node instanceof HTMLElement)) continue;
-    const text = stripAnsi(node.dataset.line || '');
-    const ok =
-      matchesLevel(node.dataset.level || '') &&
-      (!filterRe || filterRe.test(text));
-    node.classList.toggle('hidden', !ok);
-  }
-  if (autoscrollEl.checked) {
-    mainEl.scrollTop = mainEl.scrollHeight;
-  }
+  recomputeVisible();
+  renderAtBottom();
+  reportSelection();
 }
 
 function flushQueue(): void {
   if (pausedEl.checked) return;
   while (pendingQueue.length) {
     const entry = pendingQueue.shift();
-    if (entry) appendLine(entry);
+    if (entry) pushEntry(entry);
   }
 }
+
+// Approaching either edge extends the window there. No spinner and no gap:
+// the lines are already in memory, this only decides what is drawn.
+mainEl.addEventListener('scroll', () => {
+  if (mainEl.scrollTop < EDGE_PX) growTop();
+  else if (
+    mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight <
+    EDGE_PX
+  )
+    growBottom();
+});
 
 filterEl.addEventListener('input', applyFilter);
 levelPillEl.addEventListener('click', () => setLevelFilter([]));
@@ -599,9 +801,7 @@ clearBtn.addEventListener('click', async () => {
   // Wipe the real retained buffer (main), not just the visible DOM — otherwise
   // cleared lines reappear on the next live line or when the window reopens.
   if (processId) await window.api.clearLogs(processId);
-  linesEl.innerHTML = '';
-  visibleCount = 0;
-  countsEl.textContent = '0 líneas';
+  resetBuffer([]);
   // Also drop lines queued while paused — otherwise resuming re-adds the very
   // lines the user just cleared.
   pendingQueue.length = 0;
@@ -611,29 +811,50 @@ clearBtn.addEventListener('click', async () => {
 // ─────────────────────── Line selection & copy ───────────────────
 // Selection lives in the DOM (`.line.selected`) so trimming the buffer or
 // re-filtering can never leave it pointing at rows that are gone.
-let anchorRow: HTMLElement | null = null;
 
-function visibleRows(): HTMLElement[] {
-  return Array.from(linesEl.children).filter(
-    (n): n is HTMLElement =>
-      n instanceof HTMLElement && !n.classList.contains('hidden'),
-  );
-}
-
-function selectedRows(): HTMLElement[] {
-  return visibleRows().filter((r) => r.classList.contains('selected'));
-}
-
-function paintSelection(rows: HTMLElement[], next: Selection): void {
-  rows.forEach((row, i) =>
-    row.classList.toggle('selected', next.selected.has(i)),
-  );
-  anchorRow = next.anchor === null ? null : (rows[next.anchor] ?? null);
+/*
+ * Selection is keyed by ENTRY, not by row: rows come and go as the window
+ * moves, so a DOM-based selection would silently lose whatever scrolled out.
+ * Positions handed to applySelection are positions in `visible`, which is what
+ * "the line above this one" means to someone reading a filtered log.
+ */
+function repaintSelection(): void {
+  for (const node of Array.from(linesEl.children)) {
+    if (!(node instanceof HTMLElement)) continue;
+    const index = Number(node.dataset.eidx);
+    node.classList.toggle('selected', selected.has(index));
+  }
   reportSelection();
 }
 
+function selectionAsPositions(): Selection {
+  const positions = new Set<number>();
+  for (let pos = 0; pos < visible.length; pos += 1) {
+    const index = visible[pos];
+    if (index !== undefined && selected.has(index)) positions.add(pos);
+  }
+  const anchor =
+    anchorEntry === null
+      ? null
+      : (() => {
+          const pos = visible.indexOf(anchorEntry);
+          return pos < 0 ? null : pos;
+        })();
+  return { selected: positions, anchor };
+}
+
+function commitSelection(next: Selection): void {
+  selected.clear();
+  for (const pos of next.selected) {
+    const index = visible[pos];
+    if (index !== undefined) selected.add(index);
+  }
+  anchorEntry = next.anchor === null ? null : (visible[next.anchor] ?? null);
+  repaintSelection();
+}
+
 function reportSelection(): void {
-  const count = selectedRows().length;
+  const count = selected.size;
   copyBtn.title = count ? `Copiar ${count} línea(s) seleccionada(s)` : 'Copiar';
   if (count) statusEl.textContent = `${count} seleccionada(s)`;
   else if (pausedEl.checked) statusEl.textContent = 'Pausado';
@@ -641,18 +862,28 @@ function reportSelection(): void {
 }
 
 function clearSelection(): void {
-  for (const row of Array.from(linesEl.children)) {
-    if (row instanceof HTMLElement) row.classList.remove('selected');
-  }
-  anchorRow = null;
-  reportSelection();
+  selected.clear();
+  anchorEntry = null;
+  repaintSelection();
 }
 
 function selectAllVisible(): void {
-  const rows = visibleRows();
-  for (const row of rows) row.classList.add('selected');
-  anchorRow = rows[0] ?? null;
-  reportSelection();
+  selected.clear();
+  for (const index of visible) selected.add(index);
+  anchorEntry = visible[0] ?? null;
+  repaintSelection();
+}
+
+/** Copy text for entry indices, straight from the buffer. */
+function entriesToText(indices: readonly number[]): string {
+  return indices
+    .map((index) => {
+      const entry = entries[index];
+      if (!entry) return '';
+      return `${fmtTime(entry.ts)} ${stripAnsi(entry.line)}`;
+    })
+    .filter(Boolean)
+    .join('\n');
 }
 
 // Shift-click would otherwise extend the browser's text selection instead.
@@ -665,17 +896,12 @@ linesEl.addEventListener('click', (ev) => {
   if (!window.getSelection()?.isCollapsed) return;
   const row = closestElement(ev.target, '.line');
   if (!row) return;
-  const rows = visibleRows();
-  const index = rows.indexOf(row);
-  if (index < 0) return;
-  const anchorIndex = anchorRow ? rows.indexOf(anchorRow) : -1;
-  const prev: Selection = {
-    selected: new Set(
-      rows.flatMap((r, i) => (r.classList.contains('selected') ? [i] : [])),
-    ),
-    anchor: anchorIndex < 0 ? null : anchorIndex,
-  };
-  paintSelection(rows, applySelection(prev, index, selectModeFor(ev)));
+  const entryIndex = Number(row.dataset.eidx);
+  const pos = visible.indexOf(entryIndex);
+  if (pos < 0) return;
+  commitSelection(
+    applySelection(selectionAsPositions(), pos, selectModeFor(ev)),
+  );
 });
 
 // Clicking the empty space under the last line drops the selection.
@@ -683,30 +909,21 @@ mainEl.addEventListener('click', (ev) => {
   if (!closestElement(ev.target, '.line')) clearSelection();
 });
 
-function rowsToText(rows: HTMLElement[]): string {
-  return rows
-    .map((node) => {
-      const ts = node.querySelector<HTMLElement>('.ts')?.textContent ?? '';
-      const body = node.querySelector<HTMLElement>('.body')?.textContent ?? '';
-      return `${ts} ${body}`;
-    })
-    .join('\n');
-}
-
-async function copyRows(rows: HTMLElement[]): Promise<void> {
+async function copyEntries(indices: readonly number[]): Promise<void> {
   try {
-    await navigator.clipboard.writeText(rowsToText(rows));
-    statusEl.textContent = `Copiado ✓ (${rows.length})`;
+    await navigator.clipboard.writeText(entriesToText(indices));
+    statusEl.textContent = `Copiado ✓ (${indices.length})`;
     setTimeout(reportSelection, 1500);
   } catch (err) {
     statusEl.textContent = 'Error al copiar';
   }
 }
 
-// With a selection the button copies just that; with none, everything visible.
+// With a selection the button copies just that; with none, everything the
+// filter leaves — the whole filtered buffer, not merely the drawn window.
 copyBtn.addEventListener('click', () => {
-  const selected = selectedRows();
-  void copyRows(selected.length ? selected : visibleRows());
+  const picked = [...selected].sort((a, b) => a - b);
+  void copyEntries(picked.length ? picked : visible);
 });
 
 detachBtn.addEventListener('click', () => {
@@ -788,10 +1005,9 @@ document.addEventListener('keydown', (e) => {
   if (accel && (e.key === 'c' || e.key === 'C')) {
     // A real text selection wins — let the browser copy exactly that.
     if (!window.getSelection()?.isCollapsed) return;
-    const selected = selectedRows();
-    if (!selected.length) return;
+    if (!selected.size) return;
     e.preventDefault();
-    void copyRows(selected);
+    void copyEntries([...selected].sort((a, b) => a - b));
     return;
   }
   if (e.key === 'Escape') clearSelection();
@@ -1284,24 +1500,22 @@ function rerenderExistingLines(): void {
   )
     return;
   const sp = currentTarget.target.silencedPatterns || { warn: [], error: [] };
-  for (const node of Array.from(linesEl.children)) {
-    if (!(node instanceof HTMLElement)) continue;
-    const orig = node.dataset.originalLevel as SilenceLevel | undefined;
+  // Update the BUFFER, not just the drawn rows. A row scrolled out of the
+  // window would otherwise come back built from a stale `silenced` flag.
+  let changed = false;
+  for (const entry of entries) {
+    const orig = entry.originalLevel;
     if (!orig) continue;
     const list = sp[orig] || [];
-    const lineText = stripAnsi(node.dataset.line || '');
-    const isSilenced = list.some((p) => clientMatchesPattern(p, lineText));
-    node.classList.toggle('silenced', isSilenced);
-    node.classList.toggle('warn', orig === 'warn' && !isSilenced);
-    node.classList.toggle('error', orig === 'error' && !isSilenced);
-    const btn = node.querySelector<HTMLButtonElement>('.silence-btn');
-    if (btn) {
-      btn.textContent = isSilenced ? '🔔' : '🔕';
-      btn.title = isSilenced
-        ? 'Quitar silencio (esta línea)'
-        : 'Silenciar este patrón (matchea por substring)';
-    }
+    const isSilenced = list.some((pattern) =>
+      clientMatchesPattern(pattern, stripAnsi(entry.line)),
+    );
+    if (entry.silenced === isSilenced) continue;
+    entry.silenced = isSilenced;
+    entry.level = isSilenced ? null : orig;
+    changed = true;
   }
+  if (changed) renderWindow(winStart, winEnd);
 }
 
 muteWarnEl.addEventListener('change', () => {
@@ -1540,15 +1754,14 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   processId = null;
   clearMutedFeeds(); // rows from the previous scope would target the wrong command
   mergedIsAll = groupId === null;
-  linesEl.textContent = '';
-  visibleCount = 0;
+  mergedGroupId = groupId;
+  resetBuffer([]);
   pendingQueue.length = 0;
   // The queue just emptied, so a stale "Pausado (+N)" would be a lie.
   statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
   currentTarget = null;
   currentGroupId = null;
   currentCommandId = null;
-  anchorRow = null;
   setDrawer(false); // silencing is per-service; it has no meaning here
 
   const token = ++loadSeq;
@@ -1564,8 +1777,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   runBtn.style.display = 'none';
   renderLevelChips();
 
-  for (const entry of res.lines) appendLine(entry);
-  countsEl.textContent = `${linesEl.childElementCount} líneas`;
+  resetBuffer([...res.lines]);
   for (const row of Array.from(
     sideTreeEl.querySelectorAll<HTMLElement>('.side-item'),
   ))
@@ -1582,6 +1794,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
 async function selectLog(id: string, filter?: string): Promise<void> {
   processId = id;
   groupSources = null;
+  mergedGroupId = null;
   clearMutedFeeds(); // rows from the previous scope would target the wrong command
   mergedIsAll = false;
   for (const summary of Array.from(
@@ -1591,15 +1804,12 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   sideTreeEl
     .querySelector<HTMLElement>('.side-all')
     ?.classList.remove('active');
-  linesEl.textContent = '';
-  visibleCount = 0;
+  resetBuffer([]);
   pendingQueue.length = 0;
-  countsEl.textContent = '0 líneas';
   statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
   currentTarget = null;
   currentGroupId = null;
   currentCommandId = null;
-  anchorRow = null;
   muteWarnEl.checked = false;
   muteErrEl.checked = false;
   if (filter !== undefined) filterEl.value = filter;
@@ -1623,7 +1833,7 @@ async function selectLog(id: string, filter?: string): Promise<void> {
     _logsGroupName = '';
   }
 
-  for (const entry of res.lines) appendLine(entry);
+  resetBuffer([...res.lines]);
   if (!isDetached) {
     for (const row of Array.from(
       sideTreeEl.querySelectorAll<HTMLElement>('.side-item'),
@@ -1636,8 +1846,9 @@ async function selectLog(id: string, filter?: string): Promise<void> {
 
 // ─────────────────────────── Bootstrap ───────────────────────────
 (async () => {
-  // Retention is main's business — it caps the buffers and the merged snapshot.
-  // The renderer only decides how much of what arrives it draws (DOM_LINE_CAP).
+  // Retention bounds what the renderer HOLDS; the window decides what it draws.
+  const settings = await window.api.getSettings();
+  memoryCap = settings?.maxLogLines || DEFAULT_MAX_LOG_LINES;
   if (initialFilter) filterEl.value = initialFilter;
   await refreshSidebar();
   if (initialScope) {
@@ -1676,14 +1887,21 @@ window.api.onLog((payload) => {
   // In group mode any member's line belongs here; tag it with its source so
   // appendLine can label the row.
   if (groupSources) {
-    if (!groupSources.has(payload.id)) return;
+    // A service can appear AFTER the view opened — a pre-script running for
+    // the first time. Main forwards it because the scope matches, so an
+    // unknown id here means our source list is stale, not that the line is
+    // foreign: learn the name, then show it.
+    if (!groupSources.has(payload.id)) {
+      void learnSource(payload.id);
+      return;
+    }
     const sourced = { ...payload.entry, srcId: payload.id };
     if (pausedEl.checked) {
       pendingQueue.push(sourced);
       statusEl.textContent = `Pausado (+${pendingQueue.length})`;
       return;
     }
-    appendLine(sourced);
+    pushEntry(sourced);
     return;
   }
   if (payload.id !== processId) return;
@@ -1692,7 +1910,7 @@ window.api.onLog((payload) => {
     statusEl.textContent = `Pausado (+${pendingQueue.length})`;
     return;
   }
-  appendLine(payload.entry);
+  pushEntry(payload.entry);
 });
 
 // Any state change (start, stop, new warn/error) → refresh the live numbers.
