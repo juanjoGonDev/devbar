@@ -66,6 +66,11 @@ export function extendBottom(
   return clamp({ start, end }, total);
 }
 
+/** Force a window inside a list's bounds, for use after the list shifts. */
+export function clampWindow(start: number, end: number, total: number): Win {
+  return clamp({ start, end }, total);
+}
+
 /** How many rows a window covers. */
 export function windowSize(win: Win): number {
   return Math.max(0, win.end - win.start + 1);

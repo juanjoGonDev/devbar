@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampWindow,
   extendBottom,
   extendTop,
   initialWindow,
@@ -115,5 +116,29 @@ describe('walking the whole buffer', () => {
     expect(win.end).toBe(total - 1);
     // Every index was rendered at some point: scrolling never skips a line.
     expect(seen.size).toBe(total);
+  });
+});
+
+describe('clampWindow', () => {
+  it('slides a window back inside a list that lost entries from the front', () => {
+    // What a memory trim does: indices shift down by however many were dropped.
+    expect(clampWindow(100 - 30, 300 - 30, 400)).toEqual({
+      start: 70,
+      end: 270,
+    });
+  });
+
+  it('never produces negative indices when the shift overshoots', () => {
+    const win = clampWindow(-50, 100, 400);
+    expect(win.start).toBe(0);
+    expect(win.end).toBe(100);
+  });
+
+  it('pulls the end back to the last entry', () => {
+    expect(clampWindow(10, 9999, 100)).toEqual({ start: 10, end: 99 });
+  });
+
+  it('collapses to empty for an empty list', () => {
+    expect(windowSize(clampWindow(10, 20, 0))).toBe(0);
   });
 });

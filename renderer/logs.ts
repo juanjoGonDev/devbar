@@ -13,6 +13,7 @@ import {
 } from './line-selection.js';
 import { renderPatternList, wireAddPattern } from './silence-ui.js';
 import {
+  clampWindow,
   extendBottom,
   extendTop,
   initialWindow,
@@ -327,6 +328,8 @@ let mergedIsAll = false;
 /** The merged scope on screen, so unknown sources can be looked up again. */
 let mergedGroupId: string | null = null;
 let refreshingSources = false;
+/** Lines whose source was unknown, waiting on the lookup that will name it. */
+const unknownSourceQueue: SourcedLogEntry[] = [];
 /**
  * Ticket for the in-flight log load. Identity is not enough to detect a lost
  * race: two overlapping loads of the SAME scope share it, so both would pass
@@ -364,17 +367,35 @@ async function jumpToLine(srcId: string, ts: number): Promise<void> {
  * about. Guarded: a burst of lines from a new pre-script must not fire one
  * lookup each. The line that triggered it is dropped; the next one is tagged.
  */
-async function learnSource(srcId: string): Promise<void> {
+async function learnSource(entry: SourcedLogEntry): Promise<void> {
+  // Hold the line that triggered this, and any that arrive while the lookup is
+  // in flight. Dropping them would lose a service that logs once and falls
+  // quiet — and lose it from the filter and from copy too, not just the view.
+  unknownSourceQueue.push(entry);
   if (refreshingSources || !groupSources) return;
   refreshingSources = true;
   try {
     const sources = await window.api.getMergedSources(mergedGroupId);
     if (!groupSources) return;
     for (const source of sources) groupSources.set(source.id, source);
-    if (!groupSources.has(srcId)) return; // genuinely not ours
   } finally {
     refreshingSources = false;
   }
+  const held = unknownSourceQueue.splice(0);
+  for (const queued of held) {
+    // Anything still unknown after a refresh really is not ours.
+    if (groupSources?.has(queued.srcId)) deliverMerged(queued);
+  }
+}
+
+/** The paused-or-not path a merged line takes once its source is known. */
+function deliverMerged(entry: SourcedLogEntry): void {
+  if (pausedEl.checked) {
+    pendingQueue.push(entry);
+    statusEl.textContent = `Pausado (+${pendingQueue.length})`;
+    return;
+  }
+  pushEntry(entry);
 }
 
 /** Draw the window around an entry, scroll to it and mark it. */
@@ -729,7 +750,13 @@ function pushEntry(entry: LogEntry): void {
   // returns to following them.
   const wasAtEnd = winEnd >= visible.length - 1 && selected.size === 0;
   entries.push(entry);
-  if (entries.length > memoryCap + EDGE_CHUNK) trimMemory();
+  if (entries.length > memoryCap + EDGE_CHUNK && trimMemory()) {
+    // A trim rebuilds `visible` and the window from scratch, this entry
+    // included. Carrying on would push its index a second time and append a
+    // second row for it — one duplicate per trim, for the life of the view.
+    renderCounts();
+    return;
+  }
   const entryIndex = entries.length - 1;
   if (!passesFilter(entry)) {
     renderCounts();
@@ -759,9 +786,14 @@ function pushEntry(entry: LogEntry): void {
  * re-indexing below is rare. Every index in `visible`, in the selection and in
  * the window shifts, so they are all rebased together.
  */
-function trimMemory(): void {
+function trimMemory(): boolean {
   const drop = entries.length - memoryCap;
-  if (drop <= 0) return;
+  if (drop <= 0) return false;
+  // How far the window has to slide, and whether it was following the tail —
+  // decided BEFORE the shift, while the old indices still mean something.
+  const droppedVisible = visible.filter((index) => index < drop).length;
+  const wasFollowing = winEnd >= visible.length - 1;
+
   entries = entries.slice(drop);
   const rebased = new Set<number>();
   for (const index of selected) {
@@ -772,7 +804,21 @@ function trimMemory(): void {
   anchorEntry =
     anchorEntry === null || anchorEntry - drop < 0 ? null : anchorEntry - drop;
   recomputeVisible();
-  renderAtBottom();
+
+  // Only jump to the tail if that is where the reader already was. Forcing it
+  // would drag anyone scrolled back to the end every few hundred lines.
+  if (wasFollowing) {
+    renderAtBottom();
+    return true;
+  }
+  const win = clampWindow(
+    winStart - droppedVisible,
+    winEnd - droppedVisible,
+    visible.length,
+  );
+  renderWindow(win.start, win.end);
+  updateScrollButton();
+  return true;
 }
 
 function applyFilter(): void {
@@ -1777,6 +1823,7 @@ togglePanelBtn.addEventListener('click', () => {
  */
 async function selectMergedLog(groupId: string | null): Promise<void> {
   processId = null;
+  unknownSourceQueue.length = 0; // held lines belong to the old scope
   clearMutedFeeds(); // rows from the previous scope would target the wrong command
   mergedIsAll = groupId === null;
   mergedGroupId = groupId;
@@ -1820,6 +1867,7 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   processId = id;
   groupSources = null;
   mergedGroupId = null;
+  unknownSourceQueue.length = 0; // held lines belong to the old scope
   clearMutedFeeds(); // rows from the previous scope would target the wrong command
   mergedIsAll = false;
   for (const summary of Array.from(
@@ -1916,17 +1964,12 @@ window.api.onLog((payload) => {
     // the first time. Main forwards it because the scope matches, so an
     // unknown id here means our source list is stale, not that the line is
     // foreign: learn the name, then show it.
-    if (!groupSources.has(payload.id)) {
-      void learnSource(payload.id);
-      return;
-    }
     const sourced = { ...payload.entry, srcId: payload.id };
-    if (pausedEl.checked) {
-      pendingQueue.push(sourced);
-      statusEl.textContent = `Pausado (+${pendingQueue.length})`;
+    if (!groupSources.has(payload.id)) {
+      void learnSource(sourced);
       return;
     }
-    pushEntry(sourced);
+    deliverMerged(sourced);
     return;
   }
   if (payload.id !== processId) return;
