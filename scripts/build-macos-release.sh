@@ -34,6 +34,23 @@ mach_architecture() {
 DMG_ATTEMPTS=${DMG_ATTEMPTS:-3}
 DMG_RETRY_DELAY=${DMG_RETRY_DELAY:-5}
 
+# Mounting a DMG, and writing an .app under dist/, both make Launch Services
+# record a bundle at that path. Removing the files does not withdraw the
+# record: the entry survives pointing nowhere, and a stale claimant of the
+# app's identifier can outrank the real install. macOS resolves things like
+# notification permission by identifier, so the wrong claimant is not a
+# cosmetic problem — it looks like a permission the user never granted.
+# Overridable so tests can exercise this without touching the real database.
+LSREGISTER=${LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}
+
+unregister_bundle() {
+  local bundle=$1
+  [ -x "$LSREGISTER" ] || return 0
+  # Idempotent, and happy to withdraw a path that is already gone — which is
+  # exactly the case here, since the volume detaches and the work dir is wiped.
+  "$LSREGISTER" -u "$bundle" >/dev/null 2>&1 || true
+}
+
 detach_volume() {
   local volname=$1
   local mount_point="/Volumes/$volname"
@@ -57,6 +74,8 @@ create_dmg() {
       -nospotlight \
       -format UDZO \
       "$dmg"; then
+      # hdiutil mounted the volume to fill it; the registration outlives it.
+      unregister_bundle "/Volumes/$volname/DevBar.app"
       return 0
     fi
     if [ "$attempt" -ge "$DMG_ATTEMPTS" ]; then
@@ -102,6 +121,10 @@ build_architecture() {
 
   [ -s "$zip" ] || fail "ZIP artifact is empty for $arch."
   [ -s "$dmg" ] || fail "DMG artifact is empty for $arch."
+
+  # Both copies are about to be deleted with the work dir.
+  unregister_bundle "$app"
+  unregister_bundle "$dmg_root/DevBar.app"
 }
 
 main() {
