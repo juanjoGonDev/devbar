@@ -108,6 +108,37 @@ describe('a new run starts from an empty buffer', () => {
   });
 });
 
+describe('getLogSeq', () => {
+  it('counts every line the buffer was ever given', () => {
+    const pm = manager();
+    push(pm, 3);
+    expect(pm.getLogSeq(CMD_ID)).toBe(3);
+    expect(pm.getLogs(CMD_ID).map((entry) => entry.seq)).toEqual([1, 2, 3]);
+  });
+
+  it('keeps counting across a restart, so old lines stay below the new', () => {
+    const pm = manager();
+    push(pm, 5);
+    pm.start(CMD_ID); // empties the buffer, not the count
+    expect(pm.getLogSeq(CMD_ID)).toBe(6);
+    expect(pm.getLogs(CMD_ID)[0]?.seq).toBe(6);
+  });
+
+  it('keeps counting past the retention limit', () => {
+    // The count is the snapshot/stream boundary, not a buffer index: it must
+    // not restart when the buffer starts dropping from the front.
+    const pm = manager();
+    push(pm, 150);
+    expect(pm.getLogs(CMD_ID)).toHaveLength(100);
+    expect(pm.getLogSeq(CMD_ID)).toBe(150);
+    expect(pm.getLogs(CMD_ID).at(-1)?.seq).toBe(150);
+  });
+
+  it('is zero for a buffer that has never been written', () => {
+    expect(manager().getLogSeq(CMD_ID)).toBe(0);
+  });
+});
+
 describe('the buffer honours the same number', () => {
   it('trims a running process to its frozen limit, not the new config', () => {
     const pm = manager();

@@ -126,6 +126,14 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
    * to it. Anyone mirroring the buffer must ask here instead of recomputing
    * from config, or they hold lines this buffer has already dropped.
    */
+  /**
+   * How many lines this buffer has ever been given. Monotonic and never reset,
+   * so a restart continues the count and a line from the run before it can
+   * never be mistaken for a new one.
+   */
+  getLogSeq(id: string): number {
+    return this.logSeqs.get(id) ?? 0;
+  }
   getLogLimit(id: string): number {
     const state = this.states.get(id);
     if (state) return state.logLimit;
@@ -138,6 +146,9 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       buffer = [];
       this.logs.set(id, buffer);
     }
+    const seq = this.getLogSeq(id) + 1;
+    this.logSeqs.set(id, seq);
+    entry.seq = seq;
     buffer.push(entry);
     const limit = this.getLogLimit(id);
     if (buffer.length > limit) buffer.shift();
@@ -254,6 +265,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       lastFinishedAt,
     };
   }
+  private readonly logSeqs = new Map<string, number>();
   private resolveLogLimit(resolved: ResolvedTarget): number {
     if (resolved.kind === 'command' && resolved.target.maxLogLines != null)
       return resolved.target.maxLogLines;

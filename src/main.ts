@@ -1911,6 +1911,7 @@ function registerIpc() {
         },
         lines: processManager.getLogs(processId),
         logLimit: processManager.getLogLimit(processId),
+        seq: processManager.getLogSeq(processId),
         commandState: {
           status: cmdState.status,
           startedAt: cmdState.startedAt,
@@ -2018,7 +2019,17 @@ function registerIpc() {
       console.log(
         `[logs] merged ${groupId ?? 'all'}: ${sources.length} fuentes, ${lines.length} líneas`,
       );
-      return { groupName: scopeName, sources, lines };
+      return {
+        groupName: scopeName,
+        sources,
+        lines,
+        seqs: Object.fromEntries(
+          sources.map((source) => [
+            source.id,
+            processManager.getLogSeq(source.id),
+          ]),
+        ),
+      };
     },
   );
 

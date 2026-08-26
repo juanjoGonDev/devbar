@@ -1,4 +1,5 @@
 import { byId, closestElement, requireElement } from './dom.js';
+import { queuedAfter } from './pending-queue.js';
 import {
   canRun,
   dotClass,
@@ -766,8 +767,31 @@ function growBottom(): void {
  */
 function dropPendingQueue(): void {
   pendingQueue.length = 0;
-  // A "Pausado (+N)" counting a queue that no longer exists would be a lie.
-  statusEl.textContent = pausedEl.checked ? 'Pausado' : '';
+  showPausedCount();
+}
+
+/**
+ * Keep only what a freshly adopted snapshot does not already contain. The
+ * subscription that fed the queue is the SAME one across a reload, so main's
+ * snapshot-and-resubscribe-in-one-tick rule does not separate them here: only
+ * the buffer's own sequence does.
+ */
+function keepQueuedAfter(watermark: (entry: LogEntry) => number): void {
+  const fresh = queuedAfter(pendingQueue, watermark);
+  pendingQueue.length = 0;
+  pendingQueue.push(...fresh);
+  showPausedCount();
+}
+
+/** The paused badge, or nothing when the viewer is live. */
+function showPausedCount(): void {
+  if (!pausedEl.checked) {
+    statusEl.textContent = '';
+    return;
+  }
+  statusEl.textContent = pendingQueue.length
+    ? `Pausado (+${pendingQueue.length})`
+    : 'Pausado';
 }
 
 /** Point the view at a fresh set of lines (a scope switch or a snapshot). */
@@ -1881,6 +1905,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   const token = ++loadSeq;
   const res = await window.api.getMergedLogs(groupId);
   if (token !== loadSeq) return; // a newer load won the race
+  keepQueuedAfter((entry) => res.seqs[(entry as SourcedLogEntry).srcId] ?? 0);
   groupSources = new Map(res.sources.map((s) => [s.id, s]));
   _logsDisplayName = groupId ? 'todos' : '';
   _logsGroupName = res.groupName;
@@ -1935,6 +1960,8 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   if (token !== loadSeq) return; // a newer load won the race
   memoryCap = res.logLimit; // whatever main kept for it, not what config says now
   watchedStartedAt = res.commandState.startedAt;
+
+  keepQueuedAfter(() => res.seq);
 
   const target = res.target;
   if (target && target.group && target.target) {
@@ -2051,15 +2078,16 @@ function syncWatched(): void {
 async function reloadWatched(): Promise<void> {
   const id = processId;
   if (!id) return;
-  // The queue holds the finished run's lines, and the '▶ start' of the new one
-  // if it landed before we got here — the snapshot carries that one already.
-  dropPendingQueue();
   const token = ++loadSeq;
   const res = await window.api.getLogs(id);
   // The view may have moved on, and a reload must not outlive its target.
   if (token !== loadSeq || processId !== id) return;
   watchedStartedAt = res.commandState.startedAt;
   memoryCap = res.logLimit;
+  // Everything the queue holds at or below this is in the snapshot already:
+  // the finished run's lines, and the '▶ start' of the new one. What arrived
+  // after main read the buffer is genuinely ours to keep.
+  keepQueuedAfter(() => res.seq);
   resetBuffer([...res.lines]);
 }
 

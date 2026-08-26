@@ -68,6 +68,8 @@ interface LogsSnapshot {
   lines: LogEntry[];
   /** What main actually retains for this target, frozen at start. */
   logLimit: number;
+  /** How far the buffer's count had got — the snapshot/stream boundary. */
+  seq: number;
   commandState: { status: ProcessStatus; startedAt: number | null };
 }
 /** A log line that knows which service in the group produced it. */
@@ -84,6 +86,8 @@ interface GroupLogsSnapshot {
   groupName: string;
   sources: LogSource[];
   lines: SourcedLogEntry[];
+  /** Per source, how far its count had got — the snapshot/stream boundary. */
+  seqs: Record<string, number>;
 }
 export interface LogListItem {
   id: string;
