@@ -152,6 +152,8 @@ function buildSection(version: HTMLInputElement): HTMLElement {
       button.type = 'button';
       button.className = action.danger ? 'danger' : '';
       button.textContent = action.label;
+      // installTooltips() takes `title` over and draws the styled bubble.
+      if (action.hint) button.title = action.hint;
       button.addEventListener('click', () => {
         button.disabled = true;
         void action

@@ -2507,7 +2507,9 @@ function registerIpc() {
             );
           },
           toast: (kind, message) => broadcastToast(kind, message),
-          installedBundle: () => bundlePathFromExecutable(process.execPath),
+          // Not process.execPath: unpackaged that resolves to Electron's own
+          // bundle, which passes the guard and then fails deep inside the copy.
+          installedBundle: () => installedBundlePath(),
           updatesDir: () => {
             const dir = path.join(app.getPath('userData'), 'updates');
             fs.mkdirSync(dir, { recursive: true });
@@ -2518,10 +2520,14 @@ function registerIpc() {
               await stageFromZip(zipPath, version);
             } finally {
               fs.rmSync(zipPath, { force: true });
-              pruneStagedUpdates(
-                path.join(app.getPath('userData'), 'updates'),
-                version,
-              );
+              // Prune by what IS staged, not by what we wanted to stage: on a
+              // failure the latter deletes the update already waiting, and
+              // `stagedUpdate` would still point into that directory.
+              if (stagedUpdate)
+                pruneStagedUpdates(
+                  path.join(app.getPath('userData'), 'updates'),
+                  stagedUpdate.version,
+                );
             }
           },
         });
