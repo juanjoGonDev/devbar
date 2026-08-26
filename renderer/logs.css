@@ -241,11 +241,13 @@ body.sidebar-collapsed #toggle-sidebar {
   align-items: center;
   column-gap: 10px;
   row-gap: 5px;
+  position: relative; /* anchors .s-open, which is the row's real hit target */
   width: calc(100% - 6px);
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 7px;
+  box-sizing: border-box;
   padding: 7px 9px;
   margin: 1px 0 1px 6px;
   color: #e5e5e7;
@@ -283,6 +285,39 @@ body.sidebar-collapsed #toggle-sidebar {
 .side-item .s-ico {
   flex-shrink: 0;
   font-size: 12px;
+}
+.side-item .s-open {
+  /* The button that opens the log, underneath everything. Making the ROW a
+     button would nest the run control and the counters inside it, which HTML
+     forbids; this keeps one hit target without lying about the tree. */
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.side-item .s-open:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: -2px;
+}
+.side-item .s-head,
+.side-item .s-badges,
+.side-item .s-run {
+  position: relative;
+  z-index: 1;
+}
+/* Text is not a target: let clicks through to the button underneath. Only the
+   counters and the run control take pointer events of their own. */
+.side-item .s-head,
+.side-item .s-badges {
+  pointer-events: none;
+}
+.side-item .s-badges .b,
+.side-item .s-run {
+  pointer-events: auto;
 }
 .side-item .s-head {
   grid-area: 1 / 1;

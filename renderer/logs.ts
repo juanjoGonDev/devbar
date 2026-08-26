@@ -1351,10 +1351,21 @@ function renderBadges(host: HTMLElement, item: LogListItem): void {
 }
 
 function buildSideItem(item: LogListItem): HTMLElement {
-  const row = document.createElement('button');
-  row.type = 'button';
+  // A container, not a button. The row holds the run control and the counter
+  // buttons, and HTML forbids interactive descendants inside a <button>: the
+  // DOM API lets us build the tree anyway, but assistive technology is free to
+  // flatten it or announce the wrong control. The whole row is still one hit
+  // target — `.s-open` covers it underneath, so the tree is honest and the
+  // behaviour is unchanged.
+  const row = document.createElement('div');
   row.className = 'side-item';
   row.dataset.id = item.id;
+
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 's-open';
+  open.addEventListener('click', () => void selectLog(item.id));
+  row.appendChild(open);
 
   // Two rows in the first column: what the service IS on top, what it is
   // DOING underneath. The counters and the clock were sharing a line with the
@@ -1386,8 +1397,6 @@ function buildSideItem(item: LogListItem): HTMLElement {
     if (fresh) void toggleRun(fresh);
   });
   row.appendChild(run);
-
-  row.addEventListener('click', () => void selectLog(item.id));
   return row;
 }
 
@@ -1399,6 +1408,10 @@ function paintSideItem(row: HTMLElement, item: LogListItem): void {
     name.textContent = item.name;
     name.title = item.name;
   }
+  // The row is a container now, so the name has to reach the control that
+  // opens it or the button announces itself as unlabelled.
+  const open = row.querySelector<HTMLButtonElement>('.s-open');
+  if (open) open.setAttribute('aria-label', `Ver los logs de ${item.name}`);
   const badges = row.querySelector<HTMLElement>('.s-badges');
   if (badges) renderBadges(badges, item);
   const run = row.querySelector<HTMLButtonElement>('.s-run');
