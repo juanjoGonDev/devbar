@@ -66,6 +66,10 @@ export type LogsTarget =
 interface LogsSnapshot {
   target: LogsTarget;
   lines: LogEntry[];
+  /** What main actually retains for this target, frozen at start. */
+  logLimit: number;
+  /** How far the buffer's count had got — the snapshot/stream boundary. */
+  seq: number;
   commandState: { status: ProcessStatus; startedAt: number | null };
 }
 /** A log line that knows which service in the group produced it. */
@@ -82,6 +86,8 @@ interface GroupLogsSnapshot {
   groupName: string;
   sources: LogSource[];
   lines: SourcedLogEntry[];
+  /** Per source, how far its count had got — the snapshot/stream boundary. */
+  seqs: Record<string, number>;
 }
 export interface LogListItem {
   id: string;
@@ -94,6 +100,8 @@ export interface LogListItem {
   errorCount: number;
   startedAt: number | null;
   lastFinishedAt: number | null;
+  /** What main actually retains for this item, frozen at start. */
+  logLimit: number;
 }
 export interface LogListGroup {
   groupId: string;
@@ -245,6 +253,8 @@ export interface DevBarApi {
   ): Promise<{ ok: boolean; group: Group | null }>;
   getLogs(processId: string): Promise<LogsSnapshot>;
   getMergedLogs(groupId: string | null): Promise<GroupLogsSnapshot>;
+  /** Sources only, to learn about a service that started after the view. */
+  getMergedSources(groupId: string | null): Promise<LogSource[]>;
   clearLogs(processId: string): Promise<SimpleResult>;
   listLogs(): Promise<LogListGroup[]>;
   openConfig(): Promise<SimpleResult>;

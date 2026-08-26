@@ -17,6 +17,20 @@ Todas las novedades relevantes de DevBar. El formato sigue
   abrir: nunca te quedas sin app.
 - El menú de la barra y el panel de configuración distinguen entre «hay una
   actualización» y «ya está descargada, lista para instalar».
+- **El visor carga por tramos según te desplazas.** Las líneas se guardan en
+  memoria y sólo unos cientos están dibujadas: al acercarte a un borde se
+  extiende por ahí, arriba o abajo. Sin indicadores de carga y sin saltos —
+  ya están en memoria, sólo se decide qué se pinta—, así que se recorre el
+  historial completo como si fuera continuo. El filtro busca en **todo** lo
+  retenido, no sólo en lo dibujado, y copiar sin selección copia el resultado
+  entero del filtro.
+- **Seleccionar líneas desengancha la vista de la cola.** Al elegir filas has
+  dicho que no estás mirando el final, así que las nuevas se acumulan sin
+  arrastrarte: la selección se queda quieta hasta que pulses ↓ o la limpies.
+- Un servicio que arranca **después** de abrir una vista combinada ya aparece
+  en ella. Antes el reenvío se decidía con una foto de identificadores tomada
+  al abrir, así que un pre-script en su primera ejecución no existía para esa
+  vista hasta reabrirla; ahora se decide por ámbito.
 
 ### Cambiado
 
@@ -66,6 +80,14 @@ Todas las novedades relevantes de DevBar. El formato sigue
   de salir ya está tomada. Contrapartida: al salir —o al instalar una
   actualización— los cambios de configuración sin guardar se descartan sin
   preguntar.
+- **La ventana de logs se congelaba** con un límite de líneas alto. Retención y
+  renderizado eran la misma cifra, así que un ajuste de 20 000 líneas
+  significaba 20 000 filas en el DOM.
+- El botón **↓** llevaba al final de lo dibujado, no del log.
+- **El límite de líneas no se aplicaba a las vistas combinadas** (grupo y
+  telemetría general): usaban un tope fijo que ignoraba tu ajuste.
+- Los contadores de warnings, errores y tiempo del panel lateral se partían en
+  dos líneas al convertirse en botones.
 - **El menú de la barra crecía solo al escribir en el buscador de ramas.** Al
   calcular el alto necesario para el desplegable se tomaba como suelo el alto
   actual de la ventana, de modo que sólo podía crecer; como el proceso

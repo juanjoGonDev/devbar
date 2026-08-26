@@ -20,6 +20,7 @@ function item(patch: Partial<LogListItem> = {}): LogListItem {
     errorCount: 0,
     startedAt: null,
     lastFinishedAt: null,
+    logLimit: 10_000,
     ...patch,
   };
 }

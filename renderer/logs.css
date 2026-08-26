@@ -232,15 +232,23 @@ body.sidebar-collapsed #toggle-sidebar {
 }
 
 .side-item {
-  display: flex;
+  /* Two columns: everything about the service on the left, over two rows, and
+     the run control on the right spanning both. The counters and the clock had
+     been sharing one line with the name, which left them wrapping mid-badge. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 7px;
+  column-gap: 10px;
+  row-gap: 5px;
+  position: relative; /* anchors .s-open, which is the row's real hit target */
   width: calc(100% - 6px);
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 7px;
-  padding: 6px 8px;
+  box-sizing: border-box;
+  padding: 7px 9px;
   margin: 1px 0 1px 6px;
   color: #e5e5e7;
   font-family: inherit;
@@ -278,12 +286,45 @@ body.sidebar-collapsed #toggle-sidebar {
   flex-shrink: 0;
   font-size: 12px;
 }
-.side-item .s-main {
-  flex: 1;
-  min-width: 0;
+.side-item .s-open {
+  /* The button that opens the log, underneath everything. Making the ROW a
+     button would nest the run control and the counters inside it, which HTML
+     forbids; this keeps one hit target without lying about the tree. */
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.side-item .s-open:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: -2px;
+}
+.side-item .s-head,
+.side-item .s-badges,
+.side-item .s-run {
+  position: relative;
+  z-index: 1;
+}
+/* Text is not a target: let clicks through to the button underneath. Only the
+   counters and the run control take pointer events of their own. */
+.side-item .s-head,
+.side-item .s-badges {
+  pointer-events: none;
+}
+.side-item .s-badges .b,
+.side-item .s-run {
+  pointer-events: auto;
+}
+.side-item .s-head {
+  grid-area: 1 / 1;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0; /* so a long name ellipsises instead of pushing the column */
 }
 .side-item .s-name {
   overflow: hidden;
@@ -291,9 +332,14 @@ body.sidebar-collapsed #toggle-sidebar {
   white-space: nowrap;
 }
 .side-item .s-badges {
+  grid-area: 2 / 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  /* A row of its own: the badges get real breathing room, and the runtime no
+     longer has to break between its minutes and its seconds. */
+  gap: 3px 12px;
+  padding-left: 15px; /* line up under the name, past the dot and the icon */
   font-size: 10px;
   color: #8e8e93;
   font-variant-numeric: tabular-nums;
@@ -302,6 +348,11 @@ body.sidebar-collapsed #toggle-sidebar {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  /* As buttons these are wider than the old spans, and three of them plus the
+     runtime no longer fit 244px. Without this each one breaks between its icon
+     and its number instead of the ROW wrapping. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .side-item .s-badges .b.warn {
   color: #ffd60a;
@@ -313,14 +364,15 @@ body.sidebar-collapsed #toggle-sidebar {
   color: #7eea9f;
 }
 .side-item .s-run {
-  flex-shrink: 0;
+  grid-area: 1 / 2 / 3 / 3; /* its own column, centred across both rows */
+  align-self: center;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 5px;
   color: #c8c8cc;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
-  padding: 4px 5px;
+  padding: 6px 7px;
   cursor: pointer;
   visibility: hidden;
 }
@@ -955,8 +1007,9 @@ header .check.spaced {
   background: transparent;
   font-family: inherit;
   font-size: 10px;
-  padding: 1px 4px;
-  margin: -1px 0;
+  padding: 0 3px;
+  margin: 0;
+  white-space: nowrap;
   cursor: pointer;
 }
 .b.clickable:hover {

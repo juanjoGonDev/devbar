@@ -124,6 +124,12 @@ export type ProcessStatus =
 export type LogLevel = 'warn' | 'error';
 export interface LogEntry {
   ts: number;
+  /**
+   * Position in its buffer's own monotonic count, stamped by `pushLog`. The
+   * only thing that can tell a snapshot and the live stream apart: timestamps
+   * cannot, because a burst shares a millisecond.
+   */
+  seq?: number;
   stream: 'stdout' | 'stderr' | 'sys';
   level: LogLevel | null;
   originalLevel?: LogLevel | null;
