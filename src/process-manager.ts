@@ -120,6 +120,18 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       lineCount: buffer.length,
     }));
   }
+  /**
+   * How many lines this process's buffer actually keeps. A running process
+   * froze its limit at start(), so a setting edited since then does not apply
+   * to it. Anyone mirroring the buffer must ask here instead of recomputing
+   * from config, or they hold lines this buffer has already dropped.
+   */
+  getLogLimit(id: string): number {
+    const state = this.states.get(id);
+    if (state) return state.logLimit;
+    const resolved = this.resolveTarget(id);
+    return resolved ? this.resolveLogLimit(resolved) : DEFAULT_LOG_BUFFER_LIMIT;
+  }
   pushLog(id: string, entry: LogEntry): void {
     let buffer = this.logs.get(id);
     if (!buffer) {
@@ -127,7 +139,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       this.logs.set(id, buffer);
     }
     buffer.push(entry);
-    const limit = this.states.get(id)?.logLimit ?? DEFAULT_LOG_BUFFER_LIMIT;
+    const limit = this.getLogLimit(id);
     if (buffer.length > limit) buffer.shift();
     this.emit('log', { id, entry });
   }

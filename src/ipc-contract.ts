@@ -66,6 +66,8 @@ export type LogsTarget =
 interface LogsSnapshot {
   target: LogsTarget;
   lines: LogEntry[];
+  /** What main actually retains for this target, frozen at start. */
+  logLimit: number;
   commandState: { status: ProcessStatus; startedAt: number | null };
 }
 /** A log line that knows which service in the group produced it. */
@@ -94,6 +96,8 @@ export interface LogListItem {
   errorCount: number;
   startedAt: number | null;
   lastFinishedAt: number | null;
+  /** What main actually retains for this item, frozen at start. */
+  logLimit: number;
 }
 export interface LogListGroup {
   groupId: string;

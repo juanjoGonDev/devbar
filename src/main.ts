@@ -1910,6 +1910,7 @@ function registerIpc() {
           target: { name: '?' },
         },
         lines: processManager.getLogs(processId),
+        logLimit: processManager.getLogLimit(processId),
         commandState: {
           status: cmdState.status,
           startedAt: cmdState.startedAt,
@@ -2072,6 +2073,7 @@ function registerIpc() {
         errorCount: state.errorCount,
         startedAt: state.startedAt,
         lastFinishedAt: state.lastFinishedAt,
+        logLimit: processManager.getLogLimit(id),
       };
     };
 

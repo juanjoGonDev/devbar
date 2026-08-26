@@ -651,10 +651,11 @@ const EDGE_PX = 500;
 const selected = new Set<number>();
 let anchorEntry: number | null = null;
 /**
- * Lines held in memory. Mirrors what ProcessManager actually keeps, which is
- * the per-command override when a command has one and the global setting
- * otherwise (see `resolveLogLimit`). Holding more than main does would let the
- * viewer filter and copy lines the process buffer has already dropped.
+ * Lines held in memory. Mirrors what ProcessManager actually keeps for the
+ * target on screen — a number only main can give us, since a running process
+ * froze its limit at start and a setting edited since does not apply to it.
+ * Holding more than main does would let the viewer filter and copy lines the
+ * process buffer has already dropped.
  */
 let memoryCap = 20_000;
 /** The global setting, for views with no override of their own. */
@@ -1547,6 +1548,7 @@ let lastSignature = '';
 
 async function refreshSidebar(): Promise<void> {
   sideData = (await window.api.listLogs()) || [];
+  syncMemoryCap();
   if (!isDetached) {
     const signature = sideSignature();
     if (signature !== lastSignature || !repaintSidebar()) {
@@ -1919,11 +1921,7 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   const token = ++loadSeq;
   const res = await window.api.getLogs(id);
   if (token !== loadSeq) return; // a newer load won the race
-  // Match main's retention for THIS target before any line is held.
-  memoryCap =
-    res.target.kind === 'command' && res.target.target.maxLogLines != null
-      ? res.target.target.maxLogLines
-      : globalRetention;
+  memoryCap = res.logLimit; // whatever main kept for it, not what config says now
 
   const target = res.target;
   if (target && target.group && target.target) {
@@ -2014,6 +2012,22 @@ window.api.onLog((payload) => {
   }
   pushEntry(payload.entry);
 });
+
+/**
+ * Follow the watched process's retention as it changes. Restarting a command
+ * re-freezes its limit, so a view opened before that would otherwise keep
+ * holding to the old number — over the new one, that means offering lines main
+ * has already dropped.
+ */
+function syncMemoryCap(): void {
+  if (!processId) return;
+  const item = sideData
+    .flatMap((group) => group.items)
+    .find((candidate) => candidate.id === processId);
+  if (!item || item.logLimit === memoryCap) return;
+  memoryCap = item.logLimit;
+  if (entries.length > memoryCap + EDGE_CHUNK) trimMemory();
+}
 
 // Any state change (start, stop, new warn/error) → refresh the live numbers.
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
