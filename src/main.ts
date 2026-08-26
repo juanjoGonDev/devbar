@@ -40,6 +40,7 @@ import {
   spawnSwap,
 } from './self-update.js';
 import { loadShellPath, expandTilde } from './path-helper.js';
+import { mergeNewestByTs } from './merge-logs.js';
 import { RepoWatcher } from './repo-watcher.js';
 import { makeCommandId, makeActionId, parseProcessId } from './compound-id.js';
 import { createPreScriptRunner } from './pre-script-runner.js';
@@ -1975,24 +1976,16 @@ function registerIpc() {
         mainLogsGroupIds = new Set(sources.map((source) => source.id));
       }
 
-      const limit = mergedSnapshotLimit();
-      // Take each buffer's tail BEFORE merging. The old order — copy every
-      // retained line of every source, sort the lot, then keep the last 2000 —
-      // ran on the main thread: in the `all` scope that is every command and
-      // action of every group, each retaining up to maxLogLines (now 10 000 by
-      // default). A handful of long-running services meant allocating hundreds
-      // of thousands of objects on every view open, blocking IPC and the tray.
-      // No line is lost that would have survived: the result is capped anyway,
-      // and nothing older than a source's own tail can make the cut.
-      const lines = sources
-        .flatMap((source) =>
-          processManager
-            .getLogs(source.id)
-            .slice(-limit)
-            .map((entry) => ({ ...entry, srcId: source.id })),
-        )
-        .sort((a, b) => a.ts - b.ts)
-        .slice(-limit);
+      // Bounded k-way merge, not concatenate-then-sort: this runs on the main
+      // thread, and with the cap following the retention setting the naive form
+      // would build and order S × maxLogLines objects on every view open.
+      const lines = mergeNewestByTs(
+        sources.map((source) => ({
+          srcId: source.id,
+          entries: processManager.getLogs(source.id),
+        })),
+        mergedSnapshotLimit(),
+      );
       const scopeName = groupId ? (groups[0]?.name ?? '?') : 'Telemetría';
       // An empty merged view has no way to explain itself from the renderer:
       // no sources and no buffers look identical on screen.
