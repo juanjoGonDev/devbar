@@ -1356,23 +1356,24 @@ function buildSideItem(item: LogListItem): HTMLElement {
   row.className = 'side-item';
   row.dataset.id = item.id;
 
+  // Two rows in the first column: what the service IS on top, what it is
+  // DOING underneath. The counters and the clock were sharing a line with the
+  // name and had to wrap mid-badge to fit.
+  const head = document.createElement('span');
+  head.className = 's-head';
   const dot = document.createElement('span');
   dot.className = 'dot';
-  row.appendChild(dot);
-
   const ico = document.createElement('span');
   ico.className = 's-ico';
   ico.textContent = item.icon || TYPE_ICON[item.type];
-  row.appendChild(ico);
-
-  const mainCol = document.createElement('span');
-  mainCol.className = 's-main';
   const name = document.createElement('span');
   name.className = 's-name';
+  head.append(dot, ico, name);
+  row.appendChild(head);
+
   const badges = document.createElement('span');
   badges.className = 's-badges';
-  mainCol.append(name, badges);
-  row.appendChild(mainCol);
+  row.appendChild(badges);
 
   const run = document.createElement('button');
   run.type = 'button';
