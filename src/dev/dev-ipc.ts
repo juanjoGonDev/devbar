@@ -1,4 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { buildSimulatedUpdate } from './simulate-update.js';
 import type { AvailableUpdate } from '../domain-types.js';
 import type { TrayColor } from '../ipc-contract.js';
 
@@ -26,6 +27,12 @@ export interface DevHooks {
   ): void;
   showCompletionNotification(title: string, body: string): void;
   openPrescriptConfirm(name: string, command: string): void;
+  /** The .app we are running from, or null when it is not an installed bundle. */
+  installedBundle(): string | null;
+  /** Where staged updates live, so the simulated one is cleaned up with them. */
+  updatesDir(): string;
+  /** The production staging path, minus the download it no longer needs. */
+  stageLocalUpdate(zipPath: string, version: string): Promise<void>;
   toast(kind: string, message: string): void;
   currentVersion(): string;
 }
@@ -78,6 +85,43 @@ export function registerDevIpc(hooks: DevHooks): void {
       return { ok: true, version };
     },
   );
+
+  /**
+   * The whole update, for real: build a copy of this bundle one minor up, then
+   * hand it to the same staging code a release goes through. What it proves is
+   * what a fake `availableUpdate` cannot — that the seal verifies, the swap
+   * script survives our own exit, and the app comes back on the new version.
+   */
+  ipcMain.handle('dev:simulateRealUpdate', async () => {
+    const bundlePath = hooks.installedBundle();
+    if (!bundlePath)
+      return {
+        ok: false,
+        error:
+          'Solo desde una app instalada: `pnpm install-local:dev` y ábrela desde /Applications.',
+      };
+    const version = nextMinor(hooks.currentVersion());
+    try {
+      const zipPath = await buildSimulatedUpdate({
+        bundlePath,
+        workDir: hooks.updatesDir(),
+        version,
+      });
+      hooks.setSimulatedUpdate({
+        version,
+        url: `https://github.com/juanjoGonDev/devbar/releases/tag/v${version}`,
+        dmgUrl: null,
+        zipUrl: null,
+      });
+      await hooks.stageLocalUpdate(zipPath, version);
+      return { ok: true, version };
+    } catch (error: unknown) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
 
   ipcMain.handle('dev:clearUpdate', () => {
     hooks.setSimulatedUpdate(null);

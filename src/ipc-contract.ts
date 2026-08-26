@@ -194,6 +194,12 @@ type NotificationAction = string;
  */
 interface DevSimulationApi {
   simulateUpdate(version?: string): Promise<{ ok: boolean; version: string }>;
+  /** The real thing: builds a bundle one minor up and stages it for install. */
+  simulateRealUpdate(): Promise<{
+    ok: boolean;
+    version?: string;
+    error?: string;
+  }>;
   clearUpdate(): Promise<SimpleResult>;
   simulateTrayColor(color: TrayColor | null): Promise<SimpleResult>;
   simulateBanner(withCta: boolean): Promise<SimpleResult>;

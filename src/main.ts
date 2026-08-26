@@ -898,19 +898,7 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
   try {
     fs.mkdirSync(updatesDir, { recursive: true });
     await downloadFile(update.zipUrl, zipPath);
-    stagedUpdate = await extractUpdate({
-      zipPath,
-      destDir: path.join(updatesDir, update.version),
-      version: update.version,
-    });
-    console.log(`[updates] v${update.version} descargada, lista para instalar`);
-    broadcastUpdateStatus();
-    refreshTrayIcon();
-    showBannerNotification(
-      'DevBar — actualización',
-      `v${update.version} lista. Reinicia para instalarla.`,
-      { cta: { label: 'Reiniciar', action: 'install-update' } },
-    );
+    await stageFromZip(zipPath, update.version);
   } catch (err) {
     stagingFailedVersions.add(update.version);
     console.warn(
@@ -925,6 +913,29 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
     // swallow the "restart to install" notice for the rest of the session.
     if (stagedUpdate) pruneStagedUpdates(updatesDir, stagedUpdate.version);
   }
+}
+
+/**
+ * Everything staging does once the bytes are on disk: verify the seal, unpack,
+ * and tell the app there is a version waiting. Kept apart from the download so
+ * the dev simulation can exercise this half for real with a locally built zip
+ * — the half where a bad bundle or a failed swap would actually bite.
+ */
+async function stageFromZip(zipPath: string, version: string): Promise<void> {
+  const updatesDir = path.join(app.getPath('userData'), 'updates');
+  stagedUpdate = await extractUpdate({
+    zipPath,
+    destDir: path.join(updatesDir, version),
+    version,
+  });
+  console.log(`[updates] v${version} descargada, lista para instalar`);
+  broadcastUpdateStatus();
+  refreshTrayIcon();
+  showBannerNotification(
+    'DevBar — actualización',
+    `v${version} lista. Reinicia para instalarla.`,
+    { cta: { label: 'Reiniciar', action: 'install-update' } },
+  );
 }
 
 /** Drop previously staged versions — each one is a full copy of the app. */
@@ -2496,6 +2507,23 @@ function registerIpc() {
             );
           },
           toast: (kind, message) => broadcastToast(kind, message),
+          installedBundle: () => bundlePathFromExecutable(process.execPath),
+          updatesDir: () => {
+            const dir = path.join(app.getPath('userData'), 'updates');
+            fs.mkdirSync(dir, { recursive: true });
+            return dir;
+          },
+          stageLocalUpdate: async (zipPath, version) => {
+            try {
+              await stageFromZip(zipPath, version);
+            } finally {
+              fs.rmSync(zipPath, { force: true });
+              pruneStagedUpdates(
+                path.join(app.getPath('userData'), 'updates'),
+                version,
+              );
+            }
+          },
         });
       })
       .catch(() => {
