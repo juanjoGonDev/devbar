@@ -343,6 +343,59 @@ const unknownSourceQueue: { entry: SourcedLogEntry; scope: number }[] = [];
  */
 let loadSeq = 0;
 
+/** A live line held while a snapshot is in flight, with its source and place. */
+interface HeldLine {
+  id: string;
+  entry: LogEntry;
+  seq: number | undefined;
+}
+
+/**
+ * Lines that arrived while a snapshot was in flight; null when none is.
+ *
+ * Adopting a snapshot replaces the buffer wholesale, so a line delivered
+ * during the wait is erased by it — and being newer than the snapshot, it is
+ * not in there either. Holding them costs a few objects for one round trip and
+ * turns "lost or doubled" into a boundary comparison.
+ */
+let loadQueue: HeldLine[] | null = null;
+
+/** Open a load: take the ticket and start holding what arrives meanwhile. */
+function beginLoad(): number {
+  // An orphan queue from an abandoned load goes: the snapshot we are about to
+  // adopt covers everything it was holding.
+  loadQueue = [];
+  return ++loadSeq;
+}
+
+/**
+ * Close a load: deliver what arrived while we waited, minus whatever the
+ * snapshot already carried. `watermark` answers, per source, how far it got.
+ */
+function endLoad(watermark: (id: string) => number): void {
+  const held = loadQueue ?? [];
+  loadQueue = null;
+  for (const line of queuedAfter(held, (candidate) => watermark(candidate.id)))
+    receiveLine(line.id, line.entry);
+}
+
+/**
+ * Await a snapshot without risking a silent mute: if the request fails, the
+ * lines held for it go back down the live path instead of sitting in a queue
+ * nothing will ever drain.
+ */
+async function awaitSnapshot<T>(
+  request: Promise<T>,
+  token: number,
+): Promise<T> {
+  try {
+    return await request;
+  } catch (error) {
+    if (token === loadSeq) endLoad(() => 0);
+    throw error;
+  }
+}
+
 /** Open any scope, optionally pinned to the levels the caller cares about. */
 async function openScope(
   scope: Scope,
@@ -1902,10 +1955,9 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   setDrawer(false); // silencing is per-service; it has no meaning here
 
   memoryCap = globalRetention; // merged snapshots are capped globally
-  const token = ++loadSeq;
-  const res = await window.api.getMergedLogs(groupId);
-  if (token !== loadSeq) return; // a newer load won the race
-  keepQueuedAfter((entry) => res.seqs[(entry as SourcedLogEntry).srcId] ?? 0);
+  const token = beginLoad();
+  const res = await awaitSnapshot(window.api.getMergedLogs(groupId), token);
+  if (token !== loadSeq) return; // a newer load won the race, and owns the queue
   groupSources = new Map(res.sources.map((s) => [s.id, s]));
   _logsDisplayName = groupId ? 'todos' : '';
   _logsGroupName = res.groupName;
@@ -1917,6 +1969,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   renderLevelChips();
 
   resetBuffer([...res.lines]);
+  endLoad((id) => res.seqs[id] ?? 0);
   for (const row of Array.from(
     sideTreeEl.querySelectorAll<HTMLElement>('.side-item'),
   ))
@@ -1955,13 +2008,11 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   filterRe = buildFilter(filterEl.value);
 
   // getLogs also points main's live stream at this buffer, atomically.
-  const token = ++loadSeq;
-  const res = await window.api.getLogs(id);
-  if (token !== loadSeq) return; // a newer load won the race
+  const token = beginLoad();
+  const res = await awaitSnapshot(window.api.getLogs(id), token);
+  if (token !== loadSeq) return; // a newer load won the race, and owns the queue
   memoryCap = res.logLimit; // whatever main kept for it, not what config says now
   watchedStartedAt = res.commandState.startedAt;
-
-  keepQueuedAfter(() => res.seq);
 
   const target = res.target;
   if (target && target.group && target.target) {
@@ -1978,6 +2029,7 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   }
 
   resetBuffer([...res.lines]);
+  endLoad(() => res.seq);
   if (!isDetached) {
     for (const row of Array.from(
       sideTreeEl.querySelectorAll<HTMLElement>('.side-item'),
@@ -2029,6 +2081,22 @@ window.api.onLogsSelect((payload) => {
 
 window.api.onLog((payload) => {
   if (!payload) return;
+  // A snapshot is in flight. Delivering now would be undone by the
+  // `resetBuffer` that adopts it, and this line is too new to be in it: hold
+  // it and reconcile once we know where the snapshot ended.
+  if (loadQueue) {
+    loadQueue.push({
+      id: payload.id,
+      entry: payload.entry,
+      seq: payload.entry.seq,
+    });
+    return;
+  }
+  receiveLine(payload.id, payload.entry);
+});
+
+/** One live line, delivered the way the view on screen wants it. */
+function receiveLine(id: string, entry: LogEntry): void {
   // In group mode any member's line belongs here; tag it with its source so
   // appendLine can label the row.
   if (groupSources) {
@@ -2036,22 +2104,22 @@ window.api.onLog((payload) => {
     // the first time. Main forwards it because the scope matches, so an
     // unknown id here means our source list is stale, not that the line is
     // foreign: learn the name, then show it.
-    const sourced = { ...payload.entry, srcId: payload.id };
-    if (!groupSources.has(payload.id)) {
+    const sourced = { ...entry, srcId: id };
+    if (!groupSources.has(id)) {
       void learnSource(sourced);
       return;
     }
     deliverMerged(sourced);
     return;
   }
-  if (payload.id !== processId) return;
+  if (id !== processId) return;
   if (pausedEl.checked) {
-    pendingQueue.push(payload.entry);
+    pendingQueue.push(entry);
     statusEl.textContent = `Pausado (+${pendingQueue.length})`;
     return;
   }
-  pushEntry(payload.entry);
-});
+  pushEntry(entry);
+}
 
 /**
  * Follow the watched process across a restart and across a retention change.
@@ -2078,8 +2146,8 @@ function syncWatched(): void {
 async function reloadWatched(): Promise<void> {
   const id = processId;
   if (!id) return;
-  const token = ++loadSeq;
-  const res = await window.api.getLogs(id);
+  const token = beginLoad();
+  const res = await awaitSnapshot(window.api.getLogs(id), token);
   // The view may have moved on, and a reload must not outlive its target.
   if (token !== loadSeq || processId !== id) return;
   watchedStartedAt = res.commandState.startedAt;
@@ -2087,8 +2155,9 @@ async function reloadWatched(): Promise<void> {
   // Everything the queue holds at or below this is in the snapshot already:
   // the finished run's lines, and the '▶ start' of the new one. What arrived
   // after main read the buffer is genuinely ours to keep.
-  keepQueuedAfter(() => res.seq);
+  keepQueuedAfter(() => res.seq); // held from before the reload began
   resetBuffer([...res.lines]);
+  endLoad(() => res.seq); // arrived while it was in flight
 }
 
 // Any state change (start, stop, new warn/error) → refresh the live numbers.

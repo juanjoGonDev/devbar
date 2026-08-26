@@ -55,6 +55,25 @@ describe('queuedAfter', () => {
     expect(queuedAfter([{ seq: undefined }], () => 0)).toEqual([]);
   });
 
+  it('reconciles a whole load: some sources caught up, one brand new', () => {
+    // The shape endLoad() faces after a merged snapshot lands: lines held for
+    // one round trip, each carrying the source that produced it.
+    const seqs: Record<string, number> = { back: 40, front: 12 };
+    const held = [
+      line(38, 'back'), // in the snapshot
+      line(41, 'back'), // emitted after main read the buffer
+      line(12, 'front'), // exactly where the snapshot ended
+      line(13, 'front'),
+      line(1, 'worker'), // a service the snapshot never saw
+    ];
+    const kept = queuedAfter(held, (entry) => seqs[entry.srcId] ?? 0);
+    expect(kept.map((entry) => `${entry.srcId}${entry.seq}`)).toEqual([
+      'back41',
+      'front13',
+      'worker1',
+    ]);
+  });
+
   it('leaves the queue it was given alone', () => {
     const queue = [line(1), line(9)];
     queuedAfter(queue, () => 5);

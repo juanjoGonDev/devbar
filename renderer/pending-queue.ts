@@ -11,7 +11,7 @@
  * buffer's own sequence can: it only ever grows, so anything at or below what
  * the snapshot reached is already in it.
  */
-export function queuedAfter<T extends { seq?: number }>(
+export function queuedAfter<T extends { seq?: number | undefined }>(
   queued: readonly T[],
   watermark: (entry: T) => number,
 ): T[] {
