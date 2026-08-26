@@ -293,7 +293,8 @@ body.sidebar-collapsed #toggle-sidebar {
 .side-item .s-badges {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 2px 6px;
   font-size: 10px;
   color: #8e8e93;
   font-variant-numeric: tabular-nums;
@@ -302,6 +303,11 @@ body.sidebar-collapsed #toggle-sidebar {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  /* As buttons these are wider than the old spans, and three of them plus the
+     runtime no longer fit 244px. Without this each one breaks between its icon
+     and its number instead of the ROW wrapping. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .side-item .s-badges .b.warn {
   color: #ffd60a;
@@ -955,8 +961,9 @@ header .check.spaced {
   background: transparent;
   font-family: inherit;
   font-size: 10px;
-  padding: 1px 4px;
-  margin: -1px 0;
+  padding: 0 3px;
+  margin: 0;
+  white-space: nowrap;
   cursor: pointer;
 }
 .b.clickable:hover {

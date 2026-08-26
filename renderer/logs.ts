@@ -251,8 +251,13 @@ let currentTarget: LogsTarget | null = null;
 // groupId + commandId extracted from processId for silence ops
 let currentGroupId: string | null = null;
 let currentCommandId: string | null = null;
-let globalMaxLogLines = 10_000;
-let RENDER_LIMIT = 2000;
+/**
+ * How many lines may sit in the DOM at once — deliberately NOT the retention
+ * setting. Those were the same number, so raising retention to 10 000 (20 000
+ * on this machine) meant that many rows, each with children, and the window
+ * froze. Retention is how much is KEPT; this is how much is DRAWN.
+ */
+const DOM_LINE_CAP = 2000;
 let visibleCount = 0;
 const pendingQueue: LogEntry[] = [];
 let filterRe: RegExp | null = null;
@@ -548,7 +553,7 @@ function appendLine(entry: LogEntry): void {
   linesEl.appendChild(div);
   visibleCount += 1;
 
-  while (visibleCount > RENDER_LIMIT && linesEl.firstChild) {
+  while (visibleCount > DOM_LINE_CAP && linesEl.firstChild) {
     linesEl.removeChild(linesEl.firstChild);
     visibleCount -= 1;
   }
@@ -1545,7 +1550,6 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   currentCommandId = null;
   anchorRow = null;
   setDrawer(false); // silencing is per-service; it has no meaning here
-  RENDER_LIMIT = globalMaxLogLines;
 
   const token = ++loadSeq;
   const res = await window.api.getMergedLogs(groupId);
@@ -1605,11 +1609,6 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   const token = ++loadSeq;
   const res = await window.api.getLogs(id);
   if (token !== loadSeq) return; // a newer load won the race
-  // Render limit: per-command override → global setting → fallback 2000
-  const cmdLimit =
-    res.target.kind === 'command' ? res.target.target.maxLogLines : null;
-  RENDER_LIMIT = cmdLimit != null ? cmdLimit : globalMaxLogLines;
-
   const target = res.target;
   if (target && target.group && target.target) {
     applyTargetSnapshot(target);
@@ -1637,8 +1636,8 @@ async function selectLog(id: string, filter?: string): Promise<void> {
 
 // ─────────────────────────── Bootstrap ───────────────────────────
 (async () => {
-  const settings = await window.api.getSettings();
-  globalMaxLogLines = (settings && settings.maxLogLines) || 10_000;
+  // Retention is main's business — it caps the buffers and the merged snapshot.
+  // The renderer only decides how much of what arrives it draws (DOM_LINE_CAP).
   if (initialFilter) filterEl.value = initialFilter;
   await refreshSidebar();
   if (initialScope) {

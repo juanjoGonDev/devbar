@@ -66,6 +66,14 @@ Todas las novedades relevantes de DevBar. El formato sigue
   de salir ya está tomada. Contrapartida: al salir —o al instalar una
   actualización— los cambios de configuración sin guardar se descartan sin
   preguntar.
+- **La ventana de logs se congelaba** con un límite de líneas alto. Retención y
+  renderizado eran la misma cifra, así que un ajuste de 20 000 líneas
+  significaba 20 000 filas en el DOM. Ahora son dos cosas distintas: se
+  conservan las que pidas, se dibujan como máximo 2000.
+- **El límite de líneas no se aplicaba a las vistas combinadas** (grupo y
+  telemetría general): usaban un tope fijo que ignoraba tu ajuste.
+- Los contadores de warnings, errores y tiempo del panel lateral se partían en
+  dos líneas al convertirse en botones.
 - **El menú de la barra crecía solo al escribir en el buscador de ramas.** Al
   calcular el alto necesario para el desplegable se tomaba como suelo el alto
   actual de la ventana, de modo que sólo podía crecer; como el proceso

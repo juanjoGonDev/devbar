@@ -383,8 +383,14 @@ let mainLogsWatching: string | null = null;
 // Non-empty when the shared window is showing a whole group merged into one
 // stream; every id in here is forwarded to that window, tagged by source.
 let mainLogsGroupIds = new Set<string>();
-/** Merged snapshots span N services, so they are capped harder than one buffer. */
-const GROUP_LOG_SNAPSHOT_LIMIT = 2000;
+/**
+ * Cap for a merged snapshot. Follows the user's retention setting, like a
+ * single log does — a hardcoded number here meant the global view silently
+ * ignored the value they had chosen.
+ */
+function mergedSnapshotLimit(): number {
+  return configStore.getGlobalSettings().maxLogLines;
+}
 const silencedWindows = new Map<string, BrowserWindow>();
 const repoWatcher = new RepoWatcher();
 
@@ -1969,6 +1975,7 @@ function registerIpc() {
         mainLogsGroupIds = new Set(sources.map((source) => source.id));
       }
 
+      const limit = mergedSnapshotLimit();
       // Take each buffer's tail BEFORE merging. The old order — copy every
       // retained line of every source, sort the lot, then keep the last 2000 —
       // ran on the main thread: in the `all` scope that is every command and
@@ -1981,12 +1988,17 @@ function registerIpc() {
         .flatMap((source) =>
           processManager
             .getLogs(source.id)
-            .slice(-GROUP_LOG_SNAPSHOT_LIMIT)
+            .slice(-limit)
             .map((entry) => ({ ...entry, srcId: source.id })),
         )
         .sort((a, b) => a.ts - b.ts)
-        .slice(-GROUP_LOG_SNAPSHOT_LIMIT);
+        .slice(-limit);
       const scopeName = groupId ? (groups[0]?.name ?? '?') : 'Telemetría';
+      // An empty merged view has no way to explain itself from the renderer:
+      // no sources and no buffers look identical on screen.
+      console.log(
+        `[logs] merged ${groupId ?? 'all'}: ${sources.length} fuentes, ${lines.length} líneas`,
+      );
       return { groupName: scopeName, sources, lines };
     },
   );
