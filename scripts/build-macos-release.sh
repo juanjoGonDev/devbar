@@ -34,6 +34,51 @@ mach_architecture() {
 DMG_ATTEMPTS=${DMG_ATTEMPTS:-3}
 DMG_RETRY_DELAY=${DMG_RETRY_DELAY:-5}
 
+# Mounting a DMG, and writing an .app under dist/, both make Launch Services
+# record a bundle at that path. Removing the files does not withdraw the
+# record: the entry survives pointing nowhere, and a stale claimant of the
+# app's identifier can outrank the real install. macOS resolves things like
+# notification permission by identifier, so the wrong claimant is not a
+# cosmetic problem — it looks like a permission the user never granted.
+# Overridable so tests can exercise this without touching the real database.
+LSREGISTER=${LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}
+
+unregister_bundle() {
+  local bundle=$1
+  [ -x "$LSREGISTER" ] || return 0
+  # Idempotent, and happy to withdraw a path that is already gone — which is
+  # exactly the case here, since the volume detaches and the work dir is wiped.
+  "$LSREGISTER" -u "$bundle" >/dev/null 2>&1 || true
+}
+
+# Every bundle the build leaves under a directory, withdrawn before the
+# directory goes. Deleting the files first would strand the records.
+withdraw_bundles_under() {
+  local dir=$1
+  [ -d "$dir" ] || return 0
+  local bundle
+  while IFS= read -r bundle; do
+    [ -n "$bundle" ] || continue
+    unregister_bundle "$bundle"
+  done < <(find "$dir" -maxdepth 4 -name 'DevBar.app' -type d 2>/dev/null)
+}
+
+finish_work_dir() {
+  withdraw_bundles_under "$WORK_DIR"
+  rm -rf "$WORK_DIR"
+}
+
+# A build that dies half way must not leak what a finished one cleans up: the
+# copies are registered as soon as they exist, and `fail` exits before any
+# tidying. Runs on every exit, so the records go whatever the outcome.
+release_cleanup() {
+  local arch
+  for arch in arm64 x64; do
+    unregister_bundle "/Volumes/DevBar $VERSION ($arch)/DevBar.app"
+  done
+  finish_work_dir
+}
+
 detach_volume() {
   local volname=$1
   local mount_point="/Volumes/$volname"
@@ -57,6 +102,8 @@ create_dmg() {
       -nospotlight \
       -format UDZO \
       "$dmg"; then
+      # hdiutil mounted the volume to fill it; the registration outlives it.
+      unregister_bundle "/Volumes/$volname/DevBar.app"
       return 0
     fi
     if [ "$attempt" -ge "$DMG_ATTEMPTS" ]; then
@@ -113,7 +160,11 @@ main() {
     fail "package.json version '$VERSION' is not a stable semantic version."
   fi
 
-  rm -rf "$OUTPUT_DIR" "$WORK_DIR"
+  # From here on, every copy this build registers is withdrawn on the way out.
+  trap release_cleanup EXIT
+
+  rm -rf "$OUTPUT_DIR"
+  finish_work_dir # a previous run may have died holding registrations
   mkdir -p "$OUTPUT_DIR" "$WORK_DIR"
 
   build_architecture arm64
@@ -129,7 +180,7 @@ main() {
       > SHA256SUMS.txt
   )
 
-  rm -rf "$WORK_DIR"
+  finish_work_dir
   printf 'macOS release artifacts created in %s\n' "$OUTPUT_DIR"
 }
 
