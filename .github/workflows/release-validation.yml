@@ -6,17 +6,23 @@ on:
     branches: [main]
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
+      - '.github/workflows/auto-release.workflow.yml'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-validation.yml'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      - 'scripts/build.sh'
       - 'scripts/build-macos-release.sh'
-      - 'scripts/package-electron.js'
+      - 'scripts/package-electron.ts'
       - 'scripts/package-macos-app.sh'
-      - 'scripts/release-artifacts.js'
-      - 'scripts/verify-release-artifacts.js'
+      - 'scripts/release-artifacts.ts'
+      - 'scripts/release-impact-policy.ts'
+      - 'scripts/verify-release-artifacts.ts'
       - 'scripts/verify-macos-release.sh'
-      - 'tests/release-artifacts.test.js'
+      - 'tests/release-artifacts.test.ts'
+      - 'tests/release-impact-policy.test.ts'
+      - 'tests/release-workflow-impact.test.ts'
+      - 'tsconfig*.json'
 
 permissions: read-all
 
@@ -51,7 +57,7 @@ jobs:
           cache: pnpm
 
       - name: Cache Electron downloads
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/Library/Caches/electron
           key: macos-release-validation-${{ hashFiles('pnpm-lock.yaml') }}
@@ -63,7 +69,7 @@ jobs:
         run: pnpm audit --audit-level=moderate
 
       - name: Run release artifact regression tests
-        run: pnpm exec vitest run tests/release-artifacts.test.js
+        run: pnpm exec vitest run tests/release-artifacts.test.ts
 
       - name: Build and verify release without publishing
         run: pnpm run release:mac

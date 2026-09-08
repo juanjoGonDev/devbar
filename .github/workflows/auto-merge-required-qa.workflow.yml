@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Report eligible pull requests without enabling auto-merge
+        description: Report eligible pull requests without changing branches or merge state
         required: true
         default: true
         type: boolean
@@ -23,10 +23,11 @@ jobs:
     if: github.event.repository.fork == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: admin
     permissions:
-      contents: write
+      contents: read
       issues: write
-      pull-requests: write
+      pull-requests: read
     steps:
       - name: Synchronize automation labels
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -89,32 +90,56 @@ jobs:
               }
             }
 
-      - name: Validate current approvals and enable auto-merge
+      - name: Validate trusted merge identity
+        if: inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.PAT_FINE }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error title=Missing Actions secret::Configure PAT_FINE in the protected admin environment with Contents and Pull requests write permission."
+            exit 1
+          fi
+          authenticated_login=$(gh api user --jq .login)
+          if [[ "$authenticated_login" != "$GITHUB_REPOSITORY_OWNER" ]]; then
+            echo "::error title=Invalid merge actor::PAT_FINE authenticates as $authenticated_login instead of $GITHUB_REPOSITORY_OWNER."
+            exit 1
+          fi
+
+      - name: Validate current approvals and queue or merge
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           DRY_RUN: ${{ inputs.dry_run || false }}
         with:
-          github-token: ${{ github.token }}
+          github-token: ${{ inputs.dry_run == true && github.token || secrets.PAT_FINE }}
           script: |
             const dryRun = process.env.DRY_RUN === 'true';
             const { owner, repo } = context.repo;
             const defaultBranch = context.payload.repository.default_branch;
+            const repository = await github.rest.repos.get({ owner, repo });
+            const autoMergeAllowed = repository.data.allow_auto_merge === true;
+            const hasRequiredQaLabel = (pullRequest) =>
+              pullRequest.labels.some(
+                (label) => label.name === 'requires-manual-qa',
+              );
+            const isTrustedCandidate = (pullRequest) =>
+              pullRequest.user?.login === 'dependabot[bot]' &&
+              pullRequest.base.ref === defaultBranch &&
+              pullRequest.head.repo?.full_name === `${owner}/${repo}` &&
+              hasRequiredQaLabel(pullRequest);
             const pullRequests = await github.paginate(
               github.rest.pulls.list,
               { owner, repo, state: 'open', per_page: 100 },
             );
 
-            const candidates = pullRequests.filter(
-              (pullRequest) =>
-                pullRequest.user?.login === 'dependabot[bot]' &&
-                pullRequest.base.ref === defaultBranch &&
-                pullRequest.head.repo?.full_name === `${owner}/${repo}` &&
-                pullRequest.labels.some(
-                  (label) => label.name === 'requires-manual-qa',
-                ),
-            );
-
+            const candidates = pullRequests.filter(isTrustedCandidate);
             const permissionCache = new Map();
+            const decisiveReviewStates = new Set([
+              'APPROVED',
+              'CHANGES_REQUESTED',
+              'DISMISSED',
+            ]);
+
             const hasWritePermission = async (login) => {
               if (permissionCache.has(login)) {
                 return permissionCache.get(login);
@@ -141,42 +166,10 @@ jobs:
               }
             };
 
-            const results = [];
-            for (const candidate of candidates) {
-              const current = await github.rest.pulls.get({
-                owner,
-                repo,
-                pull_number: candidate.number,
-              });
-              const currentHeadSha = current.data.head.sha;
-
-              if (current.data.mergeable_state === 'behind') {
-                if (dryRun) {
-                  results.push({
-                    number: candidate.number,
-                    action: 'would-update-branch',
-                    reason: 'fresh approval required after the update',
-                  });
-                  continue;
-                }
-
-                await github.rest.pulls.updateBranch({
-                  owner,
-                  repo,
-                  pull_number: candidate.number,
-                  expected_head_sha: currentHeadSha,
-                });
-                results.push({
-                  number: candidate.number,
-                  action: 'branch-update-requested',
-                  reason: 'fresh approval required for the new head commit',
-                });
-                continue;
-              }
-
+            const readApprovalState = async (pullNumber, headSha) => {
               const reviews = await github.paginate(
                 github.rest.pulls.listReviews,
-                { owner, repo, pull_number: candidate.number, per_page: 100 },
+                { owner, repo, pull_number: pullNumber, per_page: 100 },
               );
               const latestReviewByUser = new Map();
 
@@ -186,7 +179,8 @@ jobs:
                 if (
                   !login ||
                   !Number.isFinite(submittedAt) ||
-                  review.commit_id !== currentHeadSha
+                  review.commit_id !== headSha ||
+                  !decisiveReviewStates.has(review.state)
                 ) {
                   continue;
                 }
@@ -213,68 +207,293 @@ jobs:
                 changesRequested ||= review.state === 'CHANGES_REQUESTED';
               }
 
-              if (!approved || changesRequested) {
-                results.push({
-                  number: candidate.number,
-                  action: 'skipped',
-                  reason: changesRequested
-                    ? 'current maintainer review requests changes'
-                    : 'no maintainer approval for the current head commit',
-                });
-                continue;
-              }
+              return { approved, changesRequested };
+            };
 
-              if (dryRun) {
-                results.push({
-                  number: candidate.number,
-                  action: 'would-enable-auto-merge',
-                });
-                continue;
-              }
+            const hasWorkflowChanges = async (pullNumber) => {
+              const files = await github.paginate(
+                github.rest.pulls.listFiles,
+                { owner, repo, pull_number: pullNumber, per_page: 100 },
+              );
+              return files.some((file) =>
+                file.filename.startsWith('.github/workflows/'),
+              );
+            };
 
-              const verified = await github.rest.pulls.get({
+            const mergeCleanPullRequest = async (pullNumber, headSha) => {
+              const merge = await github.rest.pulls.merge({
                 owner,
                 repo,
-                pull_number: candidate.number,
+                pull_number: pullNumber,
+                merge_method: 'squash',
+                sha: headSha,
               });
-              if (verified.data.head.sha !== currentHeadSha) {
+              if (!merge.data.merged) {
+                throw new Error(`GitHub did not merge #${pullNumber}`);
+              }
+            };
+
+            const failureReason = (error) =>
+              Number.isInteger(error?.status)
+                ? `GitHub request failed with HTTP ${error.status}`
+                : 'GitHub request failed unexpectedly';
+
+            const results = [];
+            let failures = 0;
+
+            for (const candidate of candidates) {
+              try {
+                const current = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: candidate.number,
+                });
+                const currentHeadSha = current.data.head.sha;
+
+                if (!isTrustedCandidate(current.data)) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: 'candidate trust contract changed',
+                  });
+                  continue;
+                }
+
+                if (current.data.mergeable_state === 'behind') {
+                  const workflowChanges = await hasWorkflowChanges(candidate.number);
+                  if (workflowChanges) {
+                    results.push({
+                      number: candidate.number,
+                      action: 'manual-branch-update-required',
+                      reason:
+                        'branch is behind and changes workflow files; automation will not request workflows permission',
+                    });
+                    continue;
+                  }
+
+                  if (dryRun) {
+                    results.push({
+                      number: candidate.number,
+                      action: 'would-update-branch',
+                      reason: 'fresh approval required after the update',
+                    });
+                    continue;
+                  }
+
+                  try {
+                    await github.rest.pulls.updateBranch({
+                      owner,
+                      repo,
+                      pull_number: candidate.number,
+                      expected_head_sha: currentHeadSha,
+                    });
+                  } catch (error) {
+                    const workflowPermissionFailure =
+                      error.status === 403 &&
+                      String(error.message).includes('workflows permission');
+                    if (!workflowPermissionFailure) {
+                      throw error;
+                    }
+                    results.push({
+                      number: candidate.number,
+                      action: 'manual-branch-update-required',
+                      reason:
+                        'GitHub refused the branch update because workflow-file changes require workflows permission',
+                    });
+                    continue;
+                  }
+
+                  results.push({
+                    number: candidate.number,
+                    action: 'branch-update-requested',
+                    reason: 'fresh approval required for the new head commit',
+                  });
+                  continue;
+                }
+
+                const approval = await readApprovalState(
+                  candidate.number,
+                  currentHeadSha,
+                );
+                if (!approval.approved || approval.changesRequested) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: approval.changesRequested
+                      ? 'current maintainer review requests changes'
+                      : 'no maintainer approval for the current head commit',
+                  });
+                  continue;
+                }
+
+                const verified = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: candidate.number,
+                });
+                if (!isTrustedCandidate(verified.data)) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: 'candidate trust contract changed during validation',
+                  });
+                  continue;
+                }
+                if (verified.data.head.sha !== currentHeadSha) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: 'head commit changed during validation',
+                  });
+                  continue;
+                }
+
+                const verifiedApproval = await readApprovalState(
+                  candidate.number,
+                  currentHeadSha,
+                );
+                if (
+                  !verifiedApproval.approved ||
+                  verifiedApproval.changesRequested
+                ) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: 'maintainer approval changed during validation',
+                  });
+                  continue;
+                }
+
+                if (verified.data.mergeable_state === 'behind') {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: 'branch became outdated during validation',
+                  });
+                  continue;
+                }
+
+                if (
+                  verified.data.mergeable_state === 'dirty' ||
+                  verified.data.mergeable_state === 'unknown'
+                ) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'skipped',
+                    reason: `merge state is ${verified.data.mergeable_state}`,
+                  });
+                  continue;
+                }
+
+                if (dryRun) {
+                  results.push({
+                    number: candidate.number,
+                    action:
+                      verified.data.mergeable_state === 'clean'
+                        ? 'would-merge'
+                        : autoMergeAllowed
+                          ? 'would-enable-auto-merge'
+                          : 'would-wait-for-requirements',
+                  });
+                  continue;
+                }
+
+                if (verified.data.mergeable_state === 'clean') {
+                  await mergeCleanPullRequest(candidate.number, currentHeadSha);
+                  results.push({
+                    number: candidate.number,
+                    action: 'merged',
+                  });
+                  continue;
+                }
+
+                if (!autoMergeAllowed) {
+                  results.push({
+                    number: candidate.number,
+                    action: 'waiting-for-requirements',
+                    reason:
+                      'repository auto-merge is disabled; a later run will merge once GitHub reports clean',
+                  });
+                  continue;
+                }
+
+                if (!verified.data.auto_merge) {
+                  try {
+                    await github.graphql(
+                      `mutation EnableAutoMerge(
+                        $pullRequestId: ID!
+                        $expectedHeadOid: GitObjectID!
+                      ) {
+                        enablePullRequestAutoMerge(
+                          input: {
+                            pullRequestId: $pullRequestId
+                            mergeMethod: SQUASH
+                            expectedHeadOid: $expectedHeadOid
+                          }
+                        ) {
+                          pullRequest {
+                            number
+                          }
+                        }
+                      }`,
+                      {
+                        pullRequestId: verified.data.node_id,
+                        expectedHeadOid: currentHeadSha,
+                      },
+                    );
+                  } catch (error) {
+                    const becameClean = error.errors?.some((entry) =>
+                      String(entry.message).includes('clean status'),
+                    );
+                    if (!becameClean) {
+                      throw error;
+                    }
+
+                    const clean = await github.rest.pulls.get({
+                      owner,
+                      repo,
+                      pull_number: candidate.number,
+                    });
+                    const cleanApproval = await readApprovalState(
+                      candidate.number,
+                      currentHeadSha,
+                    );
+                    if (
+                      !isTrustedCandidate(clean.data) ||
+                      clean.data.head.sha !== currentHeadSha ||
+                      clean.data.mergeable_state !== 'clean' ||
+                      !cleanApproval.approved ||
+                      cleanApproval.changesRequested
+                    ) {
+                      results.push({
+                        number: candidate.number,
+                        action: 'skipped',
+                        reason: 'pull request changed while enabling auto-merge',
+                      });
+                      continue;
+                    }
+
+                    await mergeCleanPullRequest(candidate.number, currentHeadSha);
+                    results.push({
+                      number: candidate.number,
+                      action: 'merged-after-clean-race',
+                    });
+                    continue;
+                  }
+                }
+
                 results.push({
                   number: candidate.number,
-                  action: 'skipped',
-                  reason: 'head commit changed during validation',
+                  action: 'auto-merge-enabled',
                 });
-                continue;
+              } catch (error) {
+                failures += 1;
+                results.push({
+                  number: candidate.number,
+                  action: 'failed',
+                  reason: failureReason(error),
+                });
               }
-
-              if (!verified.data.auto_merge) {
-                await github.graphql(
-                  `mutation EnableAutoMerge(
-                    $pullRequestId: ID!
-                    $expectedHeadOid: GitObjectID!
-                  ) {
-                    enablePullRequestAutoMerge(
-                      input: {
-                        pullRequestId: $pullRequestId
-                        mergeMethod: SQUASH
-                        expectedHeadOid: $expectedHeadOid
-                      }
-                    ) {
-                      pullRequest {
-                        number
-                      }
-                    }
-                  }`,
-                  {
-                    pullRequestId: verified.data.node_id,
-                    expectedHeadOid: currentHeadSha,
-                  },
-                );
-              }
-
-              results.push({
-                number: candidate.number,
-                action: 'auto-merge-enabled',
-              });
             }
 
             await core.summary
@@ -291,3 +510,9 @@ jobs:
                       .join('\n'),
               )
               .write();
+
+            if (failures > 0) {
+              core.setFailed(
+                `${failures} Dependabot pull request(s) failed processing.`,
+              );
+            }

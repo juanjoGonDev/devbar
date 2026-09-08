@@ -3,6 +3,169 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [Unreleased]
+
+### Añadido
+
+- **Actualizaciones automáticas de verdad.** Cuando DevBar detecta una versión
+  nueva ya no te manda a la página de la release: se descarga el `.zip` en
+  segundo plano, lo descomprime y lo deja preparado. Solo entonces avisa, y el
+  aviso pide una única cosa: **reiniciar**. Al aceptar, DevBar se cierra, se
+  sustituye a sí misma y se vuelve a abrir sola. Se acabó montar el DMG y
+  arrastrar a Aplicaciones.
+- Si la copia falla a medias, la versión anterior se restaura y se vuelve a
+  abrir: nunca te quedas sin app.
+- El menú de la barra y el panel de configuración distinguen entre «hay una
+  actualización» y «ya está descargada, lista para instalar».
+- **El visor carga por tramos según te desplazas.** Las líneas se guardan en
+  memoria y sólo unos cientos están dibujadas: al acercarte a un borde se
+  extiende por ahí, arriba o abajo. Sin indicadores de carga y sin saltos —
+  ya están en memoria, sólo se decide qué se pinta—, así que se recorre el
+  historial completo como si fuera continuo. El filtro busca en **todo** lo
+  retenido, no sólo en lo dibujado, y copiar sin selección copia el resultado
+  entero del filtro.
+- **Seleccionar líneas desengancha la vista de la cola.** Al elegir filas has
+  dicho que no estás mirando el final, así que las nuevas se acumulan sin
+  arrastrarte: la selección se queda quieta hasta que pulses ↓ o la limpies.
+- Un servicio que arranca **después** de abrir una vista combinada ya aparece
+  en ella. Antes el reenvío se decidía con una foto de identificadores tomada
+  al abrir, así que un pre-script en su primera ejecución no existía para esa
+  vista hasta reabrirla; ahora se decide por ámbito.
+
+### Cambiado
+
+- **El panel lateral de la ventana de logs distingue de un vistazo los grupos
+  de su contenido.** Antes el nombre del grupo era un texto gris pequeño
+  perdido en la misma columna que los servicios. Ahora cada grupo es una
+  **banda** a todo el ancho, con su nombre en claro, que además queda **fija
+  arriba** mientras recorres su lista: con diez servicios abiertos siempre
+  sabes de quién son los logs que estás mirando.
+- Los servicios de un grupo cuelgan de un **raíl vertical** que los agrupa
+  visualmente, en lugar de compartir columna con la cabecera.
+- Cada cabecera de grupo lleva el **número de servicios** que contiene y un
+  **punto con el peor estado** de su interior. Un grupo plegado ya no puede
+  esconder un servicio caído.
+
+- **Las notificaciones ahora son las nativas de macOS**, no el banner propio.
+  El banner queda de reserva para cuando el sistema las rechaza (por ejemplo en
+  desarrollo, sin empaquetar). Contrapartida: las nativas respetan el modo **No
+  molestar**; el banner no lo hacía.
+- La app se firma **ad-hoc** al empaquetarla, y cada bundle anidado con **su
+  propio** identificador. Sin cuenta de desarrollador de Apple ni certificado:
+  `codesign --sign -` es gratis. Es lo que exige `UNUserNotificationCenter`
+  para entregar notificaciones, y de paso permite al instalador automático
+  verificar el sello del bundle descargado antes de sustituir la app.
+- En **Configuración → Notificaciones**, un enlace que abre **Ajustes del
+  sistema directamente en la ficha de DevBar**. macOS pide permiso para
+  notificar una sola vez por app, así que si se denegó no vuelve a preguntar y
+  no hay pista de por qué no se ve nada: ese enlace es el atajo a la única
+  pantalla donde se arregla.
+- **Fuera el ajuste «Cerrar notificación tras N segundos».** Con notificaciones
+  nativas esa duración la manda macOS, a través del estilo de notificación de
+  la app en Ajustes del sistema: **Avisos** se cierran solos, **Alertas** se
+  quedan hasta que las cierras. El ajuste sólo gobernaba ya el aviso de
+  reserva, así que prometía más de lo que hacía.
+- La app pasa a identificarse como **`io.github.juanjogondev.devbar`**. Antes
+  usaba `com.electron.devbar`, el valor por defecto de packager — el espacio de
+  nombres de Electron, no el nuestro. Tus ajustes se conservan: viven bajo el
+  nombre de la app, no bajo el identificador. La primera vez que arranque,
+  macOS pedirá permiso para mostrar notificaciones.
+
+### Corregido
+
+- **DevBar no se cerraba** al pedirle que se actualizara —ni al pulsar
+  «Salir»— si la ventana de **configuración** estaba abierta. Esa ventana veta
+  su propio cierre para preguntar por cambios sin guardar, y ese veto abortaba
+  en silencio el apagado entero. Ahora el veto se levanta en cuanto la decisión
+  de salir ya está tomada. Contrapartida: al salir —o al instalar una
+  actualización— los cambios de configuración sin guardar se descartan sin
+  preguntar.
+- **La ventana de logs se congelaba** con un límite de líneas alto. Retención y
+  renderizado eran la misma cifra, así que un ajuste de 20 000 líneas
+  significaba 20 000 filas en el DOM.
+- El botón **↓** llevaba al final de lo dibujado, no del log.
+- **El límite de líneas no se aplicaba a las vistas combinadas** (grupo y
+  telemetría general): usaban un tope fijo que ignoraba tu ajuste.
+- Los contadores de warnings, errores y tiempo del panel lateral se partían en
+  dos líneas al convertirse en botones.
+- **El menú de la barra crecía solo al escribir en el buscador de ramas.** Al
+  calcular el alto necesario para el desplegable se tomaba como suelo el alto
+  actual de la ventana, de modo que sólo podía crecer; como el proceso
+  principal añade unos píxeles de margen, cada pulsación lo inflaba un poco
+  más y no volvía a encogerse mientras el desplegable siguiera abierto sin
+  resultados. Ahora el suelo es la altura real del contenido, así que el menú
+  se ajusta al desplegable y vuelve a su tamaño en cuanto deja de haber
+  coincidencias.
+
+## [0.6.0] - 2026-08-21
+
+### Añadido
+
+- Cuando hay una **actualización disponible**, un pequeño **punto rojo** marca
+  el chip de versión, tanto en el menú de la barra como en el panel de
+  configuración, y el propio **icono de la barra de menús** lleva el mismo
+  punto. Es el aviso discreto que usan los juegos para señalar que hay algo
+  nuevo en una sección: no interrumpe, pero se ve. El tooltip del chip indica
+  qué versión está disponible.
+- El punto desaparece solo en cuanto se instala la actualización o deja de
+  haber una versión más nueva.
+
+## [0.5.0] - 2026-08-21
+
+### Añadido
+
+- La ventana de **logs** pasa a ser un visor único con **panel lateral**: todos
+  los comandos y acciones aparecen agrupados por grupo, y cada grupo se pliega y
+  despliega (el estado se recuerda entre sesiones). Un buscador filtra la lista
+  por nombre.
+- Cada entrada del panel muestra de un vistazo su estado: punto de color,
+  número de **warnings** y **errores**, y el **tiempo** que lleva en ejecución o
+  lo que duró la última.
+- Botón de **arrancar / parar** tanto en la barra superior del log como en cada
+  fila del panel lateral, sin tener que volver a la barra de menú.
+- Botón **⧉** para abrir el log actual en una **ventana aparte**, de modo que se
+  pueden vigilar varios servicios a la vez mientras la ventana principal sigue
+  navegando entre logs.
+- Botón **◧** que **oculta el panel lateral por completo** para dejar todo el
+  ancho al log. La preferencia se recuerda entre sesiones.
+- El panel se actualiza **en tiempo real**: los grupos, comandos y acciones que
+  se añaden, renombran o borran desde la configuración aparecen y desaparecen
+  al instante, sin reabrir la ventana.
+- **Selección de líneas** en el log, con el comportamiento habitual del
+  explorador de archivos: clic selecciona una, `cmd`/`ctrl`+clic añade o quita
+  sueltas y `mayús`+clic marca un rango. `cmd`/`ctrl`+`A` selecciona todo lo
+  visible y `Esc` limpia la selección.
+- **Copiar** (botón o `cmd`/`ctrl`+`C`) copia lo seleccionado; si no hay nada
+  seleccionado, copia todas las líneas visibles con el filtro aplicado.
+  Seleccionar texto arrastrando con el ratón sigue funcionando igual.
+
+### Cambiado
+
+- Abrir un log desde la barra de menú reutiliza la ventana compartida en lugar
+  de abrir una ventana nueva por servicio.
+- La barra superior del visor es más compacta: limpiar, copiar, silenciados y
+  abrir en ventana pasan a ser botones de icono.
+- El hueco superior de la ventana se reduce a lo justo para despejar los
+  botones de la barra de título, de modo que el contenido empieza más arriba.
+
+## [0.4.4] - 2026-08-10
+
+### Cambiado
+
+- Todo el código JavaScript mantenido en el repositorio se ha migrado a **TypeScript estricto**: proceso principal de Electron, preload, renderer, scripts de soporte/release, tests y configuración ejecutable. El JavaScript de runtime pasa a ser únicamente salida generada de `build/`.
+- El renderer usa módulos ES explícitos y comparte un único contrato tipado de IPC con main/preload; el preload se empaqueta de forma autocontenida en CommonJS para mantener el aislamiento de Electron.
+- CI incorpora type-check de los cuatro targets y rechaza de forma permanente cualquier nuevo `.js`, `.jsx`, `.mjs` o `.cjs` authored.
+
+### Seguridad
+
+- Los argumentos IPC procedentes del renderer se tratan como datos no confiables (`unknown`) y se validan antes de entrar en la lógica de dominio, evitando que los tipos de Electron propaguen `any` implícito a través de la frontera de confianza.
+
+## [0.4.3] - 2026-08-08
+
+### Corregido
+
+- La automatización de **QA requerida para actualizaciones mayores de Dependabot** ya no falla cuando la rama está lista para fusionarse ni intenta elevar permisos para reescribir workflows. Las aprobaciones siguen ligadas al commit exacto y las fusiones automatizadas usan la identidad de confianza para conservar los eventos posteriores de GitHub Actions.
+
 ## [0.4.2] - 2026-08-06
 
 ### Cambiado
