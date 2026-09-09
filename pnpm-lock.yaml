@@ -20,11 +20,11 @@ importers:
         specifier: 11.0.2
         version: 11.0.2
       menubar:
-        specifier: 9.5.2
-        version: 9.5.2(electron@43.2.0)
+        specifier: 9.5.3
+        version: 9.5.3(electron@43.2.0)
       uuid:
-        specifier: 14.0.1
-        version: 14.0.1
+        specifier: 14.0.2
+        version: 14.0.2
     devDependencies:
       '@electron/packager':
         specifier: 20.3.0
@@ -1349,10 +1349,10 @@ packages:
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
-  menubar@9.5.2:
-    resolution: {integrity: sha512-yUn4jCMPOiNuqxplEE+SITlTX+Wy92ZNZaG5tsTczEvVT1El8plHR3kinOTfUPwfQcAYcWE0SLiBM41z/hS6pg==}
+  menubar@9.5.3:
+    resolution: {integrity: sha512-IicKQsb1bX7RvLMreUVRYdU3Z+tcWSZ2VYSNGvAn1hCFr8x/QWaEYAsXMqSCVWH84jwSaN6xWvRbtnBVBudvZw==}
     peerDependencies:
-      electron: '>=9.0.0 <35.0.0'
+      electron: '>=9.0.0'
 
   mimic-function@5.0.1:
     resolution: {integrity: sha512-VP79XUPxV2CigYP3jWwAUFSku2aKqBH7uTAapFWCBqutsbmDo96KY5o8uh6U+/YSIn5OxJnXp73beVkpqMIGhA==}
@@ -1657,8 +1657,8 @@ packages:
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
-  uuid@14.0.1:
-    resolution: {integrity: sha512-6ZxzVpzDXDa3bJWaHilVayA+BH/1zmxCJoVgvmqJnid/gPoKHxUrS/aC/T6LGQtNHT+XHG9fXPJB4d+IrU30Ew==}
+  uuid@14.0.2:
+    resolution: {integrity: sha512-xZe/16rV4aa+HGSOCiY2YeLT1OybRLrrkL/Rqaq7p7GMVXjFh+6wN4oMYgjFmnSnhY8t6Xpdl2l9qmnHYuMHwQ==}
     hasBin: true
 
   vite@8.0.16:
@@ -2928,7 +2928,7 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  menubar@9.5.2(electron@43.2.0):
+  menubar@9.5.3(electron@43.2.0):
     dependencies:
       electron: 43.2.0
       electron-positioner: 4.1.0
@@ -3235,7 +3235,7 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  uuid@14.0.1: {}
+  uuid@14.0.2: {}
 
   vite@8.0.16(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0):
     dependencies:
