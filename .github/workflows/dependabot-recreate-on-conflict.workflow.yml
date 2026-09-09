@@ -1,0 +1,76 @@
+name: 🔁 Dependabot recreate on conflict
+
+on:
+  schedule:
+    # Every 5 minutes, the shortest interval Actions allows. Offset from the
+    # top of the hour, where scheduled runs are most likely to be dropped.
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: dependabot-recreate-on-conflict
+  cancel-in-progress: false
+
+jobs:
+  recreate:
+    name: Ask Dependabot to recreate conflicted updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Every gh call below authenticates with PAT_FINE, so GITHUB_TOKEN is
+    # never used and needs no permissions of its own.
+    permissions: {}
+    env:
+      # Dependabot only acts on comment commands from an account with write
+      # access, so github-actions[bot] is not a reliable author for this.
+      GH_TOKEN: ${{ secrets.PAT_FINE }}
+      COMMAND: '@dependabot recreate'
+    steps:
+      - name: Comment recreate on conflicted pull requests
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error title=Missing token::Configure PAT_FINE as an Actions repository secret with Pull requests read/write permission."
+            exit 1
+          fi
+
+          # Mergeability is computed lazily, so a pull request GitHub is still
+          # working on reads as UNKNOWN. Those are simply left for the next
+          # run rather than waited on: this workflow comes back every 5 minutes.
+          # Filtering by author server-side keeps the limit off the repository's
+          # whole backlog: it now caps Dependabot's own pull requests, a set
+          # dependabot.yml already bounds through open-pull-requests-limit.
+          gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --author 'app/dependabot' \
+            --limit 100 \
+            --json number,mergeable \
+            --jq '.[] | select(.mergeable == "CONFLICTING") | .number' > conflicted.txt
+
+          # Only this token's own requests count towards not asking twice.
+          # Dependabot rejects the command from anyone without push access, so
+          # a matching comment by someone else may never have taken effect, and
+          # treating it as ours would silence this workflow for good.
+          actor=$(gh api user --jq .login)
+
+          while read -r pull_number; do
+            # Ask again only once Dependabot has pushed since the last request.
+            # A pull request that stays conflicting for hours is asked exactly
+            # once, however many times this workflow runs in the meantime.
+            gh pr view "$pull_number" --repo "$GITHUB_REPOSITORY" \
+              --json comments,commits > pull.json
+            if ! jq -e --arg cmd "$COMMAND" --arg actor "$actor" '
+              ([.comments[]
+                | select(.body == $cmd and .author.login == $actor)
+                | .createdAt] | max // "")
+              < (.commits | last | .committedDate)
+            ' pull.json >/dev/null; then
+              echo "Recreate already requested for #$pull_number; skipping."
+              continue
+            fi
+            echo "Requesting recreate for #$pull_number"
+            gh pr comment "$pull_number" --repo "$GITHUB_REPOSITORY" --body "$COMMAND"
+          done < conflicted.txt
