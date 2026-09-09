@@ -39,6 +39,10 @@ interface Fixture {
  */
 const HDIUTIL_STUB = `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$DMG_TEST_LOG"
+# Only creation is flaky. Detaching a leftover volume is not what the retry is
+# about, and letting it consume a failure would model something that does not
+# happen — while making the count depend on the tester's mounted volumes.
+if [ "\${1:-}" != create ]; then exit 0; fi
 count=$(cat "$DMG_TEST_COUNT")
 count=$((count + 1))
 printf '%s' "$count" > "$DMG_TEST_COUNT"
@@ -109,7 +113,12 @@ async function runCreateDmg(
     code = Number((error as { code?: number }).code ?? 1);
   }
   const log = await readFile(fixture.log, 'utf8').catch(() => '');
-  return { code, calls: log.split('\n').filter(Boolean) };
+  const calls = log.split('\n').filter(Boolean);
+  // Only the create attempts. `detach_volume` also reaches hdiutil, but ONLY
+  // when a volume of that exact name happens to be mounted on the machine
+  // running the tests — counting every call made these assertions depend on
+  // whether someone had a release DMG open.
+  return { code, calls: calls.filter((call) => call.startsWith('create ')) };
 }
 
 afterEach(async () => {
