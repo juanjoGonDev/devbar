@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { computeCrossContainerIndex } from '../renderer/dnd-helper.js';
+import {
+  computeCrossContainerIndex,
+  planKeyboardMove,
+} from '../renderer/dnd-helper.js';
 
 /**
  * dnd-helper.test.ts
@@ -100,5 +103,186 @@ describe('computeCrossContainerIndex', () => {
       before: false,
     });
     expect(index).toBe(2);
+  });
+});
+
+/**
+ * `planKeyboardMove` is the pure index-math seam for keyboard grab-and-move
+ * reordering (WCAG 2.1.1): the DOM-wiring half (grab/arrow/drop/cancel key
+ * handling inside `attachDragHandlers`/`attachCrossContainerDragHandlers`)
+ * has no jsdom in this suite, same precedent as `computeCrossContainerIndex`
+ * above. `containers` is the zone's containers in top-to-bottom order — a
+ * single-entry array for a plain single-container list, or every sibling
+ * container sharing a cross-container zone.
+ */
+describe('planKeyboardMove', () => {
+  it('moves one position up within the same container', () => {
+    const target = planKeyboardMove({
+      containers: [{ id: 'list-1', itemIds: ['a', 'b', 'c'] }],
+      containerId: 'list-1',
+      index: 1,
+      direction: 'up',
+    });
+    expect(target).toEqual({ containerId: 'list-1', index: 0 });
+  });
+
+  it('moves one position down within the same container', () => {
+    const target = planKeyboardMove({
+      containers: [{ id: 'list-1', itemIds: ['a', 'b', 'c'] }],
+      containerId: 'list-1',
+      index: 0,
+      direction: 'down',
+    });
+    expect(target).toEqual({ containerId: 'list-1', index: 1 });
+  });
+
+  it('is a no-op at the top edge of a single-container list', () => {
+    const target = planKeyboardMove({
+      containers: [{ id: 'list-1', itemIds: ['a', 'b', 'c'] }],
+      containerId: 'list-1',
+      index: 0,
+      direction: 'up',
+    });
+    expect(target).toBeNull();
+  });
+
+  it('is a no-op at the bottom edge of a single-container list', () => {
+    const target = planKeyboardMove({
+      containers: [{ id: 'list-1', itemIds: ['a', 'b', 'c'] }],
+      containerId: 'list-1',
+      index: 2,
+      direction: 'down',
+    });
+    expect(target).toBeNull();
+  });
+
+  it('crosses up into the end of the previous container', () => {
+    const target = planKeyboardMove({
+      containers: [
+        { id: 'step-1', itemIds: ['a', 'b'] },
+        { id: 'step-2', itemIds: ['x', 'y'] },
+      ],
+      containerId: 'step-2',
+      index: 0,
+      direction: 'up',
+    });
+    expect(target).toEqual({ containerId: 'step-1', index: 2 });
+  });
+
+  it('crosses down into the start of the next container', () => {
+    const target = planKeyboardMove({
+      containers: [
+        { id: 'step-1', itemIds: ['a', 'b'] },
+        { id: 'step-2', itemIds: ['x', 'y'] },
+      ],
+      containerId: 'step-1',
+      index: 1,
+      direction: 'down',
+    });
+    expect(target).toEqual({ containerId: 'step-2', index: 0 });
+  });
+
+  it('crossing up from the very first container is a no-op (no previous container)', () => {
+    const target = planKeyboardMove({
+      containers: [
+        { id: 'step-1', itemIds: ['a'] },
+        { id: 'step-2', itemIds: ['x'] },
+      ],
+      containerId: 'step-1',
+      index: 0,
+      direction: 'up',
+    });
+    expect(target).toBeNull();
+  });
+
+  it('crossing down from the very last container is a no-op (no next container)', () => {
+    const target = planKeyboardMove({
+      containers: [
+        { id: 'step-1', itemIds: ['a'] },
+        { id: 'step-2', itemIds: ['x'] },
+      ],
+      containerId: 'step-2',
+      index: 0,
+      direction: 'down',
+    });
+    expect(target).toBeNull();
+  });
+
+  it('crosses out of a container holding only the grabbed item, landing at the end of the previous one', () => {
+    // "step-2" holds ONLY the item being moved — index 0 is simultaneously
+    // the top AND the bottom edge (length 1), so this pins down that an
+    // upward cross still resolves to the previous container instead of
+    // getting confused by the double boundary.
+    const target = planKeyboardMove({
+      containers: [
+        { id: 'step-1', itemIds: ['a', 'b'] },
+        { id: 'step-2', itemIds: ['solo'] },
+        { id: 'step-3', itemIds: ['x'] },
+      ],
+      containerId: 'step-2',
+      index: 0,
+      direction: 'up',
+    });
+    expect(target).toEqual({ containerId: 'step-1', index: 2 });
+  });
+
+  it('crosses out of a container holding only the grabbed item, landing at the start of the next one', () => {
+    const target = planKeyboardMove({
+      containers: [
+        { id: 'step-1', itemIds: ['a', 'b'] },
+        { id: 'step-2', itemIds: ['solo'] },
+        { id: 'step-3', itemIds: ['x'] },
+      ],
+      containerId: 'step-2',
+      index: 0,
+      direction: 'down',
+    });
+    expect(target).toEqual({ containerId: 'step-3', index: 0 });
+  });
+
+  it('crosses into an empty container when moving down', () => {
+    const target = planKeyboardMove({
+      containers: [
+        { id: 'step-1', itemIds: ['a', 'b'] },
+        { id: 'step-2', itemIds: [] },
+      ],
+      containerId: 'step-1',
+      index: 1,
+      direction: 'down',
+    });
+    expect(target).toEqual({ containerId: 'step-2', index: 0 });
+  });
+
+  it('crosses into an empty container when moving up', () => {
+    const target = planKeyboardMove({
+      containers: [
+        { id: 'step-1', itemIds: [] },
+        { id: 'step-2', itemIds: ['a', 'b'] },
+      ],
+      containerId: 'step-2',
+      index: 0,
+      direction: 'up',
+    });
+    expect(target).toEqual({ containerId: 'step-1', index: 0 });
+  });
+
+  it('returns null when the container id is not found', () => {
+    const target = planKeyboardMove({
+      containers: [{ id: 'step-1', itemIds: ['a'] }],
+      containerId: 'missing',
+      index: 0,
+      direction: 'up',
+    });
+    expect(target).toBeNull();
+  });
+
+  it('returns null when the index is out of range for its container', () => {
+    const target = planKeyboardMove({
+      containers: [{ id: 'step-1', itemIds: ['a'] }],
+      containerId: 'step-1',
+      index: 5,
+      direction: 'up',
+    });
+    expect(target).toBeNull();
   });
 });

@@ -21,6 +21,12 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - Al arrancar sesión, los comandos de auto-arranque de cada grupo se liberan
   en cuanto termina el **último paso del pipeline que usa alguno de sus
   scripts**, sin esperar a que termine el pipeline entero.
+- **Todas las listas reordenables ahora se pueden manejar con el teclado**:
+  grupos, la biblioteca de pre-scripts de cada grupo, comandos, acciones, los
+  pasos del pipeline y los scripts dentro de cada paso. Con el foco en el
+  asa (**⋮⋮**), Espacio o Intro la agarra, las flechas la mueven —incluso
+  entre pasos del pipeline—, y Espacio, Intro o Escape la suelta o cancela el
+  movimiento.
 
 ### Cambiado
 

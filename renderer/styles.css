@@ -751,6 +751,21 @@ body.config {
   border-radius: 10px;
 }
 
+/* Visually hidden but still readable by assistive tech — used by
+ * `dnd-helper.ts`'s shared keyboard-reordering instructions and the single
+ * `aria-live="polite"` announcer (one instance each, not one per list). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Shared draggable-row pattern — handle reveal, dragging state, and a drop
  * indicator bar — reused by `.service-row-card`, `.nav-card`,
  * `.sub-item-row`, `.prescript-row` and `.prestep-card`. Each context below
@@ -774,6 +789,19 @@ body.config {
 .drag-row:hover .drag-handle {
   opacity: var(--drag-handle-hover-opacity, 0.7);
 }
+/* Keyboard focus on the handle itself (WCAG 2.1.1/2.4.7): the handle is now
+ * tabbable (`dnd-helper.ts`'s `enhanceHandle`), so it needs the same
+ * hover-reveal opacity plus a visible outline, matching the accent-outline
+ * convention already used for text inputs and the icon search field. */
+.drag-row .drag-handle:focus-visible {
+  opacity: var(--drag-handle-hover-opacity, 0.7);
+  outline: 2px solid rgba(0, 122, 255, 0.4);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+/* Grabbed via keyboard (`dnd-helper.ts`'s grab/move/drop/cancel handling)
+ * reuses the exact same visual as a pointer drag in progress — no parallel
+ * "grabbed" vocabulary. */
 .drag-row.dragging {
   opacity: 0.35;
 }
