@@ -690,6 +690,13 @@ function attachKeyboardReordering(
     if (!grabbed) {
       if (event.key !== ' ' && event.key !== 'Enter') return;
       event.preventDefault();
+      // The OWNING container claims the key. These listeners are delegated,
+      // and a script list sits inside `stepsRoot`, which is wired too: the
+      // inner listener grabs, the same event reaches the outer one, and with
+      // `grabbed.handle === handle` it reads that very key as a drop. Without
+      // this the item is grabbed and dropped in one press and the arrows can
+      // never move it. Same reason the pointer path stops propagation.
+      event.stopPropagation();
       const containers = adapter.snapshotContainers();
       const containerId = adapter.containerIdOf(card);
       const home = containers.find((c) => c.id === containerId);
@@ -722,15 +729,19 @@ function attachKeyboardReordering(
 
     if (event.key === 'Escape') {
       event.preventDefault();
+      event.stopPropagation();
       cancelGrab(container.ownerDocument);
     } else if (event.key === ' ' || event.key === 'Enter') {
       event.preventDefault();
+      event.stopPropagation();
       dropGrab(container.ownerDocument);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
+      event.stopPropagation();
       moveGrab('up', container.ownerDocument);
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
+      event.stopPropagation();
       moveGrab('down', container.ownerDocument);
     }
   });
