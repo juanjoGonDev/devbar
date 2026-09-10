@@ -19,6 +19,7 @@ import {
   bucketKeyFor,
   migrateServicesToGroups,
   migratePreScriptPipeline,
+  planStoreMigration,
   prunePipelineRefs,
   assignScriptToStep,
   unassignScriptFromStep,
@@ -1911,6 +1912,137 @@ describe('migratePreScriptPipeline', () => {
     expect(second.groups[0]?.preScripts).toHaveLength(1);
     expect(second.preSteps).toHaveLength(1);
     expect(second.preSteps[0]?.scripts).toEqual(first.preSteps[0]?.scripts);
+  });
+});
+
+// ─── planStoreMigration (composes BOTH migrations for config-store.ts) ──
+// config-store.ts is Electron-bound and not importable under Vitest, so this
+// pure composition seam (the autostart-schedule.ts precedent) is where the
+// version-labelling bug (sdd-verify C1's producer side) is proven directly,
+// without electron-store.
+describe('planStoreMigration', () => {
+  const baseGroup = (overrides: Record<string, unknown>) => ({
+    name: 'G',
+    path: '/g',
+    mode: 'multi',
+    order: 0,
+    silenceWarnings: false,
+    silenceErrors: false,
+    env: [],
+    commands: [],
+    actions: [],
+    ...overrides,
+  });
+
+  it('labels a v3 store with an empty groups array as v4, even though nothing legacy needed hoisting', () => {
+    const result = planStoreMigration({
+      version: 3,
+      groups: [],
+      preSteps: [],
+      globalSettings: {},
+    });
+    expect(result.changed).toBe(true);
+    expect(result.version).toBe(4);
+  });
+
+  it('leaves an already-v4, already-canonical store unchanged (changed:false)', () => {
+    const result = planStoreMigration({
+      version: 4,
+      groups: [],
+      preSteps: [],
+      globalSettings: {},
+    });
+    expect(result.changed).toBe(false);
+  });
+
+  it('still hoists legacy per-group preSteps into the global pipeline (batch-1 ordering fix intact)', () => {
+    const result = planStoreMigration({
+      version: 3,
+      groups: [
+        baseGroup({
+          id: 'g1',
+          preSteps: [
+            {
+              id: 'step1',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result.changed).toBe(true);
+    expect(result.version).toBe(4);
+    expect(result.preSteps).toHaveLength(1);
+    expect(result.preSteps[0]?.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc1' },
+    ]);
+    expect(result.groups[0]?.preScripts.map((s) => s.id)).toEqual(['sc1']);
+  });
+
+  it('also converts a genuine legacy (v1/v2) services store, landing directly on v4 (the two migrations are NOT mutually exclusive)', () => {
+    const result = planStoreMigration({
+      version: 1,
+      services: [
+        {
+          id: 'svc1',
+          name: 'Dev',
+          cwd: '/repo',
+          command: 'pnpm dev',
+          args: [],
+          env: {},
+          gitRepo: '/repo',
+        },
+      ],
+    });
+    expect(result.changed).toBe(true);
+    expect(result.version).toBe(4);
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]?.commands).toHaveLength(1);
+  });
+
+  it('surfaces the AND-folded preScriptsAutoRun only when a hoist actually happened', () => {
+    const hoisted = planStoreMigration({
+      version: 3,
+      groups: [
+        baseGroup({
+          id: 'g1',
+          preScriptsAutoRun: true,
+          preSteps: [
+            {
+              id: 'step1',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(hoisted.preScriptsAutoRun).toBe(true);
+
+    const untouched = planStoreMigration({
+      version: 4,
+      groups: [],
+      preSteps: [],
+      globalSettings: {},
+    });
+    expect(untouched.preScriptsAutoRun).toBeNull();
+  });
+
+  it('is idempotent: running it again on its own output reports changed:false', () => {
+    const first = planStoreMigration({
+      version: 3,
+      groups: [],
+      preSteps: [],
+      globalSettings: {},
+    });
+    const second = planStoreMigration({
+      version: first.version,
+      groups: first.groups,
+      preSteps: first.preSteps,
+      globalSettings: {},
+    });
+    expect(second.changed).toBe(false);
   });
 });
 

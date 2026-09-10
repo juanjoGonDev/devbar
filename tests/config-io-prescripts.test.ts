@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateImportedConfig,
+  serializeConfig,
   summarizeImport,
   type ImportValidation,
 } from '../src/config-io.js';
@@ -361,6 +362,73 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
     expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
   });
 
+  it("preserves a v3 payload's own top-level preSteps alongside newly-hoisted ones (no silent data loss)", () => {
+    // Models a v3-mislabelled store that already picked up real v4 data (see
+    // the config-store version-labelling fix): a top-level `preSteps` the
+    // pre-0.8.0 app never wrote, referencing a script defined natively via
+    // flat `preScripts`, PLUS a still-unmigrated legacy per-group step.
+    const v3Payload = {
+      version: 3,
+      groups: [
+        {
+          id: 'g1',
+          name: 'My Group',
+          path: '/some/path',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preScripts: [
+            { id: 'sc-existing', name: 'Existing', command: 'pnpm existing' },
+          ],
+          preSteps: [
+            {
+              id: 'step-legacy',
+              mode: 'serial',
+              scripts: [
+                {
+                  id: 'sc-legacy',
+                  name: 'Legacy',
+                  command: 'pnpm legacy',
+                  args: [],
+                  env: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      preSteps: [
+        {
+          id: 'step-existing',
+          mode: 'parallel',
+          scripts: [{ groupId: 'g1', scriptId: 'sc-existing' }],
+        },
+      ],
+      globalSettings: {
+        autostart: false,
+        silenceWarnings: false,
+        silenceErrors: false,
+      },
+    };
+    const result = validateImportedConfig(v3Payload);
+    expectValid(result);
+    expect(result.payload.preSteps).toHaveLength(2);
+    expect(result.payload.preSteps.map((s) => s.id)).toEqual([
+      'step-existing',
+      'step-legacy',
+    ]);
+    expect(result.payload.preSteps[0]?.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc-existing' },
+    ]);
+    expect(result.payload.preSteps[1]?.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc-legacy' },
+    ]);
+    expect(
+      result.payload.groups[0]?.preScripts.map((s) => s.id).sort(),
+    ).toEqual(['sc-existing', 'sc-legacy']);
+  });
+
   it('rejects an unsupported version (neither 3 nor 4)', () => {
     const result = validateImportedConfig({
       version: 2,
@@ -369,6 +437,70 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
     });
     expectInvalid(result);
     expect(result.error).toMatch(/versión/i);
+  });
+});
+
+// ─── export → import round-trip (S3) ───────────────────────────────────────────
+
+describe('serializeConfig -> validateImportedConfig round-trip', () => {
+  it('a live store with a real global pipeline exports and re-imports losslessly', () => {
+    const rawStore = {
+      version: 4,
+      groups: [
+        {
+          id: 'g1',
+          name: 'My Group',
+          icon: '📦',
+          path: '/some/path',
+          mode: 'multi' as const,
+          order: 0,
+          silenceWarnings: false,
+          silenceErrors: false,
+          env: [],
+          commands: [],
+          actions: [],
+          preScripts: [
+            {
+              id: 'sc-bbb',
+              name: 'Install',
+              command: 'pnpm install',
+              args: [],
+              env: [],
+              inheritGroupEnv: false,
+              confirm: false,
+              confirmSecs: null,
+              confirmOnTimeout: 'cancel' as const,
+              timeoutMs: null,
+            },
+          ],
+        },
+      ],
+      // Store-shaped input is already normalized (as `getGroupsInternal()`
+      // would read it) — exercising the actual export/import ROUND TRIP,
+      // not `normalizeGroup`'s own default-filling (already covered
+      // elsewhere).
+      preSteps: [
+        {
+          id: 'step-aaa',
+          mode: 'serial' as const,
+          scripts: [{ groupId: 'g1', scriptId: 'sc-bbb' }],
+        },
+      ],
+      globalSettings: {
+        autostart: false,
+        silenceWarnings: false,
+        silenceErrors: false,
+        preScriptsAutoRun: true,
+      },
+    };
+    const exported = serializeConfig(rawStore, '0.8.0');
+    const result = validateImportedConfig(exported);
+    expectValid(result);
+    expect(result.payload.preSteps).toEqual(exported.preSteps);
+    expect(result.payload.groups.map((g) => g.preScripts)).toEqual(
+      exported.groups.map((g) => g.preScripts),
+    );
+    expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
   });
 });
 

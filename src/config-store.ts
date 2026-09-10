@@ -15,13 +15,12 @@ import type {
 } from './domain-types.js';
 import {
   enforceSingleModeAutoStart,
-  migrateServicesToGroups,
-  migratePreScriptPipeline,
   normalizeAction,
   normalizeCommand,
   normalizeGroup,
   normalizePreScript,
   normalizePreStep,
+  planStoreMigration,
   prunePipelineRefs,
   regenerateLegacyServices,
   assignScriptToStep as assignRefToStep,
@@ -68,45 +67,26 @@ const schema = {
 const store = new Store<StoreState>({ name: 'config', schema });
 
 function runMigration(): void {
-  const raw = store.store;
-
-  // v3/v4: migratePreScriptPipeline needs each RAW group's legacy
-  // `preSteps`/`preScriptsAutoRun` key, if any, to hoist it — normalizeGroup
-  // (inside migrateServicesToGroups) silently drops both, so this must see
-  // `raw.groups` directly rather than any already-normalized pass over it.
-  // It already re-normalizes every group as a side effect of hoisting, so
-  // its output needs no separate id-repair pass.
-  const pipeline = migratePreScriptPipeline({
-    groups: raw.groups,
-    preSteps: raw.preSteps,
-    globalSettings: raw.globalSettings,
-  });
-  if (pipeline.changed) {
-    store.set('version', 4);
-    store.set('groups', pipeline.groups);
-    store.set('preSteps', pipeline.preSteps);
-    store.set('services', regenerateLegacyServices(pipeline.groups));
+  // The whole decision — pipeline hoisting (seeing the PRISTINE raw group
+  // before normalizeGroup can strip its legacy keys), THEN the v1/v2->v3
+  // conversion or v3/v4 id-repair canonical pass, and the version label
+  // itself — lives in the pure, unit-tested `planStoreMigration` (see
+  // `tests/groups-model.test.ts`). This function is only the store-write
+  // side effect.
+  const plan = planStoreMigration(store.store);
+  if (!plan.changed) return;
+  store.set('version', plan.version);
+  store.set('groups', plan.groups);
+  store.set('services', plan.services);
+  store.set('preSteps', plan.preSteps);
+  if (plan.preScriptsAutoRun !== null) {
     store.set('globalSettings', {
       ...getGlobalSettings(),
-      preScriptsAutoRun: pipeline.preScriptsAutoRun,
+      preScriptsAutoRun: plan.preScriptsAutoRun,
     });
-    return;
   }
-
-  // Nothing legacy to hoist: fall back to the pre-existing v1/v2->v3 flat-
-  // services conversion, or the v3/v4 id-repair canonical pass (e.g. a
-  // command/action without an id) — migratePreScriptPipeline does not check
-  // for either of those.
-  const idRepair = migrateServicesToGroups(raw);
-  if (!idRepair.changed) return;
-  store.set('version', idRepair.state.version);
-  store.set('groups', idRepair.state.groups);
-  store.set('services', idRepair.state.services);
-  if (Array.isArray(idRepair.state._services_pre_v3_backup)) {
-    store.set(
-      '_services_pre_v3_backup',
-      idRepair.state._services_pre_v3_backup,
-    );
+  if (plan.servicesBackup !== null) {
+    store.set('_services_pre_v3_backup', plan.servicesBackup);
   }
 }
 runMigration();

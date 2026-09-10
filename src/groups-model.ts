@@ -541,6 +541,77 @@ export function migratePreScriptPipeline(raw: {
   };
 }
 
+export interface StoreMigrationInput {
+  version?: number;
+  groups?: unknown[];
+  services?: unknown[];
+  preSteps?: unknown;
+  globalSettings?: unknown;
+  _services_pre_v3_backup?: unknown[];
+}
+
+export interface StoreMigrationPlan {
+  /** Whether `config-store.ts` needs to write anything back to disk. */
+  changed: boolean;
+  version: number;
+  groups: Group[];
+  services: LegacyService[];
+  preSteps: PreStep[];
+  /** `null` means "leave `globalSettings.preScriptsAutoRun` untouched". */
+  preScriptsAutoRun: boolean | null;
+  /** `null` means "leave `_services_pre_v3_backup` untouched". */
+  servicesBackup: unknown[] | null;
+}
+
+/**
+ * Pure composition of the store's two migrations, extracted so the version-
+ * labelling bug (sdd-verify C1's producer) is provable without
+ * electron-store, which cannot be imported under Vitest (see
+ * `config-store.ts`'s own docstring) — the `autostart-schedule.ts`
+ * precedent for a testable seam over Electron-bound code.
+ *
+ * Runs `migratePreScriptPipeline` FIRST, against the PRISTINE raw snapshot —
+ * `normalizeGroup` (inside `migrateServicesToGroups`) silently drops legacy
+ * `preSteps`/`preScriptsAutoRun`, so hoisting must see the raw group before
+ * that happens (the batch-1 ordering fix). THEN runs `migrateServicesToGroups`
+ * (id-repair / legacy v1-v2→v3 conversion) against whatever the pipeline step
+ * produced — the two are NOT mutually exclusive, matching the design's
+ * "then": a store needing both a hoist and an id repair gets both in one
+ * pass, instead of the id-repair pass being skipped whenever hoisting ran.
+ *
+ * The store is v4-shaped the instant this function has run once: there is no
+ * persisted state that is meaningfully "v3" afterward. `changed` is true
+ * whenever EITHER migration did real work, OR the on-disk version does not
+ * already say so — the latter is what keeps a store whose CONTENT needed no
+ * change (e.g. an empty `groups` array) from staying mislabelled v3 forever,
+ * which is what silently poisoned every export/backup of that store
+ * (sdd-verify C1).
+ */
+export function planStoreMigration(
+  raw: StoreMigrationInput,
+): StoreMigrationPlan {
+  const pipeline = migratePreScriptPipeline(raw);
+  const idRepair = migrateServicesToGroups({ ...raw, groups: pipeline.groups });
+  const currentVersion = typeof raw.version === 'number' ? raw.version : 1;
+  const changed = pipeline.changed || idRepair.changed || currentVersion !== 4;
+  const groups = idRepair.changed ? idRepair.state.groups : pipeline.groups;
+  const services = idRepair.changed
+    ? idRepair.state.services
+    : regenerateLegacyServices(pipeline.groups);
+  return {
+    changed,
+    version: 4,
+    groups,
+    services,
+    preSteps: pipeline.preSteps,
+    preScriptsAutoRun: pipeline.changed ? pipeline.preScriptsAutoRun : null,
+    servicesBackup:
+      idRepair.changed && Array.isArray(idRepair.state._services_pre_v3_backup)
+        ? idRepair.state._services_pre_v3_backup
+        : null,
+  };
+}
+
 /**
  * Referential-integrity pass for the global pipeline: drops any ref whose
  * group or script no longer exists. Mirrors `regenerateLegacyServices` —

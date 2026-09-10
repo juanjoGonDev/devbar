@@ -108,6 +108,7 @@ export function validateImportedConfig(value: unknown): ImportValidation {
   if (value.version === MIN_SUPPORTED_VERSION) {
     const migrated = migratePreScriptPipeline({
       groups: value.groups,
+      preSteps: value.preSteps,
       globalSettings: value.globalSettings,
     });
     rawGroups = value.groups.map((rawGroup, index) => ({
