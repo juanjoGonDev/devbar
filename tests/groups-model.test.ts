@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import os from 'os';
-import type { Group } from '../src/domain-types.js';
+import type { Group, PreStep } from '../src/domain-types.js';
 
 // Mock uuid for predictable id generation
 vi.mock('uuid', () => ({
@@ -13,10 +13,15 @@ import {
   normalizeAction,
   normalizePreScript,
   normalizePreStep,
+  normalizePreStepScriptRef,
   normalizeEnvEntries,
   materializeEnv,
   bucketKeyFor,
   migrateServicesToGroups,
+  migratePreScriptPipeline,
+  prunePipelineRefs,
+  assignScriptToStep,
+  unassignScriptFromStep,
   regenerateLegacyServices,
   validateGroupShape,
   enforceSingleModeAutoStart,
@@ -564,6 +569,40 @@ describe('validateGroupShape', () => {
     const r = validateGroupShape(g);
     expect(r.valid).toBe(false);
     expect(r.errors.some((e) => e.includes('mode'))).toBe(true);
+  });
+});
+
+// ─── validateGroupShape — preScripts field ──────────────────────────────
+describe('validateGroupShape — preScripts field', () => {
+  it('accepts a well-formed flat preScripts array', () => {
+    const g = {
+      name: 'G',
+      path: '/p',
+      mode: 'multi',
+      preScripts: [{ id: 'sc1', name: 'Prep', command: 'true' }],
+    };
+    expect(validateGroupShape(g).valid).toBe(true);
+  });
+
+  it('reports an error when preScripts is not an array', () => {
+    const g = { name: 'G', path: '/p', mode: 'multi', preScripts: 'nope' };
+    const r = validateGroupShape(g);
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes('preScripts'))).toBe(true);
+  });
+
+  it('reports an error for a preScripts entry missing an id', () => {
+    const g = {
+      name: 'G',
+      path: '/p',
+      mode: 'multi',
+      preScripts: [{ name: 'Prep', command: 'true' }],
+    };
+    const r = validateGroupShape(g);
+    expect(r.valid).toBe(false);
+    expect(
+      r.errors.some((e) => e.includes('preScripts[0]') && e.includes('id')),
+    ).toBe(true);
   });
 });
 
@@ -1267,15 +1306,16 @@ describe('normalizePreStep', () => {
     expect(step.scripts).toEqual([]);
   });
 
-  it('normalizes nested scripts', () => {
+  it('normalizes scripts as {groupId,scriptId} refs, dropping refs with an empty id', () => {
     const step = normalizePreStep({
       id: 'step-1',
       mode: 'serial',
-      scripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }],
+      scripts: [
+        { groupId: 'g1', scriptId: 'sc-1' },
+        { groupId: '', scriptId: 'sc-2' },
+      ],
     });
-    expect(step.scripts).toHaveLength(1);
-    expect(step.scripts[0].id).toBe('sc-1');
-    expect(step.scripts[0].name).toBe('Install');
+    expect(step.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc-1' }]);
   });
 
   it('preserves raw id', () => {
@@ -1288,6 +1328,29 @@ describe('normalizePreStep', () => {
     const step = normalizePreStep({});
     expect(typeof step.id).toBe('string');
     expect(step.id.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── normalizePreStepScriptRef ───────────────────────────────────────────
+describe('normalizePreStepScriptRef', () => {
+  it('returns a trimmed ref when both ids are present', () => {
+    const ref = normalizePreStepScriptRef({
+      groupId: ' g1 ',
+      scriptId: ' sc-1 ',
+    });
+    expect(ref).toEqual({ groupId: 'g1', scriptId: 'sc-1' });
+  });
+
+  it('returns null when groupId is empty', () => {
+    expect(
+      normalizePreStepScriptRef({ groupId: '', scriptId: 'sc-1' }),
+    ).toBeNull();
+  });
+
+  it('returns null when scriptId is empty', () => {
+    expect(
+      normalizePreStepScriptRef({ groupId: 'g1', scriptId: '' }),
+    ).toBeNull();
   });
 });
 
@@ -1468,54 +1531,51 @@ describe('normalizePreScript — confirm fields', () => {
   });
 });
 
-// ─── normalizeGroup — preSteps field ────────────────────────────────────
-describe('normalizeGroup — preSteps field', () => {
-  it('defaults preSteps to [] when absent', () => {
+// ─── normalizeGroup — preScripts field ───────────────────────────────────
+describe('normalizeGroup — preScripts field', () => {
+  it('defaults preScripts to [] when absent', () => {
     const g = normalizeGroup({ path: '/some/path' });
-    expect(g.preSteps).toEqual([]);
+    expect(g.preScripts).toEqual([]);
   });
 
-  it('normalizes provided preSteps', () => {
+  it('normalizes provided preScripts', () => {
     const g = normalizeGroup({
       path: '/p',
-      preSteps: [
-        {
-          id: 'step-1',
-          mode: 'serial',
-          scripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }],
-        },
-      ],
+      preScripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }],
     });
-    expect(g.preSteps).toHaveLength(1);
-    expect(g.preSteps[0].id).toBe('step-1');
-    expect(g.preSteps[0].mode).toBe('serial');
+    expect(g.preScripts).toHaveLength(1);
+    expect(g.preScripts[0].id).toBe('sc-1');
+    expect(g.preScripts[0].name).toBe('Install');
   });
 
-  it('UUID round-trip: re-normalizing an already-normalized group preserves all ids', () => {
+  it('UUID round-trip: re-normalizing an already-normalized group preserves script ids', () => {
     const original = normalizeGroup({
       path: '/p',
-      preSteps: [
-        {
-          id: 'step-aaa',
-          mode: 'parallel',
-          scripts: [{ id: 'sc-bbb', name: 'Build', command: 'pnpm build' }],
-        },
-      ],
+      preScripts: [{ id: 'sc-bbb', name: 'Build', command: 'pnpm build' }],
     });
     const json = JSON.stringify(original);
     const restored = normalizeGroup(JSON.parse(json));
-    expect(restored.preSteps[0].id).toBe('step-aaa');
-    expect(restored.preSteps[0].scripts[0].id).toBe('sc-bbb');
+    expect(restored.preScripts[0].id).toBe('sc-bbb');
   });
 
-  it('old group fixture without preSteps gets preSteps:[]', () => {
+  it('old group fixture without preScripts gets preScripts:[]', () => {
     const g = normalizeGroup({
       path: '/p',
       name: 'Legacy',
       commands: [],
       actions: [],
     });
-    expect(g.preSteps).toEqual([]);
+    expect(g.preScripts).toEqual([]);
+  });
+
+  it('drops legacy preSteps/preScriptsAutoRun instead of carrying them onto the group', () => {
+    const g = normalizeGroup({
+      path: '/p',
+      preSteps: [{ id: 'step-1', mode: 'serial', scripts: [] }],
+      preScriptsAutoRun: true,
+    });
+    expect(g).not.toHaveProperty('preSteps');
+    expect(g).not.toHaveProperty('preScriptsAutoRun');
   });
 });
 
@@ -1618,13 +1678,7 @@ describe('migrateServicesToGroups — id repair is persisted (v3 state)', () => 
   it('reports changed for a preScript without id', () => {
     const result = migrateServicesToGroups(
       v3Group({
-        preSteps: [
-          {
-            id: 's1',
-            mode: 'parallel',
-            scripts: [{ name: 'Prep', command: 'true' }],
-          },
-        ],
+        preScripts: [{ name: 'Prep', command: 'true' }],
       }),
     );
     expect(result.changed).toBe(true);
@@ -1634,15 +1688,386 @@ describe('migrateServicesToGroups — id repair is persisted (v3 state)', () => 
     const result = migrateServicesToGroups(
       v3Group({
         commands: [command({})],
-        preSteps: [
-          {
-            id: 's1',
-            mode: 'parallel',
-            scripts: [{ id: 'sc1', name: 'Prep', command: 'true', env: [] }],
-          },
-        ],
+        preScripts: [{ id: 'sc1', name: 'Prep', command: 'true', env: [] }],
       }),
     );
     expect(result.changed).toBe(false);
+  });
+});
+
+// ─── migratePreScriptPipeline (v3 → v4) ─────────────────────────────────
+describe('migratePreScriptPipeline', () => {
+  const baseGroup = (overrides: Record<string, unknown>) => ({
+    name: 'G',
+    path: '/g',
+    mode: 'multi',
+    order: 0,
+    silenceWarnings: false,
+    silenceErrors: false,
+    env: [],
+    commands: [],
+    actions: [],
+    ...overrides,
+  });
+
+  it('concatenates each group legacy steps into the global pipeline, ordered by group order', () => {
+    const result = migratePreScriptPipeline({
+      groups: [
+        baseGroup({
+          id: 'gB',
+          order: 1,
+          preSteps: [
+            {
+              id: 'stepY',
+              mode: 'parallel',
+              scripts: [{ id: 'y1', name: 'Y', command: 'true' }],
+            },
+          ],
+        }),
+        baseGroup({
+          id: 'gA',
+          order: 0,
+          preSteps: [
+            {
+              id: 'stepX',
+              mode: 'parallel',
+              scripts: [{ id: 'x1', name: 'X', command: 'true' }],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result.preSteps.map((s) => s.id)).toEqual(['stepX', 'stepY']);
+    expect(result.preSteps[0].scripts).toEqual([
+      { groupId: 'gA', scriptId: 'x1' },
+    ]);
+    expect(result.preSteps[1].scripts).toEqual([
+      { groupId: 'gB', scriptId: 'y1' },
+    ]);
+  });
+
+  it('hoists inline script definitions into the flat preScripts, de-duplicating by id', () => {
+    const result = migratePreScriptPipeline({
+      groups: [
+        baseGroup({
+          id: 'g1',
+          preScripts: [{ id: 'sc1', name: 'Existing', command: 'true' }],
+          preSteps: [
+            {
+              id: 'step1',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'Existing', command: 'true' }],
+            },
+            {
+              id: 'step2',
+              mode: 'parallel',
+              scripts: [{ id: 'sc2', name: 'New', command: 'echo hi' }],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result.groups[0]?.preScripts.map((s) => s.id)).toEqual([
+      'sc1',
+      'sc2',
+    ]);
+  });
+
+  it('reuses a free legacy step id, and mints distinct ids for a repeated or missing one — even from a fixed uuid source', () => {
+    const result = migratePreScriptPipeline({
+      groups: [
+        baseGroup({
+          id: 'g1',
+          order: 0,
+          preSteps: [
+            {
+              id: 'stepA',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+          ],
+        }),
+        baseGroup({
+          id: 'g2',
+          order: 1,
+          preSteps: [
+            // Same id as g1's step: legal when step ids were group-scoped,
+            // now a collision since step ids are global.
+            {
+              id: 'stepA',
+              mode: 'parallel',
+              scripts: [{ id: 'sc2', name: 'B', command: 'true' }],
+            },
+            // No id at all.
+            {
+              mode: 'parallel',
+              scripts: [{ id: 'sc3', name: 'C', command: 'true' }],
+            },
+          ],
+        }),
+      ],
+    });
+    const ids = result.preSteps.map((s) => s.id);
+    expect(ids[0]).toBe('stepA');
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('AND-folds preScriptsAutoRun to true when every contributing group had it true', () => {
+    const result = migratePreScriptPipeline({
+      groups: [
+        baseGroup({
+          id: 'a',
+          order: 0,
+          preScriptsAutoRun: true,
+          preSteps: [
+            {
+              id: 'stepA',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+          ],
+        }),
+        baseGroup({
+          id: 'b',
+          order: 1,
+          preScriptsAutoRun: true,
+          preSteps: [
+            {
+              id: 'stepB',
+              mode: 'parallel',
+              scripts: [{ id: 'sc2', name: 'B', command: 'true' }],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result.preScriptsAutoRun).toBe(true);
+  });
+
+  it('AND-folds preScriptsAutoRun to false when one contributing group had it false', () => {
+    const result = migratePreScriptPipeline({
+      groups: [
+        baseGroup({
+          id: 'a',
+          order: 0,
+          preScriptsAutoRun: true,
+          preSteps: [
+            {
+              id: 'stepA',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+          ],
+        }),
+        baseGroup({
+          id: 'b',
+          order: 1,
+          preScriptsAutoRun: false,
+          preSteps: [
+            {
+              id: 'stepB',
+              mode: 'parallel',
+              scripts: [{ id: 'sc2', name: 'B', command: 'true' }],
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result.preScriptsAutoRun).toBe(false);
+  });
+
+  it('folds preScriptsAutoRun to false when there are zero contributing groups', () => {
+    const result = migratePreScriptPipeline({
+      groups: [baseGroup({ id: 'a', order: 0, preScriptsAutoRun: true })],
+    });
+    expect(result.changed).toBe(true);
+    expect(result.preScriptsAutoRun).toBe(false);
+  });
+
+  it('is idempotent: migrating an already-migrated shape again reports changed:false with no duplication', () => {
+    const raw = {
+      groups: [
+        baseGroup({
+          id: 'g1',
+          preSteps: [
+            {
+              id: 'step1',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+          ],
+        }),
+      ],
+    };
+    const first = migratePreScriptPipeline(raw);
+    expect(first.changed).toBe(true);
+
+    const second = migratePreScriptPipeline({
+      groups: first.groups,
+      preSteps: first.preSteps,
+    });
+    expect(second.changed).toBe(false);
+    expect(second.groups).toHaveLength(1);
+    expect(second.groups[0]?.preScripts).toHaveLength(1);
+    expect(second.preSteps).toHaveLength(1);
+    expect(second.preSteps[0]?.scripts).toEqual(first.preSteps[0]?.scripts);
+  });
+});
+
+// ─── prunePipelineRefs ───────────────────────────────────────────────────
+describe('prunePipelineRefs', () => {
+  const group = (id: string, scriptIds: string[]): Group =>
+    normalizeGroup({
+      id,
+      path: `/${id}`,
+      preScripts: scriptIds.map((scriptId) => ({
+        id: scriptId,
+        name: scriptId,
+        command: 'true',
+      })),
+    });
+
+  it('drops a ref pointing at a deleted group id', () => {
+    const groups = [group('g1', ['sc1'])];
+    const steps = [
+      {
+        id: 'step1',
+        mode: 'parallel' as const,
+        scripts: [
+          { groupId: 'g1', scriptId: 'sc1' },
+          { groupId: 'deleted-group', scriptId: 'sc9' },
+        ],
+      },
+    ];
+    const result = prunePipelineRefs(steps, groups);
+    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
+  });
+
+  it('drops a ref pointing at a deleted script id within an existing group', () => {
+    const groups = [group('g1', ['sc1'])];
+    const steps = [
+      {
+        id: 'step1',
+        mode: 'parallel' as const,
+        scripts: [
+          { groupId: 'g1', scriptId: 'sc1' },
+          { groupId: 'g1', scriptId: 'deleted-script' },
+        ],
+      },
+    ];
+    const result = prunePipelineRefs(steps, groups);
+    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
+  });
+
+  it('keeps a step that becomes empty after pruning, rather than dropping it', () => {
+    const groups = [group('g1', [])];
+    const steps = [
+      {
+        id: 'step1',
+        mode: 'parallel' as const,
+        scripts: [{ groupId: 'g1', scriptId: 'gone' }],
+      },
+    ];
+    const result = prunePipelineRefs(steps, groups);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.scripts).toEqual([]);
+  });
+});
+
+// ─── assignScriptToStep / unassignScriptFromStep ────────────────────────
+describe('assignScriptToStep', () => {
+  const fixture = (): PreStep[] => [
+    {
+      id: 'step1',
+      mode: 'parallel',
+      scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+    },
+    { id: 'step2', mode: 'parallel', scripts: [] },
+  ];
+
+  it('appends a fresh ref to the end of the target step by default', () => {
+    const result = assignScriptToStep(fixture(), 'step2', {
+      groupId: 'g2',
+      scriptId: 'sc2',
+    });
+    expect(result.find((s) => s.id === 'step2')?.scripts).toEqual([
+      { groupId: 'g2', scriptId: 'sc2' },
+    ]);
+  });
+
+  it('inserts at the given position within the target step', () => {
+    const twoScripts: PreStep[] = [
+      {
+        id: 'step1',
+        mode: 'parallel',
+        scripts: [
+          { groupId: 'g1', scriptId: 'a' },
+          { groupId: 'g1', scriptId: 'b' },
+        ],
+      },
+    ];
+    const result = assignScriptToStep(
+      twoScripts,
+      'step1',
+      { groupId: 'g1', scriptId: 'c' },
+      1,
+    );
+    expect(result[0]?.scripts.map((s) => s.scriptId)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('moves a ref from its old step to the target step (cross-container drag)', () => {
+    const result = assignScriptToStep(fixture(), 'step2', {
+      groupId: 'g1',
+      scriptId: 'sc1',
+    });
+    expect(result.find((s) => s.id === 'step1')?.scripts).toEqual([]);
+    expect(result.find((s) => s.id === 'step2')?.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc1' },
+    ]);
+  });
+
+  it('leaves steps other than the source and target unaffected', () => {
+    const result = assignScriptToStep(fixture(), 'step2', {
+      groupId: 'g2',
+      scriptId: 'sc2',
+    });
+    expect(result.find((s) => s.id === 'step1')?.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc1' },
+    ]);
+  });
+});
+
+describe('unassignScriptFromStep', () => {
+  it('removes the matching ref from the named step', () => {
+    const steps: PreStep[] = [
+      {
+        id: 'step1',
+        mode: 'parallel',
+        scripts: [
+          { groupId: 'g1', scriptId: 'sc1' },
+          { groupId: 'g2', scriptId: 'sc2' },
+        ],
+      },
+    ];
+    const result = unassignScriptFromStep(steps, 'step1', {
+      groupId: 'g1',
+      scriptId: 'sc1',
+    });
+    expect(result[0]?.scripts).toEqual([{ groupId: 'g2', scriptId: 'sc2' }]);
+  });
+
+  it('is a no-op when the ref is not present in that step', () => {
+    const steps: PreStep[] = [
+      {
+        id: 'step1',
+        mode: 'parallel',
+        scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+      },
+    ];
+    const result = unassignScriptFromStep(steps, 'step1', {
+      groupId: 'gX',
+      scriptId: 'scX',
+    });
+    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
   });
 });

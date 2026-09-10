@@ -10,6 +10,7 @@ import type {
   LegacyService,
   PreScript,
   PreStep,
+  PreStepScriptRef,
   Schedule,
   ScheduleRule,
 } from './domain-types.js';
@@ -220,13 +221,31 @@ export function normalizePreScript(value: unknown): PreScript {
   };
 }
 
+/**
+ * A step no longer carries script DEFINITIONS, only references into their
+ * owning group's flat `preScripts`. Returns `null` for a ref with either id
+ * blank, rather than minting placeholder ids for a reference that resolves
+ * to nothing.
+ */
+export function normalizePreStepScriptRef(
+  value: unknown,
+): PreStepScriptRef | null {
+  const raw = record(value);
+  const groupId = stringValue(raw.groupId).trim();
+  const scriptId = stringValue(raw.scriptId).trim();
+  if (!groupId || !scriptId) return null;
+  return { groupId, scriptId };
+}
+
 export function normalizePreStep(value: unknown): PreStep {
   const raw = record(value);
   return {
     id: stringValue(raw.id) || uuidv4(),
     mode: raw.mode === 'serial' ? 'serial' : 'parallel',
     scripts: Array.isArray(raw.scripts)
-      ? raw.scripts.map(normalizePreScript)
+      ? raw.scripts
+          .map(normalizePreStepScriptRef)
+          .filter((ref): ref is PreStepScriptRef => ref !== null)
       : [],
   };
 }
@@ -247,10 +266,9 @@ export function normalizeGroup(value: unknown): Group {
       ? raw.commands.map(normalizeCommand)
       : [],
     actions: Array.isArray(raw.actions) ? raw.actions.map(normalizeAction) : [],
-    preSteps: Array.isArray(raw.preSteps)
-      ? raw.preSteps.map(normalizePreStep)
+    preScripts: Array.isArray(raw.preScripts)
+      ? raw.preScripts.map(normalizePreScript)
       : [],
-    preScriptsAutoRun: Boolean(raw.preScriptsAutoRun),
   };
 }
 
@@ -302,7 +320,7 @@ export function migrateServicesToGroups(value: unknown): {
 } {
   const raw = record(value);
   const version = typeof raw.version === 'number' ? raw.version : 1;
-  if (version === 3 && Array.isArray(raw.groups)) {
+  if ((version === 3 || version === 4) && Array.isArray(raw.groups)) {
     const groups = raw.groups.map(normalizeGroup);
     // Ids feed compound process ids and scheduleState keys, so a missing or
     // non-string id must be repaired AND persisted here — normalizeGroup
@@ -331,22 +349,16 @@ export function migrateServicesToGroups(value: unknown): {
             typeof record(action).inheritGroupEnv === 'boolean' &&
             !('useEnvs' in record(action)),
         ) &&
-        (!Array.isArray(item.preSteps) ||
-          item.preSteps.every((step) => {
-            const stepRecord = record(step);
-            return (
-              hasStableId(stepRecord) &&
-              (!Array.isArray(stepRecord.scripts) ||
-                stepRecord.scripts.every((script) =>
-                  hasStableId(record(script)),
-                ))
-            );
-          }))
+        (!Array.isArray(item.preScripts) ||
+          item.preScripts.every((script) => hasStableId(record(script))))
       );
     });
     const state: MigratedState = {
       ...raw,
-      version: 3,
+      // v4 groups are re-checked by this same canonical pass (flat
+      // `preScripts` replaces nested `preSteps`), so the input version must
+      // survive unchanged here — this branch no longer only means "v3".
+      version,
       groups,
       services: regenerateLegacyServices(groups),
     };
@@ -400,6 +412,220 @@ export function migrateServicesToGroups(value: unknown): {
   return { changed: true, state };
 }
 
+/**
+ * Mints an id guaranteed not to collide with `used`. Step ids were
+ * group-scoped before this migration and are global afterwards, so two
+ * legacy steps can legitimately carry the same literal id; falling back to a
+ * fresh uuid is not itself enough to guarantee uniqueness (a test double, or
+ * a pathological real UUID clash), hence the numbered-suffix loop.
+ */
+function mintUniqueId(used: ReadonlySet<string>): string {
+  const base = uuidv4();
+  if (!used.has(base)) return base;
+  let suffix = 2;
+  let candidate = `${base}-${suffix}`;
+  while (used.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}-${suffix}`;
+  }
+  return candidate;
+}
+
+/**
+ * One-time (but idempotent) v3→v4 migration: concatenates every group's old
+ * per-group `preSteps` into the new global pipeline, hoisting each step's
+ * inline script definitions into that group's flat `preScripts`. Shared by
+ * the live store (`config-store.runMigration`) and config import
+ * (`config-io.validateImportedConfig`) so the two never drift apart (D4).
+ *
+ * Idempotency relies on reading ONLY the legacy `preSteps`/`preScriptsAutoRun`
+ * keys off each raw group: the v4 writer never emits them, so re-running this
+ * against already-migrated state is a no-op walk that changes nothing.
+ */
+export function migratePreScriptPipeline(raw: {
+  groups?: unknown[];
+  preSteps?: unknown;
+  globalSettings?: unknown;
+}): {
+  changed: boolean;
+  groups: Group[];
+  preSteps: PreStep[];
+  preScriptsAutoRun: boolean;
+} {
+  const rawGroups = Array.isArray(raw.groups) ? raw.groups : [];
+  // Preserve original array position for the output `groups` order, but walk
+  // in `order` order (with a stable index tie-break) to decide global step
+  // concatenation order — the store persists `order` but never guarantees
+  // the array itself is sorted by it.
+  const indexed = rawGroups.map((item, index) => ({
+    raw: record(item),
+    index,
+  }));
+  const walkOrder = [...indexed].sort((a, b) => {
+    const orderA = typeof a.raw.order === 'number' ? a.raw.order : 0;
+    const orderB = typeof b.raw.order === 'number' ? b.raw.order : 0;
+    return orderA - orderB || a.index - b.index;
+  });
+
+  let changed = false;
+  const usedStepIds = new Set<string>();
+  const newSteps: PreStep[] = [];
+  const contributorAutoRuns: boolean[] = [];
+  const mergedByIndex = new Map<number, Group>();
+
+  for (const { raw: rawGroup, index } of walkOrder) {
+    const hasLegacySteps = Array.isArray(rawGroup.preSteps);
+    if (hasLegacySteps || 'preScriptsAutoRun' in rawGroup) changed = true;
+
+    const normalized = normalizeGroup(rawGroup);
+    const knownScriptIds = new Set(normalized.preScripts.map((s) => s.id));
+    const hoisted: PreScript[] = [];
+    let contributed = false;
+
+    if (hasLegacySteps) {
+      for (const rawStep of rawGroup.preSteps as unknown[]) {
+        const legacyStep = record(rawStep);
+        const legacyScripts = Array.isArray(legacyStep.scripts)
+          ? legacyStep.scripts
+          : [];
+        const refs: PreStepScriptRef[] = [];
+        for (const rawScript of legacyScripts) {
+          const script = normalizePreScript(rawScript);
+          if (!knownScriptIds.has(script.id)) {
+            knownScriptIds.add(script.id);
+            hoisted.push(script);
+          }
+          refs.push({ groupId: normalized.id, scriptId: script.id });
+        }
+        if (refs.length === 0) continue;
+        contributed = true;
+        const legacyId = stringValue(legacyStep.id);
+        const stepId =
+          legacyId && !usedStepIds.has(legacyId)
+            ? legacyId
+            : mintUniqueId(usedStepIds);
+        usedStepIds.add(stepId);
+        newSteps.push({
+          id: stepId,
+          mode: legacyStep.mode === 'serial' ? 'serial' : 'parallel',
+          scripts: refs,
+        });
+      }
+    }
+
+    mergedByIndex.set(index, {
+      ...normalized,
+      preScripts: [...normalized.preScripts, ...hoisted],
+    });
+    if (contributed) {
+      contributorAutoRuns.push(rawGroup.preScriptsAutoRun === true);
+    }
+  }
+
+  // An OR-merge would auto-run, at login, a script belonging to a group that
+  // had explicitly opted out — an unrecoverable "ran an unauthorized setup
+  // script at boot" versus a recoverable one-click "did not run". Zero
+  // contributors folds to false rather than leaving a stale prior value.
+  const preScriptsAutoRun =
+    contributorAutoRuns.length > 0 && contributorAutoRuns.every(Boolean);
+
+  const existingSteps = Array.isArray(raw.preSteps)
+    ? raw.preSteps.map(normalizePreStep)
+    : [];
+
+  return {
+    changed,
+    groups: indexed.map(({ index }) => mergedByIndex.get(index) as Group),
+    preSteps: [...existingSteps, ...newSteps],
+    preScriptsAutoRun,
+  };
+}
+
+/**
+ * Referential-integrity pass for the global pipeline: drops any ref whose
+ * group or script no longer exists. Mirrors `regenerateLegacyServices` —
+ * called by the persist helper on every write, not bolted onto individual
+ * delete call sites, so every future write path gets it for free (D5).
+ *
+ * A step that becomes empty is KEPT: it is a user-authored ordering slot,
+ * and the editor already creates empty steps deliberately.
+ */
+export function prunePipelineRefs(
+  steps: readonly PreStep[],
+  groups: readonly Group[],
+): PreStep[] {
+  const scriptIdsByGroup = new Map<string, Set<string>>();
+  for (const group of groups) {
+    scriptIdsByGroup.set(
+      group.id,
+      new Set(group.preScripts.map((script) => script.id)),
+    );
+  }
+  return steps.map((step) => ({
+    ...step,
+    scripts: step.scripts.filter((ref) =>
+      Boolean(scriptIdsByGroup.get(ref.groupId)?.has(ref.scriptId)),
+    ),
+  }));
+}
+
+/**
+ * Places `ref` into `stepId` at `position` (end of the step when omitted),
+ * first removing it from EVERY step (including the target). This single
+ * function covers a fresh placement, a cross-step move, and a same-step
+ * reorder — all are just "this ref now lives at this position in this
+ * step" — so the renderer's cross-container drag needs exactly one call.
+ */
+export function assignScriptToStep(
+  steps: readonly PreStep[],
+  stepId: string,
+  ref: PreStepScriptRef,
+  position?: number,
+): PreStep[] {
+  const isSameRef = (candidate: PreStepScriptRef): boolean =>
+    candidate.groupId === ref.groupId && candidate.scriptId === ref.scriptId;
+  const withoutRefAnywhere = steps.map((step) => ({
+    ...step,
+    scripts: step.scripts.filter((existing) => !isSameRef(existing)),
+  }));
+  return withoutRefAnywhere.map((step) => {
+    if (step.id !== stepId) return step;
+    const insertAt =
+      position === undefined
+        ? step.scripts.length
+        : Math.max(0, Math.min(position, step.scripts.length));
+    return {
+      ...step,
+      scripts: [
+        ...step.scripts.slice(0, insertAt),
+        ref,
+        ...step.scripts.slice(insertAt),
+      ],
+    };
+  });
+}
+
+/** Removes `ref` from `stepId` only, leaving every other step untouched. */
+export function unassignScriptFromStep(
+  steps: readonly PreStep[],
+  stepId: string,
+  ref: PreStepScriptRef,
+): PreStep[] {
+  return steps.map((step) => {
+    if (step.id !== stepId) return step;
+    return {
+      ...step,
+      scripts: step.scripts.filter(
+        (existing) =>
+          !(
+            existing.groupId === ref.groupId &&
+            existing.scriptId === ref.scriptId
+          ),
+      ),
+    };
+  });
+}
+
 export function enforceSingleModeAutoStart(group: Group): {
   group: Group;
   changed: boolean;
@@ -443,43 +669,20 @@ export function validateGroupShape(value: unknown): {
     errors.push('Group name must not be empty');
   if (value.mode !== 'single' && value.mode !== 'multi')
     errors.push('Group mode must be "single" or "multi"');
-  if (value.preSteps !== undefined) {
-    if (!Array.isArray(value.preSteps))
-      errors.push('preSteps must be an array');
+  if (value.preScripts !== undefined) {
+    if (!Array.isArray(value.preScripts))
+      errors.push('preScripts must be an array');
     else
-      value.preSteps.forEach((candidate, stepIndex) => {
-        if (!isRecord(candidate)) {
-          errors.push(`preSteps[${stepIndex}] must be an object`);
+      value.preScripts.forEach((script, scriptIndex) => {
+        if (!isRecord(script)) {
+          errors.push(`preScripts[${scriptIndex}] must be an object`);
           return;
         }
-        if (!candidate.id) errors.push(`preSteps[${stepIndex}] missing id`);
-        if (candidate.mode !== 'parallel' && candidate.mode !== 'serial')
-          errors.push(
-            `preSteps[${stepIndex}] mode must be "parallel" or "serial"`,
-          );
-        if (!Array.isArray(candidate.scripts))
-          errors.push(`preSteps[${stepIndex}] scripts must be an array`);
-        else
-          candidate.scripts.forEach((script, scriptIndex) => {
-            if (!isRecord(script)) {
-              errors.push(
-                `preSteps[${stepIndex}].scripts[${scriptIndex}] must be an object`,
-              );
-              return;
-            }
-            if (!script.id)
-              errors.push(
-                `preSteps[${stepIndex}].scripts[${scriptIndex}] missing id`,
-              );
-            if (!script.name)
-              errors.push(
-                `preSteps[${stepIndex}].scripts[${scriptIndex}] missing name`,
-              );
-            if (script.command === undefined || script.command === null)
-              errors.push(
-                `preSteps[${stepIndex}].scripts[${scriptIndex}] missing command`,
-              );
-          });
+        if (!script.id) errors.push(`preScripts[${scriptIndex}] missing id`);
+        if (!script.name)
+          errors.push(`preScripts[${scriptIndex}] missing name`);
+        if (script.command === undefined || script.command === null)
+          errors.push(`preScripts[${scriptIndex}] missing command`);
       });
   }
   return { valid: errors.length === 0, errors };
