@@ -328,7 +328,7 @@ export function initPipelineEditor(
     step: PreStep,
   ): HTMLElement {
     const li = document.createElement('li');
-    li.className = 'prescript-row';
+    li.className = 'prescript-row drag-row';
     li.dataset.id = refToDataId(ref.groupId, ref.scriptId);
     const resolved = findScript(ref.groupId, ref.scriptId);
 
@@ -402,7 +402,7 @@ export function initPipelineEditor(
   // ── Step card ────────────────────────────────────────────────────────────
   function buildStepCard(step: PreStep, stepNumber: number): HTMLElement {
     const card = document.createElement('div');
-    card.className = 'prestep-card';
+    card.className = 'prestep-card drag-row';
     card.dataset.id = step.id;
 
     const header = document.createElement('div');

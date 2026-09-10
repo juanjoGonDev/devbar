@@ -213,6 +213,7 @@ export function attachCrossContainerDragHandlers(
     crossState = null;
     clearDragVisuals(container);
     container.classList.remove('drop-zone-active');
+    container.classList.remove('drop-into');
   });
   container.addEventListener('dragover', (event) => {
     if (
@@ -223,6 +224,10 @@ export function attachCrossContainerDragHandlers(
       return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    // Whole-card drop-target affordance — active for the entire duration of
+    // a valid dragover, on top of (not instead of) the more specific
+    // empty-container/insertion-point indicators below.
+    container.classList.add('drop-into');
     const card = asElement(event.target)?.closest<HTMLElement>('[data-id]');
     container.querySelectorAll<HTMLElement>('[data-id]').forEach((node) => {
       if (node !== card)
@@ -248,6 +253,7 @@ export function attachCrossContainerDragHandlers(
     )
       return;
     container.classList.remove('drop-zone-active');
+    container.classList.remove('drop-into');
     clearDragVisuals(container);
   });
   container.addEventListener('drop', (event) => {
@@ -271,6 +277,7 @@ export function attachCrossContainerDragHandlers(
       : false;
     clearDragVisuals(container);
     container.classList.remove('drop-zone-active');
+    container.classList.remove('drop-into');
     crossState = null;
     const sourceContainerId = state.sourceContainer.dataset.containerId || '';
     const targetContainerId = container.dataset.containerId || '';

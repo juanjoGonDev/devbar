@@ -556,7 +556,7 @@ function renderGroupsList(): void {
 
 function buildGroupNavCard(group: Group): HTMLElement {
   const card = document.createElement('div');
-  card.className = `nav-card ${group.id === selectedGroupId ? 'selected' : ''}`;
+  card.className = `nav-card drag-row ${group.id === selectedGroupId ? 'selected' : ''}`;
   card.dataset.id = group.id;
 
   const handle = document.createElement('span');
@@ -1094,7 +1094,7 @@ function buildSubItemRow(
   groupId: string,
 ): HTMLElement {
   const row = document.createElement('div');
-  row.className = 'sub-item-row';
+  row.className = 'sub-item-row drag-row';
   row.dataset.id = item.id;
 
   const handle = document.createElement('span');
