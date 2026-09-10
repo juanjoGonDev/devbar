@@ -515,6 +515,107 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
     ).toEqual(['sc-existing', 'sc-legacy']);
   });
 
+  it("rejects a v3 payload's own top-level preSteps entry with an invalid mode instead of silently defaulting it", () => {
+    // Only migratePreScriptPipeline's HOISTED steps are trustworthy
+    // pass-through; the payload's own top-level preSteps must still face the
+    // exact same strict validation a v4 payload's would.
+    const v3Payload = {
+      version: 3,
+      groups: [
+        {
+          id: 'g1',
+          name: 'My Group',
+          path: '/some/path',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preScripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+        },
+      ],
+      preSteps: [{ id: 'step-bad', mode: 'batch', scripts: [] }],
+      globalSettings: {},
+    };
+    const result = validateImportedConfig(v3Payload);
+    expectInvalid(result);
+    expect(result.error).toContain('mode inválido');
+  });
+
+  it("rejects a v3 payload's own top-level preSteps entry whose scripts is not an array instead of silently dropping it", () => {
+    const v3Payload = {
+      version: 3,
+      groups: [
+        {
+          id: 'g1',
+          name: 'My Group',
+          path: '/some/path',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preScripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+        },
+      ],
+      preSteps: [{ id: 'step-bad', mode: 'parallel', scripts: 'not-an-array' }],
+      globalSettings: {},
+    };
+    const result = validateImportedConfig(v3Payload);
+    expectInvalid(result);
+    expect(result.error).toMatch(/scripts/);
+  });
+
+  it("rejects a v3 payload's own top-level preSteps ref missing an id instead of silently dropping it", () => {
+    const v3Payload = {
+      version: 3,
+      groups: [
+        {
+          id: 'g1',
+          name: 'My Group',
+          path: '/some/path',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preScripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+        },
+      ],
+      preSteps: [
+        {
+          id: 'step-bad',
+          mode: 'parallel',
+          scripts: [{ groupId: '', scriptId: 'sc1' }],
+        },
+      ],
+      globalSettings: {},
+    };
+    const result = validateImportedConfig(v3Payload);
+    expectInvalid(result);
+    expect(result.error).toContain('referencia un grupo o script inexistente');
+  });
+
+  it('rejects a v3 payload whose own top-level preSteps is not an array instead of silently discarding it', () => {
+    const v3Payload = {
+      version: 3,
+      groups: [
+        {
+          id: 'g1',
+          name: 'My Group',
+          path: '/some/path',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preScripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+        },
+      ],
+      preSteps: 'not-an-array',
+      globalSettings: {},
+    };
+    const result = validateImportedConfig(v3Payload);
+    expectInvalid(result);
+    expect(result.error).toMatch(/preSteps/);
+  });
+
   it('rejects an unsupported version (neither 3 nor 4)', () => {
     const result = validateImportedConfig({
       version: 2,

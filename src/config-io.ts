@@ -110,9 +110,26 @@ function applyV3Migration(value: {
       preScripts: migratedGroup?.preScripts ?? [],
     };
   });
+  // `migrated.preSteps` (existing + hoisted, both already normalized) is
+  // right for the LIVE STORE, which has no separate validation pass. The
+  // importer DOES have one, right below — so using `migrated.preSteps` here
+  // would let an invalid `mode`, an invalid `scripts` value, or a malformed
+  // ref inside the payload's OWN top-level `preSteps` get silently defaulted
+  // into something valid before that validation ever runs. Only
+  // `migrated.hoistedSteps` (freshly built by the migration itself, so
+  // always well-formed) is safe to trust outright; the payload's own
+  // top-level steps are passed through EXACTLY as authored so they still
+  // face the same strict checks a v4 payload's would — the same
+  // v3-leniency-stays-scoped principle already applied to `preScripts` above.
+  const rawTopLevelSteps: unknown = value.preSteps;
+  const steps: unknown = isUnknownArray(rawTopLevelSteps)
+    ? [...rawTopLevelSteps, ...migrated.hoistedSteps]
+    : rawTopLevelSteps === undefined
+      ? migrated.hoistedSteps
+      : rawTopLevelSteps;
   return {
     groups,
-    steps: migrated.preSteps,
+    steps,
     // Only when legacy data was actually hoisted. A store mislabelled v3 that
     // already holds v4 data has zero contributors, and the AND-fold would
     // silently turn OFF an auto-run the payload had enabled.
