@@ -100,24 +100,21 @@ describe('compound-id', () => {
 
   // ─── makePreScriptId ─────────────────────────────────────────────────
   describe('makePreScriptId', () => {
-    it('returns the correct 4-segment format', () => {
-      expect(makePreScriptId('g1', 's1', 'sc1')).toBe('pre:g1:s1:sc1');
+    it('returns the correct 2-arg format (stepId dropped: pid stable across drag-and-drop)', () => {
+      expect(makePreScriptId('g1', 'sc1')).toBe('pre:g1:sc1');
     });
 
     it('handles uuid-like values', () => {
       const gid = 'aaaa-1111';
-      const sid = 'bbbb-2222';
       const scid = 'cccc-3333';
-      expect(makePreScriptId(gid, sid, scid)).toBe(`pre:${gid}:${sid}:${scid}`);
+      expect(makePreScriptId(gid, scid)).toBe(`pre:${gid}:${scid}`);
     });
   });
 
   // ─── makeAggregatorId ────────────────────────────────────────────────
   describe('makeAggregatorId', () => {
-    it('returns the correct pre-pipeline format', () => {
-      expect(makeAggregatorId('g1', '1234567890')).toBe(
-        'pre-pipeline:g1:1234567890',
-      );
+    it('returns the correct pre-pipeline format (groupId dropped: one global pipeline)', () => {
+      expect(makeAggregatorId('1234567890')).toBe('pre-pipeline:1234567890');
     });
   });
 
@@ -125,45 +122,51 @@ describe('compound-id', () => {
   describe('parseProcessId — prescript roundtrip', () => {
     it('roundtrips a pre-script id', () => {
       const gid = 'group-uuid-1234';
-      const sid = 'step-uuid-5678';
       const scid = 'script-uuid-9012';
-      const pid = makePreScriptId(gid, sid, scid);
+      const pid = makePreScriptId(gid, scid);
       const parsed = parseProcessId(pid);
       expect(parsed.kind).toBe('prescript');
       if (parsed.kind !== 'prescript')
         throw new Error('Expected prescript process id');
       expect(parsed.groupId).toBe(gid);
-      expect(parsed.stepId).toBe(sid);
       expect(parsed.scriptId).toBe(scid);
     });
 
     it('roundtrips a pre-pipeline aggregator id', () => {
-      const gid = 'group-uuid-abcd';
       const runId = '1717000000000';
-      const pid = makeAggregatorId(gid, runId);
+      const pid = makeAggregatorId(runId);
       const parsed = parseProcessId(pid);
       expect(parsed.kind).toBe('preAggregator');
       if (parsed.kind !== 'preAggregator')
         throw new Error('Expected preAggregator process id');
-      expect(parsed.groupId).toBe(gid);
       expect(parsed.runId).toBe(runId);
     });
 
     it('distinguishes pre: from pre-pipeline:', () => {
-      const preParsed = parseProcessId('pre:g:s:sc');
-      const aggParsed = parseProcessId('pre-pipeline:g:run123');
+      const preParsed = parseProcessId('pre:g:sc');
+      const aggParsed = parseProcessId('pre-pipeline:run123');
       expect(preParsed.kind).toBe('prescript');
       expect(aggParsed.kind).toBe('preAggregator');
     });
 
     it('pre: does not match pre-pipeline: prefix', () => {
       // A pre-pipeline: id must NOT be parsed as prescript kind
-      const aggId = makeAggregatorId('groupX', '9999');
+      const aggId = makeAggregatorId('9999');
       expect(parseProcessId(aggId).kind).toBe('preAggregator');
     });
 
-    it('incomplete pre: id (only 3 segments) returns unknown', () => {
-      expect(parseProcessId('pre:g:s')).toEqual({ kind: 'unknown' });
+    it('a script id that itself contains colons is captured verbatim (greedy last segment)', () => {
+      const pid = 'pre:group1:sub1:sub2';
+      const parsed = parseProcessId(pid);
+      expect(parsed.kind).toBe('prescript');
+      if (parsed.kind !== 'prescript')
+        throw new Error('Expected prescript process id');
+      expect(parsed.groupId).toBe('group1');
+      expect(parsed.scriptId).toBe('sub1:sub2');
+    });
+
+    it('incomplete pre: id (only 1 segment after the prefix) returns unknown', () => {
+      expect(parseProcessId('pre:g')).toEqual({ kind: 'unknown' });
     });
 
     it('existing cmd/act paths unchanged after adding pre: branches', () => {
