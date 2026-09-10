@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePreStep, normalizePreScript } from '../src/groups-model.js';
+import {
+  normalizePreStep,
+  normalizePreScript,
+  assignScriptToStep,
+  unassignScriptFromStep,
+} from '../src/groups-model.js';
 
 /**
  * config-store-prescripts.test.js
@@ -14,6 +19,12 @@ import { normalizePreStep, normalizePreScript } from '../src/groups-model.js';
  * function are correct; the reorder tests validate the id-based splice
  * logic (same algorithm used in reorderPreSteps / reorderPreScripts /
  * reorderActions in config-store.js).
+ *
+ * Since the pipeline migration: `preSteps` is a GLOBAL top-level slice (no
+ * `groupId` on save/delete/reorder), `preScripts` stays per-group but flat
+ * (no `stepId`), and step placement is a distinct concern handled by
+ * `assignScriptToStep` / `unassignScriptFromStep` (real imports from
+ * `groups-model.ts` — genuinely testable, unlike the rest of this file).
  */
 
 // ─── Reorder algorithm (mirrors config-store's reorder helpers) ───────────────
@@ -54,14 +65,13 @@ describe('savePreStep contract — normalizePreStep', () => {
     expect(step.id).toBe('step-abc');
   });
 
-  it('normalizes scripts within the step', () => {
+  it('normalizes scripts within the step as {groupId,scriptId} refs', () => {
     const step = normalizePreStep({
       id: 'step-1',
       mode: 'serial',
-      scripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }],
+      scripts: [{ groupId: 'g1', scriptId: 'sc-1' }],
     });
-    expect(step.scripts).toHaveLength(1);
-    expect(step.scripts[0].id).toBe('sc-1');
+    expect(step.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc-1' }]);
   });
 
   it('defaults unknown mode to parallel', () => {
@@ -124,7 +134,7 @@ describe('savePreScript contract — normalizePreScript', () => {
   });
 });
 
-// ─── deletePreStep contract ───────────────────────────────────────────────────
+// ─── deletePreStep contract (global pipeline, no groupId) ─────────────────────
 
 describe('deletePreStep contract', () => {
   it('removes a step by id', () => {
@@ -144,7 +154,7 @@ describe('deletePreStep contract', () => {
   });
 });
 
-// ─── reorderPreSteps contract ─────────────────────────────────────────────────
+// ─── reorderPreSteps contract (global pipeline, no groupId) ───────────────────
 
 describe('reorderPreSteps contract — reorder algorithm', () => {
   it('reorders steps to match orderedIds', () => {
@@ -178,10 +188,10 @@ describe('reorderPreSteps contract — reorder algorithm', () => {
   });
 });
 
-// ─── deletePreScript contract ─────────────────────────────────────────────────
+// ─── deletePreScript contract (flat group.preScripts, groupId + scriptId) ─────
 
 describe('deletePreScript contract', () => {
-  it('removes a script by id from a step', () => {
+  it('removes a script by id from the group flat preScripts list', () => {
     const scripts = [{ id: 'sc1' }, { id: 'sc2' }];
     const result = scripts.filter((sc) => sc.id !== 'sc1');
     expect(result).toHaveLength(1);
@@ -189,12 +199,45 @@ describe('deletePreScript contract', () => {
   });
 });
 
-// ─── reorderPreScripts contract ───────────────────────────────────────────────
+// ─── reorderPreScripts contract (flat group.preScripts, no stepId) ────────────
 
 describe('reorderPreScripts contract', () => {
-  it('reorders scripts within a step', () => {
+  it('reorders a group flat preScripts list', () => {
     const scripts = [{ id: 'sc1' }, { id: 'sc2' }, { id: 'sc3' }];
     const result = reorderById(scripts, ['sc3', 'sc1', 'sc2']);
     expect(result.map((sc) => sc.id)).toEqual(['sc3', 'sc1', 'sc2']);
+  });
+});
+
+// ─── assignScriptToStep / unassignScriptFromStep contract ─────────────────────
+// config-store's assignScriptToStep(stepId, groupId, scriptId, position?) and
+// unassignScriptFromStep(stepId, groupId, scriptId) are thin wrappers around
+// these real, imported groups-model.ts functions — full coverage of the
+// placement algorithm itself (moves, reorders, no-ops) lives in
+// groups-model.test.ts; this documents the config-store-facing contract.
+
+describe('assignScriptToStep / unassignScriptFromStep contract', () => {
+  it('assignScriptToStep places a ref into the target step', () => {
+    const steps = [{ id: 'step1', mode: 'parallel' as const, scripts: [] }];
+    const result = assignScriptToStep(steps, 'step1', {
+      groupId: 'g1',
+      scriptId: 'sc1',
+    });
+    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
+  });
+
+  it('unassignScriptFromStep removes a placed ref from its step', () => {
+    const steps = [
+      {
+        id: 'step1',
+        mode: 'parallel' as const,
+        scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+      },
+    ];
+    const result = unassignScriptFromStep(steps, 'step1', {
+      groupId: 'g1',
+      scriptId: 'sc1',
+    });
+    expect(result[0]?.scripts).toEqual([]);
   });
 });
