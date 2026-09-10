@@ -2114,13 +2114,15 @@ if (window.api && window.api.getUpdateStatus) {
 // ────────────────────── Init ───────────────────────────────────────────
 
 loadSettings();
-loadGroups();
 
 pipelineEditor = initPipelineEditor(
   byId('prescripts-pipeline-root', HTMLElement),
   { getGroups: () => allGroups, showToast },
 );
-void pipelineEditor.refresh();
+// The editor resolves every ref against `allGroups`, which `loadGroups()`
+// only fills once `listGroups()` resolves. Refreshing before that renders
+// perfectly valid refs as "Referencia rota".
+void loadGroups().then(() => pipelineEditor.refresh());
 
 // App version label next to the page title.
 if (window.api && window.api.getAppVersion) {

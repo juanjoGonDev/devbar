@@ -199,6 +199,10 @@ export function attachCrossContainerDragHandlers(
       event.preventDefault();
       return;
     }
+    // These containers are nested inside the step cards that
+    // `attachDragHandlers` watches, and both match on `[data-id]`: without
+    // this, dragging a script row is also read as dragging its step.
+    event.stopPropagation();
     crossState = { zone, sourceContainer: container, sourceId: id };
     card.classList.add('dragging');
     if (event.dataTransfer) {
@@ -223,6 +227,7 @@ export function attachCrossContainerDragHandlers(
     )
       return;
     event.preventDefault();
+    event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     // Whole-card drop-target affordance — active for the entire duration of
     // a valid dragover, on top of (not instead of) the more specific
@@ -264,6 +269,7 @@ export function attachCrossContainerDragHandlers(
     )
       return;
     event.preventDefault();
+    event.stopPropagation();
     const state = crossState;
     const sourceId =
       event.dataTransfer?.getData('text/plain') || state.sourceId;

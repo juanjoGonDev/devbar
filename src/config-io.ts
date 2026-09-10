@@ -111,10 +111,17 @@ export function validateImportedConfig(value: unknown): ImportValidation {
       preSteps: value.preSteps,
       globalSettings: value.globalSettings,
     });
-    rawGroups = value.groups.map((rawGroup, index) => ({
-      ...record(rawGroup),
-      preScripts: migrated.groups[index]?.preScripts ?? [],
-    }));
+    rawGroups = value.groups.map((rawGroup, index) => {
+      const migratedGroup = migrated.groups[index];
+      return {
+        ...record(rawGroup),
+        // The migration mints an id for an id-less group and points its refs
+        // at it; re-normalizing the raw group would mint a different one and
+        // the cross-reference check below would reject the whole import.
+        ...(migratedGroup ? { id: migratedGroup.id } : {}),
+        preScripts: migratedGroup?.preScripts ?? [],
+      };
+    });
     rawSteps = migrated.preSteps;
     migratedAutoRun = migrated.preScriptsAutoRun;
   }

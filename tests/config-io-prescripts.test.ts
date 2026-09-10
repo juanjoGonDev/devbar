@@ -313,6 +313,54 @@ describe('validateImportedConfig — rejects malformed pipeline shapes (v4)', ()
 // ─── v3 payload imports as v4 (backward compatible) ────────────────────────────
 
 describe('validateImportedConfig — v3 payload imports as v4 (backward compatible)', () => {
+  it('keeps refs resolvable when a v3 group carries no id of its own', () => {
+    // The migration mints an id for an id-less group and points its refs at
+    // it. If the importer then re-normalizes the RAW group, a second,
+    // different uuid is minted and cross-reference validation rejects the
+    // whole import.
+    const v3Payload = {
+      version: 3,
+      groups: [
+        {
+          name: 'Sin id',
+          path: '/some/path',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preScriptsAutoRun: true,
+          preSteps: [
+            {
+              id: 'step-aaa',
+              mode: 'serial',
+              scripts: [
+                {
+                  id: 'sc-bbb',
+                  name: 'Install',
+                  command: 'pnpm install',
+                  args: [],
+                  env: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      globalSettings: {
+        autostart: false,
+        silenceWarnings: false,
+        silenceErrors: false,
+      },
+    };
+    const result = validateImportedConfig(v3Payload);
+    expectValid(result);
+    const groupId = result.payload.groups[0]?.id;
+    expect(groupId).toBeTruthy();
+    expect(result.payload.preSteps[0]?.scripts).toEqual([
+      { groupId, scriptId: 'sc-bbb' },
+    ]);
+  });
+
   it('migrates a v3 export (nested per-group preSteps) into the global pipeline', () => {
     const v3Payload = {
       version: 3,

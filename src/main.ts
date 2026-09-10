@@ -1753,7 +1753,9 @@ function registerIpc() {
       const groupId = ipcString(raw.groupId, 'groupId');
       const scriptId = ipcString(raw.scriptId, 'scriptId');
       const position =
-        typeof raw.position === 'number' ? raw.position : undefined;
+        raw.position === undefined
+          ? undefined
+          : ipcNumber(raw.position, 'position');
       const result = configStore.assignScriptToStep(
         stepId,
         groupId,

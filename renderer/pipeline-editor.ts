@@ -183,9 +183,21 @@ export function initPipelineEditor(
     label.className = 'toggle';
     const input = document.createElement('input');
     input.type = 'checkbox';
-    window.api.getSettings().then((settings) => {
-      input.checked = !!settings.preScriptsAutoRun;
-    });
+    // Disabled until the stored value lands: an early click would be saved
+    // and then silently overwritten by the resolving read, leaving the
+    // control contradicting the setting it just wrote.
+    input.disabled = true;
+    void window.api
+      .getSettings()
+      .then((settings) => {
+        input.checked = !!settings.preScriptsAutoRun;
+      })
+      .catch(() => {
+        deps.showToast('No se pudieron leer los ajustes', 'error');
+      })
+      .finally(() => {
+        input.disabled = false;
+      });
     input.addEventListener('change', async () => {
       await window.api.saveSettings({ preScriptsAutoRun: input.checked });
       deps.showToast('Ajustes guardados', 'ok');

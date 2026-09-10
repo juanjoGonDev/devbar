@@ -802,7 +802,9 @@ window.api.getGroupStates().then((groupStates) => {
   render(groupStates);
 });
 window.api.getPipelineState().then((state) => {
-  renderPipelineTrigger(state);
+  // A pushed update can land while this read is still pending; applying the
+  // older snapshot on top would leave the trigger stale until the next push.
+  if (lastPipelineState === null) renderPipelineTrigger(state);
 });
 
 // App version label
