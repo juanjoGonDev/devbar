@@ -455,9 +455,9 @@ describe('createPreScriptRunner — run()', () => {
     const res = await runner.run();
     expect(res.ok).toBe(true);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('Step 1/2'))).toBe(true);
-    expect(lines.some((l) => l.includes('Step 2/2'))).toBe(true);
-    expect(lines.some((l) => l.includes('Pipeline complete'))).toBe(true);
+    expect(lines.some((l) => l.includes('Paso 1/2'))).toBe(true);
+    expect(lines.some((l) => l.includes('Paso 2/2'))).toBe(true);
+    expect(lines.some((l) => l.includes('Pipeline completado'))).toBe(true);
   });
 });
 
@@ -492,12 +492,8 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
     const res = await runner.run();
     expect(res.ok).toBe(true);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('Working directory: /repo/a'))).toBe(
-      true,
-    );
-    expect(lines.some((l) => l.includes('Working directory: /repo/b'))).toBe(
-      true,
-    );
+    expect(lines.some((l) => l.includes('directorio: /repo/a'))).toBe(true);
+    expect(lines.some((l) => l.includes('directorio: /repo/b'))).toBe(true);
   });
 
   it('cross-group interleaving executes steps strictly in list order', async () => {
@@ -538,9 +534,15 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
     // separate, content-specific searches, not one order-preserving
     // transform of the whole log. A pipeline that ran A1/B1/A2 in any other
     // order would put these indices in a different relative order.
-    const indexOfA1 = lines.findIndex((l) => l.includes('"A1" finished ok'));
-    const indexOfB1 = lines.findIndex((l) => l.includes('"B1" finished ok'));
-    const indexOfA2 = lines.findIndex((l) => l.includes('"A2" finished ok'));
+    const indexOfA1 = lines.findIndex((l) =>
+      l.includes('A1" finalizado correctamente'),
+    );
+    const indexOfB1 = lines.findIndex((l) =>
+      l.includes('B1" finalizado correctamente'),
+    );
+    const indexOfA2 = lines.findIndex((l) =>
+      l.includes('A2" finalizado correctamente'),
+    );
     expect(indexOfA1).toBeGreaterThanOrEqual(0);
     expect(indexOfB1).toBeGreaterThanOrEqual(0);
     expect(indexOfA2).toBeGreaterThanOrEqual(0);
@@ -576,7 +578,7 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
     expect(res.ok).toBe(false);
     expect(pm.getState('pre:gOk:sc2').status).toBe('done');
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('has no configured path'))).toBe(true);
+    expect(lines.some((l) => l.includes('sin ruta configurada'))).toBe(true);
   });
 
   it('an unresolvable ref (deleted group) is skipped with a warning, not a failure', async () => {
@@ -602,7 +604,7 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
     const res = await runner.run();
     expect(res.ok).toBe(true);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('Broken reference'))).toBe(true);
+    expect(lines.some((l) => l.includes('Referencia rota'))).toBe(true);
   });
 });
 
@@ -676,8 +678,8 @@ describe('createPreScriptRunner — onStepComplete hook', () => {
     expect(res.ok).toBe(true);
     expect(events.map((e) => e.stepIndex)).toEqual([0, 1, 2]);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('Step 2/3'))).toBe(true);
-    expect(lines.some((l) => l.includes('Step 2 completed'))).toBe(true);
+    expect(lines.some((l) => l.includes('Paso 2/3'))).toBe(true);
+    expect(lines.some((l) => l.includes('Paso 2 completado'))).toBe(true);
   });
 
   it('does not fire for a step that fails, and never fires after run() resolves', async () => {
@@ -742,7 +744,7 @@ describe('createPreScriptRunner — onStepComplete hook', () => {
     const res = await runner.run();
     expect(res.ok).toBe(true);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('onStepComplete failed: boom'))).toBe(
+    expect(lines.some((l) => l.includes('aviso de fin de paso: boom'))).toBe(
       true,
     );
   });
@@ -944,7 +946,7 @@ describe('createPreScriptRunner — timeout enforcement', () => {
     vi.useRealTimers();
   });
 
-  it('script exceeds timeoutMs: resolves ok:false, aggregator contains "timed out", no "failed (exit" line, stop called once', async () => {
+  it('script exceeds timeoutMs: resolves ok:false, aggregator contains the timeout line, no failure line, stop called once', async () => {
     const group = makeGroup({
       id: 'g1',
       path: '/tmp/g1',
@@ -970,12 +972,12 @@ describe('createPreScriptRunner — timeout enforcement', () => {
     const res = await runPromise;
     expect(res.ok).toBe(false);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('timed out'))).toBe(true);
-    expect(lines.some((l) => l.includes('failed (exit'))).toBe(false);
+    expect(lines.some((l) => l.includes('excedido el tiempo'))).toBe(true);
+    expect(lines.some((l) => l.includes('ha fallado (salida'))).toBe(false);
     expect(pm.stop.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('script completes before timeout: resolves ok:true, no "timed out" line, stop not called from timeout path', async () => {
+  it('script completes before timeout: resolves ok:true, no timeout line, stop not called from timeout path', async () => {
     const group = makeGroup({
       id: 'g1',
       path: '/tmp/g1',
@@ -993,7 +995,7 @@ describe('createPreScriptRunner — timeout enforcement', () => {
     const res = await runner.run();
     expect(res.ok).toBe(true);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('timed out'))).toBe(false);
+    expect(lines.some((l) => l.includes('excedido el tiempo'))).toBe(false);
     const stopCalls = pm.stop.mock.calls.filter(
       (args) => args[0] === 'pre:g1:sc1',
     );
@@ -1025,7 +1027,7 @@ describe('createPreScriptRunner — timeout enforcement', () => {
 });
 
 describe('createPreScriptRunner — duration markers', () => {
-  it('"Pipeline complete (Xs)" present in aggregator', async () => {
+  it('"Pipeline completado (Xs)" present in aggregator', async () => {
     const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
     const pm = makeMockPM({ 'pre:g1:sc1': { code: 0 } });
     const runner = createPreScriptRunner({
@@ -1039,12 +1041,12 @@ describe('createPreScriptRunner — duration markers', () => {
     const lines = getAggregatorLines(pm);
     expect(
       lines.some(
-        (l) => l.includes('Pipeline complete') && l.match(/\(\d+\w+.*\)/),
+        (l) => l.includes('Pipeline completado') && l.match(/\(\d+\w+.*\)/),
       ),
     ).toBe(true);
   });
 
-  it('"Step 1 completed (Xs)" present after step success', async () => {
+  it('"Paso 1 completado (Xs)" present after step success', async () => {
     const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
     const pm = makeMockPM({ 'pre:g1:sc1': { code: 0 } });
     const runner = createPreScriptRunner({
@@ -1056,10 +1058,10 @@ describe('createPreScriptRunner — duration markers', () => {
 
     await runner.run();
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('Step 1 completed'))).toBe(true);
+    expect(lines.some((l) => l.includes('Paso 1 completado'))).toBe(true);
   });
 
-  it('"Script finished ok (Xs)" contains no bare "exit N"', async () => {
+  it('"Script finalizado correctamente (Xs)" contains no bare "exit N"', async () => {
     const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
     const pm = makeMockPM({ 'pre:g1:sc1': { code: 0 } });
     const runner = createPreScriptRunner({
@@ -1071,13 +1073,15 @@ describe('createPreScriptRunner — duration markers', () => {
 
     await runner.run();
     const lines = getAggregatorLines(pm);
-    const finishedLine = lines.find((l) => l.includes('finished ok'));
+    const finishedLine = lines.find((l) =>
+      l.includes('finalizado correctamente'),
+    );
     expect(finishedLine).toBeTruthy();
-    expect(finishedLine).not.toMatch(/finished ok \(exit \d+\)/);
-    expect(finishedLine).toMatch(/finished ok \(\d+\w+.*\)/);
+    expect(finishedLine).not.toMatch(/finalizado correctamente \(exit \d+\)/);
+    expect(finishedLine).toMatch(/finalizado correctamente \(\d+\w+.*\)/);
   });
 
-  it('failed script keeps "failed (exit N, Xs)" shape', async () => {
+  it('failed script keeps "ha fallado (salida N, Xs)" shape', async () => {
     const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
     const pm = makeMockPM({ 'pre:g1:sc1': { code: 1 } });
     const runner = createPreScriptRunner({
@@ -1089,9 +1093,9 @@ describe('createPreScriptRunner — duration markers', () => {
 
     await runner.run();
     const lines = getAggregatorLines(pm);
-    const failedLine = lines.find((l) => l.includes('failed (exit'));
+    const failedLine = lines.find((l) => l.includes('ha fallado (salida'));
     expect(failedLine).toBeTruthy();
-    expect(failedLine).toMatch(/failed \(exit 1,/);
+    expect(failedLine).toMatch(/ha fallado \(salida 1,/);
   });
 });
 

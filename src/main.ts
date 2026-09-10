@@ -48,6 +48,7 @@ import {
   parseProcessId,
   type ParsedProcessId,
 } from './compound-id.js';
+import { formatPipelineRunName } from './pipeline-labels.js';
 import { createPreScriptRunner } from './pre-script-runner.js';
 import {
   planAutoStartRelease,
@@ -2082,8 +2083,10 @@ function registerIpc() {
       } else if (parsed.kind === 'preAggregator') {
         if (groupId !== null && !isPipelineScope) continue; // never nested under a real group
         sources.push({
+          // Every run lands in the same bucket, so the start time is what
+          // tells two of them apart; the bucket keeps the constant name.
           id,
-          name: PIPELINE_LOG_NAME,
+          name: formatPipelineRunName(Number(parsed.runId)),
           groupId: PIPELINE_LOG_GROUP_ID,
           groupName: PIPELINE_LOG_NAME,
         });
@@ -2260,7 +2263,12 @@ function registerIpc() {
         );
       } else if (parsed.kind === 'preAggregator') {
         pipelineEntry().items.push(
-          item(id, 'pipeline', PIPELINE_LOG_NAME, null),
+          item(
+            id,
+            'pipeline',
+            formatPipelineRunName(Number(parsed.runId)),
+            null,
+          ),
         );
       }
     }

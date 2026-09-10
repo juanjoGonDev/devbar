@@ -8,6 +8,11 @@ import type {
 } from './domain-types.js';
 import { makeAggregatorId, makePreScriptId } from './compound-id.js';
 import { formatUptime } from './format-uptime.js';
+import {
+  formatScriptLabel,
+  formatStepCount,
+  formatStepMode,
+} from './pipeline-labels.js';
 
 interface ConfigStoreLike {
   getGroup(groupId: string): Group | null;
@@ -179,18 +184,21 @@ export function createPreScriptRunner({
     if (!group || !script) {
       pushAggregatorLog(
         handle.aggregatorId,
-        `── Broken reference (missing group/script), skipped ──`,
+        `── Referencia rota (grupo o script inexistente), omitida ──`,
         'warn',
       );
       return { ok: true, code: null, skipped: true };
     }
+    // Group first: two groups can each define a script called the same
+    // thing, and the bare name makes the log ambiguous about which ran.
+    const label = formatScriptLabel(group.name, script.name);
     const groupPath = group.path.trim();
     if (!groupPath) {
       // An ordinary per-script failure, not a whole-pipeline abort: siblings
       // already spawned in the same parallel step still complete.
       pushAggregatorLog(
         handle.aggregatorId,
-        `── Script "${script.name}" from group "${group.name}" has no configured path ──`,
+        `── Script "${label}" sin ruta configurada en su grupo ──`,
         'error',
       );
       return { ok: false, code: -1, error: 'no_group_path' };
@@ -202,7 +210,7 @@ export function createPreScriptRunner({
       if (!confirmed) {
         pushAggregatorLog(
           handle.aggregatorId,
-          `── Script "${script.name}" cancelado por el usuario ──`,
+          `── Script "${label}" cancelado por el usuario ──`,
         );
         return {
           ok: false,
@@ -214,7 +222,7 @@ export function createPreScriptRunner({
     }
     const pid = makePreScriptId(ref.groupId, script.id);
     handle.childPids.add(pid);
-    const tag = `[${script.name}]`;
+    const tag = `[${label}]`;
     return new Promise<OneResult>((resolve) => {
       const logHandler = ({
         id,
@@ -254,8 +262,8 @@ export function createPreScriptRunner({
           pushAggregatorLog(
             handle.aggregatorId,
             ok
-              ? `── Script "${script.name}" finished ok (${elapsed}) ──`
-              : `── Script "${script.name}" failed (exit ${code}, ${elapsed}) ──`,
+              ? `── Script "${label}" finalizado correctamente (${elapsed}) ──`
+              : `── Script "${label}" ha fallado (salida ${code}, ${elapsed}) ──`,
             ok ? null : 'error',
           );
         resolve({ ok, code });
@@ -265,7 +273,7 @@ export function createPreScriptRunner({
         timeoutToken = setTimeout(() => {
           pushAggregatorLog(
             handle.aggregatorId,
-            `── Script "${script.name}" timed out (${formatUptime(Date.now() - scriptStartedAt)}) ──`,
+            `── Script "${label}" ha excedido el tiempo límite (${formatUptime(Date.now() - scriptStartedAt)}) ──`,
             'error',
           );
           handle._timedOutScripts.add(pid);
@@ -274,7 +282,7 @@ export function createPreScriptRunner({
       }
       pushAggregatorLog(
         handle.aggregatorId,
-        `── Working directory: ${groupPath} ──`,
+        `── Script "${label}" — directorio: ${groupPath} ──`,
       );
       const result = processManager.start(pid);
       if (!result.ok) {
@@ -287,7 +295,7 @@ export function createPreScriptRunner({
         handle.childPids.delete(pid);
         pushAggregatorLog(
           handle.aggregatorId,
-          `── Script "${script.name}" failed to start: ${result.error ?? 'unknown error'} ──`,
+          `── Script "${label}" no ha podido arrancar: ${result.error ?? 'error desconocido'} ──`,
           'error',
         );
         resolve({ ok: false, code: -1, error: result.error });
@@ -315,7 +323,7 @@ export function createPreScriptRunner({
     broadcastUpdate();
     pushAggregatorLog(
       aggregatorId,
-      `── Pipeline started (${steps.length} steps) ──`,
+      `── Pipeline iniciado (${formatStepCount(steps.length)}) ──`,
     );
     let pipelineOk = true,
       pipelineCancelled = false,
@@ -332,7 +340,7 @@ export function createPreScriptRunner({
       }
       pushAggregatorLog(
         aggregatorId,
-        `── Step ${index + 1}/${steps.length} (${step.mode}) starting ──`,
+        `── Paso ${index + 1}/${steps.length} (${formatStepMode(step.mode)}) iniciando ──`,
       );
       const stepStartedAt = Date.now();
       let stepOk = false;
@@ -368,7 +376,7 @@ export function createPreScriptRunner({
       if (stepOk && !handle.cancelled) {
         pushAggregatorLog(
           aggregatorId,
-          `── Step ${index + 1} completed (${formatUptime(Date.now() - stepStartedAt)}) ──`,
+          `── Paso ${index + 1} completado (${formatUptime(Date.now() - stepStartedAt)}) ──`,
         );
         // Synchronous and non-awaited: every command released by this step
         // must be spawned before step N+1's first runOne. A throwing
@@ -385,7 +393,7 @@ export function createPreScriptRunner({
           const message = err instanceof Error ? err.message : String(err);
           pushAggregatorLog(
             aggregatorId,
-            `── onStepComplete failed: ${message} ──`,
+            `── Fallo en el aviso de fin de paso: ${message} ──`,
             'error',
           );
         }
@@ -402,7 +410,7 @@ export function createPreScriptRunner({
       if (pipelineCancelled || handle.cancelled) {
         pushAggregatorLog(
           aggregatorId,
-          `── Pipeline cancelled (${duration}) ──`,
+          `── Pipeline cancelado (${duration}) ──`,
         );
         handle.status = 'idle';
         broadcastUpdate();
@@ -417,7 +425,7 @@ export function createPreScriptRunner({
       const reason = `step_${failedStepIdx}_failed`;
       pushAggregatorLog(
         aggregatorId,
-        `── Pipeline failed at step ${failedStepIdx} (${duration}) ──`,
+        `── Pipeline fallido en el paso ${failedStepIdx} (${duration}) ──`,
         'error',
       );
       handle.status = 'error';
@@ -427,7 +435,7 @@ export function createPreScriptRunner({
       return { ok: false, error: reason, runId, aggregatorId };
     }
     handle.status = 'done';
-    pushAggregatorLog(aggregatorId, `── Pipeline complete (${duration}) ──`);
+    pushAggregatorLog(aggregatorId, `── Pipeline completado (${duration}) ──`);
     setRecentResult('done', null, runId, 3000);
     broadcastUpdate();
     onSuccess?.({ runId, stepCount: steps.length });
