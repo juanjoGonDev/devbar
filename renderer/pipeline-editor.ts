@@ -235,7 +235,13 @@ export function initPipelineEditor(
       return true;
     } catch {
       deps.showToast('No se pudo guardar el pipeline', 'error');
-      await refresh();
+      // The recovery read is best-effort: if it fails too, `write` must still
+      // settle, or every handler awaiting it produces an unhandled rejection.
+      try {
+        await refresh();
+      } catch {
+        deps.showToast('No se pudo recargar el pipeline', 'error');
+      }
       return false;
     }
   }

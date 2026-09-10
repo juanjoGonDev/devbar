@@ -978,10 +978,33 @@ function buildPreScriptsLibrary(group: Group, parent: HTMLElement): void {
   attachDragHandlers(listEl, async (orderedIds) => {
     await window.api.reorderPreScripts(group.id, orderedIds);
     await loadGroups();
+    syncPersistedSlice(group.id, 'preScripts');
     renderGroupDetail();
   });
 
   parent.appendChild(section);
+}
+
+/**
+ * Copies a slice that an INSTANT write just persisted into both active
+ * snapshots of the selected group.
+ *
+ * Reorder and delete write straight to the store, but the detail pane renders
+ * from `draftGroup` and saving the group writes `draftGroup` back — so
+ * without this the pane shows the old order and the next save silently undoes
+ * what was already persisted. Only the named slice is copied: the rest of
+ * `draftGroup` may hold unsaved edits to other fields.
+ */
+function syncPersistedSlice(
+  groupId: string,
+  key: 'preScripts' | 'commands' | 'actions',
+): void {
+  const fresh = allGroups.find((candidate) => candidate.id === groupId);
+  if (!fresh) return;
+  if (storedGroup?.id === groupId)
+    storedGroup = { ...storedGroup, [key]: structuredClone(fresh[key]) };
+  if (draftGroup?.id === groupId)
+    draftGroup = { ...draftGroup, [key]: structuredClone(fresh[key]) };
 }
 
 function buildPreScriptLibraryRow(
@@ -1030,6 +1053,7 @@ function buildPreScriptLibraryRow(
     if (!confirm(`¿Borrar "${script.name}"?`)) return;
     await window.api.deletePreScript(group.id, script.id);
     await loadGroups();
+    syncPersistedSlice(group.id, 'preScripts');
     renderGroupDetail();
     await refreshPipeline(); // deleting a definition prunes its refs from the pipeline
   });
@@ -1086,6 +1110,7 @@ function buildSubList(
       await window.api.reorderActions(group.id, orderedIds);
     }
     await loadGroups();
+    syncPersistedSlice(group.id, kind === 'command' ? 'commands' : 'actions');
     renderGroupDetail();
   });
 }
