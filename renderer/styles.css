@@ -2845,36 +2845,58 @@ dialog form {
   white-space: nowrap;
 }
 
-/* Summary strip: the resulting boot order at a glance. */
+/* Summary strip: the resulting boot order at a glance, matching the
+ * approved UI reference (`arranque-prototipo.html`) — one block per step,
+ * with a header line and one lane per script, sitting in a horizontally
+ * scrollable track so a long pipeline never widens the pane. */
 .pipeline-summary {
   margin-bottom: 10px;
 }
 .pipeline-summary-steps {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 5px;
+  overflow-x: auto;
   padding: 8px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--bg-card);
 }
 .pipeline-summary-step {
+  flex: none;
   display: flex;
-  gap: 2px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.04);
-  min-width: 16px;
-  min-height: 12px;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 84px;
+  padding: 5px 7px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card-strong);
 }
 .pipeline-summary-step.is-empty {
-  border: 1px dashed var(--border-strong);
+  border-style: dashed;
   background: transparent;
 }
-.pipeline-summary-arrow {
+/* A parallel step with more than one script gets an accent left edge. */
+.pipeline-summary-step.is-parallel {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.pipeline-summary-step-head {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
-  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.pipeline-summary-lane {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.pipeline-summary-lane.is-muted {
+  color: var(--muted);
 }
 .pipeline-summary-count {
   margin-top: 6px;
@@ -2923,9 +2945,6 @@ dialog form {
 @media (prefers-color-scheme: dark) {
   .script-picker-item:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.08);
-  }
-  .pipeline-summary-step {
-    background: rgba(255, 255, 255, 0.06);
   }
 }
 

@@ -30,6 +30,61 @@ function groupColor(name: string): string {
 
 const PIPELINE_DND_ZONE = 'pipeline-scripts';
 
+/** One lane of the summary strip: a resolved `{group, script}` pair, or a
+ * broken marker when the ref no longer resolves (matches the dimmed "ref
+ * rota" treatment `buildScriptRow` already gives a dangling ref). */
+export interface PipelineSummaryLane {
+  readonly groupName: string;
+  readonly scriptName: string;
+  readonly broken: boolean;
+}
+
+/** The summary strip's view model for one step — everything `buildSummaryStrip`
+ * needs and nothing it has to compute itself. */
+export interface PipelineSummaryStep {
+  readonly index: number;
+  readonly mode: PreStep['mode'];
+  /** Worth the accent treatment: parallel AND more than one script. A
+   * single-script "parallel" step behaves identically to serial, so it is
+   * never highlighted (matches `arranque-prototipo.html`'s `.par` rule). */
+  readonly isParallel: boolean;
+  readonly isEmpty: boolean;
+  readonly lanes: readonly PipelineSummaryLane[];
+}
+
+/**
+ * Pure view-model builder for the pipeline summary strip — no DOM, so it is
+ * directly unit-testable (`tests/pipeline-summary.test.ts`) the same way
+ * `renderer/tooltip.ts` keeps `placeTip` pure alongside its DOM-touching code.
+ */
+export function summarizePipeline(
+  steps: readonly PreStep[],
+  resolveScript: (
+    groupId: string,
+    scriptId: string,
+  ) => { groupName: string; scriptName: string } | null,
+): readonly PipelineSummaryStep[] {
+  return steps.map((step, i) => {
+    const lanes: PipelineSummaryLane[] = step.scripts.map((ref) => {
+      const resolved = resolveScript(ref.groupId, ref.scriptId);
+      return resolved
+        ? {
+            groupName: resolved.groupName,
+            scriptName: resolved.scriptName,
+            broken: false,
+          }
+        : { groupName: '', scriptName: '', broken: true };
+    });
+    return {
+      index: i + 1,
+      mode: step.mode,
+      isParallel: step.mode === 'parallel' && lanes.length > 1,
+      isEmpty: lanes.length === 0,
+      lanes,
+    };
+  });
+}
+
 export interface PipelineEditorDeps {
   /** Read-only — the editor never reads `draftGroup` (one-way dependency,
    * unsaved group edits must never leak into the pipeline view). */
@@ -149,35 +204,62 @@ export function initPipelineEditor(
   }
 
   // ── Summary strip ────────────────────────────────────────────────────────
+  //
+  // `summarizePipeline` is the pure view-model seam: it turns raw steps into
+  // exactly what the strip below renders, with no DOM involved, so the
+  // approved layout (header line + one lane per script, matching
+  // `arranque-prototipo.html`) can be driven from plain fixtures in
+  // `tests/pipeline-summary.test.ts`.
   function buildSummaryStrip(): HTMLElement {
     const strip = document.createElement('div');
     strip.className = 'pipeline-summary';
-    const stepsRow = document.createElement('div');
-    stepsRow.className = 'pipeline-summary-steps';
-    draftSteps.forEach((step, index) => {
-      if (index > 0) {
-        const arrow = document.createElement('span');
-        arrow.className = 'pipeline-summary-arrow';
-        arrow.textContent = '→';
-        stepsRow.appendChild(arrow);
-      }
+    const track = document.createElement('div');
+    track.className = 'pipeline-summary-steps';
+
+    for (const step of summarizePipeline(draftSteps, (groupId, scriptId) => {
+      const resolved = findScript(groupId, scriptId);
+      return resolved
+        ? { groupName: resolved.group.name, scriptName: resolved.script.name }
+        : null;
+    })) {
       const block = document.createElement('div');
       block.className = 'pipeline-summary-step';
-      block.title = `Paso ${index + 1} (${step.mode === 'serial' ? 'serie' : 'paralelo'})`;
-      for (const ref of step.scripts) {
-        const resolved = findScript(ref.groupId, ref.scriptId);
-        const dot = document.createElement('span');
-        dot.className = 'pipeline-summary-dot';
-        dot.style.setProperty(
-          '--group-color',
-          groupColor(resolved ? resolved.group.name : ref.groupId),
-        );
-        block.appendChild(dot);
+      if (step.isEmpty) block.classList.add('is-empty');
+      if (step.isParallel) block.classList.add('is-parallel');
+      block.title = `Paso ${step.index} (${step.mode === 'serial' ? 'serie' : 'paralelo'})`;
+
+      const head = document.createElement('span');
+      head.className = 'pipeline-summary-step-head';
+      head.textContent =
+        step.lanes.length > 1
+          ? `${step.index} · ${step.mode === 'parallel' ? '∥' : '→'}`
+          : `${step.index}`;
+      block.appendChild(head);
+
+      if (step.isEmpty) {
+        const lane = document.createElement('span');
+        lane.className = 'pipeline-summary-lane is-muted';
+        lane.textContent = 'vacío';
+        block.appendChild(lane);
+      } else {
+        for (const lane of step.lanes) {
+          const laneEl = document.createElement('span');
+          laneEl.className = 'pipeline-summary-lane';
+          if (lane.broken) {
+            laneEl.classList.add('is-muted');
+            laneEl.textContent = 'Referencia rota';
+          } else {
+            const dot = document.createElement('span');
+            dot.className = 'pipeline-group-dot';
+            dot.style.setProperty('--group-color', groupColor(lane.groupName));
+            laneEl.append(dot, document.createTextNode(lane.scriptName));
+          }
+          block.appendChild(laneEl);
+        }
       }
-      if (step.scripts.length === 0) block.classList.add('is-empty');
-      stepsRow.appendChild(block);
-    });
-    strip.appendChild(stepsRow);
+      track.appendChild(block);
+    }
+    strip.appendChild(track);
 
     const scriptCount = draftSteps.reduce(
       (sum, step) => sum + step.scripts.length,
