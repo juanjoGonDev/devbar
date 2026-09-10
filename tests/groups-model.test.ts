@@ -1320,6 +1320,22 @@ describe('normalizePreStep', () => {
     expect(step.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc-1' }]);
   });
 
+  it('deduplicates repeated {groupId,scriptId} refs within the same step, keeping the first occurrence', () => {
+    const step = normalizePreStep({
+      id: 'step-1',
+      mode: 'parallel',
+      scripts: [
+        { groupId: 'g1', scriptId: 'sc-1' },
+        { groupId: 'g2', scriptId: 'sc-2' },
+        { groupId: 'g1', scriptId: 'sc-1' },
+      ],
+    });
+    expect(step.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc-1' },
+      { groupId: 'g2', scriptId: 'sc-2' },
+    ]);
+  });
+
   it('preserves raw id', () => {
     const id = 'step-uuid-1234';
     const step = normalizePreStep({ id });
@@ -1814,6 +1830,31 @@ describe('migratePreScriptPipeline', () => {
     expect(new Set(ids).size).toBe(3);
   });
 
+  it('mints a distinct id for a migrated legacy step whose id collides with an EXISTING top-level step', () => {
+    const result = migratePreScriptPipeline({
+      groups: [
+        baseGroup({
+          id: 'g1',
+          order: 0,
+          preSteps: [
+            {
+              // Legal collision: step ids were group-scoped pre-migration,
+              // and this literal id already belongs to a top-level step
+              // below (global-scoped, unrelated group).
+              id: 'shared-id',
+              mode: 'parallel',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+          ],
+        }),
+      ],
+      preSteps: [{ id: 'shared-id', mode: 'serial', scripts: [] }],
+    });
+    const ids = result.preSteps.map((s) => s.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+
   it('AND-folds preScriptsAutoRun to true when every contributing group had it true', () => {
     const result = migratePreScriptPipeline({
       groups: [
@@ -2030,6 +2071,31 @@ describe('planStoreMigration', () => {
     expect(untouched.preScriptsAutoRun).toBeNull();
   });
 
+  it('preserves globalSettings.preScriptsAutoRun (returns null) when a group carries an empty legacy preSteps: [] and zero groups actually contribute', () => {
+    // `changed` becomes true (an empty legacy `preSteps` key is still a
+    // legacy key), but NO group contributes a real script to the fold —
+    // config-store.runMigration must leave the user's live setting alone.
+    const result = planStoreMigration({
+      version: 4,
+      groups: [baseGroup({ id: 'a', preSteps: [] })],
+      preSteps: [],
+      globalSettings: {},
+    });
+    expect(result.changed).toBe(true);
+    expect(result.preScriptsAutoRun).toBeNull();
+  });
+
+  it('preserves globalSettings.preScriptsAutoRun (returns null) when a group carries only a stale preScriptsAutoRun key and zero groups actually contribute', () => {
+    const result = planStoreMigration({
+      version: 4,
+      groups: [baseGroup({ id: 'b', preScriptsAutoRun: true })],
+      preSteps: [],
+      globalSettings: {},
+    });
+    expect(result.changed).toBe(true);
+    expect(result.preScriptsAutoRun).toBeNull();
+  });
+
   it('is idempotent: running it again on its own output reports changed:false', () => {
     const first = planStoreMigration({
       version: 3,
@@ -2167,6 +2233,15 @@ describe('assignScriptToStep', () => {
     expect(result.find((s) => s.id === 'step1')?.scripts).toEqual([
       { groupId: 'g1', scriptId: 'sc1' },
     ]);
+  });
+
+  it('returns the steps unchanged when the target stepId does not exist (stale/unknown step)', () => {
+    const original = fixture();
+    const result = assignScriptToStep(original, 'ghost-step', {
+      groupId: 'g1',
+      scriptId: 'sc1',
+    });
+    expect(result).toEqual(original);
   });
 });
 

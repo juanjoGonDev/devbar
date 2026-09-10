@@ -1,6 +1,7 @@
 import path from 'node:path';
 import os from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
+import { makePreScriptId } from './compound-id.js';
 import type {
   Action,
   Command,
@@ -239,14 +240,30 @@ export function normalizePreStepScriptRef(
 
 export function normalizePreStep(value: unknown): PreStep {
   const raw = record(value);
+  const refs = Array.isArray(raw.scripts)
+    ? raw.scripts
+        .map(normalizePreStepScriptRef)
+        .filter((ref): ref is PreStepScriptRef => ref !== null)
+    : [];
+  // Two refs sharing a {groupId,scriptId} pair resolve to the same process
+  // id (`makePreScriptId`); `processManager.start` will not start a second
+  // process for a pid already running, so the second ref's `runOne` listener
+  // would resolve off the first ref's `action:done` without its script ever
+  // actually running. The picker prevents this in the UI, but an imported or
+  // hand-edited config does not. Kept first-occurrence, matching every other
+  // dedup pass in this file (`reorderByIds`, `migratePreScriptPipeline`'s
+  // `knownScriptIds`).
+  const seen = new Set<string>();
+  const scripts = refs.filter((ref) => {
+    const key = makePreScriptId(ref.groupId, ref.scriptId);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   return {
     id: stringValue(raw.id) || uuidv4(),
     mode: raw.mode === 'serial' ? 'serial' : 'parallel',
-    scripts: Array.isArray(raw.scripts)
-      ? raw.scripts
-          .map(normalizePreStepScriptRef)
-          .filter((ref): ref is PreStepScriptRef => ref !== null)
-      : [],
+    scripts,
   };
 }
 
@@ -450,7 +467,25 @@ export function migratePreScriptPipeline(raw: {
   changed: boolean;
   groups: Group[];
   preSteps: PreStep[];
+  /**
+   * Only the steps actually hoisted from legacy PER-GROUP data — never the
+   * pre-existing top-level `preSteps` folded into `preSteps` above. The
+   * importer (`config-io.ts`) needs this split so it can keep validating the
+   * payload's OWN raw top-level steps strictly, instead of trusting this
+   * function's normalized (leniently-defaulted) pass-through of them.
+   */
+  hoistedSteps: PreStep[];
   preScriptsAutoRun: boolean;
+  /**
+   * How many groups actually contributed >=1 script to the fold above. Lets
+   * a caller (`planStoreMigration`) tell "zero groups contributed a real
+   * legacy pre-script step" apart from "something else about this raw
+   * snapshot needed normalizing" — `changed` alone conflates the two, and
+   * using it to gate whether to WRITE `preScriptsAutoRun` would silently
+   * disable a user's real setting the moment ANY group carries a stale,
+   * contribution-free legacy key (e.g. an empty `preSteps: []`).
+   */
+  preScriptsAutoRunContributors: number;
 } {
   const rawGroups = Array.isArray(raw.groups) ? raw.groups : [];
   // Preserve original array position for the output `groups` order, but walk
@@ -467,8 +502,17 @@ export function migratePreScriptPipeline(raw: {
     return orderA - orderB || a.index - b.index;
   });
 
+  // Normalized FIRST — and its ids seeded into `usedStepIds` below — so a
+  // migrated legacy step can never mint or reuse an id that collides with
+  // one an existing top-level step already has. `savePreStep`, `deletePreStep`
+  // and `reorderPreSteps` all address steps by id alone, so a collision would
+  // make them hit the wrong step.
+  const existingSteps = Array.isArray(raw.preSteps)
+    ? raw.preSteps.map(normalizePreStep)
+    : [];
+
   let changed = false;
-  const usedStepIds = new Set<string>();
+  const usedStepIds = new Set<string>(existingSteps.map((step) => step.id));
   const newSteps: PreStep[] = [];
   const contributorAutoRuns: boolean[] = [];
   const mergedByIndex = new Map<number, Group>();
@@ -529,15 +573,13 @@ export function migratePreScriptPipeline(raw: {
   const preScriptsAutoRun =
     contributorAutoRuns.length > 0 && contributorAutoRuns.every(Boolean);
 
-  const existingSteps = Array.isArray(raw.preSteps)
-    ? raw.preSteps.map(normalizePreStep)
-    : [];
-
   return {
     changed,
     groups: indexed.map(({ index }) => mergedByIndex.get(index) as Group),
     preSteps: [...existingSteps, ...newSteps],
+    hoistedSteps: newSteps,
     preScriptsAutoRun,
+    preScriptsAutoRunContributors: contributorAutoRuns.length,
   };
 }
 
@@ -604,7 +646,16 @@ export function planStoreMigration(
     groups,
     services,
     preSteps: pipeline.preSteps,
-    preScriptsAutoRun: pipeline.changed ? pipeline.preScriptsAutoRun : null,
+    // Gated on real contributors, NOT on `pipeline.changed`: a group can flip
+    // `changed` to true (a stale `preScriptsAutoRun` key, or an empty legacy
+    // `preSteps: []`) without ever contributing a script to the fold. Gating
+    // on `changed` there would write the AND-fold's zero-contributor `false`
+    // over a user's real `globalSettings.preScriptsAutoRun`, silently
+    // disabling an auto-run they had actually enabled.
+    preScriptsAutoRun:
+      pipeline.preScriptsAutoRunContributors > 0
+        ? pipeline.preScriptsAutoRun
+        : null,
     servicesBackup:
       idRepair.changed && Array.isArray(idRepair.state._services_pre_v3_backup)
         ? idRepair.state._services_pre_v3_backup
@@ -681,6 +732,11 @@ export function assignScriptToStep(
   ref: PreStepScriptRef,
   position?: number,
 ): PreStep[] {
+  // A stale/unknown stepId must not silently unassign the ref: removing it
+  // from wherever it currently lives, with no matching step to re-insert it
+  // into, would leave it placed nowhere — and `config-store` persists
+  // whatever this function returns.
+  if (!steps.some((step) => step.id === stepId)) return [...steps];
   const isSameRef = (candidate: PreStepScriptRef): boolean =>
     candidate.groupId === ref.groupId && candidate.scriptId === ref.scriptId;
   const withoutRefAnywhere = steps.map((step) => ({
