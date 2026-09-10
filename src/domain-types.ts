@@ -66,10 +66,16 @@ export interface PreScript extends ConfirmConfig {
   timeoutMs: number | null;
 }
 
+/** A step's reference to a script defined in its OWN group's `preScripts`. */
+export interface PreStepScriptRef {
+  groupId: string;
+  scriptId: string;
+}
+
 export interface PreStep {
   id: string;
   mode: 'parallel' | 'serial';
-  scripts: PreScript[];
+  scripts: PreStepScriptRef[];
 }
 
 export interface Group {
@@ -84,8 +90,7 @@ export interface Group {
   env: EnvEntry[];
   commands: Command[];
   actions: Action[];
-  preSteps: PreStep[];
-  preScriptsAutoRun: boolean;
+  preScripts: PreScript[];
 }
 
 export interface LegacyService {
@@ -116,6 +121,7 @@ export interface GlobalSettings {
   silenceErrors: boolean;
   maxLogLines: number;
   notifySuccess: boolean;
+  preScriptsAutoRun: boolean;
 }
 
 export type ProcessStatus =
