@@ -52,6 +52,9 @@ import { createPreScriptRunner } from './pre-script-runner.js';
 import {
   planAutoStartRelease,
   withheldGroupIds,
+  shouldAutoRunPipeline,
+  filterAutoStartEligibleGroups,
+  describeWithheldGroups,
   type AutoStartPlan,
 } from './autostart-schedule.js';
 import { ICON_BATTERY } from './icon-battery.js';
@@ -2750,14 +2753,16 @@ function registerIpc() {
  *   but this is a belt-and-suspenders guard).
  * - Errors per command are logged and swallowed so the remaining commands still start.
  * - The ONE global pipeline runs first, gated by `wasOpenedAtLogin` and the
- *   global `preScriptsAutoRun` setting (Login Gate Unchanged). A group with
- *   no scripts anywhere in the pipeline starts immediately; an eligible
- *   group with scripts releases as soon as the LAST step referencing one of
- *   them completes (D2/D7 staged release), not after the whole pipeline
- *   finishes. On a genuine failure OR a declined confirmation, every group
- *   still withheld at that point never starts — one release rule for both
- *   causes (the Decided Override) — and is reported via the aggregator log
- *   plus a toast/notification.
+ *   global `preScriptsAutoRun` setting (Login Gate Unchanged) — independent
+ *   of whether any group has an autoStart command, since the pipeline has
+ *   value on its own (a VPN tunnel, a `make setup` step). A group with no
+ *   scripts anywhere in the pipeline starts immediately; an eligible group
+ *   with scripts releases as soon as the LAST step referencing one of them
+ *   completes (D2/D7 staged release), not after the whole pipeline finishes.
+ *   On a genuine failure OR a declined confirmation, every group still
+ *   withheld at that point never starts — one release rule for both causes
+ *   (the Decided Override) — and is reported via the aggregator log plus a
+ *   toast/notification.
  */
 async function autoStartAllMarkedCommands(): Promise<void> {
   // Only run pre-scripts when DevBar was launched by macOS at login —
@@ -2773,18 +2778,21 @@ async function autoStartAllMarkedCommands(): Promise<void> {
         app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin
       ));
 
-  const eligibleGroups = configStore
-    .listGroups()
-    .filter((group) =>
-      (group.commands || []).some((cmd) => cmd.autoStart === true),
-    );
-  if (eligibleGroups.length === 0) return;
-
   const steps = configStore.getPreSteps();
-  const shouldRunPipeline =
-    wasOpenedAtLogin &&
-    configStore.getGlobalSettings().preScriptsAutoRun === true &&
-    steps.length > 0;
+  const shouldRunPipeline = shouldAutoRunPipeline({
+    wasOpenedAtLogin,
+    preScriptsAutoRun:
+      configStore.getGlobalSettings().preScriptsAutoRun === true,
+    stepCount: steps.length,
+  });
+
+  // Deliberately computed AFTER the pipeline decision above, and NOT used to
+  // gate it: a pipeline with real steps must run at login even when no group
+  // has an autoStart command at all (sdd-verify W2). Command release below
+  // still only ever concerns groups in THIS list.
+  const eligibleGroups = filterAutoStartEligibleGroups(
+    configStore.listGroups(),
+  );
 
   if (!shouldRunPipeline) {
     for (const group of eligibleGroups) startGroupAutoStartCommands(group);
@@ -2837,8 +2845,9 @@ function startGroupAutoStartCommands(group: Group): void {
 /**
  * Names every group withheld by a pipeline failure or a declined
  * confirmation. Same computation, same reporting machinery for both causes
- * (the Decided Override: one release rule) — only the wording and toast
- * severity differ, since a decline is a cancellation, not an error.
+ * (the Decided Override: one release rule) — the wording/severity split is
+ * `describeWithheldGroups`'s job (pure, unit-tested); this function is only
+ * the IO side effect (aggregator log, toast, notification).
  */
 function reportWithheldGroups(
   withheldIds: readonly string[],
@@ -2846,26 +2855,18 @@ function reportWithheldGroups(
   aggregatorId: string | null,
   cause: 'failure' | 'cancelled',
 ): void {
-  if (withheldIds.length === 0) return;
-  const names = withheldIds
-    .map((id) => groupsById.get(id)?.name ?? id)
-    .join(', ');
+  const report = describeWithheldGroups({ withheldIds, groupsById, cause });
+  if (!report) return;
   if (aggregatorId) {
     processManager.pushLog(aggregatorId, {
       ts: Date.now(),
       stream: 'sys',
-      level: cause === 'failure' ? 'error' : 'warn',
-      line:
-        cause === 'failure'
-          ? `── Auto-start withheld for: ${names} (pipeline failed) ──`
-          : `── Auto-start withheld for: ${names} (pipeline cancelled) ──`,
+      level: report.aggregatorLevel,
+      line: report.aggregatorLine,
     });
   }
-  const message = `Auto-arranque retenido para: ${names}`;
-  // A decline is a cancellation, never an error — 'ok' is the only styled
-  // non-error toast kind this app has (see styles.css .toast.ok/.toast.error).
-  broadcastToast(cause === 'failure' ? 'error' : 'ok', message);
-  showCompletionNotification('DevBar — pre-scripts', message);
+  broadcastToast(report.toastKind, report.message);
+  showCompletionNotification('DevBar — pre-scripts', report.message);
 }
 
 // ─────────────────────── Scheduled auto-run ──────────────────────────
