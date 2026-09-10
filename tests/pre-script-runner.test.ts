@@ -373,7 +373,18 @@ describe('createPreScriptRunner — run()', () => {
         makeScript({ id: 'sc3', name: 'C' }),
       ],
     });
-    const pm = makeMockPM({ 'pre:g1:sc1': { code: 1 } });
+    // sc2/sc3 ARE configured with a real success behaviour (unlike a bare
+    // "not configured" pid): if the abort-on-first-failure guard regressed,
+    // processManager.start() would actually run and flip their state away
+    // from 'stopped'. getState, not getLogs, is what can prove "never
+    // started" — the runner only ever pushes logs under the aggregator id
+    // (sdd-verify W4), so a per-script getLogs() is always empty regardless
+    // of whether the script ran.
+    const pm = makeMockPM({
+      'pre:g1:sc1': { code: 1 },
+      'pre:g1:sc2': { code: 0 },
+      'pre:g1:sc3': { code: 0 },
+    });
     const runner = createPreScriptRunner({
       processManager: pm,
       configStore: makeConfigStore([group], steps),
@@ -383,8 +394,8 @@ describe('createPreScriptRunner — run()', () => {
 
     const res = await runner.run();
     expect(res.ok).toBe(false);
-    expect(pm.getLogs('pre:g1:sc2').length).toBe(0);
-    expect(pm.getLogs('pre:g1:sc3').length).toBe(0);
+    expect(pm.getState('pre:g1:sc2').status).toBe('stopped');
+    expect(pm.getState('pre:g1:sc3').status).toBe('stopped');
   });
 
   it('serial step: the second ref does not start until the first completes (no overlap)', async () => {
@@ -1209,9 +1220,12 @@ describe('createPreScriptRunner — confirmation gate', () => {
       preScripts: [makeScript({ id: 'sc1', name: 'A', confirm: true })],
     });
     const steps = [makeStep('s1', 'serial', [ref('g1', 'sc1')])];
-    // sc1 intentionally not configured in pm — if start() were called it
-    // would error.
-    const pm = makeMockPM({});
+    // sc1 IS configured with a real success behaviour (unlike a bare
+    // "not configured" pid) so a regression that calls start() despite the
+    // decline actually flips its state away from 'stopped' — getState is
+    // what can prove "never started"; getLogs cannot, since the runner only
+    // ever pushes logs under the aggregator id (sdd-verify W4).
+    const pm = makeMockPM({ 'pre:g1:sc1': { code: 0 } });
     const confirmScript = vi.fn().mockResolvedValue(false);
     const onError = vi.fn();
     const runner = createPreScriptRunner({
@@ -1229,7 +1243,7 @@ describe('createPreScriptRunner — confirmation gate', () => {
     expect(res.error).toBe('cancelled');
     expect(onError).not.toHaveBeenCalled();
     expect(confirmScript).toHaveBeenCalledTimes(1);
-    expect(pm.getLogs('pre:g1:sc1').length).toBe(0);
+    expect(pm.getState('pre:g1:sc1').status).toBe('stopped');
     const rr = runner.getRecentResult();
     expect(rr == null || rr.status !== 'error').toBe(true);
     const lines = getAggregatorLines(pm);
@@ -1259,7 +1273,9 @@ describe('createPreScriptRunner — confirmation gate', () => {
     expect(res.cancelled).toBe(true);
     expect(res.error).toBe('cancelled');
     expect(onError).not.toHaveBeenCalled();
-    expect(pm.getLogs('pre:g1:sc1').length).toBe(0);
+    // sc1 IS configured with a real success behaviour — see the getState
+    // rationale on the R2.3 test above (sdd-verify W4).
+    expect(pm.getState('pre:g1:sc1').status).toBe('stopped');
   });
 
   it('R2.7: a real script failure (exit≠0) stays a failure — NOT cancelled — and calls onError', async () => {
