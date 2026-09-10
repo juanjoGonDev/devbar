@@ -652,20 +652,21 @@ function cancelGrab(doc: Document): void {
 }
 
 /**
- * Wires keyboard grab-and-move onto every `.drag-handle` inside `container`,
- * shared by `attachDragHandlers` and `attachCrossContainerDragHandlers` so
- * both give all five lists identical keyboard behaviour from one place.
+ * Registers a container for keyboard reordering.
  *
- * Some of this module's containers (the groups nav list) are a STABLE
- * element reused across every re-render — the caller re-invokes
- * `attachDragHandlers` on the very same node each time, which is how the
- * existing pointer listeners already (harmlessly) accumulate, since a
- * pointer drag is idempotent when repeated. The keyboard state machine below
- * is NOT idempotent under duplicate listeners (one keypress would be
- * processed once per accumulated listener), so the listeners themselves are
- * attached at most once per container element, tracked via a dataset flag;
- * re-enhancing `.drag-handle` attributes on every call stays safe either way.
+ * The key listener is attached ONCE PER DOCUMENT, not per container, and the
+ * owning container is resolved by walking up from the focused handle. That is
+ * deliberate: these containers nest (a pipeline script list lives inside the
+ * step list, and both are registered), so a per-container listener meant one
+ * keypress reached two of them — the inner one grabbing the row and the outer
+ * one reading the very same key as a drop. With a single listener there is no
+ * propagation between listeners to reason about, no `stopPropagation` to
+ * remember in five branches, and no need to guard against listeners piling up
+ * on a container the caller re-registers on every render.
  */
+const keyboardAdapters = new WeakMap<HTMLElement, KeyboardReorderAdapter>();
+const keyboardWiredDocuments = new WeakSet<Document>();
+
 function attachKeyboardReordering(
   container: HTMLElement,
   adapter: KeyboardReorderAdapter,
@@ -674,15 +675,36 @@ function attachKeyboardReordering(
     .querySelectorAll<HTMLElement>('.drag-handle')
     .forEach((handle) => enhanceHandle(handle, container.ownerDocument));
 
-  if (container.dataset.dndKeyboardWired === 'true') return;
-  container.dataset.dndKeyboardWired = 'true';
+  // Re-registering the same container just refreshes its adapter, so the
+  // caller may call this on every render.
+  container.dataset.dndKeyboard = 'true';
+  keyboardAdapters.set(container, adapter);
+  wireDocumentKeyboard(container.ownerDocument);
+}
 
-  container.addEventListener('keydown', (event) => {
+/** The registered container nearest the handle owns it: exactly one wins, by
+ * DOM distance, with no dependence on listener order or event propagation. */
+function ownerOf(handle: HTMLElement): {
+  container: HTMLElement;
+  adapter: KeyboardReorderAdapter;
+} | null {
+  const container = handle.closest<HTMLElement>('[data-dnd-keyboard="true"]');
+  const adapter = container ? keyboardAdapters.get(container) : undefined;
+  return container && adapter ? { container, adapter } : null;
+}
+
+function wireDocumentKeyboard(doc: Document): void {
+  if (keyboardWiredDocuments.has(doc)) return;
+  keyboardWiredDocuments.add(doc);
+
+  doc.addEventListener('keydown', (event) => {
     if (!(event instanceof KeyboardEvent)) return;
     const handle = asElement(event.target)?.closest<HTMLElement>(
       '.drag-handle',
     );
     if (!handle) return;
+    const owner = ownerOf(handle);
+    if (!owner) return;
     const card = handle.closest<HTMLElement>('[data-id]');
     const itemId = card?.dataset.id;
     if (!card || !itemId) return;
@@ -690,21 +712,14 @@ function attachKeyboardReordering(
     if (!grabbed) {
       if (event.key !== ' ' && event.key !== 'Enter') return;
       event.preventDefault();
-      // The OWNING container claims the key. These listeners are delegated,
-      // and a script list sits inside `stepsRoot`, which is wired too: the
-      // inner listener grabs, the same event reaches the outer one, and with
-      // `grabbed.handle === handle` it reads that very key as a drop. Without
-      // this the item is grabbed and dropped in one press and the arrows can
-      // never move it. Same reason the pointer path stops propagation.
-      event.stopPropagation();
-      const containers = adapter.snapshotContainers();
-      const containerId = adapter.containerIdOf(card);
+      const containers = owner.adapter.snapshotContainers();
+      const containerId = owner.adapter.containerIdOf(card);
       const home = containers.find((c) => c.id === containerId);
       const index = home ? home.itemIds.indexOf(itemId) : -1;
       if (!home || index < 0) return;
       const itemName = resolveLabel(card) ?? 'elemento sin nombre';
       grabbed = {
-        adapter,
+        adapter: owner.adapter,
         handle,
         itemId,
         itemName,
@@ -719,7 +734,7 @@ function attachKeyboardReordering(
       };
       card.classList.add('dragging');
       announce(
-        container.ownerDocument,
+        doc,
         `Agarrado «${itemName}». Flechas para mover, Enter para soltar, Escape para cancelar.`,
       );
       return;
@@ -729,25 +744,21 @@ function attachKeyboardReordering(
 
     if (event.key === 'Escape') {
       event.preventDefault();
-      event.stopPropagation();
-      cancelGrab(container.ownerDocument);
+      cancelGrab(doc);
     } else if (event.key === ' ' || event.key === 'Enter') {
       event.preventDefault();
-      event.stopPropagation();
-      dropGrab(container.ownerDocument);
+      dropGrab(doc);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      event.stopPropagation();
-      moveGrab('up', container.ownerDocument);
+      moveGrab('up', doc);
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
-      event.stopPropagation();
-      moveGrab('down', container.ownerDocument);
+      moveGrab('down', doc);
     }
   });
 
-  container.addEventListener('focusout', (event) => {
+  doc.addEventListener('focusout', (event) => {
     if (!grabbed || event.target !== grabbed.handle) return;
-    cancelGrab(container.ownerDocument);
+    cancelGrab(doc);
   });
 }
