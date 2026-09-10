@@ -133,8 +133,90 @@ function applyV3Migration(value: {
     // Only when legacy data was actually hoisted. A store mislabelled v3 that
     // already holds v4 data has zero contributors, and the AND-fold would
     // silently turn OFF an auto-run the payload had enabled.
-    autoRun: migrated.changed ? migrated.preScriptsAutoRun : undefined,
+    // Gate on real contributors, NOT on `changed`: an empty legacy
+    // `preSteps: []` flips `changed` while contributing nothing, and the
+    // AND-fold would then turn OFF an auto-run the payload had enabled.
+    // Same guard `planStoreMigration` uses on the live-store path.
+    autoRun:
+      migrated.preScriptsAutoRunContributors > 0
+        ? migrated.preScriptsAutoRun
+        : undefined,
   };
+}
+
+/**
+ * Validates the global pipeline against the rest of the payload.
+ *
+ * This importer is the only place that sees the WHOLE payload at once, so it
+ * is the only place three invariants the editor maintains by construction can
+ * be checked: refs resolve, step ids are unique, and a script is placed in at
+ * most one step. Hand-edited or third-party JSON honours none of them.
+ *
+ * Extracted from `validateImportedConfig` to keep it under the repo's
+ * complexity ceiling.
+ */
+function validatePipelineSteps(
+  rawSteps: readonly unknown[],
+  groupIds: ReadonlySet<string>,
+  scriptIdsByGroup: ReadonlyMap<string, Set<string>>,
+): { ok: true; steps: PreStep[] } | { ok: false; error: string } {
+  const steps: PreStep[] = [];
+  const usedStepIds = new Set<string>();
+  // A ref in two steps shares one process id, so the later placement never
+  // really runs — and it still delays that group's autoStart release to the
+  // later step. `assignScriptToStep` enforces this in the editor.
+  const placedRefs = new Set<string>();
+
+  for (let stepIndex = 0; stepIndex < rawSteps.length; stepIndex++) {
+    const rawStep = record(rawSteps[stepIndex]);
+    if (
+      rawStep.mode !== undefined &&
+      rawStep.mode !== 'parallel' &&
+      rawStep.mode !== 'serial'
+    )
+      return { ok: false, error: `Paso #${stepIndex} con mode inválido` };
+    if (rawStep.scripts !== undefined && !isUnknownArray(rawStep.scripts))
+      return { ok: false, error: `Paso #${stepIndex} scripts debe ser array` };
+
+    const rawRefs = isUnknownArray(rawStep.scripts) ? rawStep.scripts : [];
+    for (const candidate of rawRefs) {
+      const ref = record(candidate);
+      const groupId = typeof ref.groupId === 'string' ? ref.groupId : '';
+      const scriptId = typeof ref.scriptId === 'string' ? ref.scriptId : '';
+      const resolves =
+        groupId !== '' &&
+        scriptId !== '' &&
+        groupIds.has(groupId) &&
+        Boolean(scriptIdsByGroup.get(groupId)?.has(scriptId));
+      if (!resolves)
+        return {
+          ok: false,
+          error: `Paso #${stepIndex} referencia un grupo o script inexistente`,
+        };
+    }
+
+    // Checked on the NORMALIZED step: a missing id is minted as a fresh uuid
+    // (never a false duplicate), while a provided one is kept as-is.
+    const step = normalizePreStep(rawStep);
+    if (usedStepIds.has(step.id))
+      return {
+        ok: false,
+        error: `Paso #${stepIndex} repite el id de otro paso`,
+      };
+    usedStepIds.add(step.id);
+
+    for (const ref of step.scripts) {
+      const key = `${ref.groupId}/${ref.scriptId}`;
+      if (placedRefs.has(key))
+        return {
+          ok: false,
+          error: `Paso #${stepIndex} coloca un script que ya está en otro paso`,
+        };
+      placedRefs.add(key);
+    }
+    steps.push(step);
+  }
+  return { ok: true, steps };
 }
 
 export function validateImportedConfig(value: unknown): ImportValidation {
@@ -265,39 +347,13 @@ export function validateImportedConfig(value: unknown): ImportValidation {
   // Only this importer sees the whole payload at once, so this is the one
   // place a pipeline ref's cross-reference (does {groupId,scriptId} resolve
   // to a real script in this SAME payload?) can be validated.
-  const groupIds = new Set(cleanGroups.map((group) => group.id));
-  const cleanSteps: PreStep[] = [];
-  for (let stepIndex = 0; stepIndex < preStepsInput.length; stepIndex++) {
-    const rawStep = record(preStepsInput[stepIndex]);
-    if (
-      rawStep.mode !== undefined &&
-      rawStep.mode !== 'parallel' &&
-      rawStep.mode !== 'serial'
-    )
-      return { ok: false, error: `Paso #${stepIndex} con mode inválido` };
-    if (rawStep.scripts !== undefined && !isUnknownArray(rawStep.scripts))
-      return {
-        ok: false,
-        error: `Paso #${stepIndex} scripts debe ser array`,
-      };
-    const rawRefs = isUnknownArray(rawStep.scripts) ? rawStep.scripts : [];
-    for (const candidate of rawRefs) {
-      const ref = record(candidate);
-      const groupId = typeof ref.groupId === 'string' ? ref.groupId : '';
-      const scriptId = typeof ref.scriptId === 'string' ? ref.scriptId : '';
-      const resolves =
-        groupId !== '' &&
-        scriptId !== '' &&
-        groupIds.has(groupId) &&
-        Boolean(scriptIdsByGroup.get(groupId)?.has(scriptId));
-      if (!resolves)
-        return {
-          ok: false,
-          error: `Paso #${stepIndex} referencia un grupo o script inexistente`,
-        };
-    }
-    cleanSteps.push(normalizePreStep(rawStep));
-  }
+  const stepsResult = validatePipelineSteps(
+    preStepsInput,
+    new Set(cleanGroups.map((group) => group.id)),
+    scriptIdsByGroup,
+  );
+  if (!stepsResult.ok) return { ok: false, error: stepsResult.error };
+  const cleanSteps = stepsResult.steps;
 
   const settings = record(value.globalSettings);
   const cleanGlobalSettings: Partial<GlobalSettings> = {

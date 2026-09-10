@@ -313,6 +313,99 @@ describe('validateImportedConfig — rejects malformed pipeline shapes (v4)', ()
 // ─── v3 payload imports as v4 (backward compatible) ────────────────────────────
 
 describe('validateImportedConfig — v3 payload imports as v4 (backward compatible)', () => {
+  it('keeps preScriptsAutoRun when a v3 group has an empty legacy preSteps', () => {
+    // `changed` goes true for the empty legacy key, but nothing contributes,
+    // so the AND-fold must not overwrite the payload's own setting. Same
+    // guard planStoreMigration already uses on the live-store path.
+    const payload = {
+      version: 3,
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preSteps: [],
+        },
+      ],
+      globalSettings: {
+        autostart: false,
+        silenceWarnings: false,
+        silenceErrors: false,
+        preScriptsAutoRun: true,
+      },
+    };
+    const result = validateImportedConfig(payload);
+    expectValid(result);
+    expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
+  });
+
+  it('rejects two steps sharing an id', () => {
+    // savePreStep updates only the first match, deletePreStep removes every
+    // match, and reorderByIds keys a Map by id — a duplicate makes all three
+    // act on the wrong step.
+    const result = validateImportedConfig({
+      version: 4,
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preScripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+        },
+      ],
+      preSteps: [
+        {
+          id: 'dup',
+          mode: 'serial',
+          scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+        },
+        { id: 'dup', mode: 'serial', scripts: [] },
+      ],
+      globalSettings: {},
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects the same script placed in two different steps', () => {
+    // Both placements share one pid, so the second never really runs, and the
+    // group's autoStart release is pushed out to the later step.
+    const result = validateImportedConfig({
+      version: 4,
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preScripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+        },
+      ],
+      preSteps: [
+        {
+          id: 'st1',
+          mode: 'serial',
+          scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+        },
+        {
+          id: 'st2',
+          mode: 'serial',
+          scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+        },
+      ],
+      globalSettings: {},
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it('keeps the payload preScriptsAutoRun when a v3 label carries v4 data', () => {
     // A store mislabelled v3 that already holds v4 data has zero legacy
     // contributors, so the AND-fold would resolve to false and silently turn
