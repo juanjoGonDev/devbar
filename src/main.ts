@@ -42,8 +42,18 @@ import {
 import { loadShellPath, expandTilde } from './path-helper.js';
 import { mergeNewestByTs } from './merge-logs.js';
 import { RepoWatcher } from './repo-watcher.js';
-import { makeCommandId, makeActionId, parseProcessId } from './compound-id.js';
+import {
+  makeCommandId,
+  makeActionId,
+  parseProcessId,
+  type ParsedProcessId,
+} from './compound-id.js';
 import { createPreScriptRunner } from './pre-script-runner.js';
+import {
+  planAutoStartRelease,
+  withheldGroupIds,
+  type AutoStartPlan,
+} from './autostart-schedule.js';
 import { ICON_BATTERY } from './icon-battery.js';
 import type {
   Action,
@@ -61,6 +71,7 @@ import type {
   LogSource,
   LogListGroup,
   LogListItem,
+  PipelineState,
   PrescriptConfirmContext,
   SilenceLevel,
   TrayColor,
@@ -165,6 +176,7 @@ function ipcGlobalSettingsPatch(
     'silenceWarnings',
     'silenceErrors',
     'notifySuccess',
+    'preScriptsAutoRun',
   ] as const) {
     if (raw[field] !== undefined) {
       if (typeof raw[field] !== 'boolean')
@@ -237,7 +249,6 @@ interface PendingConfirm {
   resolve: (confirmed: boolean) => void;
   timer: NodeJS.Timeout | null;
   win: BrowserWindow | null;
-  groupId: string;
   context: PrescriptConfirmContext;
 }
 const pendingConfirms = new Map<string, PendingConfirm>();
@@ -268,9 +279,10 @@ function resolvePrescriptConfirm(
   entry.resolve(decision === 'confirm');
 }
 
-function cancelConfirm(groupId: string): void {
-  for (const [token, entry] of pendingConfirms) {
-    if (entry.groupId === groupId) resolvePrescriptConfirm(token, 'cancel');
+/** Cancels every pending pre-script confirmation — the pipeline is global now, so a cancel is never scoped to one group. */
+function cancelConfirm(): void {
+  for (const [token] of pendingConfirms) {
+    resolvePrescriptConfirm(token, 'cancel');
   }
 }
 
@@ -279,7 +291,6 @@ function showConfirmModal(
     PreScript,
     'name' | 'command' | 'args' | 'confirmSecs' | 'confirmOnTimeout'
   >,
-  groupId: string,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const token = crypto.randomUUID();
@@ -287,7 +298,6 @@ function showConfirmModal(
       resolve,
       timer: null,
       win: null,
-      groupId,
       context: {
         name: script.name,
         command: [script.command, ...(script.args || [])].join(' ').trim(),
@@ -317,9 +327,9 @@ function confirmScript(
     'name' | 'command' | 'args' | 'confirmSecs' | 'confirmOnTimeout'
   >,
   _group: Group | null,
-  groupId: string,
+  _groupId: string,
 ): Promise<boolean> {
-  const run = () => showConfirmModal(script, groupId); // always resolves boolean, never rejects
+  const run = () => showConfirmModal(script); // always resolves boolean, never rejects
   const result = confirmChain.then(run, run);
   confirmChain = result.then(
     () => undefined,
@@ -355,17 +365,40 @@ function confirmIfNeeded(
   );
 }
 
+// ── Staged auto-start release (D2/D7) ───────────────────────────────────
+// Set only while `autoStartAllMarkedCommands` awaits the BOOT-time pipeline
+// run; read by `onStepComplete` below to release each eligible group's
+// autoStart commands as soon as its LAST referencing step clears. Null the
+// rest of the time — including during a manual, tray-triggered run —
+// because releasing autoStart commands is exclusively a boot concern, same
+// as before this migration.
+let activeAutoStartRelease: {
+  plan: AutoStartPlan;
+  groupsById: ReadonlyMap<string, Group>;
+  fired: Set<number>;
+} | null = null;
+
 const preScriptRunner = createPreScriptRunner({
   processManager,
   configStore,
   broadcastUpdate: () => broadcast(),
+  onStepComplete: ({ stepIndex }) => {
+    const active = activeAutoStartRelease;
+    if (!active) return;
+    active.fired.add(stepIndex);
+    for (const groupId of active.plan.releases.get(stepIndex) ?? []) {
+      const group = active.groupsById.get(groupId);
+      if (group) startGroupAutoStartCommands(group);
+    }
+  },
   onError: (err: string, _ctx) => {
     broadcastToast('error', `Pre-scripts: ${err}`);
   },
-  onSuccess: ({ group }: { group: Group }) => {
+  onSuccess: ({ stepCount }: { runId: number; stepCount: number }) => {
+    // Pipeline-level messaging now — there is no single "the" group anymore.
     showCompletionNotification(
       'DevBar — pre-scripts',
-      `${group ? group.name : 'Grupo'}: pre-scripts completados`,
+      `Pipeline completado (${stepCount} paso${stepCount === 1 ? '' : 's'})`,
     );
   },
   confirmScript,
@@ -378,6 +411,14 @@ let forceCloseConfig = false;
 // Key '@main' is the shared multi-log window (sidebar + one visible log);
 // any other key is a processId detached into its own window.
 const MAIN_LOGS_KEY = '@main';
+/**
+ * Sentinel "group" id for the pipeline aggregator log's own top-level bucket
+ * in `logs:list`/`getMergedSources` — the pipeline is global now and must
+ * never nest under any real group (never collides with a real group id,
+ * which is always a `crypto.randomUUID()`).
+ */
+const PIPELINE_LOG_GROUP_ID = '__pipeline__';
+const PIPELINE_LOG_NAME = 'Pipeline de pre-scripts';
 const logsWindows = new Map<string, BrowserWindow>();
 // Which log the shared window is currently showing — it only receives lines
 // for that one, so N running services don't flood it with N streams.
@@ -414,9 +455,10 @@ const stagingFailedVersions = new Set<string>(); // don't retry a bad download a
 // Group-level transient errors (not persisted)
 const groupErrors = new Map<string, string | null>();
 
-// Last pre-script pipeline run id per group. Kept beyond the recent-result
-// badge TTL so the tray can still open that run's (still-retained) log buffer.
-const lastPreScriptRunId = new Map<string, string>();
+// Last pipeline run id — one global pipeline now, not one per group. Kept
+// beyond the recent-result badge TTL so the tray can still open that run's
+// (still-retained) log buffer.
+let lastPipelineRunId: string | null = null;
 
 // Action pids started by the scheduler, awaiting their action:done so we can
 // fire a completion notification (manual runs don't notify — you're watching).
@@ -498,34 +540,6 @@ function snapshotGroupStates(): GroupState[] {
       if (anyErr) groupColor = 'error';
     }
 
-    // Pre-scripts runtime fields
-    const runState = preScriptRunner.getRunState(group.id);
-    const recentResult = preScriptRunner.getRecentResult(group.id);
-    const preScriptsStatus = runState
-      ? runState.status
-      : recentResult
-        ? recentResult.status
-        : 'idle';
-    const preScriptsCurrentStep = runState ? runState.currentStep : null;
-    const preScriptsTotalSteps = runState
-      ? runState.totalSteps
-      : (group.preSteps || []).length;
-    const preScriptsLastError =
-      recentResult && recentResult.status === 'error'
-        ? recentResult.error
-        : null;
-    // The live run id (running / within the recent-result TTL). Persist it per
-    // group so the tray's "ver logs del pipeline" button survives after the
-    // status badge clears — the aggregator log buffer itself outlives the badge.
-    const liveRunId = runState
-      ? String(runState.runId)
-      : recentResult
-        ? String(recentResult.runId)
-        : null;
-    if (liveRunId) lastPreScriptRunId.set(group.id, liveRunId);
-    const preScriptsLastRunId =
-      liveRunId || lastPreScriptRunId.get(group.id) || null;
-
     return {
       groupId: group.id,
       group,
@@ -534,20 +548,68 @@ function snapshotGroupStates(): GroupState[] {
       commands: commandStates,
       actions: actionStates,
       lastError: groupErrors.get(group.id) || null,
-      preScriptsStatus,
-      preScriptsCurrentStep,
-      preScriptsTotalSteps,
-      preScriptsLastError,
-      preScriptsLastRunId,
-      preScriptsStartedAt: runState ? runState.startedAt : null,
     };
   });
+}
+
+/**
+ * Runtime state of the ONE global pre-script pipeline (D2/D7). Computed once
+ * per broadcast rather than once per group, now that the pipeline itself is
+ * global — this is the successor to the "Pre-scripts runtime fields" block
+ * that used to live inside `snapshotGroupStates`'s per-group loop.
+ */
+function snapshotPipelineState(): PipelineState {
+  const runState = preScriptRunner.getRunState();
+  const recentResult = preScriptRunner.getRecentResult();
+  const status = runState
+    ? runState.status
+    : recentResult
+      ? recentResult.status
+      : 'idle';
+  const currentStep = runState ? runState.currentStep : null;
+  const totalSteps = runState
+    ? runState.totalSteps
+    : configStore.getPreSteps().length;
+  const lastError =
+    recentResult && recentResult.status === 'error' ? recentResult.error : null;
+  // The live run id (running / within the recent-result TTL). Persisted
+  // beyond both so the tray's "ver logs del pipeline" button survives after
+  // the status badge clears — the aggregator log buffer itself outlives it.
+  const liveRunId = runState
+    ? String(runState.runId)
+    : recentResult
+      ? String(recentResult.runId)
+      : null;
+  if (liveRunId) lastPipelineRunId = liveRunId;
+  return {
+    status,
+    currentStep,
+    totalSteps,
+    lastError,
+    lastRunId: liveRunId || lastPipelineRunId,
+    startedAt: runState ? runState.startedAt : null,
+  };
 }
 
 function broadcast() {
   const payload = snapshotGroupStates();
   for (const wc of rendererTargets()) wc.send('groups:update', payload);
+  const pipelinePayload = snapshotPipelineState();
+  for (const wc of rendererTargets())
+    wc.send('pipeline:update', pipelinePayload);
   updateTrayTitle(payload);
+}
+
+/**
+ * The merged-scope "group" a process id belongs to: a real groupId for
+ * command/action/prescript, the pipeline's sentinel bucket for the
+ * aggregator log (it belongs to no single group), and null for `unknown`
+ * (belongs to no merged scope at all).
+ */
+function mergedScopeGroupId(parsed: ParsedProcessId): string | null {
+  if (parsed.kind === 'unknown') return null;
+  if (parsed.kind === 'preAggregator') return PIPELINE_LOG_GROUP_ID;
+  return parsed.groupId;
 }
 
 function broadcastLog(payload: { id: string; entry: LogEntry }): void {
@@ -560,8 +622,7 @@ function broadcastLog(payload: { id: string; entry: LogEntry }): void {
   const inScope =
     mainLogsScope !== null &&
     (mainLogsScope.groupId === null ||
-      // `unknown` carries no group, so it belongs to no merged scope.
-      (parsed.kind !== 'unknown' && parsed.groupId === mainLogsScope.groupId));
+      mergedScopeGroupId(parsed) === mainLogsScope.groupId);
   if (
     main &&
     !main.isDestroyed() &&
@@ -1625,21 +1686,20 @@ function registerIpc() {
   );
 
   // ── Pre-scripts ───────────────────────────────────────────────────────
-  ipcMain.handle('prescripts:run', (_e: IpcMainInvokeEvent, payload: unknown) =>
-    preScriptRunner.run(ipcStringField(payload, 'groupId')),
-  );
-  ipcMain.handle(
-    'prescripts:cancel',
-    (_e: IpcMainInvokeEvent, payload: unknown) =>
-      preScriptRunner.cancel(ipcStringField(payload, 'groupId')),
-  );
+  // One global pipeline now: run/cancel take no groupId (D2/D7).
+  ipcMain.handle('prescripts:run', () => preScriptRunner.run());
+  ipcMain.handle('prescripts:cancel', () => preScriptRunner.cancel());
+
+  // Pipeline CONFIG (the ordered steps) — mirrors the groups:list/groups:save
+  // split; runtime state is broadcast separately on pipeline:update.
+  ipcMain.handle('pipeline:list', () => configStore.getPreSteps());
+  ipcMain.handle('pipeline:state', () => snapshotPipelineState());
 
   ipcMain.handle(
     'preSteps:save',
     (_e: IpcMainInvokeEvent, payload: unknown) => {
       const raw = ipcRecord(payload);
-      const groupId = ipcString(raw.groupId, 'groupId');
-      const result = configStore.savePreStep(groupId, raw.data);
+      const result = configStore.savePreStep(raw.data);
       broadcast();
       return result;
     },
@@ -1647,9 +1707,8 @@ function registerIpc() {
   ipcMain.handle(
     'preSteps:delete',
     (_e: IpcMainInvokeEvent, payload: unknown) => {
-      const groupId = ipcStringField(payload, 'groupId');
       const stepId = ipcStringField(payload, 'stepId');
-      configStore.deletePreStep(groupId, stepId);
+      configStore.deletePreStep(stepId);
       broadcast();
       return { ok: true };
     },
@@ -1657,11 +1716,45 @@ function registerIpc() {
   ipcMain.handle(
     'preSteps:reorder',
     (_e: IpcMainInvokeEvent, payload: unknown) => {
-      const groupId = ipcStringField(payload, 'groupId');
       const orderedIds = ipcStringArrayField(payload, 'orderedIds');
-      configStore.reorderPreSteps(groupId, orderedIds);
+      configStore.reorderPreSteps(orderedIds);
       broadcast();
       return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    'preSteps:assignScript',
+    (_e: IpcMainInvokeEvent, payload: unknown) => {
+      const raw = ipcRecord(payload);
+      const stepId = ipcString(raw.stepId, 'stepId');
+      const groupId = ipcString(raw.groupId, 'groupId');
+      const scriptId = ipcString(raw.scriptId, 'scriptId');
+      const position =
+        typeof raw.position === 'number' ? raw.position : undefined;
+      const result = configStore.assignScriptToStep(
+        stepId,
+        groupId,
+        scriptId,
+        position,
+      );
+      broadcast();
+      return result;
+    },
+  );
+  ipcMain.handle(
+    'preSteps:unassignScript',
+    (_e: IpcMainInvokeEvent, payload: unknown) => {
+      const raw = ipcRecord(payload);
+      const stepId = ipcString(raw.stepId, 'stepId');
+      const groupId = ipcString(raw.groupId, 'groupId');
+      const scriptId = ipcString(raw.scriptId, 'scriptId');
+      const result = configStore.unassignScriptFromStep(
+        stepId,
+        groupId,
+        scriptId,
+      );
+      broadcast();
+      return result;
     },
   );
   ipcMain.handle(
@@ -1669,8 +1762,7 @@ function registerIpc() {
     (_e: IpcMainInvokeEvent, payload: unknown) => {
       const raw = ipcRecord(payload);
       const groupId = ipcString(raw.groupId, 'groupId');
-      const stepId = ipcString(raw.stepId, 'stepId');
-      const result = configStore.savePreScript(groupId, stepId, raw.data);
+      const result = configStore.savePreScript(groupId, raw.data);
       broadcast();
       return result;
     },
@@ -1679,9 +1771,8 @@ function registerIpc() {
     'preScripts:delete',
     (_e: IpcMainInvokeEvent, payload: unknown) => {
       const groupId = ipcStringField(payload, 'groupId');
-      const stepId = ipcStringField(payload, 'stepId');
       const scriptId = ipcStringField(payload, 'scriptId');
-      configStore.deletePreScript(groupId, stepId, scriptId);
+      configStore.deletePreScript(groupId, scriptId);
       broadcast();
       return { ok: true };
     },
@@ -1690,9 +1781,8 @@ function registerIpc() {
     'preScripts:reorder',
     (_e: IpcMainInvokeEvent, payload: unknown) => {
       const groupId = ipcStringField(payload, 'groupId');
-      const stepId = ipcStringField(payload, 'stepId');
       const orderedIds = ipcStringArrayField(payload, 'orderedIds');
-      configStore.reorderPreScripts(groupId, stepId, orderedIds);
+      configStore.reorderPreScripts(groupId, orderedIds);
       broadcast();
       return { ok: true };
     },
@@ -1938,11 +2028,20 @@ function registerIpc() {
    * snapshotting happen in the same tick so no line is both replayed and
    * streamed.
    */
-  /** Sources of a merged scope: null groupId means every group. */
+  /**
+   * Sources of a merged scope: null groupId means every group;
+   * `PIPELINE_LOG_GROUP_ID` means the pipeline's own top-level bucket. The
+   * pipeline aggregator log is a sibling of group buckets — it surfaces in
+   * the "every group" view and in its own scope, but never inside a real
+   * group's merged view (it belongs to no single group).
+   */
   const collectMergedSources = (groupId: string | null): LogSource[] => {
-    const groups = groupId
-      ? [configStore.getGroup(groupId)].filter((g) => g !== null)
-      : configStore.listGroups();
+    const isPipelineScope = groupId === PIPELINE_LOG_GROUP_ID;
+    const groups = isPipelineScope
+      ? []
+      : groupId
+        ? [configStore.getGroup(groupId)].filter((g) => g !== null)
+        : configStore.listGroups();
     const sources: LogSource[] = [];
     for (const group of groups) {
       for (const command of group.commands || [])
@@ -1960,26 +2059,32 @@ function registerIpc() {
           groupName: group.name,
         });
     }
-    // Pre-scripts and their pipeline only exist once they have run, so they
-    // come from the retained buffers rather than from config — the same way
-    // `logs:list` finds them for the sidebar.
+    // Pre-scripts only exist once they have run, so they come from the
+    // retained buffers rather than from config — the same way `logs:list`
+    // finds them for the sidebar.
     const wanted = new Map(groups.map((group) => [group.id, group.name]));
     for (const { id } of processManager.listLogBuffers()) {
       const parsed = parseProcessId(id);
-      if (parsed.kind !== 'prescript' && parsed.kind !== 'preAggregator')
-        continue;
-      const groupName = wanted.get(parsed.groupId);
-      if (groupName === undefined) continue;
-      const resolved = processManager.resolveTarget(id);
-      sources.push({
-        id,
-        name:
-          parsed.kind === 'preAggregator'
-            ? 'Pipeline de pre-scripts'
-            : (resolved?.target.name ?? id),
-        groupId: parsed.groupId,
-        groupName,
-      });
+      if (parsed.kind === 'prescript') {
+        if (isPipelineScope) continue; // never attributed to the pipeline bucket
+        const groupName = wanted.get(parsed.groupId);
+        if (groupName === undefined) continue;
+        const resolved = processManager.resolveTarget(id);
+        sources.push({
+          id,
+          name: resolved?.target.name ?? id,
+          groupId: parsed.groupId,
+          groupName,
+        });
+      } else if (parsed.kind === 'preAggregator') {
+        if (groupId !== null && !isPipelineScope) continue; // never nested under a real group
+        sources.push({
+          id,
+          name: PIPELINE_LOG_NAME,
+          groupId: PIPELINE_LOG_GROUP_ID,
+          groupName: PIPELINE_LOG_NAME,
+        });
+      }
     }
     return sources;
   };
@@ -2022,9 +2127,12 @@ function registerIpc() {
         })),
         mergedSnapshotLimit(),
       );
-      const scopeName = groupId
-        ? (configStore.getGroup(groupId)?.name ?? '?')
-        : 'Telemetría';
+      const scopeName =
+        groupId === PIPELINE_LOG_GROUP_ID
+          ? PIPELINE_LOG_NAME
+          : groupId
+            ? (configStore.getGroup(groupId)?.name ?? '?')
+            : 'Telemetría';
       // An empty merged view has no way to explain itself from the renderer:
       // no sources and no buffers look identical on screen.
       console.log(
@@ -2074,6 +2182,21 @@ function registerIpc() {
           items: [],
         };
         groups.set(groupId, entry);
+      }
+      return entry;
+    };
+    // The pipeline aggregator log's own top-level bucket — a sibling of every
+    // group bucket, never nested under one (Aggregator Log Placement).
+    const pipelineEntry = (): LogListGroup => {
+      let entry = groups.get(PIPELINE_LOG_GROUP_ID);
+      if (!entry) {
+        entry = {
+          groupId: PIPELINE_LOG_GROUP_ID,
+          groupName: PIPELINE_LOG_NAME,
+          groupIcon: '🧬',
+          items: [],
+        };
+        groups.set(PIPELINE_LOG_GROUP_ID, entry);
       }
       return entry;
     };
@@ -2133,8 +2256,8 @@ function registerIpc() {
           item(id, 'prescript', resolved ? resolved.target.name : id, null),
         );
       } else if (parsed.kind === 'preAggregator') {
-        groupEntry(parsed.groupId).items.push(
-          item(id, 'pipeline', 'Pipeline de pre-scripts', null),
+        pipelineEntry().items.push(
+          item(id, 'pipeline', PIPELINE_LOG_NAME, null),
         );
       }
     }
@@ -2419,7 +2542,7 @@ function registerIpc() {
       try {
         const backupPath = configStore.writeImportBackup();
         await processManager.stopAll(); // wipes all log buffers…
-        lastPreScriptRunId.clear(); // …so stale run ids must not linger
+        lastPipelineRunId = null; // …so a stale run id must not linger
         configStore.replaceConfig(payload);
         syncRepoWatchers();
         applyAutostart(configStore.getGlobalSettings().autostart);
@@ -2495,16 +2618,13 @@ function registerIpc() {
           showCompletionNotification: (title, body) =>
             showCompletionNotification(title, body),
           openPrescriptConfirm: (name, command) => {
-            void showConfirmModal(
-              {
-                name,
-                command,
-                args: [],
-                confirmSecs: null,
-                confirmOnTimeout: 'cancel',
-              },
-              'dev',
-            );
+            void showConfirmModal({
+              name,
+              command,
+              args: [],
+              confirmSecs: null,
+              confirmOnTimeout: 'cancel',
+            });
           },
           toast: (kind, message) => broadcastToast(kind, message),
           // Not process.execPath: unpackaged that resolves to Electron's own
@@ -2629,11 +2749,17 @@ function registerIpc() {
  *   than one has autoStart:true (enforceSingleModeAutoStart should prevent that,
  *   but this is a belt-and-suspenders guard).
  * - Errors per command are logged and swallowed so the remaining commands still start.
- * - For groups with preSteps, the pipeline runs first (per group, in parallel via
- *   Promise.all — distinct groups are independent; ADR-3). If the pipeline fails,
- *   the group's autoStart commands are NOT started and a toast is shown.
+ * - The ONE global pipeline runs first, gated by `wasOpenedAtLogin` and the
+ *   global `preScriptsAutoRun` setting (Login Gate Unchanged). A group with
+ *   no scripts anywhere in the pipeline starts immediately; an eligible
+ *   group with scripts releases as soon as the LAST step referencing one of
+ *   them completes (D2/D7 staged release), not after the whole pipeline
+ *   finishes. On a genuine failure OR a declined confirmation, every group
+ *   still withheld at that point never starts — one release rule for both
+ *   causes (the Decided Override) — and is reported via the aggregator log
+ *   plus a toast/notification.
  */
-async function autoStartAllMarkedCommands() {
+async function autoStartAllMarkedCommands(): Promise<void> {
   // Only run pre-scripts when DevBar was launched by macOS at login —
   // i.e. on system boot — not on every manual app restart. This protects
   // the user from re-running expensive `make setup` style scripts every
@@ -2647,48 +2773,99 @@ async function autoStartAllMarkedCommands() {
         app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin
       ));
 
-  const groups = configStore.listGroups();
-  await Promise.all(
-    groups.map(async (group) => {
-      const eligible = (group.commands || []).filter(
-        (c) => c.autoStart === true,
+  const eligibleGroups = configStore
+    .listGroups()
+    .filter((group) =>
+      (group.commands || []).some((cmd) => cmd.autoStart === true),
+    );
+  if (eligibleGroups.length === 0) return;
+
+  const steps = configStore.getPreSteps();
+  const shouldRunPipeline =
+    wasOpenedAtLogin &&
+    configStore.getGlobalSettings().preScriptsAutoRun === true &&
+    steps.length > 0;
+
+  if (!shouldRunPipeline) {
+    for (const group of eligibleGroups) startGroupAutoStartCommands(group);
+    return;
+  }
+
+  const groupsById = new Map(eligibleGroups.map((group) => [group.id, group]));
+  const plan = planAutoStartRelease({
+    steps,
+    eligibleGroupIds: eligibleGroups.map((group) => group.id),
+  });
+  for (const groupId of plan.immediate) {
+    const group = groupsById.get(groupId);
+    if (group) startGroupAutoStartCommands(group);
+  }
+
+  const release = { plan, groupsById, fired: new Set<number>() };
+  activeAutoStartRelease = release;
+  try {
+    const res = await preScriptRunner.run();
+    if (!res.ok) {
+      const withheld = withheldGroupIds(plan, release.fired);
+      reportWithheldGroups(
+        withheld,
+        groupsById,
+        res.aggregatorId ?? null,
+        res.cancelled ? 'cancelled' : 'failure',
       );
-      if (eligible.length === 0) return;
+    }
+  } finally {
+    activeAutoStartRelease = null;
+  }
+}
 
-      // Run pre-scripts pipeline if:
-      // - the group has preSteps configured
-      // - the user opted in via `preScriptsAutoRun: true`
-      // - and DevBar was opened at login (not a manual restart)
-      const shouldRunPre =
-        group.preSteps &&
-        group.preSteps.length > 0 &&
-        group.preScriptsAutoRun === true &&
-        wasOpenedAtLogin;
-      if (shouldRunPre) {
-        const res = await preScriptRunner.run(group.id);
-        // A user cancellation (declined confirmation) is NOT a failure —
-        // skip the pre-scripts but STILL start the group's commands. Only a
-        // genuine pre-script failure blocks the auto-start.
-        if (!res.ok && !res.cancelled) {
-          broadcastToast(
-            'error',
-            `Pre-scripts ${group.name}: ${res.error || 'failed'}`,
-          );
-          return; // skip starting commands for this group
-        }
-      }
-
-      const toStart = group.mode === 'single' ? eligible.slice(0, 1) : eligible;
-      for (const cmd of toStart) {
-        const pid = makeCommandId(group.id, cmd.id);
-        try {
-          processManager.start(pid);
-        } catch (err) {
-          console.error(`autoStart failed for ${group.name}/${cmd.name}:`, err);
-        }
-      }
-    }),
+function startGroupAutoStartCommands(group: Group): void {
+  const eligible = (group.commands || []).filter(
+    (cmd) => cmd.autoStart === true,
   );
+  const toStart = group.mode === 'single' ? eligible.slice(0, 1) : eligible;
+  for (const cmd of toStart) {
+    const pid = makeCommandId(group.id, cmd.id);
+    try {
+      processManager.start(pid);
+    } catch (err) {
+      console.error(`autoStart failed for ${group.name}/${cmd.name}:`, err);
+    }
+  }
+}
+
+/**
+ * Names every group withheld by a pipeline failure or a declined
+ * confirmation. Same computation, same reporting machinery for both causes
+ * (the Decided Override: one release rule) — only the wording and toast
+ * severity differ, since a decline is a cancellation, not an error.
+ */
+function reportWithheldGroups(
+  withheldIds: readonly string[],
+  groupsById: ReadonlyMap<string, Group>,
+  aggregatorId: string | null,
+  cause: 'failure' | 'cancelled',
+): void {
+  if (withheldIds.length === 0) return;
+  const names = withheldIds
+    .map((id) => groupsById.get(id)?.name ?? id)
+    .join(', ');
+  if (aggregatorId) {
+    processManager.pushLog(aggregatorId, {
+      ts: Date.now(),
+      stream: 'sys',
+      level: cause === 'failure' ? 'error' : 'warn',
+      line:
+        cause === 'failure'
+          ? `── Auto-start withheld for: ${names} (pipeline failed) ──`
+          : `── Auto-start withheld for: ${names} (pipeline cancelled) ──`,
+    });
+  }
+  const message = `Auto-arranque retenido para: ${names}`;
+  // A decline is a cancellation, never an error — 'ok' is the only styled
+  // non-error toast kind this app has (see styles.css .toast.ok/.toast.error).
+  broadcastToast(cause === 'failure' ? 'error' : 'ok', message);
+  showCompletionNotification('DevBar — pre-scripts', message);
 }
 
 // ─────────────────────── Scheduled auto-run ──────────────────────────
@@ -2936,10 +3113,10 @@ app.on('before-quit', async () => {
   // `before-quit` fires the decision to quit is already made, so drop the veto.
   forceCloseConfig = true;
   repoWatcher.closeAll();
-  // Cancel any running pre-script pipelines
-  for (const groupId of preScriptRunner.running.keys()) {
+  // Cancel the pipeline run, if any — one global pipeline now, not one per group.
+  if (preScriptRunner.isRunning()) {
     try {
-      preScriptRunner.cancel(groupId);
+      preScriptRunner.cancel();
     } catch (_) {}
   }
   // Stop all running processes
