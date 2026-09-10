@@ -2115,14 +2115,18 @@ if (window.api && window.api.getUpdateStatus) {
 
 loadSettings();
 
-pipelineEditor = initPipelineEditor(
+// Captured in a `const` rather than read back off the mutable `pipelineEditor`
+// module binding: a `let` narrowed non-null by this very assignment is not
+// guaranteed to stay narrowed inside the async callback below.
+const editor = initPipelineEditor(
   byId('prescripts-pipeline-root', HTMLElement),
   { getGroups: () => allGroups, showToast },
 );
+pipelineEditor = editor;
 // The editor resolves every ref against `allGroups`, which `loadGroups()`
 // only fills once `listGroups()` resolves. Refreshing before that renders
 // perfectly valid refs as "Referencia rota".
-void loadGroups().then(() => pipelineEditor.refresh());
+void loadGroups().then(() => editor.refresh());
 
 // App version label next to the page title.
 if (window.api && window.api.getAppVersion) {
