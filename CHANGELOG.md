@@ -97,6 +97,38 @@ Todas las novedades relevantes de DevBar. El formato sigue
   se ajusta al desplegable y vuelve a su tamaño en cuanto deja de haber
   coincidencias.
 
+## [0.8.0] - 2026-09-10
+
+### Añadido
+
+- **Pipeline de pre-scripts global.** Los pasos de pre-scripts dejan de vivir
+  dentro de cada grupo por separado: ahora hay **un único pipeline ordenado**,
+  compartido por todos los grupos, con una nueva sección **«Pipeline»** en
+  Configuración. Cada paso puede mezclar scripts de distintos grupos y
+  ejecutarlos en paralelo o en serie; arrastra un script entre pasos para
+  reordenar el arranque.
+- El disparador **▶▶** de la barra pasa a ser **uno solo para todo el
+  pipeline**, con su propio log agregado, indicador de progreso y botón de
+  cancelar — ya no hay un disparador por grupo.
+- Al arrancar sesión, los comandos de auto-arranque de cada grupo se liberan
+  en cuanto termina el **último paso del pipeline que usa alguno de sus
+  scripts**, sin esperar a que termine el pipeline entero.
+
+### Cambiado
+
+- **El interruptor «ejecutar automáticamente al arrancar el Mac» de los
+  pre-scripts ahora es global**, no por grupo. Al actualizar, DevBar migra tu
+  configuración anterior de forma conservadora: el ajuste global sólo queda
+  **activado** si TODOS los grupos que aportaban pasos al pipeline lo tenían
+  activado; si alguno lo tenía desactivado, el nuevo ajuste global queda
+  **desactivado**. **Revisa este ajuste en la sección «Pipeline» después de
+  actualizar** si dependías del auto-arranque de pre-scripts al iniciar
+  sesión.
+- Si el pipeline falla o cancelas su confirmación a mitad de camino, los
+  grupos cuyos pasos aún no habían llegado se **retienen** (no arrancan sus
+  comandos de auto-arranque); se avisa con un log y una notificación
+  nombrándolos.
+
 ## [0.6.0] - 2026-08-21
 
 ### Añadido
