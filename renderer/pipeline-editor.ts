@@ -222,6 +222,24 @@ export function initPipelineEditor(
     return section;
   }
 
+  /**
+   * Every pipeline mutation is an instant write, so a rejected IPC call must
+   * not fail silently: without this the handlers left the UI showing a change
+   * that was never persisted, and the rejection surfaced as an unhandled
+   * promise. On failure we re-read the persisted pipeline so the screen shows
+   * what is actually stored, never an optimistic guess.
+   */
+  async function write(action: () => Promise<unknown>): Promise<boolean> {
+    try {
+      await action();
+      return true;
+    } catch {
+      deps.showToast('No se pudo guardar el pipeline', 'error');
+      await refresh();
+      return false;
+    }
+  }
+
   // ── Summary strip ────────────────────────────────────────────────────────
   //
   // `summarizePipeline` is the pure view-model seam: it turns raw steps into
@@ -330,7 +348,12 @@ export function initPipelineEditor(
         item.disabled = alreadyPlaced;
         if (alreadyPlaced) item.title = 'Ya está en el pipeline';
         item.addEventListener('click', async () => {
-          await window.api.assignScriptToStep(stepId, group.id, script.id);
+          if (
+            !(await write(() =>
+              window.api.assignScriptToStep(stepId, group.id, script.id),
+            ))
+          )
+            return;
           openPickerStepId = null;
           await refresh();
         });
@@ -406,11 +429,12 @@ export function initPipelineEditor(
     removeBtn.title = 'Quitar del paso';
     removeBtn.textContent = '×';
     removeBtn.addEventListener('click', async () => {
-      await window.api.unassignScriptFromStep(
-        step.id,
-        ref.groupId,
-        ref.scriptId,
-      );
+      if (
+        !(await write(() =>
+          window.api.unassignScriptFromStep(step.id, ref.groupId, ref.scriptId),
+        ))
+      )
+        return;
       await refresh();
     });
     li.appendChild(removeBtn);
@@ -451,7 +475,8 @@ export function initPipelineEditor(
       btn.setAttribute('aria-pressed', String(step.mode === mode));
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        await window.api.savePreStep({ ...step, mode });
+        if (!(await write(() => window.api.savePreStep({ ...step, mode }))))
+          return;
         await refresh();
       });
       modeToggle.appendChild(btn);
@@ -470,7 +495,7 @@ export function initPipelineEditor(
     delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!confirm(`¿Eliminar el paso ${stepNumber}?`)) return;
-      await window.api.deletePreStep(step.id);
+      if (!(await write(() => window.api.deletePreStep(step.id)))) return;
       await refresh();
     });
     header.appendChild(delBtn);
@@ -498,12 +523,17 @@ export function initPipelineEditor(
       async (move) => {
         const ref = dataIdToRef(move.itemId);
         if (!ref) return;
-        await window.api.assignScriptToStep(
-          move.targetContainerId,
-          ref.groupId,
-          ref.scriptId,
-          move.index,
-        );
+        if (
+          !(await write(() =>
+            window.api.assignScriptToStep(
+              move.targetContainerId,
+              ref.groupId,
+              ref.scriptId,
+              move.index,
+            ),
+          ))
+        )
+          return;
         await refresh();
       },
     );
@@ -549,7 +579,12 @@ export function initPipelineEditor(
     addStepBtn.className = 'small-btn';
     addStepBtn.textContent = '+ Añadir paso';
     addStepBtn.addEventListener('click', async () => {
-      await window.api.savePreStep({ mode: 'parallel', scripts: [] });
+      if (
+        !(await write(() =>
+          window.api.savePreStep({ mode: 'parallel', scripts: [] }),
+        ))
+      )
+        return;
       await refresh();
     });
     headerRow.appendChild(addStepBtn);
@@ -568,7 +603,8 @@ export function initPipelineEditor(
       });
       host.appendChild(stepsRoot);
       attachDragHandlers(stepsRoot, async (orderedIds) => {
-        await window.api.reorderPreSteps(orderedIds);
+        if (!(await write(() => window.api.reorderPreSteps(orderedIds))))
+          return;
         await refresh();
       });
     }

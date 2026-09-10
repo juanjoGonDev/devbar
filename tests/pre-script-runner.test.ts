@@ -1450,7 +1450,7 @@ describe('createPreScriptRunner — parallel concurrency and log labelling', () 
     });
 
     const res = await runner.run();
-    expect(res.ok).toBe(true);
+    expectSucceeded(res);
     const lines = pm
       .getLogs(`pre-pipeline:${res.runId}`)
       .map((entry) => entry.line);
@@ -1500,7 +1500,7 @@ describe('createPreScriptRunner — parallel concurrency and log labelling', () 
       target: PLACEHOLDER_SCRIPT,
     });
     const res = await runPromise;
-    expect(res.ok).toBe(true);
+    expectSucceeded(res);
     const lines = pm
       .getLogs(`pre-pipeline:${res.runId}`)
       .map((entry) => entry.line);

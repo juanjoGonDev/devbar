@@ -989,7 +989,9 @@ function buildPreScriptLibraryRow(
   script: PreScript,
 ): HTMLElement {
   const li = document.createElement('li');
-  li.className = 'prescript-row';
+  // `drag-row` carries the shared handle reveal, dragging state and drop
+  // indicator that every other draggable row in this window already uses.
+  li.className = 'prescript-row drag-row';
   li.dataset.id = script.id;
 
   const dragHandle = document.createElement('span');

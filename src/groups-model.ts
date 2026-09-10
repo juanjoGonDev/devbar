@@ -513,6 +513,12 @@ export function migratePreScriptPipeline(raw: {
 
   let changed = false;
   const usedStepIds = new Set<string>(existingSteps.map((step) => step.id));
+  /** Every {groupId,scriptId} already placed, across ALL steps. */
+  const placedRefKeys = new Set<string>(
+    existingSteps.flatMap((step) =>
+      step.scripts.map((ref) => makePreScriptId(ref.groupId, ref.scriptId)),
+    ),
+  );
   const newSteps: PreStep[] = [];
   const contributorAutoRuns: boolean[] = [];
   const mergedByIndex = new Map<number, Group>();
@@ -539,6 +545,13 @@ export function migratePreScriptPipeline(raw: {
             knownScriptIds.add(script.id);
             hoisted.push(script);
           }
+          // Across the WHOLE fold, not just this step: two legacy steps
+          // carrying the same script id would otherwise place one ref twice,
+          // and `validatePipelineSteps` rejects that shape on import — the
+          // migration must not mint state the importer refuses.
+          const refKey = makePreScriptId(normalized.id, script.id);
+          if (placedRefKeys.has(refKey)) continue;
+          placedRefKeys.add(refKey);
           refs.push({ groupId: normalized.id, scriptId: script.id });
         }
         if (refs.length === 0) continue;

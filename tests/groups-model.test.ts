@@ -2311,3 +2311,45 @@ describe('reorderByIds', () => {
     expect(result.map((item) => item.id)).toEqual(['s1', 's2']);
   });
 });
+
+describe('migratePreScriptPipeline — cross-step ref uniqueness', () => {
+  it('places a repeated legacy script ref only once across steps', () => {
+    // knownScriptIds dedupes the hoisted DEFINITION, but a ref was pushed for
+    // every legacy occurrence. Two refs to one {groupId, scriptId} share a
+    // process id, so the later one never really runs and it drags that
+    // group's autoStart release out to the later step. validatePipelineSteps
+    // rejects this exact shape on import, so the migration must not mint it.
+    const result = migratePreScriptPipeline({
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preScriptsAutoRun: true,
+          preSteps: [
+            {
+              id: 'legacy-1',
+              mode: 'serial',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+            {
+              id: 'legacy-2',
+              mode: 'serial',
+              scripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+            },
+          ],
+        },
+      ],
+    });
+    const placements = result.preSteps.flatMap((step) =>
+      step.scripts.filter(
+        (ref) => ref.groupId === 'g1' && ref.scriptId === 'sc1',
+      ),
+    );
+    expect(placements).toHaveLength(1);
+    expect(result.groups[0]?.preScripts).toHaveLength(1);
+  });
+});
