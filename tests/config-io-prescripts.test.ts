@@ -496,10 +496,22 @@ describe('serializeConfig -> validateImportedConfig round-trip', () => {
     const exported = serializeConfig(rawStore, '0.8.0');
     const result = validateImportedConfig(exported);
     expectValid(result);
-    expect(result.payload.preSteps).toEqual(exported.preSteps);
-    expect(result.payload.groups.map((g) => g.preScripts)).toEqual(
-      exported.groups.map((g) => g.preScripts),
-    );
+    // Asserted against literals, NOT against `exported`: comparing the
+    // import result to its own export output passes vacuously the moment
+    // both sides degenerate to [] (exactly the data-loss shape of C1).
+    expect(result.payload.preSteps).toEqual([
+      {
+        id: 'step-aaa',
+        mode: 'serial',
+        scripts: [{ groupId: 'g1', scriptId: 'sc-bbb' }],
+      },
+    ]);
+    expect(result.payload.groups[0]?.preScripts).toHaveLength(1);
+    expect(result.payload.groups[0]?.preScripts[0]).toMatchObject({
+      id: 'sc-bbb',
+      name: 'Install',
+      command: 'pnpm install',
+    });
     expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
   });
 });

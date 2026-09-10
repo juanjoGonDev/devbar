@@ -1378,3 +1378,132 @@ describe('createPreScriptRunner — confirmation gate', () => {
     expect(cancelConfirm).toHaveBeenCalledWith();
   });
 });
+
+describe('createPreScriptRunner — parallel concurrency and log labelling', () => {
+  it('parallel step: the second ref starts without waiting for the first (real overlap)', async () => {
+    const steps = [
+      makeStep('s1', 'parallel', [ref('g1', 'sc1'), ref('g1', 'sc2')]),
+    ];
+    const group = makeGroup({
+      id: 'g1',
+      path: '/tmp/g1',
+      preScripts: [
+        makeScript({ id: 'sc1', name: 'A' }),
+        makeScript({ id: 'sc2', name: 'B' }),
+      ],
+    });
+    // Mirror of the serial no-overlap test: sc1 hangs until the test emits
+    // its action:done. Under a sequential implementation sc2 would still be
+    // 'stopped' here, so this is what tells `Promise.all` apart from
+    // `for…await` — the exact mutation the suite previously survived.
+    const pm = makeMockPM({ 'pre:g1:sc1': 'hang', 'pre:g1:sc2': { code: 0 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore([group], steps),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    const runPromise = runner.run();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pm.getState('pre:g1:sc2').status).toBe('done');
+
+    pm.emit('action:done', {
+      processId: 'pre:g1:sc1',
+      code: 0,
+      group: PLACEHOLDER_GROUP,
+      target: PLACEHOLDER_SCRIPT,
+    });
+    const res = await runPromise;
+    expect(res.ok).toBe(true);
+  });
+
+  it('every script line names its group, so same-named scripts stay distinct', async () => {
+    const steps = [
+      makeStep('s1', 'serial', [ref('back', 'setup'), ref('auto', 'setup')]),
+    ];
+    const groups = [
+      makeGroup({
+        id: 'back',
+        name: 'Back',
+        path: '/tmp/back',
+        preScripts: [makeScript({ id: 'setup', name: 'Make setup' })],
+      }),
+      makeGroup({
+        id: 'auto',
+        name: 'Automator',
+        path: '/tmp/auto',
+        preScripts: [makeScript({ id: 'setup', name: 'Make setup' })],
+      }),
+    ];
+    const pm = makeMockPM({
+      'pre:back:setup': { code: 0 },
+      'pre:auto:setup': { code: 0 },
+    });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore(groups, steps),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    const res = await runner.run();
+    expect(res.ok).toBe(true);
+    const lines = pm
+      .getLogs(`pre-pipeline:${res.runId}`)
+      .map((entry) => entry.line);
+    // Without the group, both scripts log the identical string and the user
+    // cannot tell which one ran.
+    expect(
+      lines.some((l) => l.includes('Back · Make setup')),
+      'no line names the Back group',
+    ).toBe(true);
+    expect(
+      lines.some((l) => l.includes('Automator · Make setup')),
+      'no line names the Automator group',
+    ).toBe(true);
+  });
+
+  it('forwards a script’s own output under a group-qualified prefix', async () => {
+    const steps = [makeStep('s1', 'serial', [ref('back', 'setup')])];
+    const group = makeGroup({
+      id: 'back',
+      name: 'Back',
+      path: '/tmp/back',
+      preScripts: [makeScript({ id: 'setup', name: 'Make setup' })],
+    });
+    const pm = makeMockPM({ 'pre:back:setup': 'hang' });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore([group], steps),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    const runPromise = runner.run();
+    await Promise.resolve();
+    await Promise.resolve();
+    // The output-prefix path is only reached when the script actually emits;
+    // no other test emits a script log event, so it went unexercised.
+    pm.pushLog('pre:back:setup', {
+      ts: Date.now(),
+      stream: 'stdout',
+      level: null,
+      line: 'compilando…',
+    });
+    pm.emit('action:done', {
+      processId: 'pre:back:setup',
+      code: 0,
+      group: PLACEHOLDER_GROUP,
+      target: PLACEHOLDER_SCRIPT,
+    });
+    const res = await runPromise;
+    expect(res.ok).toBe(true);
+    const lines = pm
+      .getLogs(`pre-pipeline:${res.runId}`)
+      .map((entry) => entry.line);
+    expect(lines).toContain('[Back · Make setup] compilando…');
+  });
+});
