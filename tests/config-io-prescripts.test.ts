@@ -8,8 +8,11 @@ import {
 /**
  * config-io-prescripts.test.js
  *
- * Tests for preSteps round-trip export/import (R10) and validation of
- * malformed preSteps shapes.
+ * Tests for the GLOBAL pipeline shape: top-level `preSteps` (refs) plus
+ * per-group flat `preScripts` (definitions). Covers round-trip export/import
+ * (R10), cross-reference validation of refs, and backward-compatible import
+ * of a v3 export file (nested per-group `preSteps`) via the same
+ * concatenate-and-hoist migration the live store uses.
  */
 
 function expectValid(
@@ -28,8 +31,8 @@ function expectInvalid(
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-const VALID_PRESTEPS_PAYLOAD = {
-  version: 3,
+const VALID_PIPELINE_PAYLOAD = {
+  version: 4,
   groups: [
     {
       id: 'g1',
@@ -39,90 +42,101 @@ const VALID_PRESTEPS_PAYLOAD = {
       env: [],
       commands: [],
       actions: [],
-      preSteps: [
+      preScripts: [
         {
-          id: 'step-aaa',
-          mode: 'serial',
-          scripts: [
-            {
-              id: 'sc-bbb',
-              name: 'Install',
-              command: 'pnpm install',
-              args: ['--frozen-lockfile'],
-              env: [{ key: 'NODE_ENV', value: 'ci', enabled: true }],
-              inheritGroupEnv: false,
-            },
-            {
-              id: 'sc-ccc',
-              name: 'Build',
-              command: 'pnpm build',
-              args: [],
-              env: [],
-              inheritGroupEnv: true,
-            },
-          ],
+          id: 'sc-bbb',
+          name: 'Install',
+          command: 'pnpm install',
+          args: ['--frozen-lockfile'],
+          env: [{ key: 'NODE_ENV', value: 'ci', enabled: true }],
+          inheritGroupEnv: false,
         },
         {
-          id: 'step-ddd',
-          mode: 'parallel',
-          scripts: [
-            {
-              id: 'sc-eee',
-              name: 'Lint',
-              command: 'pnpm lint',
-              args: [],
-              env: [],
-            },
-          ],
+          id: 'sc-ccc',
+          name: 'Build',
+          command: 'pnpm build',
+          args: [],
+          env: [],
+          inheritGroupEnv: true,
         },
       ],
+    },
+    {
+      id: 'g2',
+      name: 'Other Group',
+      path: '/other/path',
+      mode: 'multi',
+      env: [],
+      commands: [],
+      actions: [],
+      preScripts: [
+        {
+          id: 'sc-eee',
+          name: 'Lint',
+          command: 'pnpm lint',
+          args: [],
+          env: [],
+        },
+      ],
+    },
+  ],
+  preSteps: [
+    {
+      id: 'step-aaa',
+      mode: 'serial',
+      scripts: [
+        { groupId: 'g1', scriptId: 'sc-bbb' },
+        { groupId: 'g1', scriptId: 'sc-ccc' },
+      ],
+    },
+    {
+      id: 'step-ddd',
+      mode: 'parallel',
+      scripts: [{ groupId: 'g2', scriptId: 'sc-eee' }],
     },
   ],
   globalSettings: {
     autostart: false,
     silenceWarnings: false,
     silenceErrors: false,
+    preScriptsAutoRun: false,
   },
 };
 
 // ─── Round-trip ───────────────────────────────────────────────────────────────
 
-describe('validateImportedConfig — preSteps round-trip (R10)', () => {
-  it('accepts a valid payload with preSteps', () => {
-    const result = validateImportedConfig(VALID_PRESTEPS_PAYLOAD);
+describe('validateImportedConfig — global preSteps round-trip (R10)', () => {
+  it('accepts a valid v4 payload with a global pipeline', () => {
+    const result = validateImportedConfig(VALID_PIPELINE_PAYLOAD);
     expectValid(result);
   });
 
   it('preserves preSteps in the returned payload (round-trip)', () => {
-    const result = validateImportedConfig(VALID_PRESTEPS_PAYLOAD);
+    const result = validateImportedConfig(VALID_PIPELINE_PAYLOAD);
     expectValid(result);
-    const group = result.payload.groups[0];
-    expect(group.preSteps).toHaveLength(2);
-    expect(group.preSteps[0].id).toBe('step-aaa');
-    expect(group.preSteps[0].mode).toBe('serial');
-    expect(group.preSteps[0].scripts).toHaveLength(2);
-    expect(group.preSteps[0].scripts[0].id).toBe('sc-bbb');
-    expect(group.preSteps[0].scripts[0].command).toBe('pnpm install');
+    expect(result.payload.preSteps).toHaveLength(2);
+    expect(result.payload.preSteps[0]?.id).toBe('step-aaa');
+    expect(result.payload.preSteps[0]?.mode).toBe('serial');
+    expect(result.payload.preSteps[0]?.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc-bbb' },
+      { groupId: 'g1', scriptId: 'sc-ccc' },
+    ]);
   });
 
   it('preserves all step and script ids verbatim', () => {
-    const result = validateImportedConfig(VALID_PRESTEPS_PAYLOAD);
+    const result = validateImportedConfig(VALID_PIPELINE_PAYLOAD);
     expectValid(result);
-    const group = result.payload.groups[0];
-    const stepIds = group.preSteps.map((s) => s.id);
-    const scriptIds = group.preSteps.flatMap((s) =>
-      s.scripts.map((sc) => sc.id),
+    const stepIds = result.payload.preSteps.map((s) => s.id);
+    const scriptIds = result.payload.groups.flatMap((g) =>
+      g.preScripts.map((sc) => sc.id),
     );
-    expect(stepIds).toContain('step-aaa');
-    expect(stepIds).toContain('step-ddd');
-    expect(scriptIds).toContain('sc-bbb');
-    expect(scriptIds).toContain('sc-ccc');
-    expect(scriptIds).toContain('sc-eee');
+    expect(stepIds).toEqual(['step-aaa', 'step-ddd']);
+    expect(scriptIds).toEqual(['sc-bbb', 'sc-ccc', 'sc-eee']);
   });
 
   it('accepts a payload with no preSteps key (defaults to [])', () => {
     const payload = {
-      version: 3,
+      version: 4,
       groups: [
         { name: 'G', path: '/p', mode: 'multi', commands: [], actions: [] },
       ],
@@ -130,33 +144,102 @@ describe('validateImportedConfig — preSteps round-trip (R10)', () => {
     };
     const result = validateImportedConfig(payload);
     expectValid(result);
-    // normalizeGroup fills in preSteps: []
-    expect(result.payload.groups[0].preSteps).toEqual([]);
+    expect(result.payload.preSteps).toEqual([]);
+    expect(result.payload.groups[0]?.preScripts).toEqual([]);
   });
 });
 
-// ─── Malformed preSteps rejection ────────────────────────────────────────────
+// ─── Cross-reference validation ────────────────────────────────────────────────
 
-describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
-  it('rejects a script with missing command', () => {
+describe('validateImportedConfig — pipeline cross-reference validation', () => {
+  const oneScriptGroup = {
+    id: 'g1',
+    name: 'G',
+    path: '/p',
+    mode: 'multi',
+    commands: [],
+    actions: [],
+    preScripts: [{ id: 'sc1', name: 'A', command: 'true' }],
+  };
+
+  it('rejects a ref pointing at a group id absent from the payload', () => {
     const payload = {
-      version: 3,
-      groups: [
+      version: 4,
+      groups: [oneScriptGroup],
+      preSteps: [
         {
-          name: 'G',
-          path: '/p',
-          mode: 'multi',
-          commands: [],
-          actions: [],
-          preSteps: [
-            {
-              id: 's1',
-              mode: 'parallel',
-              scripts: [{ id: 'sc1', name: 'Install' /* no command */ }],
-            },
-          ],
+          id: 's1',
+          mode: 'parallel',
+          scripts: [{ groupId: 'ghost-group', scriptId: 'sc1' }],
         },
       ],
+      globalSettings: {},
+    };
+    expectInvalid(validateImportedConfig(payload));
+  });
+
+  it('rejects a ref pointing at a script id not defined in that group', () => {
+    const payload = {
+      version: 4,
+      groups: [oneScriptGroup],
+      preSteps: [
+        {
+          id: 's1',
+          mode: 'parallel',
+          scripts: [{ groupId: 'g1', scriptId: 'ghost-script' }],
+        },
+      ],
+      globalSettings: {},
+    };
+    expectInvalid(validateImportedConfig(payload));
+  });
+
+  it('accepts a ref that resolves correctly', () => {
+    const payload = {
+      version: 4,
+      groups: [oneScriptGroup],
+      preSteps: [
+        {
+          id: 's1',
+          mode: 'parallel',
+          scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+        },
+      ],
+      globalSettings: {},
+    };
+    expectValid(validateImportedConfig(payload));
+  });
+
+  it('rejects when preSteps is not an array', () => {
+    const payload = {
+      version: 4,
+      groups: [],
+      preSteps: 'not-an-array',
+      globalSettings: {},
+    };
+    const result = validateImportedConfig(payload);
+    expectInvalid(result);
+    expect(result.error).toMatch(/preSteps/);
+  });
+});
+
+// ─── Malformed pipeline shapes (v4, native — not migration-relaxed) ────────────
+
+describe('validateImportedConfig — rejects malformed pipeline shapes (v4)', () => {
+  const baseGroup = (preScripts: unknown[]) => ({
+    id: 'g1',
+    name: 'G',
+    path: '/p',
+    mode: 'multi',
+    commands: [],
+    actions: [],
+    preScripts,
+  });
+
+  it('rejects a preScripts entry with missing command', () => {
+    const payload = {
+      version: 4,
+      groups: [baseGroup([{ id: 'sc1', name: 'Install' }])],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -164,25 +247,10 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
     expect(result.error).toContain('pre-script sin command');
   });
 
-  it('rejects a script with empty command', () => {
+  it('rejects a preScripts entry with empty command', () => {
     const payload = {
-      version: 3,
-      groups: [
-        {
-          name: 'G',
-          path: '/p',
-          mode: 'multi',
-          commands: [],
-          actions: [],
-          preSteps: [
-            {
-              id: 's1',
-              mode: 'parallel',
-              scripts: [{ id: 'sc1', name: 'Install', command: '' }],
-            },
-          ],
-        },
-      ],
+      version: 4,
+      groups: [baseGroup([{ id: 'sc1', name: 'Install', command: '' }])],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -190,25 +258,10 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
     expect(result.error).toContain('pre-script sin command');
   });
 
-  it('rejects a script with missing name', () => {
+  it('rejects a preScripts entry with missing name', () => {
     const payload = {
-      version: 3,
-      groups: [
-        {
-          name: 'G',
-          path: '/p',
-          mode: 'multi',
-          commands: [],
-          actions: [],
-          preSteps: [
-            {
-              id: 's1',
-              mode: 'parallel',
-              scripts: [{ id: 'sc1', command: 'pnpm install' /* no name */ }],
-            },
-          ],
-        },
-      ],
+      version: 4,
+      groups: [baseGroup([{ id: 'sc1', command: 'pnpm install' }])],
       globalSettings: {},
     };
     const result = validateImportedConfig(payload);
@@ -216,66 +269,13 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
     expect(result.error).toContain('pre-script sin name');
   });
 
-  it('rejects a step with invalid mode', () => {
+  it('rejects a preScripts entry with invalid env shape (string)', () => {
     const payload = {
-      version: 3,
+      version: 4,
       groups: [
-        {
-          name: 'G',
-          path: '/p',
-          mode: 'multi',
-          commands: [],
-          actions: [],
-          preSteps: [{ id: 's1', mode: 'batch', scripts: [] }],
-        },
-      ],
-      globalSettings: {},
-    };
-    const result = validateImportedConfig(payload);
-    expectInvalid(result);
-    expect(result.error).toContain('mode inválido');
-  });
-
-  it('rejects a step where scripts is not an array', () => {
-    const payload = {
-      version: 3,
-      groups: [
-        {
-          name: 'G',
-          path: '/p',
-          mode: 'multi',
-          commands: [],
-          actions: [],
-          preSteps: [{ id: 's1', mode: 'parallel', scripts: 'not-an-array' }],
-        },
-      ],
-      globalSettings: {},
-    };
-    const result = validateImportedConfig(payload);
-    expectInvalid(result);
-    expect(result.error).toContain('scripts debe ser array');
-  });
-
-  it('rejects a script with invalid env shape (string)', () => {
-    const payload = {
-      version: 3,
-      groups: [
-        {
-          name: 'G',
-          path: '/p',
-          mode: 'multi',
-          commands: [],
-          actions: [],
-          preSteps: [
-            {
-              id: 's1',
-              mode: 'parallel',
-              scripts: [
-                { id: 'sc1', name: 'Build', command: 'pnpm build', env: 'bad' },
-              ],
-            },
-          ],
-        },
+        baseGroup([
+          { id: 'sc1', name: 'Build', command: 'pnpm build', env: 'bad' },
+        ]),
       ],
       globalSettings: {},
     };
@@ -283,22 +283,141 @@ describe('validateImportedConfig — rejects malformed preSteps (R10)', () => {
     expectInvalid(result);
     expect(result.error).toContain('env inválido');
   });
+
+  it('rejects a preSteps entry with an invalid mode', () => {
+    const payload = {
+      version: 4,
+      groups: [baseGroup([{ id: 'sc1', name: 'A', command: 'true' }])],
+      preSteps: [{ id: 's1', mode: 'batch', scripts: [] }],
+      globalSettings: {},
+    };
+    const result = validateImportedConfig(payload);
+    expectInvalid(result);
+    expect(result.error).toContain('mode inválido');
+  });
+
+  it('rejects a preSteps entry where scripts is not an array', () => {
+    const payload = {
+      version: 4,
+      groups: [baseGroup([])],
+      preSteps: [{ id: 's1', mode: 'parallel', scripts: 'not-an-array' }],
+      globalSettings: {},
+    };
+    const result = validateImportedConfig(payload);
+    expectInvalid(result);
+    expect(result.error).toMatch(/scripts/);
+  });
 });
 
-// ─── summarizeImport with preSteps ───────────────────────────────────────────
+// ─── v3 payload imports as v4 (backward compatible) ────────────────────────────
+
+describe('validateImportedConfig — v3 payload imports as v4 (backward compatible)', () => {
+  it('migrates a v3 export (nested per-group preSteps) into the global pipeline', () => {
+    const v3Payload = {
+      version: 3,
+      groups: [
+        {
+          id: 'g1',
+          name: 'My Group',
+          path: '/some/path',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preScriptsAutoRun: true,
+          preSteps: [
+            {
+              id: 'step-aaa',
+              mode: 'serial',
+              scripts: [
+                {
+                  id: 'sc-bbb',
+                  name: 'Install',
+                  command: 'pnpm install',
+                  args: [],
+                  env: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      globalSettings: {
+        autostart: false,
+        silenceWarnings: false,
+        silenceErrors: false,
+      },
+    };
+    const result = validateImportedConfig(v3Payload);
+    expectValid(result);
+    expect(result.payload.version).toBe(4);
+    expect(result.payload.preSteps).toHaveLength(1);
+    expect(result.payload.preSteps[0]?.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc-bbb' },
+    ]);
+    expect(result.payload.groups[0]?.preScripts.map((s) => s.id)).toEqual([
+      'sc-bbb',
+    ]);
+    expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
+  });
+
+  it('rejects an unsupported version (neither 3 nor 4)', () => {
+    const result = validateImportedConfig({
+      version: 2,
+      groups: [],
+      globalSettings: {},
+    });
+    expectInvalid(result);
+    expect(result.error).toMatch(/versión/i);
+  });
+});
+
+// ─── summarizeImport with the global pipeline ──────────────────────────────────
 
 describe('summarizeImport — preStepsCount / preScriptsCount', () => {
-  it('counts preSteps and preScripts from valid payload', () => {
-    const result = validateImportedConfig(VALID_PRESTEPS_PAYLOAD);
+  it('preStepsCount counts global steps; preScriptsCount counts definitions', () => {
+    const result = validateImportedConfig(VALID_PIPELINE_PAYLOAD);
     expectValid(result);
     const summary = summarizeImport(result.payload);
     expect(summary.preStepsCount).toBe(2);
     expect(summary.preScriptsCount).toBe(3);
   });
 
-  it('returns 0 for preStepsCount and preScriptsCount when no preSteps', () => {
+  it('preScriptsCount counts a defined-but-unplaced script (definitions, not placements)', () => {
     const payload = {
-      version: 3,
+      version: 4,
+      groups: [
+        {
+          id: 'g1',
+          name: 'G',
+          path: '/p',
+          mode: 'multi',
+          commands: [],
+          actions: [],
+          preScripts: [
+            { id: 'sc1', name: 'Placed', command: 'true' },
+            { id: 'sc2', name: 'Unplaced', command: 'true' },
+          ],
+        },
+      ],
+      preSteps: [
+        {
+          id: 's1',
+          mode: 'parallel',
+          scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+        },
+      ],
+      globalSettings: {},
+    };
+    const result = validateImportedConfig(payload);
+    expectValid(result);
+    const summary = summarizeImport(result.payload);
+    expect(summary.preScriptsCount).toBe(2);
+  });
+
+  it('returns 0 for preStepsCount and preScriptsCount when the pipeline is empty', () => {
+    const payload = {
+      version: 4,
       groups: [
         {
           id: 'g1',

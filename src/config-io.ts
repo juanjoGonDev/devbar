@@ -1,7 +1,14 @@
-import type { GlobalSettings, Group } from './domain-types.js';
-import { normalizeGroup, validateGroupShape } from './groups-model.js';
+import type { GlobalSettings, Group, PreStep } from './domain-types.js';
+import {
+  normalizeGroup,
+  normalizePreStep,
+  validateGroupShape,
+  migratePreScriptPipeline,
+} from './groups-model.js';
 
-export const EXPORT_SCHEMA_VERSION = 3;
+export const EXPORT_SCHEMA_VERSION = 4;
+/** A v3 export/store file (nested per-group `preSteps`) still imports. */
+const MIN_SUPPORTED_VERSION = 3;
 type UnknownRecord = Record<string, unknown>;
 function isRecord(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -34,11 +41,13 @@ export interface SerializedConfig {
   appVersion: string | null;
   version: number;
   groups: Group[];
+  preSteps: PreStep[];
   globalSettings: Partial<GlobalSettings>;
 }
 export interface ImportPayload {
   version: number;
   groups: Group[];
+  preSteps: PreStep[];
   globalSettings: Partial<GlobalSettings>;
 }
 export type ImportValidation =
@@ -49,6 +58,7 @@ export function serializeConfig(
     | {
         version?: number;
         groups?: Group[];
+        preSteps?: PreStep[];
         globalSettings?: Partial<GlobalSettings>;
       }
     | null
@@ -62,6 +72,7 @@ export function serializeConfig(
     version:
       typeof raw.version === 'number' ? raw.version : EXPORT_SCHEMA_VERSION,
     groups: Array.isArray(raw.groups) ? raw.groups : [],
+    preSteps: Array.isArray(raw.preSteps) ? raw.preSteps : [],
     globalSettings: raw.globalSettings ?? {},
   };
 }
@@ -69,16 +80,52 @@ export function serializeConfig(
 export function validateImportedConfig(value: unknown): ImportValidation {
   if (!isRecord(value))
     return { ok: false, error: 'Root must be a JSON object' };
-  if (value.version !== EXPORT_SCHEMA_VERSION)
+  if (
+    value.version !== EXPORT_SCHEMA_VERSION &&
+    value.version !== MIN_SUPPORTED_VERSION
+  )
     return {
       ok: false,
       error: `Versión de schema incompatible (esperada ${EXPORT_SCHEMA_VERSION}, recibida ${String(value.version)})`,
     };
   if (!isUnknownArray(value.groups))
     return { ok: false, error: 'groups debe ser un array' };
+
+  // A v3 export nests script DEFINITIONS inside per-group steps; reuse the
+  // SAME concatenate-and-hoist migration the live store uses (D4) so the two
+  // can never drift. Only the hoisted `preScripts` is overlaid onto each
+  // ORIGINAL raw group below — migratePreScriptPipeline fully normalizes
+  // every field as a side effect of hoisting, and using its groups wholesale
+  // would silently let a v3 payload's malformed command/action (e.g. a
+  // missing name) import as "Unnamed" instead of being rejected, same as the
+  // live store already defaults it, but MUCH more broadly than intended:
+  // this keeps that one accepted trade-off scoped to preScripts alone. Only
+  // this importer sees the WHOLE payload, so the pipeline cross-reference
+  // validation below still runs natively either way.
+  let rawGroups: unknown[] = value.groups;
+  let rawSteps: unknown = value.preSteps;
+  let migratedAutoRun: boolean | undefined;
+  if (value.version === MIN_SUPPORTED_VERSION) {
+    const migrated = migratePreScriptPipeline({
+      groups: value.groups,
+      globalSettings: value.globalSettings,
+    });
+    rawGroups = value.groups.map((rawGroup, index) => ({
+      ...record(rawGroup),
+      preScripts: migrated.groups[index]?.preScripts ?? [],
+    }));
+    rawSteps = migrated.preSteps;
+    migratedAutoRun = migrated.preScriptsAutoRun;
+  }
+
+  if (rawSteps !== undefined && !isUnknownArray(rawSteps))
+    return { ok: false, error: 'preSteps debe ser un array' };
+  const preStepsInput = isUnknownArray(rawSteps) ? rawSteps : [];
+
   const cleanGroups: Group[] = [];
-  for (let index = 0; index < value.groups.length; index++) {
-    const rawGroup = record(value.groups[index]);
+  const scriptIdsByGroup = new Map<string, Set<string>>();
+  for (let index = 0; index < rawGroups.length; index++) {
+    const rawGroup = record(rawGroups[index]);
     const groupLabel = label(rawGroup, index);
     const commands = isUnknownArray(rawGroup.commands) ? rawGroup.commands : [];
     for (const candidate of commands) {
@@ -125,42 +172,26 @@ export function validateImportedConfig(value: unknown): ImportValidation {
         error: `Grupo "${groupLabel}" tiene un env de grupo inválido (debe ser array)`,
       };
     }
-    const preSteps = isUnknownArray(rawGroup.preSteps) ? rawGroup.preSteps : [];
-    for (let stepIndex = 0; stepIndex < preSteps.length; stepIndex++) {
-      const step = record(preSteps[stepIndex]);
-      if (
-        step.mode !== undefined &&
-        step.mode !== 'parallel' &&
-        step.mode !== 'serial'
-      )
+    const preScripts = isUnknownArray(rawGroup.preScripts)
+      ? rawGroup.preScripts
+      : [];
+    for (const candidate of preScripts) {
+      const script = record(candidate);
+      if (typeof script.command !== 'string' || !script.command.trim())
         return {
           ok: false,
-          error: `Grupo "${groupLabel}" paso #${stepIndex} con mode inválido`,
+          error: `Grupo "${groupLabel}" tiene un pre-script sin command`,
         };
-      if (step.scripts !== undefined && !isUnknownArray(step.scripts))
+      if (typeof script.name !== 'string' || !script.name.trim())
         return {
           ok: false,
-          error: `Grupo "${groupLabel}" paso #${stepIndex} scripts debe ser array`,
+          error: `Grupo "${groupLabel}" tiene un pre-script sin name`,
         };
-      const scripts = isUnknownArray(step.scripts) ? step.scripts : [];
-      for (const candidate of scripts) {
-        const script = record(candidate);
-        if (typeof script.command !== 'string' || !script.command.trim())
-          return {
-            ok: false,
-            error: `Grupo "${groupLabel}" tiene un pre-script sin command`,
-          };
-        if (typeof script.name !== 'string' || !script.name.trim())
-          return {
-            ok: false,
-            error: `Grupo "${groupLabel}" tiene un pre-script sin name`,
-          };
-        if (invalidEnv(script.env))
-          return {
-            ok: false,
-            error: `Grupo "${groupLabel}" tiene un pre-script con env inválido`,
-          };
-      }
+      if (invalidEnv(script.env))
+        return {
+          ok: false,
+          error: `Grupo "${groupLabel}" tiene un pre-script con env inválido`,
+        };
     }
     const group = normalizeGroup(rawGroup);
     const validation = validateGroupShape(group);
@@ -170,18 +201,65 @@ export function validateImportedConfig(value: unknown): ImportValidation {
         error: `Grupo #${index} "${group.name}": ${validation.errors.join(', ')}`,
       };
     cleanGroups.push(group);
+    scriptIdsByGroup.set(
+      group.id,
+      new Set(group.preScripts.map((script) => script.id)),
+    );
   }
+
+  // Only this importer sees the whole payload at once, so this is the one
+  // place a pipeline ref's cross-reference (does {groupId,scriptId} resolve
+  // to a real script in this SAME payload?) can be validated.
+  const groupIds = new Set(cleanGroups.map((group) => group.id));
+  const cleanSteps: PreStep[] = [];
+  for (let stepIndex = 0; stepIndex < preStepsInput.length; stepIndex++) {
+    const rawStep = record(preStepsInput[stepIndex]);
+    if (
+      rawStep.mode !== undefined &&
+      rawStep.mode !== 'parallel' &&
+      rawStep.mode !== 'serial'
+    )
+      return { ok: false, error: `Paso #${stepIndex} con mode inválido` };
+    if (rawStep.scripts !== undefined && !isUnknownArray(rawStep.scripts))
+      return {
+        ok: false,
+        error: `Paso #${stepIndex} scripts debe ser array`,
+      };
+    const rawRefs = isUnknownArray(rawStep.scripts) ? rawStep.scripts : [];
+    for (const candidate of rawRefs) {
+      const ref = record(candidate);
+      const groupId = typeof ref.groupId === 'string' ? ref.groupId : '';
+      const scriptId = typeof ref.scriptId === 'string' ? ref.scriptId : '';
+      const resolves =
+        groupId !== '' &&
+        scriptId !== '' &&
+        groupIds.has(groupId) &&
+        Boolean(scriptIdsByGroup.get(groupId)?.has(scriptId));
+      if (!resolves)
+        return {
+          ok: false,
+          error: `Paso #${stepIndex} referencia un grupo o script inexistente`,
+        };
+    }
+    cleanSteps.push(normalizePreStep(rawStep));
+  }
+
   const settings = record(value.globalSettings);
   const cleanGlobalSettings: Partial<GlobalSettings> = {
     autostart: Boolean(settings.autostart),
     silenceWarnings: Boolean(settings.silenceWarnings),
     silenceErrors: Boolean(settings.silenceErrors),
+    preScriptsAutoRun:
+      migratedAutoRun !== undefined
+        ? migratedAutoRun
+        : Boolean(settings.preScriptsAutoRun),
   };
   return {
     ok: true,
     payload: {
       version: EXPORT_SCHEMA_VERSION,
       groups: cleanGroups,
+      preSteps: cleanSteps,
       globalSettings: cleanGlobalSettings,
     },
   };
@@ -197,28 +275,28 @@ export function summarizeImport(value: unknown): {
 } {
   const payload = record(value);
   const groups = isUnknownArray(payload.groups) ? payload.groups : [];
+  const preSteps = isUnknownArray(payload.preSteps) ? payload.preSteps : [];
   let commandsCount = 0;
   let actionsCount = 0;
-  let preStepsCount = 0;
+  // Definitions, not placements: a script defined but not yet placed in any
+  // step still counts, and a script placed in more than one step (not
+  // possible today, but not this function's job to assume) would not be
+  // double-counted.
   let preScriptsCount = 0;
   for (const candidate of groups) {
     const group = record(candidate);
     const commands = isUnknownArray(group.commands) ? group.commands : [];
     const actions = isUnknownArray(group.actions) ? group.actions : [];
-    const preSteps = isUnknownArray(group.preSteps) ? group.preSteps : [];
+    const scripts = isUnknownArray(group.preScripts) ? group.preScripts : [];
     commandsCount += commands.length;
     actionsCount += actions.length;
-    preStepsCount += preSteps.length;
-    for (const candidateStep of preSteps) {
-      const step = record(candidateStep);
-      preScriptsCount += isUnknownArray(step.scripts) ? step.scripts.length : 0;
-    }
+    preScriptsCount += scripts.length;
   }
   return {
     groupsCount: groups.length,
     commandsCount,
     actionsCount,
-    preStepsCount,
+    preStepsCount: preSteps.length,
     preScriptsCount,
     hasGlobalSettings: isRecord(payload.globalSettings),
   };

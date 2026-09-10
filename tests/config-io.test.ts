@@ -141,8 +141,7 @@ describe('serializeConfig', () => {
         silenceWarnings: false,
         silenceErrors: false,
         env: [],
-        preScriptsAutoRun: false,
-        preSteps: [],
+        preScripts: [],
         commands: [],
         actions: [],
       },
@@ -181,7 +180,9 @@ describe('validateImportedConfig', () => {
   it('accepts a minimal valid v3 payload', () => {
     const result = validateImportedConfig(MINIMAL_VALID_PAYLOAD);
     expectValid(result);
-    expect(result.payload.version).toBe(3);
+    // The returned payload is always normalized to the CURRENT schema
+    // version, regardless of the (still-accepted) input version.
+    expect(result.payload.version).toBe(EXPORT_SCHEMA_VERSION);
     expect(result.payload.groups).toEqual([]);
   });
 
@@ -319,6 +320,7 @@ describe('validateImportedConfig', () => {
       autostart: false,
       silenceWarnings: false,
       silenceErrors: false,
+      preScriptsAutoRun: false,
     });
   });
 
@@ -367,23 +369,24 @@ describe('summarizeImport', () => {
     expect(summary.hasGlobalSettings).toBe(true);
   });
 
-  it('counts preSteps and preScripts correctly', () => {
+  it('counts preSteps (global) and preScripts (flat, per-group) correctly', () => {
     const payload = {
-      version: 3,
+      version: 4,
       groups: [
         {
           commands: [],
           actions: [],
-          preSteps: [
-            { scripts: [{ id: 'sc1' }, { id: 'sc2' }] },
-            { scripts: [{ id: 'sc3' }] },
-          ],
+          preScripts: [{ id: 'sc1' }, { id: 'sc2' }],
         },
         {
           commands: [],
           actions: [],
-          preSteps: [],
+          preScripts: [{ id: 'sc3' }],
         },
+      ],
+      preSteps: [
+        { id: 's1', mode: 'parallel', scripts: [] },
+        { id: 's2', mode: 'parallel', scripts: [] },
       ],
       globalSettings: {},
     };
@@ -401,7 +404,7 @@ describe('summarizeImport', () => {
 // ─── EXPORT_SCHEMA_VERSION ────────────────────────────────────────────────────
 
 describe('EXPORT_SCHEMA_VERSION', () => {
-  it('is 3', () => {
-    expect(EXPORT_SCHEMA_VERSION).toBe(3);
+  it('is 4 (global pipeline: top-level preSteps + flat per-group preScripts)', () => {
+    expect(EXPORT_SCHEMA_VERSION).toBe(4);
   });
 });
