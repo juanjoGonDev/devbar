@@ -56,6 +56,7 @@ import {
   shouldAutoRunPipeline,
   filterAutoStartEligibleGroups,
   describeWithheldGroups,
+  shouldShowGenericFailureToast,
   type AutoStartPlan,
 } from './autostart-schedule.js';
 import { ICON_BATTERY } from './icon-battery.js';
@@ -396,7 +397,25 @@ const preScriptRunner = createPreScriptRunner({
     }
   },
   onError: (err: string, _ctx) => {
-    broadcastToast('error', `Pre-scripts: ${err}`);
+    // sdd-verify W5: during a boot auto-start run, a more informative toast
+    // naming the withheld groups follows right after `run()` resolves
+    // (reportWithheldGroups, below) — this generic one would only duplicate
+    // it. A manual (non-boot) run, or a boot run that withholds nothing, has
+    // no other message coming, so it still needs this one. The decision
+    // itself is the pure, tested `shouldShowGenericFailureToast`; reading
+    // `activeAutoStartRelease` here is plain main.ts IO glue.
+    const active = activeAutoStartRelease;
+    const withheldCount = active
+      ? withheldGroupIds(active.plan, active.fired).length
+      : 0;
+    if (
+      shouldShowGenericFailureToast({
+        isBootRun: active !== null,
+        withheldCount,
+      })
+    ) {
+      broadcastToast('error', `Pre-scripts: ${err}`);
+    }
   },
   onSuccess: ({ stepCount }: { runId: number; stepCount: number }) => {
     // Pipeline-level messaging now — there is no single "the" group anymore.

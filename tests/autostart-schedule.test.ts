@@ -5,6 +5,7 @@ import {
   shouldAutoRunPipeline,
   filterAutoStartEligibleGroups,
   describeWithheldGroups,
+  shouldShowGenericFailureToast,
 } from '../src/autostart-schedule.js';
 import { normalizeGroup } from '../src/groups-model.js';
 import type { Group, PreStep } from '../src/domain-types.js';
@@ -306,5 +307,39 @@ describe('describeWithheldGroups', () => {
       cause: 'failure',
     });
     expect(report?.message).toContain('ghost');
+  });
+});
+
+// sdd-verify W5: a genuine pipeline failure fired two error toasts — the
+// runner's own generic `onError` toast, then a second, more informative one
+// naming the withheld groups (`describeWithheldGroups`, above). This is the
+// pure decision behind main.ts's collapse to a single toast.
+describe('shouldShowGenericFailureToast', () => {
+  it('shows the generic toast for a manual (non-boot) run with nothing withheld', () => {
+    expect(
+      shouldShowGenericFailureToast({ isBootRun: false, withheldCount: 0 }),
+    ).toBe(true);
+  });
+
+  it('shows the generic toast for a manual run even if withheldCount is (nonsensically) non-zero', () => {
+    // A manual, tray-triggered run never populates activeAutoStartRelease
+    // (main.ts), so withheldCount is always 0 in practice for isBootRun:
+    // false — this case only proves isBootRun is the deciding branch, not
+    // withheldCount alone.
+    expect(
+      shouldShowGenericFailureToast({ isBootRun: false, withheldCount: 2 }),
+    ).toBe(true);
+  });
+
+  it('shows the generic toast for a boot run that withholds nothing — it is the only feedback for that failure', () => {
+    expect(
+      shouldShowGenericFailureToast({ isBootRun: true, withheldCount: 0 }),
+    ).toBe(true);
+  });
+
+  it('suppresses the generic toast for a boot run that withholds at least one group — the named-groups report is more informative', () => {
+    expect(
+      shouldShowGenericFailureToast({ isBootRun: true, withheldCount: 1 }),
+    ).toBe(false);
   });
 });

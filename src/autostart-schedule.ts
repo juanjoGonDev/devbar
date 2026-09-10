@@ -149,3 +149,21 @@ export function describeWithheldGroups(input: {
     message: `Auto-arranque retenido para: ${names}`,
   };
 }
+
+/**
+ * Whether the runner's own generic per-failure toast should still fire,
+ * given whether this failure happened during a boot auto-start run and how
+ * many groups that run withholds (sdd-verify W5: a genuine pipeline failure
+ * fired two error toasts — this one, then a second, more informative one
+ * naming the withheld groups via `describeWithheldGroups`). A boot run that
+ * withholds at least one group gets its failure reported by that more
+ * informative toast instead, so the generic one would only duplicate it. A
+ * manual (non-boot) run, or a boot run that withholds nothing, has no other
+ * message coming and still needs this one as its only feedback.
+ */
+export function shouldShowGenericFailureToast(input: {
+  isBootRun: boolean;
+  withheldCount: number;
+}): boolean {
+  return !input.isBootRun || input.withheldCount === 0;
+}
