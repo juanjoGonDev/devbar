@@ -2792,6 +2792,151 @@ dialog form {
   margin-top: 4px;
 }
 
+/* ── Pipeline editor (global "Pipeline" nav section) ─────────────────── */
+
+/* Cross-container drop-zone affordance — the one genuinely new drag style;
+ * every other `.prestep-*`/`.prescript-*` rule above is reused as-is. */
+.prescript-list.drop-zone-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: rgba(10, 132, 255, 0.06);
+}
+
+/* An empty step is a barrier that waits for everything before it — rendered
+ * as a dashed drop target instead of a bare, ambiguous empty list. */
+.prescript-list.prestep-empty-dropzone {
+  min-height: 32px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prestep-drop-hint {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 0;
+  pointer-events: none;
+}
+
+/* Group identity — a coloured dot (deterministic hash of the group name,
+ * same technique as renderer/logs.ts's per-source colouring) plus its name,
+ * reused on a pipeline script row, the summary strip, and the picker. */
+.pipeline-group-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--group-color, var(--muted));
+  flex-shrink: 0;
+}
+.pipeline-group-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.pipeline-group-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Summary strip: the resulting boot order at a glance. */
+.pipeline-summary {
+  margin-bottom: 10px;
+}
+.pipeline-summary-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-card);
+}
+.pipeline-summary-step {
+  display: flex;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  min-width: 16px;
+  min-height: 12px;
+}
+.pipeline-summary-step.is-empty {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+}
+.pipeline-summary-arrow {
+  color: var(--muted);
+  font-size: 11px;
+}
+.pipeline-summary-count {
+  margin-top: 6px;
+}
+
+/* "+ Añadir script" picker, grouped by group; already-placed scripts show
+ * disabled rather than being omitted, so the user sees WHY they're missing. */
+.script-picker {
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-card);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.script-picker-group + .script-picker-group {
+  margin-top: 8px;
+}
+.script-picker-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.script-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: transparent;
+  border: 0;
+}
+.script-picker-item:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+.script-picker-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+@media (prefers-color-scheme: dark) {
+  .script-picker-item:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .pipeline-summary-step {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+/* Global pipeline trigger — lives in the tray header now, one for the whole
+ * app instead of one per group row. */
+.pipeline-trigger-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* ================================================================
    Pre-script confirmation modal (renderer/prescript-confirm.html)
    ================================================================ */
