@@ -250,17 +250,34 @@ const processManager = new ProcessManager(configStore);
 // queue (ADR-2), and the frameless BrowserWindow. This is the ONLY place
 // with mutable confirm state.
 type ConfirmDecision = 'confirm' | 'cancel';
+/**
+ * `pipeline` = the global pre-script pipeline, cancellable in bulk via
+ * `cancelConfirm` below. `interactive` = a manual/scheduled command or
+ * action confirmation (`confirmIfNeeded`). Both origins share the SAME
+ * serial modal queue (`confirmChain`, ADR-2) and the SAME `pendingConfirms`
+ * map — origin only decides which entries `cancelConfirm` may resolve, and
+ * which queued jobs `pipelineConfirmGeneration` may pre-empt.
+ */
+type ConfirmOrigin = 'pipeline' | 'interactive';
 interface PendingConfirm {
   resolve: (confirmed: boolean) => void;
   timer: NodeJS.Timeout | null;
   win: BrowserWindow | null;
   context: PrescriptConfirmContext;
+  origin: ConfirmOrigin;
 }
 const pendingConfirms = new Map<string, PendingConfirm>();
 const prescriptConfirmWindows = new Map<string, BrowserWindow>();
 let confirmChain: Promise<void> = Promise.resolve();
-/** Bumped by every cancel, so queued confirmations decline instead of showing. */
-let confirmGeneration = 0;
+/**
+ * Bumped only by a pipeline cancel (`cancelConfirm`), so a PIPELINE job still
+ * queued behind `confirmChain` declines instead of showing. An interactive
+ * (manual/scheduled command or action) confirmation never consults this
+ * counter — the pipeline and an unrelated interactive confirmation happened
+ * to share one queue and one counter before, so cancelling the pipeline
+ * could silently cancel or invalidate a manual command's confirmation too.
+ */
+let pipelineConfirmGeneration = 0;
 let _prescriptConfirmLogo: string | null = null;
 
 function getPrescriptConfirmLogo(): string {
@@ -286,14 +303,20 @@ function resolvePrescriptConfirm(
   entry.resolve(decision === 'confirm');
 }
 
-/** Cancels every pending pre-script confirmation — the pipeline is global now, so a cancel is never scoped to one group. */
+/**
+ * Cancels every pending PIPELINE pre-script confirmation — the pipeline is
+ * global now, so a cancel is never scoped to one group. Never touches an
+ * `interactive`-origin entry: a manual/scheduled command's or action's
+ * confirmation shares the same queue but has nothing to do with a pipeline
+ * cancel and must keep running (or keep waiting its turn) unaffected.
+ */
 function cancelConfirm(): void {
-  // Bump FIRST: jobs still queued behind `confirmChain` are not in
-  // `pendingConfirms` yet, so without this they would open their modal after
+  // Bump FIRST: a pipeline job still queued behind `confirmChain` is not in
+  // `pendingConfirms` yet, so without this it would open its modal after
   // the user already cancelled and leave the runner's Promise.all pending.
-  confirmGeneration += 1;
-  for (const [token] of pendingConfirms) {
-    resolvePrescriptConfirm(token, 'cancel');
+  pipelineConfirmGeneration += 1;
+  for (const [token, entry] of pendingConfirms) {
+    if (entry.origin === 'pipeline') resolvePrescriptConfirm(token, 'cancel');
   }
 }
 
@@ -302,6 +325,7 @@ function showConfirmModal(
     PreScript,
     'name' | 'command' | 'args' | 'confirmSecs' | 'confirmOnTimeout'
   >,
+  origin: ConfirmOrigin,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const token = crypto.randomUUID();
@@ -309,6 +333,7 @@ function showConfirmModal(
       resolve,
       timer: null,
       win: null,
+      origin,
       context: {
         name: script.name,
         command: [script.command, ...(script.args || [])].join(' ').trim(),
@@ -330,6 +355,34 @@ function showConfirmModal(
   });
 }
 
+/**
+ * Shared enqueue mechanics for BOTH confirm origins: always serializes
+ * through the SAME `confirmChain` so only one modal ever shows at a time
+ * (ADR-2), regardless of whether the job came from the pipeline or from an
+ * interactive command/action. Only a `pipeline` job can be pre-empted while
+ * still queued (via `pipelineConfirmGeneration`, bumped by `cancelConfirm`);
+ * an `interactive` job always shows when its turn comes up.
+ */
+function enqueueConfirm(
+  script: Pick<
+    PreScript,
+    'name' | 'command' | 'args' | 'confirmSecs' | 'confirmOnTimeout'
+  >,
+  origin: ConfirmOrigin,
+): Promise<boolean> {
+  const generation = pipelineConfirmGeneration;
+  const run = (): Promise<boolean> =>
+    origin === 'pipeline' && generation !== pipelineConfirmGeneration
+      ? Promise.resolve(false)
+      : showConfirmModal(script, origin); // always resolves boolean, never rejects
+  const result = confirmChain.then(run, run);
+  confirmChain = result.then(
+    () => undefined,
+    () => undefined,
+  ); // neutralize so the next job is unaffected
+  return result;
+}
+
 // Injected into the runner. Serializes via confirmChain so only ONE modal
 // shows at a time across ALL concurrent group pipelines (global queue).
 function confirmScript(
@@ -340,18 +393,7 @@ function confirmScript(
   _group: Group | null,
   _groupId: string,
 ): Promise<boolean> {
-  const generation = confirmGeneration;
-  // A cancel between enqueue and turn declines the job instead of showing it.
-  const run = (): Promise<boolean> =>
-    generation === confirmGeneration
-      ? showConfirmModal(script) // always resolves boolean, never rejects
-      : Promise.resolve(false);
-  const result = confirmChain.then(run, run);
-  confirmChain = result.then(
-    () => undefined,
-    () => undefined,
-  ); // neutralize so the next job is unaffected
-  return result;
+  return enqueueConfirm(script, 'pipeline');
 }
 
 /**
@@ -364,11 +406,14 @@ function confirmScript(
  */
 function confirmIfNeeded(
   target: Command | Action | null | undefined,
-  group: Group | null,
-  groupId: string,
+  _group: Group | null,
+  _groupId: string,
 ): Promise<boolean> {
   if (!target || !target.confirm) return Promise.resolve(true);
-  return confirmScript(
+  // origin: 'interactive' — a manual/scheduled confirmation must never be
+  // cancelled or pre-empted by an unrelated pipeline cancel (sdd-verify,
+  // third round): see `enqueueConfirm`/`cancelConfirm`.
+  return enqueueConfirm(
     {
       name: target.name,
       command: target.command,
@@ -376,8 +421,7 @@ function confirmIfNeeded(
       confirmSecs: target.confirmSecs,
       confirmOnTimeout: target.confirmOnTimeout,
     },
-    group,
-    groupId,
+    'interactive',
   );
 }
 
@@ -2661,13 +2705,18 @@ function registerIpc() {
           showCompletionNotification: (title, body) =>
             showCompletionNotification(title, body),
           openPrescriptConfirm: (name, command) => {
-            void showConfirmModal({
-              name,
-              command,
-              args: [],
-              confirmSecs: null,
-              confirmOnTimeout: 'cancel',
-            });
+            // Dev-only manual trigger, unrelated to the real pipeline: a
+            // pipeline cancel must never close this simulated dialog.
+            void showConfirmModal(
+              {
+                name,
+                command,
+                args: [],
+                confirmSecs: null,
+                confirmOnTimeout: 'cancel',
+              },
+              'interactive',
+            );
           },
           toast: (kind, message) => broadcastToast(kind, message),
           // Not process.execPath: unpackaged that resolves to Electron's own
