@@ -199,8 +199,15 @@ export function initPipelineEditor(
         input.disabled = false;
       });
     input.addEventListener('change', async () => {
-      await window.api.saveSettings({ preScriptsAutoRun: input.checked });
-      deps.showToast('Ajustes guardados', 'ok');
+      try {
+        await window.api.saveSettings({ preScriptsAutoRun: input.checked });
+        deps.showToast('Ajustes guardados', 'ok');
+      } catch {
+        // Put the control back where the stored setting still is, so it
+        // never claims a value that was not persisted.
+        input.checked = !input.checked;
+        deps.showToast('No se pudo guardar el ajuste', 'error');
+      }
     });
     label.appendChild(input);
     const span = document.createElement('span');

@@ -259,6 +259,8 @@ interface PendingConfirm {
 const pendingConfirms = new Map<string, PendingConfirm>();
 const prescriptConfirmWindows = new Map<string, BrowserWindow>();
 let confirmChain: Promise<void> = Promise.resolve();
+/** Bumped by every cancel, so queued confirmations decline instead of showing. */
+let confirmGeneration = 0;
 let _prescriptConfirmLogo: string | null = null;
 
 function getPrescriptConfirmLogo(): string {
@@ -286,6 +288,10 @@ function resolvePrescriptConfirm(
 
 /** Cancels every pending pre-script confirmation — the pipeline is global now, so a cancel is never scoped to one group. */
 function cancelConfirm(): void {
+  // Bump FIRST: jobs still queued behind `confirmChain` are not in
+  // `pendingConfirms` yet, so without this they would open their modal after
+  // the user already cancelled and leave the runner's Promise.all pending.
+  confirmGeneration += 1;
   for (const [token] of pendingConfirms) {
     resolvePrescriptConfirm(token, 'cancel');
   }
@@ -334,7 +340,12 @@ function confirmScript(
   _group: Group | null,
   _groupId: string,
 ): Promise<boolean> {
-  const run = () => showConfirmModal(script); // always resolves boolean, never rejects
+  const generation = confirmGeneration;
+  // A cancel between enqueue and turn declines the job instead of showing it.
+  const run = (): Promise<boolean> =>
+    generation === confirmGeneration
+      ? showConfirmModal(script) // always resolves boolean, never rejects
+      : Promise.resolve(false);
   const result = confirmChain.then(run, run);
   confirmChain = result.then(
     () => undefined,

@@ -28,14 +28,18 @@ export function formatScriptLabel(
 }
 
 /**
- * `Pipeline · 12:47:13`.
+ * `Pipeline · 12:47:13.815`.
  *
  * Every run lands in the same log bucket, so the start time is the only thing
  * that tells two of them apart in the sidebar.
  */
 export function formatPipelineRunName(runId: number): string {
   const at = new Date(runId);
-  return `Pipeline · ${pad2(at.getHours())}:${pad2(at.getMinutes())}:${pad2(at.getSeconds())}`;
+  // Milliseconds included on purpose: runIds are `Date.now()` stamps, and a
+  // cancel-and-retry lands two runs inside the same second. The sidebar shows
+  // nothing but this label to tell their logs apart.
+  const ms = String(at.getMilliseconds()).padStart(3, '0');
+  return `Pipeline · ${pad2(at.getHours())}:${pad2(at.getMinutes())}:${pad2(at.getSeconds())}.${ms}`;
 }
 
 /** `1 paso` / `2 pasos`. */

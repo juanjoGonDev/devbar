@@ -123,6 +123,21 @@ export function attachDragHandlers(
 // to `attachDragHandlers` — its 4 existing call sites depend on today's
 // single-container guard (D8 in the design).
 
+/**
+ * `closest('[data-id]')` walks past the container, and in the pipeline editor
+ * a script list sits inside a `.prestep-card` that carries `data-id` too — so
+ * an unscoped lookup resolves list padding and empty-step hints to the STEP
+ * card, which both suppresses the empty-container affordance and draws a
+ * step-level insertion marker during a script drag.
+ */
+function cardWithin(
+  target: EventTarget | null,
+  container: HTMLElement,
+): HTMLElement | null {
+  const card = asElement(target)?.closest<HTMLElement>('[data-id]');
+  return card && card !== container && container.contains(card) ? card : null;
+}
+
 export interface CrossContainerMove {
   sourceContainerId: string;
   targetContainerId: string;
@@ -233,7 +248,7 @@ export function attachCrossContainerDragHandlers(
     // a valid dragover, on top of (not instead of) the more specific
     // empty-container/insertion-point indicators below.
     container.classList.add('drop-into');
-    const card = asElement(event.target)?.closest<HTMLElement>('[data-id]');
+    const card = cardWithin(event.target, container);
     container.querySelectorAll<HTMLElement>('[data-id]').forEach((node) => {
       if (node !== card)
         node.classList.remove('drag-over-before', 'drag-over-after');
@@ -273,9 +288,7 @@ export function attachCrossContainerDragHandlers(
     const state = crossState;
     const sourceId =
       event.dataTransfer?.getData('text/plain') || state.sourceId;
-    const targetCard = asElement(event.target)?.closest<HTMLElement>(
-      '[data-id]',
-    );
+    const targetCard = cardWithin(event.target, container);
     const before = targetCard
       ? event.clientY <
         targetCard.getBoundingClientRect().top +

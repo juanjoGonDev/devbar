@@ -313,6 +313,44 @@ describe('validateImportedConfig — rejects malformed pipeline shapes (v4)', ()
 // ─── v3 payload imports as v4 (backward compatible) ────────────────────────────
 
 describe('validateImportedConfig — v3 payload imports as v4 (backward compatible)', () => {
+  it('keeps the payload preScriptsAutoRun when a v3 label carries v4 data', () => {
+    // A store mislabelled v3 that already holds v4 data has zero legacy
+    // contributors, so the AND-fold would resolve to false and silently turn
+    // off an auto-run the user had enabled.
+    const payload = {
+      version: 3,
+      groups: [
+        {
+          id: 'g1',
+          name: 'Ya migrado',
+          path: '/some/path',
+          mode: 'multi',
+          env: [],
+          commands: [],
+          actions: [],
+          preScripts: [{ id: 'sc1', name: 'Install', command: 'pnpm install' }],
+        },
+      ],
+      preSteps: [
+        {
+          id: 'st1',
+          mode: 'serial',
+          scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+        },
+      ],
+      globalSettings: {
+        autostart: false,
+        silenceWarnings: false,
+        silenceErrors: false,
+        preScriptsAutoRun: true,
+      },
+    };
+    const result = validateImportedConfig(payload);
+    expectValid(result);
+    expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
+    expect(result.payload.preSteps).toHaveLength(1);
+  });
+
   it('keeps refs resolvable when a v3 group carries no id of its own', () => {
     // The migration mints an id for an id-less group and points its refs at
     // it. If the importer then re-normalizes the RAW group, a second,

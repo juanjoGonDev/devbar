@@ -77,6 +77,49 @@ export function serializeConfig(
   };
 }
 
+/**
+ * Hoists a v3 payload's nested per-group script definitions into the global
+ * pipeline shape. A v4 payload passes straight through.
+ *
+ * Extracted from `validateImportedConfig` to keep that function under the
+ * repo's complexity ceiling; it is also the only part of the importer that
+ * needs to reason about two schema versions at once.
+ */
+function applyV3Migration(value: {
+  version?: unknown;
+  groups: unknown[];
+  preSteps?: unknown;
+  globalSettings?: unknown;
+}): { groups: unknown[]; steps: unknown; autoRun: boolean | undefined } {
+  if (value.version !== MIN_SUPPORTED_VERSION)
+    return { groups: value.groups, steps: value.preSteps, autoRun: undefined };
+
+  const migrated = migratePreScriptPipeline({
+    groups: value.groups,
+    preSteps: value.preSteps,
+    globalSettings: value.globalSettings,
+  });
+  const groups = value.groups.map((rawGroup, index) => {
+    const migratedGroup = migrated.groups[index];
+    return {
+      ...record(rawGroup),
+      // The migration mints an id for an id-less group and points its refs at
+      // it; re-normalizing the raw group would mint a different one and the
+      // cross-reference check would then reject the whole import.
+      ...(migratedGroup ? { id: migratedGroup.id } : {}),
+      preScripts: migratedGroup?.preScripts ?? [],
+    };
+  });
+  return {
+    groups,
+    steps: migrated.preSteps,
+    // Only when legacy data was actually hoisted. A store mislabelled v3 that
+    // already holds v4 data has zero contributors, and the AND-fold would
+    // silently turn OFF an auto-run the payload had enabled.
+    autoRun: migrated.changed ? migrated.preScriptsAutoRun : undefined,
+  };
+}
+
 export function validateImportedConfig(value: unknown): ImportValidation {
   if (!isRecord(value))
     return { ok: false, error: 'Root must be a JSON object' };
@@ -86,7 +129,7 @@ export function validateImportedConfig(value: unknown): ImportValidation {
   )
     return {
       ok: false,
-      error: `Versión de schema incompatible (esperada ${EXPORT_SCHEMA_VERSION}, recibida ${String(value.version)})`,
+      error: `Versión de schema incompatible (admitidas ${MIN_SUPPORTED_VERSION} y ${EXPORT_SCHEMA_VERSION}, recibida ${String(value.version)})`,
     };
   if (!isUnknownArray(value.groups))
     return { ok: false, error: 'groups debe ser un array' };
@@ -102,29 +145,16 @@ export function validateImportedConfig(value: unknown): ImportValidation {
   // this keeps that one accepted trade-off scoped to preScripts alone. Only
   // this importer sees the WHOLE payload, so the pipeline cross-reference
   // validation below still runs natively either way.
-  let rawGroups: unknown[] = value.groups;
-  let rawSteps: unknown = value.preSteps;
-  let migratedAutoRun: boolean | undefined;
-  if (value.version === MIN_SUPPORTED_VERSION) {
-    const migrated = migratePreScriptPipeline({
-      groups: value.groups,
-      preSteps: value.preSteps,
-      globalSettings: value.globalSettings,
-    });
-    rawGroups = value.groups.map((rawGroup, index) => {
-      const migratedGroup = migrated.groups[index];
-      return {
-        ...record(rawGroup),
-        // The migration mints an id for an id-less group and points its refs
-        // at it; re-normalizing the raw group would mint a different one and
-        // the cross-reference check below would reject the whole import.
-        ...(migratedGroup ? { id: migratedGroup.id } : {}),
-        preScripts: migratedGroup?.preScripts ?? [],
-      };
-    });
-    rawSteps = migrated.preSteps;
-    migratedAutoRun = migrated.preScriptsAutoRun;
-  }
+  const {
+    groups: rawGroups,
+    steps: rawSteps,
+    autoRun: migratedAutoRun,
+  } = applyV3Migration({
+    version: value.version,
+    groups: value.groups,
+    preSteps: value.preSteps,
+    globalSettings: value.globalSettings,
+  });
 
   if (rawSteps !== undefined && !isUnknownArray(rawSteps))
     return { ok: false, error: 'preSteps debe ser un array' };

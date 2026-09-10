@@ -30,12 +30,21 @@ describe('formatPipelineRunName', () => {
   it('stamps the start time so consecutive runs are told apart in the log list', () => {
     // Local-time constructor: the expected clock reading is timezone-independent.
     const at = new Date(2026, 8, 10, 12, 47, 13).getTime();
-    expect(formatPipelineRunName(at)).toBe('Pipeline · 12:47:13');
+    expect(formatPipelineRunName(at)).toBe('Pipeline · 12:47:13.000');
   });
 
   it('zero-pads so the labels stay column-aligned', () => {
     const at = new Date(2026, 8, 10, 9, 5, 4).getTime();
-    expect(formatPipelineRunName(at)).toBe('Pipeline · 09:05:04');
+    expect(formatPipelineRunName(at)).toBe('Pipeline · 09:05:04.000');
+  });
+
+  it('distinguishes two runs inside the same second', () => {
+    // runIds are Date.now() stamps; a cancel-and-retry can land twice in one
+    // second, and the sidebar shows only this label to tell the logs apart.
+    const at = new Date(2026, 8, 10, 12, 47, 13).getTime();
+    expect(formatPipelineRunName(at + 120)).not.toBe(
+      formatPipelineRunName(at + 880),
+    );
   });
 
   it('gives two runs a second apart different labels', () => {
