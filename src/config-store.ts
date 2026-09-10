@@ -22,6 +22,7 @@ import {
   normalizePreStep,
   planStoreMigration,
   prunePipelineRefs,
+  reorderByIds,
   regenerateLegacyServices,
   assignScriptToStep as assignRefToStep,
   unassignScriptFromStep as unassignRefFromStep,
@@ -136,23 +137,6 @@ export function saveGroup(
 }
 export function deleteGroup(id: string): void {
   persistState(getGroupsInternal().filter((group) => group.id !== id));
-}
-function reorderByIds<T extends { id: string }>(
-  items: readonly T[],
-  orderedIds: readonly string[],
-): T[] {
-  const byId = new Map(items.map((item) => [item.id, item]));
-  const seen = new Set<string>();
-  const sorted: T[] = [];
-  for (const id of orderedIds) {
-    const item = byId.get(id);
-    if (item && !seen.has(id)) {
-      sorted.push(item);
-      seen.add(id);
-    }
-  }
-  for (const item of items) if (!seen.has(item.id)) sorted.push(item);
-  return sorted;
 }
 export function reorderGroups(orderedIds: readonly string[]): Group[] {
   const sorted = reorderByIds(getGroupsInternal(), orderedIds).map(

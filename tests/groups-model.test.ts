@@ -21,6 +21,7 @@ import {
   migratePreScriptPipeline,
   planStoreMigration,
   prunePipelineRefs,
+  reorderByIds,
   assignScriptToStep,
   unassignScriptFromStep,
   regenerateLegacyServices,
@@ -2201,5 +2202,37 @@ describe('unassignScriptFromStep', () => {
       scriptId: 'scX',
     });
     expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
+  });
+});
+
+// sdd-verify W3: config-store.ts's own reorder helper for groups, commands,
+// actions, pre-steps, and pre-scripts (reorderGroups/reorderCommands/
+// reorderActions/reorderPreSteps/reorderPreScripts) — moved here so it is a
+// real, directly-importable function instead of a hand-copy re-implemented
+// inside a test file (config-store.ts itself is Electron-bound and cannot be
+// imported under Vitest).
+describe('reorderByIds', () => {
+  it('reorders items to match orderedIds', () => {
+    const items = [{ id: 's1' }, { id: 's2' }, { id: 's3' }];
+    const result = reorderByIds(items, ['s3', 's1', 's2']);
+    expect(result.map((item) => item.id)).toEqual(['s3', 's1', 's2']);
+  });
+
+  it('appends items missing from orderedIds at the end, in their original order', () => {
+    const items = [{ id: 's1' }, { id: 's2' }, { id: 's3' }];
+    const result = reorderByIds(items, ['s2']);
+    expect(result.map((item) => item.id)).toEqual(['s2', 's1', 's3']);
+  });
+
+  it('ignores ids in orderedIds that do not match any item', () => {
+    const items = [{ id: 's1' }, { id: 's2' }];
+    const result = reorderByIds(items, ['ghost', 's1', 's2']);
+    expect(result.map((item) => item.id)).toEqual(['s1', 's2']);
+  });
+
+  it('does not duplicate an item whose id repeats in orderedIds', () => {
+    const items = [{ id: 's1' }, { id: 's2' }];
+    const result = reorderByIds(items, ['s1', 's1', 's2']);
+    expect(result.map((item) => item.id)).toEqual(['s1', 's2']);
   });
 });

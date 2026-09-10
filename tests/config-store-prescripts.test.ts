@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizePreStep,
   normalizePreScript,
+  reorderByIds,
   assignScriptToStep,
   unassignScriptFromStep,
 } from '../src/groups-model.js';
@@ -12,13 +13,18 @@ import {
  * config-store requires electron-store (Electron context) and cannot be
  * imported in a pure Vitest environment. We therefore test the CRUD logic
  * that lives in the normalizer layer (normalizePreStep / normalizePreScript)
- * and verify the reorder algorithm inline — both mirror exactly what
- * config-store's savePreStep / reorderPreSteps / savePreScript etc. do.
+ * and exercise the REAL reorder algorithm via `reorderByIds` — both mirror
+ * exactly what config-store's savePreStep / reorderPreSteps / savePreScript
+ * etc. do.
  *
  * The normalizer tests ensure the data shapes produced by each CRUD
- * function are correct; the reorder tests validate the id-based splice
- * logic (same algorithm used in reorderPreSteps / reorderPreScripts /
- * reorderActions in config-store.js).
+ * function are correct; the reorder tests below call the same
+ * `reorderByIds` function config-store.ts imports for reorderGroups /
+ * reorderCommands / reorderActions / reorderPreSteps / reorderPreScripts
+ * (sdd-verify W3: previously this file hand-copied the algorithm instead of
+ * importing it, so a real drift between the two would have gone unnoticed;
+ * dedicated coverage for `reorderByIds` itself lives in
+ * `groups-model.test.ts`).
  *
  * Since the pipeline migration: `preSteps` is a GLOBAL top-level slice (no
  * `groupId` on save/delete/reorder), `preScripts` stays per-group but flat
@@ -26,28 +32,6 @@ import {
  * `assignScriptToStep` / `unassignScriptFromStep` (real imports from
  * `groups-model.ts` — genuinely testable, unlike the rest of this file).
  */
-
-// ─── Reorder algorithm (mirrors config-store's reorder helpers) ───────────────
-
-function reorderById<T extends { id: string }>(
-  items: readonly T[],
-  orderedIds: readonly string[],
-): T[] {
-  const byId = new Map(items.map((x) => [x.id, x]));
-  const seen = new Set<string>();
-  const sorted: T[] = [];
-  for (const id of orderedIds) {
-    if (byId.has(id) && !seen.has(id)) {
-      const item = byId.get(id);
-      if (item) sorted.push(item);
-      seen.add(id);
-    }
-  }
-  for (const x of items) {
-    if (!seen.has(x.id)) sorted.push(x);
-  }
-  return sorted;
-}
 
 // ─── normalizePreStep (savePreStep contract) ──────────────────────────────────
 
@@ -163,25 +147,25 @@ describe('reorderPreSteps contract — reorder algorithm', () => {
       { id: 's2', mode: 'serial', scripts: [] },
       { id: 's3', mode: 'parallel', scripts: [] },
     ];
-    const result = reorderById(steps, ['s3', 's1', 's2']);
+    const result = reorderByIds(steps, ['s3', 's1', 's2']);
     expect(result.map((s) => s.id)).toEqual(['s3', 's1', 's2']);
   });
 
   it('appends unknown ids at the end', () => {
     const steps = [{ id: 's1' }, { id: 's2' }];
-    const result = reorderById(steps, ['s2']); // s1 not mentioned
+    const result = reorderByIds(steps, ['s2']); // s1 not mentioned
     expect(result.map((s) => s.id)).toEqual(['s2', 's1']);
   });
 
   it('ignores ids not in the current list', () => {
     const steps = [{ id: 's1' }, { id: 's2' }];
-    const result = reorderById(steps, ['s3', 's1', 's2']); // s3 doesn't exist
+    const result = reorderByIds(steps, ['s3', 's1', 's2']); // s3 doesn't exist
     expect(result.map((s) => s.id)).toEqual(['s1', 's2']);
   });
 
   it('does not duplicate items', () => {
     const steps = [{ id: 's1' }, { id: 's2' }];
-    const result = reorderById(steps, ['s1', 's1', 's2']); // duplicate
+    const result = reorderByIds(steps, ['s1', 's1', 's2']); // duplicate
     const ids = result.map((s) => s.id);
     const deduped = [...new Set(ids)];
     expect(ids).toEqual(deduped);
@@ -204,7 +188,7 @@ describe('deletePreScript contract', () => {
 describe('reorderPreScripts contract', () => {
   it('reorders a group flat preScripts list', () => {
     const scripts = [{ id: 'sc1' }, { id: 'sc2' }, { id: 'sc3' }];
-    const result = reorderById(scripts, ['sc3', 'sc1', 'sc2']);
+    const result = reorderByIds(scripts, ['sc3', 'sc1', 'sc2']);
     expect(result.map((sc) => sc.id)).toEqual(['sc3', 'sc1', 'sc2']);
   });
 });

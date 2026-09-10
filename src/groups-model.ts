@@ -641,6 +641,34 @@ export function prunePipelineRefs(
 }
 
 /**
+ * Reorders `items` to match `orderedIds`: known ids come first, in that
+ * exact order (a repeated id only counts once); any item whose id is not in
+ * `orderedIds` is appended afterward, in its original relative order.
+ * Shared by every id-ordered CRUD list in `config-store.ts` — groups,
+ * commands, actions, pre-steps, and pre-scripts all reorder the same way
+ * (sdd-verify W3: previously a private helper there, and hand-copied again
+ * inside a test file since `config-store.ts` cannot be imported under
+ * Vitest; now real and imported by both).
+ */
+export function reorderByIds<T extends { id: string }>(
+  items: readonly T[],
+  orderedIds: readonly string[],
+): T[] {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const seen = new Set<string>();
+  const sorted: T[] = [];
+  for (const id of orderedIds) {
+    const item = byId.get(id);
+    if (item && !seen.has(id)) {
+      sorted.push(item);
+      seen.add(id);
+    }
+  }
+  for (const item of items) if (!seen.has(item.id)) sorted.push(item);
+  return sorted;
+}
+
+/**
  * Places `ref` into `stepId` at `position` (end of the step when omitted),
  * first removing it from EVERY step (including the target). This single
  * function covers a fresh placement, a cross-step move, and a same-step
