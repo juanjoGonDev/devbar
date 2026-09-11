@@ -41,3 +41,17 @@ describe('both sides of a merged view share one membership rule', () => {
     expect(mainSource).not.toContain('mergedScopeGroupId');
   });
 });
+
+describe('boot auto-start adopts an in-flight run without a window', () => {
+  it('captures current() before awaiting run(), not after', () => {
+    // Reading `current()` after the await loses a run that finished in
+    // between, leaving the synthetic `already_running` result. `main.ts` has
+    // no test seam, so this asserts the ORDER in the shipped source.
+    const call = mainSource.indexOf('const attempt = preScriptRunner.run()');
+    const capture = mainSource.indexOf('preScriptRunner.current()');
+    const awaitAttempt = mainSource.indexOf('await attempt');
+    expect(call).toBeGreaterThan(-1);
+    expect(capture).toBeGreaterThan(call);
+    expect(awaitAttempt).toBeGreaterThan(capture);
+  });
+});

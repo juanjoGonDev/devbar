@@ -1574,3 +1574,49 @@ describe('createPreScriptRunner — parallel concurrency and log labelling', () 
     );
   });
 });
+
+describe('createPreScriptRunner — adopting a run already in flight', () => {
+  it('hands back the in-flight promise synchronously with the rejected attempt', async () => {
+    // The adopting caller reads `current()` in the statement right after
+    // calling `run()`. Nothing may settle in between, or a run that finishes
+    // in that window leaves the caller holding the synthetic
+    // `already_running` result: a cancellation reported as a failure, and no
+    // aggregatorId, so the withheld notice never reaches the real run's log.
+    const group = makeGroup({
+      id: 'g1',
+      path: '/tmp/g1',
+      preScripts: [makeScript({ id: 'sc1', name: 'A' })],
+    });
+    const steps = [makeStep('s1', 'serial', [ref('g1', 'sc1')])];
+    const pm = makeMockPM({ 'pre:g1:sc1': 'hang' });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore([group], steps),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    const first = runner.run();
+    await Promise.resolve();
+
+    // Exactly what the adopting caller does: call, then capture, then await.
+    const attempt = runner.run();
+    const inFlight = runner.current();
+    const res = await attempt;
+    expect(res.ok).toBe(false);
+    expect(inFlight).not.toBeNull();
+
+    // Let the real run finish AFTER the attempt was rejected — the window the
+    // racy version lost.
+    pm.emit('action:done', {
+      processId: 'pre:g1:sc1',
+      code: 0,
+      group: PLACEHOLDER_GROUP,
+      target: PLACEHOLDER_SCRIPT,
+    });
+    const adopted = await inFlight!;
+    const real = await first;
+    expect(adopted).toEqual(real);
+    expect(adopted.ok).toBe(true);
+  });
+});

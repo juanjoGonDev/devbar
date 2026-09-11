@@ -2934,17 +2934,23 @@ async function autoStartAllMarkedCommands(): Promise<void> {
   const release = { plan, groupsById, fired: new Set<number>() };
   activeAutoStartRelease = release;
   try {
-    let res = await preScriptRunner.run();
-    if (!res.ok && res.error === 'already_running') {
+    // Capture the in-flight run BEFORE awaiting. `run()` returns its promise
+    // synchronously, so nothing can settle between these two statements; read
+    // `current()` after the await instead and a manual run that finished in
+    // that window is already gone, leaving the synthetic `already_running`
+    // result — which reports a cancellation as a failure and loses the real
+    // run's `aggregatorId`, so the withheld notice never reaches its log.
+    const attempt = preScriptRunner.run();
+    const inFlight = preScriptRunner.current();
+    let res = await attempt;
+    if (!res.ok && res.error === 'already_running' && inFlight) {
       // A manual run (e.g. the tray ▶▶) was already in flight when boot
-      // auto-start fired. Wait for THAT run and adopt its result instead of
-      // reporting a spurious failure here: `activeAutoStartRelease` stays
-      // set for the whole wait, so the in-flight run's `onStepComplete`
-      // still releases this boot plan's groups as its own steps clear —
-      // clearing early (the old behaviour) starved every group whose
-      // release step hadn't fired yet.
-      const inFlight = preScriptRunner.current();
-      if (inFlight) res = await inFlight;
+      // auto-start fired. Adopt ITS result instead of reporting a spurious
+      // failure: `activeAutoStartRelease` stays set for the whole wait, so
+      // that run's `onStepComplete` still releases this boot plan's groups as
+      // its own steps clear — clearing early starved every group whose
+      // release step had not fired yet.
+      res = await inFlight;
     }
     if (!res.ok) {
       const withheld = withheldGroupIds(plan, release.fired);
