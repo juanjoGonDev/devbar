@@ -595,8 +595,11 @@ function buildRow(entry: LogEntry, entryIndex: number): HTMLElement {
   if (source) {
     div.dataset.src = source.name;
     div.dataset.group = source.groupName;
-    // The group tag is redundant inside a single group's view.
-    if (mergedIsAll) {
+    // The group tag is redundant inside a single real group's own view,
+    // where every source shares that same group — but not in the pipeline's
+    // own merged view, whose sources are whichever real groups' scripts
+    // took part, exactly like "Todo".
+    if (mergedGroupId === null || mergedGroupId === PIPELINE_LOG_GROUP_ID) {
       const grp = document.createElement('button');
       grp.type = 'button';
       grp.className = 'src grp';

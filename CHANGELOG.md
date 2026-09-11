@@ -55,6 +55,18 @@ Todas las novedades relevantes de DevBar. El formato sigue
   comandos de auto-arranque); se avisa con un log y una notificación
   nombrándolos.
 
+### Corregido
+
+- **El log combinado del pipeline etiquetaba mal cada línea.** Todas las
+  líneas de cualquier script del pipeline aparecían bajo la misma etiqueta
+  genérica del pipeline, así que no se podía saber de qué grupo venía cada
+  una — y además cada línea se duplicaba: vivía a la vez en el log del propio
+  script y, copiada con un prefijo de texto, en el log del pipeline. Ahora el
+  pipeline solo agrega su propia narración (inicio, pasos, fin); la salida de
+  cada script se etiqueta con su grupo y su propio nombre reales (por
+  ejemplo, `[Back] [Make setup]`), igual que en «Todo», y deja de
+  duplicarse.
+
 ## [0.7.1] - 2026-09-09
 
 Solo cambios internos de mantenimiento (dependencias y proceso de

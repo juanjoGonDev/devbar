@@ -1466,7 +1466,7 @@ describe('createPreScriptRunner — parallel concurrency and log labelling', () 
     ).toBe(true);
   });
 
-  it('forwards a script’s own output under a group-qualified prefix', async () => {
+  it('never copies a script’s own output into the aggregator buffer', async () => {
     const steps = [makeStep('s1', 'serial', [ref('back', 'setup')])];
     const group = makeGroup({
       id: 'back',
@@ -1485,8 +1485,9 @@ describe('createPreScriptRunner — parallel concurrency and log labelling', () 
     const runPromise = runner.run();
     await Promise.resolve();
     await Promise.resolve();
-    // The output-prefix path is only reached when the script actually emits;
-    // no other test emits a script log event, so it went unexercised.
+    // Simulates the script's own child process emitting real output — this is
+    // ordinary per-process logging done by processManager, unrelated to the
+    // runner. The runner must not additionally relay it into the aggregator.
     pm.pushLog('pre:back:setup', {
       ts: Date.now(),
       stream: 'stdout',
@@ -1501,9 +1502,19 @@ describe('createPreScriptRunner — parallel concurrency and log labelling', () 
     });
     const res = await runPromise;
     expectSucceeded(res);
-    const lines = pm
+    // The aggregator only ever carries the pipeline's own narration — never a
+    // copy of a script's stdout/stderr, which would duplicate the same line
+    // between two buffers and make the pipeline's line count lie about how
+    // much a script actually produced.
+    const aggregatorLines = pm
       .getLogs(`pre-pipeline:${res.runId}`)
       .map((entry) => entry.line);
-    expect(lines).toContain('[Back · Make setup] compilando…');
+    expect(aggregatorLines.some((line) => line.includes('compilando…'))).toBe(
+      false,
+    );
+    // The line still lives exactly once, in the script's own buffer,
+    // untouched — no `[tag]` prefix rewriting it, no duplication.
+    const scriptLines = pm.getLogs('pre:back:setup').map((entry) => entry.line);
+    expect(scriptLines).toEqual(['compilando…']);
   });
 });

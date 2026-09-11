@@ -2114,6 +2114,16 @@ function registerIpc() {
    * pipeline aggregator log is a sibling of group buckets — it surfaces in
    * the "every group" view and in its own scope, but never inside a real
    * group's merged view (it belongs to no single group).
+   *
+   * The pipeline's own scope is a genuine cross-group merge, not a
+   * single-group one: every pre-script only ever runs through the pipeline
+   * (there is no other way to mint a `pre:groupId:scriptId` buffer), so its
+   * merged view must include every one of them, each tagged with its OWN
+   * real group and script name — never the pipeline's sentinel — exactly
+   * like a normal group's commands/actions. The aggregator itself carries
+   * only the pipeline's own narration; it never holds a copy of a script's
+   * output (see `pre-script-runner.ts`'s `runOne`), so without this, a
+   * script's lines would have no source of their own here at all.
    */
   const collectMergedSources = (groupId: string | null): LogSource[] => {
     const isPipelineScope = groupId === PIPELINE_LOG_GROUP_ID;
@@ -2146,7 +2156,22 @@ function registerIpc() {
     for (const { id } of processManager.listLogBuffers()) {
       const parsed = parseProcessId(id);
       if (parsed.kind === 'prescript') {
-        if (isPipelineScope) continue; // never attributed to the pipeline bucket
+        if (isPipelineScope) {
+          // Attribute to the script's OWN real group/name — the whole point
+          // of this fix — rather than skipping it or folding it into the
+          // pipeline's sentinel bucket. A ref whose group or script has
+          // since been deleted fails to resolve; skip it instead of
+          // crashing the view (D6 — same rule the runner itself follows).
+          const resolved = processManager.resolveTarget(id);
+          if (!resolved) continue;
+          sources.push({
+            id,
+            name: resolved.target.name,
+            groupId: resolved.group.id,
+            groupName: resolved.group.name,
+          });
+          continue;
+        }
         const groupName = wanted.get(parsed.groupId);
         if (groupName === undefined) continue;
         const resolved = processManager.resolveTarget(id);

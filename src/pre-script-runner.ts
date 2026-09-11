@@ -222,23 +222,7 @@ export function createPreScriptRunner({
     }
     const pid = makePreScriptId(ref.groupId, script.id);
     handle.childPids.add(pid);
-    const tag = `[${label}]`;
     return new Promise<OneResult>((resolve) => {
-      const logHandler = ({
-        id,
-        entry,
-      }: {
-        id: string;
-        entry: LogEntry;
-      }): void => {
-        if (id !== pid || entry.stream === 'sys') return;
-        pushAggregatorLog(
-          handle.aggregatorId,
-          `${tag} ${entry.line}`,
-          entry.level,
-        );
-      };
-      processManager.on('log', logHandler);
       let timeoutToken: NodeJS.Timeout | null = null;
       const scriptStartedAt = Date.now();
       const handler = ({
@@ -254,7 +238,6 @@ export function createPreScriptRunner({
           timeoutToken = null;
         }
         processManager.removeListener('action:done', handler);
-        processManager.removeListener('log', logHandler);
         handle.childPids.delete(pid);
         const elapsed = formatUptime(Date.now() - scriptStartedAt),
           ok = code === 0;
@@ -291,7 +274,6 @@ export function createPreScriptRunner({
           timeoutToken = null;
         }
         processManager.removeListener('action:done', handler);
-        processManager.removeListener('log', logHandler);
         handle.childPids.delete(pid);
         pushAggregatorLog(
           handle.aggregatorId,
