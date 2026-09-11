@@ -21,13 +21,18 @@ const mainSource = fs.readFileSync(
 describe('both sides of a merged view share one membership rule', () => {
   // Each call passes the scope its own side holds, so the argument names
   // identify the call site without parsing the file.
+  // `\s*,?\s*` before the closing paren tolerates a reflow that also adds a
+  // trailing comma (this repo's Prettier 3 default for broken-out args), not
+  // just one that adds whitespace.
   it('the opening snapshot asks belongsToMergedScope', () => {
-    expect(mainSource).toContain('belongsToMergedScope(parsed, groupId)');
+    expect(mainSource).toMatch(
+      /belongsToMergedScope\(\s*parsed,\s*groupId\s*,?\s*\)/,
+    );
   });
 
   it('the live stream asks belongsToMergedScope', () => {
-    expect(mainSource).toContain(
-      'belongsToMergedScope(parsed, mainLogsScope.groupId)',
+    expect(mainSource).toMatch(
+      /belongsToMergedScope\(\s*parsed,\s*mainLogsScope\.groupId\s*,?\s*\)/,
     );
   });
 
