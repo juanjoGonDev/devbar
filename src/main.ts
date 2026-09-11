@@ -48,7 +48,11 @@ import {
   parseProcessId,
   type ParsedProcessId,
 } from './compound-id.js';
-import { formatPipelineRunName } from './pipeline-labels.js';
+import {
+  formatPipelineRunName,
+  PIPELINE_LOG_GROUP_ID,
+  PIPELINE_LOG_NAME,
+} from './pipeline-labels.js';
 import { createPreScriptRunner } from './pre-script-runner.js';
 import {
   planAutoStartRelease,
@@ -493,14 +497,6 @@ let forceCloseConfig = false;
 // Key '@main' is the shared multi-log window (sidebar + one visible log);
 // any other key is a processId detached into its own window.
 const MAIN_LOGS_KEY = '@main';
-/**
- * Sentinel "group" id for the pipeline aggregator log's own top-level bucket
- * in `logs:list`/`getMergedSources` — the pipeline is global now and must
- * never nest under any real group (never collides with a real group id,
- * which is always a `crypto.randomUUID()`).
- */
-const PIPELINE_LOG_GROUP_ID = '__pipeline__';
-const PIPELINE_LOG_NAME = 'Pipeline de pre-scripts';
 const logsWindows = new Map<string, BrowserWindow>();
 // Which log the shared window is currently showing — it only receives lines
 // for that one, so N running services don't flood it with N streams.

@@ -4,6 +4,8 @@ import {
   formatPipelineRunName,
   formatStepCount,
   formatStepMode,
+  PIPELINE_LOG_GROUP_ID,
+  PIPELINE_LOG_NAME,
 } from '../src/pipeline-labels.js';
 
 describe('formatScriptLabel', () => {
@@ -71,5 +73,19 @@ describe('formatStepMode', () => {
   it('reads in the same language as the rest of the app', () => {
     expect(formatStepMode('serial')).toBe('serie');
     expect(formatStepMode('parallel')).toBe('paralelo');
+  });
+});
+
+// Single source of truth shared by `main.ts` (which builds the sidebar data)
+// and `renderer/logs.ts` (which has to single out this one bucket to render
+// it right after "Todo" and without per-run children) — a typo in either
+// place duplicating this string by hand would silently break that matching.
+describe('PIPELINE_LOG_GROUP_ID / PIPELINE_LOG_NAME', () => {
+  it('is the shared sentinel identifying the pipeline bucket, never a real group id', () => {
+    expect(PIPELINE_LOG_GROUP_ID).toBe('__pipeline__');
+  });
+
+  it('is the shared display name for that bucket', () => {
+    expect(PIPELINE_LOG_NAME).toBe('Pipeline de pre-scripts');
   });
 });
