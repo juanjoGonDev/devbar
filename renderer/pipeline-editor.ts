@@ -114,6 +114,14 @@ export function initPipelineEditor(
   let draftSteps: PreStep[] = [];
   let openPickerStepId: string | null = null;
 
+  // Global auto-run setting, read ONCE (loadAutoRunSetting, below) rather
+  // than on every render(): render() runs after every step mutation and
+  // every picker toggle, and a fresh getSettings() call each time left the
+  // checkbox disabled — dead to clicks — until that call resolved, even for
+  // renders that have nothing to do with this setting.
+  let autoRunEnabled = false;
+  let autoRunSettingLoaded = false;
+
   function isPipelineDirty(): boolean {
     return JSON.stringify(draftSteps) !== JSON.stringify(storedSteps);
   }
@@ -175,7 +183,30 @@ export function initPipelineEditor(
     saveBarHost.appendChild(bar);
   }
 
+  /** Reads the global auto-run setting exactly once (called from
+   * `initPipelineEditor` below), caching it so every subsequent render()
+   * paints from memory instead of racing a fresh IPC call. */
+  function loadAutoRunSetting(): void {
+    void window.api
+      .getSettings()
+      .then((settings) => {
+        autoRunEnabled = !!settings.preScriptsAutoRun;
+      })
+      .catch(() => {
+        deps.showToast('No se pudieron leer los ajustes', 'error');
+      })
+      .finally(() => {
+        autoRunSettingLoaded = true;
+        render();
+      });
+  }
+
   // ── Auto-run toggle (now a GLOBAL setting, not per-group) ───────────────
+  //
+  // Reads the cached `autoRunEnabled`/`autoRunSettingLoaded` state (set once
+  // by `loadAutoRunSetting`, below) instead of firing its own getSettings()
+  // call — this function now runs on every render() without re-fetching or
+  // re-disabling the control.
   function buildAutoRunToggle(): HTMLElement {
     const section = document.createElement('div');
     section.className = 'detail-section';
@@ -183,24 +214,15 @@ export function initPipelineEditor(
     label.className = 'toggle';
     const input = document.createElement('input');
     input.type = 'checkbox';
-    // Disabled until the stored value lands: an early click would be saved
-    // and then silently overwritten by the resolving read, leaving the
-    // control contradicting the setting it just wrote.
-    input.disabled = true;
-    void window.api
-      .getSettings()
-      .then((settings) => {
-        input.checked = !!settings.preScriptsAutoRun;
-      })
-      .catch(() => {
-        deps.showToast('No se pudieron leer los ajustes', 'error');
-      })
-      .finally(() => {
-        input.disabled = false;
-      });
+    input.checked = autoRunEnabled;
+    // Disabled until the cached value has loaded once: an early click would
+    // be saved and then silently overwritten by the resolving read, leaving
+    // the control contradicting the setting it just wrote.
+    input.disabled = !autoRunSettingLoaded;
     input.addEventListener('change', async () => {
       try {
         await window.api.saveSettings({ preScriptsAutoRun: input.checked });
+        autoRunEnabled = input.checked;
         deps.showToast('Ajustes guardados', 'ok');
       } catch {
         // Put the control back where the stored setting still is, so it
@@ -617,6 +639,8 @@ export function initPipelineEditor(
 
     renderSaveBar();
   }
+
+  loadAutoRunSetting();
 
   return { refresh, isPipelineDirty };
 }
