@@ -8,11 +8,7 @@ import type {
 } from './domain-types.js';
 import { makeAggregatorId, makePreScriptId } from './compound-id.js';
 import { formatUptime } from './format-uptime.js';
-import {
-  formatScriptLabel,
-  formatStepCount,
-  formatStepMode,
-} from './pipeline-labels.js';
+import { formatStepCount, formatStepMode } from './pipeline-labels.js';
 
 interface ConfigStoreLike {
   getGroup(groupId: string): Group | null;
@@ -138,17 +134,26 @@ export function createPreScriptRunner({
   // Singleton: one global pipeline, not one per group.
   let running: RunHandle | null = null;
   let recentResult: RecentResult | null = null;
-  const pushAggregatorLog = (
-    aggregatorId: string,
+  const pushSysLog = (
+    bufferId: string,
     line: string,
     level: 'warn' | 'error' | null = null,
   ): void =>
-    processManager.pushLog(aggregatorId, {
+    processManager.pushLog(bufferId, {
       ts: Date.now(),
       stream: 'sys',
       level,
       line,
     });
+  /** Pipeline-level narration: the run itself, never one script. */
+  const pushAggregatorLog = pushSysLog;
+  /**
+   * Narration ABOUT one script goes into that script's OWN buffer, so the
+   * merged view tags it `[Back] [Make setup]` from a real source instead of
+   * attributing it to the pipeline. The tag now carries the identity, so the
+   * message no longer repeats `Script "Grupo · Script"` in its text.
+   */
+  const pushScriptLog = pushSysLog;
   function setRecentResult(
     status: 'done' | 'error',
     error: string | null,
@@ -189,18 +194,12 @@ export function createPreScriptRunner({
       );
       return { ok: true, code: null, skipped: true };
     }
-    // Group first: two groups can each define a script called the same
-    // thing, and the bare name makes the log ambiguous about which ran.
-    const label = formatScriptLabel(group.name, script.name);
+    const pid = makePreScriptId(ref.groupId, script.id);
     const groupPath = group.path.trim();
     if (!groupPath) {
       // An ordinary per-script failure, not a whole-pipeline abort: siblings
       // already spawned in the same parallel step still complete.
-      pushAggregatorLog(
-        handle.aggregatorId,
-        `── Script "${label}" sin ruta configurada en su grupo ──`,
-        'error',
-      );
+      pushScriptLog(pid, `── Sin ruta configurada en su grupo ──`, 'error');
       return { ok: false, code: -1, error: 'no_group_path' };
     }
     if (script.confirm) {
@@ -208,10 +207,7 @@ export function createPreScriptRunner({
         ? await confirmScript(script, group, ref.groupId)
         : false;
       if (!confirmed) {
-        pushAggregatorLog(
-          handle.aggregatorId,
-          `── Script "${label}" cancelado por el usuario ──`,
-        );
+        pushScriptLog(pid, `── Cancelado por el usuario ──`);
         return {
           ok: false,
           code: -1,
@@ -220,7 +216,6 @@ export function createPreScriptRunner({
         };
       }
     }
-    const pid = makePreScriptId(ref.groupId, script.id);
     handle.childPids.add(pid);
     return new Promise<OneResult>((resolve) => {
       let timeoutToken: NodeJS.Timeout | null = null;
@@ -242,11 +237,11 @@ export function createPreScriptRunner({
         const elapsed = formatUptime(Date.now() - scriptStartedAt),
           ok = code === 0;
         if (!handle._timedOutScripts.has(pid))
-          pushAggregatorLog(
-            handle.aggregatorId,
+          pushScriptLog(
+            pid,
             ok
-              ? `── Script "${label}" finalizado correctamente (${elapsed}) ──`
-              : `── Script "${label}" ha fallado (salida ${code}, ${elapsed}) ──`,
+              ? `── Finalizado correctamente (${elapsed}) ──`
+              : `── Ha fallado (salida ${code}, ${elapsed}) ──`,
             ok ? null : 'error',
           );
         resolve({ ok, code });
@@ -254,19 +249,16 @@ export function createPreScriptRunner({
       processManager.on('action:done', handler);
       if (script.timeoutMs) {
         timeoutToken = setTimeout(() => {
-          pushAggregatorLog(
-            handle.aggregatorId,
-            `── Script "${label}" ha excedido el tiempo límite (${formatUptime(Date.now() - scriptStartedAt)}) ──`,
+          pushScriptLog(
+            pid,
+            `── Ha excedido el tiempo límite (${formatUptime(Date.now() - scriptStartedAt)}) ──`,
             'error',
           );
           handle._timedOutScripts.add(pid);
           void processManager.stop(pid);
         }, script.timeoutMs);
       }
-      pushAggregatorLog(
-        handle.aggregatorId,
-        `── Script "${label}" — directorio: ${groupPath} ──`,
-      );
+      pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
       const result = processManager.start(pid);
       if (!result.ok) {
         if (timeoutToken) {
@@ -275,9 +267,9 @@ export function createPreScriptRunner({
         }
         processManager.removeListener('action:done', handler);
         handle.childPids.delete(pid);
-        pushAggregatorLog(
-          handle.aggregatorId,
-          `── Script "${label}" no ha podido arrancar: ${result.error ?? 'error desconocido'} ──`,
+        pushScriptLog(
+          pid,
+          `── No ha podido arrancar: ${result.error ?? 'error desconocido'} ──`,
           'error',
         );
         resolve({ ok: false, code: -1, error: result.error });

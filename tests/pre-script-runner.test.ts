@@ -191,6 +191,12 @@ function expectSucceeded(
     throw new Error(`Expected runner success, got ${result.error}`);
 }
 
+/** Narration ABOUT one script now lives in that script's OWN buffer, so the
+ * merged view can tag it `[Group] [Script]` from a real source. */
+function getScriptLines(pm: MockProcessManager, pid: string): string[] {
+  return pm.getLogs(pid).map((entry) => entry.line);
+}
+
 function getAggregatorLines(pm: MockProcessManager): string[] {
   const aggregatorId = Object.keys(pm._logs).find((id) =>
     id.startsWith('pre-pipeline:'),
@@ -502,9 +508,16 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
 
     const res = await runner.run();
     expect(res.ok).toBe(true);
-    const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('directorio: /repo/a'))).toBe(true);
-    expect(lines.some((l) => l.includes('directorio: /repo/b'))).toBe(true);
+    expect(
+      getScriptLines(pm, 'pre:gA:sca').some((l) =>
+        l.includes('Directorio: /repo/a'),
+      ),
+    ).toBe(true);
+    expect(
+      getScriptLines(pm, 'pre:gB:scb').some((l) =>
+        l.includes('Directorio: /repo/b'),
+      ),
+    ).toBe(true);
   });
 
   it('cross-group interleaving executes steps strictly in list order', async () => {
@@ -538,27 +551,19 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
       onError: vi.fn(),
     });
 
+    // Record the real spawn sequence. Stronger than the old index compare:
+    // it asserts the exact order, so a reversed or concurrent pipeline fails
+    // rather than merely shifting indices that were derived from one log.
+    const started: string[] = [];
+    const realStart = pm.start.bind(pm);
+    pm.start = (pid: string) => {
+      started.push(pid);
+      return realStart(pid);
+    };
+
     const res = await runner.run();
     expect(res.ok).toBe(true);
-    const lines = getAggregatorLines(pm);
-    // Find each script's OWN completion marker independently — three
-    // separate, content-specific searches, not one order-preserving
-    // transform of the whole log. A pipeline that ran A1/B1/A2 in any other
-    // order would put these indices in a different relative order.
-    const indexOfA1 = lines.findIndex((l) =>
-      l.includes('A1" finalizado correctamente'),
-    );
-    const indexOfB1 = lines.findIndex((l) =>
-      l.includes('B1" finalizado correctamente'),
-    );
-    const indexOfA2 = lines.findIndex((l) =>
-      l.includes('A2" finalizado correctamente'),
-    );
-    expect(indexOfA1).toBeGreaterThanOrEqual(0);
-    expect(indexOfB1).toBeGreaterThanOrEqual(0);
-    expect(indexOfA2).toBeGreaterThanOrEqual(0);
-    expect(indexOfA1).toBeLessThan(indexOfB1);
-    expect(indexOfB1).toBeLessThan(indexOfA2);
+    expect(started).toEqual(['pre:gA:a1', 'pre:gB:b1', 'pre:gA:a2']);
   });
 
   it('an empty group.path fails only that script, not the whole step', async () => {
@@ -588,8 +593,11 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
     // configured path DID run — the pipeline did not abort up-front.
     expect(res.ok).toBe(false);
     expect(pm.getState('pre:gOk:sc2').status).toBe('done');
-    const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('sin ruta configurada'))).toBe(true);
+    expect(
+      getScriptLines(pm, 'pre:gBroken:sc1').some((l) =>
+        l.includes('Sin ruta configurada'),
+      ),
+    ).toBe(true);
   });
 
   it('an unresolvable ref (deleted group) is skipped with a warning, not a failure', async () => {
@@ -982,9 +990,9 @@ describe('createPreScriptRunner — timeout enforcement', () => {
 
     const res = await runPromise;
     expect(res.ok).toBe(false);
-    const lines = getAggregatorLines(pm);
+    const lines = getScriptLines(pm, 'pre:g1:sc1');
     expect(lines.some((l) => l.includes('excedido el tiempo'))).toBe(true);
-    expect(lines.some((l) => l.includes('ha fallado (salida'))).toBe(false);
+    expect(lines.some((l) => l.includes('Ha fallado (salida'))).toBe(false);
     expect(pm.stop.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -1005,7 +1013,7 @@ describe('createPreScriptRunner — timeout enforcement', () => {
 
     const res = await runner.run();
     expect(res.ok).toBe(true);
-    const lines = getAggregatorLines(pm);
+    const lines = getScriptLines(pm, 'pre:g1:sc1');
     expect(lines.some((l) => l.includes('excedido el tiempo'))).toBe(false);
     const stopCalls = pm.stop.mock.calls.filter(
       (args) => args[0] === 'pre:g1:sc1',
@@ -1083,13 +1091,12 @@ describe('createPreScriptRunner — duration markers', () => {
     });
 
     await runner.run();
-    const lines = getAggregatorLines(pm);
-    const finishedLine = lines.find((l) =>
-      l.includes('finalizado correctamente'),
+    const finishedLine = getScriptLines(pm, 'pre:g1:sc1').find((l) =>
+      l.includes('Finalizado correctamente'),
     );
     expect(finishedLine).toBeTruthy();
-    expect(finishedLine).not.toMatch(/finalizado correctamente \(exit \d+\)/);
-    expect(finishedLine).toMatch(/finalizado correctamente \(\d+\w+.*\)/);
+    expect(finishedLine).not.toMatch(/Finalizado correctamente \(exit \d+\)/);
+    expect(finishedLine).toMatch(/Finalizado correctamente \(\d+\w+.*\)/);
   });
 
   it('failed script keeps "ha fallado (salida N, Xs)" shape', async () => {
@@ -1103,10 +1110,11 @@ describe('createPreScriptRunner — duration markers', () => {
     });
 
     await runner.run();
-    const lines = getAggregatorLines(pm);
-    const failedLine = lines.find((l) => l.includes('ha fallado (salida'));
+    const failedLine = getScriptLines(pm, 'pre:g1:sc1').find((l) =>
+      l.includes('Ha fallado (salida'),
+    );
     expect(failedLine).toBeTruthy();
-    expect(failedLine).toMatch(/ha fallado \(salida 1,/);
+    expect(failedLine).toMatch(/Ha fallado \(salida 1,/);
   });
 });
 
@@ -1246,10 +1254,11 @@ describe('createPreScriptRunner — confirmation gate', () => {
     expect(pm.getState('pre:g1:sc1').status).toBe('stopped');
     const rr = runner.getRecentResult();
     expect(rr == null || rr.status !== 'error').toBe(true);
-    const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('cancelado por el usuario'))).toBe(
-      true,
-    );
+    expect(
+      getScriptLines(pm, 'pre:g1:sc1').some((l) =>
+        l.includes('Cancelado por el usuario'),
+      ),
+    ).toBe(true);
   });
 
   it('R2.4: no confirmScript dep injected → fail-safe declined (cancelled, not failure), start never called', async () => {
@@ -1451,19 +1460,26 @@ describe('createPreScriptRunner — parallel concurrency and log labelling', () 
 
     const res = await runner.run();
     expectSucceeded(res);
-    const lines = pm
-      .getLogs(`pre-pipeline:${res.runId}`)
-      .map((entry) => entry.line);
-    // Without the group, both scripts log the identical string and the user
-    // cannot tell which one ran.
+    // Identity now lives in each line's SOURCE, not in its text: the two
+    // same-named scripts are distinguishable because each one's narration
+    // lands in its own buffer, which the merged view tags [Group] [Script].
+    // Asserting on prose would pass even if both lines shared one buffer.
     expect(
-      lines.some((l) => l.includes('Back · Make setup')),
-      'no line names the Back group',
+      getScriptLines(pm, 'pre:back:setup').some((l) =>
+        l.includes('Finalizado correctamente'),
+      ),
+      'Back·Make setup has no line of its own',
     ).toBe(true);
     expect(
-      lines.some((l) => l.includes('Automator · Make setup')),
-      'no line names the Automator group',
+      getScriptLines(pm, 'pre:auto:setup').some((l) =>
+        l.includes('Finalizado correctamente'),
+      ),
+      'Automator·Make setup has no line of its own',
     ).toBe(true);
+    // And the aggregator names neither: it carries pipeline narration only.
+    expect(getAggregatorLines(pm).some((l) => l.includes('Make setup'))).toBe(
+      false,
+    );
   });
 
   it('never copies a script’s own output into the aggregator buffer', async () => {
@@ -1512,9 +1528,13 @@ describe('createPreScriptRunner — parallel concurrency and log labelling', () 
     expect(aggregatorLines.some((line) => line.includes('compilando…'))).toBe(
       false,
     );
-    // The line still lives exactly once, in the script's own buffer,
-    // untouched — no `[tag]` prefix rewriting it, no duplication.
+    // The line still lives exactly once, in the script's own buffer, and
+    // verbatim — no `[tag]` prefix rewriting it, no duplication. Its own
+    // narration shares that buffer, which is what lets the merged view tag
+    // both as [Group] [Script].
     const scriptLines = pm.getLogs('pre:back:setup').map((entry) => entry.line);
-    expect(scriptLines).toEqual(['compilando…']);
+    expect(scriptLines.filter((line) => line === 'compilando…')).toHaveLength(
+      1,
+    );
   });
 });

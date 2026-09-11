@@ -27,21 +27,6 @@ export const PIPELINE_LOG_GROUP_ID = '__pipeline__';
 export const PIPELINE_LOG_NAME = 'Pipeline de pre-scripts';
 
 /**
- * `Back · Make setup`.
- *
- * The group comes first and is never omitted when present: two groups can
- * each define a script called "Make setup", and with the bare script name
- * the log is genuinely ambiguous about which one ran.
- */
-export function formatScriptLabel(
-  groupName: string,
-  scriptName: string,
-): string {
-  const group = groupName.trim();
-  return group ? `${group} · ${scriptName}` : scriptName;
-}
-
-/**
  * `Pipeline · 12:47:13.815`.
  *
  * Every run lands in the same log bucket, so the start time is the only thing

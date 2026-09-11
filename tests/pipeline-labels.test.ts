@@ -1,32 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  formatScriptLabel,
   formatPipelineRunName,
   formatStepCount,
   formatStepMode,
   PIPELINE_LOG_GROUP_ID,
   PIPELINE_LOG_NAME,
 } from '../src/pipeline-labels.js';
-
-describe('formatScriptLabel', () => {
-  it('puts the group before the script so same-named scripts stay distinguishable', () => {
-    expect(formatScriptLabel('Back', 'Make setup')).toBe('Back · Make setup');
-    expect(formatScriptLabel('Automator', 'Make setup')).toBe(
-      'Automator · Make setup',
-    );
-  });
-
-  it('never collapses two same-named scripts from different groups', () => {
-    expect(formatScriptLabel('Back', 'Make setup')).not.toBe(
-      formatScriptLabel('Automator', 'Make setup'),
-    );
-  });
-
-  it('falls back to the script alone when the group has no usable name', () => {
-    expect(formatScriptLabel('', 'Make setup')).toBe('Make setup');
-    expect(formatScriptLabel('   ', 'Make setup')).toBe('Make setup');
-  });
-});
 
 describe('formatPipelineRunName', () => {
   it('stamps the start time so consecutive runs are told apart in the log list', () => {
