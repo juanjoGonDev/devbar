@@ -68,6 +68,15 @@
         <button
           type="button"
           class="nav-item"
+          data-target="prescripts"
+          aria-label="Pipeline"
+        >
+          <span class="nav-ico" aria-hidden="true">🧬</span
+          ><span class="nav-label">Pipeline</span>
+        </button>
+        <button
+          type="button"
+          class="nav-item"
           data-target="backup"
           aria-label="Copias de seguridad"
         >
@@ -158,6 +167,11 @@
               </button>
             </div>
           </section>
+        </section>
+
+        <!-- ── Pipeline de pre-scripts ────────────────────────────── -->
+        <section class="config-section" data-section="prescripts">
+          <div id="prescripts-pipeline-root"></div>
         </section>
 
         <!-- ── Copias de seguridad ────────────────────────────────── -->

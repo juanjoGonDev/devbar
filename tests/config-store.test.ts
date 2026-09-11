@@ -80,6 +80,7 @@ describe('config-store — DEFAULT_GLOBAL_SETTINGS contract', () => {
     silenceWarnings: false,
     silenceErrors: false,
     maxLogLines: 2000,
+    preScriptsAutoRun: false,
   };
 
   it('default maxLogLines is 2000', () => {
@@ -90,11 +91,16 @@ describe('config-store — DEFAULT_GLOBAL_SETTINGS contract', () => {
     expect(DEFAULT_GLOBAL_SETTINGS.autostart).toBe(false);
   });
 
+  it('default preScriptsAutoRun is false (the global pipeline auto-run gate)', () => {
+    expect(DEFAULT_GLOBAL_SETTINGS.preScriptsAutoRun).toBe(false);
+  });
+
   it('all required fields are present', () => {
     expect(DEFAULT_GLOBAL_SETTINGS).toHaveProperty('autostart');
     expect(DEFAULT_GLOBAL_SETTINGS).toHaveProperty('silenceWarnings');
     expect(DEFAULT_GLOBAL_SETTINGS).toHaveProperty('silenceErrors');
     expect(DEFAULT_GLOBAL_SETTINGS).toHaveProperty('maxLogLines');
+    expect(DEFAULT_GLOBAL_SETTINGS).toHaveProperty('preScriptsAutoRun');
   });
 });
 

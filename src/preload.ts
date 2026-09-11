@@ -112,21 +112,34 @@ const api: DevBarApi = {
   applyImportedConfig: (args) => ipcRenderer.invoke('config:applyImport', args),
   pickFolder: (defaultPath) =>
     ipcRenderer.invoke('dialog:pickFolder', { defaultPath }),
-  runPreScripts: (groupId) => ipcRenderer.invoke('prescripts:run', { groupId }),
-  cancelPreScripts: (groupId) =>
-    ipcRenderer.invoke('prescripts:cancel', { groupId }),
-  savePreStep: (groupId, data) =>
-    ipcRenderer.invoke('preSteps:save', { groupId, data }),
-  deletePreStep: (groupId, stepId) =>
-    ipcRenderer.invoke('preSteps:delete', { groupId, stepId }),
-  reorderPreSteps: (groupId, orderedIds) =>
-    ipcRenderer.invoke('preSteps:reorder', { groupId, orderedIds }),
-  savePreScript: (groupId, stepId, data) =>
-    ipcRenderer.invoke('preScripts:save', { groupId, stepId, data }),
-  deletePreScript: (groupId, stepId, scriptId) =>
-    ipcRenderer.invoke('preScripts:delete', { groupId, stepId, scriptId }),
-  reorderPreScripts: (groupId, stepId, orderedIds) =>
-    ipcRenderer.invoke('preScripts:reorder', { groupId, stepId, orderedIds }),
+  runPreScripts: () => ipcRenderer.invoke('prescripts:run'),
+  cancelPreScripts: () => ipcRenderer.invoke('prescripts:cancel'),
+  getPreSteps: () => ipcRenderer.invoke('pipeline:list'),
+  savePreStep: (data) => ipcRenderer.invoke('preSteps:save', { data }),
+  deletePreStep: (stepId) => ipcRenderer.invoke('preSteps:delete', { stepId }),
+  reorderPreSteps: (orderedIds) =>
+    ipcRenderer.invoke('preSteps:reorder', { orderedIds }),
+  savePreScript: (groupId, data) =>
+    ipcRenderer.invoke('preScripts:save', { groupId, data }),
+  deletePreScript: (groupId, scriptId) =>
+    ipcRenderer.invoke('preScripts:delete', { groupId, scriptId }),
+  reorderPreScripts: (groupId, orderedIds) =>
+    ipcRenderer.invoke('preScripts:reorder', { groupId, orderedIds }),
+  assignScriptToStep: (stepId, groupId, scriptId, position) =>
+    ipcRenderer.invoke('preSteps:assignScript', {
+      stepId,
+      groupId,
+      scriptId,
+      position,
+    }),
+  unassignScriptFromStep: (stepId, groupId, scriptId) =>
+    ipcRenderer.invoke('preSteps:unassignScript', {
+      stepId,
+      groupId,
+      scriptId,
+    }),
+  getPipelineState: () => ipcRenderer.invoke('pipeline:state'),
+  onPipelineUpdate: (cb) => subscribe('pipeline:update', cb),
   getPrescriptConfirmContext: (token) =>
     ipcRenderer.invoke('prescriptConfirm:getContext', token),
   resolvePrescriptConfirm: (token, decision) =>

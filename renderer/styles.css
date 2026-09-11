@@ -751,6 +751,79 @@ body.config {
   border-radius: 10px;
 }
 
+/* Visually hidden but still readable by assistive tech — used by
+ * `dnd-helper.ts`'s shared keyboard-reordering instructions and the single
+ * `aria-live="polite"` announcer (one instance each, not one per list). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Shared draggable-row pattern — handle reveal, dragging state, and a drop
+ * indicator bar — reused by `.service-row-card`, `.nav-card`,
+ * `.sub-item-row`, `.prescript-row` and `.prestep-card`. Each context below
+ * overrides only the custom properties that genuinely differ; everything
+ * else is identical behaviour reused, not reimplemented. */
+.drag-row {
+  position: relative;
+  transition: opacity 0.15s ease;
+}
+.drag-row .drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  user-select: none;
+  font-size: var(--drag-handle-font-size, 12px);
+  letter-spacing: -3px;
+  padding: var(--drag-handle-padding, 2px 1px);
+  opacity: var(--drag-handle-idle-opacity, 0.3);
+  transition: opacity 0.12s ease;
+  flex-shrink: 0;
+}
+.drag-row:hover .drag-handle {
+  opacity: var(--drag-handle-hover-opacity, 0.7);
+}
+/* Keyboard focus on the handle itself (WCAG 2.1.1/2.4.7): the handle is now
+ * tabbable (`dnd-helper.ts`'s `enhanceHandle`), so it needs the same
+ * hover-reveal opacity plus a visible outline, matching the accent-outline
+ * convention already used for text inputs and the icon search field. */
+.drag-row .drag-handle:focus-visible {
+  opacity: var(--drag-handle-hover-opacity, 0.7);
+  outline: 2px solid rgba(0, 122, 255, 0.4);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+/* Grabbed via keyboard (`dnd-helper.ts`'s grab/move/drop/cancel handling)
+ * reuses the exact same visual as a pointer drag in progress — no parallel
+ * "grabbed" vocabulary. */
+.drag-row.dragging {
+  opacity: 0.35;
+}
+/* Drop indicator: a thin accent bar drawn in the gap above/below the row. */
+.drag-row.drag-over-before::before,
+.drag-row.drag-over-after::after {
+  content: '';
+  position: absolute;
+  left: var(--drop-indicator-inset, 4px);
+  right: var(--drop-indicator-inset, 4px);
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.drag-row.drag-over-before::before {
+  top: calc(-1 * var(--drop-indicator-offset, 2px));
+}
+.drag-row.drag-over-after::after {
+  bottom: calc(-1 * var(--drop-indicator-offset, 2px));
+}
+
 .service-row-card {
   background: var(--bg-card-strong);
   border: 1px solid var(--border);
@@ -760,25 +833,15 @@ body.config {
   align-items: center;
   gap: 12px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  position: relative;
   min-width: 0;
-  transition: opacity 0.15s ease;
+  --drag-handle-idle-opacity: 0.35;
+  --drag-handle-hover-opacity: 0.8;
+  --drag-handle-font-size: 13px;
+  --drag-handle-padding: 4px 2px;
+  --drop-indicator-inset: 8px;
+  --drop-indicator-offset: 5px;
 }
 
-.service-row-card .drag-handle {
-  cursor: grab;
-  color: var(--muted);
-  user-select: none;
-  font-size: 13px;
-  letter-spacing: -3px;
-  padding: 4px 2px;
-  opacity: 0.35;
-  transition: opacity 0.12s ease;
-  flex-shrink: 0;
-}
-.service-row-card:hover .drag-handle {
-  opacity: 0.8;
-}
 .service-row-card .drag-handle:hover {
   opacity: 1;
 }
@@ -819,28 +882,6 @@ body.config {
   font-size: 11px;
 }
 
-.service-row-card.dragging {
-  opacity: 0.35;
-}
-
-/* Drop indicators: a thin accent bar drawn in the gap above/below the card. */
-.service-row-card.drag-over-before::before,
-.service-row-card.drag-over-after::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 1px;
-  pointer-events: none;
-}
-.service-row-card.drag-over-before::before {
-  top: -5px;
-}
-.service-row-card.drag-over-after::after {
-  bottom: -5px;
-}
 .config tr:last-child td {
   border-bottom: none;
 }
@@ -1848,7 +1889,7 @@ fieldset.schedule-group legend {
   user-select: none;
   transition: background 0.1s ease;
   margin-bottom: 2px;
-  position: relative;
+  --drop-indicator-offset: 2px;
 }
 .nav-card:hover {
   background: var(--bg-row-hover);
@@ -1861,20 +1902,6 @@ fieldset.schedule-group legend {
   font-weight: 600;
 }
 
-.nav-card .drag-handle {
-  cursor: grab;
-  color: var(--muted);
-  user-select: none;
-  font-size: 12px;
-  letter-spacing: -3px;
-  padding: 2px 1px;
-  opacity: 0.3;
-  transition: opacity 0.12s ease;
-  flex-shrink: 0;
-}
-.nav-card:hover .drag-handle {
-  opacity: 0.7;
-}
 .nav-card .drag-handle:hover {
   opacity: 1;
 }
@@ -1890,28 +1917,6 @@ fieldset.schedule-group legend {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-/* Drag visual indicators for nav cards */
-.nav-card.dragging {
-  opacity: 0.35;
-}
-.nav-card.drag-over-before::before,
-.nav-card.drag-over-after::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 1px;
-  pointer-events: none;
-}
-.nav-card.drag-over-before::before {
-  top: -2px;
-}
-.nav-card.drag-over-after::after {
-  bottom: -2px;
 }
 
 /* Right pane: detail editor */
@@ -2028,43 +2033,7 @@ fieldset.schedule-group legend {
   border-radius: 7px;
   border: 1px solid var(--border);
   background: var(--bg-card-strong);
-  position: relative;
-  transition: opacity 0.15s ease;
-}
-
-.sub-item-row .drag-handle {
-  cursor: grab;
-  color: var(--muted);
-  user-select: none;
-  font-size: 12px;
-  letter-spacing: -3px;
-  padding: 2px 1px;
-  opacity: 0.3;
-  transition: opacity 0.12s ease;
-  flex-shrink: 0;
-}
-.sub-item-row:hover .drag-handle {
-  opacity: 0.7;
-}
-.sub-item-row.dragging {
-  opacity: 0.35;
-}
-.sub-item-row.drag-over-before::before,
-.sub-item-row.drag-over-after::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 1px;
-  pointer-events: none;
-}
-.sub-item-row.drag-over-before::before {
-  top: -3px;
-}
-.sub-item-row.drag-over-after::after {
-  bottom: -3px;
+  --drop-indicator-offset: 3px;
 }
 
 .sub-icon {
@@ -2792,6 +2761,187 @@ dialog form {
   margin-top: 4px;
 }
 
+/* ── Pipeline editor (global "Pipeline" nav section) ─────────────────── */
+
+/* Cross-container drop-zone affordance — for an append drop into an empty
+ * (or background) area of a step's own script list. */
+.prescript-list.drop-zone-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: rgba(10, 132, 255, 0.06);
+}
+
+/* The step card's own drop target: highlights the WHOLE card (not just its
+ * script list) for the entire duration a script is dragged over any part of
+ * it, matching the approved reference's `.drop-into`. `:has()` lets this stay
+ * pure CSS — `attachCrossContainerDragHandlers` only toggles a class on the
+ * script list itself, same as `drop-zone-active` above. */
+.prestep-card:has(.prescript-list.drop-into) {
+  border-color: var(--accent);
+  background: rgba(0, 122, 255, 0.1);
+}
+
+/* An empty step is a barrier that waits for everything before it — rendered
+ * as a dashed drop target instead of a bare, ambiguous empty list. */
+.prescript-list.prestep-empty-dropzone {
+  min-height: 32px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prestep-drop-hint {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 0;
+  pointer-events: none;
+}
+
+/* Group identity — a coloured dot (deterministic hash of the group name,
+ * same technique as renderer/logs.ts's per-source colouring) plus its name,
+ * reused on a pipeline script row, the summary strip, and the picker. */
+.pipeline-group-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--group-color, var(--muted));
+  flex-shrink: 0;
+}
+.pipeline-group-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.pipeline-group-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Summary strip: the resulting boot order at a glance, matching the
+ * approved UI reference (`arranque-prototipo.html`) — one block per step,
+ * with a header line and one lane per script, sitting in a horizontally
+ * scrollable track so a long pipeline never widens the pane. */
+.pipeline-summary {
+  margin-bottom: 10px;
+}
+.pipeline-summary-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-card);
+}
+.pipeline-summary-step {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 84px;
+  padding: 5px 7px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card-strong);
+}
+.pipeline-summary-step.is-empty {
+  border-style: dashed;
+  background: transparent;
+}
+/* A parallel step with more than one script gets an accent left edge. */
+.pipeline-summary-step.is-parallel {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.pipeline-summary-step-head {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pipeline-summary-lane {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.pipeline-summary-lane.is-muted {
+  color: var(--muted);
+}
+.pipeline-summary-count {
+  margin-top: 6px;
+}
+
+/* "+ Añadir script" picker, grouped by group; already-placed scripts show
+ * disabled rather than being omitted, so the user sees WHY they're missing. */
+.script-picker {
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-card);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.script-picker-group + .script-picker-group {
+  margin-top: 8px;
+}
+.script-picker-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.script-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: transparent;
+  border: 0;
+}
+.script-picker-item:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+.script-picker-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+@media (prefers-color-scheme: dark) {
+  .script-picker-item:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* Global pipeline trigger — lives in the tray header now, one for the whole
+ * app instead of one per group row. */
+/* The popover is a fixed 410px non-resizable window, so this host must give
+ * way rather than widen the header: the elapsed time inside the badge grows
+ * as the pipeline runs, and without `min-width: 0` a flex item keeps its
+ * min-content width, so the badge's own ellipsis never gets a chance and the
+ * tray gains a horizontal scrollbar. */
+.pipeline-trigger-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
 /* ================================================================
    Pre-script confirmation modal (renderer/prescript-confirm.html)
    ================================================================ */
@@ -2818,6 +2968,13 @@ body.prescript-confirm {
   border-radius: 12px;
   object-fit: contain;
   margin-bottom: 4px;
+}
+.prescript-confirm #pc-group {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
 }
 .prescript-confirm #pc-title {
   margin: 0;

@@ -66,10 +66,16 @@ export interface PreScript extends ConfirmConfig {
   timeoutMs: number | null;
 }
 
+/** A step's reference to a script defined in its OWN group's `preScripts`. */
+export interface PreStepScriptRef {
+  groupId: string;
+  scriptId: string;
+}
+
 export interface PreStep {
   id: string;
   mode: 'parallel' | 'serial';
-  scripts: PreScript[];
+  scripts: PreStepScriptRef[];
 }
 
 export interface Group {
@@ -84,8 +90,17 @@ export interface Group {
   env: EnvEntry[];
   commands: Command[];
   actions: Action[];
-  preSteps: PreStep[];
-  preScriptsAutoRun: boolean;
+  preScripts: PreScript[];
+  /**
+   * Whether this group's `autoStart` commands must wait for the ENTIRE
+   * pipeline to finish successfully before releasing, instead of releasing
+   * as soon as this group's own last referencing step completes. Defaults
+   * to `true` (wait): releasing early fails silently — the group looks
+   * started but a later, unrelated step (e.g. a different group's `make
+   * setup` restarting Docker) can still break it — while waiting only fails
+   * by making boot slower, which is visible and self-explanatory.
+   */
+  waitForPipeline: boolean;
 }
 
 export interface LegacyService {
@@ -116,6 +131,7 @@ export interface GlobalSettings {
   silenceErrors: boolean;
   maxLogLines: number;
   notifySuccess: boolean;
+  preScriptsAutoRun: boolean;
 }
 
 export type ProcessStatus =

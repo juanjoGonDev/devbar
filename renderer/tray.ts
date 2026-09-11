@@ -11,6 +11,7 @@ import type {
   ActionRuntimeState,
   CommandRuntimeState,
   GroupState,
+  PipelineState,
   UpdateStatus,
 } from '../src/ipc-contract.js';
 import type { Command, Action } from '../src/domain-types.js';
@@ -123,6 +124,109 @@ function alertButton(
   return btn;
 }
 
+// ─────────────────────── Global pipeline trigger ──────────────────────
+//
+// One global `▶▶` trigger/badge/cancel-chip/logs-button, replacing the
+// per-group ones (there is one pipeline now, not one per group). Rendered
+// once in the sticky header, not per group row.
+
+let lastPipelineState: PipelineState | null = null;
+
+function renderPipelineTrigger(state: PipelineState | null): void {
+  lastPipelineState = state;
+  const host = document.getElementById('pipeline-trigger');
+  if (!host) return;
+  host.innerHTML = '';
+  // Nothing configured and nothing to show for a past run — hide entirely,
+  // same gate as the old per-group "only when preSteps defined" condition.
+  if (!state || (state.totalSteps === 0 && state.status === 'idle')) return;
+
+  const triggerBtn = document.createElement('button');
+  triggerBtn.className = 'ghost prescripts-trigger';
+  triggerBtn.title =
+    state.status === 'running' ? 'Pipeline corriendo…' : 'Ejecutar pipeline';
+  triggerBtn.dataset.prestepStatus = state.status;
+  triggerBtn.textContent = '▶▶';
+  triggerBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (state.status === 'running') {
+      showToast('Ya hay un pipeline corriendo', 'warn');
+      return;
+    }
+    const res = await window.api.runPreScripts();
+    if (res && !res.ok && res.error === 'already_running') {
+      showToast('Ya hay un pipeline corriendo', 'warn');
+    }
+  });
+  host.appendChild(triggerBtn);
+
+  // Status badge — compact, responsive: hide "paso N/M" when redundant
+  // (single-step pipelines) and drop the word "paso" for multi-step. Full
+  // info lives in the tooltip so the header never gets squeezed by the
+  // badge regardless of how long the pipeline runs.
+  if (state.status === 'running') {
+    const badge = document.createElement('span');
+    badge.className = 'prestep-badge';
+    const total = state.totalSteps || 1;
+    const current = state.currentStep || 1;
+    const showStep = total > 1;
+    badge.title = `Pipeline: paso ${current}/${total}`;
+
+    if (showStep) {
+      const stepSpan = document.createElement('span');
+      stepSpan.className = 'prestep-step';
+      stepSpan.textContent = `${current}/${total}`;
+      badge.appendChild(stepSpan);
+    }
+
+    if (state.startedAt) {
+      if (showStep) badge.appendChild(document.createTextNode(' · '));
+      const elapsedSpan = document.createElement('span');
+      elapsedSpan.className = 'uptime prestep-elapsed';
+      elapsedSpan.dataset.startedAt = String(state.startedAt);
+      elapsedSpan.textContent = formatUptime(Date.now() - state.startedAt);
+      badge.appendChild(elapsedSpan);
+    }
+
+    host.appendChild(badge);
+
+    const cancelChip = document.createElement('button');
+    cancelChip.className = 'ghost prestep-cancel';
+    cancelChip.title = 'Cancelar pipeline';
+    cancelChip.textContent = '×';
+    cancelChip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.api.cancelPreScripts();
+    });
+    host.appendChild(cancelChip);
+  } else if (state.status === 'done') {
+    const badge = document.createElement('span');
+    badge.className = 'prestep-badge ok';
+    badge.textContent = '✓';
+    host.appendChild(badge);
+  } else if (state.status === 'error') {
+    const badge = document.createElement('span');
+    badge.className = 'prestep-badge err';
+    badge.title = state.lastError || 'Error en el pipeline';
+    badge.textContent = '✕';
+    host.appendChild(badge);
+  }
+
+  // Log opener — shown whenever a run's log exists (it persists after the
+  // transient status badge clears), so a finished pipeline stays reviewable.
+  if (state.lastRunId) {
+    const logsBtn = document.createElement('button');
+    logsBtn.className = 'ghost prestep-logs-btn';
+    logsBtn.title = 'Ver logs del pipeline';
+    logsBtn.textContent = '📋';
+    logsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.api.openLogs(`pre-pipeline:${state.lastRunId}`);
+    });
+    host.appendChild(logsBtn);
+  }
+}
+
 // ─────────────────────── Main render ─────────────────────────────────
 
 /**
@@ -142,6 +246,7 @@ function render(groupStates: GroupState[]): void {
   }
   groupsEl.innerHTML = '';
   renderAlertsSummary(groupStates);
+  renderPipelineTrigger(lastPipelineState);
 
   if (!groupStates.length) {
     const empty = document.createElement('div');
@@ -303,104 +408,6 @@ function renderGroupRow(gs: GroupState): HTMLElement {
   // Branch selector — always at the end of the row.
   const branchSel = buildBranchSelector(gs);
   row.appendChild(branchSel);
-
-  // Pre-scripts trigger — only shown when the group has preSteps defined.
-  if ((group.preSteps || []).length > 0) {
-    const prescriptStatus = gs.preScriptsStatus || 'idle';
-
-    // ▶▶ trigger button
-    const prescriptsBtn = document.createElement('button');
-    prescriptsBtn.className = 'ghost prescripts-trigger';
-    prescriptsBtn.title =
-      prescriptStatus === 'running'
-        ? 'Pre-scripts corriendo…'
-        : 'Ejecutar pre-scripts';
-    prescriptsBtn.dataset.prestepStatus = prescriptStatus;
-    prescriptsBtn.textContent = '▶▶';
-    prescriptsBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (prescriptStatus === 'running') {
-        showToast('Ya hay un pipeline corriendo', 'warn');
-        return;
-      }
-      const res = await window.api.runPreScripts(groupId);
-      if (res && !res.ok && res.error === 'already_running') {
-        showToast('Ya hay un pipeline corriendo', 'warn');
-      }
-    });
-    row.appendChild(prescriptsBtn);
-
-    // Status badge — compact, responsive: hide "paso N/M" when redundant
-    // (single-step pipelines) and drop the word "paso" for multi-step.
-    // Full info lives in the tooltip so the row never gets squeezed by the
-    // badge regardless of how long the pipeline runs.
-    if (prescriptStatus === 'running') {
-      const badge = document.createElement('span');
-      badge.className = 'prestep-badge';
-      const total = gs.preScriptsTotalSteps || 1;
-      const current = gs.preScriptsCurrentStep || 1;
-      const showStep = total > 1;
-      badge.title = `Pre-scripts: paso ${current}/${total}`;
-
-      if (showStep) {
-        const stepSpan = document.createElement('span');
-        stepSpan.className = 'prestep-step';
-        stepSpan.textContent = `${current}/${total}`;
-        badge.appendChild(stepSpan);
-      }
-
-      if (gs.preScriptsStartedAt) {
-        if (showStep) badge.appendChild(document.createTextNode(' · '));
-        const elapsedSpan = document.createElement('span');
-        elapsedSpan.className = 'uptime prestep-elapsed';
-        elapsedSpan.dataset.startedAt = String(gs.preScriptsStartedAt);
-        elapsedSpan.textContent = formatUptime(
-          Date.now() - gs.preScriptsStartedAt,
-        );
-        badge.appendChild(elapsedSpan);
-      }
-
-      row.appendChild(badge);
-
-      const cancelChip = document.createElement('button');
-      cancelChip.className = 'ghost prestep-cancel';
-      cancelChip.title = 'Cancelar pre-scripts';
-      cancelChip.textContent = '×';
-      cancelChip.addEventListener('click', (e) => {
-        e.stopPropagation();
-        window.api.cancelPreScripts(groupId);
-      });
-      row.appendChild(cancelChip);
-    } else if (prescriptStatus === 'done') {
-      const badge = document.createElement('span');
-      badge.className = 'prestep-badge ok';
-      badge.textContent = '✓';
-      row.appendChild(badge);
-    } else if (prescriptStatus === 'error') {
-      const badge = document.createElement('span');
-      badge.className = 'prestep-badge err';
-      badge.title = gs.preScriptsLastError || 'Error en el pipeline';
-      badge.textContent = '✕';
-      row.appendChild(badge);
-    }
-
-    // Pipeline log opener — shown whenever a run's log exists (it persists
-    // after the transient status badge clears), so a finished pipeline stays
-    // reviewable, not only during/just-after execution.
-    if (gs.preScriptsLastRunId) {
-      const logsBtn = document.createElement('button');
-      logsBtn.className = 'ghost prestep-logs-btn';
-      logsBtn.title = 'Ver logs del pipeline';
-      logsBtn.textContent = '📋';
-      logsBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        window.api.openLogs(
-          `pre-pipeline:${groupId}:${gs.preScriptsLastRunId}`,
-        );
-      });
-      row.appendChild(logsBtn);
-    }
-  }
 
   // Expand chevron (only if group has actions or commands)
   const caret = document.createElement('button');
@@ -777,6 +784,10 @@ window.api.onUpdate((groupStates) => {
   render(groupStates);
 });
 
+window.api.onPipelineUpdate((state) => {
+  renderPipelineTrigger(state);
+});
+
 window.api.onBranchesChanged(() => {
   branchCache.clear();
   if (lastGroupStates.length) render(lastGroupStates);
@@ -789,6 +800,11 @@ window.api.onToast(({ kind, message }) => {
 // Initial load
 window.api.getGroupStates().then((groupStates) => {
   render(groupStates);
+});
+window.api.getPipelineState().then((state) => {
+  // A pushed update can land while this read is still pending; applying the
+  // older snapshot on top would leave the trigger stale until the next push.
+  if (lastPipelineState === null) renderPipelineTrigger(state);
 });
 
 // App version label
