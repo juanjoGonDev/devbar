@@ -42,6 +42,21 @@ function esc(literal: string): string {
  * `.b { … }` override) would otherwise match that shared list's body
  * instead of its own dedicated rule.
  */
+/** Source text of `function NAME(...) { ... }`, braces balanced. */
+function functionBody(source: string, name: string): string {
+  const start = source.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error(`${name} not found`);
+  let depth = 0;
+  for (let i = source.indexOf('{', start); i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  throw new Error(`${name} never closes`);
+}
+
 function ruleBody(source: string, selector: string): string {
   const matches = [
     ...source.matchAll(new RegExp(`${esc(selector)}\\s*\\{([^}]*)\\}`, 'g')),
@@ -215,5 +230,39 @@ describe('tray header never scrolls sideways', () => {
     // scrollbar. Measured before the fix: scrollWidth 418 vs clientWidth 408.
     const body = ruleBody(css, '.pipeline-trigger-host');
     expect(declaresExactly(body, 'min-width', '0')).toBe(true);
+  });
+});
+
+describe('a drag never resolves a card outside its own list', () => {
+  it('routes every card lookup through directChildCard', () => {
+    // Third occurrence of one bug: an unscoped `closest('[data-id]')` walks
+    // past the container. A step card holds a script list whose rows also
+    // carry `data-id`, so a step drag hovering a script row resolved to THAT
+    // ROW — drawing an insertion line inside a step (promising a nesting the
+    // model has no concept of), feeding script ids into a step reorder, and
+    // handing insertBefore a node that is not a child of the container.
+    //
+    // `directChildCard` is the single rule both helpers must use. Its own
+    // body is the one legitimate place the raw selector may appear.
+    const body = functionBody(dndHelperSource, 'directChildCard');
+    expect(body).toContain("closest<HTMLElement>('[data-id]')");
+
+    // Only the raw-selector uses that resolve an ARBITRARY event target are
+    // dangerous; walking up from a handle, or clearing classes off every
+    // descendant, cannot land in the wrong list.
+    // Resolving the HANDLE from an event target is fine — a handle is a leaf.
+    // Resolving a CARD that way is the hazard, and must go through the helper.
+    const rest = dndHelperSource.replace(body, '').replace(/\s+/g, ' ');
+    expect(rest).not.toContain(
+      "asElement(event.target)?.closest<HTMLElement>( '[data-id]',",
+    );
+    expect(rest).not.toContain(
+      "asElement(event.target)?.closest<HTMLElement>('[data-id]')",
+    );
+    // Reorder payloads and keyboard snapshots must come from own children.
+    expect(rest).not.toContain(
+      "container.querySelectorAll<HTMLElement>('[data-id]'), ) .map",
+    );
+    expect(rest).not.toContain("el.querySelectorAll<HTMLElement>('[data-id]')");
   });
 });

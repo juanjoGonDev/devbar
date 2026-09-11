@@ -57,7 +57,7 @@ export function attachDragHandlers(
       dragContainer !== container
     )
       return;
-    const card = asElement(event.target)?.closest<HTMLElement>('[data-id]');
+    const card = directChildCard(event.target, container);
     if (!card || card.dataset.id === dragSourceId) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
@@ -71,7 +71,7 @@ export function attachDragHandlers(
     card.classList.toggle('drag-over-after', !before);
   });
   container.addEventListener('dragleave', (event) => {
-    const card = asElement(event.target)?.closest<HTMLElement>('[data-id]');
+    const card = directChildCard(event.target, container);
     if (!card) return;
     if (
       event.relatedTarget instanceof Node &&
@@ -84,9 +84,7 @@ export function attachDragHandlers(
     if (!(event instanceof DragEvent)) return;
     event.preventDefault();
     const sourceId = event.dataTransfer?.getData('text/plain') || dragSourceId;
-    const targetCard = asElement(event.target)?.closest<HTMLElement>(
-      '[data-id]',
-    );
+    const targetCard = directChildCard(event.target, container);
     const targetId = targetCard?.dataset.id;
     if (!targetCard || !sourceId || !targetId || sourceId === targetId) {
       clearDragVisuals(container);
@@ -97,12 +95,11 @@ export function attachDragHandlers(
       targetCard.getBoundingClientRect().top +
         targetCard.getBoundingClientRect().height / 2;
     clearDragVisuals(container);
-    const cards = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-id]'),
+    const cards = Array.from(container.children).filter(
+      (node): node is HTMLElement =>
+        node instanceof HTMLElement && Boolean(node.dataset.id),
     );
-    const ids = cards
-      .map((c) => c.dataset.id)
-      .filter((id): id is string => Boolean(id));
+    const ids = directChildIds(container);
     const from = ids.indexOf(sourceId);
     if (from < 0) return;
     ids.splice(from, 1);
@@ -123,11 +120,10 @@ export function attachDragHandlers(
     snapshotContainers: () => [
       {
         id: SINGLE_CONTAINER_ID,
-        itemIds: Array.from(
-          container.querySelectorAll<HTMLElement>('[data-id]'),
-        )
-          .map((node) => node.dataset.id)
-          .filter((id): id is string => Boolean(id)),
+        // Own children only: a step card holds a script list whose rows also
+        // carry `data-id`, and counting those would compute step positions
+        // against a list that is not the step list.
+        itemIds: directChildIds(container),
       },
     ],
     containerIdOf: () => SINGLE_CONTAINER_ID,
@@ -150,18 +146,34 @@ export function attachDragHandlers(
 // single-container guard (D8 in the design).
 
 /**
- * `closest('[data-id]')` walks past the container, and in the pipeline editor
- * a script list sits inside a `.prestep-card` that carries `data-id` too — so
- * an unscoped lookup resolves list padding and empty-step hints to the STEP
- * card, which both suppresses the empty-container affordance and draws a
- * step-level insertion marker during a script drag.
+ * The `[data-id]` card that is a DIRECT CHILD of `container`, or `null`.
+ *
+ * A reorderable list's items are its own children, and `closest()` happily
+ * walks past the container into whatever encloses it. Both shapes here nest:
+ * a pipeline step card holds a script list whose rows also carry `data-id`,
+ * and the step list encloses all of it. An unscoped lookup therefore resolved
+ * a step drag hovering a script row to THAT ROW — drawing an insertion line
+ * inside a step, which promises a nesting the model does not have, feeding
+ * script ids into a step reorder, and handing `insertBefore` a node that is
+ * not a child of the container (a DOM NotFoundError).
  */
-function cardWithin(
+function directChildCard(
   target: EventTarget | null,
   container: HTMLElement,
 ): HTMLElement | null {
-  const card = asElement(target)?.closest<HTMLElement>('[data-id]');
-  return card && card !== container && container.contains(card) ? card : null;
+  let card = asElement(target)?.closest<HTMLElement>('[data-id]') ?? null;
+  while (card && card.parentElement !== container) {
+    card = card.parentElement?.closest<HTMLElement>('[data-id]') ?? null;
+  }
+  return card;
+}
+
+/** The ids of `container`'s own item children, in DOM order. A reorder payload
+ * must never include ids from a nested list. */
+function directChildIds(container: HTMLElement): string[] {
+  return Array.from(container.children)
+    .map((node) => (node instanceof HTMLElement ? node.dataset.id : undefined))
+    .filter((id): id is string => Boolean(id));
 }
 
 export interface CrossContainerMove {
@@ -279,7 +291,7 @@ export function attachCrossContainerDragHandlers(
     // a valid dragover, on top of (not instead of) the more specific
     // empty-container/insertion-point indicators below.
     container.classList.add('drop-into');
-    const card = cardWithin(event.target, container);
+    const card = directChildCard(event.target, container);
     container.querySelectorAll<HTMLElement>('[data-id]').forEach((node) => {
       if (node !== card)
         node.classList.remove('drag-over-before', 'drag-over-after');
@@ -319,7 +331,7 @@ export function attachCrossContainerDragHandlers(
     const state = crossState;
     const sourceId =
       event.dataTransfer?.getData('text/plain') || state.sourceId;
-    const targetCard = cardWithin(event.target, container);
+    const targetCard = directChildCard(event.target, container);
     const before = targetCard
       ? event.clientY <
         targetCard.getBoundingClientRect().top +
@@ -335,11 +347,7 @@ export function attachCrossContainerDragHandlers(
     if (targetCardId === sourceId && sourceContainerId === targetContainerId) {
       return; // dropped on itself, in the same container — no-op
     }
-    const targetIds = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-id]'),
-    )
-      .map((node) => node.dataset.id)
-      .filter((id): id is string => Boolean(id));
+    const targetIds = directChildIds(container);
     const index = computeCrossContainerIndex({
       targetIds,
       sourceContainerId,
@@ -362,9 +370,7 @@ export function attachCrossContainerDragHandlers(
         .filter((el) => el.dataset.dndZone === zone)
         .map((el) => ({
           id: el.dataset.containerId ?? '',
-          itemIds: Array.from(el.querySelectorAll<HTMLElement>('[data-id]'))
-            .map((node) => node.dataset.id)
-            .filter((id): id is string => Boolean(id)),
+          itemIds: directChildIds(el),
         }));
     },
     containerIdOf: (card) => {
