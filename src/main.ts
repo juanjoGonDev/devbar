@@ -2144,15 +2144,16 @@ function registerIpc() {
     const wanted = new Map(groups.map((group) => [group.id, group.name]));
     for (const { id } of processManager.listLogBuffers()) {
       const parsed = parseProcessId(id);
+      // Membership is the SHARED rule — the very same call `broadcastLog`
+      // makes — so this view can never list a buffer the live stream then
+      // withholds, which is exactly how the two drifted before. Only NAMING
+      // a source differs by kind below.
+      if (!belongsToMergedScope(parsed, groupId)) continue;
       if (parsed.kind === 'prescript') {
-        if (isPipelineScope) {
-          // Attribute to the script's OWN real group/name — the whole point
-          // of this fix — rather than skipping it or folding it into the
-          // pipeline's sentinel bucket. A ref whose group or script has
-          // since been deleted fails to resolve; skip it instead of
-          // crashing the view (D6 — same rule the runner itself follows).
-          const resolved = processManager.resolveTarget(id);
-          if (!resolved) continue;
+        // Always the script's OWN real group, in the pipeline's cross-group
+        // view and inside its own group's view alike.
+        const resolved = processManager.resolveTarget(id);
+        if (resolved) {
           sources.push({
             id,
             name: resolved.target.name,
@@ -2161,17 +2162,19 @@ function registerIpc() {
           });
           continue;
         }
+        // The script is gone but its buffer survives. Inside that group's own
+        // view its name is still known, so keep the logs reachable under the
+        // raw id rather than dropping them; nothing can name it in the
+        // pipeline's cross-group view, where it is skipped.
         const groupName = wanted.get(parsed.groupId);
         if (groupName === undefined) continue;
-        const resolved = processManager.resolveTarget(id);
         sources.push({
           id,
-          name: resolved?.target.name ?? id,
+          name: id,
           groupId: parsed.groupId,
           groupName,
         });
       } else if (parsed.kind === 'preAggregator') {
-        if (groupId !== null && !isPipelineScope) continue; // never nested under a real group
         sources.push({
           // Every run lands in the same bucket, so the start time is what
           // tells two of them apart; the bucket keeps the constant name.
