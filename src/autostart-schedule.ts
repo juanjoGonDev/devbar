@@ -154,8 +154,8 @@ export function describeWithheldGroups(input: {
     .join(', ');
   const aggregatorLine =
     cause === 'failure'
-      ? `── Auto-start withheld for: ${names} (pipeline failed) ──`
-      : `── Auto-start withheld for: ${names} (pipeline cancelled) ──`;
+      ? `── Auto-arranque retenido para: ${names} (pipeline fallido) ──`
+      : `── Auto-arranque retenido para: ${names} (pipeline cancelado) ──`;
   return {
     aggregatorLine,
     aggregatorLevel: cause === 'failure' ? 'error' : 'warn',

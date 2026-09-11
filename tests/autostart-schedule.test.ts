@@ -407,7 +407,7 @@ describe('describeWithheldGroups', () => {
     expect(report).not.toBeNull();
     expect(report?.toastKind).toBe('error');
     expect(report?.aggregatorLevel).toBe('error');
-    expect(report?.aggregatorLine).toContain('pipeline failed');
+    expect(report?.aggregatorLine).toContain('pipeline fallido');
     expect(report?.message).toContain('Group B');
     expect(report?.message).toContain('Group C');
   });
@@ -423,7 +423,7 @@ describe('describeWithheldGroups', () => {
     expect(report?.toastKind).toBe('ok');
     expect(report?.toastKind).not.toBe('error');
     expect(report?.aggregatorLevel).toBe('warn');
-    expect(report?.aggregatorLine).toContain('pipeline cancelled');
+    expect(report?.aggregatorLine).toContain('pipeline cancelado');
   });
 
   it('falls back to the raw id when a group is not present in groupsById', () => {
