@@ -66,6 +66,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   cada script se etiqueta con su grupo y su propio nombre reales (por
   ejemplo, `[Back] [Make setup]`), igual que en «Todo», y deja de
   duplicarse.
+- **El auto-arranque de inicio de sesión podía dejar grupos retenidos para
+  siempre si ya había un pipeline en marcha.** Si lanzabas el pipeline a mano
+  (por ejemplo con ▶▶ en la barra) justo antes de que arrancase el de inicio
+  de sesión, este último informaba de un fallo que no existía y dejaba de
+  vigilar el pipeline que seguía en marcha: los grupos pendientes de liberar
+  ya no arrancaban al completarse sus pasos. Ahora el auto-arranque de inicio
+  de sesión espera a ese pipeline y usa su resultado real.
 
 ## [0.7.1] - 2026-09-09
 
