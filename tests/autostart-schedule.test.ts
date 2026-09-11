@@ -85,6 +85,132 @@ describe('planAutoStartRelease', () => {
   });
 });
 
+describe('planAutoStartRelease — waitingGroupIds (per-group wait-for-pipeline)', () => {
+  // The flaw this covers: a group's own last referencing step can succeed
+  // while a LATER step belonging to a DIFFERENT group still disrupts shared
+  // infra (e.g. a second `make setup` restarting Docker). A waiting group
+  // must release only at the pipeline's FINAL step, not its own last one.
+  it('forces a waiting group to release at the pipeline final step instead of its own last referencing step', () => {
+    const steps = [
+      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
+      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
+      step('s3', [{ groupId: 'gC', scriptId: 'sc3' }]),
+    ];
+    const plan = planAutoStartRelease({
+      steps,
+      eligibleGroupIds: ['gA', 'gB', 'gC'],
+      waitingGroupIds: ['gA'],
+    });
+    expect(plan.releases.get(2)).toContain('gA');
+    expect(plan.releases.get(0)).toBeUndefined();
+  });
+
+  it('leaves a waiting group unaffected when its own last referencing step is already the final step', () => {
+    const steps = [
+      step('s1', [{ groupId: 'gB', scriptId: 'sc1' }]),
+      step('s2', [{ groupId: 'gA', scriptId: 'sc2' }]),
+    ];
+    const plan = planAutoStartRelease({
+      steps,
+      eligibleGroupIds: ['gA', 'gB'],
+      waitingGroupIds: ['gA'],
+    });
+    expect(plan.releases.get(1)).toEqual(['gA']);
+    expect(plan.releases.get(0)).toEqual(['gB']);
+  });
+
+  it('a non-waiting group still releases at its own last referencing step even when a sibling group waits', () => {
+    const steps = [
+      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
+      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
+      step('s3', []),
+    ];
+    const plan = planAutoStartRelease({
+      steps,
+      eligibleGroupIds: ['gA', 'gB'],
+      waitingGroupIds: ['gA'],
+    });
+    expect(plan.releases.get(2)).toEqual(['gA']);
+    expect(plan.releases.get(1)).toEqual(['gB']);
+  });
+
+  it('collapses two waiting groups with different natural release steps into the same final-step bucket, in eligibleGroupIds order', () => {
+    const steps = [
+      step('s1', [{ groupId: 'gB', scriptId: 'sc1' }]),
+      step('s2', [{ groupId: 'gA', scriptId: 'sc2' }]),
+      step('s3', []),
+    ];
+    const plan = planAutoStartRelease({
+      steps,
+      eligibleGroupIds: ['gA', 'gB'],
+      waitingGroupIds: ['gA', 'gB'],
+    });
+    expect(plan.releases.get(2)).toEqual(['gA', 'gB']);
+  });
+
+  it('does not affect a waiting group with no ref anywhere in the pipeline — it still starts immediately', () => {
+    const steps = [step('s1', [{ groupId: 'gOther', scriptId: 'sc1' }])];
+    const plan = planAutoStartRelease({
+      steps,
+      eligibleGroupIds: ['gOther', 'gWaitingScriptless'],
+      waitingGroupIds: ['gWaitingScriptless'],
+    });
+    expect(plan.immediate).toContain('gWaitingScriptless');
+    expect(plan.releases.size).toBe(1);
+  });
+
+  it('behaves exactly like before when waitingGroupIds is omitted (backward compatible)', () => {
+    const steps = [
+      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
+      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
+    ];
+    const plan = planAutoStartRelease({
+      steps,
+      eligibleGroupIds: ['gA', 'gB'],
+    });
+    expect(plan.releases.get(0)).toEqual(['gA']);
+    expect(plan.releases.get(1)).toEqual(['gB']);
+  });
+
+  // The exact reported scenario: Back's (gA) own step succeeds early, but
+  // Automator's (gB) LATER step restarts Docker again and fails. Back must
+  // stay withheld, not already running with a broken DB connection.
+  it('withholds a waiting group whose own step already succeeded when a later, different step fails', () => {
+    const steps = [
+      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
+      step('s2', [{ groupId: 'gIrrelevant', scriptId: 'sc2' }]),
+      step('s3', [{ groupId: 'gB', scriptId: 'sc3' }]),
+    ];
+    const plan = planAutoStartRelease({
+      steps,
+      eligibleGroupIds: ['gA', 'gB'],
+      waitingGroupIds: ['gA'],
+    });
+    // Step 1 (gA) and step 2 (gIrrelevant) succeeded; step 3 (gB) failed —
+    // its onStepComplete never fires.
+    const fired = new Set([0, 1]);
+    const withheld = withheldGroupIds(plan, fired);
+    expect(withheld).toContain('gA');
+    expect(withheld).toContain('gB');
+  });
+
+  it('releases a waiting group only once the whole pipeline, including a later different group step, succeeds', () => {
+    const steps = [
+      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
+      step('s2', [{ groupId: 'gIrrelevant', scriptId: 'sc2' }]),
+      step('s3', [{ groupId: 'gB', scriptId: 'sc3' }]),
+    ];
+    const plan = planAutoStartRelease({
+      steps,
+      eligibleGroupIds: ['gA', 'gB'],
+      waitingGroupIds: ['gA'],
+    });
+    expect(plan.releases.get(2)).toEqual(['gA', 'gB']);
+    const fired = new Set([0, 1, 2]);
+    expect(withheldGroupIds(plan, fired)).toEqual([]);
+  });
+});
+
 describe('withheldGroupIds', () => {
   it('is empty when every release key fired', () => {
     const steps = [

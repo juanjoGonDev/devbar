@@ -2845,9 +2845,14 @@ function registerIpc() {
  *   global `preScriptsAutoRun` setting (Login Gate Unchanged) — independent
  *   of whether any group has an autoStart command, since the pipeline has
  *   value on its own (a VPN tunnel, a `make setup` step). A group with no
- *   scripts anywhere in the pipeline starts immediately; an eligible group
- *   with scripts releases as soon as the LAST step referencing one of them
- *   completes (D2/D7 staged release), not after the whole pipeline finishes.
+ *   scripts anywhere in the pipeline starts immediately. An eligible group
+ *   WITH scripts releases according to its own `Group.waitForPipeline`
+ *   (default `true`): waiting releases only after the WHOLE pipeline
+ *   finishes successfully; opting out releases as soon as the LAST step
+ *   referencing one of its scripts completes (D2/D7 staged release), same
+ *   as before this per-group toggle existed. Waiting is the default because
+ *   a later, unrelated group's step (e.g. a second `make setup` restarting
+ *   Docker) can otherwise break an already-started group silently.
  *   On a genuine failure OR a declined confirmation, every group still
  *   withheld at that point never starts — one release rule for both causes
  *   (the Decided Override) — and is reported via the aggregator log plus a
@@ -2892,6 +2897,15 @@ async function autoStartAllMarkedCommands(): Promise<void> {
   const plan = planAutoStartRelease({
     steps,
     eligibleGroupIds: eligibleGroups.map((group) => group.id),
+    // Group.waitForPipeline (default true): a group whose own last step
+    // already succeeded can still get broken by a LATER, unrelated group's
+    // step (e.g. a second `make setup` restarting Docker) — so by default
+    // every eligible group waits for the whole pipeline instead of
+    // releasing early. Opting out per group stays available for genuinely
+    // independent groups.
+    waitingGroupIds: eligibleGroups
+      .filter((group) => group.waitForPipeline)
+      .map((group) => group.id),
   });
   for (const groupId of plan.immediate) {
     const group = groupsById.get(groupId);

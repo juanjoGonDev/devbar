@@ -171,6 +171,24 @@ describe('normalizeGroup', () => {
   });
 });
 
+// ─── normalizeGroup — waitForPipeline ──────────────────────────────────
+describe('normalizeGroup — waitForPipeline', () => {
+  it('defaults to true when not provided (existing v4 stores have no such key)', () => {
+    const g = normalizeGroup({ path: '/some/path' });
+    expect(g.waitForPipeline).toBe(true);
+  });
+
+  it('respects an explicit false (opt out for a genuinely independent group)', () => {
+    const g = normalizeGroup({ path: '/p', waitForPipeline: false });
+    expect(g.waitForPipeline).toBe(false);
+  });
+
+  it('respects an explicit true', () => {
+    const g = normalizeGroup({ path: '/p', waitForPipeline: true });
+    expect(g.waitForPipeline).toBe(true);
+  });
+});
+
 // ─── normalizeCommand ─────────────────────────────────────────────────
 describe('normalizeCommand', () => {
   it('applies defaults for empty input', () => {

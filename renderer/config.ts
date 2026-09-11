@@ -842,6 +842,34 @@ function renderGroupDetail(): void {
   // ── Pre-scripts library (definitions only — order lives in "Pipeline") ──
   buildPreScriptsLibrary(group, groupDetailEl);
 
+  // ── Pipeline release timing (Group.waitForPipeline, default true) ──────
+  // Placed right before the commands list, where each command's own
+  // auto-start toggle lives — this setting decides WHEN this group's
+  // auto-start commands are released relative to the pipeline.
+  const waitSection = document.createElement('div');
+  waitSection.className = 'detail-section';
+  const waitLbl = buildToggleLabel(
+    'Esperar a que termine todo el pipeline antes de arrancar',
+    group.waitForPipeline,
+    'detail-wait-pipeline',
+  );
+  waitLbl
+    .querySelector<HTMLInputElement>('input')
+    ?.addEventListener('change', (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      mutateDraft((d) => {
+        d.waitForPipeline = input.checked;
+      });
+    });
+  waitSection.appendChild(waitLbl);
+  const waitHint = document.createElement('p');
+  waitHint.className = 'help-text muted';
+  waitHint.style.cssText = 'font-size:11px; margin:4px 0 8px;';
+  waitHint.textContent =
+    'Un paso posterior de OTRO grupo puede reiniciar servicios compartidos (p. ej. Docker). Desactívalo solo si este grupo es realmente independiente del resto del pipeline.';
+  waitSection.appendChild(waitHint);
+  groupDetailEl.appendChild(waitSection);
+
   // ── Commands sub-list ─────────────────────────────────────────────────
   buildSubList(group, 'command', groupDetailEl);
 

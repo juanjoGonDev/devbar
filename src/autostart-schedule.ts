@@ -16,17 +16,31 @@ export interface AutoStartPlan {
 /**
  * Walks `steps` in order; for each ref whose `groupId` is eligible, the
  * ref's step index overwrites any earlier one recorded for that group
- * (later wins) — so a group's release point is always its LAST referencing
+ * (later wins) — so a group's NATURAL release point is its LAST referencing
  * step. Both output lists are emitted in `eligibleGroupIds` input order,
  * never steps-walk insertion order, so assertions on the result stay
  * deterministic regardless of how the pipeline happens to be authored.
+ *
+ * `waitingGroupIds` (per-group `Group.waitForPipeline`, default `true`)
+ * overrides that natural point for a group WITH at least one ref in the
+ * pipeline: instead of its own last referencing step, it releases only at
+ * the pipeline's FINAL step. This closes a real defect found in production
+ * use — a group's own last step can succeed while a LATER step belonging to
+ * a completely different group still disrupts shared infrastructure (e.g. a
+ * second `make setup` restarting Docker after the first group already came
+ * up and connected to it). A group with no ref anywhere in the pipeline is
+ * unaffected by `waitingGroupIds` and still starts immediately (unchanged
+ * "Scriptless group starts immediately" behaviour) — waiting only makes
+ * sense relative to a step this group actually participates in.
  */
 export function planAutoStartRelease(input: {
   steps: readonly PreStep[];
   eligibleGroupIds: readonly string[];
+  waitingGroupIds?: readonly string[];
 }): AutoStartPlan {
   const { steps, eligibleGroupIds } = input;
   const eligible = new Set(eligibleGroupIds);
+  const waiting = new Set(input.waitingGroupIds ?? []);
   const lastStepIndexByGroup = new Map<string, number>();
   for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
     const step = steps[stepIndex];
@@ -38,14 +52,16 @@ export function planAutoStartRelease(input: {
     }
   }
 
+  const finalStepIndex = steps.length - 1;
   const immediate: string[] = [];
   const releases = new Map<number, string[]>();
   for (const groupId of eligibleGroupIds) {
-    const releaseStepIndex = lastStepIndexByGroup.get(groupId);
+    let releaseStepIndex = lastStepIndexByGroup.get(groupId);
     if (releaseStepIndex === undefined) {
       immediate.push(groupId);
       continue;
     }
+    if (waiting.has(groupId)) releaseStepIndex = finalStepIndex;
     const group = releases.get(releaseStepIndex);
     if (group) group.push(groupId);
     else releases.set(releaseStepIndex, [groupId]);

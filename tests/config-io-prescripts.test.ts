@@ -739,6 +739,7 @@ describe('serializeConfig -> validateImportedConfig round-trip', () => {
           env: [],
           commands: [],
           actions: [],
+          waitForPipeline: true,
           preScripts: [
             {
               id: 'sc-bbb',

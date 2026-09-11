@@ -144,6 +144,7 @@ describe('serializeConfig', () => {
         preScripts: [],
         commands: [],
         actions: [],
+        waitForPipeline: true,
       },
     ];
     const result = serializeConfig(

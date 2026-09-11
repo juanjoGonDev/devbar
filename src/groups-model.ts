@@ -286,6 +286,9 @@ export function normalizeGroup(value: unknown): Group {
     preScripts: Array.isArray(raw.preScripts)
       ? raw.preScripts.map(normalizePreScript)
       : [],
+    // Existing v4 stores have no such key, so this default IS the decision:
+    // it must resolve to "wait" (see Group.waitForPipeline doc).
+    waitForPipeline: raw.waitForPipeline !== false,
   };
 }
 

@@ -91,6 +91,16 @@ export interface Group {
   commands: Command[];
   actions: Action[];
   preScripts: PreScript[];
+  /**
+   * Whether this group's `autoStart` commands must wait for the ENTIRE
+   * pipeline to finish successfully before releasing, instead of releasing
+   * as soon as this group's own last referencing step completes. Defaults
+   * to `true` (wait): releasing early fails silently — the group looks
+   * started but a later, unrelated step (e.g. a different group's `make
+   * setup` restarting Docker) can still break it — while waiting only fails
+   * by making boot slower, which is visible and self-explanatory.
+   */
+  waitForPipeline: boolean;
 }
 
 export interface LegacyService {

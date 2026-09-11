@@ -18,9 +18,14 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - El disparador **▶▶** de la barra pasa a ser **uno solo para todo el
   pipeline**, con su propio log agregado, indicador de progreso y botón de
   cancelar — ya no hay un disparador por grupo.
-- Al arrancar sesión, los comandos de auto-arranque de cada grupo se liberan
-  en cuanto termina el **último paso del pipeline que usa alguno de sus
-  scripts**, sin esperar a que termine el pipeline entero.
+- Al arrancar sesión, los comandos de auto-arranque de cada grupo esperan,
+  **por defecto, a que termine todo el pipeline** antes de arrancar: un paso
+  posterior de OTRO grupo (por ejemplo, un segundo `make setup` que reinicia
+  Docker) podía romper un grupo que ya había arrancado. Cada grupo tiene un
+  nuevo interruptor **«Esperar a que termine todo el pipeline antes de
+  arrancar»** en su configuración para liberarlo antes —en cuanto termina el
+  último paso que usa alguno de sus scripts— si es realmente independiente
+  del resto del pipeline.
 - **Todas las listas reordenables ahora se pueden manejar con el teclado**:
   grupos, la biblioteca de pre-scripts de cada grupo, comandos, acciones, los
   pasos del pipeline y los scripts dentro de cada paso. Con el foco en el
