@@ -1,4 +1,3 @@
-import { byId } from './dom.js';
 import {
   attachDragHandlers,
   attachCrossContainerDragHandlers,
@@ -94,23 +93,18 @@ export interface PipelineEditorDeps {
 
 export interface PipelineEditorHandle {
   refresh(): Promise<void>;
-  isPipelineDirty(): boolean;
 }
 
 export function initPipelineEditor(
   host: HTMLElement,
   deps: PipelineEditorDeps,
 ): PipelineEditorHandle {
-  const saveBarHost = byId('prescripts-save-bar', HTMLElement);
-
-  // storedSteps/draftSteps mirror storedGroup/draftGroup structurally, but
-  // every mutation here (add/delete/reorder step, assign/unassign a script,
-  // mode toggle) is instant-write — exactly like the group pane's own
-  // command/action sub-lists. Both copies are re-synced from the same fresh
-  // response right after each write succeeds, so isPipelineDirty() stays the
-  // interlock the close-guard needs without ever needing a visible save
-  // affordance for the actions this editor currently exposes.
-  let storedSteps: PreStep[] = [];
+  // Every pipeline mutation here (add/delete/reorder step, assign/unassign a
+  // script, mode toggle) is an instant IPC write immediately followed by a
+  // full refresh() — there is no local-only draft to save or discard, unlike
+  // the group pane's storedGroup/draftGroup. `draftSteps` is simply the last
+  // state fetched from main, kept as its own copy (not shared with
+  // findScript's group lookups) so re-renders never need to re-fetch it.
   let draftSteps: PreStep[] = [];
   let openPickerStepId: string | null = null;
 
@@ -121,10 +115,6 @@ export function initPipelineEditor(
   // renders that have nothing to do with this setting.
   let autoRunEnabled = false;
   let autoRunSettingLoaded = false;
-
-  function isPipelineDirty(): boolean {
-    return JSON.stringify(draftSteps) !== JSON.stringify(storedSteps);
-  }
 
   function findScript(
     groupId: string,
@@ -145,42 +135,12 @@ export function initPipelineEditor(
   }
 
   async function reload(): Promise<void> {
-    const steps = await window.api.getPreSteps();
-    storedSteps = steps;
-    draftSteps = structuredClone(steps);
+    draftSteps = await window.api.getPreSteps();
   }
 
   async function refresh(): Promise<void> {
     await reload();
     render();
-  }
-
-  function renderSaveBar(): void {
-    saveBarHost.innerHTML = '';
-    if (!isPipelineDirty()) return;
-    const bar = document.createElement('div');
-    bar.className = 'save-bar';
-    const msg = document.createElement('span');
-    msg.className = 'save-bar-message';
-    msg.textContent = 'Cambios sin guardar en el pipeline';
-    bar.appendChild(msg);
-    const discardBtn = document.createElement('button');
-    discardBtn.className = 'ghost';
-    discardBtn.textContent = 'Descartar';
-    discardBtn.addEventListener('click', () => {
-      draftSteps = structuredClone(storedSteps);
-      render();
-    });
-    bar.appendChild(discardBtn);
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'primary';
-    saveBtn.textContent = 'Guardar';
-    saveBtn.addEventListener('click', () => {
-      storedSteps = structuredClone(draftSteps);
-      render();
-    });
-    bar.appendChild(saveBtn);
-    saveBarHost.appendChild(bar);
   }
 
   /** Reads the global auto-run setting exactly once (called from
@@ -636,11 +596,9 @@ export function initPipelineEditor(
         await refresh();
       });
     }
-
-    renderSaveBar();
   }
 
   loadAutoRunSetting();
 
-  return { refresh, isPipelineDirty };
+  return { refresh };
 }

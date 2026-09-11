@@ -275,11 +275,6 @@ function isDirty(): boolean {
   return JSON.stringify(draftGroup) !== JSON.stringify(storedGroup);
 }
 
-/** Independent dirty gate for the pipeline editor (decoupling contract). */
-function isPipelineDirty(): boolean {
-  return pipelineEditor?.isPipelineDirty() ?? false;
-}
-
 /** Re-reads the pipeline from main, where referential-integrity pruning
  * already ran — called after a group-side save that can affect the global
  * pipeline (deleting a group or a pre-script definition prunes its refs). */
@@ -580,7 +575,7 @@ function buildGroupNavCard(group: Group): HTMLElement {
     if (e.target instanceof HTMLElement && e.target.closest('.drag-handle'))
       return;
     if (group.id === selectedGroupId) return;
-    if (isDirty() || isPipelineDirty()) {
+    if (isDirty()) {
       const { choice } = await window.api.confirmDirty('nav-switch');
       if (choice === 'cancel') return;
       if (choice === 'save') {
@@ -2013,7 +2008,7 @@ if (setNotifySuccess)
 window.api.onUpdate(async () => {
   await loadGroups(); // refreshes allGroups + nav via renderGroupsList
   if (!selectedGroupId) return;
-  if (isDirty() || isPipelineDirty()) {
+  if (isDirty()) {
     // Pane has unsaved edits — do NOT overwrite draftGroup.
     // The nav has already re-rendered via renderGroupsList inside loadGroups.
     return;
@@ -2030,7 +2025,7 @@ let _closingGuard = false;
 if (window.api.onConfigCloseRequested) {
   window.api.onConfigCloseRequested(async () => {
     if (_closingGuard) return;
-    if (!isDirty() && !isPipelineDirty()) {
+    if (!isDirty()) {
       window.api.confirmCloseConfig();
       return;
     }
