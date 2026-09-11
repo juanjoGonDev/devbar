@@ -326,6 +326,7 @@ function showConfirmModal(
     'name' | 'command' | 'args' | 'confirmSecs' | 'confirmOnTimeout'
   >,
   origin: ConfirmOrigin,
+  groupName: string | null,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const token = crypto.randomUUID();
@@ -340,6 +341,7 @@ function showConfirmModal(
         secs: script.confirmSecs, // null => no countdown (indefinite)
         onTimeout: script.confirmOnTimeout, // 'confirm' | 'cancel'
         logo: getPrescriptConfirmLogo(),
+        groupName,
       },
     };
     pendingConfirms.set(token, entry);
@@ -369,12 +371,13 @@ function enqueueConfirm(
     'name' | 'command' | 'args' | 'confirmSecs' | 'confirmOnTimeout'
   >,
   origin: ConfirmOrigin,
+  groupName: string | null,
 ): Promise<boolean> {
   const generation = pipelineConfirmGeneration;
   const run = (): Promise<boolean> =>
     origin === 'pipeline' && generation !== pipelineConfirmGeneration
       ? Promise.resolve(false)
-      : showConfirmModal(script, origin); // always resolves boolean, never rejects
+      : showConfirmModal(script, origin, groupName); // always resolves boolean, never rejects
   const result = confirmChain.then(run, run);
   confirmChain = result.then(
     () => undefined,
@@ -390,10 +393,10 @@ function confirmScript(
     PreScript,
     'name' | 'command' | 'args' | 'confirmSecs' | 'confirmOnTimeout'
   >,
-  _group: Group | null,
+  group: Group | null,
   _groupId: string,
 ): Promise<boolean> {
-  return enqueueConfirm(script, 'pipeline');
+  return enqueueConfirm(script, 'pipeline', group?.name ?? null);
 }
 
 /**
@@ -406,7 +409,7 @@ function confirmScript(
  */
 function confirmIfNeeded(
   target: Command | Action | null | undefined,
-  _group: Group | null,
+  group: Group | null,
   _groupId: string,
 ): Promise<boolean> {
   if (!target || !target.confirm) return Promise.resolve(true);
@@ -422,6 +425,7 @@ function confirmIfNeeded(
       confirmOnTimeout: target.confirmOnTimeout,
     },
     'interactive',
+    group?.name ?? null,
   );
 }
 
@@ -1873,7 +1877,7 @@ function registerIpc() {
     (_e: IpcMainInvokeEvent, rawToken: unknown) => {
       const token = ipcString(rawToken, 'token');
       const entry = pendingConfirms.get(token);
-      return entry ? entry.context : null; // { name, command, secs, onTimeout, logo }
+      return entry ? entry.context : null; // { name, command, secs, onTimeout, logo, groupName }
     },
   );
   ipcMain.handle(
@@ -2706,7 +2710,8 @@ function registerIpc() {
             showCompletionNotification(title, body),
           openPrescriptConfirm: (name, command) => {
             // Dev-only manual trigger, unrelated to the real pipeline: a
-            // pipeline cancel must never close this simulated dialog.
+            // pipeline cancel must never close this simulated dialog. No
+            // real group backs this simulated trigger, hence `null`.
             void showConfirmModal(
               {
                 name,
@@ -2716,6 +2721,7 @@ function registerIpc() {
                 confirmOnTimeout: 'cancel',
               },
               'interactive',
+              null,
             );
           },
           toast: (kind, message) => broadcastToast(kind, message),

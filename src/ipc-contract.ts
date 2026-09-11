@@ -144,6 +144,11 @@ export interface PrescriptConfirmContext {
   secs: number | null;
   onTimeout: 'confirm' | 'cancel';
   logo: string | null;
+  /** The script's own group — `null` only for the dev-panel's simulated
+   * trigger, which has no real group behind it. Two groups can each define a
+   * script with the same name, so the group is shown as a qualifier next to
+   * the script name it belongs to. */
+  groupName: string | null;
 }
 interface ChangelogPayload {
   releases: ReleaseSummary[];
