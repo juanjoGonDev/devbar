@@ -205,3 +205,15 @@ describe('shared .drag-row pattern (defect 2+3 remediation)', () => {
     expect(/classList\.add\('drop-into'\)/.test(dndHelperSource)).toBe(true);
   });
 });
+
+describe('tray header never scrolls sideways', () => {
+  it('lets the pipeline trigger host shrink instead of widening the popover', () => {
+    // The popover is a fixed 410px non-resizable window and the elapsed time
+    // inside the badge grows for as long as the pipeline runs. A flex item
+    // keeps its min-content width unless told otherwise, so without this the
+    // badge's own ellipsis never engages and the tray gains a horizontal
+    // scrollbar. Measured before the fix: scrollWidth 418 vs clientWidth 408.
+    const body = ruleBody(css, '.pipeline-trigger-host');
+    expect(declaresExactly(body, 'min-width', '0')).toBe(true);
+  });
+});

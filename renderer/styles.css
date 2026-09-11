@@ -2929,10 +2929,17 @@ dialog form {
 
 /* Global pipeline trigger — lives in the tray header now, one for the whole
  * app instead of one per group row. */
+/* The popover is a fixed 410px non-resizable window, so this host must give
+ * way rather than widen the header: the elapsed time inside the badge grows
+ * as the pipeline runs, and without `min-width: 0` a flex item keeps its
+ * min-content width, so the badge's own ellipsis never gets a chance and the
+ * tray gains a horizontal scrollbar. */
 .pipeline-trigger-host {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 /* ================================================================
