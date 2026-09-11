@@ -2934,7 +2934,18 @@ async function autoStartAllMarkedCommands(): Promise<void> {
   const release = { plan, groupsById, fired: new Set<number>() };
   activeAutoStartRelease = release;
   try {
-    const res = await preScriptRunner.run();
+    let res = await preScriptRunner.run();
+    if (!res.ok && res.error === 'already_running') {
+      // A manual run (e.g. the tray ▶▶) was already in flight when boot
+      // auto-start fired. Wait for THAT run and adopt its result instead of
+      // reporting a spurious failure here: `activeAutoStartRelease` stays
+      // set for the whole wait, so the in-flight run's `onStepComplete`
+      // still releases this boot plan's groups as its own steps clear —
+      // clearing early (the old behaviour) starved every group whose
+      // release step hadn't fired yet.
+      const inFlight = preScriptRunner.current();
+      if (inFlight) res = await inFlight;
+    }
     if (!res.ok) {
       const withheld = withheldGroupIds(plan, release.fired);
       reportWithheldGroups(

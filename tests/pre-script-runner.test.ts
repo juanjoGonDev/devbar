@@ -1173,6 +1173,42 @@ describe('createPreScriptRunner — getRunState / getRecentResult', () => {
   });
 });
 
+describe('createPreScriptRunner — current()', () => {
+  it('is null when idle', () => {
+    const runner = createPreScriptRunner({
+      processManager: makeMockPM(),
+      configStore: makeConfigStore([G1], []),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+    expect(runner.current()).toBeNull();
+  });
+
+  it('returns the in-flight promise while running, resolving to the same result the original caller gets, and goes null again once it settles', async () => {
+    const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
+    const pm = makeMockPM({ 'pre:g1:sc1': 'hang' });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore([G1], steps),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    const firstRunPromise = runner.run();
+    await Promise.resolve();
+    const inFlight = runner.current();
+    expect(inFlight).not.toBeNull();
+
+    runner.cancel();
+    const [firstRes, inFlightRes] = await Promise.all([
+      firstRunPromise,
+      inFlight as Promise<RunResult>,
+    ]);
+    expect(inFlightRes).toEqual(firstRes);
+    expect(runner.current()).toBeNull();
+  });
+});
+
 describe('createPreScriptRunner — confirmation gate', () => {
   it('R2.1: confirm:false → confirmScript never called, start runs normally', async () => {
     const group = makeGroup({

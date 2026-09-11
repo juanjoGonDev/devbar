@@ -119,6 +119,11 @@ export interface PreScriptRunner {
   isRunning(): boolean;
   getRunState(): PipelineRunState | null;
   getRecentResult(): RecentResult | null;
+  /** The in-flight `run()` promise, or `null` when idle. Lets a caller that
+   * got `already_running` wait for the run already underway and adopt ITS
+   * result, instead of treating another caller's run as a failure of its
+   * own. */
+  current(): Promise<RunResult> | null;
 }
 
 export function createPreScriptRunner({
@@ -134,6 +139,10 @@ export function createPreScriptRunner({
   // Singleton: one global pipeline, not one per group.
   let running: RunHandle | null = null;
   let recentResult: RecentResult | null = null;
+  // The promise backing the in-flight `run()` call, or null when idle.
+  // Exposed via `current()` so a caller who got `already_running` can await
+  // the SAME run instead of misreporting it as its own failure.
+  let currentRunPromise: Promise<RunResult> | null = null;
   const pushSysLog = (
     bufferId: string,
     line: string,
@@ -277,8 +286,27 @@ export function createPreScriptRunner({
     });
   }
 
+  /**
+   * Thin guard + bookkeeping wrapper. The guard runs synchronously, exactly
+   * as before, so a concurrent call still gets `already_running` immediately
+   * (see the still-passing `returns already_running when called twice`
+   * test). Once past the guard, `performRun`'s own promise is published via
+   * `currentRunPromise` — read through `current()` — for the ENTIRE run,
+   * cleared only once it settles, so a caller who awaits `current()` sees
+   * exactly the same result this call resolves to.
+   */
   async function run(): Promise<RunResult> {
     if (running) return { ok: false, error: 'already_running' };
+    const runPromise = performRun();
+    currentRunPromise = runPromise;
+    try {
+      return await runPromise;
+    } finally {
+      currentRunPromise = null;
+    }
+  }
+
+  async function performRun(): Promise<RunResult> {
     const steps = configStore.getPreSteps();
     if (!steps.length) return { ok: true, runId: Date.now() };
     const runId = Date.now(),
@@ -443,5 +471,13 @@ export function createPreScriptRunner({
     }
     return recentResult;
   }
-  return { run, cancel, isRunning, getRunState, getRecentResult };
+  const current = (): Promise<RunResult> | null => currentRunPromise;
+  return {
+    run,
+    cancel,
+    isRunning,
+    getRunState,
+    getRecentResult,
+    current,
+  };
 }
