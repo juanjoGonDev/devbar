@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-  makeCommandId,
+  belongsToMergedScope,
   makeActionId,
-  makePreScriptId,
   makeAggregatorId,
+  makeCommandId,
+  makePreScriptId,
   parseProcessId,
 } from '../src/compound-id.js';
+import { PIPELINE_LOG_GROUP_ID } from '../src/pipeline-labels.js';
 
 describe('compound-id', () => {
   // ─── makeCommandId ───────────────────────────────────────────────────
@@ -183,6 +185,64 @@ describe('compound-id', () => {
         throw new Error('Expected action process id');
       expect(actParsed.groupId).toBe('g');
       expect(actParsed.actionId).toBe('a');
+    });
+  });
+});
+
+describe('belongsToMergedScope', () => {
+  const cmd = parseProcessId(makeCommandId('back', 'c1'));
+  const action = parseProcessId(makeActionId('back', 'a1'));
+  const script = parseProcessId(makePreScriptId('back', 's1'));
+  const otherScript = parseProcessId(makePreScriptId('front', 's2'));
+  const aggregator = parseProcessId(makeAggregatorId(1789107788205));
+
+  // One rule for BOTH the snapshot (`collectMergedSources`) and the live
+  // stream (`broadcastLog`). They were written separately once and drifted:
+  // the pipeline view listed a script's buffer but never received its new
+  // lines, so it only filled in on reload.
+  describe('the "Todo" scope', () => {
+    it('takes everything that parses', () => {
+      for (const parsed of [cmd, action, script, otherScript, aggregator])
+        expect(belongsToMergedScope(parsed, null)).toBe(true);
+    });
+
+    it('still rejects an unparseable id', () => {
+      expect(belongsToMergedScope(parseProcessId('nonsense'), null)).toBe(
+        false,
+      );
+    });
+  });
+
+  describe('the pipeline scope', () => {
+    it('takes the aggregator and EVERY group’s pre-scripts', () => {
+      expect(belongsToMergedScope(aggregator, PIPELINE_LOG_GROUP_ID)).toBe(
+        true,
+      );
+      expect(belongsToMergedScope(script, PIPELINE_LOG_GROUP_ID)).toBe(true);
+      expect(belongsToMergedScope(otherScript, PIPELINE_LOG_GROUP_ID)).toBe(
+        true,
+      );
+    });
+
+    it('takes no commands or actions', () => {
+      expect(belongsToMergedScope(cmd, PIPELINE_LOG_GROUP_ID)).toBe(false);
+      expect(belongsToMergedScope(action, PIPELINE_LOG_GROUP_ID)).toBe(false);
+    });
+  });
+
+  describe('a real group scope', () => {
+    it('takes that group’s commands, actions and pre-scripts', () => {
+      expect(belongsToMergedScope(cmd, 'back')).toBe(true);
+      expect(belongsToMergedScope(action, 'back')).toBe(true);
+      expect(belongsToMergedScope(script, 'back')).toBe(true);
+    });
+
+    it('takes nothing from another group', () => {
+      expect(belongsToMergedScope(otherScript, 'back')).toBe(false);
+    });
+
+    it('never nests the pipeline aggregator under a real group', () => {
+      expect(belongsToMergedScope(aggregator, 'back')).toBe(false);
     });
   });
 });

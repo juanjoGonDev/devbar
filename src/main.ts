@@ -46,7 +46,7 @@ import {
   makeCommandId,
   makeActionId,
   parseProcessId,
-  type ParsedProcessId,
+  belongsToMergedScope,
 } from './compound-id.js';
 import {
   formatPipelineRunName,
@@ -678,18 +678,6 @@ function broadcast() {
   updateTrayTitle(payload);
 }
 
-/**
- * The merged-scope "group" a process id belongs to: a real groupId for
- * command/action/prescript, the pipeline's sentinel bucket for the
- * aggregator log (it belongs to no single group), and null for `unknown`
- * (belongs to no merged scope at all).
- */
-function mergedScopeGroupId(parsed: ParsedProcessId): string | null {
-  if (parsed.kind === 'unknown') return null;
-  if (parsed.kind === 'preAggregator') return PIPELINE_LOG_GROUP_ID;
-  return parsed.groupId;
-}
-
 function broadcastLog(payload: { id: string; entry: LogEntry }): void {
   const detached = logsWindows.get(payload.id);
   if (detached && !detached.isDestroyed()) {
@@ -697,10 +685,11 @@ function broadcastLog(payload: { id: string; entry: LogEntry }): void {
   }
   const main = logsWindows.get(MAIN_LOGS_KEY);
   const parsed = parseProcessId(payload.id);
+  // Same membership rule the snapshot uses, so the view cannot list a buffer
+  // it then never receives lines from.
   const inScope =
     mainLogsScope !== null &&
-    (mainLogsScope.groupId === null ||
-      mergedScopeGroupId(parsed) === mainLogsScope.groupId);
+    belongsToMergedScope(parsed, mainLogsScope.groupId);
   if (
     main &&
     !main.isDestroyed() &&

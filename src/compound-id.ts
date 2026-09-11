@@ -1,3 +1,5 @@
+import { PIPELINE_LOG_GROUP_ID } from './pipeline-labels.js';
+
 export type ParsedProcessId =
   | { kind: 'command'; groupId: string; commandId: string }
   | { kind: 'action'; groupId: string; actionId: string }
@@ -39,4 +41,31 @@ export function parseProcessId(value: unknown): ParsedProcessId {
   return match[1] === 'cmd'
     ? { kind: 'command', groupId: match[2], commandId: match[3] }
     : { kind: 'action', groupId: match[2], actionId: match[3] };
+}
+
+/**
+ * Does this process belong to the merged log view scoped to `scopeGroupId`?
+ *
+ * ONE rule for both sides of that view: the snapshot it opens with
+ * (`collectMergedSources`) and the lines it receives live (`broadcastLog`).
+ * They were written separately once and drifted — the pipeline view listed a
+ * script's buffer but never got its new lines, so it only filled in on
+ * reload. Keeping the membership in a single pure place is what stops that.
+ *
+ * - `null` is the "Todo" scope: everything that parses.
+ * - The pipeline scope is a cross-group merge of its own narration plus every
+ *   pre-script, each tagged with its real group.
+ * - A real group takes its own commands, actions and pre-scripts, and never
+ *   the pipeline aggregator, which belongs to no single group.
+ */
+export function belongsToMergedScope(
+  parsed: ParsedProcessId,
+  scopeGroupId: string | null,
+): boolean {
+  if (parsed.kind === 'unknown') return false;
+  if (scopeGroupId === null) return true;
+  if (scopeGroupId === PIPELINE_LOG_GROUP_ID)
+    return parsed.kind === 'preAggregator' || parsed.kind === 'prescript';
+  if (parsed.kind === 'preAggregator') return false;
+  return parsed.groupId === scopeGroupId;
 }
