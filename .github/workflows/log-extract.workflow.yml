@@ -1,0 +1,58 @@
+name: log-extract (temporary)
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_ids:
+        description: Comma-separated GitHub Actions job ids
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch job logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_IDS: ${{ inputs.job_ids }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra IDS <<<"$JOB_IDS"
+          for id in "${IDS[@]}"; do
+            id="$(echo "$id" | tr -d '[:space:]')"
+            [ -z "$id" ] && continue
+            curl -sL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/actions/jobs/$id/logs" \
+              -o "job-$id.log"
+            echo "fetched job-$id.log ($(wc -c < "job-$id.log") bytes)"
+          done
+
+      - name: Save logs to branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_IDS: ${{ inputs.job_ids }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch arena/01a09cad-devbar \
+            "https://x-access-token:$GH_TOKEN@github.com/${GITHUB_REPOSITORY}.git" ws
+          mkdir -p ws/.ci-debug
+          IFS=',' read -ra IDS <<<"$JOB_IDS"
+          for id in "${IDS[@]}"; do
+            id="$(echo "$id" | tr -d '[:space:]')"
+            [ -z "$id" ] && continue
+            cp "job-$id.log" "ws/.ci-debug/job-$id.log"
+          done
+          cd ws
+          git config user.name "ci-debug-bot"
+          git config user.email "ci-debug-bot@users.noreply.github.com"
+          git add .ci-debug
+          git commit -m "ci: temporary job logs"
+          git push
