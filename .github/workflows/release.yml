@@ -206,7 +206,6 @@ jobs:
     if: needs.detect.outputs.publish == 'true'
     runs-on: macos-15
     timeout-minutes: 40
-    environment: admin
     permissions:
       contents: read
     steps:
@@ -258,7 +257,6 @@ jobs:
     if: needs.detect.outputs.publish == 'true'
     runs-on: windows-latest
     timeout-minutes: 45
-    environment: admin
     permissions:
       contents: read
     steps:
@@ -337,7 +335,6 @@ jobs:
     if: needs.detect.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: admin
     permissions:
       contents: read
     steps:
@@ -397,15 +394,14 @@ jobs:
             dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-armv7.AppImage
             dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-armv7.deb
 
-  publish:
-    name: Publish release
+  assemble:
+    name: Assemble and verify the full release set
     needs: ['detect', 'build-macos', 'build-windows', 'build-linux']
     if: needs.detect.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: admin
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -451,6 +447,34 @@ jobs:
           node build/scripts/release-manifest.js dist/release "$VERSION"
           node build/scripts/verify-release-artifacts.js dist/release "$VERSION"
 
+      - name: Upload final release set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-final-${{ needs.detect.outputs.version }}
+          retention-days: 1
+          if-no-files-found: error
+          path: dist/release
+
+  publish:
+    name: Publish release
+    # Deliberately no checkout: a privileged job must never check out a ref
+    # derived from another job's outputs (CodeQL privileged-checkout rule).
+    # Everything this job needs arrives as a verified build artifact, and
+    # tag/release operations use the GitHub API instead of local git.
+    needs: ['detect', 'assemble']
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: admin
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release set
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-final-${{ needs.detect.outputs.version }}
+          path: dist/release
+
       - name: Create immutable release tag
         if: needs.detect.outputs.tag_exists != 'true'
         env:
@@ -460,8 +484,7 @@ jobs:
         run: |
           set -euo pipefail
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
-            existing_sha=$(git rev-list -n 1 "$RELEASE_TAG")
+            existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')
             [[ "$existing_sha" == "$RELEASE_SHA" ]]
             exit 0
           fi
@@ -480,7 +503,6 @@ jobs:
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
               --target "$RELEASE_SHA" \
               --title "DevBar $RELEASE_TAG" \
               --generate-notes \
@@ -539,8 +561,7 @@ jobs:
             < <(printf '%s\n' "${expected_assets[@]}" | sort)
           [[ "${actual_assets[*]}" == "${sorted_expected_assets[*]}" ]]
 
-          git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
-          tag_sha=$(git rev-list -n 1 "$RELEASE_TAG")
+          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')
           [[ "$tag_sha" == "$RELEASE_SHA" ]]
 
           release_url=$(jq -r .url <<<"$release_json")

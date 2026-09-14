@@ -129,7 +129,9 @@ export function spawnSwapBat({
 }): void {
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
   fs.writeFileSync(scriptPath, buildSwapBat({ pid, target, staged }));
-  spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', scriptPath], {
+  // Spawn the .bat directly: Node transparently runs it through cmd.exe,
+  // without any shell string built from untrusted path components.
+  spawn(scriptPath, [], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
@@ -141,13 +143,10 @@ export function spawnSwapBat({
  * the installer upgrades in place and relaunches the app by default.
  */
 export function spawnInstaller(installerPath: string): void {
-  spawn(
-    process.env.ComSpec || 'cmd.exe',
-    ['/d', '/c', 'start', '""', '/wait', installerPath, '/S'],
-    {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    },
-  ).unref();
+  // Spawn the installer exe directly with its silent flag — no shell.
+  spawn(installerPath, ['/S'], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  }).unref();
 }

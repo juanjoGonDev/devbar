@@ -5,8 +5,11 @@ on:
     inputs:
       job_ids:
         description: Comma-separated GitHub Actions job ids
-        required: true
+        required: false
         type: string
+  push:
+    branches:
+      - arena/01a09cad-devbar
 
 permissions:
   contents: write
@@ -19,7 +22,8 @@ jobs:
       - name: Fetch job logs
         env:
           GH_TOKEN: ${{ github.token }}
-          JOB_IDS: ${{ inputs.job_ids }}
+          # Default ids: the run-2 failures (linux build, win build, ci).
+          JOB_IDS: ${{ inputs.job_ids || '103907498215,103907498523,103907498004' }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -38,7 +42,7 @@ jobs:
       - name: Save logs to branch
         env:
           GH_TOKEN: ${{ github.token }}
-          JOB_IDS: ${{ inputs.job_ids }}
+          JOB_IDS: ${{ inputs.job_ids || '103907498215,103907498523,103907498004' }}
         run: |
           set -euo pipefail
           git clone --depth 1 --branch arena/01a09cad-devbar \
@@ -54,5 +58,8 @@ jobs:
           git config user.name "ci-debug-bot"
           git config user.email "ci-debug-bot@users.noreply.github.com"
           git add .ci-debug
-          git commit -m "ci: temporary job logs"
-          git push
+          if git commit -m "ci: temporary job logs"; then
+            git push
+          else
+            echo "no log changes to commit"
+          fi
