@@ -86,21 +86,44 @@ export async function extractUpdate({
  * The old bundle is only deleted once the copy succeeded — a failed `ditto`
  * rolls back and reopens the version that was already working.
  */
+/**
+ * `relaunchArgs` and `markerPath` are CI conveniences (both optional, and
+ * null in production): the relaunch receives the given arguments (the
+ * `--devbar-smoke` proof of life, for example) and a success marker is
+ * written once the swap has completed. `open` passes arguments via
+ * `--args` because it launches through LaunchServices and would not
+ * inherit the script's environment.
+ */
 export function buildSwapScript({
   pid,
   target,
   staged,
+  relaunchArgs,
+  markerPath,
 }: {
   pid: number;
   target: string;
   staged: string;
+  relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): string {
   const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+  const args = (relaunchArgs ?? []).map(quote).join(' ');
+  const relaunch = args ? `open "$target" --args ${args}` : `open "$target"`;
+  const markerLine = markerPath
+    ? `printf 'ok' > ${quote(markerPath)} 2>/dev/null || true\n`
+    : '';
   return `#!/bin/bash
 set -u
 target=${quote(target)}
 staged=${quote(staged)}
 backup="$target.devbar-old"
+
+# The relaunch must never re-enter a CI simulation: strip the
+# update/hold env the app was run with. relaunchArgs (if any)
+# re-enables plain smoke explicitly.
+unset DEVBAR_SMOKE DEVBAR_SMOKE_HOLD DEVBAR_SMOKE_UPDATE \
+  DEVBAR_SMOKE_ARTIFACT DEVBAR_SMOKE_SHA DEVBAR_SMOKE_VERSION
 
 # Bounded wait: a stuck quit must not leave a swap script running forever.
 for _ in $(seq 1 100); do
@@ -122,7 +145,8 @@ rm -rf "$backup"
 # We downloaded this ourselves, so it carries no quarantine flag — strip it
 # anyway in case a future path routes the archive through something that does.
 xattr -dr com.apple.quarantine "$target" 2>/dev/null
-open "$target"
+${markerLine}
+${relaunch}
 `;
 }
 
@@ -132,16 +156,22 @@ export function spawnSwap({
   pid,
   target,
   staged,
+  relaunchArgs,
+  markerPath,
 }: {
   scriptPath: string;
   pid: number;
   target: string;
   staged: string;
+  relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): void {
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
-  fs.writeFileSync(scriptPath, buildSwapScript({ pid, target, staged }), {
-    mode: 0o755,
-  });
+  fs.writeFileSync(
+    scriptPath,
+    buildSwapScript({ pid, target, staged, relaunchArgs, markerPath }),
+    { mode: 0o755 },
+  );
   spawn('/bin/bash', [scriptPath], {
     detached: true,
     stdio: 'ignore',

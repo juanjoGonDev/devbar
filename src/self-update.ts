@@ -18,7 +18,7 @@ import {
   isInstalledExe,
   stageWindowsArtifact,
   spawnSwapBat,
-  spawnInstaller,
+  spawnInstallerBat,
 } from './self-update-windows.js';
 import type { AvailableUpdate, StagedUpdate } from './domain-types.js';
 
@@ -44,7 +44,11 @@ export {
   buildSwapScript as buildLinuxSwapScript,
   looksLikeAppImage,
 } from './self-update-linux.js';
-export { buildSwapBat, isInstalledExe } from './self-update-windows.js';
+export {
+  buildSwapBat,
+  buildInstallerBat,
+  isInstalledExe,
+} from './self-update-windows.js';
 
 type StagedKind = 'macBundle' | 'appImage' | 'winInstaller' | 'winPortable';
 
@@ -200,17 +204,25 @@ export async function stageDownloadedArtifact({
 /**
  * Spawn the detached process that performs the swap/install. The caller quits
  * right after; the child waits for the pid to die before touching anything.
+ *
+ * `relaunchArgs` and `markerPath` are CI conveniences (both optional, and
+ * null in production): the swap relaunch receives the given arguments and
+ * writes a success marker when it has finished.
  */
 export function spawnSwap({
   staged,
   target,
   scriptDir,
   pid,
+  relaunchArgs,
+  markerPath,
 }: {
   staged: StagedUpdate;
   target: string;
   scriptDir: string;
   pid: number;
+  relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): void {
   fs.mkdirSync(scriptDir, { recursive: true });
   if (isMac) {
@@ -219,6 +231,8 @@ export function spawnSwap({
       pid,
       target,
       staged: staged.appPath,
+      relaunchArgs,
+      markerPath,
     });
     return;
   }
@@ -228,12 +242,20 @@ export function spawnSwap({
       pid,
       target,
       staged: staged.appPath,
+      relaunchArgs,
+      markerPath,
     });
     return;
   }
   const mode = windowsUpdateMode(target);
   if (mode === 'nsis') {
-    spawnInstaller(staged.appPath);
+    // The bat waits for our exit first: the installer replacing a locked exe
+    // is the most common way an update would "half-resolve" on Windows.
+    spawnInstallerBat({
+      scriptPath: path.join(scriptDir, 'install.bat'),
+      pid,
+      installer: staged.appPath,
+    });
   } else {
     // Portable = a single self-extracting exe: plain file swap.
     spawnSwapBat({
@@ -241,6 +263,8 @@ export function spawnSwap({
       pid,
       target,
       staged: staged.appPath,
+      relaunchArgs,
+      markerPath,
     });
   }
 }

@@ -11,6 +11,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+ROOT="$(pwd)"
 
 step() { printf "\033[1;34m→\033[0m %s\n" "$*"; }
 ok()   { printf "\033[1;32m✓\033[0m %s\n" "$*"; }
@@ -20,12 +21,24 @@ warn() { printf "\033[1;33m!\033[0m %s\n" "$*"; }
 step "Stopping any running DevBar…"
 # Installed bundle (either /Applications or ~/Applications)
 pkill -f "/Applications/DevBar.app" 2>/dev/null || true
-# Bundle running straight from dist/ (orphan from a previous build)
-pkill -f "devbar/dist/DevBar-darwin"   2>/dev/null || true
-# Dev mode (`npm start`)
-pkill -f "devbar/node_modules/electron/dist/Electron.app" 2>/dev/null || true
+# Bundle running straight from this repo's dist/ (orphan from a previous
+# build) — anchored to the actual checkout path, not a folder name guess.
+pkill -f "${ROOT}/dist/DevBar-darwin" 2>/dev/null || true
+# Dev mode (`npm start` / `pnpm start`) out of this checkout
+pkill -f "${ROOT}/node_modules" 2>/dev/null || true
 # Generic fallback: any process whose path contains DevBar.app
 pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+# Wave 2: a leftover process is exactly how a reinstall half-resolves, so
+# verify the kill instead of assuming it.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if ! pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.5
+done
+if pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
+  warn "A DevBar process survived the kill — if the install fails to replace the bundle, quit it manually and re-run."
+fi
 # Give the OS a moment to release file locks on the bundle.
 sleep 1
 

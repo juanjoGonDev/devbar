@@ -15,6 +15,7 @@
     "dist": "pnpm run build && node --experimental-strip-types scripts/platform.ts dist",
     "dist:mac": "pnpm run build && node --experimental-strip-types scripts/platform.ts dist:mac",
     "release:verify": "pnpm run build && node --experimental-strip-types scripts/platform.ts verify",
+    "release": "pnpm run dist && pnpm run release:verify",
     "release:mac": "pnpm run dist:mac && pnpm run release:verify",
     "verify": "pnpm run build && node --experimental-strip-types scripts/platform.ts verify",
     "install-local": "node --experimental-strip-types scripts/platform.ts install-local",

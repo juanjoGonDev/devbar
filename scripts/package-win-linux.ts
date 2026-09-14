@@ -35,7 +35,7 @@ try {
  * with an explicit artifact name. The app is pure JS, so cross-building
  * from any host works; downloads of the Electron runtime are cached.
  *
- * Usage: node --experimental-strip-types scripts/package-win-linux.ts win|linux [dir]
+ * Usage: node --experimental-strip-types scripts/package-win-linux.ts win|linux [dir|host]
  *
  * With the `dir` argument only the unpacked app directory for the HOST
  * arch is produced (used by `pnpm run pack` / `pnpm install-local` for a
@@ -70,7 +70,8 @@ function baseConfig(): Record<string, unknown> {
 }
 
 async function buildWindows(): Promise<void> {
-  const archs = dirOnly ? [hostArch()] : (['x64', 'arm64'] as const);
+  const archs =
+    dirOnly || hostOnly ? [hostArch()] : (['x64', 'arm64'] as const);
   for (const arch of archs) {
     await builder.build({
       // Force the platform: an empty list keeps the per-arch targets from
@@ -109,14 +110,19 @@ async function buildWindows(): Promise<void> {
 }
 
 async function buildLinux(): Promise<void> {
-  const pairs: ReadonlyArray<readonly [string, string]> = dirOnly
-    ? [[hostArch(), hostArch()]]
-    : [
-        // [electron-builder arch key, artifact-contract arch name]
-        ['x64', 'x64'],
-        ['arm64', 'arm64'],
-        ['armv7l', 'armv7'],
-      ];
+  // electron-builder's armv7 key is "armv7l"; the artifact contract says
+  // "armv7". hostArch() already returns the builder key.
+  const contractName = (arch: string): string =>
+    arch === 'armv7l' ? 'armv7' : arch;
+  const pairs: ReadonlyArray<readonly [string, string]> =
+    dirOnly || hostOnly
+      ? [[hostArch(), contractName(hostArch())]]
+      : [
+          // [electron-builder arch key, artifact-contract arch name]
+          ['x64', 'x64'],
+          ['arm64', 'arm64'],
+          ['armv7l', 'armv7'],
+        ];
   for (const [builderArch, contractArch] of pairs) {
     await builder.build({
       // Force the platform — see buildWindows.
@@ -154,13 +160,18 @@ function ext(): string {
 }
 
 const target = process.argv[2];
-const dirOnly = process.argv[3] === 'dir';
+/** dir = unpacked host dir only; host = full targets for the host arch only
+ *  (CI update simulation builds one next-version artifact quickly);
+ *  omitted = every arch the release contract ships. */
+const mode = process.argv[3] ?? 'full';
+const dirOnly = mode === 'dir';
+const hostOnly = mode === 'host';
 if (target !== 'win' && target !== 'linux') {
-  console.error('Usage: package-win-linux.ts win|linux [dir]');
+  console.error('Usage: package-win-linux.ts win|linux [dir|host]');
   process.exit(1);
 }
 
-/** electron-builder arch key for the host CPU (dir-mode only builds one). */
+/** electron-builder arch key for the host CPU (dir/host mode builds one). */
 function hostArch(): string {
   switch (process.arch) {
     case 'arm64':

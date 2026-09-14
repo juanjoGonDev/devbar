@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   appImagePathFromExecutable,
   bundlePathFromExecutable,
+  buildInstallerBat,
   buildLinuxSwapScript,
   buildMacSwapScript as buildSwapScript,
   buildSwapBat,
@@ -194,21 +195,105 @@ describe('windows update mode + helpers', () => {
 });
 
 describe('looksLikeAppImage', () => {
-  it('rejects files shorter than the magic window', () => {
+  /** Real AppImage shape: ELF header + "AI" + type byte at offset 8. */
+  function realImage(typeByte: number): Buffer {
+    const buf = Buffer.alloc(64);
+    buf.write('\x7fELF', 0, 'latin1');
+    buf[8] = 0x41; // "A"
+    buf[9] = 0x49; // "I"
+    buf[10] = typeByte;
+    return buf;
+  }
+
+  function withFile(content: Buffer): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-img-'));
     const file = path.join(dir, 'x.AppImage');
-    fs.writeFileSync(file, Buffer.from('short'));
+    fs.writeFileSync(file, content);
+    return file;
+  }
+
+  it('rejects files shorter than the magic window', () => {
+    const file = withFile(Buffer.from('short'));
     expect(looksLikeAppImage(file)).toBe(false);
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
   });
 
-  it('accepts the AppImage magic word at offset 8', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-img-'));
-    const file = path.join(dir, 'x.AppImage');
+  it('accepts the AppImageSpec magic (ELF + AI + type byte)', () => {
+    expect(looksLikeAppImage(withFile(realImage(0x02)))).toBe(true);
+    expect(looksLikeAppImage(withFile(realImage(0x01)))).toBe(true);
+  });
+
+  it('rejects the legacy "AppImage" string at offset 8 — real images do not carry it', () => {
     const buf = Buffer.alloc(64);
     buf.write('AppImage', 8, 'latin1');
-    fs.writeFileSync(file, buf);
-    expect(looksLikeAppImage(file)).toBe(true);
-    fs.rmSync(dir, { recursive: true, force: true });
+    expect(looksLikeAppImage(withFile(buf))).toBe(false);
+  });
+
+  it('rejects an ELF file without the AppImage marker', () => {
+    const buf = Buffer.alloc(64);
+    buf.write('\x7fELF', 0, 'latin1');
+    expect(looksLikeAppImage(withFile(buf))).toBe(false);
+  });
+});
+
+describe('swap scripts: CI relaunch args + success marker', () => {
+  const mac = buildSwapScript({
+    pid: 7,
+    target: '/Applications/DevBar.app',
+    staged: '/tmp/u/v2/DevBar.app',
+    relaunchArgs: ['--devbar-smoke'],
+    markerPath: '/tmp/u/swap-ok',
+  });
+  it('macOS relaunch passes the args through `open --args` (env would not survive LaunchServices)', () => {
+    expect(mac).toContain('open "$target" --args \'--devbar-smoke\'');
+  });
+  it('macOS writes the success marker after a clean swap', () => {
+    expect(mac).toContain("printf 'ok' > '/tmp/u/swap-ok'");
+  });
+
+  const linux = buildLinuxSwapScript({
+    pid: 7,
+    target: '/home/x/DevBar.AppImage',
+    staged: '/tmp/u/v2/DevBar.AppImage',
+    relaunchArgs: ['--devbar-smoke'],
+    markerPath: '/tmp/u/swap-ok',
+  });
+  it('Linux relaunch appends the args to the detached exec', () => {
+    expect(linux).toContain('setsid "$target" \'--devbar-smoke\' >/dev/null');
+  });
+  it('Linux writes the success marker after a clean swap', () => {
+    expect(linux).toContain("printf 'ok' > '/tmp/u/swap-ok'");
+  });
+  it('sh swaps strip the CI-simulation env before relaunch (no re-entrancy)', () => {
+    for (const script of [mac, linux]) {
+      expect(script).toContain('unset DEVBAR_SMOKE');
+      expect(script).toContain('DEVBAR_SMOKE_UPDATE');
+    }
+  });
+
+  const bat = buildSwapBat({
+    pid: 7,
+    target: 'C:\\folder with space\\DevBar.exe',
+    staged: 'C:\\staged\\DevBar.exe',
+    relaunchArgs: ['--devbar-smoke'],
+    markerPath: 'C:\\staged\\swap-ok',
+  });
+  it('Windows portable bat relaunch passes the args and writes the marker', () => {
+    expect(bat).toContain('start "" "%target%" "--devbar-smoke"');
+    expect(bat).toContain('echo ok> "C:\\staged\\swap-ok" 2>nul');
+  });
+});
+
+describe('buildInstallerBat', () => {
+  const bat = buildInstallerBat({ pid: 4321, installer: 'C:\\u\\setup.exe' });
+  it('waits for the old pid before launching the installer', () => {
+    const wait = bat.indexOf('tasklist /fi "PID eq 4321"');
+    const run = bat.indexOf('start "" "C:\\u\\setup.exe" /S');
+    expect(wait).toBeGreaterThan(-1);
+    expect(run).toBeGreaterThan(-1);
+    expect(wait).toBeLessThan(run);
+  });
+  it('gives up instead of installing over a stuck process', () => {
+    expect(bat).toContain('if %tries% geq 120 exit /b 1');
   });
 });

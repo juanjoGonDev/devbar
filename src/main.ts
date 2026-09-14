@@ -48,13 +48,14 @@ import {
   stageDownloadedArtifact,
   spawnSwap,
   verifySha256,
+  windowsUpdateMode,
 } from './self-update.js';
 import {
   setLinuxAutostart,
   wasOpenedAtLoginFromArgv,
   LOGIN_ARG,
 } from './autostart.js';
-import { isMac, isWin, platformLabel } from './platform.js';
+import { isLinux, isMac, isWin, platformLabel } from './platform.js';
 import { loadShellPath, expandTilde } from './path-helper.js';
 import { mergeNewestByTs } from './merge-logs.js';
 import { RepoWatcher } from './repo-watcher.js';
@@ -3104,17 +3105,87 @@ app.whenReady().then(() => {
   trayIcon.preload();
 
   if (SMOKE_MODE) {
+    // Two CI shapes on top of the plain proof of life:
+    //  - HOLD (--devbar-smoke-hold / DEVBAR_SMOKE_HOLD=1): stay resident so a
+    //    following `pnpm install-local` has a real running process to kill —
+    //    the "reinstall while running" test.
+    //  - UPDATE (DEVBAR_SMOKE_UPDATE=1): run the REAL staging + swap handoff
+    //    with a locally built artifact (DEVBAR_SMOKE_ARTIFACT + _SHA +
+    //    _VERSION), then exit. The swap script relaunches the app with
+    //    --devbar-smoke, so the new version proves itself through the same
+    //    marker — end-to-end "automatic update" coverage in CI.
+    const smokeHold =
+      process.argv.includes('--devbar-smoke-hold') ||
+      process.env.DEVBAR_SMOKE_HOLD === '1';
+    const smokeUpdate = process.env.DEVBAR_SMOKE_UPDATE === '1';
+
     // Headless-friendly proof of life: create only the platform tray (no
     // BrowserWindow, no menubar chrome, no commands). Owning a tray is the
     // platform-specific part worth proving — menu bar on macOS,
-    // StatusNotifier/XEmbed on Linux, notification area on Windows.
+    // StatusNotifier/XEmbed on Linux, notification area on Windows. The
+    // update phase swaps the app and exits, so it skips the tray.
     try {
       fs.rmSync(SMOKE_MARKER_PATH, { force: true });
-      void new Tray(trayIcon.defaultIcon());
+      if (!smokeUpdate) void new Tray(trayIcon.defaultIcon());
     } catch (error) {
       console.error('DEVBAR_SMOKE_TRAY_FAILED:', error);
       app.exit(1);
     }
+
+    if (smokeUpdate) {
+      const artifact = process.env.DEVBAR_SMOKE_ARTIFACT;
+      const sha = process.env.DEVBAR_SMOKE_SHA;
+      const version = process.env.DEVBAR_SMOKE_VERSION;
+      const target = installedAppPath();
+      const fail = (reason: string): void => {
+        console.error(`DEVBAR_SMOKE_UPDATE_FAILED ${reason}`);
+        app.exit(1);
+      };
+      if (!artifact || !sha || !version)
+        return fail('missing DEVBAR_SMOKE_ARTIFACT/_SHA/_VERSION');
+      if (!target) return fail('not running from an installed location');
+      void (async () => {
+        try {
+          // The production staging path, byte for byte: hash seal, artifact
+          // magic checks, copy into the per-version staging dir.
+          const verified = await verifySha256(artifact, sha);
+          if (!verified) throw new Error('el hash del artefacto no coincide');
+          const updatesDir = path.join(app.getPath('userData'), 'updates');
+          const kind = isMac
+            ? 'macBundle'
+            : isLinux
+              ? 'appImage'
+              : windowsUpdateMode(target) === 'nsis'
+                ? 'winInstaller'
+                : 'winPortable';
+          const staged = await stageDownloadedArtifact({
+            filePath: artifact,
+            destDir: path.join(updatesDir, version),
+            version,
+            kind,
+          });
+          // The swap waits for this pid to die, replaces the app and
+          // relaunches it with --devbar-smoke, so the new version writes the
+          // marker CI is about to wait for. (NSIS mode relaunches through
+          // the installer, which cannot pass arguments — CI verifies that
+          // case through the installed exe version instead.)
+          spawnSwap({
+            staged,
+            target,
+            scriptDir: updatesDir,
+            pid: process.pid,
+            relaunchArgs: ['--devbar-smoke'],
+            markerPath: path.join(updatesDir, 'swap-ok'),
+          });
+          console.log(`DEVBAR_SMOKE_UPDATE_HANDOFF ${version}`);
+          app.exit(0);
+        } catch (error) {
+          fail(errorMessage(error));
+        }
+      })();
+      return;
+    }
+
     setTimeout(() => {
       try {
         fs.writeFileSync(
@@ -3125,6 +3196,12 @@ app.whenReady().then(() => {
         // Marker is a CI convenience; the stdout marker below is primary.
       }
       console.log('DEVBAR_SMOKE_OK');
+      if (smokeHold) {
+        // Resident proof of life: CI checks this pid, then expects the next
+        // install-local to kill exactly this process.
+        console.log(`DEVBAR_SMOKE_HOLDING ${process.pid}`);
+        return;
+      }
       app.exit(0);
     }, 1500);
     return;

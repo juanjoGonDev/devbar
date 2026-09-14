@@ -19,6 +19,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const command = process.argv[2];
 const isDev = process.argv.includes('--dev');
 const platform = process.platform;
+/** Everything after the command name (e.g. `--no-build`) — forwarded to the
+ *  implementation that takes extra flags. */
+const extraArgs = process.argv.slice(3);
 
 function fail(message: string): never {
   console.error(`[platform] ${message}`);
@@ -92,7 +95,10 @@ switch (command) {
   case 'install-local':
     if (platform === 'darwin') runBash('install-local.sh');
     else if (platform === 'win32' || platform === 'linux')
-      runNode('scripts/install-local.ts', isDev ? ['--dev'] : []);
+      runNode('scripts/install-local.ts', [
+        ...(isDev ? ['--dev'] : []),
+        ...extraArgs,
+      ]);
     else unsupported();
     break;
 

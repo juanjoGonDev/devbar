@@ -98,11 +98,18 @@ artifacts from any host.
 | macOS DMG + ZIP              | `pnpm run dist` (= `dist:mac`) | `dist/release/DevBar-<v>-macos-{arm64,x64}.{dmg,zip}` + `SHA256SUMS.txt`                           |
 | Windows NSIS + portable      | `pnpm run dist`                | `dist/electron-builder/DevBar-<v>-win-{x64,arm64}-{setup,portable}.exe`                            |
 | Linux AppImage + deb         | `pnpm run dist`                | `dist/electron-builder/DevBar-<v>-linux-{x64,arm64,armv7}.{AppImage,deb}`                          |
+| Build + verify (this OS)     | `pnpm run release`             | Runs `dist` then `release:verify` for the host OS — one command from build to validated artifacts  |
 
 `pnpm run verify` runs the matching verifier (artifact contract + contents)
 for the current OS. macOS keeps its own packager pipeline (ad-hoc signing +
 notification identity); Windows and Linux are built with
 **electron-builder**.
+
+`pnpm run release` is the OS-agnostic "make a release and prove it" command:
+it builds the full artifact set for the host OS and runs the matching
+verifier in one step. On macOS it is exactly `release:mac`; on Windows and
+Linux it is `dist` + `release:verify`, so a release is one command on every
+OS instead of a macOS-specific name.
 
 The release workflow builds all three platforms in parallel, launches each
 packaged binary as a smoke test (NSIS install + portable on Windows, AppImage +
@@ -113,7 +120,13 @@ deb under `xvfb` on Linux, packaged app on macOS), assembles the full
 
 `pnpm run install-local` (or `install-local:dev` with the dev panel) works
 on every OS — stop any running DevBar, repack, replace the local install,
-relaunch:
+relaunch. Stopping is done in two waves because a leftover process is
+exactly how a reinstall (or an automatic update) half-resolves: the old
+instance keeps running while the new one can't replace locked files. First
+it kills the packaged app (and a `pnpm start` dev instance of this repo),
+then it **verifies** nothing is left alive before touching the install
+location — if a process survives, it says so loudly instead of swapping
+files under a live process:
 
 - **macOS** — replaces `/Applications/DevBar.app` (falls back to
   `~/Applications` if not writable) and strips the Gatekeeper quarantine

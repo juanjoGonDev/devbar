@@ -30,15 +30,25 @@ export function canInstallInPlace(appImage: string | null): appImage is string {
 }
 
 /**
- * AppImage v1.0 files carry the magic word `AppImage` at byte offset 8 — an
- * HTML error page or a truncated download cannot masquerade as one.
+ * AppImage magic per the AppImageSpec: an ELF file whose ident padding
+ * carries "AI" + a type byte at offset 8 (0x01 type 1, 0x02 type 2 —
+ * electron-builder emits type 2). The remaining padding is zeroes, so the
+ * legacy "AppImage" string check rejects genuine images — and a random
+ * 8-byte string could not masquerade as one either.
  */
 export function looksLikeAppImage(filePath: string): boolean {
   const fd = fs.openSync(filePath, 'r');
   try {
-    const buf = Buffer.alloc(16);
-    if (fs.readSync(fd, buf, 0, 16, 0) < 16) return false;
-    return buf.subarray(8, 16).toString('latin1') === 'AppImage';
+    const elf = Buffer.alloc(4);
+    if (fs.readSync(fd, elf, 0, 4, 0) < 4) return false;
+    if (elf.toString('latin1') !== '\x7fELF') return false;
+    const magic = Buffer.alloc(3);
+    if (fs.readSync(fd, magic, 0, 3, 8) < 3) return false;
+    return (
+      magic[0] === 0x41 &&
+      magic[1] === 0x49 &&
+      (magic[2] === 0x01 || magic[2] === 0x02)
+    );
   } finally {
     fs.closeSync(fd);
   }
@@ -71,22 +81,43 @@ export function stageAppImage({
  * Swap script: wait for the old process, move it aside, copy the new
  * AppImage in, relaunch detached. Rollback re-runs the old file when the
  * copy fails, so a bad download can never strand the user without DevBar.
+ *
+ * `relaunchArgs` and `markerPath` are CI conveniences (both optional, and
+ * null in production): the relaunch receives the given arguments (the
+ * `--devbar-smoke` proof of life, for example), and a success marker is
+ * written once the swap has completed, so a test can observe it from
+ * outside the app.
  */
 export function buildSwapScript({
   pid,
   target,
   staged,
+  relaunchArgs,
+  markerPath,
 }: {
   pid: number;
   target: string;
   staged: string;
+  relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): string {
   const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+  const args = (relaunchArgs ?? []).map(quote).join(' ');
+  const relaunch = args ? `setsid "$target" ${args}` : 'setsid "$target"';
+  const markerLine = markerPath
+    ? `printf 'ok' > ${quote(markerPath)} 2>/dev/null || true\n`
+    : '';
   return `#!/bin/bash
 set -u
 target=${quote(target)}
 staged=${quote(staged)}
 backup="$target.devbar-old"
+
+# The relaunch must never re-enter a CI simulation: strip the
+# update/hold env the app was run with. relaunchArgs (if any)
+# re-enables plain smoke explicitly.
+unset DEVBAR_SMOKE DEVBAR_SMOKE_HOLD DEVBAR_SMOKE_UPDATE \
+  DEVBAR_SMOKE_ARTIFACT DEVBAR_SMOKE_SHA DEVBAR_SMOKE_VERSION
 
 # Bounded wait: a stuck quit must not leave a swap script running forever.
 for _ in $(seq 1 100); do
@@ -111,10 +142,11 @@ else
   chmod 755 "$target"
   rm -f "$backup"
 fi
+${markerLine}
 # Detached relaunch: the swap script is the last process that knows the path.
 # No --login: an update relaunch is a manual launch, not a boot, so
 # pre-scripts must NOT re-run (they gate on the login flag).
-setsid "$target" >/dev/null 2>&1 < /dev/null &
+${relaunch} >/dev/null 2>&1 < /dev/null &
 `;
 }
 
@@ -124,16 +156,22 @@ export function spawnSwap({
   pid,
   target,
   staged,
+  relaunchArgs,
+  markerPath,
 }: {
   scriptPath: string;
   pid: number;
   target: string;
   staged: string;
+  relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): void {
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
-  fs.writeFileSync(scriptPath, buildSwapScript({ pid, target, staged }), {
-    mode: 0o755,
-  });
+  fs.writeFileSync(
+    scriptPath,
+    buildSwapScript({ pid, target, staged, relaunchArgs, markerPath }),
+    { mode: 0o755 },
+  );
   spawn('/bin/bash', [scriptPath], {
     detached: true,
     stdio: 'ignore',

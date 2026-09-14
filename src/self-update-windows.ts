@@ -60,41 +60,75 @@ export function stageWindowsArtifact({
   return staged;
 }
 
+const BAT_ENV_CLEAR_LINES = [
+  'rem The relaunch must never re-enter a CI simulation: clear the',
+  'rem update/hold env the app was run with (relaunch args, if any,',
+  'rem re-enable plain smoke explicitly).',
+  'set "DEVBAR_SMOKE="',
+  'set "DEVBAR_SMOKE_HOLD="',
+  'set "DEVBAR_SMOKE_UPDATE="',
+  'set "DEVBAR_SMOKE_ARTIFACT="',
+  'set "DEVBAR_SMOKE_SHA="',
+  'set "DEVBAR_SMOKE_VERSION="',
+];
+
 /** Double-quote for .bat embedding, doubling any inner quote. */
 function batQuote(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
 /**
+ * Bounded "wait until our pid is gone" prologue shared by both bats. The
+ * swap must never touch a file a live process holds, so both the portable
+ * swap and the NSIS install wait for the app to actually exit first.
+ */
+const PID_WAIT_LINES = (pid: number): string[] => [
+  'set /a tries=0',
+  ':wait',
+  `tasklist /fi "PID eq ${pid}" /fo csv | find /i "DevBar" >nul`,
+  'if not errorlevel 1 (',
+  '  set /a tries+=1',
+  '  if %tries% geq 120 exit /b 1',
+  '  timeout /t 1 /nobreak >nul',
+  '  goto :wait',
+  ')',
+];
+
+/**
  * Portable exe swap. Waits (bounded) for the old process, moves the file
  * aside, copies the new one into place, relaunches. A failed copy rolls the
  * old file back and relaunches it, so the user never ends up with no DevBar
  * at all.
+ *
+ * `relaunchArgs` and `markerPath` are CI conveniences (both optional, and
+ * null in production): the relaunch receives the given arguments (the
+ * `--devbar-smoke` proof of life, for example) and a success marker is
+ * written once the swap has completed.
  */
 export function buildSwapBat({
   pid,
   target,
   staged,
+  relaunchArgs,
+  markerPath,
 }: {
   pid: number;
   target: string;
   staged: string;
+  relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): string {
+  const args = (relaunchArgs ?? []).map((a) => batQuote(a)).join(' ');
+  const relaunch = args ? `start "" "%target%" ${args}` : `start "" "%target%"`;
+  const markerLine = markerPath ? `echo ok> ${batQuote(markerPath)} 2>nul` : '';
   return [
     '@echo off',
     'setlocal',
     `set "target=${batQuote(target)}"`,
     `set "staged=${batQuote(staged)}"`,
     'set "backup=%target%.devbar-old"',
-    'set /a tries=0',
-    ':wait',
-    `tasklist /fi "PID eq ${pid}" /fo csv | find /i "DevBar" >nul`,
-    'if not errorlevel 1 (',
-    '  set /a tries+=1',
-    '  if %tries% geq 120 exit /b 1',
-    '  timeout /t 1 /nobreak >nul',
-    '  goto :wait',
-    ')',
+    ...BAT_ENV_CLEAR_LINES,
+    ...PID_WAIT_LINES(pid),
     'rem let the GPU/render helper processes wind down before we move the file',
     'timeout /t 2 /nobreak >nul',
     ':swap',
@@ -102,7 +136,8 @@ export function buildSwapBat({
     'move /y "%target%" "%backup%" || goto :fail',
     'copy /y "%staged%" "%target%" || goto :fail',
     'del /f /q "%backup%" 2>nul',
-    'start "" "%target%"',
+    ...(markerLine ? [markerLine] : []),
+    relaunch,
     'exit /b 0',
     ':fail',
     'if exist "%backup%" (',
@@ -121,14 +156,21 @@ export function spawnSwapBat({
   pid,
   target,
   staged,
+  relaunchArgs,
+  markerPath,
 }: {
   scriptPath: string;
   pid: number;
   target: string;
   staged: string;
+  relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): void {
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
-  fs.writeFileSync(scriptPath, buildSwapBat({ pid, target, staged }));
+  fs.writeFileSync(
+    scriptPath,
+    buildSwapBat({ pid, target, staged, relaunchArgs, markerPath }),
+  );
   // Spawn the .bat directly: Node transparently runs it through cmd.exe,
   // without any shell string built from untrusted path components.
   spawn(scriptPath, [], {
@@ -139,8 +181,56 @@ export function spawnSwapBat({
 }
 
 /**
+ * NSIS install prologue. The running exe and its DLLs stay locked until the
+ * process has fully exited, so the installer must wait for our pid first —
+ * launching it immediately would race the quit and can fail to replace a
+ * locked file. The oneClick installer then upgrades in place and relaunches
+ * the app by default.
+ */
+export function buildInstallerBat({
+  pid,
+  installer,
+}: {
+  pid: number;
+  installer: string;
+}): string {
+  return [
+    '@echo off',
+    'setlocal',
+    ...BAT_ENV_CLEAR_LINES,
+    ...PID_WAIT_LINES(pid),
+    'rem let the GPU/render helper processes release their file locks',
+    'timeout /t 2 /nobreak >nul',
+    `start "" ${batQuote(installer)} /S`,
+    'exit /b 0',
+    '',
+  ].join('\r\n');
+}
+
+/** Write the bat and launch it detached (hidden console). Caller quits. */
+export function spawnInstallerBat({
+  scriptPath,
+  pid,
+  installer,
+}: {
+  scriptPath: string;
+  pid: number;
+  installer: string;
+}): void {
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+  fs.writeFileSync(scriptPath, buildInstallerBat({ pid, installer }));
+  spawn(scriptPath, [], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  }).unref();
+}
+
+/**
  * Launch the oneClick NSIS installer silent and detached. With DevBar quit,
  * the installer upgrades in place and relaunches the app by default.
+ * (Kept for direct callers; the updater itself goes through
+ * spawnInstallerBat, which waits for the old process first.)
  */
 export function spawnInstaller(installerPath: string): void {
   // Spawn the installer exe directly with its silent flag — no shell.

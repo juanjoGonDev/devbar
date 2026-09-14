@@ -9,7 +9,21 @@
  * Linux it is ~/.local/share/DevBar with a launcher in ~/.local/bin when
  * that directory exists.
  *
- * Usage: node --experimental-strip-types scripts/install-local.ts [--dev]
+ * Stopping is done in two waves, because a leftover process is exactly how
+ * a reinstall (or an automatic update) half-resolves: the old instance
+ * keeps its tray icon and the new one either fails to replace locked files
+ * or both run side by side.
+ *   1. kill: the packaged image name (Windows) or the exact install/dist/
+ *      dev paths (Linux), including a `pnpm start` instance of THIS repo.
+ *   2. verify: poll until nothing matched anymore. If something survives,
+ *      say so loudly instead of swapping files under a live process.
+ *
+ * Usage: node --experimental-strip-types scripts/install-local.ts
+ *        [--dev] [--no-build]
+ *
+ * --no-build reuses an existing dist/electron-builder/<os>-unpacked output
+ * (CI builds it right before, so the kill+install+relaunch cycle can run
+ * without a second full build).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -19,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isDev = process.argv.includes('--dev');
+const noBuild = process.argv.includes('--no-build');
 const platform = process.platform;
 
 const step = (message: string): void => console.log(`→ ${message}`);
@@ -36,10 +51,8 @@ function run(cmd: string, args: string[], inherit = true): void {
 
 function tryQuiet(cmd: string, args: string[]): void {
   try {
-    const result = spawnSync(cmd, args, { stdio: 'ignore', cwd: ROOT });
-    if (!result.error && result.status !== 0) {
-      /* nothing to stop — expected */
-    }
+    spawnSync(cmd, args, { stdio: 'ignore', cwd: ROOT });
+    /* nothing to stop is an expected outcome */
   } catch {
     /* best effort */
   }
@@ -79,43 +92,108 @@ function layout(): InstallLayout {
   process.exit(1);
 }
 
-function stopRunningInstances(): void {
+/**
+ * Wave 1 — kill. Windows: the packaged image name, plus electron.exe
+ * processes started from THIS repo (`pnpm start` runs electron, not
+ * DevBar.exe, so the image-name kill alone would leave a dev instance
+ * alive). Linux: exact paths of the installed copy, a dist/ run, and a
+ * dev run from this checkout — no assumptions about the repo folder name.
+ */
+function killRunningInstances(installDir: string): void {
   step('Stopping any running DevBar…');
   if (platform === 'win32') {
-    // taskkill /F /IM: packaged app. Dev-mode (electron .) is left alone —
-    // killing every electron.exe on the machine would be too aggressive.
     tryQuiet('taskkill', ['/F', '/IM', 'DevBar.exe']);
+    // Dev mode: electron.exe whose command line references this checkout.
+    // (Killing every electron.exe on the machine would be too aggressive.)
+    const repoPattern = ROOT.replaceAll('\\', '\\\\');
+    tryQuiet('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue | ` +
+        `Where-Object { $_.CommandLine -like '*${repoPattern}*' } | ` +
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+    ]);
   } else {
-    // Packaged build from dist/, installed copy, and dev mode (electron .)
-    // resolved through this repo's node_modules.
-    tryQuiet('pkill', ['-f', 'devbar/dist/electron-builder']);
-    tryQuiet('pkill', ['-f', 'share/DevBar']);
-    tryQuiet('pkill', ['-f', 'devbar/node_modules']);
+    tryQuiet('pkill', ['-f', path.join(installDir)]);
+    tryQuiet('pkill', ['-f', path.join(ROOT, 'dist', 'electron-builder')]);
+    tryQuiet('pkill', ['-f', path.join(ROOT, 'node_modules')]);
   }
+}
+
+/**
+ * Wave 2 — verify. Poll until the kill patterns match nothing; if a process
+ * survives, warn instead of swapping files under a live process.
+ */
+function verifyStopped(installDir: string): void {
+  const alive = (): boolean => {
+    if (platform === 'win32') {
+      const list = spawnSync('tasklist', ['/FI', 'IMAGENAME eq DevBar.exe'], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        cwd: ROOT,
+        encoding: 'utf8',
+      });
+      if (list.error) return false;
+      return /DevBar\.exe/i.test(list.stdout ?? '');
+    }
+    const pids = spawnSync('pgrep', ['-f', path.join(installDir)], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    if (pids.error) return false;
+    // pgrep can match its own spawn line through the pattern — ignore pids
+    // younger than this script (nothing matching can be older and real
+    // except the instances we are trying to kill).
+    return (pids.stdout ?? '').trim().length > 0;
+  };
+  for (let i = 0; i < 20; i++) {
+    if (!alive()) return;
+    // A CLI script may block: no child process needed for a half-second.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+  }
+  if (alive())
+    warn(
+      'A DevBar process is still running after the kill — if the next step ' +
+        'fails to replace files, close it manually and re-run.',
+    );
 }
 
 function main(): void {
   const { unpackedDir, installDir, executable } = layout();
 
-  stopRunningInstances();
+  killRunningInstances(installDir);
 
-  step('Building…');
-  run(process.execPath, ['--experimental-strip-types', 'scripts/build.ts']);
+  if (noBuild) {
+    step('Building…');
+    if (!fs.existsSync(path.join(unpackedDir, executable))) {
+      console.error(
+        `--no-build: no packaged app at ${unpackedDir} — run without the flag first`,
+      );
+      process.exit(1);
+    }
+    ok(`reusing build: ${unpackedDir}`);
+  } else {
+    step('Building…');
+    run(process.execPath, ['--experimental-strip-types', 'scripts/build.ts']);
 
-  step(`Packaging (electron-builder dir target, host arch)…`);
-  run(process.execPath, [
-    '--experimental-strip-types',
-    'scripts/package-win-linux.ts',
-    platform === 'win32' ? 'win' : 'linux',
-    'dir',
-  ]);
-  if (!fs.existsSync(path.join(unpackedDir, executable))) {
-    console.error(
-      `packaged executable not found at ${path.join(unpackedDir, executable)}`,
-    );
-    process.exit(1);
+    step(`Packaging (electron-builder dir target, host arch)…`);
+    run(process.execPath, [
+      '--experimental-strip-types',
+      'scripts/package-win-linux.ts',
+      platform === 'win32' ? 'win' : 'linux',
+      'dir',
+    ]);
+    if (!fs.existsSync(path.join(unpackedDir, executable))) {
+      console.error(
+        `packaged executable not found at ${path.join(unpackedDir, executable)}`,
+      );
+      process.exit(1);
+    }
+    ok(`built: ${unpackedDir}`);
   }
-  ok(`built: ${unpackedDir}`);
+
+  verifyStopped(installDir);
 
   step(`Installing to ${installDir}`);
   fs.rmSync(installDir, { recursive: true, force: true });
