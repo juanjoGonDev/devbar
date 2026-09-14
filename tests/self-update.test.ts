@@ -143,8 +143,18 @@ describe('buildSwapBat', () => {
 
   it('waits for the old process (bounded) before moving the file', () => {
     expect(bat).toContain('tasklist /fi "PID eq 4242"');
-    expect(bat).toContain('if %tries% geq 120 exit /b 1');
+    expect(bat).toContain('if %tries% geq 150 (');
     expect(bat.indexOf(':wait')).toBeLessThan(bat.indexOf(':swap'));
+  });
+
+  it('checks the pid without a pipe (tasklist|find hangs in the hidden detached context)', () => {
+    expect(bat).toContain(
+      'tasklist /fi "PID eq 4242" /fo csv > "%~dp0devbar-pid.tmp" 2>nul',
+    );
+    expect(bat).toContain(
+      'findstr /i "DevBar" "%~dp0devbar-pid.tmp" >nul 2>&1',
+    );
+    expect(bat).not.toContain('| find');
   });
 
   it('moves the old exe aside and copies the new one into place', () => {
@@ -294,10 +304,19 @@ describe('buildInstallerBat', () => {
     expect(wait).toBeLessThan(run);
   });
   it('gives up instead of installing over a stuck process', () => {
-    expect(bat).toContain('if %tries% geq 120 exit /b 1');
+    expect(bat).toContain('if %tries% geq 150 (');
+    expect(bat).toContain('giving up: old pid still present');
   });
   it('traces its progress to install.log (silent NSIS failures are the failure mode)', () => {
     expect(bat).toContain('set "log=%~dp0install.log"');
     expect(bat).toContain('installer exited with code %errorlevel%');
+  });
+  it('checks the pid without a pipe and retries the installer once on failure', () => {
+    expect(bat).toContain(
+      'findstr /i "DevBar" "%~dp0devbar-pid.tmp" >nul 2>&1',
+    );
+    expect(bat).not.toContain('| find');
+    expect(bat.match(/"C:\\u\\setup\.exe" \/S/g)).toHaveLength(2);
+    expect(bat).toContain('if not errorlevel 1 goto :installer_done');
   });
 });

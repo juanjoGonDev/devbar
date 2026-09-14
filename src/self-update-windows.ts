@@ -81,17 +81,29 @@ function batQuote(value: string): string {
  * Bounded "wait until our pid is gone" prologue shared by both bats. The
  * swap must never touch a file a live process holds, so both the portable
  * swap and the NSIS install wait for the app to actually exit first.
+ *
+ * The check is deliberately PIPE-FREE: `tasklist | find` has been observed
+ * hanging in the hidden detached context these bats run in (find waits for
+ * an EOF that never comes, and the bat sits in the wait loop forever).
+ * tasklist writes to a file, findstr scans the file — no pipe, no console.
+ * `ping` paces the loop because `timeout` also wants a console.
  */
 const PID_WAIT_LINES = (pid: number): string[] => [
   'set /a tries=0',
   ':wait',
-  `tasklist /fi "PID eq ${pid}" /fo csv | find /i "DevBar" >nul`,
-  'if not errorlevel 1 (',
-  '  set /a tries+=1',
-  '  if %tries% geq 120 exit /b 1',
-  '  timeout /t 1 /nobreak >nul',
-  '  goto :wait',
+  `tasklist /fi "PID eq ${pid}" /fo csv > "%~dp0devbar-pid.tmp" 2>nul`,
+  'findstr /i "DevBar" "%~dp0devbar-pid.tmp" >nul 2>&1',
+  'if errorlevel 1 goto :pidgone',
+  'set /a tries+=1',
+  'if %tries% geq 150 (',
+  '  echo [%date% %time%] giving up: old pid still present >> "%log%"',
+  '  del /q "%~dp0devbar-pid.tmp" 2>nul',
+  '  exit /b 1',
   ')',
+  'ping -n 2 127.0.0.1 >nul',
+  'goto :wait',
+  ':pidgone',
+  'del /q "%~dp0devbar-pid.tmp" 2>nul',
 ];
 
 /**
@@ -133,7 +145,7 @@ export function buildSwapBat({
     ...PID_WAIT_LINES(pid),
     'echo [%date% %time%] pid gone, swapping >> "%log%"',
     'rem let the GPU/render helper processes wind down before we move the file',
-    'timeout /t 2 /nobreak >nul',
+    'ping -n 3 127.0.0.1 >nul',
     ':swap',
     'del /f /q "%backup%" 2>nul',
     'move /y "%target%" "%backup%" || goto :fail',
@@ -221,11 +233,16 @@ export function buildInstallerBat({
     ...PID_WAIT_LINES(pid),
     'echo [%date% %time%] pid gone, launching installer >> "%log%"',
     'rem let the GPU/render helper processes release their file locks',
-    'timeout /t 2 /nobreak >nul',
-    // Run the installer directly (not via `start`): a `start` from this
-    // hidden, detached context has been seen to launch nothing, and a
-    // direct run also yields the installer's exit code for the log.
+    'ping -n 3 127.0.0.1 >nul',
+    // Run the installer directly (not via `start`): a plain PE launch in a
+    // context where `start` has been seen to launch nothing, and a direct
+    // run also yields the installer's exit code for the log.
     `${batQuote(installer)} /S`,
+    'if not errorlevel 1 goto :installer_done',
+    'rem one retry: a lingering helper process may still hold a file lock',
+    'ping -n 5 127.0.0.1 >nul',
+    `${batQuote(installer)} /S`,
+    ':installer_done',
     'echo [%date% %time%] installer exited with code %errorlevel% >> "%log%"',
     'exit /b 0',
     '',
