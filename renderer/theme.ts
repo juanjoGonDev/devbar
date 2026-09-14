@@ -25,6 +25,11 @@ let initialized = false;
 export function initTheme(): void {
   if (initialized) return;
   initialized = true;
+  // Tag the running OS on <html> so CSS can adapt chrome that only belongs
+  // to one platform (the inset title strip is macOS chrome — on
+  // Windows/Linux the native titlebar already carries the title, and the
+  // strip would duplicate it).
+  document.documentElement.setAttribute('data-os', window.api.platform);
   void window.api
     .getSettings()
     .then((s) => applyTheme(s.theme ?? 'auto'))

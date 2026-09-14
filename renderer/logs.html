@@ -13,7 +13,9 @@
     <!--
       The titlebar is `hiddenInset`, so macOS paints no title of its own and
       this strip was 36px of dead space. It now carries the window title, which
-      frees the header row below for controls.
+      frees the header row below for controls. On Windows/Linux the native
+      titlebar already shows the title, so CSS hides the strip there
+      (html[data-os] — see logs.css).
     -->
     <div class="app-window-spacer">
       <strong id="title">Logs</strong>
