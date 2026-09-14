@@ -148,8 +148,10 @@ export function buildSwapBat({
     'ping -n 3 127.0.0.1 >nul',
     ':swap',
     'del /f /q "%backup%" 2>nul',
-    'move /y "%target%" "%backup%" || goto :fail',
-    'copy /y "%staged%" "%target%" || goto :fail',
+    // Command output goes to the trace: a swap failure must say WHY (access
+    // denied, path problem, lock), not just that it happened.
+    'move /y "%target%" "%backup%" >> "%log%" 2>&1 || goto :fail',
+    'copy /y "%staged%" "%target%" >> "%log%" 2>&1 || goto :fail',
     'del /f /q "%backup%" 2>nul',
     ...(markerLine ? [markerLine] : []),
     'echo [%date% %time%] swap done, relaunching >> "%log%"',

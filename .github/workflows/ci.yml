@@ -461,22 +461,26 @@ jobs:
             Start-Sleep -Seconds 1
           }
           # 2) The production swap bat, byte for byte (same builder the app
-          #    uses), launched exactly the way the app launches it. Forward
-          #    slashes for the node bridge: a backslash path inside the JS
-          #    string literal would become an escape sequence.
-          $workFs = $work -replace '\\','/'
-          $targetFs = $target -replace '\\','/'
-          $portableV2Fs = $portableV2 -replace '\\','/'
+          #    uses), launched exactly the way the app launches it. The paths
+          #    cross the node bridge via env vars: a backslash path inside a
+          #    JS string literal would become an escape sequence, and the bat
+          #    must carry real backslash paths (cmd builtins misbehave on
+          #    forward-slash forms like D:/a/...).
+          $env:DB_WORK = $work
+          $env:DB_TARGET = $target
+          $env:DB_STAGED = $portableV2
+          $env:DB_MARKER = Join-Path $work 'swap-ok'
           node -e "
             const { buildSwapBat } = require('./build/src/self-update.js');
             const fs = require('fs');
-            fs.writeFileSync('$workFs/swap.bat', buildSwapBat({
+            fs.writeFileSync(process.env.DB_WORK + '/swap.bat', buildSwapBat({
               pid: $($old.Id),
-              target: '$targetFs',
-              staged: '$portableV2Fs',
-              markerPath: '$workFs/swap-ok',
+              target: process.env.DB_TARGET,
+              staged: process.env.DB_STAGED,
+              markerPath: process.env.DB_MARKER,
             }));
           "
+          Remove-Item Env:\DB_WORK, Env:\DB_TARGET, Env:\DB_STAGED, Env:\DB_MARKER
           if (-not (Test-Path "$work\swap.bat")) {
             $old | Stop-Process -Force
             throw 'swap.bat was not generated'
