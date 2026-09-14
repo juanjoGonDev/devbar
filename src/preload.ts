@@ -132,6 +132,9 @@ const api: DevBarApi = {
   resolvePrescriptConfirm: (token, decision) =>
     ipcRenderer.invoke('prescriptConfirm:resolve', { token, decision }),
   quit: () => ipcRenderer.invoke('app:quit'),
+  // Static platform value (not IPC) so renderers can adapt their text to the
+  // OS synchronously at load time.
+  platform: process.platform,
   getAppVersion: () => ipcRenderer.invoke('app:version'),
   getChangelog: () => ipcRenderer.invoke('updates:changelog'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

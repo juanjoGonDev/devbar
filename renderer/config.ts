@@ -1945,6 +1945,50 @@ addGroupBtn.addEventListener('click', async () => {
   }
 });
 
+// ────────────────────── Per-OS copy ────────────────────────────────────
+// The static HTML carries OS-neutral fallbacks; this refines the wording —
+// and the settings-link label — for the platform actually running, so a
+// Windows user never reads macOS instructions (and vice versa).
+function adaptOsTexts(): void {
+  const platform = window.api.platform;
+
+  const autostartHint = byId<HTMLElement>('autostart-hint', HTMLElement);
+  if (autostartHint) {
+    const osMechanism =
+      platform === 'win32'
+        ? 'el autostart de Windows (clave Run)'
+        : platform === 'linux'
+          ? 'el autostart de la sesión (XDG)'
+          : 'los elementos de inicio de sesión (Login Items)';
+    autostartHint.textContent = `Registra DevBar en ${osMechanism}. Solo aplica a la app empaquetada/instalada.`;
+  }
+
+  const notifHint = byId<HTMLElement>('notif-hint', HTMLElement);
+  const notifBtn = byId<HTMLButtonElement>(
+    'open-notification-settings',
+    HTMLButtonElement,
+  );
+  if (notifHint && notifBtn) {
+    let text: string;
+    if (platform === 'darwin') {
+      text =
+        '¿No se ven las notificaciones? macOS pide permiso una sola vez por app. Compruébalo en ';
+      notifBtn.textContent = 'Ajustes del sistema → Notificaciones';
+    } else if (platform === 'win32') {
+      text =
+        '¿No se ven las notificaciones? Windows gestiona el permiso por app. Compruébalo en ';
+      notifBtn.textContent = 'Configuración → Sistema → Notificaciones';
+    } else {
+      text =
+        '¿No se ven las notificaciones? El panel depende de tu escritorio (GNOME: Ajustes → Notificaciones; KDE: Configuración del sistema → Notificaciones). Puedes abrir ';
+      notifBtn.textContent = 'los ajustes del sistema';
+    }
+    notifHint.textContent = text;
+    notifHint.appendChild(notifBtn);
+    notifHint.appendChild(document.createTextNode('.'));
+  }
+}
+
 // ────────────────────── Settings ───────────────────────────────────────
 
 async function loadSettings() {
@@ -2253,6 +2297,7 @@ if (window.api && window.api.getUpdateStatus) {
 
 // ────────────────────── Init ───────────────────────────────────────────
 
+adaptOsTexts();
 loadSettings();
 loadGroups();
 

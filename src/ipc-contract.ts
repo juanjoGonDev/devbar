@@ -338,6 +338,12 @@ export interface DevBarApi {
   ): Promise<SimpleResult>;
   quit(): Promise<SimpleResult>;
   /**
+   * The OS this instance is running on (Node's `process.platform`:
+   * 'darwin' | 'win32' | 'linux' | …). Static value, not an IPC call —
+   * renderers use it to adapt user-facing text to the platform.
+   */
+  platform: string;
+  /**
    * Whether this build shipped the dev simulation panel — true for any dev run
    * and for a `DEVBAR_DEV_PANEL=1` package, false for a normal build. Gates
    * loading the panel.
@@ -348,7 +354,11 @@ export interface DevBarApi {
   getAppVersion(): Promise<string>;
   getChangelog(): Promise<ChangelogPayload>;
   openExternal(url: string): Promise<SimpleResult>;
-  /** macOS notification settings, aimed at this app's own row. */
+  /**
+   * Open the OS notification settings: macOS deep-links to this app's own
+   * row, Windows to the notifications page, Linux best-effort via
+   * xdg-settings (the pane name varies per desktop environment).
+   */
   openNotificationSettings(): Promise<SimpleResult>;
   confirmDirty(
     context: string,

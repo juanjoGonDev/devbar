@@ -2732,8 +2732,22 @@ function registerIpc() {
           'x-apple.systempreferences:com.apple.Notifications-Settings.extension';
         const bundleId = installedBundleId();
         await shell.openExternal(bundleId ? `${pane}?id=${bundleId}` : pane);
-      } else {
+      } else if (process.platform === 'win32') {
         await shell.openExternal('ms-settings:notifications');
+      } else {
+        // Linux: no universal URI. xdg-settings maps "notifications" to the
+        // right pane on GNOME/KDE; if it is absent the command just fails
+        // quietly and the user navigates manually (the in-app hint names the
+        // pane for each desktop).
+        const { spawn } = await import('node:child_process');
+        const child = spawn('xdg-settings', ['open', 'notifications'], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.on('error', () => {
+          /* no xdg-settings — best effort only */
+        });
+        child.unref();
       }
       return { ok: true };
     } catch (err) {

@@ -92,10 +92,10 @@
             <label class="toggle">
               <input type="checkbox" id="set-autostart" />
               <span>Iniciar al arrancar el sistema</span>
-              <small
-                >Registra DevBar en el autostart del sistema (Login Item en
-                macOS, Run en Windows, autostart en Linux). Solo aplica a la app
-                empaquetada/instalada.</small
+              <!-- textContent is refined per-OS by config.ts -->
+              <small id="autostart-hint"
+                >Registra DevBar en el autostart del sistema. Solo aplica a la
+                app empaquetada/instalada.</small
               >
             </label>
           </section>
@@ -172,15 +172,15 @@
                 >Notificar al terminar pre-scripts y acciones programadas</span
               >
             </label>
-            <p class="muted small" style="margin: 12px 0 0">
-              ¿No se ven las notificaciones? macOS pide permiso una sola vez por
-              app. Compruébalo en
+            <!-- Wording + button label are refined per-OS by config.ts -->
+            <p id="notif-hint" class="muted small" style="margin: 12px 0 0">
+              ¿No se ven las notificaciones? Revisa el permiso en
               <button
                 type="button"
                 id="open-notification-settings"
                 class="linkish"
               >
-                Ajustes del sistema → Notificaciones</button
+                los ajustes del sistema</button
               >.
             </p>
             <div style="margin-top: 8px">
