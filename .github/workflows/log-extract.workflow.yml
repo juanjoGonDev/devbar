@@ -57,7 +57,7 @@ jobs:
           cd ws
           git config user.name "ci-debug-bot"
           git config user.email "ci-debug-bot@users.noreply.github.com"
-          git add .ci-debug
+          git add -f .ci-debug
           if git commit -m "ci: temporary job logs"; then
             git push
           else
