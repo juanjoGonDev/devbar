@@ -429,6 +429,93 @@ jobs:
           Get-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force
           Remove-Item Env:\DEVBAR_SMOKE, Env:\DEVBAR_SMOKE_UPDATE, Env:\DEVBAR_SMOKE_ARTIFACT, Env:\DEVBAR_SMOKE_SHA, Env:\DEVBAR_SMOKE_VERSION
 
+      - name: Automatic update simulation — Windows (portable file swap)
+        if: matrix.os == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+          $v2 = node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'"
+          $portableV1 = "dist\electron-builder\DevBar-$version-win-x64-portable.exe"
+          # The previous step's v2 build produced the portable alongside the
+          # NSIS installer.
+          $portableV2 = "dist\electron-builder\DevBar-$v2-win-x64-portable.exe"
+          if (-not (Test-Path $portableV1)) { throw "current portable missing: $portableV1" }
+          if (-not (Test-Path $portableV2)) { throw "next-version portable missing: $portableV2" }
+          # 1) The file the user would keep in any folder: the real v1
+          #    portable, as the swap target, in a scratch dir.
+          $work = Join-Path $env:RUNNER_TEMP "devbar-portable-swap"
+          Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $work | Out-Null
+          $target = Join-Path $work "DevBar.exe"
+          Copy-Item $portableV1 $target
+          # The swap bat waits for a DevBar process with a given pid to die —
+          # a real resident instance stands in for the running app (a plain
+          # dummy would not match the bat's name check and the wait phase
+          # could not be exercised).
+          $installed = "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe"
+          $old = Start-Process -PassThru -FilePath $installed -ArgumentList '--devbar-smoke','--devbar-smoke-hold'
+          $deadline = (Get-Date).AddSeconds(90)
+          while (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
+            if ((Get-Date) -gt $deadline) { throw 'resident smoke did not start' }
+            Start-Sleep -Seconds 1
+          }
+          # 2) The production swap bat, byte for byte (same builder the app
+          #    uses), launched exactly the way the app launches it. Forward
+          #    slashes for the node bridge: a backslash path inside the JS
+          #    string literal would become an escape sequence.
+          $workFs = $work -replace '\\','/'
+          $targetFs = $target -replace '\\','/'
+          $portableV2Fs = $portableV2 -replace '\\','/'
+          node -e "
+            const { buildSwapBat } = require('./build/src/self-update.js');
+            const fs = require('fs');
+            fs.writeFileSync('$workFs/swap.bat', buildSwapBat({
+              pid: $old.Id,
+              target: '$targetFs',
+              staged: '$portableV2Fs',
+              markerPath: '$workFs/swap-ok',
+            }));
+          "
+          Start-Process -FilePath cmd.exe -ArgumentList '/d','/s','/c',"$work\swap.bat" -WindowStyle Hidden
+          Start-Sleep -Seconds 4
+          # While the old pid is alive: nothing may have been touched.
+          if (Test-Path "$work\swap-ok") { throw 'marker written before the old pid died' }
+          if ((Get-FileHash $target).Hash -ne (Get-FileHash (Resolve-Path $portableV1)).Hash) {
+            throw 'portable file changed before the old pid died'
+          }
+          # 3) After the pid dies: the old file is moved aside and replaced,
+          #    the marker is written, and the bat relaunches the swapped-in
+          #    portable (the wrapper runs the real app as a child).
+          $old | Stop-Process -Force
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline) {
+            if (Test-Path "$work\swap-ok") { break }
+            Start-Sleep -Seconds 1
+          }
+          if (-not (Test-Path "$work\swap-ok")) {
+            Write-Host '--- swap artifacts ---'
+            Get-ChildItem $work | ForEach-Object { Write-Host $_.FullName }
+            Write-Host '--- swap.log (bat trace) ---'
+            if (Test-Path "$work\swap.log") { Get-Content "$work\swap.log" } else { Write-Host '(no log — the bat never executed)' }
+            throw 'portable swap never completed'
+          }
+          if ((Get-FileHash $target).Hash -ne (Get-FileHash (Resolve-Path $portableV2)).Hash) {
+            throw 'swap did not replace the portable file'
+          }
+          $new = $null
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline) {
+            $new = Get-Process DevBar -ErrorAction SilentlyContinue
+            if ($new) { break }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $new) { throw 'the swap bat did not relaunch the portable' }
+          # Clean slate: stop the relaunched app, then the scratch dir.
+          Get-Process DevBar | Stop-Process -Force
+          Start-Sleep -Seconds 2
+          Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+
       - name: Reinstall while running — Linux (kill old process)
         if: matrix.os == 'linux'
         shell: bash
