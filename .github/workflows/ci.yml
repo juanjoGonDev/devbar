@@ -425,6 +425,13 @@ jobs:
           pnpm run pack
           export DEVBAR_SMOKE=1
           export DEVBAR_SMOKE_HOLD=1
+          # A plain unpacked copy cannot carry the root-owned setuid
+          # chrome-sandbox the .deb postinst creates, and runners without
+          # unprivileged user namespaces have no other usable sandbox — so
+          # CI relaunches with --no-sandbox (install-local passes it through
+          # DEVBAR_LAUNCH_ARGS). The kill/replace/relaunch mechanics this
+          # step tests are unaffected by the sandbox choice.
+          export DEVBAR_LAUNCH_ARGS="--no-sandbox"
           # 1) First install: launches a resident instance (smoke env).
           pnpm install-local --no-build
           sleep 4
@@ -434,6 +441,12 @@ jobs:
             kill -0 "$XVFB_PID" 2>/dev/null && echo 'Xvfb alive' || echo 'Xvfb DEAD'
             echo "--- app log ---"
             tail -40 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null || true
+            echo "--- chrome-sandbox ---"
+            ls -la "$HOME/.local/share/DevBar/chrome-sandbox" 2>/dev/null || true
+            echo "--- library check ---"
+            ldd "$HOME/.local/share/DevBar/devbar" 2>&1 | grep "not found" || echo 'ldd: all libraries resolve'
+            echo "--- direct launch probe (output visible) ---"
+            timeout 8 "$HOME/.local/share/DevBar/devbar" --devbar-smoke --devbar-smoke-hold 2>&1 | head -40 || true
             echo "--- processes ---"
             ps aux | grep -i devbar | grep -v grep || true
             exit 1

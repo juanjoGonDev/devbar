@@ -35,6 +35,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isDev = process.argv.includes('--dev');
 const noBuild = process.argv.includes('--no-build');
 const platform = process.platform;
+/** Extra args for the relaunch, space-separated (CI escape hatch — e.g.
+ *  `--no-sandbox` on Linux runners, where a plain unpacked copy cannot
+ *  carry the root-owned setuid chrome-sandbox the .deb postinst creates). */
+const launchArgs = (process.env.DEVBAR_LAUNCH_ARGS ?? '')
+  .split(' ')
+  .filter(Boolean);
 
 const step = (message: string): void => console.log(`→ ${message}`);
 const ok = (message: string): void => console.log(`✓ ${message}`);
@@ -222,7 +228,7 @@ function main(): void {
 
   step('Launching');
   const appPath = path.join(installDir, executable);
-  const child = spawn(appPath, [], {
+  const child = spawn(appPath, launchArgs, {
     detached: true,
     stdio: 'ignore',
     cwd: installDir,

@@ -150,6 +150,22 @@ export function buildSwapBat({
   ].join('\r\n');
 }
 
+/**
+ * Launch a .bat detached through an explicit `cmd.exe /d /s /c`. Node's
+ * implicit .bat wrapping has been seen to fail with `spawn EINVAL` on CI
+ * runners; running cmd.exe (a real PE) directly is the stable form, and it
+ * keeps the bat path as a single quoted argument — no shell string built
+ * from untrusted path components.
+ */
+function spawnBat(scriptPath: string): void {
+  const comspec = process.env.COMSPEC ?? 'cmd.exe';
+  spawn(comspec, ['/d', '/s', '/c', `"${scriptPath}"`], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  }).unref();
+}
+
 /** Write the bat and launch it detached (hidden console). Caller quits. */
 export function spawnSwapBat({
   scriptPath,
@@ -171,13 +187,7 @@ export function spawnSwapBat({
     scriptPath,
     buildSwapBat({ pid, target, staged, relaunchArgs, markerPath }),
   );
-  // Spawn the .bat directly: Node transparently runs it through cmd.exe,
-  // without any shell string built from untrusted path components.
-  spawn(scriptPath, [], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  }).unref();
+  spawnBat(scriptPath);
 }
 
 /**
@@ -219,9 +229,5 @@ export function spawnInstallerBat({
 }): void {
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
   fs.writeFileSync(scriptPath, buildInstallerBat({ pid, installer }));
-  spawn(scriptPath, [], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  }).unref();
+  spawnBat(scriptPath);
 }
