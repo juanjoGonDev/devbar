@@ -27,13 +27,20 @@ const outputDirectory =
   process.argv[2] || path.join(ROOT, 'dist', 'electron-builder');
 const version = process.argv[3] || packageJson.version;
 
-/** AppImage runtime magic: "AppImage" at byte offset 8. */
+/**
+ * AppImageSpec magic: "AI" + type byte at offset 8 (0x414902 for the type 2
+ * images electron-builder produces; 0x414901 for type 1). The remaining ELF
+ * ident padding is zeroes, so no longer "AppImage" string — tooling that
+ * greps for it is checking the wrong convention.
+ */
 function looksLikeAppImage(filePath: string): boolean {
   const fd = openSync(filePath, 'r');
   try {
-    const buf = Buffer.alloc(8);
-    if (readSync(fd, buf, 0, 8, 8) < 8) return false;
-    return buf.toString('latin1') === 'AppImage';
+    const buf = Buffer.alloc(3);
+    if (readSync(fd, buf, 0, 3, 8) < 3) return false;
+    return (
+      buf[0] === 0x41 && buf[1] === 0x49 && (buf[2] === 0x01 || buf[2] === 0x02)
+    );
   } finally {
     closeSync(fd);
   }

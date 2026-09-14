@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import https from 'node:https';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -2973,6 +2974,16 @@ function startScheduleLoop() {
 const SMOKE_MODE =
   process.argv.includes('--devbar-smoke') || process.env.DEVBAR_SMOKE === '1';
 
+/**
+ * Smoke result marker. Some launchers (notably the Windows portable exe,
+ * whose NSIS wrapper runs the real app as a child process without
+ * redirecting stdio) never deliver the app's stdout to the caller, so CI
+ * jobs also check for this file: removed at smoke start, written on
+ * success — a missing marker means the packaged binary did not complete
+ * its smoke.
+ */
+const SMOKE_MARKER_PATH = path.join(os.tmpdir(), 'devbar-smoke-ok');
+
 const isPrimary = app.requestSingleInstanceLock();
 if (!isPrimary) {
   app.quit();
@@ -3029,12 +3040,21 @@ app.whenReady().then(() => {
     // platform-specific part worth proving — menu bar on macOS,
     // StatusNotifier/XEmbed on Linux, notification area on Windows.
     try {
+      fs.rmSync(SMOKE_MARKER_PATH, { force: true });
       void new Tray(trayIcon.defaultIcon());
     } catch (error) {
       console.error('DEVBAR_SMOKE_TRAY_FAILED:', error);
       app.exit(1);
     }
     setTimeout(() => {
+      try {
+        fs.writeFileSync(
+          SMOKE_MARKER_PATH,
+          `DEVBAR_SMOKE_OK ${process.platform} ${app.getVersion()}\n`,
+        );
+      } catch {
+        // Marker is a CI convenience; the stdout marker below is primary.
+      }
       console.log('DEVBAR_SMOKE_OK');
       app.exit(0);
     }, 1500);

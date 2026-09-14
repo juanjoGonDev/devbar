@@ -187,10 +187,15 @@ jobs:
             exit 1
           }
           # 2) Portable single exe: launches straight from dist/.
+          # The NSIS portable wrapper runs the real app as a child process
+          # without redirecting its stdio, so its DEVBAR_SMOKE_OK line never
+          # reaches this console. The app writes a marker file on smoke
+          # success (removed at smoke start), and the wrapper only returns
+          # once the child exits — so the marker is settled now.
           & ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |
-            Tee-Object -FilePath smoke-win-portable.log
-          if (-not (Select-String -Path smoke-win-portable.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {
-            Write-Error 'portable-app smoke failed'
+            Out-File -FilePath smoke-win-portable.log -Encoding utf8
+          if (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
+            Write-Error 'portable-app smoke failed (no smoke marker)'
             exit 1
           }
 
