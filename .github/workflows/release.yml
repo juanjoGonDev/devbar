@@ -4,12 +4,13 @@ on:
   push:
     branches:
       - main
+  # No dispatch inputs: any workflow input is a CodeQL taint source, and a
+  # tainted ref reaching a checkout/cache step in this default-branch
+  # workflow is a cache-poisoning alert. The dispatch path recovers the
+  # version currently in package.json on main (detect resolves and verifies
+  # the introducing commit against the live tag and release state), so it
+  # needs no operator-supplied data.
   workflow_dispatch:
-    inputs:
-      version:
-        description: Exact package.json version to recover, for example 0.2.0
-        required: true
-        type: string
 
 permissions: read-all
 
@@ -53,7 +54,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
-          REQUESTED_VERSION: ${{ inputs.version || '' }}
         run: |
           set -euo pipefail
 
@@ -69,12 +69,10 @@ jobs:
             exit 1
           fi
 
+          # Recovery (workflow_dispatch) re-resolves the version currently in
+          # package.json against the full first-parent history; a push
+          # resolves only the version that push introduced.
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            requested_version="${REQUESTED_VERSION#v}"
-            if [[ "$requested_version" != "$current_version" ]]; then
-              echo "::error title=Version mismatch::Requested $requested_version but package.json contains $current_version."
-              exit 1
-            fi
             release_range="$GITHUB_SHA"
           else
             zero_sha=0000000000000000000000000000000000000000
