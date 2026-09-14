@@ -242,6 +242,227 @@ jobs:
           xvfb-run -a /usr/bin/devbar --devbar-smoke 2>&1 | tee smoke-linux-deb.log
           grep -q DEVBAR_SMOKE_OK smoke-linux-deb.log
 
+      - name: Reinstall while running — macOS (kill old process)
+        if: matrix.os == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          WORK=$(mktemp -d)
+          ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
+          APP="$WORK/DevBar.app/Contents/MacOS/DevBar"
+          # 1) Resident instance: writes the smoke marker, then stays alive.
+          "$APP" --devbar-smoke --devbar-smoke-hold >/dev/null 2>&1 &
+          OLDPID=$!
+          for i in $(seq 1 60); do
+            grep -q DEVBAR_SMOKE_OK "$TMPDIR/devbar-smoke-ok" 2>/dev/null && break
+            sleep 1
+          done
+          grep -q DEVBAR_SMOKE_OK "$TMPDIR/devbar-smoke-ok"
+          # 2) Reinstall: install-local must kill OLDPID, replace the bundle
+          #    and relaunch — a leftover process is the classic half-update.
+          pnpm install-local
+          sleep 2
+          if kill -0 "$OLDPID" 2>/dev/null; then
+            echo "old instance ($OLDPID) survived the reinstall"
+            exit 1
+          fi
+          # 3) The relaunched instance runs from /Applications: prove it is
+          #    alive, then stop it so the next step owns the machine.
+          NEWPID=$(pgrep -f "Applications/DevBar.app/Contents/MacOS/DevBar" | head -1)
+          [ -n "$NEWPID" ] || { echo "no new instance after reinstall"; exit 1; }
+          pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          rm -rf "$WORK"
+
+      - name: Automatic update simulation — macOS (stage → swap → relaunch)
+        if: matrix.os == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          WORK=$(mktemp -d)
+          ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
+          BUNDLE="$WORK/DevBar.app"
+          APP="$BUNDLE/Contents/MacOS/DevBar"
+          # 1) A real next-version bundle: the dev "real update" builder
+          #    (copy, version bump, asar patch, ad-hoc re-sign, zip).
+          V2=$(node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'")
+          ZIP=$(node --experimental-strip-types scripts/build-simulated-update.ts "$BUNDLE" "$WORK" "$V2" | tail -1)
+          [ -f "$ZIP" ] || { echo "simulated update zip missing"; exit 1; }
+          SHA=$(shasum -a 256 "$ZIP" | awk '{print $1}')
+          # 2) The running app runs the PRODUCTION handoff: sha seal, staging
+          #    (ditto + codesign --verify), swap script, quit.
+          rm -f "$TMPDIR/devbar-smoke-ok"
+          DEVBAR_SMOKE=1 DEVBAR_SMOKE_UPDATE=1 DEVBAR_SMOKE_ARTIFACT="$ZIP" \
+            DEVBAR_SMOKE_SHA="$SHA" DEVBAR_SMOKE_VERSION="$V2" \
+            "$APP" 2>&1 | tee smoke-macos-update.log
+          grep -q "DEVBAR_SMOKE_UPDATE_HANDOFF $V2" smoke-macos-update.log
+          # 3) The swap relaunches the replaced bundle with --devbar-smoke,
+          #    so the new version proves itself through the same marker.
+          for i in $(seq 1 90); do
+            grep -q "DEVBAR_SMOKE_OK darwin $V2" "$TMPDIR/devbar-smoke-ok" 2>/dev/null && break
+            sleep 1
+          done
+          grep -q "DEVBAR_SMOKE_OK darwin $V2" "$TMPDIR/devbar-smoke-ok"
+          rm -rf "$WORK"
+
+      - name: Reinstall while running — Windows (kill old process)
+        if: matrix.os == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe"
+          # 1) Resident instance of the installed app (from the earlier NSIS
+          #    install): writes the smoke marker, then stays alive.
+          $old = Start-Process -PassThru -FilePath $exe -ArgumentList '--devbar-smoke','--devbar-smoke-hold'
+          $deadline = (Get-Date).AddSeconds(90)
+          while (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
+            if ((Get-Date) -gt $deadline) { throw 'resident smoke did not start' }
+            Start-Sleep -Seconds 1
+          }
+          # 2) Reinstall without a second full build (reuses win-unpacked):
+          #    install-local must kill $old, replace the files and relaunch.
+          #    The env vars make the relaunched instance a resident smoke.
+          $env:DEVBAR_SMOKE = '1'
+          $env:DEVBAR_SMOKE_HOLD = '1'
+          pnpm install-local --no-build
+          Start-Sleep -Seconds 5
+          if (-not $old.HasExited) {
+            throw "old instance ($($old.Id)) survived the reinstall"
+          }
+          # 3) The new instance must be alive; stop it so later steps are clean.
+          $new = Get-Process DevBar -ErrorAction SilentlyContinue
+          if (-not $new) { throw 'no new instance after reinstall' }
+          $new | Stop-Process -Force
+          Remove-Item Env:\DEVBAR_SMOKE, Env:\DEVBAR_SMOKE_HOLD
+
+      - name: Automatic update simulation — Windows (NSIS upgrade)
+        if: matrix.os == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+          $exe = "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe"
+          $v2 = node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'"
+          # 1) Build the REAL next-version installer (host arch only): bump
+          #    the version, build, restore — the artifact keeps the bump.
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$v2';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          pnpm run build
+          node --experimental-strip-types scripts/package-win-linux.ts win host
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$version';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          $setup = "dist\electron-builder\DevBar-$v2-win-x64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "next-version installer missing: $setup" }
+          $sha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          # 2) The installed app runs the PRODUCTION handoff: sha seal, MZ
+          #    check, staging, then the install bat waits for the pid to die
+          #    and runs the oneClick installer, which upgrades in place and
+          #    relaunches the app by default.
+          $env:DEVBAR_SMOKE = '1'
+          $env:DEVBAR_SMOKE_UPDATE = '1'
+          $env:DEVBAR_SMOKE_ARTIFACT = (Resolve-Path $setup).Path
+          $env:DEVBAR_SMOKE_SHA = $sha
+          $env:DEVBAR_SMOKE_VERSION = $v2
+          $old = Start-Process -PassThru -FilePath $exe -ArgumentList '--devbar-smoke'
+          $deadline = (Get-Date).AddSeconds(180)
+          while (-not $old.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (-not $old.HasExited) { throw 'update handoff app did not exit' }
+          # 3) The installer relaunches v2: the NEW process exists and the
+          #    installed exe reports the new version. Then stop it.
+          $new = $null
+          $deadline = (Get-Date).AddSeconds(180)
+          while ((Get-Date) -lt $deadline) {
+            $new = Get-Process DevBar -ErrorAction SilentlyContinue
+            if ($new) { break }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $new) { throw 'the installer did not relaunch DevBar' }
+          Start-Sleep -Seconds 3
+          $fileVersion = (Get-Item $exe).VersionInfo.ProductVersion
+          if ($fileVersion -ne $v2) { throw "installed exe is v$fileVersion, expected v$v2" }
+          $new | Stop-Process -Force
+          Remove-Item Env:\DEVBAR_SMOKE, Env:\DEVBAR_SMOKE_UPDATE, Env:\DEVBAR_SMOKE_ARTIFACT, Env:\DEVBAR_SMOKE_SHA, Env:\DEVBAR_SMOKE_VERSION
+
+      - name: Reinstall while running — Linux (kill old process)
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A long-lived X server: the resident app must outlive each step.
+          Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp >/dev/null 2>&1 &
+          XVFB_PID=$!
+          trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
+          export DISPLAY=:99
+          # The unpacked binary needs the same system libraries the .deb
+          # carries — the deb smoke step above already apt-resolved them,
+          # so this is redundant insurance (best-effort by design).
+          sudo apt-get install -y -qq libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libgtk-3-0 libgbm1 libasound2 libxshmfence1 >/dev/null || true
+          pnpm run pack
+          export DEVBAR_SMOKE=1
+          export DEVBAR_SMOKE_HOLD=1
+          # 1) First install: launches a resident instance (smoke env).
+          pnpm install-local --no-build
+          sleep 4
+          OLDPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
+          [ -n "$OLDPID" ] || { echo "no resident instance after first install"; exit 1; }
+          # 2) Reinstall: install-local must kill OLDPID, replace the files
+          #    and relaunch — a leftover process is the classic half-update.
+          pnpm install-local --no-build
+          sleep 4
+          if kill -0 "$OLDPID" 2>/dev/null; then
+            echo "old instance ($OLDPID) survived the reinstall"
+            exit 1
+          fi
+          NEWPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
+          [ -n "$NEWPID" ] || { echo "no new instance after reinstall"; exit 1; }
+          kill "$NEWPID" 2>/dev/null || true
+          kill "$XVFB_PID" 2>/dev/null || true
+
+      - name: Automatic update simulation — Linux (AppImage swap)
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          V2=$(node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'")
+          WORK=$(mktemp -d)
+          cp "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" "$WORK/cur.AppImage"
+          # 1) Build the REAL next-version AppImage (host arch only): bump
+          #    the version, build, restore — the artifact keeps the bump.
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$V2';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          pnpm run build
+          node --experimental-strip-types scripts/package-win-linux.ts linux host
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$VERSION';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          cp "dist/electron-builder/DevBar-${V2}-linux-x64.AppImage" "$WORK/new.AppImage"
+          # 2) Swap mechanics with a real target file: a dummy process stands
+          #    in for the running app (hosted runners have no /dev/fuse, so
+          #    the AppImage itself cannot run here — the swap script is the
+          #    platform-specific part, and it is tested byte for byte).
+          install -m 755 "$WORK/cur.AppImage" "$WORK/t.AppImage"
+          sleep 300 & DUMMY=$!
+          node -e "
+            const { buildSwapScript } = require('./build/src/self-update-linux.js');
+            const fs = require('fs');
+            fs.writeFileSync('$WORK/swap.sh', buildSwapScript({
+              pid: $DUMMY,
+              target: '$WORK/t.AppImage',
+              staged: '$WORK/new.AppImage',
+              markerPath: '$WORK/swap-ok',
+            }), { mode: 0o755 });
+          "
+          bash "$WORK/swap.sh" & SWAP=$!
+          sleep 4
+          # While the old pid is alive: nothing may have been touched.
+          [ ! -f "$WORK/swap-ok" ] || { echo "marker written before the old pid died"; exit 1; }
+          cmp -s "$WORK/cur.AppImage" "$WORK/t.AppImage" || { echo "file changed before the old pid died"; exit 1; }
+          # 3) After the pid dies: the swap completes, the new file is in
+          #    place and the marker is written.
+          kill "$DUMMY"
+          for i in $(seq 1 60); do [ -f "$WORK/swap-ok" ] && break; sleep 1; done
+          [ -f "$WORK/swap-ok" ] || { echo "swap never completed"; exit 1; }
+          cmp -s "$WORK/new.AppImage" "$WORK/t.AppImage" || { echo "swap did not replace the file"; exit 1; }
+          kill "$SWAP" 2>/dev/null || true
+          rm -rf "$WORK"
+
       - name: Upload build evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
