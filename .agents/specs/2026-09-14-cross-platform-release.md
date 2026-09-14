@@ -40,10 +40,19 @@ Raspberry Pi, Windows and Linux. The previous base was macOS only.
   exe. Linux smoke: AppImage under `xvfb` + `dpkg -i` → installed binary.
   `release-validation.yml` gets matching Windows/Linux dry-run jobs.
 - **Release**: `release.yml` builds the three platforms in parallel, merges the
-  artifacts in a publish job, writes the full `SHA256SUMS.txt`
-  (`scripts/release-manifest.ts`), verifies the complete set, then tags and
-  publishes all 14 artifacts + manifest. The detect job's expected-asset list
-  is the 14-artifact contract.
+  artifacts in a read-only `assemble` job (writes the full `SHA256SUMS.txt`
+  via `scripts/release-manifest.ts`, verifies the complete set with
+  `verify-release-artifacts.js`), then a privileged `publish` job (no checkout)
+  tags and publishes all 14 artifacts + manifest through the GitHub API.
+  The detect job's expected-asset list is the 14-artifact contract.
+  CodeQL constraint: this workflow is cache-writable (push to main /
+  workflow_dispatch), so it may not check out a ref derived from job outputs
+  or inputs (cache-poisoning alerts) — build/assemble jobs use the plain
+  immutable event-sha checkout. In this repo's flow the version-introducing
+  commit is the push HEAD (detect warns when they differ); the tag and
+  release still target the resolved release_sha. Dispatch has no inputs:
+  recovery re-resolves the current main version against full first-parent
+  history (the former `version` input was a verification token, not data).
 - **Windows icon**: `assets/icon.ico` (16 → 256) generated from `icon.png`.
 
 ## Acceptance criteria
