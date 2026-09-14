@@ -90,8 +90,18 @@ async function main(): Promise<void> {
         !/\/usr\/share\/applications\/[A-Za-z0-9._-]+\.desktop/.test(contents)
       )
         throw new Error(`${name} is missing its .desktop entry`);
-      if (!/usr\/share\/icons\/hicolor\/256x256\/apps\//.test(contents))
-        throw new Error(`${name} is missing its 256px icon`);
+      if (!/usr\/share\/icons\/hicolor\/256x256\/apps\//.test(contents)) {
+        // Dump whatever icon entries DO exist so the CI log explains the
+        // failure (size set wrong? different path? no icons at all?).
+        const iconLines = contents
+          .split('\n')
+          .filter((line) => line.includes('/icons/'))
+          .map((line) => line.trim())
+          .join('\n    ');
+        throw new Error(
+          `${name} is missing its 256px icon.\n    Icon entries found in the deb:\n    ${iconLines || '(none)'}`,
+        );
+      }
       console.log(`ok: ${name} (dpkg -c: desktop entry + icon present)`);
     }
   } else {
