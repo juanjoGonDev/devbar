@@ -295,7 +295,11 @@ describe('swap scripts: CI relaunch args + success marker', () => {
 });
 
 describe('buildInstallerBat', () => {
-  const bat = buildInstallerBat({ pid: 4321, installer: 'C:\\u\\setup.exe' });
+  const bat = buildInstallerBat({
+    pid: 4321,
+    installer: 'C:\\u\\setup.exe',
+    target: 'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+  });
   it('waits for the old pid before launching the installer', () => {
     const wait = bat.indexOf('tasklist /fi "PID eq 4321"');
     const run = bat.indexOf('"C:\\u\\setup.exe" /S');
@@ -309,7 +313,7 @@ describe('buildInstallerBat', () => {
   });
   it('traces its progress to install.log (silent NSIS failures are the failure mode)', () => {
     expect(bat).toContain('set "log=%~dp0install.log"');
-    expect(bat).toContain('installer exited with code %errorlevel%');
+    expect(bat).toContain('installer done, relaunching app');
   });
   it('checks the pid without a pipe and retries the installer once on failure', () => {
     expect(bat).toContain(
@@ -317,6 +321,27 @@ describe('buildInstallerBat', () => {
     );
     expect(bat).not.toContain('| find');
     expect(bat.match(/"C:\\u\\setup\.exe" \/S/g)).toHaveLength(2);
-    expect(bat).toContain('if not errorlevel 1 goto :installer_done');
+  });
+  it('relaunches the app itself after a successful install (the installer does not, in this context)', () => {
+    const install = bat.lastIndexOf('"C:\\u\\setup.exe" /S');
+    const relaunch = bat.indexOf('start "" "%target%"');
+    expect(relaunch).toBeGreaterThan(-1);
+    expect(relaunch).toBeGreaterThan(install);
+  });
+  it('does not relaunch when the installer failed', () => {
+    const failedLine = bat.indexOf('installer FAILED with code %errorlevel%');
+    const giveUp = bat.indexOf('exit /b 1', failedLine);
+    expect(failedLine).toBeGreaterThan(-1);
+    expect(giveUp).toBeGreaterThan(failedLine);
+    expect(bat.indexOf('start "" "%target%"')).toBeGreaterThan(giveUp);
+  });
+  it('passes the relaunch args through the start line', () => {
+    const withArgs = buildInstallerBat({
+      pid: 1,
+      installer: 'C:\\u\\setup.exe',
+      target: 'C:\\p\\DevBar.exe',
+      relaunchArgs: ['--devbar-smoke'],
+    });
+    expect(withArgs).toContain('start "" "%target%" "--devbar-smoke"');
   });
 });

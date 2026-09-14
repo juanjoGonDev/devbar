@@ -250,11 +250,16 @@ export function spawnSwap({
   const mode = windowsUpdateMode(target);
   if (mode === 'nsis') {
     // The bat waits for our exit first: the installer replacing a locked exe
-    // is the most common way an update would "half-resolve" on Windows.
+    // is the most common way an update would "half-resolve" on Windows. It
+    // also owns the relaunch (the installer's own "run after finish" does not
+    // fire in this hidden detached context), with the same args/marker
+    // conventions as the swap paths.
     spawnInstallerBat({
       scriptPath: path.join(scriptDir, 'install.bat'),
       pid,
       installer: staged.appPath,
+      target,
+      relaunchArgs,
     });
   } else {
     // Portable = a single self-extracting exe: plain file swap.

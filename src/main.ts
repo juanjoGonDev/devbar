@@ -3166,9 +3166,9 @@ app.whenReady().then(() => {
           });
           // The swap waits for this pid to die, replaces the app and
           // relaunches it with --devbar-smoke, so the new version writes the
-          // marker CI is about to wait for. (NSIS mode relaunches through
-          // the installer, which cannot pass arguments — CI verifies that
-          // case through the installed exe version instead.)
+          // marker CI is about to wait for. On Windows the install bat plays
+          // the swap's role (installer = swap), relaunching with the same
+          // args once the installer exits 0.
           spawnSwap({
             staged,
             target,

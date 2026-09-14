@@ -211,22 +211,35 @@ export function spawnSwapBat({
 }
 
 /**
- * NSIS install prologue. The running exe and its DLLs stay locked until the
- * process has fully exited, so the installer must wait for our pid first —
- * launching it immediately would race the quit and can fail to replace a
- * locked file. The oneClick installer then upgrades in place and relaunches
- * the app by default.
+ * NSIS install + relaunch bat. The running exe and its DLLs stay locked
+ * until the process has fully exited, so the installer must wait for our
+ * pid first — launching it immediately would race the quit and can fail to
+ * replace a locked file. The oneClick installer then upgrades in place.
+ *
+ * The RELAUNCH is the bat's own job, not the installer's: the installer's
+ * "run after finish" has been observed to fire only in interactive contexts
+ * and silently no-op in the hidden detached one this bat runs in. Relaunching
+ * here makes the outcome deterministic on both paths (if the installer ALSO
+ * relaunches in some context, the single-instance lock makes the second
+ * launch a harmless no-op).
  */
 export function buildInstallerBat({
   pid,
   installer,
+  target,
+  relaunchArgs,
 }: {
   pid: number;
   installer: string;
+  target: string;
+  relaunchArgs?: string[] | null | undefined;
 }): string {
+  const args = (relaunchArgs ?? []).map((a) => batQuote(a)).join(' ');
+  const relaunch = args ? `start "" "%target%" ${args}` : `start "" "%target%"`;
   return [
     '@echo off',
     'setlocal',
+    `set "target=${batQuote(target)}"`,
     'set "log=%~dp0install.log"',
     'echo [%date% %time%] installer bat started (waiting for old pid) >> "%log%"',
     ...BAT_ENV_CLEAR_LINES,
@@ -234,16 +247,19 @@ export function buildInstallerBat({
     'echo [%date% %time%] pid gone, launching installer >> "%log%"',
     'rem let the GPU/render helper processes release their file locks',
     'ping -n 3 127.0.0.1 >nul',
-    // Run the installer directly (not via `start`): a plain PE launch in a
-    // context where `start` has been seen to launch nothing, and a direct
-    // run also yields the installer's exit code for the log.
+    // Run the installer directly: a plain PE launch that also yields the
+    // installer's exit code for the log.
     `${batQuote(installer)} /S`,
-    'if not errorlevel 1 goto :installer_done',
+    'if not errorlevel 1 goto :relaunch',
     'rem one retry: a lingering helper process may still hold a file lock',
     'ping -n 5 127.0.0.1 >nul',
     `${batQuote(installer)} /S`,
-    ':installer_done',
-    'echo [%date% %time%] installer exited with code %errorlevel% >> "%log%"',
+    'if not errorlevel 1 goto :relaunch',
+    'echo [%date% %time%] installer FAILED with code %errorlevel%, not relaunching >> "%log%"',
+    'exit /b 1',
+    ':relaunch',
+    'echo [%date% %time%] installer done, relaunching app >> "%log%"',
+    relaunch,
     'exit /b 0',
     '',
   ].join('\r\n');
@@ -254,12 +270,19 @@ export function spawnInstallerBat({
   scriptPath,
   pid,
   installer,
+  target,
+  relaunchArgs,
 }: {
   scriptPath: string;
   pid: number;
   installer: string;
+  target: string;
+  relaunchArgs?: string[] | null | undefined;
 }): void {
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
-  fs.writeFileSync(scriptPath, buildInstallerBat({ pid, installer }));
+  fs.writeFileSync(
+    scriptPath,
+    buildInstallerBat({ pid, installer, target, relaunchArgs }),
+  );
   spawnBat(scriptPath);
 }

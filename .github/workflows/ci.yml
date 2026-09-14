@@ -363,9 +363,15 @@ jobs:
           if (-not (Test-Path $setup)) { throw "next-version installer missing: $setup" }
           $sha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
           # 2) The installed app runs the PRODUCTION handoff: sha seal, MZ
-          #    check, staging, then the install bat waits for the pid to die
-          #    and runs the oneClick installer, which upgrades in place and
-          #    relaunches the app by default.
+          #    check, staging, then the install bat waits for the pid to die,
+          #    runs the oneClick installer (upgrade in place) and relaunches
+          #    the app with --devbar-smoke — the bat owns the relaunch because
+          #    the installer's "run after finish" does not fire in this hidden
+          #    detached context.
+          # Fresh marker: the reinstall step's resident instance left one
+          # behind for the OLD version.
+          $marker = Join-Path $env:TEMP 'devbar-smoke-ok'
+          Remove-Item $marker -ErrorAction SilentlyContinue
           $env:DEVBAR_SMOKE = '1'
           $env:DEVBAR_SMOKE_UPDATE = '1'
           $env:DEVBAR_SMOKE_ARTIFACT = (Resolve-Path $setup).Path
@@ -375,16 +381,22 @@ jobs:
           $deadline = (Get-Date).AddSeconds(180)
           while (-not $old.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
           if (-not $old.HasExited) { throw 'update handoff app did not exit' }
-          # 3) The installer relaunches v2: the NEW process exists and the
-          #    installed exe reports the new version. Then stop it.
-          $new = $null
+          # 3) The new version is back: a new process appears (relaunched by
+          #    the bat, or by the installer in contexts where it does) and/or
+          #    the relaunched smoke instance writes the v2 marker. The
+          #    installed exe version is checked either way — it is the
+          #    deterministic proof.
+          $relaunched = $false
           $deadline = (Get-Date).AddSeconds(180)
           while ((Get-Date) -lt $deadline) {
-            $new = Get-Process DevBar -ErrorAction SilentlyContinue
-            if ($new) { break }
+            if (Get-Process DevBar -ErrorAction SilentlyContinue) { $relaunched = $true; break }
+            if (Test-Path $marker) {
+              $content = Get-Content $marker -Raw -ErrorAction SilentlyContinue
+              if ($content -match "DEVBAR_SMOKE_OK win32 $v2") { $relaunched = $true; break }
+            }
             Start-Sleep -Seconds 1
           }
-          if (-not $new) {
+          if (-not $relaunched) {
             # Self-diagnose: did the app finish the handoff (install.bat
             # written, installer staged)? Did the installer install v2 but
             # just not relaunch? What does the app itself say?
@@ -409,7 +421,10 @@ jobs:
           Start-Sleep -Seconds 3
           $fileVersion = (Get-Item $exe).VersionInfo.ProductVersion
           if ($fileVersion -ne $v2) { throw "installed exe is v$fileVersion, expected v$v2" }
-          $new | Stop-Process -Force
+          # The smoke relaunch self-exits after writing its marker; stop any
+          # instance that outlived it (an installer-side relaunch, for
+          # example) so the job ends clean.
+          Get-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force
           Remove-Item Env:\DEVBAR_SMOKE, Env:\DEVBAR_SMOKE_UPDATE, Env:\DEVBAR_SMOKE_ARTIFACT, Env:\DEVBAR_SMOKE_SHA, Env:\DEVBAR_SMOKE_VERSION
 
       - name: Reinstall while running — Linux (kill old process)
