@@ -419,8 +419,10 @@ jobs:
             throw 'the installer did not relaunch DevBar'
           }
           Start-Sleep -Seconds 3
+          # ProductVersion is 4-part (0.8.0.0); the npm version is 3-part.
           $fileVersion = (Get-Item $exe).VersionInfo.ProductVersion
-          if ($fileVersion -ne $v2) { throw "installed exe is v$fileVersion, expected v$v2" }
+          $fileVersionShort = (($fileVersion -split '\.')[0..2]) -join '.'
+          if ($fileVersionShort -ne $v2) { throw "installed exe is v$fileVersion, expected v$v2" }
           # The smoke relaunch self-exits after writing its marker; stop any
           # instance that outlived it (an installer-side relaunch, for
           # example) so the job ends clean.
