@@ -285,9 +285,11 @@ jobs:
           BUNDLE="$WORK/DevBar.app"
           APP="$BUNDLE/Contents/MacOS/DevBar"
           # 1) A real next-version bundle: the dev "real update" builder
-          #    (copy, version bump, asar patch, ad-hoc re-sign, zip).
+          #    (copy, version bump, asar patch, ad-hoc re-sign, zip). The
+          #    compiled copy runs: the helper imports local TS modules, which
+          #    raw --experimental-strip-types cannot resolve (.js != .ts).
           V2=$(node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'")
-          ZIP=$(node --experimental-strip-types scripts/build-simulated-update.ts "$BUNDLE" "$WORK" "$V2" | tail -1)
+          ZIP=$(node build/scripts/build-simulated-update.js "$BUNDLE" "$WORK" "$V2" | tail -1)
           [ -f "$ZIP" ] || { echo "simulated update zip missing"; exit 1; }
           SHA=$(shasum -a 256 "$ZIP" | awk '{print $1}')
           # 2) The running app runs the PRODUCTION handoff: sha seal, staging
@@ -303,7 +305,14 @@ jobs:
             grep -q "DEVBAR_SMOKE_OK darwin $V2" "$TMPDIR/devbar-smoke-ok" 2>/dev/null && break
             sleep 1
           done
-          grep -q "DEVBAR_SMOKE_OK darwin $V2" "$TMPDIR/devbar-smoke-ok"
+          if ! grep -q "DEVBAR_SMOKE_OK darwin $V2" "$TMPDIR/devbar-smoke-ok" 2>/dev/null; then
+            echo "swap never produced a running new version"
+            echo "--- app log (new bundle) ---"
+            tail -30 "$HOME/Library/Logs/DevBar/app.log" 2>/dev/null || true
+            echo "--- swap artifacts ---"
+            ls -la "$HOME/Library/Application Support/DevBar/updates" 2>/dev/null || true
+            exit 1
+          fi
           rm -rf "$WORK"
 
       - name: Reinstall while running — Windows (kill old process)
@@ -375,7 +384,22 @@ jobs:
             if ($new) { break }
             Start-Sleep -Seconds 1
           }
-          if (-not $new) { throw 'the installer did not relaunch DevBar' }
+          if (-not $new) {
+            # Self-diagnose: did the app finish the handoff (install.bat
+            # written, installer staged)? Did the installer install v2 but
+            # just not relaunch? What does the app itself say?
+            Write-Host '--- diagnostics: app log ---'
+            $appLog = Join-Path $env:APPDATA 'DevBar\logs\app.log'
+            if (Test-Path $appLog) { Get-Content $appLog -Tail 40 } else { Write-Host '(no app log)' }
+            Write-Host '--- diagnostics: updates dir (bat + staged installer) ---'
+            Get-ChildItem (Join-Path $env:APPDATA 'DevBar\updates') -Recurse -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host $_.FullName }
+            Write-Host "--- diagnostics: installed exe version: $((Get-Item $exe).VersionInfo.ProductVersion) (expected $v2) ---"
+            Write-Host '--- diagnostics: processes ---'
+            Get-Process | Where-Object { $_.Name -match 'DevBar|setup|Uninstall' } |
+              ForEach-Object { Write-Host "$($_.Name) $($_.Id)" }
+            throw 'the installer did not relaunch DevBar'
+          }
           Start-Sleep -Seconds 3
           $fileVersion = (Get-Item $exe).VersionInfo.ProductVersion
           if ($fileVersion -ne $v2) { throw "installed exe is v$fileVersion, expected v$v2" }
@@ -392,10 +416,12 @@ jobs:
           XVFB_PID=$!
           trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
           export DISPLAY=:99
+          # Let the X server come up before anything connects to it.
+          sleep 1
           # The unpacked binary needs the same system libraries the .deb
           # carries — the deb smoke step above already apt-resolved them,
           # so this is redundant insurance (best-effort by design).
-          sudo apt-get install -y -qq libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libgtk-3-0 libgbm1 libasound2 libxshmfence1 >/dev/null || true
+          sudo apt-get install -y -qq libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libgtk-3-0 libgbm1 libasound2t64 libxshmfence1 >/dev/null || true
           pnpm run pack
           export DEVBAR_SMOKE=1
           export DEVBAR_SMOKE_HOLD=1
@@ -403,7 +429,15 @@ jobs:
           pnpm install-local --no-build
           sleep 4
           OLDPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
-          [ -n "$OLDPID" ] || { echo "no resident instance after first install"; exit 1; }
+          if [ -z "$OLDPID" ]; then
+            echo "no resident instance after first install"
+            kill -0 "$XVFB_PID" 2>/dev/null && echo 'Xvfb alive' || echo 'Xvfb DEAD'
+            echo "--- app log ---"
+            tail -40 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null || true
+            echo "--- processes ---"
+            ps aux | grep -i devbar | grep -v grep || true
+            exit 1
+          fi
           # 2) Reinstall: install-local must kill OLDPID, replace the files
           #    and relaunch — a leftover process is the classic half-update.
           pnpm install-local --no-build

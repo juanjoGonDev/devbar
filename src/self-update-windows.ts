@@ -225,18 +225,3 @@ export function spawnInstallerBat({
     windowsHide: true,
   }).unref();
 }
-
-/**
- * Launch the oneClick NSIS installer silent and detached. With DevBar quit,
- * the installer upgrades in place and relaunches the app by default.
- * (Kept for direct callers; the updater itself goes through
- * spawnInstallerBat, which waits for the old process first.)
- */
-export function spawnInstaller(installerPath: string): void {
-  // Spawn the installer exe directly with its silent flag — no shell.
-  spawn(installerPath, ['/S'], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  }).unref();
-}

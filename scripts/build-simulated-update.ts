@@ -5,8 +5,9 @@
  * the transfer is simulated; staging, verification and the swap all run the
  * production path.
  *
- * Usage: node --experimental-strip-types scripts/build-simulated-update.ts \
- *          <bundle.app> <workDir> [version]
+ * Usage (CI runs the compiled copy — it imports local TS modules, which raw
+ * --experimental-strip-types cannot resolve):
+ *   node build/scripts/build-simulated-update.js <bundle.app> <workDir> [version]
  * Prints the zip path on the last line.
  */
 import fs from 'node:fs';
