@@ -322,11 +322,20 @@ async function saveDraft(): Promise<SavedGroup | null> {
     return null;
   }
   const savedGroup = await window.api.saveGroup(draftGroup);
-  const baseline = structuredClone(savedGroup || draftGroup);
-  storedGroup = baseline;
-  const idx = allGroups.findIndex((group) => group.id === baseline.id);
-  if (idx >= 0) allGroups[idx] = baseline;
-  return savedGroup || baseline;
+  // The dirty-check baseline is the DRAFT itself: a successful save means
+  // exactly what the user is looking at is now persisted. Basing it on the
+  // IPC response leaves the group "dirty" after every save — the response is
+  // a re-normalized shape that also carries the transient
+  // `_autoStartEnforced` flag the draft never has, and the stringify
+  // comparison cannot ignore that.
+  storedGroup = structuredClone(draftGroup);
+  const canonicalId = savedGroup?.id ?? draftGroup.id;
+  const idx = allGroups.findIndex((group) => group.id === canonicalId);
+  if (idx >= 0 && savedGroup) {
+    const { _autoStartEnforced: _transient, ...canonical } = savedGroup;
+    allGroups[idx] = canonical;
+  }
+  return savedGroup || structuredClone(storedGroup);
 }
 
 // ────────────────────── Toast ──────────────────────────────────────────
