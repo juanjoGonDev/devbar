@@ -66,3 +66,154 @@ jobs:
 
       - name: Build and package smoke
         run: pnpm run pack
+
+  build:
+    name: Build, verify & launch smoke — ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    if: >-
+      github.repository == 'juanjoGonDev/devbar' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.draft == false)
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            runner: macos-15
+          - os: win
+            runner: windows-latest
+          - os: linux
+            runner: ubuntu-latest
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron downloads (macOS)
+        if: matrix.os == 'macos'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-macos-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Cache Electron downloads (Windows)
+        if: matrix.os == 'win'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            %LOCALAPPDATA%\electron\Cache
+            %LOCALAPPDATA%\electron-builder\Cache
+          key: electron-win-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Cache Electron downloads (Linux)
+        if: matrix.os == 'linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-linux-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install reproducibly
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify macOS release
+        if: matrix.os == 'macos'
+        run: pnpm run release:mac
+
+      - name: Build and verify Windows release
+        if: matrix.os == 'win'
+        shell: bash
+        run: pnpm run dist:win && pnpm run verify:win
+
+      - name: Build and verify Linux release
+        if: matrix.os == 'linux'
+        run: pnpm run dist:linux && pnpm run verify:linux
+
+      - name: Launch smoke — macOS (packaged app)
+        if: matrix.os == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          WORK=$(mktemp -d)
+          ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
+          "$WORK/DevBar.app/Contents/MacOS/DevBar" --devbar-smoke 2>&1 | tee smoke-macos.log
+          grep -q DEVBAR_SMOKE_OK smoke-macos.log
+          rm -rf "$WORK"
+
+      - name: Launch smoke — Windows (NSIS install + portable)
+        if: matrix.os == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+          # 1) NSIS installer: silent per-user install, then prove the
+          #    installed exe launches — this also confirms the install path
+          #    is %LOCALAPPDATA%\Programs\DevBar, the location the in-app
+          #    updater recognises.
+          Start-Process -Wait -FilePath ".\dist\electron-builder\DevBar-$version-win-x64-setup.exe" -ArgumentList '/S'
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe")) {
+            Write-Error "NSIS install did not produce the expected exe"
+            exit 1
+          }
+          # The oneClick installer launches the app at the end of the install;
+          # stop that instance so the smoke launch owns the single-instance lock.
+          Get-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force
+          & "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe" --devbar-smoke *>&1 |
+            Tee-Object -FilePath smoke-win-installed.log
+          if (-not (Select-String -Path smoke-win-installed.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {
+            Write-Error 'installed-app smoke failed'
+            exit 1
+          }
+          # 2) Portable single exe: launches straight from dist/.
+          & ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |
+            Tee-Object -FilePath smoke-win-portable.log
+          if (-not (Select-String -Path smoke-win-portable.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {
+            Write-Error 'portable-app smoke failed'
+            exit 1
+          }
+
+      - name: Launch smoke — Linux (AppImage + deb)
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          # AppImage runs from the file; xvfb provides the display.
+          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-appimage.log
+          # .deb: full install + launch of the installed binary.
+          sudo dpkg -i "dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
+          xvfb-run -a /usr/bin/devbar --devbar-smoke 2>&1 | tee smoke-linux-deb.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-deb.log
+
+      - name: Upload build evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-${{ matrix.os }}-${{ github.sha }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            dist/
+            smoke-*.log

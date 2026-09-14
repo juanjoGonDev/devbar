@@ -14,6 +14,7 @@ import {
   shell,
   powerMonitor,
   nativeTheme,
+  Tray,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
   type MessageBoxOptions,
@@ -32,13 +33,26 @@ import { ProcessManager, deriveColor } from './process-manager.js';
 import * as gitManager from './git-manager.js';
 import * as trayIcon from './tray-icon.js';
 import * as logger from './logger.js';
-import { checkForUpdate, fetchReleases } from './update-check.js';
 import {
-  bundlePathFromExecutable,
+  checkForUpdate,
+  fetchReleases,
+  fetchReleaseSha256,
+} from './update-check.js';
+import {
   canInstallInPlace,
   extractUpdate,
+  installedAppPath,
+  stageableAsset,
+  stageDownloadedArtifact,
   spawnSwap,
+  verifySha256,
 } from './self-update.js';
+import {
+  setLinuxAutostart,
+  wasOpenedAtLoginFromArgv,
+  LOGIN_ARG,
+} from './autostart.js';
+import { isMac, isWin, platformLabel } from './platform.js';
 import { loadShellPath, expandTilde } from './path-helper.js';
 import { mergeNewestByTs } from './merge-logs.js';
 import { RepoWatcher } from './repo-watcher.js';
@@ -204,6 +218,14 @@ function showSaveDialog(
     ? dialog.showSaveDialog(owner, options)
     : dialog.showSaveDialog(options);
 }
+
+// Keep the app identity consistent across platforms. macOS already gets
+// "DevBar" from the bundle (CFBundleName); Windows and Linux would fall back
+// to the package.json `name` ("devbar"), which would scatter userData, logs
+// and notification identity across differently-named directories per OS.
+// Pinning it means DevBar always owns the "DevBar" folders everywhere.
+// (Dev mode is left untouched so existing dev stores keep working.)
+if (app.isPackaged) app.name = 'DevBar';
 
 loadShellPath();
 
@@ -826,10 +848,10 @@ async function runUpdateCheck({ manual = false } = {}) {
   if (!devUpdateSimulated) availableUpdate = found || null;
   refreshTrayIcon();
   if (found && !devUpdateSimulated) {
-    // When we can swap the bundle ourselves, stay quiet until the download is
-    // on disk — one notice ("reinicia") beats two ("hay una" / "ya está").
-    if (found.zipUrl && canInstallInPlace(installedBundlePath()))
-      void stageUpdate(found);
+    // When this install shape supports an in-place update, stay quiet until
+    // the download is on disk — one notice ("reinicia") beats two
+    // ("hay una" / "ya está"). Otherwise the assisted download flow.
+    if (stageableAsset(found, installedAppPath())) void stageUpdate(found);
     else notifyUpdateAvailable(found, manual);
   }
   broadcastUpdateStatus();
@@ -860,8 +882,8 @@ function notifyUpdateAvailable(update: AvailableUpdate, manual: boolean): void {
  * what was packaged.
  */
 function installedBundleId(): string | null {
-  const bundle = installedBundlePath();
-  if (!bundle) return null;
+  const bundle = installedAppPath();
+  if (!bundle || !isMac) return null;
   try {
     const plist = fs.readFileSync(
       path.join(bundle, 'Contents', 'Info.plist'),
@@ -875,30 +897,61 @@ function installedBundleId(): string | null {
   }
 }
 
-/** The installed `.app` we would replace, or null when that isn't our shape. */
-function installedBundlePath(): string | null {
-  return app.isPackaged ? bundlePathFromExecutable(app.getPath('exe')) : null;
-}
-
 /**
- * Download the release .zip in the background and unpack it next to our config,
- * so applying the update later is just a swap-and-relaunch. Any failure falls
- * back to the old "grab the DMG yourself" notice rather than going silent.
+ * Download the platform's update artifact in the background and stage it next
+ * to our config, so applying the update later is just a swap-and-relaunch. Any
+ * failure falls back to the assisted "download it yourself" notice rather than
+ * going silent.
  */
 async function stageUpdate(update: AvailableUpdate): Promise<void> {
-  if (!update.zipUrl) return;
   if (stagedUpdate && stagedUpdate.version === update.version) return;
   if (stagingVersion === update.version) return;
   // The check loop runs every 5 minutes; without this, a version that fails to
   // download would re-pull ~100 MB on every tick.
   if (stagingFailedVersions.has(update.version)) return;
+  const plan = stageableAsset(update, installedAppPath());
+  if (!plan) return;
   stagingVersion = update.version;
   const updatesDir = path.join(app.getPath('userData'), 'updates');
-  const zipPath = path.join(updatesDir, `DevBar-${update.version}.zip`);
+  const filePath = path.join(updatesDir, plan.fileName);
   try {
     fs.mkdirSync(updatesDir, { recursive: true });
-    await downloadFile(update.zipUrl, zipPath);
-    await stageFromZip(zipPath, update.version);
+    await downloadFile(plan.url, filePath);
+    // Integrity seal: the release's SHA256SUMS.txt. On macOS the bundle is
+    // re-sealed by codesign when it is unpacked, so a missing manifest degrades
+    // to that; on Windows/Linux the manifest is the ONLY trust anchor, so a
+    // fetch failure aborts staging instead of installing an unverified file.
+    const manifest = await fetchReleaseSha256(
+      UPDATE_REPO.owner,
+      UPDATE_REPO.repo,
+      update.version,
+    );
+    if (manifest) {
+      const verified = await verifySha256(
+        filePath,
+        manifest.get(plan.fileName),
+      );
+      if (!verified)
+        throw new Error(
+          'el hash de la descarga no coincide con SHA256SUMS.txt',
+        );
+    } else if (!isMac) {
+      throw new Error('no se pudo obtener SHA256SUMS.txt');
+    }
+    stagedUpdate = await stageDownloadedArtifact({
+      filePath,
+      destDir: path.join(updatesDir, update.version),
+      version: update.version,
+      kind: plan.kind,
+    });
+    console.log(`[updates] v${update.version} descargada, lista para instalar`);
+    broadcastUpdateStatus();
+    refreshTrayIcon();
+    showBannerNotification(
+      'DevBar — actualización',
+      `v${update.version} lista. Reinicia para instalarla.`,
+      { cta: { label: 'Reiniciar', action: 'install-update' } },
+    );
   } catch (err) {
     stagingFailedVersions.add(update.version);
     console.warn(
@@ -906,7 +959,7 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
     );
     notifyUpdateAvailable(update, false);
   } finally {
-    fs.rmSync(zipPath, { force: true });
+    fs.rmSync(filePath, { force: true });
     stagingVersion = null;
     // Housekeeping, deliberately outside the try: a prune that trips over a
     // dangling entry must not mark a perfectly good download as failed and
@@ -989,10 +1042,11 @@ function downloadFile(
 }
 
 /**
- * Install the already-downloaded update: confirm → hand the bundle swap to a
- * detached script → quit. The script waits for us to exit, replaces the .app
- * and reopens it, so the user never touches the Finder. Only the confirmation
- * is asked of them, and only once.
+ * Install the already-downloaded update: confirm → hand the swap to a detached
+ * process → quit. macOS/Linux run a swap script that waits for us to exit,
+ * replaces the app and relaunches it; Windows runs the new installer (or a
+ * folder-swap bat for portable installs), which does the same. The user never
+ * touches the Finder/Explorer. Only the confirmation is asked of them, once.
  */
 async function installStagedUpdate(staged: StagedUpdate, target: string) {
   const owner =
@@ -1015,10 +1069,10 @@ async function installStagedUpdate(staged: StagedUpdate, target: string) {
 
   try {
     spawnSwap({
-      scriptPath: path.join(app.getPath('userData'), 'updates', 'swap.sh'),
-      pid: process.pid,
+      staged,
       target,
-      staged: staged.appPath,
+      scriptDir: path.join(app.getPath('userData'), 'updates'),
+      pid: process.pid,
     });
   } catch (err) {
     broadcastToast('error', `No se pudo instalar: ${errorMessage(err)}`);
@@ -1031,67 +1085,120 @@ async function installStagedUpdate(staged: StagedUpdate, target: string) {
 }
 
 /**
- * Assisted update: confirm (no timeout) → download the .dmg to Downloads →
- * open it → QUIT DevBar so the drag-into-Applications isn't blocked by the
- * running app. Only reached when the in-place swap isn't possible (no zip
- * asset, or the bundle lives somewhere we can't write).
+ * Assisted update — reached when an in-place update is not possible for this
+ * install shape (or before a staged download exists). Per platform:
+ *
+ * - macOS:  download the .dmg to Downloads, open the Finder volume, QUIT so
+ *           the drag-into-Applications isn't blocked by the running app.
+ * - Windows: download the NSIS installer to Downloads, run it (it upgrades the
+ *           install and relaunches), QUIT so the locked exe can be replaced.
+ * - Linux:  download the .deb (or AppImage) to Downloads and point the user at
+ *           it — system installs need the package manager, which needs the
+ *           user's own terminal/elevation.
  */
 async function applyUpdate() {
   if (!availableUpdate) return { ok: false, error: 'no_update' };
-  const { version, dmgUrl, url } = availableUpdate;
+  const { version, dmgUrl, setupUrl, debUrl, appImageUrl, url } =
+    availableUpdate;
   const staged = stagedUpdate;
-  const target = installedBundlePath();
+  const target = installedAppPath();
   if (staged && staged.version === version && canInstallInPlace(target))
     return installStagedUpdate(staged, target);
   const owner =
     configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
+
+  let downloadUrl: string | null = null;
+  let destName = '';
+  let detail =
+    'Se abrirá la página de la release para descargar la nueva versión.';
+  let buttons = ['Cancelar', 'Descargar'];
+  if (isMac && dmgUrl) {
+    downloadUrl = dmgUrl;
+    destName = `DevBar-${version}-macos-${process.arch}.dmg`;
+    buttons = ['Cancelar', 'Descargar y cerrar'];
+    detail =
+      'Se descargará el instalador y DevBar se CERRARÁ para que puedas sustituirla (macOS no deja reemplazar la app mientras está abierta).\n\nSe abrirá una ventana del Finder: arrastra DevBar a Aplicaciones y vuelve a abrirla.';
+  } else if (!isMac && setupUrl) {
+    downloadUrl = setupUrl;
+    destName = `DevBar-${version}-win-${process.arch}-setup.exe`;
+    buttons = ['Cancelar', 'Descargar y cerrar'];
+    detail =
+      'Se descargará el instalador, DevBar se CERRARÁ y el instalador actualizará la aplicación en su sitio.';
+  } else if (!isMac && debUrl) {
+    downloadUrl = debUrl;
+    destName = `DevBar-${version}-linux-${process.arch}.deb`;
+  } else if (!isMac && appImageUrl) {
+    downloadUrl = appImageUrl;
+    destName = `DevBar-${version}-linux-${process.arch}.AppImage`;
+    detail =
+      'Se descargará la AppImage a Descargas. Cierra DevBar y ejecútala desde ahí (o cópiala a ~/Applications).';
+  }
+
   let res;
   try {
     res = await showMessageBox(owner, {
       type: 'question',
-      buttons: ['Cancelar', dmgUrl ? 'Descargar y cerrar' : 'Descargar'],
+      buttons,
       defaultId: 1,
       cancelId: 0,
       message: `Actualizar a DevBar v${version}`,
-      detail: dmgUrl
-        ? 'Se descargará el instalador y DevBar se CERRARÁ para que puedas sustituirla (macOS no deja reemplazar la app mientras está abierta).\n\nSe abrirá una ventana del Finder: arrastra DevBar a Aplicaciones y vuelve a abrirla.'
-        : 'Se abrirá la página de la release para descargar la nueva versión.',
+      detail,
     });
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
   if (res.response !== 1) return { ok: false, cancelled: true };
 
-  if (!dmgUrl) {
+  if (!downloadUrl) {
     shell.openExternal(url);
     return { ok: true, opened: 'page' };
   }
 
-  const dest = path.join(
-    app.getPath('downloads'),
-    `DevBar-${version}-macos-${process.arch}.dmg`,
-  );
+  const dest = path.join(app.getPath('downloads'), destName);
   showBannerNotification('DevBar — actualización', `Descargando v${version}…`);
   try {
-    await downloadFile(dmgUrl, dest);
+    await downloadFile(downloadUrl, dest);
   } catch (err) {
     broadcastToast('error', `Descarga falló: ${errorMessage(err)}`);
     shell.openExternal(url); // fall back to the release page
     return { ok: false, error: errorMessage(err), fellBack: true };
   }
-  const openErr = await shell.openPath(dest); // mount the dmg → Finder window
-  if (openErr) {
-    // Mount failed — don't quit and strand the user; open the release page.
-    broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
-    shell.openExternal(url);
-    return { ok: false, error: openErr, fellBack: true };
+
+  if (isMac) {
+    const openErr = await shell.openPath(dest); // mount the dmg → Finder
+    if (openErr) {
+      // Mount failed — don't quit and strand the user; open the release page.
+      broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
+      shell.openExternal(url);
+      return { ok: false, error: openErr, fellBack: true };
+    }
+    // Quit so the .app can be replaced. The DMG mount is an OS-owned Finder
+    // volume that outlives us; the single-instance lock means this is the
+    // only instance. Small delay lets the Finder window surface first.
+    // ponytail: fixed 1.2s delay, not a mount-completion watch.
+    setTimeout(() => app.quit(), 1200);
+    return { ok: true, path: dest, quitting: true };
   }
-  // Quit so the .app can be replaced. The DMG mount is an OS-owned Finder
-  // volume that outlives us; the single-instance lock means this is the only
-  // instance. Small delay lets the Finder window surface before we vanish.
-  // ponytail: fixed 1.2s delay, not a mount-completion watch.
-  setTimeout(() => app.quit(), 1200);
-  return { ok: true, path: dest, quitting: true };
+
+  if (!isMac && setupUrl) {
+    // Launch the installer (upgrades in place, relaunches DevBar), then quit
+    // so the locked exe/DLLs can be replaced.
+    const openErr = await shell.openPath(dest);
+    if (openErr) {
+      broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
+      return { ok: false, error: openErr, fellBack: true };
+    }
+    setTimeout(() => app.quit(), 1200);
+    return { ok: true, path: dest, quitting: true };
+  }
+
+  // Linux package/AppImage: the user installs it with the package manager or
+  // a double-click — no quit needed from us.
+  broadcastToast(
+    'ok',
+    `v${version} descargada a ${dest}. Cierra DevBar e instálala/éjecútala.`,
+  );
+  return { ok: true, path: dest };
 }
 
 /**
@@ -1153,9 +1260,15 @@ function buildLogsWindow({
     minWidth: detached ? 480 : 720,
     minHeight: 320,
     title,
-    backgroundColor: '#1e1e1e',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 12, y: 14 },
+    // hiddenInset + traffic lights are macOS chrome; elsewhere the native
+    // titlebar is the least-surprising option.
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 12, y: 14 },
+          backgroundColor: '#1e1e1e',
+        }
+      : { backgroundColor: '#1e1e1e' }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1191,9 +1304,13 @@ function ensureSilencedWindow(
     minWidth: 360,
     minHeight: 320,
     title: `Silenciados — ${command.name}`,
-    backgroundColor: '#1e1e1e',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 12, y: 14 },
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 12, y: 14 },
+          backgroundColor: '#1e1e1e',
+        }
+      : { backgroundColor: '#1e1e1e' }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1204,7 +1321,7 @@ function ensureSilencedWindow(
   // NOT visible-on-all-workspaces (see logs/config): avoids the secondary-display
   // minimize-everything quirk for accessory-app windows.
   win.loadFile(path.join(__dirname, '..', 'renderer', 'silenced.html'), {
-    query: { groupId, commandId },
+    query: { groupId, commandId, platform: platformLabel() },
   });
   win.on('closed', () => {
     silencedWindows.delete(key);
@@ -1273,7 +1390,9 @@ function updateTrayTitle(payload: GroupState[]): void {
   let badge = '';
   if (errs > 0) badge = ` ${errs}`;
   else if (warns > 0) badge = ` ${warns}`;
-  mb.tray.setTitle(badge);
+  // Text next to the tray icon only renders on macOS; the other platforms
+  // carry the state in the icon itself.
+  if (isMac) mb.tray.setTitle(badge);
 }
 
 function adaptiveSize(maxW: number, maxH: number, marginW = 60, marginH = 100) {
@@ -1397,11 +1516,17 @@ function ensureConfigWindow({ goto }: { goto?: string } = {}): void {
     minWidth: 460,
     minHeight: 380,
     title: 'DevBar — Configuración',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 16 },
-    vibrancy: 'sidebar',
-    visualEffectState: 'active',
-    backgroundColor: '#00000000',
+    // macOS: frameless-ish hiddenInset with vibrancy. Elsewhere: a normal
+    // titled window (vibrancy/traffic-light positions don't exist).
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 14, y: 16 },
+          vibrancy: 'sidebar' as const,
+          visualEffectState: 'active' as const,
+          backgroundColor: '#00000000',
+        }
+      : { backgroundColor: '#1e1e1e' }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1438,17 +1563,39 @@ function ensureConfigWindow({ goto }: { goto?: string } = {}): void {
   updateDockVisibility();
 }
 
+/**
+ * Apply the "open at login" setting to the OS. Dev runs are a no-op: the
+ * entry would point at Electron's own binary and boot a bare shell.
+ */
 function applyAutostart(enabled: boolean): void {
-  if (process.platform !== 'darwin') return;
   if (!app.isPackaged) return;
   try {
-    app.setLoginItemSettings({
-      openAtLogin: !!enabled,
-      openAsHidden: true,
-    });
+    if (isMac) {
+      app.setLoginItemSettings({
+        openAtLogin: !!enabled,
+        openAsHidden: true,
+      });
+    } else if (isWin) {
+      // The --login argument is the boot signal on Windows (see autostart.ts).
+      app.setLoginItemSettings({
+        openAtLogin: !!enabled,
+        args: enabled ? [LOGIN_ARG] : [],
+      });
+    } else {
+      setLinuxAutostart(process.execPath, !!enabled);
+    }
   } catch (err) {
     console.error('Failed to set login item:', err);
   }
+}
+
+/** Per-platform "was this launch the OS login one" (pre-script gate). */
+function wasOpenedAtLogin(): boolean {
+  if (isMac)
+    return !!(
+      app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin
+    );
+  return wasOpenedAtLoginFromArgv();
 }
 
 // ─────────────────────── IPC handlers ────────────────────────────────
@@ -2509,7 +2656,7 @@ function registerIpc() {
           toast: (kind, message) => broadcastToast(kind, message),
           // Not process.execPath: unpackaged that resolves to Electron's own
           // bundle, which passes the guard and then fails deep inside the copy.
-          installedBundle: () => installedBundlePath(),
+          installedBundle: () => installedAppPath(),
           updatesDir: () => {
             const dir = path.join(app.getPath('userData'), 'updates');
             fs.mkdirSync(dir, { recursive: true });
@@ -2553,23 +2700,27 @@ function registerIpc() {
   }));
 
   /**
-   * Open the macOS Notifications pane. Separate from `app:openExternal`, which
-   * is deliberately https-only so a renderer bug cannot fire arbitrary schemes
-   * — this URL is a constant built in main and never comes from the renderer.
+   * Open the OS notification settings for this app. Separate from
+   * `app:openExternal`, which is deliberately https-only so a renderer bug
+   * cannot fire arbitrary schemes — these URLs are constants built in main
+   * and never come from the renderer.
    *
-   * The `?id=` form deep-links to this app's own row. The id is read back from
-   * the running bundle rather than repeated here, so it cannot drift from what
-   * was actually packaged; without a bundle to read (a dev run) the plain pane
-   * is opened instead, which is still where the user needs to be. System
-   * Settings reports success either way, so a wrong id degrades quietly rather
-   * than failing.
+   * macOS deep-links to this app's own Notifications row (the bundle id is
+   * read back from the running bundle rather than repeated here, so it cannot
+   * drift from what was packaged). Windows opens the notifications settings
+   * page. Linux has no universal URI, so we open the distro's best-effort
+   * control center and let the user find the pane.
    */
   ipcMain.handle('app:openNotificationSettings', async () => {
-    const pane =
-      'x-apple.systempreferences:com.apple.Notifications-Settings.extension';
-    const bundleId = installedBundleId();
     try {
-      await shell.openExternal(bundleId ? `${pane}?id=${bundleId}` : pane);
+      if (isMac) {
+        const pane =
+          'x-apple.systempreferences:com.apple.Notifications-Settings.extension';
+        const bundleId = installedBundleId();
+        await shell.openExternal(bundleId ? `${pane}?id=${bundleId}` : pane);
+      } else {
+        await shell.openExternal('ms-settings:notifications');
+      }
       return { ok: true };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
@@ -2634,18 +2785,15 @@ function registerIpc() {
  *   the group's autoStart commands are NOT started and a toast is shown.
  */
 async function autoStartAllMarkedCommands() {
-  // Only run pre-scripts when DevBar was launched by macOS at login —
+  // Only run pre-scripts when DevBar was launched by the OS at login —
   // i.e. on system boot — not on every manual app restart. This protects
   // the user from re-running expensive `make setup` style scripts every
-  // time they quit and reopen DevBar.
+  // time they quit and reopen DevBar. The signal is per-platform: native on
+  // macOS, the --login flag the autostart entries pass on Windows/Linux.
   // DEVBAR_FORCE_LOGIN=1 forces the "opened at login" path — for testing the
-  // boot auto-run flow without rebooting. Otherwise use the real signal.
-  const wasOpenedAtLogin =
-    process.env.DEVBAR_FORCE_LOGIN === '1' ||
-    (process.platform === 'darwin' &&
-      !!(
-        app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin
-      ));
+  // boot auto-run flow without rebooting.
+  const openedAtLogin =
+    process.env.DEVBAR_FORCE_LOGIN === '1' || wasOpenedAtLogin();
 
   const groups = configStore.listGroups();
   await Promise.all(
@@ -2663,7 +2811,7 @@ async function autoStartAllMarkedCommands() {
         group.preSteps &&
         group.preSteps.length > 0 &&
         group.preScriptsAutoRun === true &&
-        wasOpenedAtLogin;
+        openedAtLogin;
       if (shouldRunPre) {
         const res = await preScriptRunner.run(group.id);
         // A user cancellation (declined confirmation) is NOT a failure —
@@ -2816,6 +2964,15 @@ function startScheduleLoop() {
 // tray icon writing the same store. The second instance focuses config on the
 // primary and exits. `isPrimary` also guards the ready handlers, since a
 // second instance may still emit 'ready' before app.quit() takes effect.
+/**
+ * CI smoke mode (`--devbar-smoke` or DEVBAR_SMOKE=1). Proves the PACKAGED
+ * binary boots on its target OS and owns a system tray, then self-terminates
+ * with a DEVBAR_SMOKE_OK marker the build jobs grep for. Skips windows,
+ * commands, schedules and update checks.
+ */
+const SMOKE_MODE =
+  process.argv.includes('--devbar-smoke') || process.env.DEVBAR_SMOKE === '1';
+
 const isPrimary = app.requestSingleInstanceLock();
 if (!isPrimary) {
   app.quit();
@@ -2834,7 +2991,8 @@ app.on('ready', () => {
 app.whenReady().then(() => {
   if (!isPrimary) return;
   registerIpc();
-  applyAutostart(configStore.getGlobalSettings().autostart);
+  // Smoke mode must not touch the user's auto-start registration on a CI host.
+  if (!SMOKE_MODE) applyAutostart(configStore.getGlobalSettings().autostart);
   processManager.on('change', () => broadcast());
   processManager.on('log', (payload) => broadcastLog(payload));
   processManager.on('action:done', ({ processId, code, group, target }) => {
@@ -2865,6 +3023,24 @@ app.whenReady().then(() => {
 
   trayIcon.preload();
 
+  if (SMOKE_MODE) {
+    // Headless-friendly proof of life: create only the platform tray (no
+    // BrowserWindow, no menubar chrome, no commands). Owning a tray is the
+    // platform-specific part worth proving — menu bar on macOS,
+    // StatusNotifier/XEmbed on Linux, notification area on Windows.
+    try {
+      void new Tray(trayIcon.defaultIcon());
+    } catch (error) {
+      console.error('DEVBAR_SMOKE_TRAY_FAILED:', error);
+      app.exit(1);
+    }
+    setTimeout(() => {
+      console.log('DEVBAR_SMOKE_OK');
+      app.exit(0);
+    }, 1500);
+    return;
+  }
+
   const menuBar = menubar({
     index: `file://${path.join(__dirname, '..', 'renderer', 'tray.html')}`,
     icon: trayIcon.defaultIcon(),
@@ -2886,7 +3062,7 @@ app.whenReady().then(() => {
 
   menuBar.on('ready', () => {
     menuBar.tray.setImage(trayIcon.defaultIcon());
-    menuBar.tray.setTitle('');
+    if (isMac) menuBar.tray.setTitle('');
 
     menuBar.tray.on('right-click', () => {
       menuBar.tray.popUpContextMenu(buildTrayContextMenu());

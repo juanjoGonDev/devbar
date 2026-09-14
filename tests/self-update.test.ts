@@ -3,9 +3,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  appImagePathFromExecutable,
   bundlePathFromExecutable,
-  buildSwapScript,
+  buildLinuxSwapScript,
+  buildMacSwapScript as buildSwapScript,
+  buildSwapBat,
   canInstallInPlace,
+  isInstalledExe,
+  looksLikeAppImage,
+  windowsUpdateMode,
 } from '../src/self-update.js';
 
 describe('bundlePathFromExecutable', () => {
@@ -80,5 +86,129 @@ describe('buildSwapScript', () => {
     });
     expect(tricky).toContain(`target='/Apps/Dev Bar'\\''s.app'`);
     expect(tricky).toContain(`staged='/tmp/a b/DevBar.app'`);
+  });
+});
+
+describe('appImagePathFromExecutable', () => {
+  it('accepts a running .AppImage path', () => {
+    expect(appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage')).toBe(
+      '/home/u/Apps/DevBar.AppImage',
+    );
+  });
+
+  it('rejects a .deb install (plain binary) and dev runs', () => {
+    expect(appImagePathFromExecutable('/usr/bin/DevBar')).toBeNull();
+    expect(
+      appImagePathFromExecutable('/repo/node_modules/electron/dist/electron'),
+    ).toBeNull();
+  });
+});
+
+describe('buildLinuxSwapScript', () => {
+  const script = buildLinuxSwapScript({
+    pid: 777,
+    target: '/home/u/Apps/DevBar.AppImage',
+    staged: '/tmp/updates/0.8.0/DevBar-0.8.0-linux-x64.AppImage',
+  });
+
+  it('waits for the old process before touching the file', () => {
+    const wait = script.indexOf('kill -0 777');
+    const copy = script.indexOf('cp "$staged" "$target"');
+    expect(wait).toBeGreaterThan(-1);
+    expect(copy).toBeGreaterThan(wait);
+  });
+
+  it('gives up instead of swapping when the old process never exits', () => {
+    expect(script).toContain('if kill -0 777 2>/dev/null; then exit 1; fi');
+  });
+
+  it('rolls the old file back when the copy fails', () => {
+    expect(script).toContain('mv "$backup" "$target"');
+  });
+
+  it('relaunches detached without the --login flag (no pre-script rerun)', () => {
+    expect(script).toContain('setsid "$target" >/dev/null 2>&1 < /dev/null &');
+    expect(script).not.toMatch(/setsid .*--login/);
+  });
+});
+
+describe('buildSwapBat', () => {
+  const bat = buildSwapBat({
+    pid: 4242,
+    target: 'C:\\Users\\dev\\DevBar.exe',
+    staged:
+      'C:\\Users\\dev\\AppData\\Roaming\\devbar\\updates\\0.8.0\\DevBar-0.8.0-win-x64-portable.exe',
+  });
+
+  it('waits for the old process (bounded) before moving the file', () => {
+    expect(bat).toContain('tasklist /fi "PID eq 4242"');
+    expect(bat).toContain('if %tries% geq 120 exit /b 1');
+    expect(bat.indexOf(':wait')).toBeLessThan(bat.indexOf(':swap'));
+  });
+
+  it('moves the old exe aside and copies the new one into place', () => {
+    expect(bat).toContain('move /y "%target%" "%backup%"');
+    expect(bat).toContain('copy /y "%staged%" "%target%"');
+  });
+
+  it('rolls back and relaunches the old exe on failure', () => {
+    expect(bat).toContain(':fail');
+    expect(bat).toContain('move /y "%backup%" "%target%"');
+    expect(bat.match(/start "" "%target%"/g)).toHaveLength(2);
+  });
+
+  it('doubles embedded quotes so they cannot break out of the bat quoting', () => {
+    const tricky = buildSwapBat({
+      pid: 1,
+      target: 'C:\\dir "x"\\DevBar.exe',
+      staged: 'C:\\z.exe',
+    });
+    expect(tricky).toContain('set "target="C:\\dir ""x""\\DevBar.exe""');
+  });
+});
+
+describe('windows update mode + helpers', () => {
+  it('detects the NSIS per-user install location', () => {
+    expect(
+      isInstalledExe(
+        'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+      ),
+    ).toBe(true);
+    expect(
+      windowsUpdateMode(
+        'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+      ),
+    ).toBe('nsis');
+  });
+
+  it('treats Program Files as assisted-only (needs elevation)', () => {
+    expect(windowsUpdateMode('C:\\Program Files\\DevBar\\DevBar.exe')).toBe(
+      'assisted',
+    );
+  });
+
+  it('treats any other folder as a portable install', () => {
+    expect(isInstalledExe('D:\\Tools\\DevBar\\DevBar.exe')).toBe(false);
+    expect(windowsUpdateMode('D:\\Tools\\DevBar\\DevBar.exe')).toBe('portable');
+  });
+});
+
+describe('looksLikeAppImage', () => {
+  it('rejects files shorter than the magic window', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-img-'));
+    const file = path.join(dir, 'x.AppImage');
+    fs.writeFileSync(file, Buffer.from('short'));
+    expect(looksLikeAppImage(file)).toBe(false);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('accepts the AppImage magic word at offset 8', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-img-'));
+    const file = path.join(dir, 'x.AppImage');
+    const buf = Buffer.alloc(64);
+    buf.write('AppImage', 8, 'latin1');
+    fs.writeFileSync(file, buf);
+    expect(looksLikeAppImage(file)).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -1,6 +1,11 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import {
+  execFile,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from 'node:child_process';
 import readline from 'node:readline';
 import { EventEmitter } from 'node:events';
+import { isWin, userShell } from './platform.js';
 import { expandTilde, enhancedEnv } from './path-helper.js';
 import { buildCmdline } from './parse-command.js';
 import { parseProcessId } from './compound-id.js';
@@ -53,6 +58,39 @@ function matchesPattern(pattern: string, cleaned: string): boolean {
   return regex ? regex.test(cleaned) : cleaned.includes(pattern);
 }
 
+/**
+ * The interpreter that runs a user command, per platform.
+ *
+ * POSIX uses the user's login shell in interactive-login mode (`-ic`) so the
+ * same PATH / aliases / rc files their terminal sees apply. Windows has no
+ * comparable login shell, so commands run through `cmd.exe /d /s /c`; the
+ * environment has already been enriched by `enhancedEnv`.
+ */
+export function spawnShellForPlatform(): {
+  file: string;
+  baseArgs: readonly string[];
+} {
+  if (isWin)
+    return {
+      file: process.env.ComSpec || 'cmd.exe',
+      baseArgs: ['/d', '/s', '/c'],
+    };
+  return { file: userShell(), baseArgs: ['-ic'] };
+}
+
+/** Compose the full argv for running `cmdline` under the platform shell. */
+export function buildSpawnArgs(cmdline: string): {
+  file: string;
+  args: string[];
+  description: string;
+} {
+  const { file, baseArgs } = spawnShellForPlatform();
+  const description = isWin
+    ? `${file} /d /s /c "${cmdline}"`
+    : `${file} -ic '${cmdline}'`;
+  return { file, args: [...baseArgs, cmdline], description };
+}
+
 interface ConfigStoreLike {
   getGroup(id: string): Group | null;
   listGroups(): Group[];
@@ -101,6 +139,10 @@ function defaultState(id: string): InternalState {
 export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
   private readonly states = new Map<string, InternalState>();
   private readonly logs = new Map<string, LogEntry[]>();
+  // pids we asked to die. On Windows a killed process exits with a plain
+  // code (no signal), so this is how the exit handler still knows the stop
+  // was ours rather than a real crash.
+  private readonly killRequested = new Set<number>();
   constructor(private readonly configStore: ConfigStoreLike) {
     super();
   }
@@ -291,7 +333,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
         expandTilde(('cwd' in target ? target.cwd : null) || group.path) ||
         process.cwd(),
       cmdline = buildCmdline(target.command, target.args),
-      shell = process.env.SHELL || '/bin/zsh';
+      spawnSpec = buildSpawnArgs(cmdline);
     let spawnEnv: NodeJS.ProcessEnv;
     if (kind === 'command')
       spawnEnv = enhancedEnv({
@@ -307,11 +349,16 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     }
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(shell, ['-ic', cmdline], {
+      // POSIX: `detached` gives the service its own process group so a stop
+      // can kill the whole tree at once. Windows: detached would pop a
+      // console per service, so we stay attached and hide the window
+      // instead; killing the tree goes through taskkill /T.
+      child = spawn(spawnSpec.file, spawnSpec.args, {
         cwd,
         env: spawnEnv,
         shell: false,
-        detached: true,
+        detached: !isWin,
+        ...(isWin ? { windowsHide: true } : {}),
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -337,7 +384,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       ts: Date.now(),
       stream: 'sys',
       level: null,
-      line: `▶ start: ${shell} -ic '${cmdline}'  (cwd=${cwd})`,
+      line: `▶ start: ${spawnSpec.description}  (cwd=${cwd})`,
     });
     this.emit('change', this.getState(processId));
     const handleLine =
@@ -403,7 +450,10 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     child.on('exit', (code, signal) => {
       const state = this.states.get(processId);
       if (!state || state.child !== child) return;
-      const killed = signal === 'SIGTERM' || signal === 'SIGKILL';
+      const killed =
+        signal === 'SIGTERM' ||
+        signal === 'SIGKILL' ||
+        (child.pid != null && this.killRequested.delete(child.pid));
       this.pushLog(processId, {
         ts: Date.now(),
         stream: 'sys',
@@ -452,6 +502,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       return { ok: true };
     }
     const child = state.child;
+    if (child.pid != null) this.killRequested.add(child.pid);
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         killGroup(child, 'SIGKILL');
@@ -478,6 +529,22 @@ function killGroup(
   signal: NodeJS.Signals,
 ): Error | null {
   if (!child?.pid) return null;
+  if (isWin) {
+    // No process groups on Windows: taskkill /T walks the whole tree
+    // (cmd.exe + whatever the user command spawned). /F because there is no
+    // portable graceful equivalent that reaches grandchildren.
+    try {
+      execFile(
+        'taskkill',
+        ['/pid', String(child.pid), '/T', '/F'],
+        { windowsHide: true },
+        () => {},
+      );
+      return null;
+    } catch (error: unknown) {
+      return error instanceof Error ? error : new Error(String(error));
+    }
+  }
   try {
     process.kill(-child.pid, signal);
     return null;

@@ -57,7 +57,39 @@ const schema = {
   _services_pre_v3_backup: { type: 'array', default: [] },
 } as const;
 
-const store = new Store<StoreState>({ name: 'config', schema });
+/**
+ * Pin the store to the "DevBar" folder for packaged builds. Without this, the
+ * directory comes from `app.getPath('userData')` at import time — which on
+ * Windows/Linux still carries the package.json name ("devbar") because the
+ * app.name pinning in main.ts runs after this module loads. The explicit
+ * path matches what main.ts later resolves for logs/updates, so config, logs
+ * and update staging all live under one per-OS "DevBar" folder. Dev mode
+ * keeps Electron's default so existing dev stores are not orphaned.
+ */
+function packagedStoreDir(): string | undefined {
+  if (!app.isPackaged) return undefined;
+  const home = app.getPath('home');
+  if (process.platform === 'darwin')
+    return path.join(home, 'Library', 'Application Support', 'DevBar');
+  if (process.platform === 'win32')
+    return path.join(
+      process.env.APPDATA || path.join(home, 'AppData', 'Roaming'),
+      'DevBar',
+    );
+  return path.join(
+    process.env.XDG_CONFIG_HOME || path.join(home, '.config'),
+    'DevBar',
+  );
+}
+
+const storeOptions: {
+  name: string;
+  schema: typeof schema;
+  cwd?: string;
+} = { name: 'config', schema };
+const storeDir = packagedStoreDir();
+if (storeDir !== undefined) storeOptions.cwd = storeDir;
+const store = new Store<StoreState>(storeOptions);
 
 function runMigration(): void {
   const result = migrateServicesToGroups(store.store);

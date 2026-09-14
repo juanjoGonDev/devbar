@@ -123,6 +123,16 @@ jobs:
             "DevBar-${current_version}-macos-arm64.zip"
             "DevBar-${current_version}-macos-x64.dmg"
             "DevBar-${current_version}-macos-x64.zip"
+            "DevBar-${current_version}-win-x64-setup.exe"
+            "DevBar-${current_version}-win-x64-portable.exe"
+            "DevBar-${current_version}-win-arm64-setup.exe"
+            "DevBar-${current_version}-win-arm64-portable.exe"
+            "DevBar-${current_version}-linux-x64.AppImage"
+            "DevBar-${current_version}-linux-x64.deb"
+            "DevBar-${current_version}-linux-arm64.AppImage"
+            "DevBar-${current_version}-linux-arm64.deb"
+            "DevBar-${current_version}-linux-armv7.AppImage"
+            "DevBar-${current_version}-linux-armv7.deb"
             "SHA256SUMS.txt"
           )
 
@@ -190,15 +200,15 @@ jobs:
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
           echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
 
-  release:
-    name: Build and publish macOS installers
+  build-macos:
+    name: Build & verify macOS installers
     needs: detect
     if: needs.detect.outputs.publish == 'true'
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 40
     environment: admin
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -219,7 +229,9 @@ jobs:
       - name: Cache Electron downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/Library/Caches/electron
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
           key: macos-installer-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install
@@ -227,6 +239,217 @@ jobs:
 
       - name: Build and verify Intel and Apple Silicon installers
         run: pnpm run release:mac
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-macos-${{ needs.detect.outputs.version }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            dist/release/DevBar-${{ needs.detect.outputs.version }}-macos-arm64.dmg
+            dist/release/DevBar-${{ needs.detect.outputs.version }}-macos-arm64.zip
+            dist/release/DevBar-${{ needs.detect.outputs.version }}-macos-x64.dmg
+            dist/release/DevBar-${{ needs.detect.outputs.version }}-macos-x64.zip
+
+  build-windows:
+    name: Build & verify Windows installers
+    needs: detect
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    environment: admin
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.detect.outputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cache Electron downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            %LOCALAPPDATA%\electron\Cache
+            %LOCALAPPDATA%\electron-builder\Cache
+          key: windows-installer-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify NSIS + portable (x64, arm64)
+        shell: bash
+        run: pnpm run dist:win && pnpm run verify:win
+
+      - name: Launch smoke — NSIS install + portable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ needs.detect.outputs.version }}'
+          Start-Process -Wait -FilePath ".\dist\electron-builder\DevBar-$version-win-x64-setup.exe" -ArgumentList '/S'
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe")) {
+            Write-Error "NSIS install did not produce the expected exe"
+            exit 1
+          }
+          # The oneClick installer launches the app at the end of the install;
+          # stop that instance so the smoke launch owns the single-instance lock.
+          Get-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force
+          & "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe" --devbar-smoke *>&1 |
+            Tee-Object -FilePath smoke-win-installed.log
+          if (-not (Select-String -Path smoke-win-installed.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {
+            Write-Error 'installed-app smoke failed'
+            exit 1
+          }
+          & ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |
+            Tee-Object -FilePath smoke-win-portable.log
+          if (-not (Select-String -Path smoke-win-portable.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {
+            Write-Error 'portable-app smoke failed'
+            exit 1
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows-${{ needs.detect.outputs.version }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-win-x64-setup.exe
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-win-x64-portable.exe
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-win-arm64-setup.exe
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-win-arm64-portable.exe
+
+  build-linux:
+    name: Build & verify Linux packages (incl. Raspberry Pi)
+    needs: detect
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: admin
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.detect.outputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cache Electron downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: linux-installer-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify AppImage + deb (x64, arm64, armv7)
+        run: pnpm run dist:linux && pnpm run verify:linux
+
+      - name: Launch smoke — AppImage + deb (x64, host arch)
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.detect.outputs.version }}"
+          # AppImage runs straight from the file; xvfb provides the display.
+          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-appimage.log
+          # .deb: full install + launch of the installed binary.
+          sudo dpkg -i "dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
+          xvfb-run -a /usr/bin/devbar --devbar-smoke 2>&1 | tee smoke-linux-deb.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-deb.log
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-linux-${{ needs.detect.outputs.version }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-x64.AppImage
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-x64.deb
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-arm64.AppImage
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-arm64.deb
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-armv7.AppImage
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-armv7.deb
+
+  publish:
+    name: Publish release
+    needs: ['detect', 'build-macos', 'build-windows', 'build-linux']
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: admin
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.detect.outputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Install and build (for the release tooling)
+        run: pnpm install --frozen-lockfile && pnpm run build
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-macos-${{ needs.detect.outputs.version }}
+          path: dist/release
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-windows-${{ needs.detect.outputs.version }}
+          path: dist/release
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-linux-${{ needs.detect.outputs.version }}
+          path: dist/release
+
+      - name: Write full SHA256SUMS manifest and verify the complete set
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          set -euo pipefail
+          node build/scripts/release-manifest.js dist/release "$VERSION"
+          node build/scripts/verify-release-artifacts.js dist/release "$VERSION"
 
       - name: Create immutable release tag
         if: needs.detect.outputs.tag_exists != 'true'
@@ -265,6 +488,16 @@ jobs:
               "dist/release/DevBar-$VERSION-macos-arm64.zip" \
               "dist/release/DevBar-$VERSION-macos-x64.dmg" \
               "dist/release/DevBar-$VERSION-macos-x64.zip" \
+              "dist/release/DevBar-$VERSION-win-x64-setup.exe" \
+              "dist/release/DevBar-$VERSION-win-x64-portable.exe" \
+              "dist/release/DevBar-$VERSION-win-arm64-setup.exe" \
+              "dist/release/DevBar-$VERSION-win-arm64-portable.exe" \
+              "dist/release/DevBar-$VERSION-linux-x64.AppImage" \
+              "dist/release/DevBar-$VERSION-linux-x64.deb" \
+              "dist/release/DevBar-$VERSION-linux-arm64.AppImage" \
+              "dist/release/DevBar-$VERSION-linux-arm64.deb" \
+              "dist/release/DevBar-$VERSION-linux-armv7.AppImage" \
+              "dist/release/DevBar-$VERSION-linux-armv7.deb" \
               "dist/release/SHA256SUMS.txt"
           fi
 
@@ -286,10 +519,18 @@ jobs:
             "DevBar-${VERSION}-macos-arm64.zip"
             "DevBar-${VERSION}-macos-x64.dmg"
             "DevBar-${VERSION}-macos-x64.zip"
+            "DevBar-${VERSION}-win-x64-setup.exe"
+            "DevBar-${VERSION}-win-x64-portable.exe"
+            "DevBar-${VERSION}-win-arm64-setup.exe"
+            "DevBar-${VERSION}-win-arm64-portable.exe"
+            "DevBar-${VERSION}-linux-x64.AppImage"
+            "DevBar-${VERSION}-linux-x64.deb"
+            "DevBar-${VERSION}-linux-arm64.AppImage"
+            "DevBar-${VERSION}-linux-arm64.deb"
+            "DevBar-${VERSION}-linux-armv7.AppImage"
+            "DevBar-${VERSION}-linux-armv7.deb"
             "SHA256SUMS.txt"
           )
-          # `while IFS= read -r` loop, not `mapfile`: this job runs on macOS, whose
-          # default bash 3.2 has no mapfile/readarray builtin (exit 127).
           actual_assets=()
           while IFS= read -r asset; do actual_assets+=("$asset"); done \
             < <(jq -r '.assets[].name' <<<"$release_json" | sort)

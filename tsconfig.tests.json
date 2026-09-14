@@ -6,7 +6,10 @@
     "types": ["node", "vitest/globals"],
     "noEmit": true,
     "noUncheckedIndexedAccess": false,
-    "exactOptionalPropertyTypes": false
+    "exactOptionalPropertyTypes": false,
+    "paths": {
+      "electron-builder": ["./scripts/electron-builder.d.ts"]
+    }
   },
   "include": [
     "tests/**/*.ts",

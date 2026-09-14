@@ -25,6 +25,7 @@ const RELEASE_EXACT_PATHS = new Set([
   'scripts/build.sh',
   'scripts/package-electron.ts',
   'scripts/package-macos-app.sh',
+  'scripts/package-win-linux.ts',
   'tsconfig.node.json',
   'tsconfig.renderer.json',
 ]);

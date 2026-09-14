@@ -5,6 +5,11 @@ import { installTooltips } from './tooltip.js';
 const params = new URLSearchParams(window.location.search);
 const groupId = params.get('groupId');
 const commandId = params.get('commandId');
+// The fake traffic lights imitate macOS window chrome; other platforms draw
+// a real titlebar, so they are hidden there (main passes its platform label).
+if (params.get('platform') && params.get('platform') !== 'macos') {
+  document.body.classList.add('non-mac');
+}
 let currentCommand: {
   id: string;
   name: string;

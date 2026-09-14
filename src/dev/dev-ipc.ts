@@ -70,18 +70,26 @@ export function nextMinor(version: string): string {
   return `${major}.${minor + 1}.0`;
 }
 
+/** A simulated update with no downloadable artifact (banner/chip testing). */
+function simulatedUpdate(version: string): AvailableUpdate {
+  return {
+    version,
+    url: `https://github.com/juanjoGonDev/devbar/releases/tag/v${version}`,
+    dmgUrl: null,
+    zipUrl: null,
+    setupUrl: null,
+    appImageUrl: null,
+    debUrl: null,
+  };
+}
+
 export function registerDevIpc(hooks: DevHooks): void {
   ipcMain.handle(
     'dev:simulateUpdate',
     (_e: IpcMainInvokeEvent, payload: unknown) => {
       const raw = asRecord(payload);
       const version = asString(raw.version, nextMinor(hooks.currentVersion()));
-      hooks.setSimulatedUpdate({
-        version,
-        url: `https://github.com/juanjoGonDev/devbar/releases/tag/v${version}`,
-        dmgUrl: null,
-        zipUrl: null,
-      });
+      hooks.setSimulatedUpdate(simulatedUpdate(version));
       return { ok: true, version };
     },
   );
@@ -107,12 +115,7 @@ export function registerDevIpc(hooks: DevHooks): void {
         workDir: hooks.updatesDir(),
         version,
       });
-      hooks.setSimulatedUpdate({
-        version,
-        url: `https://github.com/juanjoGonDev/devbar/releases/tag/v${version}`,
-        dmgUrl: null,
-        zipUrl: null,
-      });
+      hooks.setSimulatedUpdate(simulatedUpdate(version));
       await hooks.stageLocalUpdate(zipPath, version);
       return { ok: true, version };
     } catch (error: unknown) {
