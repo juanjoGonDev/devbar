@@ -254,9 +254,16 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
-          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
+          # AppImage: --appimage-extract-and-run — hosted runners have no
+          # /dev/fuse, so mounting the image would fail; extract-and-run
+          # executes the same payload (what the smoke validates). xvfb
+          # provides the display.
+          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --appimage-extract-and-run --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
           grep -q DEVBAR_SMOKE_OK smoke-linux-appimage.log
-          sudo dpkg -i "dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
+          # .deb: apt resolves package dependencies (the runner image lacks
+          # some Electron libraries; plain dpkg -i would fail); then launch
+          # the installed binary.
+          sudo apt-get install -y "dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
           xvfb-run -a /usr/bin/devbar --devbar-smoke 2>&1 | tee smoke-linux-deb.log
           grep -q DEVBAR_SMOKE_OK smoke-linux-deb.log
 
