@@ -26,6 +26,7 @@ import { serializeConfig } from './config-io.js';
 
 const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   autostart: false,
+  theme: 'auto',
   silenceWarnings: false,
   silenceErrors: false,
   maxLogLines: DEFAULT_MAX_LOG_LINES,
@@ -390,6 +391,8 @@ export function saveGlobalSettings(
 ): GlobalSettings {
   const next = { ...getGlobalSettings(), ...patch };
   next.autostart = Boolean(next.autostart);
+  next.theme =
+    next.theme === 'light' || next.theme === 'dark' ? next.theme : 'auto';
   next.silenceWarnings = Boolean(next.silenceWarnings);
   next.silenceErrors = Boolean(next.silenceErrors);
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);

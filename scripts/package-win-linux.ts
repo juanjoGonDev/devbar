@@ -1,7 +1,22 @@
-import { build } from 'electron-builder';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import packageJson from '../package.json' with { type: 'json' };
+
+// Dynamic import with a friendly failure: after a `git pull` that adds
+// dependencies, node_modules can be out of sync (pnpm warns about it) and a
+// static import would die with a cryptic ERR_MODULE_NOT_FOUND.
+let builder: typeof import('electron-builder');
+try {
+  builder = await import('electron-builder');
+} catch {
+  console.error(
+    'electron-builder no está disponible en node_modules.\n' +
+      'Tu node_modules está desincronizado con el lockfile (p. ej. tras un git pull que añade dependencias).\n' +
+      'Ejecuta: pnpm install\n' +
+      '(y usa el pnpm fijado en package.json: corepack enable)',
+  );
+  process.exit(1);
+}
 
 /**
  * electron-builder orchestration for the NON-macOS targets. macOS keeps its
@@ -57,13 +72,18 @@ function baseConfig(): Record<string, unknown> {
 async function buildWindows(): Promise<void> {
   const archs = dirOnly ? [hostArch()] : (['x64', 'arm64'] as const);
   for (const arch of archs) {
-    await build({
+    await builder.build({
+      // Force the platform: an empty list keeps the per-arch targets from
+      // config.win.target, but without the flag electron-builder would build
+      // for the HOST, so a `win` request from a Linux/macOS host would
+      // silently produce a Linux bundle.
+      win: [],
       config: {
         ...baseConfig(),
         win: {
           icon: path.join(ROOT, 'assets', 'icon.ico'),
           target: dirOnly
-            ? [{ target: 'dir' }]
+            ? [{ target: 'dir', arch: [hostArch()] }]
             : [
                 { target: 'nsis', arch: [arch] },
                 { target: 'portable', arch: [arch] },
@@ -98,7 +118,9 @@ async function buildLinux(): Promise<void> {
         ['armv7l', 'armv7'],
       ];
   for (const [builderArch, contractArch] of pairs) {
-    await build({
+    await builder.build({
+      // Force the platform — see buildWindows.
+      linux: [],
       config: {
         ...baseConfig(),
         linux: {
@@ -113,7 +135,7 @@ async function buildLinux(): Promise<void> {
           description:
             'Start and stop dev services, switch git branches per group, run actions and watch logs from the system tray.',
           target: dirOnly
-            ? [{ target: 'dir' }]
+            ? [{ target: 'dir', arch: [hostArch()] }]
             : [
                 { target: 'AppImage', arch: [builderArch] },
                 { target: 'deb', arch: [builderArch] },

@@ -37,6 +37,19 @@ export interface BuildConfiguration {
 
 export interface BuildOptions {
   config?: BuildConfiguration | string;
+  /**
+   * CLI-style platform flags (mirrors app-builder-lib's PackagerOptions:
+   * `win?: Array<string>`, `linux?: Array<string>`, `mac?: Array<string>`).
+   *
+   * An EMPTY array is meaningful: it forces the platform while leaving the
+   * per-arch targets defined in `config.win.target` / `config.linux.target`
+   * in charge. With NO flag at all, electron-builder builds for the HOST
+   * platform — so cross-host requests (`win` from a Linux box) would
+   * silently produce the host's bundle.
+   */
+  win?: string[];
+  linux?: string[];
+  mac?: string[];
 }
 
 export function build(rawOptions?: BuildOptions): Promise<string[]>;

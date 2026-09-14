@@ -31,6 +31,8 @@ import type {
   SourcedLogEntry,
 } from '../src/ipc-contract.js';
 import { installTooltips } from './tooltip.js';
+import { initTheme } from './theme.js';
+initTheme();
 
 type AnsiStyle = {
   fg: string | null;

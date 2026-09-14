@@ -11,10 +11,13 @@ import type {
   PreStep,
   Schedule,
   ScheduleRule,
+  ThemePreference,
 } from '../src/domain-types.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 import type { IconBatteryItem, UpdateStatus } from '../src/ipc-contract.js';
 import { installTooltips } from './tooltip.js';
+import { initTheme } from './theme.js';
+initTheme();
 
 type EditableItem = Command | Action | PreScript;
 type SubKind = 'command' | 'action' | 'prescript';
@@ -947,7 +950,7 @@ function buildPreStepsSection(group: Group, parent: HTMLElement): void {
   // When ON, pre-scripts auto-run ONLY when DevBar was launched by macOS
   // at login (system boot), not on every manual app restart. Default OFF.
   const autoRunLbl = buildToggleLabel(
-    'Ejecutar automáticamente al arrancar el Mac',
+    'Ejecutar automáticamente al arrancar el sistema',
     !!group.preScriptsAutoRun,
     'detail-prestep-autorun',
   );
@@ -964,7 +967,7 @@ function buildPreStepsSection(group: Group, parent: HTMLElement): void {
   autoRunHint.style.cssText =
     'display:block; margin:2px 0 8px 42px; font-size:10px;';
   autoRunHint.textContent =
-    'Solo dispara cuando DevBar abre como Login Item del sistema; no en relanzados manuales.';
+    'Solo dispara cuando DevBar abre con el arranque del sistema; no en relanzados manuales.';
   section.appendChild(autoRunLbl);
   section.appendChild(autoRunHint);
 
@@ -1947,6 +1950,8 @@ addGroupBtn.addEventListener('click', async () => {
 async function loadSettings() {
   const s = await window.api.getSettings();
   setAutostart.checked = !!s.autostart;
+  selectedTheme = s.theme ?? 'auto';
+  markThemeOption();
   setSilenceWarnings.checked = !!s.silenceWarnings;
   setSilenceErrors.checked = !!s.silenceErrors;
   if (setMaxLogLines)
@@ -1981,6 +1986,7 @@ async function persistSettings() {
       : Number(maxLogLinesRaw) || DEFAULT_MAX_LOG_LINES;
   await window.api.saveSettings({
     autostart: setAutostart.checked,
+    theme: selectedTheme,
     silenceWarnings: setSilenceWarnings.checked,
     silenceErrors: setSilenceErrors.checked,
     maxLogLines,
@@ -1988,6 +1994,24 @@ async function persistSettings() {
   });
   showToast('Ajustes guardados', 'ok');
 }
+
+// Theme picker: segmented control, persists on click (same as the other
+// instant-save controls). initTheme() re-applies on every broadcast, so the
+// change propagates to all open windows (and to this one).
+let selectedTheme: ThemePreference = 'auto';
+const themeOpts = Array.from(
+  document.querySelectorAll<HTMLButtonElement>('.theme-opt'),
+);
+function markThemeOption(): void {
+  for (const btn of themeOpts)
+    btn.classList.toggle('is-on', btn.dataset.themeValue === selectedTheme);
+}
+for (const btn of themeOpts)
+  btn.addEventListener('click', () => {
+    selectedTheme = (btn.dataset.themeValue ?? 'auto') as ThemePreference;
+    markThemeOption();
+    void persistSettings();
+  });
 
 setAutostart.addEventListener('change', persistSettings);
 setSilenceWarnings.addEventListener('change', persistSettings);

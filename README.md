@@ -63,9 +63,16 @@ pnpm start
 
 > Requires pnpm ≥ 10.16 and Node ≥ 22 (enforced via `engine-strict`)
 > on macOS, Windows and Linux — no bash needed (the dev build runs in Node).
+> Use the pnpm pinned in `package.json` (`pnpm@10.32.1`), e.g. via corepack
+> (`corepack enable`) — other pnpm versions can flag the lockfile as out of
+> sync. After a `git pull` that changes dependencies, run `pnpm install`
+> again before building.
 > Electron 42 no longer ships a postinstall, so `pnpm start` (dev mode)
 > needs `fetch-electron` once. Packaging (`pnpm run pack`) downloads its
 > own Electron and does not need this step.
+
+The UI theme follows your OS by default; you can force light or dark under
+**Configuración → General → Tema** (auto / claro / oscuro).
 
 A status icon (the same one shown above) appears on the right side of the menu bar:
 

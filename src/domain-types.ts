@@ -110,8 +110,12 @@ export interface LegacyService {
  */
 export const DEFAULT_MAX_LOG_LINES = 10_000;
 
+export type ThemePreference = 'auto' | 'light' | 'dark';
+
 export interface GlobalSettings {
   autostart: boolean;
+  /** UI theme: follow the OS (auto) or force light/dark. */
+  theme: ThemePreference;
   silenceWarnings: boolean;
   silenceErrors: boolean;
   maxLogLines: number;

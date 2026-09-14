@@ -91,12 +91,43 @@
           <section class="settings-card">
             <label class="toggle">
               <input type="checkbox" id="set-autostart" />
-              <span>Iniciar al arrancar el Mac</span>
+              <span>Iniciar al arrancar el sistema</span>
               <small
-                >Registra DevBar como Login Item. Solo aplica al .app
-                empaquetado.</small
+                >Registra DevBar en el autostart del sistema (Login Item en
+                macOS, Run en Windows, autostart en Linux). Solo aplica a la app
+                empaquetada/instalada.</small
               >
             </label>
+          </section>
+          <section class="settings-card">
+            <h2>Tema</h2>
+            <div class="theme-picker" id="set-theme">
+              <button
+                type="button"
+                class="small-btn theme-opt"
+                data-theme-value="auto"
+              >
+                Automático
+              </button>
+              <button
+                type="button"
+                class="small-btn theme-opt"
+                data-theme-value="light"
+              >
+                Claro
+              </button>
+              <button
+                type="button"
+                class="small-btn theme-opt"
+                data-theme-value="dark"
+              >
+                Oscuro
+              </button>
+            </div>
+            <small
+              >Automático sigue la apariencia del sistema. Claro y Oscuro
+              fuerzan la apariencia de todas las ventanas.</small
+            >
           </section>
           <section class="settings-card">
             <h2>Filtros globales</h2>

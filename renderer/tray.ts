@@ -16,6 +16,8 @@ import type {
 import type { Command, Action } from '../src/domain-types.js';
 import { byId } from './dom.js';
 import { installTooltips } from './tooltip.js';
+import { initTheme } from './theme.js';
+initTheme();
 const groupsEl = byId('groups', HTMLElement);
 const toastEl = byId('toast', HTMLElement);
 

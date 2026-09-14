@@ -15,6 +15,7 @@ import {
   shell,
   powerMonitor,
   nativeTheme,
+  nativeImage,
   Tray,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
@@ -186,6 +187,15 @@ function ipcGlobalSettingsPatch(
         throw new TypeError(`Invalid IPC ${field}`);
       patch[field] = raw[field];
     }
+  }
+  if (raw['theme'] !== undefined) {
+    if (
+      raw['theme'] !== 'auto' &&
+      raw['theme'] !== 'light' &&
+      raw['theme'] !== 'dark'
+    )
+      throw new TypeError('Invalid IPC theme');
+    patch['theme'] = raw['theme'];
   }
   for (const field of ['maxLogLines'] as const) {
     if (raw[field] !== undefined) patch[field] = ipcNumber(raw[field], field);
@@ -1263,13 +1273,14 @@ function buildLogsWindow({
     title,
     // hiddenInset + traffic lights are macOS chrome; elsewhere the native
     // titlebar is the least-surprising option.
+    icon: appWindowIcon(),
     ...(isMac
       ? {
           titleBarStyle: 'hiddenInset' as const,
           trafficLightPosition: { x: 12, y: 14 },
-          backgroundColor: '#1e1e1e',
+          backgroundColor: themeWindowBackground(),
         }
-      : { backgroundColor: '#1e1e1e' }),
+      : { backgroundColor: themeWindowBackground() }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1517,6 +1528,7 @@ function ensureConfigWindow({ goto }: { goto?: string } = {}): void {
     minWidth: 460,
     minHeight: 380,
     title: 'DevBar — Configuración',
+    icon: appWindowIcon(),
     // macOS: frameless-ish hiddenInset with vibrancy. Elsewhere: a normal
     // titled window (vibrancy/traffic-light positions don't exist).
     ...(isMac
@@ -1527,7 +1539,7 @@ function ensureConfigWindow({ goto }: { goto?: string } = {}): void {
           visualEffectState: 'active' as const,
           backgroundColor: '#00000000',
         }
-      : { backgroundColor: '#1e1e1e' }),
+      : { backgroundColor: themeWindowBackground() }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -2412,6 +2424,7 @@ function registerIpc() {
         ipcGlobalSettingsPatch(rawPatch),
       );
       applyAutostart(next.autostart);
+      if (next.theme !== undefined) refreshWindowBackgrounds();
       broadcast();
       return next;
     },
@@ -2960,6 +2973,48 @@ function startScheduleLoop() {
 
 // ─────────────────────── App lifecycle ───────────────────────────────
 
+/**
+ * Window icon for dev mode: `electron .` runs on the Electron shell, so the
+ * taskbar/titlebar would otherwise show Electron's default icon. Setting it
+ * explicitly gives the app its own identity in dev (packaged Windows builds
+ * already pick it up from the .exe icon — same design, so it's consistent).
+ */
+function appWindowIcon(): Electron.NativeImage {
+  try {
+    const name = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+    const p = path.join(__dirname, '..', 'assets', name);
+    if (!fs.existsSync(p)) return nativeImage.createEmpty();
+    const image = nativeImage.createFromPath(p);
+    return image.isEmpty() ? nativeImage.createEmpty() : image;
+  } catch {
+    return nativeImage.createEmpty();
+  }
+}
+
+/** Resolved theme (user preference, falling back to the OS in auto mode). */
+function resolvedThemeIsDark(): boolean {
+  const t = configStore.getGlobalSettings().theme;
+  if (t === 'light') return false;
+  if (t === 'dark') return true;
+  return nativeTheme.shouldUseDarkColors;
+}
+
+function themeWindowBackground(): string {
+  return resolvedThemeIsDark() ? '#1e1e1e' : '#f5f5f7';
+}
+
+// Apply the theme-appropriate opaque background to every visible app window
+// (macOS vibrancy windows keep their translucent background). Called after a
+// theme change so open windows follow the new setting.
+function refreshWindowBackgrounds(): void {
+  const bg = themeWindowBackground();
+  const menuBarWindow = (mb as { browserWindow?: BrowserWindow } | undefined)
+    ?.browserWindow;
+  for (const win of [configWindow, menuBarWindow, ...logsWindows.values()]) {
+    if (win && !win.isDestroyed()) win.setBackgroundColor(bg);
+  }
+}
+
 // Single-instance lock. DevBar is a menubar app backed by one electron-store
 // file; a second launch (e.g. login item + manual open) would spawn a duelling
 // tray icon writing the same store. The second instance focuses config on the
@@ -3071,6 +3126,8 @@ app.whenReady().then(() => {
       height: 500,
       transparent: false,
       resizable: false,
+      icon: appWindowIcon(),
+      backgroundColor: themeWindowBackground(),
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         contextIsolation: true,
