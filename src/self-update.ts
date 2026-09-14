@@ -50,7 +50,6 @@ export {
   buildInstallerBat,
   isInstalledExe,
   isPortableContainer,
-  portableContainerPath,
 } from './self-update-windows.js';
 
 type StagedKind = 'macBundle' | 'appImage' | 'winInstaller' | 'winPortable';
