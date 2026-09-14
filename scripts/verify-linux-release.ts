@@ -1,11 +1,28 @@
 import { execFileSync } from 'node:child_process';
-import { openSync, readSync, closeSync } from 'node:fs';
+import { existsSync, openSync, readSync, closeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import packageJson from '../package.json' with { type: 'json' };
 import { verifyReleaseArtifactSet } from './release-artifacts.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+/**
+ * Repo root, independent of how this script is invoked: from source
+ * (scripts/) or compiled (build/scripts/). The root is the only directory
+ * level that carries pnpm-lock.yaml (the tsc-emitted build/package.json
+ * would be a false anchor).
+ */
+function findRepoRoot(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    if (existsSync(path.join(dir, 'pnpm-lock.yaml'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) throw new Error('repository root not found');
+    dir = parent;
+  }
+}
+
+const ROOT = findRepoRoot();
+
 const outputDirectory =
   process.argv[2] || path.join(ROOT, 'dist', 'electron-builder');
 const version = process.argv[3] || packageJson.version;

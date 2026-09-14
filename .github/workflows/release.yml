@@ -115,6 +115,10 @@ jobs:
             exit 1
           fi
 
+          if [[ "$release_sha" != "$GITHUB_SHA" ]]; then
+            echo "::warning title=Release commit is not HEAD::The version-introducing commit $release_sha differs from the push HEAD $GITHUB_SHA; the build uses HEAD."
+          fi
+
           release_tag="v${current_version}"
           expected_assets=(
             "DevBar-${current_version}-macos-arm64.dmg"
@@ -207,11 +211,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout exact release commit
+      # Plain default-branch checkout (the event sha — an immutable ref).
+      # CodeQL treats any checkout whose ref comes from another job's
+      # outputs as untrusted code in this cache-writable workflow; in the
+      # normal flow the version-introducing commit IS the push HEAD, and
+      # detect warns when they differ.
+      - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.detect.outputs.release_sha }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up pnpm
@@ -258,11 +265,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout exact release commit
+      # Plain default-branch checkout (the event sha — an immutable ref).
+      # CodeQL treats any checkout whose ref comes from another job's
+      # outputs as untrusted code in this cache-writable workflow; in the
+      # normal flow the version-introducing commit IS the push HEAD, and
+      # detect warns when they differ.
+      - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.detect.outputs.release_sha }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up pnpm
@@ -336,11 +346,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout exact release commit
+      # Plain default-branch checkout (the event sha — an immutable ref).
+      # CodeQL treats any checkout whose ref comes from another job's
+      # outputs as untrusted code in this cache-writable workflow; in the
+      # normal flow the version-introducing commit IS the push HEAD, and
+      # detect warns when they differ.
+      - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.detect.outputs.release_sha }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up pnpm
@@ -401,11 +414,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout exact release commit
+      # Plain default-branch checkout (the event sha — an immutable ref).
+      # CodeQL treats any checkout whose ref comes from another job's
+      # outputs as untrusted code in this cache-writable workflow; in the
+      # normal flow the version-introducing commit IS the push HEAD, and
+      # detect warns when they differ.
+      - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.detect.outputs.release_sha }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js
