@@ -1,5 +1,6 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 /**
@@ -11,10 +12,12 @@ import path from 'node:path';
  *   exe/DLLs are locked, so no in-process swap is possible — the installer is
  *   the swap.
  * - PORTABLE apps: electron-builder's portable target is a SINGLE self-
- *   extracting .exe the user keeps in any folder. Updating one is a plain
- *   file swap: wait for the process, rename the old exe aside, copy the new
- *   one in, relaunch, roll back on failure — the same shape as the macOS
- *   bundle and Linux AppImage swaps.
+ *   extracting .exe the user keeps in any folder. The running app is the
+ *   PAYLOAD the stub extracted to a temp folder, so an update targets the
+ *   CONTAINER — the stub itself, resolved as the payload's parent process
+ *   (`portableContainerPath`) — and swaps it: wait for the process, rename
+ *   the old exe aside, copy the new one in, relaunch, roll back on failure
+ *   — the same shape as the macOS bundle and Linux AppImage swaps.
  * - Program Files installs update only via the assisted flow: replacing
  *   those files needs elevation, which the app must not silently request.
  */
@@ -39,6 +42,94 @@ function looksLikeWindowsExe(filePath: string): boolean {
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/**
+ * A running NSIS portable app executes the PAYLOAD that the stub (the
+ * portable file the user keeps) extracted into a temp folder, so
+ * `process.execPath` of a portable instance is an ephemeral copy. Swapping
+ * that copy would not survive the next launch: the container — the stub,
+ * i.e. the payload's parent process — is the file an update must replace.
+ *
+ * Safety: this must never point a swap at a wrong file, so the candidate
+ * parent is accepted only when it is a real PE whose name still says
+ * "devbar" (the user may rename the file, the app name stays), living
+ * outside Program Files (an assisted-only, elevation-requiring location).
+ * Any failure returns null and the caller degrades to the payload path —
+ * today's session-scoped behaviour — never another application's file.
+ */
+
+/** Pure gate: is `parentPath` a plausible portable container for `execPath`? */
+export function isPortableContainer(
+  execPath: string,
+  parentPath: string | null,
+): boolean {
+  if (!parentPath) return false;
+  const parent = parentPath.toLowerCase();
+  if (parent === execPath.toLowerCase()) return false;
+  if (!path.win32.basename(parent).includes('devbar')) return false;
+  // The "Program Files" check is two levels up: C:\Program Files\DevBar\...
+  const grandDir = path.win32
+    .basename(path.win32.dirname(path.win32.dirname(parent)))
+    .toLowerCase();
+  return grandDir !== 'program files' && grandDir !== 'program files (x86)';
+}
+
+let portableContainerCache: {
+  execPath: string;
+  container: string | null;
+} | null = null;
+
+/**
+ * The portable file a running portable app was extracted from, or null when
+ * this is not a portable instance (or it cannot be established). Resolved
+ * once per process and cached: the answer is stable for the app's lifetime.
+ */
+export function portableContainerPath(execPath: string): string | null {
+  if (process.platform !== 'win32') return null;
+  if (portableContainerCache?.execPath === execPath)
+    return portableContainerCache.container;
+  const result: string | null = (() => {
+    try {
+      // Only a payload extracted under the temp dir can be a portable
+      // instance; every other case short-circuits without a process query.
+      const tmp = os.tmpdir().toLowerCase();
+      const tmpPrefix = tmp.endsWith('\\') ? tmp : `${tmp}\\`;
+      if (!execPath.toLowerCase().startsWith(tmpPrefix)) return null;
+      const ppid = process.ppid;
+      if (!ppid || ppid <= 1) return null;
+      // wmic is gone from current Windows images; CIM via powershell is
+      // the portable way to ask "which exe is my parent".
+      const out = execFileSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `(Get-CimInstance Win32_Process -Filter "ProcessId=${ppid}" -ErrorAction Stop).ExecutablePath`,
+        ],
+        {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          windowsHide: true,
+          timeout: 10000,
+        },
+      );
+      const parentPath =
+        out
+          .split(/\r?\n/u)
+          .map((line) => line.trim())
+          .find((line) => line.length > 0) ?? null;
+      if (!parentPath || !isPortableContainer(execPath, parentPath))
+        return null;
+      // The gate says "plausible"; only a real PE is a target for a swap.
+      return looksLikeWindowsExe(parentPath) ? parentPath : null;
+    } catch {
+      return null; // parent already gone, query failed — degrade safely
+    }
+  })();
+  portableContainerCache = { execPath, container: result };
+  return result;
 }
 
 export function stageWindowsArtifact({

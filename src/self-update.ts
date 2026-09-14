@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { isLinux, isMac } from './platform.js';
+import { isLinux, isMac, isWin } from './platform.js';
 import {
   bundlePathFromExecutable,
   canInstallInPlace as macCanInstallInPlace,
@@ -16,6 +16,7 @@ import {
 } from './self-update-linux.js';
 import {
   isInstalledExe,
+  portableContainerPath,
   stageWindowsArtifact,
   spawnSwapBat,
   spawnInstallerBat,
@@ -48,6 +49,8 @@ export {
   buildSwapBat,
   buildInstallerBat,
   isInstalledExe,
+  isPortableContainer,
+  portableContainerPath,
 } from './self-update-windows.js';
 
 type StagedKind = 'macBundle' | 'appImage' | 'winInstaller' | 'winPortable';
@@ -58,11 +61,21 @@ type StagedKind = 'macBundle' | 'appImage' | 'winInstaller' | 'winPortable';
  * Reads `process.execPath` / `process.defaultApp` (the standard Electron
  * unpackaged detection) rather than `app`, so this module stays testable
  * without the electron binary.
+ *
+ * Windows portable twist: a running portable app executes the payload the
+ * NSIS stub extracted into a temp folder, so `process.execPath` is an
+ * ephemeral copy, not the file the user keeps. `portableContainerPath`
+ * resolves the stub (the parent process) so an in-place swap replaces the
+ * REAL portable file and survives the next launch.
  */
 export function installedAppPath(): string | null {
   if (process.defaultApp) return null; // dev run out of node_modules/electron
   if (isMac) return bundlePathFromExecutable(process.execPath);
   if (isLinux) return appImagePathFromExecutable(process.execPath);
+  if (isWin) {
+    const container = portableContainerPath(process.execPath);
+    if (container) return container;
+  }
   return process.execPath;
 }
 

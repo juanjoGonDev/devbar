@@ -11,6 +11,7 @@ import {
   buildSwapBat,
   canInstallInPlace,
   isInstalledExe,
+  isPortableContainer,
   looksLikeAppImage,
   windowsUpdateMode,
 } from '../src/self-update.js';
@@ -175,6 +176,41 @@ describe('buildSwapBat', () => {
       staged: 'C:\\z.exe',
     });
     expect(tricky).toContain('set "target="C:\\dir ""x""\\DevBar.exe""');
+  });
+});
+
+describe('isPortableContainer (the swap must target the stub, not the temp payload)', () => {
+  const payload = 'C:\\Users\\u\\AppData\\Local\\Temp\\devbar-x\\DevBar.exe';
+  it('accepts a devbar-named parent exe outside Program Files', () => {
+    expect(
+      isPortableContainer(
+        payload,
+        'D:\\Apps\\DevBar-0.7.1-win-x64-portable.exe',
+      ),
+    ).toBe(true);
+    // A user-renamed file keeps the app name.
+    expect(isPortableContainer(payload, 'D:\\Apps\\devbar.exe')).toBe(true);
+  });
+  it('rejects a parent that is not a devbar exe (explorer, renamed stub)', () => {
+    expect(isPortableContainer(payload, 'C:\\Windows\\explorer.exe')).toBe(
+      false,
+    );
+    expect(isPortableContainer(payload, 'D:\\Apps\\launcher.exe')).toBe(false);
+  });
+  it('rejects itself and a missing parent', () => {
+    expect(isPortableContainer(payload, payload)).toBe(false);
+    expect(isPortableContainer(payload, null)).toBe(false);
+  });
+  it('rejects Program Files (assisted-only, elevation-requiring location)', () => {
+    expect(
+      isPortableContainer(payload, 'C:\\Program Files\\DevBar\\DevBar.exe'),
+    ).toBe(false);
+    expect(
+      isPortableContainer(
+        payload,
+        'C:\\Program Files (x86)\\DevBar\\DevBar.exe',
+      ),
+    ).toBe(false);
   });
 });
 
