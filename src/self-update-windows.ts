@@ -158,13 +158,16 @@ export function buildSwapBat({
 /**
  * Launch a .bat detached through an explicit `cmd.exe /d /s /c`. Node's
  * implicit .bat wrapping has been seen to fail with `spawn EINVAL` on CI
- * runners; running cmd.exe (a real PE) directly is the stable form, and it
- * keeps the bat path as a single quoted argument — no shell string built
- * from untrusted path components.
+ * runners; running cmd.exe (a real PE) directly is the stable form.
+ *
+ * The bat path is passed UNQUOTED: Node quotes it exactly once when it
+ * builds the command line, and `cmd /s` then strips that single outer
+ * pair. Pre-quoting here would survive the strip with a dangling quote
+ * and the bat would silently never run — verified on CI.
  */
 function spawnBat(scriptPath: string): void {
   const comspec = process.env.COMSPEC ?? 'cmd.exe';
-  spawn(comspec, ['/d', '/s', '/c', `"${scriptPath}"`], {
+  spawn(comspec, ['/d', '/s', '/c', scriptPath], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
