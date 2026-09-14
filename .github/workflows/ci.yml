@@ -471,12 +471,16 @@ jobs:
             const { buildSwapBat } = require('./build/src/self-update.js');
             const fs = require('fs');
             fs.writeFileSync('$workFs/swap.bat', buildSwapBat({
-              pid: $old.Id,
+              pid: $($old.Id),
               target: '$targetFs',
               staged: '$portableV2Fs',
               markerPath: '$workFs/swap-ok',
             }));
           "
+          if (-not (Test-Path "$work\swap.bat")) {
+            $old | Stop-Process -Force
+            throw 'swap.bat was not generated'
+          }
           Start-Process -FilePath cmd.exe -ArgumentList '/d','/s','/c',"$work\swap.bat" -WindowStyle Hidden
           Start-Sleep -Seconds 4
           # While the old pid is alive: nothing may have been touched.
