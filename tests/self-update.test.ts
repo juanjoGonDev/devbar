@@ -288,12 +288,16 @@ describe('buildInstallerBat', () => {
   const bat = buildInstallerBat({ pid: 4321, installer: 'C:\\u\\setup.exe' });
   it('waits for the old pid before launching the installer', () => {
     const wait = bat.indexOf('tasklist /fi "PID eq 4321"');
-    const run = bat.indexOf('start "" "C:\\u\\setup.exe" /S');
+    const run = bat.indexOf('"C:\\u\\setup.exe" /S');
     expect(wait).toBeGreaterThan(-1);
     expect(run).toBeGreaterThan(-1);
     expect(wait).toBeLessThan(run);
   });
   it('gives up instead of installing over a stuck process', () => {
     expect(bat).toContain('if %tries% geq 120 exit /b 1');
+  });
+  it('traces its progress to install.log (silent NSIS failures are the failure mode)', () => {
+    expect(bat).toContain('set "log=%~dp0install.log"');
+    expect(bat).toContain('installer exited with code %errorlevel%');
   });
 });

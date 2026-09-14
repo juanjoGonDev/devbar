@@ -127,8 +127,11 @@ export function buildSwapBat({
     `set "target=${batQuote(target)}"`,
     `set "staged=${batQuote(staged)}"`,
     'set "backup=%target%.devbar-old"',
+    'set "log=%~dp0swap.log"',
+    'echo [%date% %time%] swap bat started >> "%log%"',
     ...BAT_ENV_CLEAR_LINES,
     ...PID_WAIT_LINES(pid),
+    'echo [%date% %time%] pid gone, swapping >> "%log%"',
     'rem let the GPU/render helper processes wind down before we move the file',
     'timeout /t 2 /nobreak >nul',
     ':swap',
@@ -137,9 +140,11 @@ export function buildSwapBat({
     'copy /y "%staged%" "%target%" || goto :fail',
     'del /f /q "%backup%" 2>nul',
     ...(markerLine ? [markerLine] : []),
+    'echo [%date% %time%] swap done, relaunching >> "%log%"',
     relaunch,
     'exit /b 0',
     ':fail',
+    'echo [%date% %time%] swap failed, rolling back >> "%log%"',
     'if exist "%backup%" (',
     '  del /f /q "%target%" 2>nul',
     '  move /y "%backup%" "%target%"',
@@ -207,11 +212,18 @@ export function buildInstallerBat({
   return [
     '@echo off',
     'setlocal',
+    'set "log=%~dp0install.log"',
+    'echo [%date% %time%] installer bat started (waiting for old pid) >> "%log%"',
     ...BAT_ENV_CLEAR_LINES,
     ...PID_WAIT_LINES(pid),
+    'echo [%date% %time%] pid gone, launching installer >> "%log%"',
     'rem let the GPU/render helper processes release their file locks',
     'timeout /t 2 /nobreak >nul',
-    `start "" ${batQuote(installer)} /S`,
+    // Run the installer directly (not via `start`): a `start` from this
+    // hidden, detached context has been seen to launch nothing, and a
+    // direct run also yields the installer's exit code for the log.
+    `${batQuote(installer)} /S`,
+    'echo [%date% %time%] installer exited with code %errorlevel% >> "%log%"',
     'exit /b 0',
     '',
   ].join('\r\n');

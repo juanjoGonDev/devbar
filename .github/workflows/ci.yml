@@ -394,6 +394,12 @@ jobs:
             Write-Host '--- diagnostics: updates dir (bat + staged installer) ---'
             Get-ChildItem (Join-Path $env:APPDATA 'DevBar\updates') -Recurse -ErrorAction SilentlyContinue |
               ForEach-Object { Write-Host $_.FullName }
+            Write-Host '--- diagnostics: install.bat content ---'
+            $batFile = Join-Path $env:APPDATA 'DevBar\updates\install.bat'
+            if (Test-Path $batFile) { Get-Content $batFile } else { Write-Host '(no bat)' }
+            Write-Host '--- diagnostics: install.log (bat trace) ---'
+            $batLog = Join-Path $env:APPDATA 'DevBar\updates\install.log'
+            if (Test-Path $batLog) { Get-Content $batLog } else { Write-Host '(no log — the bat never executed)' }
             Write-Host "--- diagnostics: installed exe version: $((Get-Item $exe).VersionInfo.ProductVersion) (expected $v2) ---"
             Write-Host '--- diagnostics: processes ---'
             Get-Process | Where-Object { $_.Name -match 'DevBar|setup|Uninstall' } |
