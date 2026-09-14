@@ -5,7 +5,6 @@
 export const isMac = process.platform === 'darwin';
 export const isWin = process.platform === 'win32';
 export const isLinux = process.platform === 'linux';
-export const isPosix = isMac || isLinux;
 
 /**
  * The interactive shell a user's services run under. macOS keeps its

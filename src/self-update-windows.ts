@@ -30,24 +30,12 @@ export function isInstalledExe(execPath: string): boolean {
 }
 
 /** The two-byte MZ header every Windows PE file carries. */
-export function looksLikeWindowsExe(filePath: string): boolean {
+function looksLikeWindowsExe(filePath: string): boolean {
   const fd = fs.openSync(filePath, 'r');
   try {
     const buf = Buffer.alloc(2);
     if (fs.readSync(fd, buf, 0, 2, 0) < 2) return false;
     return buf.toString('latin1') === 'MZ';
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-/** `PK` zip magic (an HTML error page or a truncated download is neither). */
-export function looksLikeZip(filePath: string): boolean {
-  const fd = fs.openSync(filePath, 'r');
-  try {
-    const buf = Buffer.alloc(2);
-    if (fs.readSync(fd, buf, 0, 2, 0) < 2) return false;
-    return buf.toString('latin1') === 'PK';
   } finally {
     fs.closeSync(fd);
   }

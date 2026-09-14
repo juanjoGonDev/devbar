@@ -44,15 +44,9 @@ export {
   buildSwapScript as buildLinuxSwapScript,
   looksLikeAppImage,
 } from './self-update-linux.js';
-export {
-  buildSwapBat,
-  isInstalledExe,
-  looksLikeWindowsExe,
-  looksLikeZip,
-} from './self-update-windows.js';
+export { buildSwapBat, isInstalledExe } from './self-update-windows.js';
 
-export type StagedKind =
-  'macBundle' | 'appImage' | 'winInstaller' | 'winPortable';
+type StagedKind = 'macBundle' | 'appImage' | 'winInstaller' | 'winPortable';
 
 /**
  * The installed app we would replace, or null when that is not our shape.
@@ -68,7 +62,7 @@ export function installedAppPath(): string | null {
   return process.execPath;
 }
 
-export type WindowsUpdateMode = 'nsis' | 'portable' | 'assisted';
+type WindowsUpdateMode = 'nsis' | 'portable' | 'assisted';
 
 export function windowsUpdateMode(installed: string): WindowsUpdateMode {
   if (isInstalledExe(installed)) return 'nsis';
