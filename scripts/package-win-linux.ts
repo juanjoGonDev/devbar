@@ -92,7 +92,11 @@ async function buildLinux(): Promise<void> {
       config: {
         ...baseConfig(),
         linux: {
-          icon: path.join(ROOT, 'assets', 'icon.png'),
+          // Directory of pre-sized PNGs (16–256). A single PNG source is
+          // embedded as-is, which would leave the .deb without the 256px
+          // hicolor icon the desktop expects; a directory yields the full
+          // hicolor set. Kept out of the app bundle (not under assets/).
+          icon: path.join(ROOT, 'buildResources', 'icons'),
           category: 'Development',
           maintainer: 'Juanjo González <juanjo96developer@gmail.com>',
           synopsis: 'Menu bar launcher for local development services',
