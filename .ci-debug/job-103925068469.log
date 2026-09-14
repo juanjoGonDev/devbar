@@ -1,0 +1,391 @@
+﻿2026-09-14T09:29:00.0408060Z Current runner version: '2.337.0'
+2026-09-14T09:29:00.0445323Z ##[group]Runner Image Provisioner
+2026-09-14T09:29:00.0446798Z Hosted Compute Agent
+2026-09-14T09:29:00.0447847Z Version: 20260828.587
+2026-09-14T09:29:00.0448937Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-14T09:29:00.0450226Z Build Date: 2026-08-28T16:44:25Z
+2026-09-14T09:29:00.0451421Z Worker ID: {d4e0c765-3178-41eb-b32e-18a5586fcc20}
+2026-09-14T09:29:00.0452763Z Azure Region: westus
+2026-09-14T09:29:00.0453670Z ##[endgroup]
+2026-09-14T09:29:00.0455983Z ##[group]Operating System
+2026-09-14T09:29:00.0457024Z Microsoft Windows Server 2025
+2026-09-14T09:29:00.0458030Z 10.0.26100
+2026-09-14T09:29:00.0458906Z Datacenter
+2026-09-14T09:29:00.0460116Z ##[endgroup]
+2026-09-14T09:29:00.0461070Z ##[group]Runner Image
+2026-09-14T09:29:00.0462068Z Image: windows-2025-vs2026
+2026-09-14T09:29:00.0463028Z Version: 20260907.229.1
+2026-09-14T09:29:00.0465558Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20260907.229/images/windows/Windows2025-VS2026-Readme.md
+2026-09-14T09:29:00.0468583Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20260907.229
+2026-09-14T09:29:00.0470343Z ##[endgroup]
+2026-09-14T09:29:00.0472194Z ##[group]GITHUB_TOKEN Permissions
+2026-09-14T09:29:00.0475109Z Contents: read
+2026-09-14T09:29:00.0475983Z Metadata: read
+2026-09-14T09:29:00.0476891Z ##[endgroup]
+2026-09-14T09:29:00.0480248Z Secret source: Actions
+2026-09-14T09:29:00.0481753Z Cache mode: write
+2026-09-14T09:29:00.0483181Z Prepare workflow directory
+2026-09-14T09:29:00.1036747Z Prepare all required actions
+2026-09-14T09:29:00.1118963Z Getting action download info
+2026-09-14T09:29:00.4944313Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-09-14T09:29:00.6672057Z Download action repository 'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86' (SHA:0977fd99725f1db4007ccb2928dbb4e90d06cc86)
+2026-09-14T09:29:01.0301435Z Download action repository 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' (SHA:820762786026740c76f36085b0efc47a31fe5020)
+2026-09-14T09:29:01.2129184Z Download action repository 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9' (SHA:55cc8345863c7cc4c66a329aec7e433d2d1c52a9)
+2026-09-14T09:29:01.3778991Z Download action repository 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' (SHA:043fb46d1a93c77aae656e7c1c64a875d1fc6a0a)
+2026-09-14T09:29:01.6266649Z Complete job name: Build, verify & launch smoke — win
+2026-09-14T09:29:01.8287842Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+2026-09-14T09:29:01.8289066Z with:
+2026-09-14T09:29:01.8289527Z   persist-credentials: false
+2026-09-14T09:29:01.8290056Z   repository: juanjoGonDev/devbar
+2026-09-14T09:29:01.8294081Z   token: ***
+2026-09-14T09:29:01.8294514Z   ssh-strict: true
+2026-09-14T09:29:01.8294944Z   ssh-user: git
+2026-09-14T09:29:01.8295358Z   clean: true
+2026-09-14T09:29:01.8295816Z   sparse-checkout-cone-mode: true
+2026-09-14T09:29:01.8296315Z   fetch-depth: 1
+2026-09-14T09:29:01.8296727Z   fetch-tags: false
+2026-09-14T09:29:01.8297158Z   show-progress: true
+2026-09-14T09:29:01.8297593Z   lfs: false
+2026-09-14T09:29:01.8297994Z   submodules: false
+2026-09-14T09:29:01.8298427Z   set-safe-directory: true
+2026-09-14T09:29:01.8298923Z   allow-unsafe-pr-checkout: false
+2026-09-14T09:29:01.8299788Z ##[endgroup]
+2026-09-14T09:29:02.0917553Z Syncing repository: juanjoGonDev/devbar
+2026-09-14T09:29:02.0922938Z ##[group]Getting Git version info
+2026-09-14T09:29:02.0923992Z Working directory is 'D:\a\devbar\devbar'
+2026-09-14T09:29:02.2259829Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-14T09:29:02.7260411Z git version 2.55.0.windows.5
+2026-09-14T09:29:02.7339386Z ##[endgroup]
+2026-09-14T09:29:02.7356849Z Temporarily overriding HOME='D:\a\_temp\8741efc3-9013-424d-9d34-9956815c4c74' before making global git config changes
+2026-09-14T09:29:02.7361908Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-14T09:29:02.7370034Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\devbar\devbar
+2026-09-14T09:29:02.8784535Z Deleting the contents of 'D:\a\devbar\devbar'
+2026-09-14T09:29:02.8790760Z ##[group]Determining repository object format
+2026-09-14T09:29:02.8792971Z ##[endgroup]
+2026-09-14T09:29:02.8794685Z ##[group]Initializing the repository
+2026-09-14T09:29:02.8805357Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\devbar\devbar
+2026-09-14T09:29:03.1217391Z Initialized empty Git repository in D:/a/devbar/devbar/.git/
+2026-09-14T09:29:03.1302831Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/juanjoGonDev/devbar
+2026-09-14T09:29:03.3255215Z ##[endgroup]
+2026-09-14T09:29:03.3256396Z ##[group]Disabling automatic garbage collection
+2026-09-14T09:29:03.3267341Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2026-09-14T09:29:03.5164075Z ##[endgroup]
+2026-09-14T09:29:03.5169742Z ##[group]Setting up auth
+2026-09-14T09:29:03.5171829Z Removing SSH command configuration
+2026-09-14T09:29:03.5178527Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-14T09:29:03.7410168Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-14T09:29:05.8726732Z Removing HTTP extra header
+2026-09-14T09:29:05.8741276Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-14T09:29:05.9123544Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-14T09:29:06.9997829Z Removing includeIf entries pointing to credentials config files
+2026-09-14T09:29:07.0016224Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-14T09:29:07.0828868Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-14T09:29:07.8643756Z [command]"C:\Program Files\Git\bin\git.exe" config --file D:\a\_temp\git-credentials-988b294b-0535-480c-ae44-79869b184f23.config http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-09-14T09:29:07.9044560Z [command]"C:\Program Files\Git\bin\git.exe" config --local includeIf.gitdir:D:/a/devbar/devbar/.git.path D:\a\_temp\git-credentials-988b294b-0535-480c-ae44-79869b184f23.config
+2026-09-14T09:29:07.9328946Z [command]"C:\Program Files\Git\bin\git.exe" config --local includeIf.gitdir:D:/a/devbar/devbar/.git/worktrees/*.path D:\a\_temp\git-credentials-988b294b-0535-480c-ae44-79869b184f23.config
+2026-09-14T09:29:07.9689349Z [command]"C:\Program Files\Git\bin\git.exe" config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-988b294b-0535-480c-ae44-79869b184f23.config
+2026-09-14T09:29:08.0003983Z [command]"C:\Program Files\Git\bin\git.exe" config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-988b294b-0535-480c-ae44-79869b184f23.config
+2026-09-14T09:29:08.0289221Z ##[endgroup]
+2026-09-14T09:29:08.0289966Z ##[group]Fetching the repository
+2026-09-14T09:29:08.0300422Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +00f4218a0685520baa99ab517824c27b1906046a:refs/remotes/pull/78/merge
+2026-09-14T09:29:09.2321841Z From https://github.com/juanjoGonDev/devbar
+2026-09-14T09:29:09.2324977Z  * [new ref]         00f4218a0685520baa99ab517824c27b1906046a -> pull/78/merge
+2026-09-14T09:29:09.2365067Z ##[endgroup]
+2026-09-14T09:29:09.2365627Z ##[group]Determining the checkout info
+2026-09-14T09:29:09.2367176Z ##[endgroup]
+2026-09-14T09:29:09.2381077Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2026-09-14T09:29:09.2896642Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2026-09-14T09:29:09.3209975Z ##[group]Checking out the ref
+2026-09-14T09:29:09.3218674Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/remotes/pull/78/merge
+2026-09-14T09:29:09.4367071Z Note: switching to 'refs/remotes/pull/78/merge'.
+2026-09-14T09:29:09.4367502Z 
+2026-09-14T09:29:09.4367841Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-14T09:29:09.4369124Z changes and commit them, and you can discard any commits you make in this
+2026-09-14T09:29:09.4370515Z state without impacting any branches by switching back to a branch.
+2026-09-14T09:29:09.4371038Z 
+2026-09-14T09:29:09.4371409Z If you want to create a new branch to retain commits you create, you may
+2026-09-14T09:29:09.4372155Z do so (now or later) by using -c with the switch command. Example:
+2026-09-14T09:29:09.4372694Z 
+2026-09-14T09:29:09.4372911Z   git switch -c <new-branch-name>
+2026-09-14T09:29:09.4373307Z 
+2026-09-14T09:29:09.4373455Z Or undo this operation with:
+2026-09-14T09:29:09.4373719Z 
+2026-09-14T09:29:09.4373842Z   git switch -
+2026-09-14T09:29:09.4374020Z 
+2026-09-14T09:29:09.4374371Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-14T09:29:09.4374903Z 
+2026-09-14T09:29:09.4375487Z HEAD is now at 00f4218 Merge 77f765af80be88c0d595798067dacd722ac4b450 into 42a77c630288a92901d0127cde05e7e033cf4dda
+2026-09-14T09:29:09.4484309Z ##[endgroup]
+2026-09-14T09:29:09.4891342Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-09-14T09:29:09.5165153Z 00f4218a0685520baa99ab517824c27b1906046a
+2026-09-14T09:29:09.5203129Z ##[group]Removing auth
+2026-09-14T09:29:09.5203432Z Removing SSH command configuration
+2026-09-14T09:29:09.5214600Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-14T09:29:09.5509767Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-14T09:29:10.1163971Z Removing HTTP extra header
+2026-09-14T09:29:10.1172899Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-14T09:29:10.1467740Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-14T09:29:10.6785663Z Removing includeIf entries pointing to credentials config files
+2026-09-14T09:29:10.6796872Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-14T09:29:10.7062915Z includeif.gitdir:D:/a/devbar/devbar/.git.path
+2026-09-14T09:29:10.7063566Z includeif.gitdir:D:/a/devbar/devbar/.git/worktrees/*.path
+2026-09-14T09:29:10.7064185Z includeif.gitdir:/github/workspace/.git.path
+2026-09-14T09:29:10.7064792Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-09-14T09:29:10.7105450Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:D:/a/devbar/devbar/.git.path
+2026-09-14T09:29:10.7359984Z D:\a\_temp\git-credentials-988b294b-0535-480c-ae44-79869b184f23.config
+2026-09-14T09:29:10.7402734Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:D:/a/devbar/devbar/.git.path D\:\\a\\_temp\\git\-credentials\-988b294b\-0535\-480c\-ae44\-79869b184f23\.config
+2026-09-14T09:29:10.7697963Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:D:/a/devbar/devbar/.git/worktrees/*.path
+2026-09-14T09:29:10.7981118Z D:\a\_temp\git-credentials-988b294b-0535-480c-ae44-79869b184f23.config
+2026-09-14T09:29:10.8033410Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:D:/a/devbar/devbar/.git/worktrees/*.path D\:\\a\\_temp\\git\-credentials\-988b294b\-0535\-480c\-ae44\-79869b184f23\.config
+2026-09-14T09:29:10.8411578Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-09-14T09:29:10.8701283Z /github/runner_temp/git-credentials-988b294b-0535-480c-ae44-79869b184f23.config
+2026-09-14T09:29:10.8752155Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-988b294b\-0535\-480c\-ae44\-79869b184f23\.config
+2026-09-14T09:29:10.9094114Z [command]"C:\Program Files\Git\bin\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-09-14T09:29:10.9361844Z /github/runner_temp/git-credentials-988b294b-0535-480c-ae44-79869b184f23.config
+2026-09-14T09:29:10.9408191Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-988b294b\-0535\-480c\-ae44\-79869b184f23\.config
+2026-09-14T09:29:10.9701510Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-14T09:29:11.4748904Z Removing credentials config 'D:\a\_temp\git-credentials-988b294b-0535-480c-ae44-79869b184f23.config'
+2026-09-14T09:29:11.4760219Z ##[endgroup]
+2026-09-14T09:29:11.5160432Z ##[group]Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+2026-09-14T09:29:11.5160871Z with:
+2026-09-14T09:29:11.5161056Z   dest: ~/setup-pnpm
+2026-09-14T09:29:11.5161256Z   run_install: null
+2026-09-14T09:29:11.5161436Z   cache: false
+2026-09-14T09:29:11.5161647Z   cache_dependency_path: pnpm-lock.yaml
+2026-09-14T09:29:11.5161920Z   package_json_file: package.json
+2026-09-14T09:29:11.5162156Z   standalone: false
+2026-09-14T09:29:11.5162342Z ##[endgroup]
+2026-09-14T09:29:11.7024319Z ##[group]Running self-installer...
+2026-09-14T09:29:11.7089448Z (node:7840) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+2026-09-14T09:29:11.7091432Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-14T09:29:24.9153145Z 
+2026-09-14T09:29:24.9153757Z added 1 package, and audited 2 packages in 10s
+2026-09-14T09:29:24.9154314Z 
+2026-09-14T09:29:24.9154480Z 1 package is looking for funding
+2026-09-14T09:29:24.9154898Z   run `npm fund` for details
+2026-09-14T09:29:24.9164707Z 
+2026-09-14T09:29:24.9165021Z found 0 vulnerabilities
+2026-09-14T09:29:27.0380046Z Checking for updates...
+2026-09-14T09:29:27.2001324Z Switching pnpm from v11.19.0 to v10.32.1...
+2026-09-14T09:29:27.8522872Z .../2214-1a09f400341-502481d47ef5f2c4    | Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-09-14T09:29:27.8549762Z .../2214-1a09f400341-502481d47ef5f2c4    |   +1 +
+2026-09-14T09:29:29.7298663Z .../2214-1a09f400341-502481d47ef5f2c4    | Progress: resolved 1, reused 0, downloaded 1, added 0
+2026-09-14T09:29:32.3672724Z .../2214-1a09f400341-502481d47ef5f2c4    | Progress: resolved 1, reused 0, downloaded 1, added 1
+2026-09-14T09:29:32.3676585Z .../2214-1a09f400341-502481d47ef5f2c4    | Progress: resolved 1, reused 0, downloaded 1, added 1, done
+2026-09-14T09:29:33.0361026Z [WARN] Detected a pnpm v10 installation layout at PNPM_HOME. The pnpm shims at PNPM_HOME have been refreshed so the new version is active, but pnpm v11 expects bins in PNPM_HOME/bin. Run "pnpm setup" to migrate your PATH to the v11 layout.
+2026-09-14T09:29:33.0399361Z Successfully updated pnpm to v10.32.1
+2026-09-14T09:29:33.1485311Z ##[endgroup]
+2026-09-14T09:29:33.1486054Z Installation Completed!
+2026-09-14T09:29:33.2044348Z ##[group]Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+2026-09-14T09:29:33.2044885Z with:
+2026-09-14T09:29:33.2045115Z   node-version: 22
+2026-09-14T09:29:33.2045359Z   cache: pnpm
+2026-09-14T09:29:33.2045629Z   check-latest: false
+2026-09-14T09:29:33.2048998Z   token: ***
+2026-09-14T09:29:33.2049245Z   package-manager-cache: true
+2026-09-14T09:29:33.2049534Z env:
+2026-09-14T09:29:33.2049843Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+2026-09-14T09:29:33.2050255Z ##[endgroup]
+2026-09-14T09:29:33.3759935Z Found in cache @ C:\hostedtoolcache\windows\node\22.23.2\x64
+2026-09-14T09:29:33.3765847Z ##[group]Environment details
+2026-09-14T09:29:37.9256569Z node: v22.23.2
+2026-09-14T09:29:37.9256879Z npm: 10.9.8
+2026-09-14T09:29:37.9257053Z yarn: 1.22.22
+2026-09-14T09:29:37.9257476Z ##[endgroup]
+2026-09-14T09:29:38.0069879Z [command]C:\Windows\system32\cmd.exe /D /S /C "C:\Users\runneradmin\setup-pnpm\node_modules\.bin\bin\pnpm.CMD store path --silent"
+2026-09-14T09:29:38.7740016Z D:\.pnpm-store\v10
+2026-09-14T09:29:39.1788658Z pnpm cache is not found
+2026-09-14T09:29:39.2104716Z ##[group]Run echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+2026-09-14T09:29:39.2105873Z [36;1mecho "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"[0m
+2026-09-14T09:29:39.2126649Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-09-14T09:29:39.2127059Z env:
+2026-09-14T09:29:39.2127313Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+2026-09-14T09:29:39.2127634Z ##[endgroup]
+2026-09-14T09:29:39.5774670Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+2026-09-14T09:29:39.5775095Z with:
+2026-09-14T09:29:39.5775437Z   path: %LOCALAPPDATA%\electron\Cache
+%LOCALAPPDATA%\electron-builder\Cache
+
+2026-09-14T09:29:39.5776002Z   key: electron-win-bd7ccba579594a20f024796e585806d4af44b8ef510a056ddb8577e0e08c82b5
+2026-09-14T09:29:39.5776447Z   enableCrossOsArchive: false
+2026-09-14T09:29:39.5776676Z   fail-on-cache-miss: false
+2026-09-14T09:29:39.5776881Z   lookup-only: false
+2026-09-14T09:29:39.5777155Z   save-always: false
+2026-09-14T09:29:39.5777457Z env:
+2026-09-14T09:29:39.5777703Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+2026-09-14T09:29:39.5778015Z ##[endgroup]
+2026-09-14T09:29:40.1048394Z Cache not found for input keys: electron-win-bd7ccba579594a20f024796e585806d4af44b8ef510a056ddb8577e0e08c82b5
+2026-09-14T09:29:40.1299151Z ##[group]Run pnpm install --frozen-lockfile
+2026-09-14T09:29:40.1299561Z [36;1mpnpm install --frozen-lockfile[0m
+2026-09-14T09:29:40.2730124Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-14T09:29:40.2730565Z env:
+2026-09-14T09:29:40.2730891Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+2026-09-14T09:29:40.2731305Z ##[endgroup]
+2026-09-14T09:29:41.0750913Z Lockfile is up to date, resolution step is skipped
+2026-09-14T09:29:41.2718703Z Packages: +481
+2026-09-14T09:29:41.2719543Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+2026-09-14T09:29:41.6039839Z Progress: resolved 0, reused 0, downloaded 1, added 0
+2026-09-14T09:29:42.6071138Z Progress: resolved 0, reused 0, downloaded 51, added 12
+2026-09-14T09:29:43.6087483Z Progress: resolved 0, reused 0, downloaded 138, added 38
+2026-09-14T09:29:44.6136629Z Progress: resolved 0, reused 0, downloaded 209, added 61
+2026-09-14T09:29:45.6118103Z Progress: resolved 0, reused 0, downloaded 360, added 113
+2026-09-14T09:29:46.6144110Z Progress: resolved 0, reused 0, downloaded 464, added 171
+2026-09-14T09:29:47.6139172Z Progress: resolved 0, reused 0, downloaded 465, added 481
+2026-09-14T09:29:47.7033783Z Progress: resolved 0, reused 0, downloaded 465, added 481, done
+2026-09-14T09:29:47.7191736Z node_modules/lefthook postinstall$ node postinstall.js
+2026-09-14T09:29:47.7881911Z node_modules/lefthook postinstall: Done
+2026-09-14T09:29:48.0008889Z 
+2026-09-14T09:29:48.1507895Z 
+2026-09-14T09:29:48.1508858Z > devbar@0.7.1 postinstall D:\a\devbar\devbar
+2026-09-14T09:29:48.1509658Z > node --experimental-strip-types scripts/install-hooks.ts
+2026-09-14T09:29:48.1510109Z 
+2026-09-14T09:29:48.2629557Z ╭ Warning ─────────────────────────────────────────────────────────────────────╮
+2026-09-14T09:29:48.2630525Z │                                                                              │
+2026-09-14T09:29:48.2631559Z │   Ignored build scripts: electron-winstaller@5.4.0, esbuild@0.28.2.          │
+2026-09-14T09:29:48.2632711Z │   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+2026-09-14T09:29:48.2633753Z │   to run scripts.                                                            │
+2026-09-14T09:29:48.2634598Z │                                                                              │
+2026-09-14T09:29:48.2635513Z ╰──────────────────────────────────────────────────────────────────────────────╯
+2026-09-14T09:29:48.2729339Z Done in 7.6s using pnpm v10.32.1
+2026-09-14T09:29:48.4676956Z ##[group]Run pnpm run dist:win && pnpm run verify:win
+2026-09-14T09:29:48.4677652Z [36;1mpnpm run dist:win && pnpm run verify:win[0m
+2026-09-14T09:29:48.4695436Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-09-14T09:29:48.4695842Z env:
+2026-09-14T09:29:48.4696105Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+2026-09-14T09:29:48.4696812Z ##[endgroup]
+2026-09-14T09:29:49.1829562Z 
+2026-09-14T09:29:49.1830448Z > devbar@0.7.1 dist:win D:\a\devbar\devbar
+2026-09-14T09:29:49.1831518Z > pnpm run build && node --experimental-strip-types scripts/package-win-linux.ts win
+2026-09-14T09:29:49.1832188Z 
+2026-09-14T09:29:49.6232071Z 
+2026-09-14T09:29:49.6233080Z > devbar@0.7.1 build D:\a\devbar\devbar
+2026-09-14T09:29:49.6233660Z > bash scripts/build.sh
+2026-09-14T09:29:49.6233905Z 
+2026-09-14T09:30:00.7458820Z 
+2026-09-14T09:30:00.7459477Z   build\src\preload.cjs  8.9kb
+2026-09-14T09:30:00.7459795Z 
+2026-09-14T09:30:00.7476337Z Done in 5ms
+2026-09-14T09:30:01.6411242Z   • electron-builder  version=26.16.1 os=10.0.26100
+2026-09-14T09:30:01.6417802Z   • publishing will be skipped  reason=current build is a part of pull request solution=set env PUBLISH_FOR_PULL_REQUEST to true to force code signing
+2026-09-14T09:30:01.6419513Z There are serious security concerns with PUBLISH_FOR_PULL_REQUEST=true (see the  CircleCI documentation (https://circleci.com/docs/1.0/fork-pr-builds/) for details)
+2026-09-14T09:30:01.6421525Z If you have SSH keys, sensitive env vars or AWS credentials stored in your project settings and untrusted forks can make pull requests against your repo, then this option isn't for you.
+2026-09-14T09:30:01.6536315Z   • author is missed in the package.json  appPackageFile=D:\a\devbar\devbar\package.json
+2026-09-14T09:30:02.7675505Z   • executing @electron/rebuild  electronVersion=43.2.0 arch=x64 buildFromSource=false workspaceRoot=D:\a\devbar\devbar projectDir=./ appDir=./
+2026-09-14T09:30:02.7677049Z   • installing native dependencies  arch=x64
+2026-09-14T09:30:03.0393810Z   • completed installing native dependencies
+2026-09-14T09:30:03.0455958Z   • packaging       platform=win32 arch=x64 electron=43.2.0 appOutDir=dist\electron-builder\win-unpacked
+2026-09-14T09:30:03.3016517Z   • downloaded      label=electron progress=100%
+2026-09-14T09:30:08.0930691Z   • downloaded electron zip extracted successfully  output=D:\a\devbar\devbar\dist\electron-builder\win-unpacked
+2026-09-14T09:30:08.1330200Z   • searching for node modules  pm=pnpm searchDir=D:\a\devbar\devbar
+2026-09-14T09:30:12.5727960Z   • duplicate dependency references  dependencies=["type-fest@5.7.0"]
+2026-09-14T09:30:14.4784309Z   • updating asar integrity executable resource  executablePath=dist\electron-builder\win-unpacked\DevBar.exe
+2026-09-14T09:30:14.7996243Z   • no code signing certificate configured, signing is skipped  path=dist\electron-builder\win-unpacked\DevBar.exe
+2026-09-14T09:30:14.8013283Z   • building        target=nsis file=dist\electron-builder\DevBar-0.7.1-win-x64-setup.exe archs=x64 oneClick=true perMachine=false
+2026-09-14T09:30:15.0224195Z   • downloaded      label=7zip-win-x64.tar.gz progress=100%
+2026-09-14T09:30:52.3926871Z   • downloaded      label=nsis-3.0.4.1.7z progress=100%
+2026-09-14T09:30:53.8064586Z   • no code signing certificate configured, signing is skipped  path=C:\Users\RUNNER~1\AppData\Local\Temp\t-U0Hgqb\elevate-staging-3\resources\elevate.exe
+2026-09-14T09:30:54.2788790Z   • downloaded      label=nsis-resources-3.4.1.7z progress=100%
+2026-09-14T09:30:55.3931376Z   • no code signing certificate configured, signing is skipped  path=dist\electron-builder\DevBar-0.7.1-win-x64-setup.__uninstaller.exe
+2026-09-14T09:30:56.5866323Z   • no code signing certificate configured, signing is skipped  path=dist\electron-builder\DevBar-0.7.1-win-x64-setup.exe
+2026-09-14T09:30:56.5869144Z   • building block map  blockMapFile=dist\electron-builder\DevBar-0.7.1-win-x64-setup.exe.blockmap
+2026-09-14T09:31:01.9012467Z   • building        target=portable file=dist\electron-builder\DevBar-0.7.1-win-x64-portable.exe archs=x64
+2026-09-14T09:31:02.5800431Z   • no code signing certificate configured, signing is skipped  path=dist\electron-builder\DevBar-0.7.1-win-x64-portable.exe
+2026-09-14T09:31:02.5955246Z [win] x64 done
+2026-09-14T09:31:02.5965701Z   • electron-builder  version=26.16.1 os=10.0.26100
+2026-09-14T09:31:02.5971760Z   • publishing will be skipped  reason=current build is a part of pull request solution=set env PUBLISH_FOR_PULL_REQUEST to true to force code signing
+2026-09-14T09:31:02.5973812Z There are serious security concerns with PUBLISH_FOR_PULL_REQUEST=true (see the  CircleCI documentation (https://circleci.com/docs/1.0/fork-pr-builds/) for details)
+2026-09-14T09:31:02.5976262Z If you have SSH keys, sensitive env vars or AWS credentials stored in your project settings and untrusted forks can make pull requests against your repo, then this option isn't for you.
+2026-09-14T09:31:02.6014337Z   • author is missed in the package.json  appPackageFile=D:\a\devbar\devbar\package.json
+2026-09-14T09:31:03.0312424Z   • executing @electron/rebuild  electronVersion=43.2.0 arch=arm64 buildFromSource=false workspaceRoot=D:\a\devbar\devbar projectDir=./ appDir=./
+2026-09-14T09:31:03.0313348Z   • installing native dependencies  arch=arm64
+2026-09-14T09:31:03.3056326Z   • completed installing native dependencies
+2026-09-14T09:31:03.3143649Z   • packaging       platform=win32 arch=arm64 electron=43.2.0 appOutDir=dist\electron-builder\win-arm64-unpacked
+2026-09-14T09:31:03.5030989Z   • downloaded      label=electron progress=100%
+2026-09-14T09:31:08.5112299Z   • downloaded electron zip extracted successfully  output=D:\a\devbar\devbar\dist\electron-builder\win-arm64-unpacked
+2026-09-14T09:31:08.5411928Z   • searching for node modules  pm=pnpm searchDir=D:\a\devbar\devbar
+2026-09-14T09:31:11.1243031Z   • duplicate dependency references  dependencies=["type-fest@5.7.0"]
+2026-09-14T09:31:12.9979393Z   • updating asar integrity executable resource  executablePath=dist\electron-builder\win-arm64-unpacked\DevBar.exe
+2026-09-14T09:31:13.2938063Z   • no code signing certificate configured, signing is skipped  path=dist\electron-builder\win-arm64-unpacked\DevBar.exe
+2026-09-14T09:31:13.2948887Z   • building        target=nsis file=dist\electron-builder\DevBar-0.7.1-win-arm64-setup.exe archs=arm64 oneClick=true perMachine=false
+2026-09-14T09:31:50.3258875Z   • no code signing certificate configured, signing is skipped  path=C:\Users\RUNNER~1\AppData\Local\Temp\t-4COYKD\elevate-staging-9\resources\elevate.exe
+2026-09-14T09:31:51.2953946Z   • no code signing certificate configured, signing is skipped  path=dist\electron-builder\DevBar-0.7.1-win-arm64-setup.__uninstaller.exe
+2026-09-14T09:31:52.4426925Z   • no code signing certificate configured, signing is skipped  path=dist\electron-builder\DevBar-0.7.1-win-arm64-setup.exe
+2026-09-14T09:31:52.4429946Z   • building block map  blockMapFile=dist\electron-builder\DevBar-0.7.1-win-arm64-setup.exe.blockmap
+2026-09-14T09:31:57.8204330Z   • building        target=portable file=dist\electron-builder\DevBar-0.7.1-win-arm64-portable.exe archs=arm64
+2026-09-14T09:31:58.4633599Z   • no code signing certificate configured, signing is skipped  path=dist\electron-builder\DevBar-0.7.1-win-arm64-portable.exe
+2026-09-14T09:31:58.4755123Z [win] arm64 done
+2026-09-14T09:31:59.0843598Z 
+2026-09-14T09:31:59.0844287Z > devbar@0.7.1 verify:win D:\a\devbar\devbar
+2026-09-14T09:31:59.0845197Z > pnpm run build && node build/scripts/verify-win-release.js
+2026-09-14T09:31:59.0845520Z 
+2026-09-14T09:31:59.4686591Z 
+2026-09-14T09:31:59.4687158Z > devbar@0.7.1 build D:\a\devbar\devbar
+2026-09-14T09:31:59.4687586Z > bash scripts/build.sh
+2026-09-14T09:31:59.4687764Z 
+2026-09-14T09:32:10.4982732Z 
+2026-09-14T09:32:10.4983876Z   build\src\preload.cjs  8.9kb
+2026-09-14T09:32:10.4984238Z 
+2026-09-14T09:32:10.4984425Z Done in 4ms
+2026-09-14T09:32:10.6441753Z Verified 4 win artifacts for v0.7.1 in D:\a\devbar\devbar\dist\electron-builder
+2026-09-14T09:32:10.6444714Z ok: DevBar-0.7.1-win-x64-setup.exe (MZ header)
+2026-09-14T09:32:10.6447268Z ok: DevBar-0.7.1-win-x64-portable.exe (MZ header)
+2026-09-14T09:32:10.6448895Z ok: DevBar-0.7.1-win-arm64-setup.exe (MZ header)
+2026-09-14T09:32:10.6450706Z ok: DevBar-0.7.1-win-arm64-portable.exe (MZ header)
+2026-09-14T09:32:10.6892796Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-09-14T09:32:10.6893358Z [36;1m$ErrorActionPreference = 'Stop'[0m
+2026-09-14T09:32:10.6893689Z [36;1m$version = '0.7.1'[0m
+2026-09-14T09:32:10.6894101Z [36;1m# 1) NSIS installer: silent per-user install, then prove the[0m
+2026-09-14T09:32:10.6894620Z [36;1m#    installed exe launches — this also confirms the install path[0m
+2026-09-14T09:32:10.6895150Z [36;1m#    is %LOCALAPPDATA%\Programs\DevBar, the location the in-app[0m
+2026-09-14T09:32:10.6895601Z [36;1m#    updater recognises.[0m
+2026-09-14T09:32:10.6896217Z [36;1mStart-Process -Wait -FilePath ".\dist\electron-builder\DevBar-$version-win-x64-setup.exe" -ArgumentList '/S'[0m
+2026-09-14T09:32:10.6896948Z [36;1mif (-not (Test-Path "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe")) {[0m
+2026-09-14T09:32:10.6897477Z [36;1m  Write-Error "NSIS install did not produce the expected exe"[0m
+2026-09-14T09:32:10.6897831Z [36;1m  exit 1[0m
+2026-09-14T09:32:10.6898127Z [36;1m}[0m
+2026-09-14T09:32:10.6898473Z [36;1m# The oneClick installer launches the app at the end of the install;[0m
+2026-09-14T09:32:10.6899037Z [36;1m# stop that instance so the smoke launch owns the single-instance lock.[0m
+2026-09-14T09:32:10.6899633Z [36;1mGet-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force[0m
+2026-09-14T09:32:10.6900209Z [36;1m& "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe" --devbar-smoke *>&1 |[0m
+2026-09-14T09:32:10.6900710Z [36;1m  Tee-Object -FilePath smoke-win-installed.log[0m
+2026-09-14T09:32:10.6901334Z [36;1mif (-not (Select-String -Path smoke-win-installed.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {[0m
+2026-09-14T09:32:10.6901909Z [36;1m  Write-Error 'installed-app smoke failed'[0m
+2026-09-14T09:32:10.6902237Z [36;1m  exit 1[0m
+2026-09-14T09:32:10.6902476Z [36;1m}[0m
+2026-09-14T09:32:10.6902785Z [36;1m# 2) Portable single exe: launches straight from dist/.[0m
+2026-09-14T09:32:10.6903352Z [36;1m& ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |[0m
+2026-09-14T09:32:10.6903905Z [36;1m  Tee-Object -FilePath smoke-win-portable.log[0m
+2026-09-14T09:32:10.6904458Z [36;1mif (-not (Select-String -Path smoke-win-portable.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {[0m
+2026-09-14T09:32:10.6905113Z [36;1m  Write-Error 'portable-app smoke failed'[0m
+2026-09-14T09:32:10.6905463Z [36;1m  exit 1[0m
+2026-09-14T09:32:10.6905704Z [36;1m}[0m
+2026-09-14T09:32:10.6979724Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-14T09:32:10.6980374Z env:
+2026-09-14T09:32:10.6980706Z   PNPM_HOME: C:\Users\runneradmin\setup-pnpm\node_modules\.bin
+2026-09-14T09:32:10.6981096Z ##[endgroup]
+2026-09-14T09:32:24.9453952Z 
+2026-09-14T09:32:26.8624920Z DEVBAR_SMOKE_OK
+2026-09-14T09:32:34.8718137Z [31;1mSelect-String: [0mD:\a\_temp\d120fbbb-d2d8-4060-92c4-05040c1ddc00.ps1:25[0m
+2026-09-14T09:32:34.8719140Z [31;1m[0m[36;1mLine |[0m
+2026-09-14T09:32:34.8720458Z [31;1m[0m[36;1m[36;1m  25 | [0m if (-not ([36;1mSelect-String -Path smoke-win-portable.log -Pattern 'DEVBAR[0m …[0m
+2026-09-14T09:32:34.8722072Z [31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+2026-09-14T09:32:34.8723999Z [31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mCannot find path 'D:\a\devbar\devbar\smoke-win-portable.log' because it does not exist.[0m
+2026-09-14T09:32:34.8961932Z ##[error]Process completed with exit code 1.
+2026-09-14T09:32:34.9269721Z Post job cleanup.
+2026-09-14T09:32:35.1153123Z Pruning is unnecessary.
+2026-09-14T09:32:35.1550917Z Post job cleanup.
+2026-09-14T09:32:35.3865037Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-14T09:32:35.4148491Z git version 2.55.0.windows.5
+2026-09-14T09:32:35.4216359Z Temporarily overriding HOME='D:\a\_temp\a850d180-83df-4c69-9b2e-3704f4ae748a' before making global git config changes
+2026-09-14T09:32:35.4218209Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-14T09:32:35.4229086Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\devbar\devbar
+2026-09-14T09:32:35.4597329Z Removing SSH command configuration
+2026-09-14T09:32:35.4616240Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-14T09:32:35.4980465Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-14T09:32:36.0785029Z Removing HTTP extra header
+2026-09-14T09:32:36.0798576Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-14T09:32:36.1136501Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-14T09:32:36.6973612Z Removing includeIf entries pointing to credentials config files
+2026-09-14T09:32:36.6989782Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-14T09:32:36.7307178Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-14T09:32:37.3079264Z Cleaning up orphan processes
