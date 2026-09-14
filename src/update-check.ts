@@ -155,7 +155,7 @@ export function checkForUpdate({
  * failure. Used for the SHA256SUMS.txt integrity manifest — the only trust
  * anchor an unsigned-download update has.
  */
-export function httpGetText(
+function httpGetText(
   url: string,
   timeoutMs = 20000,
   redirects = 5,

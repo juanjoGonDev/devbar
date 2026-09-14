@@ -66,7 +66,7 @@ function matchesPattern(pattern: string, cleaned: string): boolean {
  * comparable login shell, so commands run through `cmd.exe /d /s /c`; the
  * environment has already been enriched by `enhancedEnv`.
  */
-export function spawnShellForPlatform(): {
+function spawnShellForPlatform(): {
   file: string;
   baseArgs: readonly string[];
 } {

@@ -32,21 +32,29 @@ const VERSION = packageJson.version;
  * entry + metadata). Production node_modules are added by electron-builder
  * itself. Everything else in the repo is dev-only and stays out.
  */
-const COMMON: Record<string, unknown> = {
-  appId: 'io.github.juanjogondev.devbar',
-  productName: 'DevBar',
-  asar: true,
-  // No autoUpdater feed: DevBar does its own release checks + swaps.
-  publish: null,
-  directories: { output: 'dist/electron-builder' },
-  files: ['build/**/*', 'assets/**/*', 'package.json'],
-};
+/**
+ * Fresh base config per build() call. app-builder-lib normalizes (mutates)
+ * the config it receives — reusing one object across the per-arch invocations
+ * crashes the second call ("Cannot read properties of null (reading 'from')"
+ * in normalizeFiles), so every invocation gets its own instance.
+ */
+function baseConfig(): Record<string, unknown> {
+  return {
+    appId: 'io.github.juanjogondev.devbar',
+    productName: 'DevBar',
+    asar: true,
+    // No autoUpdater feed: DevBar does its own release checks + swaps.
+    publish: null,
+    directories: { output: 'dist/electron-builder' },
+    files: ['build/**/*', 'assets/**/*', 'package.json'],
+  };
+}
 
 async function buildWindows(): Promise<void> {
   for (const arch of ['x64', 'arm64'] as const) {
     await build({
       config: {
-        ...COMMON,
+        ...baseConfig(),
         win: {
           icon: path.join(ROOT, 'assets', 'icon.ico'),
           target: [
@@ -82,7 +90,7 @@ async function buildLinux(): Promise<void> {
   ] as const) {
     await build({
       config: {
-        ...COMMON,
+        ...baseConfig(),
         linux: {
           icon: path.join(ROOT, 'assets', 'icon.png'),
           category: 'Development',
