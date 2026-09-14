@@ -297,7 +297,7 @@ jobs:
 
       - name: Build and verify NSIS + portable (x64, arm64)
         shell: bash
-        run: pnpm run dist:win && pnpm run verify:win
+        run: pnpm run dist && pnpm run verify
 
       - name: Launch smoke — NSIS install + portable
         shell: pwsh
@@ -377,7 +377,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build and verify AppImage + deb (x64, arm64, armv7)
-        run: pnpm run dist:linux && pnpm run verify:linux
+        run: pnpm run dist && pnpm run verify
 
       - name: Launch smoke — AppImage + deb (x64, host arch)
         run: |

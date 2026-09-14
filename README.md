@@ -61,7 +61,8 @@ pnpm run fetch-electron   # one-time: downloads the Electron binary for `pnpm st
 pnpm start
 ```
 
-> Requires pnpm ≥ 10.16 and Node ≥ 22 (enforced via `engine-strict`).
+> Requires pnpm ≥ 10.16 and Node ≥ 22 (enforced via `engine-strict`)
+> on macOS, Windows and Linux — no bash needed (the dev build runs in Node).
 > Electron 42 no longer ships a postinstall, so `pnpm start` (dev mode)
 > needs `fetch-electron` once. Packaging (`pnpm run pack`) downloads its
 > own Electron and does not need this step.
@@ -77,20 +78,24 @@ Click the icon to open the popover. Click **Configuración** to add and edit gro
 
 ## Build the installers
 
-All builds are cross-buildable (the app is pure JS; only the Electron runtime
-is platform-specific), so you can produce Windows/Linux artifacts from any host.
+The commands are OS-agnostic: a thin router (`scripts/platform.ts`)
+detects the host and dispatches to the matching implementation — the
+original macOS bash pipeline, or electron-builder on Windows and Linux.
+All builds are cross-buildable (the app is pure JS; only the Electron
+runtime is platform-specific), so you can produce Windows/Linux
+artifacts from any host.
 
-| OS                      | Command               | Output                                                                    |
-| ----------------------- | --------------------- | ------------------------------------------------------------------------- |
-| macOS `.app` (dev)      | `pnpm run pack`       | `dist/DevBar-darwin-*`                                                    |
-| macOS DMG + ZIP         | `pnpm run dist:mac`   | `dist/release/DevBar-<v>-macos-{arm64,x64}.{dmg,zip}` + `SHA256SUMS.txt`  |
-| Windows NSIS + portable | `pnpm run dist:win`   | `dist/electron-builder/DevBar-<v>-win-{x64,arm64}-{setup,portable}.exe`   |
-| Linux AppImage + deb    | `pnpm run dist:linux` | `dist/electron-builder/DevBar-<v>-linux-{x64,arm64,armv7}.{AppImage,deb}` |
+| What                         | Command (on that OS)           | Output                                                                                             |
+| ---------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Unpacked dev app (host arch) | `pnpm run pack`                | macOS `dist/DevBar-darwin-*` · win `dist/electron-builder/win-unpacked` · linux `…/linux-unpacked` |
+| macOS DMG + ZIP              | `pnpm run dist` (= `dist:mac`) | `dist/release/DevBar-<v>-macos-{arm64,x64}.{dmg,zip}` + `SHA256SUMS.txt`                           |
+| Windows NSIS + portable      | `pnpm run dist`                | `dist/electron-builder/DevBar-<v>-win-{x64,arm64}-{setup,portable}.exe`                            |
+| Linux AppImage + deb         | `pnpm run dist`                | `dist/electron-builder/DevBar-<v>-linux-{x64,arm64,armv7}.{AppImage,deb}`                          |
 
-macOS keeps its own packager pipeline (ad-hoc signing + notification identity);
-Windows and Linux are built with **electron-builder**. Each platform has a
-matching verifier that checks the artifact contract and contents:
-`pnpm run verify:win` and `pnpm run verify:linux`.
+`pnpm run verify` runs the matching verifier (artifact contract + contents)
+for the current OS. macOS keeps its own packager pipeline (ad-hoc signing +
+notification identity); Windows and Linux are built with
+**electron-builder**.
 
 The release workflow builds all three platforms in parallel, launches each
 packaged binary as a smoke test (NSIS install + portable on Windows, AppImage +
@@ -99,13 +104,22 @@ deb under `xvfb` on Linux, packaged app on macOS), assembles the full
 
 ## Install / reinstall
 
-- **macOS** — `pnpm run install-local` stops any running DevBar, repacks,
-  replaces `/Applications/DevBar.app`, strips the Gatekeeper quarantine flag
-  (the bundle is unsigned), and relaunches. Falls back to `~/Applications` if
-  `/Applications` is not writable.
-- **Windows** — run the `setup.exe` installer, or drop the `portable.exe` in
-  any folder and run it.
-- **Linux** — run the `.AppImage` directly, or `sudo dpkg -i` the `.deb`.
+`pnpm run install-local` (or `install-local:dev` with the dev panel) works
+on every OS — stop any running DevBar, repack, replace the local install,
+relaunch:
+
+- **macOS** — replaces `/Applications/DevBar.app` (falls back to
+  `~/Applications` if not writable) and strips the Gatekeeper quarantine
+  flag (the bundle is unsigned).
+- **Windows** — replaces `%LOCALAPPDATA%\Programs\DevBar`, the same
+  per-user location the NSIS installer uses (the in-app updater keeps
+  working).
+- **Linux** — replaces `~/.local/share/DevBar` and links `devbar` into
+  `~/.local/bin` when it exists.
+
+For a "real" install, run the `setup.exe` installer (Windows), drop the
+`portable.exe` in any folder, run the `.AppImage` directly, or
+`sudo dpkg -i` the `.deb` (Linux).
 
 ## Logs
 

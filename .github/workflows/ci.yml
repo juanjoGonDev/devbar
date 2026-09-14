@@ -151,12 +151,12 @@ jobs:
           # network-heavy build before failing.
           ok=0
           for attempt in 1 2 3; do
-            if pnpm run dist:win; then ok=1; break; fi
-            echo "::warning::dist:win failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (win) failed on attempt ${attempt} (transient download?) — retrying in 30s"
             if [ "$attempt" -lt 3 ]; then sleep 30; fi
           done
-          if [ "$ok" != 1 ]; then echo "dist:win failed after 3 attempts"; exit 1; fi
-          pnpm run verify:win
+          if [ "$ok" != 1 ]; then echo "dist (win) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
 
       - name: Build and verify Linux release
         if: matrix.os == 'linux'
@@ -167,12 +167,12 @@ jobs:
           # network-heavy build before failing.
           ok=0
           for attempt in 1 2 3; do
-            if pnpm run dist:linux; then ok=1; break; fi
-            echo "::warning::dist:linux failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (linux) failed on attempt ${attempt} (transient download?) — retrying in 30s"
             if [ "$attempt" -lt 3 ]; then sleep 30; fi
           done
-          if [ "$ok" != 1 ]; then echo "dist:linux failed after 3 attempts"; exit 1; fi
-          pnpm run verify:linux
+          if [ "$ok" != 1 ]; then echo "dist (linux) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
 
       - name: Launch smoke — macOS (packaged app)
         if: matrix.os == 'macos'

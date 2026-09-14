@@ -20,7 +20,11 @@ import packageJson from '../package.json' with { type: 'json' };
  * with an explicit artifact name. The app is pure JS, so cross-building
  * from any host works; downloads of the Electron runtime are cached.
  *
- * Usage: node --experimental-strip-types scripts/package-win-linux.ts win|linux
+ * Usage: node --experimental-strip-types scripts/package-win-linux.ts win|linux [dir]
+ *
+ * With the `dir` argument only the unpacked app directory for the HOST
+ * arch is produced (used by `pnpm run pack` / `pnpm install-local` for a
+ * quick dev install — no installer, no portable, no AppImage/deb).
  */
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -51,16 +55,19 @@ function baseConfig(): Record<string, unknown> {
 }
 
 async function buildWindows(): Promise<void> {
-  for (const arch of ['x64', 'arm64'] as const) {
+  const archs = dirOnly ? [hostArch()] : (['x64', 'arm64'] as const);
+  for (const arch of archs) {
     await build({
       config: {
         ...baseConfig(),
         win: {
           icon: path.join(ROOT, 'assets', 'icon.ico'),
-          target: [
-            { target: 'nsis', arch: [arch] },
-            { target: 'portable', arch: [arch] },
-          ],
+          target: dirOnly
+            ? [{ target: 'dir' }]
+            : [
+                { target: 'nsis', arch: [arch] },
+                { target: 'portable', arch: [arch] },
+              ],
         },
         nsis: {
           // One-click, per-user: no UAC prompt, installs to
@@ -82,12 +89,15 @@ async function buildWindows(): Promise<void> {
 }
 
 async function buildLinux(): Promise<void> {
-  // [electron-builder arch key, artifact-contract arch name]
-  for (const [builderArch, contractArch] of [
-    ['x64', 'x64'],
-    ['arm64', 'arm64'],
-    ['armv7l', 'armv7'],
-  ] as const) {
+  const pairs: ReadonlyArray<readonly [string, string]> = dirOnly
+    ? [[hostArch(), hostArch()]]
+    : [
+        // [electron-builder arch key, artifact-contract arch name]
+        ['x64', 'x64'],
+        ['arm64', 'arm64'],
+        ['armv7l', 'armv7'],
+      ];
+  for (const [builderArch, contractArch] of pairs) {
     await build({
       config: {
         ...baseConfig(),
@@ -102,10 +112,12 @@ async function buildLinux(): Promise<void> {
           synopsis: 'Menu bar launcher for local development services',
           description:
             'Start and stop dev services, switch git branches per group, run actions and watch logs from the system tray.',
-          target: [
-            { target: 'AppImage', arch: [builderArch] },
-            { target: 'deb', arch: [builderArch] },
-          ],
+          target: dirOnly
+            ? [{ target: 'dir' }]
+            : [
+                { target: 'AppImage', arch: [builderArch] },
+                { target: 'deb', arch: [builderArch] },
+              ],
           artifactName: `DevBar-${VERSION}-linux-${contractArch}.${ext()}`,
         },
       },
@@ -120,9 +132,22 @@ function ext(): string {
 }
 
 const target = process.argv[2];
+const dirOnly = process.argv[3] === 'dir';
 if (target !== 'win' && target !== 'linux') {
-  console.error('Usage: package-win-linux.ts win|linux');
+  console.error('Usage: package-win-linux.ts win|linux [dir]');
   process.exit(1);
+}
+
+/** electron-builder arch key for the host CPU (dir-mode only builds one). */
+function hostArch(): string {
+  switch (process.arch) {
+    case 'arm64':
+      return 'arm64';
+    case 'arm':
+      return 'armv7l';
+    default:
+      return 'x64';
+  }
 }
 
 process.chdir(ROOT);

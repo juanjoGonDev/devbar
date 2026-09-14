@@ -33,7 +33,13 @@ Raspberry Pi, Windows and Linux. The previous base was macOS only.
 - **App identity**: packaged builds pin `app.name = 'DevBar'` on every OS so
   userData/logs/notification folders are consistent (dev mode unchanged).
 - **CI**: `ci.yml` gains a 3-OS `build` job that compiles, verifies
-  (`pnpm run verify:win|linux`, `release:mac`) and LAUNCHES each packaged
+  (`pnpm run verify` routed per-OS, `release:mac`) and LAUNCHES each packaged
+- **OS-agnostic dev commands**: `pack`, `dist`, `verify`, `dist:mac`,
+  `release:verify`, `install-local[:dev]` keep their original names; a router
+  (`scripts/platform.ts`) inspects process.platform and dispatches — darwin to
+  the original bash pipeline, win32/linux to electron-builder. The dev build
+  itself runs in Node (`scripts/build.ts`) so `pnpm start` needs no bash on
+  Windows. `pnpm run pack` on win/linux produces the unpacked app (dir target).
   binary via a built-in smoke mode (`--devbar-smoke` / `DEVBAR_SMOKE=1` prints
   `DEVBAR_SMOKE_OK` and exits; creates the platform tray, skips windows/
   commands/autostart). Windows smoke: NSIS install → installed exe + portable
