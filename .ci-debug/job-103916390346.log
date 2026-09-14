@@ -1,0 +1,367 @@
+﻿2026-09-14T08:58:30.0958094Z Current runner version: '2.337.0'
+2026-09-14T08:58:30.0979964Z ##[group]Runner Image Provisioner
+2026-09-14T08:58:30.0980672Z Hosted Compute Agent
+2026-09-14T08:58:30.0981183Z Version: 20260828.587
+2026-09-14T08:58:30.0981793Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-14T08:58:30.0982445Z Build Date: 2026-08-28T16:44:25Z
+2026-09-14T08:58:30.0983059Z Worker ID: {572fba2b-7487-4338-9fe0-63937ea10d9e}
+2026-09-14T08:58:30.0983688Z Azure Region: westus3
+2026-09-14T08:58:30.0984161Z ##[endgroup]
+2026-09-14T08:58:30.0985298Z ##[group]Operating System
+2026-09-14T08:58:30.0985810Z Ubuntu
+2026-09-14T08:58:30.0986301Z 24.04.5
+2026-09-14T08:58:30.0986753Z LTS
+2026-09-14T08:58:30.0987218Z ##[endgroup]
+2026-09-14T08:58:30.0988031Z ##[group]Runner Image
+2026-09-14T08:58:30.0988587Z Image: ubuntu-24.04
+2026-09-14T08:58:30.0989098Z Version: 20260907.300.1
+2026-09-14T08:58:30.0990198Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260907.300/images/ubuntu/Ubuntu2404-Readme.md
+2026-09-14T08:58:30.0991472Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260907.300
+2026-09-14T08:58:30.0992241Z ##[endgroup]
+2026-09-14T08:58:30.0993164Z ##[group]GITHUB_TOKEN Permissions
+2026-09-14T08:58:30.0994759Z Contents: read
+2026-09-14T08:58:30.0995308Z Metadata: read
+2026-09-14T08:58:30.0995799Z ##[endgroup]
+2026-09-14T08:58:30.0998032Z Secret source: Actions
+2026-09-14T08:58:30.0998957Z Cache mode: write
+2026-09-14T08:58:30.0999541Z Prepare workflow directory
+2026-09-14T08:58:30.1382784Z Prepare all required actions
+2026-09-14T08:58:30.1421471Z Getting action download info
+2026-09-14T08:58:30.4949561Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-09-14T08:58:30.6533415Z Download action repository 'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86' (SHA:0977fd99725f1db4007ccb2928dbb4e90d06cc86)
+2026-09-14T08:58:31.3289379Z Download action repository 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' (SHA:820762786026740c76f36085b0efc47a31fe5020)
+2026-09-14T08:58:31.8296369Z Download action repository 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9' (SHA:55cc8345863c7cc4c66a329aec7e433d2d1c52a9)
+2026-09-14T08:58:32.2502246Z Download action repository 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' (SHA:043fb46d1a93c77aae656e7c1c64a875d1fc6a0a)
+2026-09-14T08:58:32.4418501Z Complete job name: Build, verify & launch smoke — linux
+2026-09-14T08:58:32.5094119Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+2026-09-14T08:58:32.5094722Z with:
+2026-09-14T08:58:32.5094958Z   persist-credentials: false
+2026-09-14T08:58:32.5095215Z   repository: juanjoGonDev/devbar
+2026-09-14T08:58:32.5097497Z   token: ***
+2026-09-14T08:58:32.5097713Z   ssh-strict: true
+2026-09-14T08:58:32.5097929Z   ssh-user: git
+2026-09-14T08:58:32.5098129Z   clean: true
+2026-09-14T08:58:32.5098352Z   sparse-checkout-cone-mode: true
+2026-09-14T08:58:32.5098643Z   fetch-depth: 1
+2026-09-14T08:58:32.5098860Z   fetch-tags: false
+2026-09-14T08:58:32.5099083Z   show-progress: true
+2026-09-14T08:58:32.5099293Z   lfs: false
+2026-09-14T08:58:32.5099487Z   submodules: false
+2026-09-14T08:58:32.5099694Z   set-safe-directory: true
+2026-09-14T08:58:32.5099937Z   allow-unsafe-pr-checkout: false
+2026-09-14T08:58:32.5100344Z ##[endgroup]
+2026-09-14T08:58:32.5941825Z Syncing repository: juanjoGonDev/devbar
+2026-09-14T08:58:32.5943635Z ##[group]Getting Git version info
+2026-09-14T08:58:32.5944161Z Working directory is '/home/runner/work/devbar/devbar'
+2026-09-14T08:58:32.5945004Z [command]/usr/bin/git version
+2026-09-14T08:58:32.5978336Z git version 2.55.0
+2026-09-14T08:58:32.5995290Z ##[endgroup]
+2026-09-14T08:58:32.6006079Z Temporarily overriding HOME='/home/runner/work/_temp/cf2f4a14-5055-4d69-bff2-683a64bd0ff0' before making global git config changes
+2026-09-14T08:58:32.6007235Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-14T08:58:32.6011205Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/devbar/devbar
+2026-09-14T08:58:32.6055750Z Deleting the contents of '/home/runner/work/devbar/devbar'
+2026-09-14T08:58:32.6058815Z ##[group]Determining repository object format
+2026-09-14T08:58:32.6060408Z ##[endgroup]
+2026-09-14T08:58:32.6060945Z ##[group]Initializing the repository
+2026-09-14T08:58:32.6065459Z [command]/usr/bin/git init /home/runner/work/devbar/devbar
+2026-09-14T08:58:32.7611432Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-09-14T08:58:32.7612225Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-09-14T08:58:32.7612821Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-09-14T08:58:32.7613261Z hint: call:
+2026-09-14T08:58:32.7613501Z hint:
+2026-09-14T08:58:32.7613862Z hint: 	git config --global init.defaultBranch <name>
+2026-09-14T08:58:32.7614256Z hint:
+2026-09-14T08:58:32.7614602Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-09-14T08:58:32.7615251Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-09-14T08:58:32.7615723Z hint:
+2026-09-14T08:58:32.7615960Z hint: 	git branch -m <name>
+2026-09-14T08:58:32.7616229Z hint:
+2026-09-14T08:58:32.7616607Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-09-14T08:58:32.7617221Z Initialized empty Git repository in /home/runner/work/devbar/devbar/.git/
+2026-09-14T08:58:32.7621079Z [command]/usr/bin/git remote add origin https://github.com/juanjoGonDev/devbar
+2026-09-14T08:58:32.7674242Z ##[endgroup]
+2026-09-14T08:58:32.7674721Z ##[group]Disabling automatic garbage collection
+2026-09-14T08:58:32.7678065Z [command]/usr/bin/git config --local gc.auto 0
+2026-09-14T08:58:32.7709991Z ##[endgroup]
+2026-09-14T08:58:32.7710449Z ##[group]Setting up auth
+2026-09-14T08:58:32.7710845Z Removing SSH command configuration
+2026-09-14T08:58:32.7716290Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-14T08:58:32.7747354Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-14T08:58:32.8393710Z Removing HTTP extra header
+2026-09-14T08:58:32.8398790Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-14T08:58:32.8431496Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-14T08:58:32.8624502Z Removing includeIf entries pointing to credentials config files
+2026-09-14T08:58:32.8629361Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-14T08:58:32.8661075Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-14T08:58:32.8856432Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-09-14T08:58:32.8891010Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/devbar/devbar/.git.path /home/runner/work/_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config
+2026-09-14T08:58:32.8919796Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/devbar/devbar/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config
+2026-09-14T08:58:32.8950417Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config
+2026-09-14T08:58:32.8980703Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config
+2026-09-14T08:58:32.9005745Z ##[endgroup]
+2026-09-14T08:58:32.9006063Z ##[group]Fetching the repository
+2026-09-14T08:58:32.9011677Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a97b81eb914d55fefafeb84b56e525e402bfe8de:refs/remotes/pull/78/merge
+2026-09-14T08:58:34.1532509Z From https://github.com/juanjoGonDev/devbar
+2026-09-14T08:58:34.1533064Z  * [new ref]         a97b81eb914d55fefafeb84b56e525e402bfe8de -> pull/78/merge
+2026-09-14T08:58:34.1536139Z ##[endgroup]
+2026-09-14T08:58:34.1537300Z ##[group]Determining the checkout info
+2026-09-14T08:58:34.1538087Z ##[endgroup]
+2026-09-14T08:58:34.1541882Z [command]/usr/bin/git sparse-checkout disable
+2026-09-14T08:58:34.1586757Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-09-14T08:58:34.1615291Z ##[group]Checking out the ref
+2026-09-14T08:58:34.1619664Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/78/merge
+2026-09-14T08:58:34.1775318Z Note: switching to 'refs/remotes/pull/78/merge'.
+2026-09-14T08:58:34.1775595Z 
+2026-09-14T08:58:34.1775779Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-14T08:58:34.1776180Z changes and commit them, and you can discard any commits you make in this
+2026-09-14T08:58:34.1776559Z state without impacting any branches by switching back to a branch.
+2026-09-14T08:58:34.1776933Z 
+2026-09-14T08:58:34.1777181Z If you want to create a new branch to retain commits you create, you may
+2026-09-14T08:58:34.1777731Z do so (now or later) by using -c with the switch command. Example:
+2026-09-14T08:58:34.1778028Z 
+2026-09-14T08:58:34.1778729Z   git switch -c <new-branch-name>
+2026-09-14T08:58:34.1779021Z 
+2026-09-14T08:58:34.1779165Z Or undo this operation with:
+2026-09-14T08:58:34.1779354Z 
+2026-09-14T08:58:34.1779473Z   git switch -
+2026-09-14T08:58:34.1779883Z 
+2026-09-14T08:58:34.1780204Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-14T08:58:34.1780599Z 
+2026-09-14T08:58:34.1781030Z HEAD is now at a97b81e Merge 07e99fe2e469f4e5155c71eb56144731b05d5c88 into 42a77c630288a92901d0127cde05e7e033cf4dda
+2026-09-14T08:58:34.1784299Z ##[endgroup]
+2026-09-14T08:58:34.1826245Z [command]/usr/bin/git log -1 --format=%H
+2026-09-14T08:58:34.1851290Z a97b81eb914d55fefafeb84b56e525e402bfe8de
+2026-09-14T08:58:34.1859382Z ##[group]Removing auth
+2026-09-14T08:58:34.1859745Z Removing SSH command configuration
+2026-09-14T08:58:34.1862729Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-14T08:58:34.1892711Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-14T08:58:34.2090355Z Removing HTTP extra header
+2026-09-14T08:58:34.2093196Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-14T08:58:34.2126075Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-14T08:58:34.2324259Z Removing includeIf entries pointing to credentials config files
+2026-09-14T08:58:34.2326634Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-14T08:58:34.2354950Z includeif.gitdir:/home/runner/work/devbar/devbar/.git.path
+2026-09-14T08:58:34.2355620Z includeif.gitdir:/home/runner/work/devbar/devbar/.git/worktrees/*.path
+2026-09-14T08:58:34.2356161Z includeif.gitdir:/github/workspace/.git.path
+2026-09-14T08:58:34.2356612Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-09-14T08:58:34.2362856Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/devbar/devbar/.git.path
+2026-09-14T08:58:34.2386159Z /home/runner/work/_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config
+2026-09-14T08:58:34.2394782Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/devbar/devbar/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-b33fdafa\-876b\-4fcc\-b0dc\-5ba677a7e3c6\.config
+2026-09-14T08:58:34.2424937Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/devbar/devbar/.git/worktrees/*.path
+2026-09-14T08:58:34.2448845Z /home/runner/work/_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config
+2026-09-14T08:58:34.2455404Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/devbar/devbar/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-b33fdafa\-876b\-4fcc\-b0dc\-5ba677a7e3c6\.config
+2026-09-14T08:58:34.2484983Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-09-14T08:58:34.2507214Z /github/runner_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config
+2026-09-14T08:58:34.2514512Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-b33fdafa\-876b\-4fcc\-b0dc\-5ba677a7e3c6\.config
+2026-09-14T08:58:34.2548187Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-09-14T08:58:34.2573238Z /github/runner_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config
+2026-09-14T08:58:34.2598781Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-b33fdafa\-876b\-4fcc\-b0dc\-5ba677a7e3c6\.config
+2026-09-14T08:58:34.2658208Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-14T08:58:34.2863214Z Removing credentials config '/home/runner/work/_temp/git-credentials-b33fdafa-876b-4fcc-b0dc-5ba677a7e3c6.config'
+2026-09-14T08:58:34.2864441Z ##[endgroup]
+2026-09-14T08:58:34.3050380Z ##[group]Run pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+2026-09-14T08:58:34.3050729Z with:
+2026-09-14T08:58:34.3050900Z   dest: ~/setup-pnpm
+2026-09-14T08:58:34.3051082Z   run_install: null
+2026-09-14T08:58:34.3051254Z   cache: false
+2026-09-14T08:58:34.3051437Z   cache_dependency_path: pnpm-lock.yaml
+2026-09-14T08:58:34.3051682Z   package_json_file: package.json
+2026-09-14T08:58:34.3051887Z   standalone: false
+2026-09-14T08:58:34.3052054Z ##[endgroup]
+2026-09-14T08:58:34.4248687Z ##[group]Running self-installer...
+2026-09-14T08:58:36.5874618Z 
+2026-09-14T08:58:36.5875078Z added 1 package, and audited 2 packages in 2s
+2026-09-14T08:58:36.5875315Z 
+2026-09-14T08:58:36.5875415Z 1 package is looking for funding
+2026-09-14T08:58:36.5875645Z   run `npm fund` for details
+2026-09-14T08:58:36.5880401Z 
+2026-09-14T08:58:36.5880538Z found 0 vulnerabilities
+2026-09-14T08:58:37.0888820Z Checking for updates...
+2026-09-14T08:58:37.2742285Z Switching pnpm from v11.19.0 to v10.32.1...
+2026-09-14T08:58:37.8028384Z .../v11/863-1a09f23c8c9-4640094dad9457ce | Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-09-14T08:58:37.8044248Z .../v11/863-1a09f23c8c9-4640094dad9457ce |   +1 +
+2026-09-14T08:58:38.0241582Z .../v11/863-1a09f23c8c9-4640094dad9457ce | Progress: resolved 1, reused 0, downloaded 1, added 1, done
+2026-09-14T08:58:38.3648150Z [WARN] Detected a pnpm v10 installation layout at PNPM_HOME. The pnpm shims at PNPM_HOME have been refreshed so the new version is active, but pnpm v11 expects bins in PNPM_HOME/bin. Run "pnpm setup" to migrate your PATH to the v11 layout.
+2026-09-14T08:58:38.3678614Z Successfully updated pnpm to v10.32.1
+2026-09-14T08:58:38.4495258Z ##[endgroup]
+2026-09-14T08:58:38.4495504Z Installation Completed!
+2026-09-14T08:58:38.4659162Z ##[group]Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+2026-09-14T08:58:38.4659485Z with:
+2026-09-14T08:58:38.4659651Z   node-version: 22
+2026-09-14T08:58:38.4659823Z   cache: pnpm
+2026-09-14T08:58:38.4659990Z   check-latest: false
+2026-09-14T08:58:38.4662086Z   token: ***
+2026-09-14T08:58:38.4662269Z   package-manager-cache: true
+2026-09-14T08:58:38.4662473Z env:
+2026-09-14T08:58:38.4662676Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-09-14T08:58:38.4662926Z ##[endgroup]
+2026-09-14T08:58:38.5714612Z Found in cache @ /opt/hostedtoolcache/node/22.23.2/x64
+2026-09-14T08:58:38.5717201Z ##[group]Environment details
+2026-09-14T08:58:39.1318790Z node: v22.23.2
+2026-09-14T08:58:39.1319115Z npm: 10.9.8
+2026-09-14T08:58:39.1319332Z yarn: 1.22.22
+2026-09-14T08:58:39.1319900Z ##[endgroup]
+2026-09-14T08:58:39.1336357Z [command]/home/runner/setup-pnpm/node_modules/.bin/bin/pnpm store path --silent
+2026-09-14T08:58:39.5633595Z /home/runner/setup-pnpm/node_modules/.bin/store/v10
+2026-09-14T08:58:39.7820279Z Cache hit for: node-cache-Linux-x64-pnpm-83528be4bfacfab174cb4589cc6560b2987ff34bb71b9519b61a7c1fb63cbec1
+2026-09-14T08:58:41.0113369Z Received 33554432 of 72015995 (46.6%), 32.0 MBs/sec
+2026-09-14T08:58:41.2876581Z Received 72015995 of 72015995 (100.0%), 53.8 MBs/sec
+2026-09-14T08:58:41.2877641Z Cache Size: ~69 MB (72015995 B)
+2026-09-14T08:58:41.2927007Z [command]/usr/bin/tar -xf /home/runner/work/_temp/ddb435a6-0ed1-47b4-8d95-833a70f629a7/cache.tzst -P -C /home/runner/work/devbar/devbar --use-compress-program unzstd
+2026-09-14T08:58:41.8557869Z Cache restored successfully
+2026-09-14T08:58:41.8592925Z Cache restored from key: node-cache-Linux-x64-pnpm-83528be4bfacfab174cb4589cc6560b2987ff34bb71b9519b61a7c1fb63cbec1
+2026-09-14T08:58:41.8724007Z ##[group]Run echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+2026-09-14T08:58:41.8724590Z [36;1mecho "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"[0m
+2026-09-14T08:58:41.8763189Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-09-14T08:58:41.8763486Z env:
+2026-09-14T08:58:41.8763709Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-09-14T08:58:41.8763965Z ##[endgroup]
+2026-09-14T08:58:41.9632060Z ##[group]Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+2026-09-14T08:58:41.9632380Z with:
+2026-09-14T08:58:41.9632589Z   path: ~/.cache/electron
+~/.cache/electron-builder
+
+2026-09-14T08:58:41.9632998Z   key: electron-linux-83528be4bfacfab174cb4589cc6560b2987ff34bb71b9519b61a7c1fb63cbec1
+2026-09-14T08:58:41.9633376Z   enableCrossOsArchive: false
+2026-09-14T08:58:41.9633583Z   fail-on-cache-miss: false
+2026-09-14T08:58:41.9633776Z   lookup-only: false
+2026-09-14T08:58:41.9633957Z   save-always: false
+2026-09-14T08:58:41.9634118Z env:
+2026-09-14T08:58:41.9634316Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-09-14T08:58:41.9634563Z ##[endgroup]
+2026-09-14T08:58:42.2559625Z Cache not found for input keys: electron-linux-83528be4bfacfab174cb4589cc6560b2987ff34bb71b9519b61a7c1fb63cbec1
+2026-09-14T08:58:42.2633035Z ##[group]Run pnpm install --frozen-lockfile
+2026-09-14T08:58:42.2633344Z [36;1mpnpm install --frozen-lockfile[0m
+2026-09-14T08:58:42.2666130Z shell: /usr/bin/bash -e {0}
+2026-09-14T08:58:42.2666365Z env:
+2026-09-14T08:58:42.2666594Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-09-14T08:58:42.2666855Z ##[endgroup]
+2026-09-14T08:58:42.5157792Z Lockfile is up to date, resolution step is skipped
+2026-09-14T08:58:42.6385612Z Packages: +481
+2026-09-14T08:58:42.6386160Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+2026-09-14T08:58:42.7531010Z Progress: resolved 0, reused 1, downloaded 0, added 0
+2026-09-14T08:58:43.5549086Z Progress: resolved 0, reused 465, downloaded 0, added 481, done
+2026-09-14T08:58:43.8173038Z 
+2026-09-14T08:58:43.8563578Z 
+2026-09-14T08:58:43.8564535Z > devbar@0.7.1 postinstall /home/runner/work/devbar/devbar
+2026-09-14T08:58:43.8565010Z > node --experimental-strip-types scripts/install-hooks.ts
+2026-09-14T08:58:43.8565293Z 
+2026-09-14T08:58:43.9345257Z ╭ Warning ─────────────────────────────────────────────────────────────────────╮
+2026-09-14T08:58:43.9346170Z │                                                                              │
+2026-09-14T08:58:43.9347942Z │   Ignored build scripts: electron-winstaller@5.4.0, esbuild@0.28.2.          │
+2026-09-14T08:58:43.9349094Z │   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+2026-09-14T08:58:43.9349914Z │   to run scripts.                                                            │
+2026-09-14T08:58:43.9350587Z │                                                                              │
+2026-09-14T08:58:43.9351126Z ╰──────────────────────────────────────────────────────────────────────────────╯
+2026-09-14T08:58:43.9427995Z Done in 1.6s using pnpm v10.32.1
+2026-09-14T08:58:43.9599864Z ##[group]Run pnpm run dist:linux && pnpm run verify:linux
+2026-09-14T08:58:43.9600225Z [36;1mpnpm run dist:linux && pnpm run verify:linux[0m
+2026-09-14T08:58:43.9632720Z shell: /usr/bin/bash -e {0}
+2026-09-14T08:58:43.9632937Z env:
+2026-09-14T08:58:43.9633147Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-09-14T08:58:43.9633405Z ##[endgroup]
+2026-09-14T08:58:44.2225790Z 
+2026-09-14T08:58:44.2226317Z > devbar@0.7.1 dist:linux /home/runner/work/devbar/devbar
+2026-09-14T08:58:44.2227175Z > pnpm run build && node --experimental-strip-types scripts/package-win-linux.ts linux
+2026-09-14T08:58:44.2227769Z 
+2026-09-14T08:58:44.4353336Z 
+2026-09-14T08:58:44.4354062Z > devbar@0.7.1 build /home/runner/work/devbar/devbar
+2026-09-14T08:58:44.4354406Z > bash scripts/build.sh
+2026-09-14T08:58:44.4354538Z 
+2026-09-14T08:58:52.3245567Z 
+2026-09-14T08:58:52.3246369Z   build/src/preload.cjs  8.9kb
+2026-09-14T08:58:52.3246614Z 
+2026-09-14T08:58:52.3246954Z ⚡ Done in 2ms
+2026-09-14T08:58:52.7148169Z   • electron-builder  version=26.16.1 os=6.17.0-1022-azure
+2026-09-14T08:58:52.7150602Z   • publishing will be skipped  reason=current build is a part of pull request solution=set env PUBLISH_FOR_PULL_REQUEST to true to force code signing
+2026-09-14T08:58:52.7151611Z There are serious security concerns with PUBLISH_FOR_PULL_REQUEST=true (see the  CircleCI documentation (https://circleci.com/docs/1.0/fork-pr-builds/) for details)
+2026-09-14T08:58:52.7152928Z If you have SSH keys, sensitive env vars or AWS credentials stored in your project settings and untrusted forks can make pull requests against your repo, then this option isn't for you.
+2026-09-14T08:58:52.7223395Z   • author is missed in the package.json  appPackageFile=/home/runner/work/devbar/devbar/package.json
+2026-09-14T08:58:53.4025388Z   • executing @electron/rebuild  electronVersion=43.2.0 arch=x64 buildFromSource=false workspaceRoot=/home/runner/work/devbar/devbar projectDir=./ appDir=./
+2026-09-14T08:58:53.4026242Z   • installing native dependencies  arch=x64
+2026-09-14T08:58:53.5001075Z   • completed installing native dependencies
+2026-09-14T08:58:53.5036577Z   • packaging       platform=linux arch=x64 electron=43.2.0 appOutDir=dist/electron-builder/linux-unpacked
+2026-09-14T08:58:53.6782789Z   • downloaded      label=electron progress=100%
+2026-09-14T08:58:55.7187816Z   • downloaded electron zip extracted successfully  output=/home/runner/work/devbar/devbar/dist/electron-builder/linux-unpacked
+2026-09-14T08:58:55.7423053Z   • searching for node modules  pm=pnpm searchDir=/home/runner/work/devbar/devbar
+2026-09-14T08:58:56.7330680Z   • duplicate dependency references  dependencies=["type-fest@5.7.0"]
+2026-09-14T08:58:57.4260479Z   • building        target=AppImage arch=x64 file=dist/electron-builder/DevBar-0.7.1-linux-x64.AppImage
+2026-09-14T08:58:57.4265853Z   • electron uses desktopName as app_id / WM_CLASS for window association. Without it desktop environments may not link running windows to this .desktop entry. Set desktopName in package.json and linux.syncDesktopName: true to fix.  reason=desktopName is not set in package.json docs=https://www.electron.build/linux#window-association-desktopname--syncdesktopname
+2026-09-14T08:58:57.5324702Z   • downloaded      label=appimage-12.0.1.7z progress=100%
+2026-09-14T08:58:57.6507588Z   • downloaded      label=7zip-linux-x64.tar.gz progress=100%
+2026-09-14T08:59:06.1508341Z   • building embedded block map  file=dist/electron-builder/DevBar-0.7.1-linux-x64.AppImage
+2026-09-14T08:59:11.0060758Z   • building        target=deb arch=x64 file=dist/electron-builder/DevBar-0.7.1-linux-x64.deb
+2026-09-14T08:59:11.0075285Z   • electron uses desktopName as app_id / WM_CLASS for window association. Without it desktop environments may not link running windows to this .desktop entry. Set desktopName in package.json and linux.syncDesktopName: true to fix.  reason=desktopName is not set in package.json docs=https://www.electron.build/linux#window-association-desktopname--syncdesktopname
+2026-09-14T08:59:11.1699870Z   • downloaded      label=fpm-1.17.0-ruby-3.4.3-linux-amd64.7z progress=100%
+2026-09-14T09:00:27.3249363Z [linux] x64 done
+2026-09-14T09:00:27.3254850Z   • electron-builder  version=26.16.1 os=6.17.0-1022-azure
+2026-09-14T09:00:27.3258687Z   • publishing will be skipped  reason=current build is a part of pull request solution=set env PUBLISH_FOR_PULL_REQUEST to true to force code signing
+2026-09-14T09:00:27.3260159Z There are serious security concerns with PUBLISH_FOR_PULL_REQUEST=true (see the  CircleCI documentation (https://circleci.com/docs/1.0/fork-pr-builds/) for details)
+2026-09-14T09:00:27.3261550Z If you have SSH keys, sensitive env vars or AWS credentials stored in your project settings and untrusted forks can make pull requests against your repo, then this option isn't for you.
+2026-09-14T09:00:27.3285504Z   • author is missed in the package.json  appPackageFile=/home/runner/work/devbar/devbar/package.json
+2026-09-14T09:00:27.5634984Z   • executing @electron/rebuild  electronVersion=43.2.0 arch=arm64 buildFromSource=false workspaceRoot=/home/runner/work/devbar/devbar projectDir=./ appDir=./
+2026-09-14T09:00:27.5636098Z   • installing native dependencies  arch=arm64
+2026-09-14T09:00:27.6654664Z   • completed installing native dependencies
+2026-09-14T09:00:27.6695290Z   • packaging       platform=linux arch=arm64 electron=43.2.0 appOutDir=dist/electron-builder/linux-arm64-unpacked
+2026-09-14T09:00:27.8318227Z   • downloaded      label=electron progress=100%
+2026-09-14T09:00:30.8649867Z   • downloaded electron zip extracted successfully  output=/home/runner/work/devbar/devbar/dist/electron-builder/linux-arm64-unpacked
+2026-09-14T09:00:30.8920025Z   • searching for node modules  pm=pnpm searchDir=/home/runner/work/devbar/devbar
+2026-09-14T09:00:31.8419132Z   • duplicate dependency references  dependencies=["type-fest@5.7.0"]
+2026-09-14T09:00:32.6615970Z   • building        target=AppImage arch=arm64 file=dist/electron-builder/DevBar-0.7.1-linux-arm64.AppImage
+2026-09-14T09:00:32.6620507Z   • electron uses desktopName as app_id / WM_CLASS for window association. Without it desktop environments may not link running windows to this .desktop entry. Set desktopName in package.json and linux.syncDesktopName: true to fix.  reason=desktopName is not set in package.json docs=https://www.electron.build/linux#window-association-desktopname--syncdesktopname
+2026-09-14T09:00:40.0714715Z   • building embedded block map  file=dist/electron-builder/DevBar-0.7.1-linux-arm64.AppImage
+2026-09-14T09:00:45.4237322Z   • building        target=deb arch=arm64 file=dist/electron-builder/DevBar-0.7.1-linux-arm64.deb
+2026-09-14T09:00:45.4254274Z   • electron uses desktopName as app_id / WM_CLASS for window association. Without it desktop environments may not link running windows to this .desktop entry. Set desktopName in package.json and linux.syncDesktopName: true to fix.  reason=desktopName is not set in package.json docs=https://www.electron.build/linux#window-association-desktopname--syncdesktopname
+2026-09-14T09:01:54.7874121Z [linux] arm64 done
+2026-09-14T09:01:54.7879955Z   • electron-builder  version=26.16.1 os=6.17.0-1022-azure
+2026-09-14T09:01:54.7886142Z   • publishing will be skipped  reason=current build is a part of pull request solution=set env PUBLISH_FOR_PULL_REQUEST to true to force code signing
+2026-09-14T09:01:54.7887568Z There are serious security concerns with PUBLISH_FOR_PULL_REQUEST=true (see the  CircleCI documentation (https://circleci.com/docs/1.0/fork-pr-builds/) for details)
+2026-09-14T09:01:54.7889420Z If you have SSH keys, sensitive env vars or AWS credentials stored in your project settings and untrusted forks can make pull requests against your repo, then this option isn't for you.
+2026-09-14T09:01:54.7911852Z   • author is missed in the package.json  appPackageFile=/home/runner/work/devbar/devbar/package.json
+2026-09-14T09:01:55.0301243Z   • executing @electron/rebuild  electronVersion=43.2.0 arch=armv7l buildFromSource=false workspaceRoot=/home/runner/work/devbar/devbar projectDir=./ appDir=./
+2026-09-14T09:01:55.0302292Z   • installing native dependencies  arch=armv7l
+2026-09-14T09:01:55.1295334Z   • completed installing native dependencies
+2026-09-14T09:01:55.1337754Z   • packaging       platform=linux arch=armv7l electron=43.2.0 appOutDir=dist/electron-builder/linux-armv7l-unpacked
+2026-09-14T09:01:55.3865259Z   • downloaded      label=electron progress=100%
+2026-09-14T09:01:59.2532078Z   • downloaded electron zip extracted successfully  output=/home/runner/work/devbar/devbar/dist/electron-builder/linux-armv7l-unpacked
+2026-09-14T09:01:59.2634811Z   • searching for node modules  pm=pnpm searchDir=/home/runner/work/devbar/devbar
+2026-09-14T09:02:00.2060193Z   • duplicate dependency references  dependencies=["type-fest@5.7.0"]
+2026-09-14T09:02:00.9747024Z   • building        target=AppImage arch=armv7l file=dist/electron-builder/DevBar-0.7.1-linux-armv7.AppImage
+2026-09-14T09:02:00.9752571Z   • electron uses desktopName as app_id / WM_CLASS for window association. Without it desktop environments may not link running windows to this .desktop entry. Set desktopName in package.json and linux.syncDesktopName: true to fix.  reason=desktopName is not set in package.json docs=https://www.electron.build/linux#window-association-desktopname--syncdesktopname
+2026-09-14T09:02:06.8834711Z   • building embedded block map  file=dist/electron-builder/DevBar-0.7.1-linux-armv7.AppImage
+2026-09-14T09:02:12.0565009Z   • building        target=deb arch=armv7l file=dist/electron-builder/DevBar-0.7.1-linux-armv7.deb
+2026-09-14T09:02:12.0578252Z   • electron uses desktopName as app_id / WM_CLASS for window association. Without it desktop environments may not link running windows to this .desktop entry. Set desktopName in package.json and linux.syncDesktopName: true to fix.  reason=desktopName is not set in package.json docs=https://www.electron.build/linux#window-association-desktopname--syncdesktopname
+2026-09-14T09:03:10.6805867Z [linux] armv7 done
+2026-09-14T09:03:10.9463629Z 
+2026-09-14T09:03:10.9464363Z > devbar@0.7.1 verify:linux /home/runner/work/devbar/devbar
+2026-09-14T09:03:10.9467051Z > pnpm run build && node build/scripts/verify-linux-release.js
+2026-09-14T09:03:10.9467913Z 
+2026-09-14T09:03:11.1574879Z 
+2026-09-14T09:03:11.1575599Z > devbar@0.7.1 build /home/runner/work/devbar/devbar
+2026-09-14T09:03:11.1576117Z > bash scripts/build.sh
+2026-09-14T09:03:11.1576311Z 
+2026-09-14T09:03:18.4550847Z 
+2026-09-14T09:03:18.4555159Z   build/src/preload.cjs  8.9kb
+2026-09-14T09:03:18.4555389Z 
+2026-09-14T09:03:18.4555765Z ⚡ Done in 2ms
+2026-09-14T09:03:18.5034780Z DevBar-0.7.1-linux-x64.AppImage is missing or empty: /home/runner/work/devbar/devbar/build/dist/electron-builder/DevBar-0.7.1-linux-x64.AppImage
+2026-09-14T09:03:18.5184898Z  ELIFECYCLE  Command failed with exit code 1.
+2026-09-14T09:03:18.6498135Z ##[error]Process completed with exit code 1.
+2026-09-14T09:03:18.6588939Z Post job cleanup.
+2026-09-14T09:03:18.7770222Z Pruning is unnecessary.
+2026-09-14T09:03:18.7908868Z Post job cleanup.
+2026-09-14T09:03:18.8705113Z [command]/usr/bin/git version
+2026-09-14T09:03:18.8742362Z git version 2.55.0
+2026-09-14T09:03:18.8784477Z Temporarily overriding HOME='/home/runner/work/_temp/20035cfb-720d-4cff-a51a-c4f560f21635' before making global git config changes
+2026-09-14T09:03:18.8785586Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-14T09:03:18.8795250Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/devbar/devbar
+2026-09-14T09:03:18.8835596Z Removing SSH command configuration
+2026-09-14T09:03:18.8843613Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-14T09:03:18.8883904Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-14T09:03:18.9150303Z Removing HTTP extra header
+2026-09-14T09:03:18.9155074Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-14T09:03:18.9189930Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-14T09:03:18.9401263Z Removing includeIf entries pointing to credentials config files
+2026-09-14T09:03:18.9407874Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-14T09:03:18.9450008Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-14T09:03:18.9775052Z Cleaning up orphan processes
