@@ -9,6 +9,17 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Añadido
 
+- **En Linux, el panel se abre junto al icono de la bandeja (como en
+  macOS)** cuando la sesión informa la posición real del icono (X11):
+  bajo una barra superior cuelga del icono centrado en él, y se adapta
+  para no salirse de la pantalla. En sesiones Wayland el compositor
+  decide la colocación (Electron no puede forzarla), así que se mantiene
+  el comportamiento habitual de menubar.
+- **El lanzador de la instalación local incluye icono.** Si
+  electron-builder no incluyó uno en la copia empaquetada, `install-local`
+  copia el del proyecto dentro de la instalación y la entrada del menú
+  de aplicaciones (Linux) / Menú Inicio (Windows) lo referencia.
+
 - **Tras `install-local`, la app aparece en el menú del sistema.** En Linux la instalación registra su entrada en el menú de aplicaciones (`~/.local/share/applications/devbar.desktop`, con icono) y en Windows crea su acceso directo en el Menú Inicio; antes la copia local funcionaba pero era invisible desde el lanzador, a diferencia de los instaladores oficiales.
 
 - **Windows, Linux y Raspberry Pi.** DevBar ya no es solo de macOS: el mismo

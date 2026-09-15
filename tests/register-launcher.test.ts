@@ -5,8 +5,10 @@ import path from 'node:path';
 import {
   desktopApplicationsDir,
   desktopLauncherPath,
+  ensureInstallIcon,
   findAppIcon,
   lnkCommand,
+  pickRepoIcon,
   renderDesktopEntry,
   startMenuLnkPath,
   startMenuProgramsDir,
@@ -197,5 +199,71 @@ describe('findAppIcon', () => {
   it('returns null when no icon exists', () => {
     const dir = makeTempDir('devbar-icon-');
     expect(findAppIcon(dir, '.png')).toBeNull();
+  });
+});
+
+describe('pickRepoIcon', () => {
+  it('prefers the largest PNG in buildResources/icons', () => {
+    const root = makeTempDir('devbar-repo-');
+    fs.mkdirSync(path.join(root, 'buildResources', 'icons'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(root, 'buildResources', 'icons', '64.png'),
+      '64',
+    );
+    fs.writeFileSync(
+      path.join(root, 'buildResources', 'icons', '256.png'),
+      '256',
+    );
+    expect(pickRepoIcon(root, '.png')).toBe(
+      path.join(root, 'buildResources', 'icons', '256.png'),
+    );
+  });
+
+  it('uses assets/icon.ico for the Windows extension', () => {
+    const root = makeTempDir('devbar-repo-');
+    fs.mkdirSync(path.join(root, 'assets'), { recursive: true });
+    const ico = path.join(root, 'assets', 'icon.ico');
+    fs.writeFileSync(ico, 'ico');
+    expect(pickRepoIcon(root, '.ico')).toBe(ico);
+  });
+
+  it('returns null when the repo has no icon sources', () => {
+    const root = makeTempDir('devbar-repo-');
+    expect(pickRepoIcon(root, '.png')).toBeNull();
+    expect(pickRepoIcon(root, '.ico')).toBeNull();
+  });
+});
+
+describe('ensureInstallIcon', () => {
+  it('keeps an icon already shipped inside the install', () => {
+    const repo = makeTempDir('devbar-repo-');
+    const install = makeTempDir('devbar-install-');
+    fs.mkdirSync(path.join(install, 'resources'));
+    const shipped = path.join(install, 'resources', 'icon.png');
+    fs.writeFileSync(shipped, 'shipped');
+    expect(ensureInstallIcon(install, '.png', repo)).toBe(shipped);
+  });
+
+  it('copies the repo icon into <install>/resources when missing', () => {
+    const repo = makeTempDir('devbar-repo-');
+    fs.mkdirSync(path.join(repo, 'buildResources', 'icons'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(repo, 'buildResources', 'icons', '128.png'),
+      'repo-icon',
+    );
+    const install = makeTempDir('devbar-install-');
+    const icon = ensureInstallIcon(install, '.png', repo);
+    expect(icon).toBe(path.join(install, 'resources', 'icon.png'));
+    expect(fs.readFileSync(icon!, 'utf8')).toBe('repo-icon');
+  });
+
+  it('returns null when neither the install nor the repo has an icon', () => {
+    const repo = makeTempDir('devbar-repo-');
+    const install = makeTempDir('devbar-install-');
+    expect(ensureInstallIcon(install, '.png', repo)).toBeNull();
   });
 });

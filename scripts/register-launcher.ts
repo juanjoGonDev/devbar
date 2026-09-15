@@ -25,6 +25,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const platform = process.platform;
+/** Repo root: this script lives in <repo>/scripts/. */
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const step = (message: string): void => console.log(`→ ${message}`);
 const ok = (message: string): void => console.log(`✓ ${message}`);
 const warn = (message: string): void => console.log(`! ${message}`);
@@ -144,6 +146,54 @@ export function findAppIcon(
   return null;
 }
 
+/**
+ * Icon sources that ship with the repo (install-local always runs from a
+ * checkout). The electron-builder `dir` target does not reliably place an
+ * icon inside the unpacked app, so when none is found next to the
+ * installed copy, one is copied in — referencing a file that travels with
+ * the install instead of a path into the checkout (which may move).
+ */
+export function pickRepoIcon(
+  repoRoot: string,
+  extension: '.png' | '.ico',
+): string | null {
+  if (extension === '.ico') {
+    const candidate = path.join(repoRoot, 'assets', 'icon.ico');
+    return fs.existsSync(candidate) ? candidate : null;
+  }
+  // Largest first: desktop app menus want ~256px and scale down cleanly.
+  for (const size of [256, 128, 64, 48, 32, 16]) {
+    const candidate = path.join(
+      repoRoot,
+      'buildResources',
+      'icons',
+      `${size}.png`,
+    );
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * An icon the launcher can reference: one already shipped inside the
+ * installed app, or a copy of the repo's icon placed at
+ * <installDir>/resources/icon.<ext>. Null when no source exists.
+ */
+export function ensureInstallIcon(
+  installDir: string,
+  extension: '.png' | '.ico',
+  repoRoot: string,
+): string | null {
+  const existing = findAppIcon(installDir, extension);
+  if (existing) return existing;
+  const source = pickRepoIcon(repoRoot, extension);
+  if (!source) return null;
+  const target = path.join(installDir, 'resources', `icon${extension}`);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(source, target);
+  return target;
+}
+
 /** Where install-local puts the app on this platform. */
 function installDir(): string {
   if (platform === 'win32') {
@@ -169,9 +219,17 @@ function main(): void {
     // App-menu entry: what makes the install show up in the GNOME/KDE app
     // grid, same as the .desktop entry the .deb ships.
     step('Registering in the app menu…');
+    let icon: string | null = null;
+    try {
+      icon = ensureInstallIcon(dir, '.png', ROOT);
+    } catch (error) {
+      warn(
+        `icon not installed (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+    if (!icon) warn('no icon available — the launcher entry will have none');
     const desktopFile = desktopLauncherPath();
     try {
-      const icon = findAppIcon(dir, '.png');
       fs.mkdirSync(path.dirname(desktopFile), { recursive: true });
       fs.writeFileSync(desktopFile, renderDesktopEntry(appPath, icon));
       // Some desktops cache the menu database; a refresh is best effort.
@@ -190,7 +248,14 @@ function main(): void {
     const lnk = startMenuLnkPath();
     try {
       fs.mkdirSync(path.dirname(lnk), { recursive: true });
-      const icon = findAppIcon(dir, '.ico');
+      let icon: string | null = null;
+      try {
+        icon = ensureInstallIcon(dir, '.ico', ROOT);
+      } catch (error) {
+        warn(
+          `icon not installed (${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
       const result = spawnSync(
         'powershell',
         [

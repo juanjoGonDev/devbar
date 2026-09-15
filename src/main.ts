@@ -21,6 +21,7 @@ import {
   type MenuItemConstructorOptions,
   type MessageBoxOptions,
   type OpenDialogOptions,
+  type Rectangle,
   type SaveDialogOptions,
 } from 'electron';
 import { menubar, type Menubar } from 'menubar';
@@ -3226,6 +3227,60 @@ app.whenReady().then(() => {
     return;
   }
 
+  /**
+   * Which edge of the display the taskbar/panel sits on, from the tray
+   * icon's bounds: the work area is the screen minus the taskbar, so the
+   * offset between workArea and display bounds reveals the taskbar side.
+   * Same idea as menubar's internal taskbarLocation, but based on the
+   * display that actually contains the icon (multi-monitor friendly).
+   */
+  function taskbarSideOf(
+    trayPos: Rectangle,
+  ): 'top' | 'bottom' | 'left' | 'right' {
+    const display = screen.getDisplayMatching(trayPos);
+    const offX = display.workArea.x - display.bounds.x;
+    const offY = display.workArea.y - display.bounds.y;
+    if (offX > 0) return 'left';
+    if (offY > 0) return 'top';
+    if (display.workArea.width < display.bounds.width) return 'right';
+    return 'bottom';
+  }
+
+  /**
+   * Tray-relative electron-positioner position for each taskbar side: top
+   * bar → the panel hangs from the bar, centered on the icon (exactly what
+   * macOS gets with menubar's default 'trayCenter'); bottom bar → right
+   * above the bar, centered; left/right bar → next to the bar edge.
+   */
+  function trayPositionForTaskbarSide(
+    side: 'top' | 'bottom' | 'left' | 'right',
+  ): 'trayCenter' | 'trayBottomCenter' | 'trayLeft' | 'trayRight' {
+    switch (side) {
+      case 'top':
+        return 'trayCenter';
+      case 'bottom':
+        return 'trayBottomCenter';
+      case 'left':
+        return 'trayLeft';
+      case 'right':
+        return 'trayRight';
+    }
+  }
+
+  /**
+   * Keep the panel fully inside the work area (electron-positioner only
+   * guards the right edge; a tray icon near the left edge would push the
+   * panel off-screen otherwise).
+   */
+  function clampXToWorkArea(
+    x: number,
+    width: number,
+    trayPos: Rectangle,
+  ): number {
+    const wa = screen.getDisplayMatching(trayPos).workArea;
+    return Math.max(wa.x, Math.min(x, wa.x + wa.width - width));
+  }
+
   const menuBar = menubar({
     index: `file://${path.join(__dirname, '..', 'renderer', 'tray.html')}`,
     icon: trayIcon.defaultIcon(),
@@ -3250,6 +3305,60 @@ app.whenReady().then(() => {
   menuBar.on('ready', () => {
     menuBar.tray.setImage(trayIcon.defaultIcon());
     if (isMac) menuBar.tray.setTitle('');
+
+    // menubar v9 deliberately does NOT place the Linux panel next to the
+    // tray icon: it overwrites the position with a screen-corner fallback
+    // (its own taskbarLocation), so the panel opens in a corner — or
+    // wherever the compositor decides — instead of "justo donde está el
+    // icono" like macOS. When Electron reports the icon's real bounds
+    // (X11), redirect the calculation to a tray-relative position. On
+    // Wayland the bounds are (0,0) and the compositor owns window
+    // placement, so menubar's behavior is kept there.
+    if (isLinux) {
+      type Calc = (
+        position: string,
+        trayBounds?: Rectangle,
+      ) => { x: number; y: number };
+      const positioner = menuBar.positioner as unknown as { calculate: Calc };
+      const originalCalculate = positioner.calculate.bind(positioner);
+      let logged = false;
+      positioner.calculate = (
+        position: string,
+        trayPos?: Rectangle,
+      ): { x: number; y: number } => {
+        if (
+          trayPos &&
+          trayPos.x > 0 &&
+          trayPos.y > 0 &&
+          trayPos.width > 0 &&
+          trayPos.height > 0
+        ) {
+          const win = menuBar.window;
+          if (!win) return originalCalculate(position, trayPos);
+          const result = originalCalculate(
+            trayPositionForTaskbarSide(taskbarSideOf(trayPos)),
+            trayPos,
+          );
+          const [w = 0] = win.getSize();
+          if (!logged) {
+            logged = true;
+            console.log(
+              `[tray] icono en (${trayPos.x},${trayPos.y} ${trayPos.width}x${trayPos.height}, ` +
+                `sesión ${process.env.XDG_SESSION_TYPE ?? 'desconocida'}) → panel junto al icono`,
+            );
+          }
+          return { x: clampXToWorkArea(result.x, w, trayPos), y: result.y };
+        }
+        if (!logged) {
+          logged = true;
+          console.log(
+            `[tray] sin bounds del icono (sesión ${process.env.XDG_SESSION_TYPE ?? 'desconocida'}) → ` +
+              'posición por defecto de menubar',
+          );
+        }
+        return originalCalculate(position, trayPos);
+      };
+    }
 
     menuBar.tray.on('right-click', () => {
       menuBar.tray.popUpContextMenu(buildTrayContextMenu());
