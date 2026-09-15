@@ -14,5 +14,9 @@
     "tests/**/*.ts"
   ],
   "ignoreBinaries": ["tail", "dpkg-deb", "tasklist", "pgrep", "pkill"],
-  "ignoreDependencies": ["@types/debug", "@types/electron-positioner"]
+  "ignoreDependencies": [
+    "@types/debug",
+    "@types/electron-positioner",
+    "@vitest/coverage-v8"
+  ]
 }
