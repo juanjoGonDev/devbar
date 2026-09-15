@@ -54,6 +54,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Corregido
 
+- **En Linux, los logs y el staging de actualizaciones se escribían en una
+  carpeta con el nombre del paquete (`~/.config/devbar/…`) mientras la
+  configuración vivía en `~/.config/DevBar`.** Electron fija la carpeta XDG
+  desde el nombre del paquete al arrancar, antes de que la app pueda
+  renombrarse, así que los datos quedaban repartidos en dos sitios y
+  `pnpm logs` no encontraba el log. Ahora configuración, logs y
+  actualizaciones comparten la carpeta «DevBar» en los tres SO.
 - **Los contadores ⚠ y ✕ del panel de la bandeja abrían una búsqueda con
   regex** en lugar del filtro por nivel. Ahora abren el pill «sólo ⚠ warnings»
   / «sólo ⛔ errores» de la ventana de logs —el mismo mecanismo, visible y

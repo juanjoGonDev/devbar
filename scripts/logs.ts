@@ -6,8 +6,10 @@ import path from 'node:path';
 /**
  * `pnpm run logs` — print the log file location and tail it live.
  *
- * The app writes to Electron's per-OS log dir (`app.getPath('logs')`,
- * src/main.ts). This script reproduces the same convention outside Electron:
+ * Packaged builds write app.log under their per-OS "DevBar" data folder
+ * (pinned explicitly in src/app-paths.ts, because on Linux Electron's
+ * default keeps the package.json name). This script reproduces the same
+ * convention outside Electron:
  *   macOS   ~/Library/Logs/DevBar/app.log
  *   Windows %APPDATA%\DevBar\logs\app.log
  *   Linux   $XDG_CONFIG_HOME/DevBar/logs/app.log (default ~/.config)

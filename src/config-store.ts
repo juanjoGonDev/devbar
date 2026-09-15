@@ -22,6 +22,7 @@ import {
   normalizePreStep,
   regenerateLegacyServices,
 } from './groups-model.js';
+import { appHome, packagedAppHome } from './app-paths.js';
 import { serializeConfig } from './config-io.js';
 
 const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
@@ -59,36 +60,17 @@ const schema = {
 } as const;
 
 /**
- * Pin the store to the "DevBar" folder for packaged builds. Without this, the
- * directory comes from `app.getPath('userData')` at import time — which on
- * Windows/Linux still carries the package.json name ("devbar") because the
- * app.name pinning in main.ts runs after this module loads. The explicit
- * path matches what main.ts later resolves for logs/updates, so config, logs
- * and update staging all live under one per-OS "DevBar" folder. Dev mode
- * keeps Electron's default so existing dev stores are not orphaned.
+ * Pin the store to the "DevBar" folder for packaged builds (see
+ * app-paths.ts for why the explicit pin exists — on Linux Electron's
+ * default keeps the package.json name). Dev mode keeps Electron's default
+ * so existing dev stores are not orphaned.
  */
-function packagedStoreDir(): string | undefined {
-  if (!app.isPackaged) return undefined;
-  const home = app.getPath('home');
-  if (process.platform === 'darwin')
-    return path.join(home, 'Library', 'Application Support', 'DevBar');
-  if (process.platform === 'win32')
-    return path.join(
-      process.env.APPDATA || path.join(home, 'AppData', 'Roaming'),
-      'DevBar',
-    );
-  return path.join(
-    process.env.XDG_CONFIG_HOME || path.join(home, '.config'),
-    'DevBar',
-  );
-}
-
 const storeOptions: {
   name: string;
   schema: typeof schema;
   cwd?: string;
 } = { name: 'config', schema };
-const storeDir = packagedStoreDir();
+const storeDir = packagedAppHome();
 if (storeDir !== undefined) storeOptions.cwd = storeDir;
 const store = new Store<StoreState>(storeOptions);
 
@@ -432,10 +414,7 @@ export function replaceConfig(payload: {
   persistGroups(safeGroups);
 }
 export function writeImportBackup(): string {
-  const backupPath = path.join(
-    app.getPath('userData'),
-    'pre-import-backup.json',
-  );
+  const backupPath = path.join(appHome(), 'pre-import-backup.json');
   const snapshot = {
     backedUpAt: new Date().toISOString(),
     version: store.get('version', 3),

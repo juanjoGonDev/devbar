@@ -24,6 +24,7 @@ import {
   type SaveDialogOptions,
 } from 'electron';
 import { menubar, type Menubar } from 'menubar';
+import { appHome } from './app-paths.js';
 import { isDue } from './scheduler.js';
 import * as configStore from './config-store.js';
 import {
@@ -233,10 +234,12 @@ function showSaveDialog(
 
 // Keep the app identity consistent across platforms. macOS already gets
 // "DevBar" from the bundle (CFBundleName); Windows and Linux would fall back
-// to the package.json `name` ("devbar"), which would scatter userData, logs
-// and notification identity across differently-named directories per OS.
-// Pinning it means DevBar always owns the "DevBar" folders everywhere.
-// (Dev mode is left untouched so existing dev stores keep working.)
+// to the package.json `name` ("devbar"). The pin moves the name (and, on
+// Windows, the default paths); on Linux the XDG directory is resolved at
+// process start, so the data locations are pinned explicitly in app-paths.ts
+// instead — packaged builds own one per-OS "DevBar" folder for config, logs
+// and update staging. (Dev mode is left untouched so existing dev stores
+// keep working.)
 if (app.isPackaged) app.name = 'DevBar';
 
 loadShellPath();
@@ -246,12 +249,18 @@ loadShellPath();
 // from the main process. The renderer side is hooked later, when each
 // BrowserWindow is created (we need its `webContents` to subscribe).
 //
-// File lives at `app.getPath('logs')/app.log` which is
-// `~/Library/Logs/DevBar/app.log` on macOS. `install-local.sh` drops a
-// symlink at the repo root so the user can `tail -f app.log` from the
-// project directory.
+// File lives at app.log under the per-OS log dir: `app.getPath('logs')`
+// (~/Library/Logs/DevBar on macOS), or the pinned "DevBar" folder on
+// Windows/Linux packaged builds — there app.getPath('logs') would stay
+// under the package.json name, splitting logs from config and updates
+// (see app-paths.ts). `install-local.sh` drops a symlink at the repo
+// root (macOS) so the user can `tail -f app.log` from the workspace.
 try {
-  logger.init({ filePath: path.join(app.getPath('logs'), 'app.log') });
+  const logsDir =
+    app.isPackaged && process.platform !== 'darwin'
+      ? path.join(appHome(), 'logs')
+      : app.getPath('logs');
+  logger.init({ filePath: path.join(logsDir, 'app.log') });
   logger.attachMainConsole();
 } catch (e) {
   // Logger is best-effort; never block startup.
@@ -924,7 +933,7 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
   const plan = stageableAsset(update, installedAppPath());
   if (!plan) return;
   stagingVersion = update.version;
-  const updatesDir = path.join(app.getPath('userData'), 'updates');
+  const updatesDir = path.join(appHome(), 'updates');
   const filePath = path.join(updatesDir, plan.fileName);
   try {
     fs.mkdirSync(updatesDir, { recursive: true });
@@ -987,7 +996,7 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
  * — the half where a bad bundle or a failed swap would actually bite.
  */
 async function stageFromZip(zipPath: string, version: string): Promise<void> {
-  const updatesDir = path.join(app.getPath('userData'), 'updates');
+  const updatesDir = path.join(appHome(), 'updates');
   stagedUpdate = await extractUpdate({
     zipPath,
     destDir: path.join(updatesDir, version),
@@ -1083,7 +1092,7 @@ async function installStagedUpdate(staged: StagedUpdate, target: string) {
     spawnSwap({
       staged,
       target,
-      scriptDir: path.join(app.getPath('userData'), 'updates'),
+      scriptDir: path.join(appHome(), 'updates'),
       pid: process.pid,
     });
   } catch (err) {
@@ -2683,7 +2692,7 @@ function registerIpc() {
           // bundle, which passes the guard and then fails deep inside the copy.
           installedBundle: () => installedAppPath(),
           updatesDir: () => {
-            const dir = path.join(app.getPath('userData'), 'updates');
+            const dir = path.join(appHome(), 'updates');
             fs.mkdirSync(dir, { recursive: true });
             return dir;
           },
@@ -2697,7 +2706,7 @@ function registerIpc() {
               // `stagedUpdate` would still point into that directory.
               if (stagedUpdate)
                 pruneStagedUpdates(
-                  path.join(app.getPath('userData'), 'updates'),
+                  path.join(appHome(), 'updates'),
                   stagedUpdate.version,
                 );
             }
@@ -3160,7 +3169,7 @@ app.whenReady().then(() => {
           // magic checks, copy into the per-version staging dir.
           const verified = await verifySha256(artifact, sha);
           if (!verified) throw new Error('el hash del artefacto no coincide');
-          const updatesDir = path.join(app.getPath('userData'), 'updates');
+          const updatesDir = path.join(appHome(), 'updates');
           const kind = isMac
             ? 'macBundle'
             : isLinux
