@@ -59,15 +59,21 @@ export function desktopLauncherPath(): string {
 /**
  * XDG .desktop content for an installed copy. Exec points at the exact
  * executable of this install; the icon (when one was found next to the
- * app) is an absolute path — legal for user-local entries. Paths with
- * whitespace are quoted per the Desktop Entry spec (Exec field).
+ * app) is an absolute path — legal for user-local entries.
+ *
+ * Quoting follows the Desktop Entry spec: a value with whitespace or a
+ * special character (`"`, `$`, backtick, `\`) goes in double quotes,
+ * where those four must be backslash-escaped (backslash first, so the
+ * escaping backslashes are not re-escaped themselves).
  */
 export function renderDesktopEntry(
   executable: string,
   icon?: string | null,
 ): string {
   const quote = (value: string): string =>
-    /[\s"]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
+    /[\s"'`$\\]/.test(value)
+      ? `"${value.replace(/([\\`$"])/g, '\\$1')}"`
+      : value;
   const lines = [
     '[Desktop Entry]',
     'Type=Application',

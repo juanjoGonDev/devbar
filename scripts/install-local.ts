@@ -111,13 +111,15 @@ function killRunningInstances(installDir: string): void {
     tryQuiet('taskkill', ['/F', '/IM', 'DevBar.exe']);
     // Dev mode: electron.exe whose command line references this checkout.
     // (Killing every electron.exe on the machine would be too aggressive.)
-    const repoPattern = ROOT.replaceAll('\\', '\\\\');
+    // NOTE: backslashes are NOT doubled — PowerShell single-quoted strings
+    // treat `\` as literal and `-like` has no backslash metacharacters, so
+    // the pattern must contain the path exactly as the command line does.
     tryQuiet('powershell', [
       '-NoProfile',
       '-NonInteractive',
       '-Command',
       `Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue | ` +
-        `Where-Object { $_.CommandLine -like '*${repoPattern}*' } | ` +
+        `Where-Object { $_.CommandLine -like '*${ROOT}*' } | ` +
         `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
     ]);
   } else {

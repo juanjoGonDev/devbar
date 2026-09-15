@@ -56,6 +56,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Corregido
 
+- **En Windows, `install-local` no detuvo la instancia de desarrollo** (un `pnpm start` de este checkout): el patrón que buscaba electron.exe le doblaba los backslashes y nunca coincidía con la línea de comandos real, así que podía quedar corriendo la copia vieja. Ahora el kill encuentra el proceso y lo detiene.
+
 - **En la bandeja, los grupos que no usan git seguían mostrando el selector de ramas** —sin ruta aparecía un «Rama…» y con una ruta que no es un repositorio el selector se quedaba para siempre en «Cargando…». Ahora el selector solo se muestra en proyectos que son repositorios git de verdad: la app recuerda la decisión de «no es un repositorio» (de modo que no relanza git a cada refresco del panel) y el selector vuelve a aparecer si el grupo apunta luego a un repositorio.
 
 - **En Linux, los logs y el staging de actualizaciones se escribían en una

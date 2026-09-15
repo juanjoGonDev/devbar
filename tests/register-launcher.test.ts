@@ -74,6 +74,21 @@ describe('renderDesktopEntry', () => {
       `Icon="/home/u my name/.local/share/DevBar/resources/icon.png"`,
     );
   });
+
+  it('quotes and escapes a lone backslash (no whitespace needed)', () => {
+    // A backslash is special in Exec even unquoted: it would escape the
+    // following character, so the value must be quoted and the `\` doubled.
+    const content = renderDesktopEntry('/home/u/odd\\path/devbar');
+    expect(content).toContain(`Exec="/home/u/odd\\\\path/devbar"`);
+  });
+
+  it('escapes backslash, dollar, backtick and quote inside quoted values', () => {
+    const tricky = '/home/u/a \\b$c`d"x/devbar'; // \ $ ` " and a space
+    const content = renderDesktopEntry(tricky);
+    expect(content).toContain(
+      `Exec="/home/u/a \\\\b\\$c` + '\\' + '`' + `d\\"x/devbar"`,
+    );
+  });
 });
 
 describe('desktopLauncherPath', () => {
