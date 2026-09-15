@@ -6,12 +6,8 @@
  * host, replace the per-user install location and relaunch. On Windows the
  * location is %LOCALAPPDATA%\Programs\DevBar — the very path the NSIS
  * per-user installer uses, so the in-app updater keeps recognising it. On
- * Linux it is ~/.local/share/DevBar, registered in the app menu via
- * ~/.local/share/applications/devbar.desktop (plus a launcher in
- * ~/.local/bin when that directory exists). On Windows a Start Menu
- * shortcut is created (%APPDATA%\...\Start Menu\Programs\DevBar.lnk) —
- * without those, an unpacked copy is invisible to the desktop even
- * though it works.
+ * Linux it is ~/.local/share/DevBar with a launcher in ~/.local/bin when
+ * that directory exists.
  *
  * Stopping is done in two waves, because a leftover process is exactly how
  * a reinstall (or an automatic update) half-resolves: the old instance
@@ -34,13 +30,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  desktopLauncherPath,
-  findAppIcon,
-  lnkCommand,
-  renderDesktopEntry,
-  startMenuLnkPath,
-} from './launcher.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isDev = process.argv.includes('--dev');
@@ -218,34 +207,14 @@ function main(): void {
   fs.cpSync(unpackedDir, installDir, { recursive: true });
   ok(`installed at ${installDir}`);
 
-  const appPath = path.join(installDir, executable);
-
   let launcherPath: string | null = null;
   if (platform === 'linux') {
-    // App-menu entry: what makes the install show up in the GNOME/KDE app
-    // grid, same as the .desktop entry the .deb ships. Best effort — the
-    // install itself is already done, a broken menu entry must not undo it.
-    const desktopFile = desktopLauncherPath();
-    try {
-      const icon = findAppIcon(installDir, '.png');
-      fs.mkdirSync(path.dirname(desktopFile), { recursive: true });
-      fs.writeFileSync(desktopFile, renderDesktopEntry(appPath, icon));
-      // Some desktops cache the menu database; a refresh is best effort.
-      tryQuiet('update-desktop-database', [path.dirname(desktopFile)]);
-      ok(`App menu entry: ${desktopFile}`);
-    } catch (error) {
-      warn(
-        `App menu entry not created (${
-          error instanceof Error ? error.message : String(error)
-        }) — launch it with: ${appPath}`,
-      );
-    }
     const binDir = path.join(os.homedir(), '.local', 'bin');
     if (fs.existsSync(binDir)) {
       launcherPath = path.join(binDir, 'devbar');
       try {
         fs.rmSync(launcherPath, { force: true });
-        fs.symlinkSync(appPath, launcherPath);
+        fs.symlinkSync(path.join(installDir, executable), launcherPath);
       } catch {
         launcherPath = null;
       }
@@ -256,40 +225,9 @@ function main(): void {
       );
     }
   }
-  if (platform === 'win32') {
-    // Start Menu shortcut — the Windows equivalent of the app-menu entry.
-    const lnk = startMenuLnkPath();
-    try {
-      fs.mkdirSync(path.dirname(lnk), { recursive: true });
-      const icon = findAppIcon(installDir, '.ico');
-      const result = spawnSync(
-        'powershell',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          lnkCommand(lnk, appPath, installDir, icon),
-        ],
-        { stdio: 'ignore', cwd: ROOT },
-      );
-      if (result.error) throw result.error;
-      if (result.status === 0) {
-        ok(`Start Menu shortcut: ${lnk}`);
-      } else {
-        warn(
-          `Start Menu shortcut not created (powershell exit ${result.status}) — pin DevBar.exe from the Start Menu instead.`,
-        );
-      }
-    } catch (error) {
-      warn(
-        `Start Menu shortcut not created (${
-          error instanceof Error ? error.message : String(error)
-        }).`,
-      );
-    }
-  }
 
   step('Launching');
+  const appPath = path.join(installDir, executable);
   const child = spawn(appPath, launchArgs, {
     detached: true,
     stdio: 'ignore',

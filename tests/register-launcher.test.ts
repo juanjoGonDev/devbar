@@ -11,7 +11,7 @@ import {
   startMenuLnkPath,
   startMenuProgramsDir,
   DESKTOP_FILE_NAME,
-} from '../scripts/launcher.js';
+} from '../scripts/register-launcher.js';
 
 const tmpDirs: string[] = [];
 
