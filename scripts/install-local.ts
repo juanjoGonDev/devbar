@@ -30,11 +30,65 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  posixKillServiceTrees,
-  windowsKillDevInstanceCommand,
-  windowsKillImageTreeArgs,
-} from './lib/kill-trees.js';
+
+// ── process-kill helpers ──────────────────────────────────────────────
+// Same logic as scripts/lib/kill-trees.ts (which stays a standalone CLI
+// for install-local.sh), inlined here because
+// `--experimental-strip-types` does not resolve the local
+// `./lib/kill-trees.js → .ts` import at runtime.
+function windowsKillImageTreeArgs(image: string): string[] {
+  return ['/F', '/T', '/IM', image];
+}
+/** Windows dev mode: electron.exe from this checkout, matched by command
+ *  line. NOTE: backslashes are NOT doubled — PowerShell single-quoted
+ *  strings treat `\` as literal and `-like` has no backslash metachars. */
+function windowsKillDevInstanceCommand(checkoutPath: string): string {
+  return (
+    `Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue | ` +
+    `Where-Object { $_.CommandLine -like '*${checkoutPath}*' } | ` +
+    `ForEach-Object { & taskkill /PID $($_.ProcessId) /T /F | Out-Null }`
+  );
+}
+/**
+ * POSIX: signal each matching instance's service trees BEFORE the
+ * instances themselves. A service spawns `detached` (its own process
+ * group), so a bare pkill of the app never reaches it: pgrep -P finds the
+ * service shell (the group leader) and `kill -- -<pid>` signals the group.
+ * Best effort: a pattern matching nothing must not fail the install.
+ */
+function posixKillServiceTrees(patterns: string[]): void {
+  for (const pattern of patterns) {
+    const pidRes = spawnSync('pgrep', ['-f', pattern], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    if (pidRes.error || pidRes.status !== 0) continue;
+    for (const pid of (pidRes.stdout ?? '')
+      .split('\n')
+      .map((line) => line.trim())) {
+      if (!pid) continue;
+      // pgrep -f can match the caller's own spawn line — never signal self
+      // or the parent shell.
+      if (Number(pid) === process.pid || Number(pid) === process.ppid) continue;
+      const childRes = spawnSync('pgrep', ['-P', pid], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        cwd: ROOT,
+        encoding: 'utf8',
+      });
+      if (childRes.error || childRes.status !== 0) continue;
+      for (const child of (childRes.stdout ?? '')
+        .split('\n')
+        .map((line) => line.trim())) {
+        if (!child) continue;
+        // Group first (leader == child pid: shell + user command), then the
+        // bare pid in case the group is already gone.
+        tryQuiet('kill', ['-s', 'TERM', '--', `-${child}`]);
+        tryQuiet('kill', ['-s', 'TERM', child]);
+      }
+    }
+  }
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isDev = process.argv.includes('--dev');
@@ -145,38 +199,79 @@ function killRunningInstances(installDir: string): void {
  * Wave 2 — verify. Poll until the kill patterns match nothing; if a process
  * survives, warn instead of swapping files under a live process.
  */
-function verifyStopped(installDir: string): void {
-  const alive = (): boolean => {
-    if (platform === 'win32') {
-      const list = spawnSync('tasklist', ['/FI', 'IMAGENAME eq DevBar.exe'], {
-        stdio: ['ignore', 'pipe', 'ignore'],
-        cwd: ROOT,
-        encoding: 'utf8',
-      });
-      if (list.error) return false;
-      return /DevBar\.exe/i.test(list.stdout ?? '');
-    }
-    const pids = spawnSync('pgrep', ['-f', path.join(installDir)], {
+/** True while any DevBar instance (or its helpers) still matches. */
+function isAnyDevBarAlive(installDir: string): boolean {
+  if (platform === 'win32') {
+    const list = spawnSync('tasklist', ['/FI', 'IMAGENAME eq DevBar.exe'], {
       stdio: ['ignore', 'pipe', 'ignore'],
       cwd: ROOT,
       encoding: 'utf8',
     });
-    if (pids.error) return false;
-    // pgrep can match its own spawn line through the pattern — ignore pids
-    // younger than this script (nothing matching can be older and real
-    // except the instances we are trying to kill).
-    return (pids.stdout ?? '').trim().length > 0;
-  };
+    if (list.error) return false;
+    return /DevBar\.exe/i.test(list.stdout ?? '');
+  }
+  const pids = spawnSync('pgrep', ['-f', path.join(installDir)], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  if (pids.error) return false;
+  return (pids.stdout ?? '').trim().length > 0;
+}
+
+/**
+ * Wave 2 — verify. Poll until the kill patterns match nothing; if a process
+ * survives, warn instead of swapping files under a live process.
+ */
+function verifyStopped(installDir: string): void {
   for (let i = 0; i < 20; i++) {
-    if (!alive()) return;
+    if (!isAnyDevBarAlive(installDir)) return;
     // A CLI script may block: no child process needed for a half-second.
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
   }
-  if (alive())
+  if (isAnyDevBarAlive(installDir))
     warn(
       'A DevBar process is still running after the kill — if the next step ' +
         'fails to replace files, close it manually and re-run.',
     );
+}
+
+/**
+ * Wave 3 — force-kill whatever survived the graceful stop. TERM is a
+ * request; a process that outlives the app still holds the inherited
+ * single-instance socket and turns the next launch into a silent second
+ * instance. The reinstall must not leave a lock holder behind.
+ */
+function killLeftovers(installDir: string): void {
+  if (!isAnyDevBarAlive(installDir)) return;
+  warn('A DevBar process ignored the graceful stop — forcing it.');
+  if (platform === 'win32') {
+    tryQuiet('taskkill', windowsKillImageTreeArgs('DevBar.exe'));
+    tryQuiet('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      windowsKillDevInstanceCommand(ROOT),
+    ]);
+  } else {
+    const patterns = [
+      path.join(installDir),
+      path.join(ROOT, 'dist', 'electron-builder'),
+      path.join(ROOT, 'node_modules'),
+    ];
+    for (const pattern of patterns) tryQuiet('pkill', ['-9', '-f', pattern]);
+  }
+  for (let i = 0; i < 10; i++) {
+    if (!isAnyDevBarAlive(installDir)) {
+      ok('all previous instances stopped');
+      return;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+  }
+  warn(
+    'A DevBar process survived even the forced stop — it may keep the ' +
+      'single-instance lock; close it manually before the next launch.',
+  );
 }
 
 function main(): void {
@@ -214,6 +309,7 @@ function main(): void {
   }
 
   verifyStopped(installDir);
+  killLeftovers(installDir);
 
   step(`Installing to ${installDir}`);
   fs.rmSync(installDir, { recursive: true, force: true });

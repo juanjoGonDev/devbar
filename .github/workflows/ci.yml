@@ -271,7 +271,14 @@ jobs:
           #    alive, then stop it so the next step owns the machine.
           NEWPID=$(pgrep -f "Applications/DevBar.app/Contents/MacOS/DevBar" | head -1)
           [ -n "$NEWPID" ] || { echo "no new instance after reinstall"; exit 1; }
+          # Stop the new instance — TERM, then force anything that survives.
+          # A helper that outlives the main process keeps the single-instance
+          # socket and makes the update-sim launch below a silent 2nd instance.
           pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          sleep 1
+          pkill -9 -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          LEFT=$(pgrep -f "DevBar.app/Contents/MacOS/DevBar" || true)
+          [ -z "$LEFT" ] || { echo "::error::macos-reinstall: DevBar procs survived the stop: $LEFT"; exit 1; }
           rm -rf "$WORK"
 
       - name: Automatic update simulation — macOS (stage → swap → relaunch)
@@ -296,8 +303,13 @@ jobs:
           #    (ditto + codesign --verify), swap script, quit.
           # Any still-running DevBar instance (e.g. a slow-dying one from the
           # previous step) holds the single-instance lock and would turn this
-          # launch into a silent second instance — surface it if present.
-          echo "::warning::macos-update-sim: DevBar procs before launch: $(pgrep -af 'DevBar.app/Contents/MacOS/DevBar' || echo none)"
+          # launch into a silent second instance — sweep it out (TERM, then
+          # force) and fail if anything survives.
+          pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          sleep 1
+          pkill -9 -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          LEFT=$(pgrep -f "DevBar.app/Contents/MacOS/DevBar" || true)
+          [ -z "$LEFT" ] || { echo "::error::macos-update-sim: DevBar procs survived the pre-launch sweep: $LEFT"; exit 1; }
           rm -f "$TMPDIR/devbar-smoke-ok"
           DEVBAR_SMOKE=1 DEVBAR_SMOKE_UPDATE=1 DEVBAR_SMOKE_ARTIFACT="$ZIP" \
             DEVBAR_SMOKE_SHA="$SHA" DEVBAR_SMOKE_VERSION="$V2" \
@@ -334,7 +346,10 @@ jobs:
           # (a leftover would tangle the single-instance lock with the
           # resident we are about to spawn).
           $before = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
-          Write-Host "::warning::win-reinstall: DevBar procs before resident start: $($before ?: 'none')"
+          Write-Host "::warning::win-reinstall: DevBar procs before resident start: $($before ?? 'none')"
+          # A leftover instance holds the single-instance lock and would turn
+          # the resident below into a silent second instance — force it out.
+          Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { Write-Host "::warning::win-reinstall: force-killing leftover $($_.Name)($($_.Id))"; Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
           # 1) Resident instance of the installed app (from the earlier NSIS
           #    install): writes the smoke marker, then stays alive.
           $old = Start-Process -PassThru -FilePath $exe -ArgumentList '--devbar-smoke','--devbar-smoke-hold'
@@ -564,7 +579,13 @@ jobs:
           # carries — the deb smoke step above already apt-resolved them,
           # so this is redundant insurance (best-effort by design).
           sudo apt-get install -y -qq libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libgtk-3-0 libgbm1 libasound2t64 libxshmfence1 >/dev/null || true
-          pnpm run pack
+          # set -e would kill the step on failure before any annotation, so
+          # wrap the long commands to surface their output in an annotation.
+          pnpm run pack 2>&1 | tee pack-linux-reinstall.log || {
+            echo "::error::linux-reinstall: pnpm run pack failed. output tail:"
+            tail -40 pack-linux-reinstall.log
+            exit 1
+          }
           export DEVBAR_SMOKE=1
           export DEVBAR_SMOKE_HOLD=1
           # A plain unpacked copy cannot carry the root-owned setuid
@@ -575,7 +596,12 @@ jobs:
           # step tests are unaffected by the sandbox choice.
           export DEVBAR_LAUNCH_ARGS="--no-sandbox"
           # 1) First install: launches a resident instance (smoke env).
-          pnpm install-local --no-build
+          pnpm install-local --no-build 2>&1 | tee install-local-1.log || {
+            echo "::error::linux-reinstall: first install-local failed. output tail:"
+            tail -60 install-local-1.log
+            echo "::error::linux-reinstall: procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            exit 1
+          }
           sleep 4
           OLDPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
           if [ -z "$OLDPID" ]; then
@@ -596,10 +622,12 @@ jobs:
           fi
           # 2) Reinstall: install-local must kill OLDPID, replace the files
           #    and relaunch — a leftover process is the classic half-update.
-          pnpm install-local --no-build
-          if [ $? -ne 0 ]; then
-            echo "::error::linux-reinstall: pnpm install-local --no-build (2nd) failed. procs: $(pgrep -af 'local/share/DevBar' || echo none)"
-          fi
+          pnpm install-local --no-build 2>&1 | tee install-local-2.log || {
+            echo "::error::linux-reinstall: second install-local failed. output tail:"
+            tail -60 install-local-2.log
+            echo "::error::linux-reinstall: procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            exit 1
+          }
           sleep 4
           if kill -0 "$OLDPID" 2>/dev/null; then
             echo "::error::linux-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < /proc/$OLDPID/cmdline 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"

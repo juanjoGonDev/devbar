@@ -3531,7 +3531,16 @@ function onTerminalSignal(): void {
     process.exit(0);
   }
   if (shutdownPhase === 'idle') {
-    void shutdownCleanup().then(() => app.exit(0));
+    void shutdownCleanup().then(() => {
+      // app.quit (not app.exit): a bare exit skips Electron's own shutdown
+      // sequence, which is what tears down its child processes (GPU /
+      // renderer / utility helpers). A helper that outlives the main
+      // process still holds the inherited single-instance socket, and the
+      // next launch then dies as a silent second instance. The safety net
+      // covers a quit that gets stuck.
+      app.quit();
+      setTimeout(() => process.exit(0), 4000);
+    });
   } else if (shutdownPhase === 'done') {
     process.exit(0); // already clean
   }

@@ -46,7 +46,24 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
   sleep 0.5
 done
 if pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
-  warn "A DevBar process survived the kill — if the install fails to replace the bundle, quit it manually and re-run."
+  # Wave 3: a leftover process still holds the single-instance socket and
+  # turns the relaunch into a silent second instance — force it.
+  warn "A DevBar process ignored the graceful stop — forcing it."
+  pkill -9 -f "/Applications/DevBar.app" 2>/dev/null || true
+  pkill -9 -f "${ROOT}/dist/DevBar-darwin" 2>/dev/null || true
+  pkill -9 -f "${ROOT}/node_modules" 2>/dev/null || true
+  pkill -9 -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+  for _ in 1 2 3 4 5 6; do
+    if ! pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+  if pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
+    warn "A DevBar process survived even the forced stop — it may keep the single-instance lock; quit it manually and re-run."
+  else
+    ok "all previous instances stopped"
+  fi
 fi
 # Give the OS a moment to release file locks on the bundle.
 sleep 1
