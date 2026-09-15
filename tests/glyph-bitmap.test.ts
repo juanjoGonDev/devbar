@@ -203,7 +203,7 @@ describe('countBubbleSDF', () => {
   const size = 36;
 
   it('is negative at the bubble centre and positive at the corner', () => {
-    expect(countBubbleSDF(0.66 * size, 0.3 * size, size)).toBeLessThan(0);
+    expect(countBubbleSDF(0.6 * size, 0.34 * size, size)).toBeLessThan(0);
     expect(countBubbleSDF(0, 0, size)).toBeGreaterThan(0);
   });
 });
@@ -219,8 +219,8 @@ describe('drawGlyphBGRA with a count bubble', () => {
   // White (digit) pixels inside the bubble region, clear of the mark.
   function whitePixels(buf: Buffer): number {
     let white = 0;
-    for (let y = Math.floor(0.13 * size); y < 0.48 * size; y++)
-      for (let x = Math.floor(0.44 * size); x < 0.9 * size; x++) {
+    for (let y = Math.floor(0.16 * size); y < 0.52 * size; y++)
+      for (let x = Math.floor(0.33 * size); x < 0.87 * size; x++) {
         const [r, g, b, a] = px(buf, size, x, y);
         if (a > 200 && r > 240 && g > 240 && b > 240) white++;
       }
@@ -231,8 +231,8 @@ describe('drawGlyphBGRA with a count bubble', () => {
     const [r, g, b, a] = px(
       counted,
       size,
-      Math.round(0.66 * size),
-      Math.round(0.12 * size),
+      Math.round(0.6 * size),
+      Math.round(0.1 * size),
     );
     expect(a).toBe(255);
     expect([r, g, b]).toEqual(badge);

@@ -1431,6 +1431,13 @@ function updateTrayTitle(payload: GroupState[]): void {
   } else {
     lastTrayCount = count;
   }
+  // Hover affordance where the count can't be displayed next to the icon:
+  // the tray tooltip carries it too.
+  mb.tray.setToolTip(
+    count
+      ? `DevBar — ${count === 1 ? '1 error' : `${count} errores`}`
+      : 'DevBar',
+  );
   refreshTrayIcon();
 }
 
@@ -3316,6 +3323,10 @@ app.whenReady().then(() => {
       height: 500,
       transparent: false,
       resizable: false,
+      // The tray popover is a utility surface, not a window: it must not
+      // claim a taskbar entry on win/linux. Real windows (config, logs)
+      // are separate BrowserWindows and keep their entries.
+      skipTaskbar: true,
       icon: appWindowIcon(),
       backgroundColor: themeWindowBackground(),
       webPreferences: {

@@ -5,6 +5,22 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ## [Unreleased]
 
+### Corregido
+
+- **En Windows y Linux, el panel de la bandeja ya no aparece en la barra de
+  tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
+  Configuración y/o Logs cuando esas ventanas están abiertas; el panel es
+  siempre sin marco y no genera botón.
+
+### Cambiado
+
+- **En Windows y Linux, la insignia de errores del icono de la bandeja es
+  más grande y más gruesa** para que se lea de un vistazo (burbuja redonda
+  con el número en blanco sobre el icono). El número también aparece en el
+  tooltip del icono («DevBar — 14 errores»); que el número se dibuje _junto_
+  al icono, como en macOS, no es posible en estos sistemas porque el área de
+  la bandeja es un cuadrado fijo fijado por el sistema operativo.
+
 ## [0.9.0] - 2026-09-15
 
 ### Añadido

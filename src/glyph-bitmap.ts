@@ -22,12 +22,13 @@ const BADGE_CX = 0.79,
   BADGE_CY = 0.21,
   BADGE_R = 0.14;
 // Count bubble (win/linux, where tray titles don't render): a larger
-// top-right badge carrying the error/warning count in white digits. Sized
-// so the outline ring stays inside the box (cx + r + OUTLINE <= 1) and the
-// bubble still clears the chevron's top stroke.
-const COUNT_CX = 0.66,
-  COUNT_CY = 0.3,
-  COUNT_R = 0.26;
+// top-right badge carrying the error/warning count in white digits. The
+// tray slot is a fixed square owned by the OS, so the number has to live
+// inside the icon — sized as large as the outline ring allows
+// (cx + r + OUTLINE <= 1) while still clearing the box edges.
+const COUNT_CX = 0.6,
+  COUNT_CY = 0.34,
+  COUNT_R = 0.28;
 // 3x5 bitmap digits (row-major, bit 2 = leftmost) for the count bubble.
 const DIGITS: Record<string, readonly number[]> = {
   '0': [7, 5, 5, 5, 7],
@@ -123,9 +124,12 @@ export function drawGlyphBGRA(
     const n = label.length,
       unitsW = 3 * n + (n - 1),
       unit = Math.min(
-        (2 * COUNT_R * size * 0.72) / unitsW,
-        (2 * COUNT_R * size * 0.62) / 5,
+        (2 * COUNT_R * size * 0.88) / unitsW,
+        (2 * COUNT_R * size * 0.78) / 5,
       ),
+      // Bold the 3x5 strokes: at tray size a bare 1px stroke reads as a
+      // pinprick, so each digit cell is expanded slightly in all directions.
+      fatten = 0.08 * unit,
       x0 = COUNT_CX * size - (unit * unitsW) / 2,
       y0 = COUNT_CY * size - (unit * 5) / 2;
     for (let i = 0; i < n; i++) {
@@ -139,13 +143,13 @@ export function drawGlyphBGRA(
           const rx = x0 + (i * 4 + col) * unit,
             ry = y0 + row * unit;
           for (
-            let y = Math.max(0, Math.floor(ry));
-            y < size && y < Math.ceil(ry + unit);
+            let y = Math.max(0, Math.floor(ry - fatten));
+            y < size && y < Math.ceil(ry + unit + fatten);
             y++
           )
             for (
-              let x = Math.max(0, Math.floor(rx));
-              x < size && x < Math.ceil(rx + unit);
+              let x = Math.max(0, Math.floor(rx - fatten));
+              x < size && x < Math.ceil(rx + unit + fatten);
               x++
             )
               digitMask[y * size + x] = 1;
