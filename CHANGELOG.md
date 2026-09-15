@@ -9,6 +9,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Añadido
 
+- **En Windows y Linux, el icono de la bandeja muestra el número de errores** (o de avisos, si no hay errores) como insignia dibujada sobre el icono —en macOS ya aparecía como texto al lado del icono, y los títulos de bandeja no se renderizan en los otros dos sistemas—, con tope en «99+».
+
 - **En Linux, el panel se abre junto al icono de la bandeja (como en
   macOS)** cuando la sesión informa la posición real del icono (X11):
   bajo una barra superior cuelga del icono centrado en él, y se adapta

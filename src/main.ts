@@ -1371,6 +1371,9 @@ function syncRepoWatchers() {
 }
 
 let lastTrayColor: TrayColor = 'stopped'; // remembered so a theme flip can re-render
+// Errors/warnings badge drawn into the tray icon on win/linux (tray titles
+// only render on macOS). Remembered so a theme flip re-renders it too.
+let lastTrayCount = 0;
 
 // Dev-only overrides, driven by the simulation panel (src/dev, excluded from
 // packaged builds). Both stay null in a real run.
@@ -1385,8 +1388,14 @@ let devUpdateSimulated = false;
 function refreshTrayIcon(): void {
   if (!mb || !mb.tray) return;
   try {
+    // macOS carries the count as tray title text; win/linux don't render
+    // titles, so the count is drawn into the icon itself.
     mb.tray.setImage(
-      trayIcon.loadIcon(devTrayColor ?? lastTrayColor, !!availableUpdate),
+      trayIcon.loadIcon(
+        devTrayColor ?? lastTrayColor,
+        !!availableUpdate,
+        isMac ? 0 : lastTrayCount,
+      ),
     );
   } catch (err) {
     console.error('setImage failed:', err);
@@ -1399,7 +1408,6 @@ function updateTrayTitle(payload: GroupState[]): void {
   const colorStubs = payload.map((gs) => ({ color: gs.color }));
   const overall = aggregateColor(colorStubs);
   lastTrayColor = overall;
-  refreshTrayIcon();
   // Count non-silenced warns/errors across all command states
   let warns = 0;
   let errs = 0;
@@ -1410,12 +1418,15 @@ function updateTrayTitle(payload: GroupState[]): void {
       if (!cs.muteErr) errs += cs.errorCount;
     }
   }
-  let badge = '';
-  if (errs > 0) badge = ` ${errs}`;
-  else if (warns > 0) badge = ` ${warns}`;
-  // Text next to the tray icon only renders on macOS; the other platforms
-  // carry the state in the icon itself.
-  if (isMac) mb.tray.setTitle(badge);
+  const count = trayIcon.badgeCount(errs, warns);
+  // macOS: count as text next to the icon. win/linux don't render tray
+  // titles, so the count is drawn into the icon instead.
+  if (isMac) {
+    mb.tray.setTitle(count ? ` ${count}` : '');
+  } else {
+    lastTrayCount = count;
+  }
+  refreshTrayIcon();
 }
 
 function adaptiveSize(maxW: number, maxH: number, marginW = 60, marginH = 100) {
