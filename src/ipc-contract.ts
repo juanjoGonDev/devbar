@@ -270,7 +270,12 @@ export interface DevBarApi {
   openLogs(
     arg:
       | string
-      | { processId: string; filter?: string; detached?: boolean }
+      | {
+          processId: string;
+          filter?: string;
+          detached?: boolean;
+          level?: SilenceLevel;
+        }
       | { scope: 'all'; level?: SilenceLevel }
       | { scope: 'group'; groupId: string; level?: SilenceLevel },
   ): Promise<SimpleResult>;

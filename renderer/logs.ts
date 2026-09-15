@@ -1999,7 +1999,11 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
     ?.classList.toggle('active', mergedIsAll);
 }
 
-async function selectLog(id: string, filter?: string): Promise<void> {
+async function selectLog(
+  id: string,
+  filter?: string,
+  level?: SilenceLevel,
+): Promise<void> {
   processId = id;
   groupSources = null;
   mergedGroupId = null;
@@ -2022,6 +2026,9 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   muteErrEl.checked = false;
   if (filter !== undefined) filterEl.value = filter;
   filterRe = buildFilter(filterEl.value);
+  // A counter-button entry point (tray, in-window nav) pins the level chip;
+  // a plain log switch keeps whatever the user has on screen.
+  if (level) setLevelFilter([level]);
 
   // getLogs also points main's live stream at this buffer, atomically.
   const token = beginLoad();
@@ -2067,7 +2074,11 @@ async function selectLog(id: string, filter?: string): Promise<void> {
   if (initialScope) {
     await openScope(initialScope, initialLevel ? [initialLevel] : []);
   } else if (processId) {
-    await selectLog(processId, initialFilter || undefined);
+    await selectLog(
+      processId,
+      initialFilter || undefined,
+      initialLevel ?? undefined,
+    );
   } else {
     titleEl.textContent = 'Logs (sin proceso)';
   }
@@ -2092,7 +2103,7 @@ window.api.onLogsSelect((payload) => {
     applyFilter();
     return;
   }
-  void selectLog(pid, payload.filter);
+  void selectLog(pid, payload.filter, payload.level ?? undefined);
 });
 
 window.api.onLog((payload) => {

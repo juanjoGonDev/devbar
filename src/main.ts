@@ -1426,15 +1426,19 @@ function adaptiveSize(maxW: number, maxH: number, marginW = 60, marginH = 100) {
 
 function ensureLogsWindow(
   processId: string,
-  { filter, detached }: { filter?: string; detached?: boolean } = {},
+  {
+    filter,
+    detached,
+    level,
+  }: { filter?: string; detached?: boolean; level?: 'warn' | 'error' } = {},
 ): BrowserWindow {
   const key = detached ? processId : MAIN_LOGS_KEY;
   const existing = logsWindows.get(key);
   if (existing && !existing.isDestroyed()) {
     // Re-selecting the log already on screen would clear and refetch it for
     // nothing; only tell the renderer when something actually changes.
-    if (detached || processId !== mainLogsWatching || filter) {
-      existing.webContents.send('logs:select', { processId, filter });
+    if (detached || processId !== mainLogsWatching || filter || level) {
+      existing.webContents.send('logs:select', { processId, filter, level });
     }
     if (!detached) mainLogsWatching = processId;
     existing.show();
@@ -1450,6 +1454,7 @@ function ensureLogsWindow(
     : processId;
   const query: Record<string, string> = { id: processId };
   if (filter) query.filter = filter;
+  if (level) query.level = level;
   if (detached) query.detached = '1';
   else mainLogsWatching = processId;
   const win = buildLogsWindow({
@@ -2374,9 +2379,14 @@ function registerIpc() {
         typeof payload === 'string'
           ? false
           : ipcRecord(payload).detached === true;
+      const rawLevel =
+        typeof payload === 'string' ? undefined : ipcRecord(payload).level;
+      const level =
+        rawLevel === 'warn' || rawLevel === 'error' ? rawLevel : undefined;
       ensureLogsWindow(processId, {
         ...(filter === undefined ? {} : { filter }),
         ...(detached ? { detached: true } : {}),
+        ...(level === undefined ? {} : { level }),
       });
       if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
       return { ok: true };

@@ -570,13 +570,11 @@ function loadBranchesIntoCombo(groupId: string, combo: ComboboxControl): void {
  * @param {'warn'|'error'} kind
  * @param {number} count
  * @param {string} processId
- * @param {string} filterRegex  — passed as filter to openLogs
  */
 function buildCounterBtn(
   kind: 'warn' | 'error',
   count: number,
   processId: string,
-  filterRegex: string,
 ): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -585,7 +583,9 @@ function buildCounterBtn(
   btn.title = `Ver logs filtrados por ${kind === 'warn' ? 'warnings' : 'errors'}`;
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    window.api.openLogs({ processId, filter: filterRegex });
+    // The same level chip as the in-window nav (the "sólo ⚠ warnings" pill),
+    // not a text search: every warn/error entry point behaves identically.
+    window.api.openLogs({ processId, level: kind });
   });
   return btn;
 }
@@ -620,21 +620,11 @@ function buildCommandSubRow(
     const counters = document.createElement('span');
     counters.className = 'cmd-counters';
     if (!cs.muteWarn && cs.warnCount > 0) {
-      const w = buildCounterBtn(
-        'warn',
-        cs.warnCount,
-        cs.processId,
-        '\\bwarn(ing)?s?\\b',
-      );
+      const w = buildCounterBtn('warn', cs.warnCount, cs.processId);
       counters.appendChild(w);
     }
     if (!cs.muteErr && cs.errorCount > 0) {
-      const e = buildCounterBtn(
-        'error',
-        cs.errorCount,
-        cs.processId,
-        '\\berror(s)?\\b',
-      );
+      const e = buildCounterBtn('error', cs.errorCount, cs.processId);
       counters.appendChild(e);
     }
     subRow.appendChild(counters);
