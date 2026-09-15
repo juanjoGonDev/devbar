@@ -38,17 +38,34 @@ function git(
     ),
   );
 }
-export async function listBranches(
-  repo: string,
-): Promise<{ ok: boolean; branches?: string[]; error?: string | undefined }> {
-  if (!repo) return { ok: false, error: 'No git repo configured' };
+export async function listBranches(repo: string): Promise<{
+  ok: boolean;
+  branches?: string[];
+  error?: string | undefined;
+  /**
+   * False when the path is not a git repository (or has no path): the UI
+   * hides the branch selector instead of showing a stuck "Cargando…".
+   */
+  isRepo?: boolean;
+}> {
+  if (!repo)
+    return { ok: false, isRepo: false, error: 'No git repo configured' };
+  // Probe first: `rev-parse --is-inside-work-tree` succeeds only inside a
+  // repository, and its verdict is locale-independent (parsing the
+  // "fatal: not a git repository" message would depend on git's locale).
+  const probe = await git(repo, ['rev-parse', '--is-inside-work-tree'], {
+    timeout: 5000,
+  });
+  if (!probe.ok || probe.stdout !== 'true') {
+    return { ok: false, isRepo: false, error: 'not a git repository' };
+  }
   const result = await git(repo, [
     'for-each-ref',
     '--format=%(refname:short)',
     'refs/heads',
     'refs/remotes',
   ]);
-  if (!result.ok) return { ok: false, error: result.error };
+  if (!result.ok) return { ok: false, isRepo: true, error: result.error };
   const seen = new Set<string>();
   const branches: string[] = [];
   for (const raw of result.stdout.split('\n')) {
@@ -61,7 +78,7 @@ export async function listBranches(
     }
   }
   branches.sort();
-  return { ok: true, branches };
+  return { ok: true, branches, isRepo: true };
 }
 export async function currentBranch(
   repo: string,

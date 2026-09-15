@@ -54,9 +54,13 @@ if (document.readyState !== 'loading') {
 let lastGroupStates: GroupState[] = [];
 // State update that arrived while a branch dropdown was open; replayed on close.
 let _pendingStates: GroupState[] | null = null;
-// Branch cache: groupId → { branches: string[], current: string|null }
+// Branch cache: groupId → { branches: string[], current: string|null, isRepo? }
+// isRepo === false is a NEGATIVE cache entry: the group's path is not a git
+// repository, so the selector stays hidden without re-querying on every
+// re-render.
 interface BranchCacheEntry {
   branches: string[];
+  isRepo?: boolean | undefined;
   current: string | null;
 }
 const branchCache = new Map<string, BranchCacheEntry>();
@@ -487,21 +491,28 @@ function renderGroupRow(gs: GroupState): HTMLElement {
 
 // ─────────────────────── Branch selector (combobox) ──────────────────
 
+/**
+ * Invisible stand-in for the branch selector on groups that do not use git
+ * (no path, or a path that is not a repository). Keeps the row's right-edge
+ * slot so the layout does not shift, without showing a dead control.
+ */
+function branchNone(): HTMLElement {
+  const el = document.createElement('span');
+  el.className = 'branch-select branch-none';
+  el.hidden = true;
+  return el;
+}
+
 function buildBranchSelector(gs: GroupState): HTMLElement {
   const groupId = gs.groupId;
   const group = gs.group || {};
 
-  // Groups without a path don't have branches
-  if (!group.path) {
-    const placeholder = document.createElement('span');
-    placeholder.className = 'branch-select';
-    placeholder.style.cssText =
-      'font-size:11px; color:var(--muted); flex-shrink:0; padding:2px 4px;';
-    placeholder.textContent = 'Rama…';
-    return placeholder;
-  }
+  // Groups without a path don't use git: no selector at all.
+  if (!group.path) return branchNone();
 
   const cached = branchCache.get(groupId);
+  // Known non-git project: nothing to show and nothing to query.
+  if (cached && cached.isRepo === false) return branchNone();
   const initOptions = cached ? branchDataToOptions(cached) : [];
   const initValue = cached ? cached.current || null : null;
 
@@ -550,11 +561,24 @@ function branchDataToOptions(data: BranchCacheEntry): ComboboxOption[] {
 function loadBranchesIntoCombo(groupId: string, combo: ComboboxControl): void {
   window.api.listBranches(groupId).then((res) => {
     combo.setLoading(false);
-    if (!res.ok) return;
+    if (!res.ok) {
+      if (res.isRepo === false) {
+        // Not a git project: remember it (negative cache) and drop the
+        // selector entirely — a stuck "Cargando…" box is a dead control.
+        branchCache.set(groupId, {
+          branches: [],
+          current: null,
+          isRepo: false,
+        });
+        combo.replaceWith(branchNone());
+      }
+      return;
+    }
     window.api.currentBranch(groupId).then((cur) => {
       const data: BranchCacheEntry = {
         branches: res.branches ?? [],
         current: cur.ok ? (cur.branch ?? null) : null,
+        isRepo: true,
       };
       branchCache.set(groupId, data);
       combo.setOptions(branchDataToOptions(data));
@@ -765,7 +789,19 @@ byId('quit-app', HTMLButtonElement).addEventListener('click', () => {
   window.api.quit();
 });
 
+let lastPathSignature = '';
 window.api.onUpdate((groupStates) => {
+  // A group's path moving (added, retargeted, cleared) invalidates every
+  // branch verdict — including "this project has no git" — so the selector
+  // reappears as soon as the project becomes a repository.
+  const signature = groupStates
+    .map((gs) => `${gs.groupId}:${gs.group?.path ?? ''}`)
+    .sort()
+    .join('|');
+  if (signature !== lastPathSignature) {
+    lastPathSignature = signature;
+    branchCache.clear();
+  }
   render(groupStates);
 });
 

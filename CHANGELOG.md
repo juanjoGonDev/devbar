@@ -9,6 +9,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Añadido
 
+- **Tras `install-local`, la app aparece en el menú del sistema.** En Linux la instalación registra su entrada en el menú de aplicaciones (`~/.local/share/applications/devbar.desktop`, con icono) y en Windows crea su acceso directo en el Menú Inicio; antes la copia local funcionaba pero era invisible desde el lanzador, a diferencia de los instaladores oficiales.
+
 - **Windows, Linux y Raspberry Pi.** DevBar ya no es solo de macOS: el mismo
   runtime funciona en los tres sistemas, cada uno con su empaquetado —
   **instalador de un clic y portable** en Windows (x64 y arm64), **AppImage y
@@ -53,6 +55,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
   una actualización automática.
 
 ### Corregido
+
+- **En la bandeja, los grupos que no usan git seguían mostrando el selector de ramas** —sin ruta aparecía un «Rama…» y con una ruta que no es un repositorio el selector se quedaba para siempre en «Cargando…». Ahora el selector solo se muestra en proyectos que son repositorios git de verdad: la app recuerda la decisión de «no es un repositorio» (de modo que no relanza git a cada refresco del panel) y el selector vuelve a aparecer si el grupo apunta luego a un repositorio.
 
 - **En Linux, los logs y el staging de actualizaciones se escribían en una
   carpeta con el nombre del paquete (`~/.config/devbar/…`) mientras la

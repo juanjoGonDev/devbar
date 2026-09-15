@@ -153,6 +153,8 @@ interface BranchListResult {
   ok: boolean;
   branches?: string[] | undefined;
   error?: string | undefined;
+  /** False when the group's path is not a git repository. */
+  isRepo?: boolean | undefined;
 }
 interface BranchResult {
   ok: boolean;
