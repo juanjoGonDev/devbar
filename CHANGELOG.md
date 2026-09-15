@@ -5,6 +5,73 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-15
+
+### Añadido
+
+- **Windows, Linux y Raspberry Pi.** DevBar ya no es solo de macOS: el mismo
+  runtime funciona en los tres sistemas, cada uno con su empaquetado —
+  **instalador de un clic y portable** en Windows (x64 y arm64), **AppImage y
+  .deb** en Linux (x64, arm64 y armv7 para Raspberry Pi 4/5) y el DMG de
+  siempre en macOS. En la release aparecen los 14 artefactos de las tres
+  plataformas, cada uno con su suma SHA-256.
+- **Actualización automática en los tres SO.** El auto-actualizador de la
+  0.7.0 ahora cubre Windows (instalado: reinstalación silenciosa; portable:
+  sustituye el propio ejecutable en su sitio) y Linux (AppImage in-place con
+  rollback; .deb con reinstalación asistida). En Windows y Linux cada descarga
+  se verifica contra SHA-256 antes de instalarse, y si la copia falla a medias
+  la versión anterior se restaura y se relanza.
+- **Arranque con el sistema en los tres SO.** «Arrancar con DevBar al iniciar»
+  funciona en Windows (clave Run de usuario) y en Linux (entrada XDG
+  `~/.config/autostart/devbar.desktop`), además del login item de macOS. En
+  Windows y Linux la app distingue un arranque de inicio de uno manual, de
+  modo que el comportamiento programado al arrancar (pre-scripts) es el mismo
+  en las tres plataformas.
+- **CI que construye, verifica y lanza cada build en los tres SO.** Cada
+  cambio compila los tres empaquetados, comprueba el contenido (cabecera PE en
+  Windows, magic y escritorio del AppImage en Linux, checks habituales en
+  macOS) y arranca el binario empaquetado en modo smoke —tray real, sin
+  ventanas ni comandos— antes de dejar la verificación en verde. La validación
+  de release añade dry-runs de Windows y Linux al de macOS.
+
+### Cambiado
+
+- **La interfaz se adapta al SO en marcha.** Los textos de la app (avisos de
+  actualización, instrucciones de instalación, atajos) ya no asumen macOS: en
+  Windows y Linux describen y enlazan a los lugares de tu sistema, no de otro.
+- **Los comandos de desarrollo mantienen su nombre y funcionan en cualquier
+  SO.** `pack`, `dist`, `verify`, `dist:mac`, `release:verify`,
+  `install-local` y `install-local:dev` son los mismos de siempre: un
+  enrutador los interpreta según el SO (el pipeline original en macOS,
+  electron-builder en Windows y Linux) y la compilación de desarrollo corre en
+  Node, de modo que `pnpm start` ya no necesita bash en Windows.
+- **`install-local` mata la instancia anterior antes de reinstalar.** Antes
+  podía dejar corriendo el proceso viejo y quedarse con dos instancias —justo
+  donde una actualización automática a medio resolver se complica más—. Ahora
+  detiene la copia instalada y la de desarrollo, instala y relanza; el ciclo
+  completo se prueba en CI tanto con una instancia corriendo como simulando
+  una actualización automática.
+
+### Corregido
+
+- **Los contadores ⚠ y ✕ del panel de la bandeja abrían una búsqueda con
+  regex** en lugar del filtro por nivel. Ahora abren el pill «sólo ⚠ warnings»
+  / «sólo ⛔ errores» de la ventana de logs —el mismo mecanismo, visible y
+  quitable con su ✕, que usan el panel lateral y los totales de alerta.
+- **Un grupo guardado en Configuración seguía marcado con cambios sin
+  guardar.** El botón Guardar quedaba activo, la barra de «cambios sin guardar»
+  se negaba a irse y al cambiar de grupo o cerrar la ventana volvía a saltar el
+  aviso. La comparación se hacía contra una forma normalizada que el borrador
+  nunca tiene, así que nunca coincidía; ahora se compara contra el estado real
+  del borrador.
+
+## [0.7.1] - 2026-09-09
+
+Solo cambios internos de mantenimiento (dependencias y proceso de
+compilación/publicación); sin novedades de cara al usuario.
+
+## [0.7.0] - 2026-08-26
+
 ### Añadido
 
 - **Actualizaciones automáticas de verdad.** Cuando DevBar detecta una versión
