@@ -1379,6 +1379,9 @@ let lastTrayCount = 0;
 // packaged builds). Both stay null in a real run.
 let devTrayColor: TrayColor | null = null;
 let devUpdateSimulated = false;
+// Dev-panel override for the tray count, so the badge can be exercised
+// without real errors. null = follow the real aggregated state.
+let devTrayCount: number | null = null;
 
 /**
  * Repaint the menubar mark for the current state. The mark carries a small red
@@ -1389,12 +1392,13 @@ function refreshTrayIcon(): void {
   if (!mb || !mb.tray) return;
   try {
     // macOS carries the count as tray title text; win/linux don't render
-    // titles, so the count is drawn into the icon itself.
+    // titles, so the count is drawn into the icon itself. The dev panel
+    // can force it (devTrayCount) without real errors.
     mb.tray.setImage(
       trayIcon.loadIcon(
         devTrayColor ?? lastTrayColor,
         !!availableUpdate,
-        isMac ? 0 : lastTrayCount,
+        isMac ? 0 : (devTrayCount ?? lastTrayCount),
       ),
     );
   } catch (err) {
@@ -1418,9 +1422,10 @@ function updateTrayTitle(payload: GroupState[]): void {
       if (!cs.muteErr) errs += cs.errorCount;
     }
   }
-  const count = trayIcon.badgeCount(errs, warns);
+  const count = devTrayCount ?? trayIcon.badgeCount(errs, warns);
   // macOS: count as text next to the icon. win/linux don't render tray
-  // titles, so the count is drawn into the icon instead.
+  // titles, so the count is drawn into the icon instead. The dev panel's
+  // override (devTrayCount) wins over the real aggregated state.
   if (isMac) {
     mb.tray.setTitle(count ? ` ${count}` : '');
   } else {
@@ -2679,6 +2684,15 @@ function registerIpc() {
           },
           setSimulatedTrayColor: (color) => {
             devTrayColor = color;
+            refreshTrayIcon();
+          },
+          setSimulatedTrayCount: (count) => {
+            devTrayCount = count;
+            // macOS renders the count as title text; set it immediately so
+            // the simulation is visible before the next state tick.
+            if (isMac && mb && mb.tray) {
+              mb.tray.setTitle(count ? ` ${count}` : '');
+            }
             refreshTrayIcon();
           },
           showBanner: (title, body, options) =>

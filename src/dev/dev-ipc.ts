@@ -2,6 +2,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { buildSimulatedUpdate } from './simulate-update.js';
 import type { AvailableUpdate } from '../domain-types.js';
 import type { TrayColor } from '../ipc-contract.js';
+import { parseTrayCount } from '../tray-icon.js';
 
 /**
  * Everything the simulation panel needs to reach back into the running app.
@@ -13,6 +14,11 @@ export interface DevHooks {
   setSimulatedUpdate(update: AvailableUpdate | null): void;
   /** null releases the override and repaints from the real aggregated state. */
   setSimulatedTrayColor(color: TrayColor | null): void;
+  /**
+   * Forces the tray error/warning count (badge on win/linux, title on
+   * macOS) without real errors. null releases the override.
+   */
+  setSimulatedTrayCount(count: number | null): void;
   /** The real path: native when macOS accepts it, in-app banner otherwise. */
   showBanner(
     title: string,
@@ -139,6 +145,15 @@ export function registerDevIpc(hooks: DevHooks): void {
       const color = TRAY_COLORS.find((candidate) => candidate === value);
       hooks.setSimulatedTrayColor(color ?? null);
       return { ok: true, color: color ?? null };
+    },
+  );
+
+  ipcMain.handle(
+    'dev:simulateTrayCount',
+    (_e: IpcMainInvokeEvent, payload: unknown) => {
+      const count = parseTrayCount(asRecord(payload).count);
+      hooks.setSimulatedTrayCount(count);
+      return { ok: true, count };
     },
   );
 

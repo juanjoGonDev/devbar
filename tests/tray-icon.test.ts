@@ -38,6 +38,7 @@ import {
   badgeCount,
   invalidateCache,
   loadIcon,
+  parseTrayCount,
 } from '../src/tray-icon.js';
 
 interface MockImage {
@@ -93,6 +94,31 @@ describe('loadIcon with a count badge', () => {
     ) as unknown as MockImage;
     expect(update.bitmap).not.toEqual(none.bitmap);
     expect(updatePlusCount.bitmap).not.toEqual(update.bitmap);
+  });
+});
+
+describe('parseTrayCount', () => {
+  it('accepts non-negative integers (numbers and numeric strings)', () => {
+    expect(parseTrayCount(0)).toBe(0);
+    expect(parseTrayCount(14)).toBe(14);
+    expect(parseTrayCount('14')).toBe(14);
+  });
+
+  it('caps huge values at 9999', () => {
+    expect(parseTrayCount(9999)).toBe(9999);
+    expect(parseTrayCount(123456)).toBe(9999);
+  });
+
+  it('rejects invalid input (release the override)', () => {
+    expect(parseTrayCount(null)).toBeNull();
+    expect(parseTrayCount(undefined)).toBeNull();
+    expect(parseTrayCount('')).toBeNull();
+    expect(parseTrayCount('  ')).toBeNull();
+    expect(parseTrayCount(-1)).toBeNull();
+    expect(parseTrayCount(1.5)).toBeNull();
+    expect(parseTrayCount('abc')).toBeNull();
+    expect(parseTrayCount({ count: 5 })).toBeNull();
+    expect(parseTrayCount(true)).toBeNull();
   });
 });
 

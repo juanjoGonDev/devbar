@@ -24,6 +24,20 @@ export function badgeCount(errs: number, warns: number): number {
   return errs > 0 ? errs : warns;
 }
 
+/**
+ * Validates a dev-panel count payload: non-negative integer (numbers or
+ * numeric strings), capped; null/empty/invalid → null (release the
+ * override). The dev panel uses it to force the badge without real errors.
+ */
+export function parseTrayCount(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return null;
+  return n > 9999 ? 9999 : n;
+}
+
 export function loadIcon(
   state: TrayColor,
   hasUpdate = false,

@@ -204,6 +204,7 @@ interface DevSimulationApi {
   }>;
   clearUpdate(): Promise<SimpleResult>;
   simulateTrayColor(color: TrayColor | null): Promise<SimpleResult>;
+  simulateTrayCount(count: number | null): Promise<SimpleResult>;
   simulateBanner(withCta: boolean): Promise<SimpleResult>;
   simulateFallbackBanner(withCta: boolean): Promise<SimpleResult>;
   simulateSuccess(): Promise<SimpleResult>;

@@ -77,6 +77,8 @@ const api: DevBarApi = {
     clearUpdate: () => ipcRenderer.invoke('dev:clearUpdate'),
     simulateTrayColor: (color) =>
       ipcRenderer.invoke('dev:simulateTrayColor', { color }),
+    simulateTrayCount: (count) =>
+      ipcRenderer.invoke('dev:simulateTrayCount', { count }),
     simulateBanner: (cta) => ipcRenderer.invoke('dev:simulateBanner', { cta }),
     simulateFallbackBanner: (cta) =>
       ipcRenderer.invoke('dev:simulateFallbackBanner', { cta }),
