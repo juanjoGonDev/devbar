@@ -59,7 +59,26 @@ jobs:
           fi
 
       - name: Static quality
-        run: pnpm lint:strict && pnpm format:check && pnpm deadcode && pnpm deps:check
+        run: |
+          set -o pipefail
+          # Self-diagnostic: each gate runs with its own log and a
+          # ::error:: annotation with the output tail, so a failure says
+          # WHICH gate and WHY (the bare && chain only said "exit 1").
+          quality() {
+            name="$1"; shift
+            echo "::group::$name"
+            if ! "$@" > "/tmp/quality-${name//:/-}.log" 2>&1; then
+              echo "::endgroup::"
+              echo "::error::static-quality: $name failed. output tail:"
+              tail -40 "/tmp/quality-${name//:/-}.log"
+              exit 1
+            fi
+            echo "::endgroup::"
+          }
+          quality lint:strict pnpm lint:strict
+          quality format:check pnpm format:check
+          quality deadcode pnpm deadcode
+          quality deps:check pnpm deps:check
 
       - name: Tests
         run: pnpm test

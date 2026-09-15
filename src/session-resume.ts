@@ -56,21 +56,21 @@ export interface ResumeSnapshot {
 }
 
 /** Why a launch decided (or not) to resume. */
-export type ResumeReason =
+type ResumeReason =
   | 'fresh' // snapshot read, in window, resumable ids → resume
   | 'none' // no snapshot file
   | 'stale' // older than RESUME_WINDOW_MS
   | 'corrupt' // unreadable / wrong shape — deleted
   | 'user-quit' // previous session ended in a deliberate quit — deleted
   | 'empty'; // nothing left after filtering to valid ids — deleted
-export interface ResumeDecision {
+interface ResumeDecision {
   /** Process ids to start (order preserved from the snapshot). */
   resume: string[];
   /** What the decision was and why — for logging. */
   reason: ResumeReason;
 }
 
-export interface Clock {
+interface Clock {
   now(): number;
 }
 const realClock: Clock = { now: () => Date.now() };
@@ -192,7 +192,7 @@ export function consumeSnapshot(
   }
 }
 
-export interface TrackerOptions {
+interface TrackerOptions {
   /** Debounce for change-driven writes. Default 750 ms. */
   writeDelayMs?: number;
   /** Periodic refresh while the set is non-empty (keeps a crash-resume
