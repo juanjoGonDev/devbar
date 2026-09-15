@@ -11,10 +11,13 @@ import type {
   PreStep,
   Schedule,
   ScheduleRule,
+  ThemePreference,
 } from '../src/domain-types.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 import type { IconBatteryItem, UpdateStatus } from '../src/ipc-contract.js';
 import { installTooltips } from './tooltip.js';
+import { initTheme } from './theme.js';
+initTheme();
 
 type EditableItem = Command | Action | PreScript;
 type SubKind = 'command' | 'action' | 'prescript';
@@ -319,11 +322,20 @@ async function saveDraft(): Promise<SavedGroup | null> {
     return null;
   }
   const savedGroup = await window.api.saveGroup(draftGroup);
-  const baseline = structuredClone(savedGroup || draftGroup);
-  storedGroup = baseline;
-  const idx = allGroups.findIndex((group) => group.id === baseline.id);
-  if (idx >= 0) allGroups[idx] = baseline;
-  return savedGroup || baseline;
+  // The dirty-check baseline is the DRAFT itself: a successful save means
+  // exactly what the user is looking at is now persisted. Basing it on the
+  // IPC response leaves the group "dirty" after every save — the response is
+  // a re-normalized shape that also carries the transient
+  // `_autoStartEnforced` flag the draft never has, and the stringify
+  // comparison cannot ignore that.
+  storedGroup = structuredClone(draftGroup);
+  const canonicalId = savedGroup?.id ?? draftGroup.id;
+  const idx = allGroups.findIndex((group) => group.id === canonicalId);
+  if (idx >= 0 && savedGroup) {
+    const { _autoStartEnforced: _transient, ...canonical } = savedGroup;
+    allGroups[idx] = canonical;
+  }
+  return savedGroup || structuredClone(storedGroup);
 }
 
 // ────────────────────── Toast ──────────────────────────────────────────
@@ -947,7 +959,7 @@ function buildPreStepsSection(group: Group, parent: HTMLElement): void {
   // When ON, pre-scripts auto-run ONLY when DevBar was launched by macOS
   // at login (system boot), not on every manual app restart. Default OFF.
   const autoRunLbl = buildToggleLabel(
-    'Ejecutar automáticamente al arrancar el Mac',
+    'Ejecutar automáticamente al arrancar el sistema',
     !!group.preScriptsAutoRun,
     'detail-prestep-autorun',
   );
@@ -964,7 +976,7 @@ function buildPreStepsSection(group: Group, parent: HTMLElement): void {
   autoRunHint.style.cssText =
     'display:block; margin:2px 0 8px 42px; font-size:10px;';
   autoRunHint.textContent =
-    'Solo dispara cuando DevBar abre como Login Item del sistema; no en relanzados manuales.';
+    'Solo dispara cuando DevBar abre con el arranque del sistema; no en relanzados manuales.';
   section.appendChild(autoRunLbl);
   section.appendChild(autoRunHint);
 
@@ -1942,11 +1954,57 @@ addGroupBtn.addEventListener('click', async () => {
   }
 });
 
+// ────────────────────── Per-OS copy ────────────────────────────────────
+// The static HTML carries OS-neutral fallbacks; this refines the wording —
+// and the settings-link label — for the platform actually running, so a
+// Windows user never reads macOS instructions (and vice versa).
+function adaptOsTexts(): void {
+  const platform = window.api.platform;
+
+  const autostartHint = byId<HTMLElement>('autostart-hint', HTMLElement);
+  if (autostartHint) {
+    const osMechanism =
+      platform === 'win32'
+        ? 'el autostart de Windows (clave Run)'
+        : platform === 'linux'
+          ? 'el autostart de la sesión (XDG)'
+          : 'los elementos de inicio de sesión (Login Items)';
+    autostartHint.textContent = `Registra DevBar en ${osMechanism}. Solo aplica a la app empaquetada/instalada.`;
+  }
+
+  const notifHint = byId<HTMLElement>('notif-hint', HTMLElement);
+  const notifBtn = byId<HTMLButtonElement>(
+    'open-notification-settings',
+    HTMLButtonElement,
+  );
+  if (notifHint && notifBtn) {
+    let text: string;
+    if (platform === 'darwin') {
+      text =
+        '¿No se ven las notificaciones? macOS pide permiso una sola vez por app. Compruébalo en ';
+      notifBtn.textContent = 'Ajustes del sistema → Notificaciones';
+    } else if (platform === 'win32') {
+      text =
+        '¿No se ven las notificaciones? Windows gestiona el permiso por app. Compruébalo en ';
+      notifBtn.textContent = 'Configuración → Sistema → Notificaciones';
+    } else {
+      text =
+        '¿No se ven las notificaciones? El panel depende de tu escritorio (GNOME: Ajustes → Notificaciones; KDE: Configuración del sistema → Notificaciones). Puedes abrir ';
+      notifBtn.textContent = 'los ajustes del sistema';
+    }
+    notifHint.textContent = text;
+    notifHint.appendChild(notifBtn);
+    notifHint.appendChild(document.createTextNode('.'));
+  }
+}
+
 // ────────────────────── Settings ───────────────────────────────────────
 
 async function loadSettings() {
   const s = await window.api.getSettings();
   setAutostart.checked = !!s.autostart;
+  selectedTheme = s.theme ?? 'auto';
+  markThemeOption();
   setSilenceWarnings.checked = !!s.silenceWarnings;
   setSilenceErrors.checked = !!s.silenceErrors;
   if (setMaxLogLines)
@@ -1981,6 +2039,7 @@ async function persistSettings() {
       : Number(maxLogLinesRaw) || DEFAULT_MAX_LOG_LINES;
   await window.api.saveSettings({
     autostart: setAutostart.checked,
+    theme: selectedTheme,
     silenceWarnings: setSilenceWarnings.checked,
     silenceErrors: setSilenceErrors.checked,
     maxLogLines,
@@ -1988,6 +2047,24 @@ async function persistSettings() {
   });
   showToast('Ajustes guardados', 'ok');
 }
+
+// Theme picker: segmented control, persists on click (same as the other
+// instant-save controls). initTheme() re-applies on every broadcast, so the
+// change propagates to all open windows (and to this one).
+let selectedTheme: ThemePreference = 'auto';
+const themeOpts = Array.from(
+  document.querySelectorAll<HTMLButtonElement>('.theme-opt'),
+);
+function markThemeOption(): void {
+  for (const btn of themeOpts)
+    btn.classList.toggle('is-on', btn.dataset.themeValue === selectedTheme);
+}
+for (const btn of themeOpts)
+  btn.addEventListener('click', () => {
+    selectedTheme = (btn.dataset.themeValue ?? 'auto') as ThemePreference;
+    markThemeOption();
+    void persistSettings();
+  });
 
 setAutostart.addEventListener('change', persistSettings);
 setSilenceWarnings.addEventListener('change', persistSettings);
@@ -2229,6 +2306,7 @@ if (window.api && window.api.getUpdateStatus) {
 
 // ────────────────────── Init ───────────────────────────────────────────
 
+adaptOsTexts();
 loadSettings();
 loadGroups();
 

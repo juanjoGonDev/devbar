@@ -109,6 +109,7 @@ describe('release impact policy', () => {
     'scripts/build-macos-release.sh',
     'scripts/package-electron.ts',
     'scripts/package-macos-app.sh',
+    'scripts/package-win-linux.ts',
   ])('classifies %s as release-impacting', (path) => {
     expect(classify([path], packageJson, packageJson)).toEqual({
       publish: true,

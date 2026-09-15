@@ -22,10 +22,12 @@ import {
   normalizePreStep,
   regenerateLegacyServices,
 } from './groups-model.js';
+import { appHome, packagedAppHome } from './app-paths.js';
 import { serializeConfig } from './config-io.js';
 
 const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   autostart: false,
+  theme: 'auto',
   silenceWarnings: false,
   silenceErrors: false,
   maxLogLines: DEFAULT_MAX_LOG_LINES,
@@ -57,7 +59,20 @@ const schema = {
   _services_pre_v3_backup: { type: 'array', default: [] },
 } as const;
 
-const store = new Store<StoreState>({ name: 'config', schema });
+/**
+ * Pin the store to the "DevBar" folder for packaged builds (see
+ * app-paths.ts for why the explicit pin exists — on Linux Electron's
+ * default keeps the package.json name). Dev mode keeps Electron's default
+ * so existing dev stores are not orphaned.
+ */
+const storeOptions: {
+  name: string;
+  schema: typeof schema;
+  cwd?: string;
+} = { name: 'config', schema };
+const storeDir = packagedAppHome();
+if (storeDir !== undefined) storeOptions.cwd = storeDir;
+const store = new Store<StoreState>(storeOptions);
 
 function runMigration(): void {
   const result = migrateServicesToGroups(store.store);
@@ -358,6 +373,8 @@ export function saveGlobalSettings(
 ): GlobalSettings {
   const next = { ...getGlobalSettings(), ...patch };
   next.autostart = Boolean(next.autostart);
+  next.theme =
+    next.theme === 'light' || next.theme === 'dark' ? next.theme : 'auto';
   next.silenceWarnings = Boolean(next.silenceWarnings);
   next.silenceErrors = Boolean(next.silenceErrors);
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
@@ -397,10 +414,7 @@ export function replaceConfig(payload: {
   persistGroups(safeGroups);
 }
 export function writeImportBackup(): string {
-  const backupPath = path.join(
-    app.getPath('userData'),
-    'pre-import-backup.json',
-  );
+  const backupPath = path.join(appHome(), 'pre-import-backup.json');
   const snapshot = {
     backedUpAt: new Date().toISOString(),
     version: store.get('version', 3),

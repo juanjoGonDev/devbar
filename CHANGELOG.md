@@ -5,6 +5,129 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ## [Unreleased]
 
+### Corregido
+
+- **Los comandos que DevBar ejecuta ya no se quedan huérfanos cuando la app
+  se cierra.** Antes, al salir (o en la swap de la actualización
+  automática) solo se detenía el primer servicio y el resto seguía vivo
+  ocupando su puerto —el siguiente arranque fallaba con «dirección ya en
+  uso»—. Ahora TODAS las salidas (menú «Salir», `app:quit`, swap de
+  actualización) esperan a que termine de pararse cada servicio (escalando
+  a fuerza si hace falta) antes de morir, y Ctrl+C en el terminal de
+  `pnpm start` o `kill <pid>` limpian igual. En Windows, además, los
+  servicios heredan la consola del terminal (antes no la recibían y un
+  Ctrl+C los dejaba vivos), y `install-local` mata el árbol completo de la
+  instancia en los tres sistemas (antes dejaba los servicios corriendo).
+  La única vía que aún puede dejar un huérfano es un kill duro
+  (SIGKILL / `taskkill` sin /T), que no permite ejecutar ninguna limpieza.
+- **En Windows y Linux, el panel de la bandeja ya no aparece en la barra de
+  tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
+  Configuración y/o Logs cuando esas ventanas están abiertas; el panel es
+  siempre sin marco y no genera botón.
+
+### Cambiado
+
+- **En Windows y Linux, la insignia de errores del icono de la bandeja es
+  más grande y más gruesa** para que se lea de un vistazo (burbuja redonda
+  con el número en blanco sobre el icono). El número también aparece en el
+  tooltip del icono («DevBar — 14 errores»); que el número se dibuje _junto_
+  al icono, como en macOS, no es posible en estos sistemas porque el área de
+  la bandeja es un cuadrado fijo fijado por el sistema operativo.
+
+## [0.9.0] - 2026-09-15
+
+### Añadido
+
+- **En Windows y Linux, el icono de la bandeja muestra el número de errores** (o de avisos, si no hay errores) como insignia dibujada sobre el icono —en macOS ya aparecía como texto al lado del icono, y los títulos de bandeja no se renderizan en los otros dos sistemas—, con tope en «99+».
+- **El panel Dev de Configuración puede forzar el contador de la bandeja.** Los botones «Errores: 5 / 14 / 99+» (y «Sin contador») prueban la insignia de la bandeja sin provocar errores reales; en macOS se muestra como texto junto al icono, igual que el real.
+
+- **En Linux, el panel se abre junto al icono de la bandeja (como en
+  macOS)** cuando la sesión informa la posición real del icono (X11):
+  bajo una barra superior cuelga del icono centrado en él, y se adapta
+  para no salirse de la pantalla. En sesiones Wayland el compositor
+  decide la colocación (Electron no puede forzarla), así que se mantiene
+  el comportamiento habitual de menubar.
+- **El lanzador de la instalación local incluye icono.** Si
+  electron-builder no incluyó uno en la copia empaquetada, `install-local`
+  copia el del proyecto dentro de la instalación y la entrada del menú
+  de aplicaciones (Linux) / Menú Inicio (Windows) lo referencia.
+
+- **Tras `install-local`, la app aparece en el menú del sistema.** En Linux la instalación registra su entrada en el menú de aplicaciones (`~/.local/share/applications/devbar.desktop`, con icono) y en Windows crea su acceso directo en el Menú Inicio; antes la copia local funcionaba pero era invisible desde el lanzador, a diferencia de los instaladores oficiales.
+
+- **Windows, Linux y Raspberry Pi.** DevBar ya no es solo de macOS: el mismo
+  runtime funciona en los tres sistemas, cada uno con su empaquetado —
+  **instalador de un clic y portable** en Windows (x64 y arm64), **AppImage y
+  .deb** en Linux (x64, arm64 y armv7 para Raspberry Pi 4/5) y el DMG de
+  siempre en macOS. En la release aparecen los 14 artefactos de las tres
+  plataformas, cada uno con su suma SHA-256.
+- **Actualización automática en los tres SO.** El auto-actualizador de la
+  0.7.0 ahora cubre Windows (instalado: reinstalación silenciosa; portable:
+  sustituye el propio ejecutable en su sitio) y Linux (AppImage in-place con
+  rollback; .deb con reinstalación asistida). En Windows y Linux cada descarga
+  se verifica contra SHA-256 antes de instalarse, y si la copia falla a medias
+  la versión anterior se restaura y se relanza.
+- **Arranque con el sistema en los tres SO.** «Arrancar con DevBar al iniciar»
+  funciona en Windows (clave Run de usuario) y en Linux (entrada XDG
+  `~/.config/autostart/devbar.desktop`), además del login item de macOS. En
+  Windows y Linux la app distingue un arranque de inicio de uno manual, de
+  modo que el comportamiento programado al arrancar (pre-scripts) es el mismo
+  en las tres plataformas.
+- **CI que construye, verifica y lanza cada build en los tres SO.** Cada
+  cambio compila los tres empaquetados, comprueba el contenido (cabecera PE en
+  Windows, magic y escritorio del AppImage en Linux, checks habituales en
+  macOS) y arranca el binario empaquetado en modo smoke —tray real, sin
+  ventanas ni comandos— antes de dejar la verificación en verde. La validación
+  de release añade dry-runs de Windows y Linux al de macOS.
+
+### Cambiado
+
+- **La interfaz se adapta al SO en marcha.** Los textos de la app (avisos de
+  actualización, instrucciones de instalación, atajos) ya no asumen macOS: en
+  Windows y Linux describen y enlazan a los lugares de tu sistema, no de otro.
+- **Los comandos de desarrollo mantienen su nombre y funcionan en cualquier
+  SO.** `pack`, `dist`, `verify`, `dist:mac`, `release:verify`,
+  `install-local` y `install-local:dev` son los mismos de siempre: un
+  enrutador los interpreta según el SO (el pipeline original en macOS,
+  electron-builder en Windows y Linux) y la compilación de desarrollo corre en
+  Node, de modo que `pnpm start` ya no necesita bash en Windows.
+- **`install-local` mata la instancia anterior antes de reinstalar.** Antes
+  podía dejar corriendo el proceso viejo y quedarse con dos instancias —justo
+  donde una actualización automática a medio resolver se complica más—. Ahora
+  detiene la copia instalada y la de desarrollo, instala y relanza; el ciclo
+  completo se prueba en CI tanto con una instancia corriendo como simulando
+  una actualización automática.
+
+### Corregido
+
+- **En Windows, `install-local` no detuvo la instancia de desarrollo** (un `pnpm start` de este checkout): el patrón que buscaba electron.exe le doblaba los backslashes y nunca coincidía con la línea de comandos real, así que podía quedar corriendo la copia vieja. Ahora el kill encuentra el proceso y lo detiene.
+
+- **En la bandeja, los grupos que no usan git seguían mostrando el selector de ramas** —sin ruta aparecía un «Rama…» y con una ruta que no es un repositorio el selector se quedaba para siempre en «Cargando…». Ahora el selector solo se muestra en proyectos que son repositorios git de verdad: la app recuerda la decisión de «no es un repositorio» (de modo que no relanza git a cada refresco del panel) y el selector vuelve a aparecer si el grupo apunta luego a un repositorio.
+
+- **En Linux, los logs y el staging de actualizaciones se escribían en una
+  carpeta con el nombre del paquete (`~/.config/devbar/…`) mientras la
+  configuración vivía en `~/.config/DevBar`.** Electron fija la carpeta XDG
+  desde el nombre del paquete al arrancar, antes de que la app pueda
+  renombrarse, así que los datos quedaban repartidos en dos sitios y
+  `pnpm logs` no encontraba el log. Ahora configuración, logs y
+  actualizaciones comparten la carpeta «DevBar» en los tres SO.
+- **Los contadores ⚠ y ✕ del panel de la bandeja abrían una búsqueda con
+  regex** en lugar del filtro por nivel. Ahora abren el pill «sólo ⚠ warnings»
+  / «sólo ⛔ errores» de la ventana de logs —el mismo mecanismo, visible y
+  quitable con su ✕, que usan el panel lateral y los totales de alerta.
+- **Un grupo guardado en Configuración seguía marcado con cambios sin
+  guardar.** El botón Guardar quedaba activo, la barra de «cambios sin guardar»
+  se negaba a irse y al cambiar de grupo o cerrar la ventana volvía a saltar el
+  aviso. La comparación se hacía contra una forma normalizada que el borrador
+  nunca tiene, así que nunca coincidía; ahora se compara contra el estado real
+  del borrador.
+
+## [0.7.1] - 2026-09-09
+
+Solo cambios internos de mantenimiento (dependencias y proceso de
+compilación/publicación); sin novedades de cara al usuario.
+
+## [0.7.0] - 2026-08-26
+
 ### Añadido
 
 - **Actualizaciones automáticas de verdad.** Cuando DevBar detecta una versión

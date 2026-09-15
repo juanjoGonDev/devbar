@@ -13,10 +13,10 @@
     "scripts/**/*.ts",
     "tests/**/*.ts"
   ],
-  "ignoreBinaries": ["tail"],
+  "ignoreBinaries": ["tail", "dpkg-deb", "tasklist", "pgrep", "pkill"],
   "ignoreDependencies": [
     "@types/debug",
     "@types/electron-positioner",
-    "esbuild"
+    "@vitest/coverage-v8"
   ]
 }

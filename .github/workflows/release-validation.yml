@@ -13,11 +13,16 @@ on:
       - 'pnpm-lock.yaml'
       - 'scripts/build.sh'
       - 'scripts/build-macos-release.sh'
+      - 'scripts/electron-builder.d.ts'
       - 'scripts/package-electron.ts'
       - 'scripts/package-macos-app.sh'
+      - 'scripts/package-win-linux.ts'
       - 'scripts/release-artifacts.ts'
       - 'scripts/release-impact-policy.ts'
+      - 'scripts/release-manifest.ts'
+      - 'scripts/verify-linux-release.ts'
       - 'scripts/verify-release-artifacts.ts'
+      - 'scripts/verify-win-release.ts'
       - 'scripts/verify-macos-release.sh'
       - 'tests/release-artifacts.test.ts'
       - 'tests/release-impact-policy.test.ts'
@@ -31,7 +36,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  macos:
     name: macOS release dry run
     if: >-
       github.repository == 'juanjoGonDev/devbar' &&
@@ -59,7 +64,9 @@ jobs:
       - name: Cache Electron downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/Library/Caches/electron
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
           key: macos-release-validation-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install
@@ -74,6 +81,16 @@ jobs:
       - name: Build and verify release without publishing
         run: pnpm run release:mac
 
+      - name: Launch smoke — packaged app
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          WORK=$(mktemp -d)
+          ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
+          "$WORK/DevBar.app/Contents/MacOS/DevBar" --devbar-smoke 2>&1 | tee smoke-macos.log
+          grep -q DEVBAR_SMOKE_OK smoke-macos.log
+          rm -rf "$WORK"
+
       - name: Record release plan
         env:
           TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -84,6 +101,7 @@ jobs:
             echo "tag=v$version"
             echo "target=$TARGET_SHA"
             echo 'publication=false'
+            echo 'platform=macos'
             echo 'assets:'
             sed 's/^/  /' dist/release/SHA256SUMS.txt
           } > dist/release/RELEASE_VALIDATION.txt
@@ -91,9 +109,212 @@ jobs:
       - name: Upload dry-run evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-validation-${{ github.sha }}
+          name: release-validation-macos-${{ github.sha }}
           retention-days: 3
           if-no-files-found: error
           path: |
             dist/release/SHA256SUMS.txt
             dist/release/RELEASE_VALIDATION.txt
+            smoke-macos.log
+
+  windows:
+    name: Windows release dry run
+    if: >-
+      github.repository == 'juanjoGonDev/devbar' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.draft == false)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cache Electron downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            %LOCALAPPDATA%\electron\Cache
+            %LOCALAPPDATA%\electron-builder\Cache
+          key: windows-release-validation-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify NSIS + portable (x64, arm64)
+        shell: bash
+        run: |
+          # electron-builder downloads Electron dists + toolsets (NSIS,
+          # fpm, appimagetool) from GitHub releases; a transient 5xx
+          # there would otherwise kill the whole job, so retry the
+          # network-heavy build before failing.
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (win) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "dist (win) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
+
+      - name: Launch smoke — NSIS install + portable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          Start-Process -Wait -FilePath ".\dist\electron-builder\DevBar-$version-win-x64-setup.exe" -ArgumentList '/S'
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe")) {
+            Write-Error "NSIS install did not produce the expected exe"
+            exit 1
+          }
+          Get-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force
+          & "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe" --devbar-smoke *>&1 |
+            Tee-Object -FilePath smoke-win-installed.log
+          if (-not (Select-String -Path smoke-win-installed.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {
+            Write-Error 'installed-app smoke failed'
+            exit 1
+          }
+          # The NSIS portable wrapper runs the real app as a child process
+          # without redirecting its stdio, so its DEVBAR_SMOKE_OK line never
+          # reaches this console. The app writes a marker file on smoke
+          # success (removed at smoke start), and the wrapper only returns
+          # once the child exits — so the marker is settled now.
+          & ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |
+            Out-File -FilePath smoke-win-portable.log -Encoding utf8
+          if (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
+            Write-Error 'portable-app smoke failed (no smoke marker)'
+            exit 1
+          }
+
+      - name: Record release plan
+        shell: pwsh
+        env:
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $out = New-Item -ItemType Directory -Force dist\validation | Select-Object -ExpandProperty FullName
+          $assets = Get-ChildItem "dist\electron-builder\DevBar-$version-win-*.exe" |
+            Select-Object -ExpandProperty Name | Sort-Object
+          $lines = @("tag=v$version", "target=$env:TARGET_SHA", 'publication=false', 'platform=win', 'assets:')
+          foreach ($asset in $assets) { $lines += "  $asset" }
+          Set-Content -Path (Join-Path $out 'RELEASE_VALIDATION.txt') -Value $lines
+
+      - name: Upload dry-run evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-validation-windows-${{ github.sha }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            dist/validation/RELEASE_VALIDATION.txt
+            smoke-win-installed.log
+            smoke-win-portable.log
+
+  linux:
+    name: Linux release dry run (incl. Raspberry Pi)
+    if: >-
+      github.repository == 'juanjoGonDev/devbar' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cache Electron downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: linux-release-validation-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify AppImage + deb (x64, arm64, armv7)
+        run: |
+          # electron-builder downloads Electron dists + toolsets (NSIS,
+          # fpm, appimagetool) from GitHub releases; a transient 5xx
+          # there would otherwise kill the whole job, so retry the
+          # network-heavy build before failing.
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (linux) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "dist (linux) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
+
+      - name: Launch smoke — AppImage + deb (x64, host arch)
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          # AppImage: --appimage-extract-and-run — hosted runners have no
+          # /dev/fuse, so mounting the image would fail; extract-and-run
+          # executes the same payload (what the smoke validates). xvfb
+          # provides the display.
+          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --appimage-extract-and-run --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-appimage.log
+          # .deb: apt resolves package dependencies (the runner image lacks
+          # some Electron libraries; plain dpkg -i would fail); then launch
+          # the installed binary.
+          sudo apt-get install -y "./dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
+          xvfb-run -a /usr/bin/devbar --devbar-smoke 2>&1 | tee smoke-linux-deb.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-deb.log
+
+      - name: Record release plan
+        env:
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          mkdir -p dist/validation
+          {
+            echo "tag=v$version"
+            echo "target=$TARGET_SHA"
+            echo 'publication=false'
+            echo 'platform=linux'
+            echo 'assets:'
+            ls dist/electron-builder/DevBar-"$version"-linux-* |
+              xargs -n1 basename | sort | sed 's/^/  /'
+          } > dist/validation/RELEASE_VALIDATION.txt
+
+      - name: Upload dry-run evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-validation-linux-${{ github.sha }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            dist/validation/RELEASE_VALIDATION.txt
+            smoke-linux-appimage.log
+            smoke-linux-deb.log

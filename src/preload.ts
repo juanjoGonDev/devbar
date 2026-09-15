@@ -77,6 +77,8 @@ const api: DevBarApi = {
     clearUpdate: () => ipcRenderer.invoke('dev:clearUpdate'),
     simulateTrayColor: (color) =>
       ipcRenderer.invoke('dev:simulateTrayColor', { color }),
+    simulateTrayCount: (count) =>
+      ipcRenderer.invoke('dev:simulateTrayCount', { count }),
     simulateBanner: (cta) => ipcRenderer.invoke('dev:simulateBanner', { cta }),
     simulateFallbackBanner: (cta) =>
       ipcRenderer.invoke('dev:simulateFallbackBanner', { cta }),
@@ -132,6 +134,9 @@ const api: DevBarApi = {
   resolvePrescriptConfirm: (token, decision) =>
     ipcRenderer.invoke('prescriptConfirm:resolve', { token, decision }),
   quit: () => ipcRenderer.invoke('app:quit'),
+  // Static platform value (not IPC) so renderers can adapt their text to the
+  // OS synchronously at load time.
+  platform: process.platform,
   getAppVersion: () => ipcRenderer.invoke('app:version'),
   getChangelog: () => ipcRenderer.invoke('updates:changelog'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),

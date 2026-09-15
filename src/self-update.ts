@@ -1,149 +1,287 @@
-import { execFile, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { StagedUpdate } from './domain-types.js';
+import { isLinux, isMac, isWin } from './platform.js';
+import {
+  bundlePathFromExecutable,
+  canInstallInPlace as macCanInstallInPlace,
+  extractUpdate,
+  spawnSwap as macSpawnSwap,
+} from './self-update-macos.js';
+import {
+  appImagePathFromExecutable,
+  canInstallInPlace as linuxCanInstallInPlace,
+  stageAppImage,
+  spawnSwap as linuxSpawnSwap,
+} from './self-update-linux.js';
+import {
+  isInstalledExe,
+  portableContainerPath,
+  stageWindowsArtifact,
+  spawnSwapBat,
+  spawnInstallerBat,
+} from './self-update-windows.js';
+import type { AvailableUpdate, StagedUpdate } from './domain-types.js';
 
-function run(file: string, args: readonly string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(file, [...args], (err, stdout) => {
-      if (err) reject(err instanceof Error ? err : new Error(String(err)));
-      else resolve(stdout.trim());
-    });
+/**
+ * Platform facade for the in-app updater. Each platform has its own install
+ * shape, so its own artifact and swap mechanism:
+ *
+ * - macOS:  release .zip → unpacked .app, swapped over the installed bundle.
+ * - Linux:  .AppImage file renamed into place (.deb installs are NOT
+ *           updatable in place — they use the assisted download flow).
+ * - Windows: installed (NSIS per-user) → run the new installer after quit;
+ *           portable (any folder) → folder swap; Program Files install →
+ *           assisted flow only (needs elevation the app must not request).
+ */
+
+export {
+  bundlePathFromExecutable,
+  extractUpdate,
+  buildSwapScript as buildMacSwapScript,
+} from './self-update-macos.js';
+export {
+  appImagePathFromExecutable,
+  buildSwapScript as buildLinuxSwapScript,
+  looksLikeAppImage,
+} from './self-update-linux.js';
+export {
+  buildSwapBat,
+  buildInstallerBat,
+  isInstalledExe,
+  isPortableContainer,
+} from './self-update-windows.js';
+
+type StagedKind = 'macBundle' | 'appImage' | 'winInstaller' | 'winPortable';
+
+/**
+ * The installed app we would replace, or null when that is not our shape.
+ *
+ * Reads `process.execPath` / `process.defaultApp` (the standard Electron
+ * unpackaged detection) rather than `app`, so this module stays testable
+ * without the electron binary.
+ *
+ * Windows portable twist: a running portable app executes the payload the
+ * NSIS stub extracted into a temp folder, so `process.execPath` is an
+ * ephemeral copy, not the file the user keeps. `portableContainerPath`
+ * resolves the stub (the parent process) so an in-place swap replaces the
+ * REAL portable file and survives the next launch.
+ */
+export function installedAppPath(): string | null {
+  if (process.defaultApp) return null; // dev run out of node_modules/electron
+  if (isMac) return bundlePathFromExecutable(process.execPath);
+  if (isLinux) return appImagePathFromExecutable(process.execPath);
+  if (isWin) {
+    const container = portableContainerPath(process.execPath);
+    if (container) return container;
+  }
+  return process.execPath;
+}
+
+type WindowsUpdateMode = 'nsis' | 'portable' | 'assisted';
+
+export function windowsUpdateMode(installed: string): WindowsUpdateMode {
+  if (isInstalledExe(installed)) return 'nsis';
+  const parent = path.win32
+    .basename(path.win32.dirname(path.win32.dirname(installed)))
+    .toLowerCase();
+  if (parent === 'program files' || parent === 'program files (x86)')
+    return 'assisted';
+  return 'portable';
+}
+
+/** Whether an in-place update is possible for this installed path. */
+export function canInstallInPlace(
+  installed: string | null,
+): installed is string {
+  if (!installed) return false;
+  if (isMac) return macCanInstallInPlace(installed);
+  if (isLinux) return linuxCanInstallInPlace(installed);
+  return windowsUpdateMode(installed) !== 'assisted';
+}
+
+function assetBasename(url: string): string {
+  return path.posix.basename(new URL(url).pathname);
+}
+
+/**
+ * The artifact an in-place update must download for this platform + install
+ * shape, or null when only the assisted flow applies.
+ */
+export function stageableAsset(
+  update: AvailableUpdate,
+  installed: string | null,
+): { url: string; fileName: string; kind: StagedKind } | null {
+  if (!installed || !canInstallInPlace(installed)) return null;
+  if (isMac) {
+    if (!update.zipUrl) return null;
+    return {
+      url: update.zipUrl,
+      fileName: assetBasename(update.zipUrl),
+      kind: 'macBundle',
+    };
+  }
+  if (isLinux) {
+    if (!update.appImageUrl) return null;
+    return {
+      url: update.appImageUrl,
+      fileName: assetBasename(update.appImageUrl),
+      kind: 'appImage',
+    };
+  }
+  const mode = windowsUpdateMode(installed);
+  if (mode === 'nsis' && update.setupUrl)
+    return {
+      url: update.setupUrl,
+      fileName: assetBasename(update.setupUrl),
+      kind: 'winInstaller',
+    };
+  if (mode === 'portable' && update.zipUrl)
+    return {
+      url: update.zipUrl,
+      fileName: assetBasename(update.zipUrl),
+      kind: 'winPortable',
+    };
+  return null;
+}
+
+/**
+ * Verify a downloaded file against the release's SHA256SUMS.txt entry — the
+ * integrity seal for every unsigned-download path (macOS adds a codesign
+ * check on top of this).
+ */
+export async function verifySha256(
+  filePath: string,
+  expectedHex: string | undefined,
+): Promise<boolean> {
+  if (!expectedHex) return false;
+  const hash = createHash('sha256');
+  await new Promise<void>((resolve, reject) => {
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk: Buffer | string) => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', resolve);
   });
+  return hash.digest('hex').toLowerCase() === expectedHex.toLowerCase();
 }
 
 /**
- * `/Applications/DevBar.app/Contents/MacOS/DevBar` → `/Applications/DevBar.app`.
- * Returns null when the executable isn't inside a bundle (dev runs from
- * `node_modules/electron`, where an in-place swap makes no sense).
+ * Place a downloaded (and hash-verified) artifact into the per-version
+ * staging dir and hand back the staged update.
  */
-export function bundlePathFromExecutable(execPath: string): string | null {
-  const bundle = path.resolve(execPath, '..', '..', '..');
-  return bundle.endsWith('.app') ? bundle : null;
-}
-
-/**
- * We replace the whole bundle, so the write permission that matters is on the
- * PARENT directory (`/Applications`), not on the bundle itself.
- */
-export function canInstallInPlace(bundle: string | null): bundle is string {
-  if (!bundle) return false;
-  try {
-    fs.accessSync(path.dirname(bundle), fs.constants.W_OK);
-    return true;
-  } catch {
-    return false;
+export async function stageDownloadedArtifact({
+  filePath,
+  destDir,
+  version,
+  kind,
+}: {
+  filePath: string;
+  destDir: string;
+  version: string;
+  kind: StagedKind;
+}): Promise<StagedUpdate> {
+  switch (kind) {
+    case 'macBundle':
+      return extractUpdate({ zipPath: filePath, destDir, version });
+    case 'appImage':
+      return {
+        version,
+        appPath: stageAppImage({
+          filePath,
+          destDir,
+          fileName: path.basename(filePath),
+        }),
+      };
+    case 'winInstaller':
+      return {
+        version,
+        appPath: stageWindowsArtifact({
+          filePath,
+          destDir,
+          fileName: path.basename(filePath),
+        }),
+      };
+    case 'winPortable':
+      return {
+        version,
+        appPath: stageWindowsArtifact({
+          filePath,
+          destDir,
+          fileName: path.basename(filePath),
+        }),
+      };
   }
 }
 
 /**
- * Unpack a release .zip and hand back the `.app` it contains, once it looks
- * like the version we asked for. `ditto -x -k` is the same tool that built the
- * archive, so the ad-hoc signature and resource forks survive the round trip.
+ * Spawn the detached process that performs the swap/install. The caller quits
+ * right after; the child waits for the pid to die before touching anything.
+ *
+ * `relaunchArgs` and `markerPath` are CI conveniences (both optional, and
+ * null in production): the swap relaunch receives the given arguments and
+ * writes a success marker when it has finished.
  */
-export async function extractUpdate({
-  zipPath,
-  destDir,
-  version,
-}: {
-  zipPath: string;
-  destDir: string;
-  version: string;
-}): Promise<StagedUpdate> {
-  fs.rmSync(destDir, { recursive: true, force: true });
-  fs.mkdirSync(destDir, { recursive: true });
-  await run('/usr/bin/ditto', ['-x', '-k', zipPath, destDir]);
-
-  const entry = fs.readdirSync(destDir).find((name) => name.endsWith('.app'));
-  if (!entry) throw new Error('el archivo no contiene ninguna .app');
-  const appPath = path.join(destDir, entry);
-
-  if (!fs.existsSync(path.join(appPath, 'Contents', 'Info.plist')))
-    throw new Error('la .app descargada no tiene Info.plist');
-
-  const found = await run('/usr/libexec/PlistBuddy', [
-    '-c',
-    'Print :CFBundleShortVersionString',
-    path.join(appPath, 'Contents', 'Info.plist'),
-  ]);
-  if (found !== version)
-    throw new Error(`la descarga dice v${found}, se esperaba v${version}`);
-
-  // We are about to overwrite the user's installed app, and the only trust
-  // anchor so far is the HTTPS transfer. Releases are ad-hoc signed, so this
-  // seal covers every file in the bundle: a truncated or partially rewritten
-  // download fails here instead of at the swap. It proves integrity, not
-  // authorship — an ad-hoc signature carries no identity.
-  await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath]);
-
-  return { version, appPath };
-}
-
-/**
- * Swap script: waits for us to die, moves the old bundle aside, copies the new
- * one in, and relaunches. Kept as a detached shell script because macOS won't
- * let a running app reliably re-exec itself out of a bundle it is replacing.
- * The old bundle is only deleted once the copy succeeded — a failed `ditto`
- * rolls back and reopens the version that was already working.
- */
-export function buildSwapScript({
-  pid,
-  target,
-  staged,
-}: {
-  pid: number;
-  target: string;
-  staged: string;
-}): string {
-  const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
-  return `#!/bin/bash
-set -u
-target=${quote(target)}
-staged=${quote(staged)}
-backup="$target.devbar-old"
-
-# Bounded wait: a stuck quit must not leave a swap script running forever.
-for _ in $(seq 1 100); do
-  kill -0 ${pid} 2>/dev/null || break
-  sleep 0.2
-done
-if kill -0 ${pid} 2>/dev/null; then exit 1; fi
-sleep 1 # let Electron's helper processes wind down before we move the bundle
-
-rm -rf "$backup"
-mv "$target" "$backup" || exit 1
-if ! /usr/bin/ditto "$staged" "$target"; then
-  rm -rf "$target"
-  mv "$backup" "$target"
-  open "$target"
-  exit 1
-fi
-rm -rf "$backup"
-# We downloaded this ourselves, so it carries no quarantine flag — strip it
-# anyway in case a future path routes the archive through something that does.
-xattr -dr com.apple.quarantine "$target" 2>/dev/null
-open "$target"
-`;
-}
-
-/** Write the swap script and launch it detached. The caller then quits. */
 export function spawnSwap({
-  scriptPath,
-  pid,
-  target,
   staged,
+  target,
+  scriptDir,
+  pid,
+  relaunchArgs,
+  markerPath,
 }: {
-  scriptPath: string;
-  pid: number;
+  staged: StagedUpdate;
   target: string;
-  staged: string;
+  scriptDir: string;
+  pid: number;
+  relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): void {
-  fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
-  fs.writeFileSync(scriptPath, buildSwapScript({ pid, target, staged }), {
-    mode: 0o755,
-  });
-  spawn('/bin/bash', [scriptPath], {
-    detached: true,
-    stdio: 'ignore',
-  }).unref();
+  fs.mkdirSync(scriptDir, { recursive: true });
+  if (isMac) {
+    macSpawnSwap({
+      scriptPath: path.join(scriptDir, 'swap.sh'),
+      pid,
+      target,
+      staged: staged.appPath,
+      relaunchArgs,
+      markerPath,
+    });
+    return;
+  }
+  if (isLinux) {
+    linuxSpawnSwap({
+      scriptPath: path.join(scriptDir, 'swap.sh'),
+      pid,
+      target,
+      staged: staged.appPath,
+      relaunchArgs,
+      markerPath,
+    });
+    return;
+  }
+  const mode = windowsUpdateMode(target);
+  if (mode === 'nsis') {
+    // The bat waits for our exit first: the installer replacing a locked exe
+    // is the most common way an update would "half-resolve" on Windows. It
+    // also owns the relaunch (the installer's own "run after finish" does not
+    // fire in this hidden detached context), with the same args/marker
+    // conventions as the swap paths.
+    spawnInstallerBat({
+      scriptPath: path.join(scriptDir, 'install.bat'),
+      pid,
+      installer: staged.appPath,
+      target,
+      relaunchArgs,
+    });
+  } else {
+    // Portable = a single self-extracting exe: plain file swap.
+    spawnSwapBat({
+      scriptPath: path.join(scriptDir, 'swap.bat'),
+      pid,
+      target,
+      staged: staged.appPath,
+      relaunchArgs,
+      markerPath,
+    });
+  }
 }

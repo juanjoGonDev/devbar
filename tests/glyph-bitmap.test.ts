@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { badgeSDF, drawGlyphBGRA, markSDF } from '../src/glyph-bitmap.js';
+import {
+  badgeSDF,
+  countBubbleSDF,
+  countLabel,
+  drawGlyphBGRA,
+  markSDF,
+} from '../src/glyph-bitmap.js';
 type RGB = readonly [number, number, number];
 
 // Helper: read premultiplied BGRA at (x,y) → [r,g,b,a].
@@ -171,6 +177,95 @@ describe('drawGlyphBGRA with an update badge', () => {
       expect(badged[i]).toBeLessThanOrEqual(a);
       expect(badged[i + 1]).toBeLessThanOrEqual(a);
       expect(badged[i + 2]).toBeLessThanOrEqual(a);
+    }
+  });
+});
+
+describe('countLabel', () => {
+  it('is empty for zero or negative counts', () => {
+    expect(countLabel(0)).toBe('');
+    expect(countLabel(-3)).toBe('');
+  });
+
+  it('passes counts up to 99 through', () => {
+    expect(countLabel(1)).toBe('1');
+    expect(countLabel(14)).toBe('14');
+    expect(countLabel(99)).toBe('99');
+  });
+
+  it('caps larger counts at 99+', () => {
+    expect(countLabel(100)).toBe('99+');
+    expect(countLabel(1234)).toBe('99+');
+  });
+});
+
+describe('countBubbleSDF', () => {
+  const size = 36;
+
+  it('is negative at the bubble centre and positive at the corner', () => {
+    expect(countBubbleSDF(0.6 * size, 0.34 * size, size)).toBeLessThan(0);
+    expect(countBubbleSDF(0, 0, size)).toBeGreaterThan(0);
+  });
+});
+
+describe('drawGlyphBGRA with a count bubble', () => {
+  const size = 36;
+  const red: RGB = [255, 69, 58];
+  const outline: RGB = [28, 28, 30];
+  const badge: RGB = [255, 59, 48];
+  const plain = drawGlyphBGRA(size, red, outline, badge, 0);
+  const counted = drawGlyphBGRA(size, red, outline, badge, 14);
+
+  // White (digit) pixels inside the bubble region, clear of the mark.
+  function whitePixels(buf: Buffer): number {
+    let white = 0;
+    for (let y = Math.floor(0.16 * size); y < 0.52 * size; y++)
+      for (let x = Math.floor(0.33 * size); x < 0.87 * size; x++) {
+        const [r, g, b, a] = px(buf, size, x, y);
+        if (a > 200 && r > 240 && g > 240 && b > 240) white++;
+      }
+    return white;
+  }
+
+  it('paints the bubble red above the digits, inside the bubble', () => {
+    const [r, g, b, a] = px(
+      counted,
+      size,
+      Math.round(0.6 * size),
+      Math.round(0.1 * size),
+    );
+    expect(a).toBe(255);
+    expect([r, g, b]).toEqual(badge);
+  });
+
+  it('draws white digits inside the bubble', () => {
+    expect(whitePixels(counted)).toBeGreaterThan(10);
+  });
+
+  it('draws no digits when the count is zero (small update dot instead)', () => {
+    expect(whitePixels(plain)).toBe(0);
+  });
+
+  it('renders more digit pixels for two digits than for one', () => {
+    const two = whitePixels(drawGlyphBGRA(size, red, outline, badge, 14));
+    const one = whitePixels(drawGlyphBGRA(size, red, outline, badge, 7));
+    expect(two).toBeGreaterThan(one);
+    expect(one).toBeGreaterThan(0);
+  });
+
+  it('keeps the mark intact and the premultiplied invariant', () => {
+    const [, , , a] = px(
+      counted,
+      size,
+      Math.round(0.32 * size),
+      Math.round(0.33 * size),
+    );
+    expect(a).toBe(255);
+    for (let i = 0; i < counted.length; i += 4) {
+      const alpha = counted[i + 3];
+      expect(counted[i]).toBeLessThanOrEqual(alpha);
+      expect(counted[i + 1]).toBeLessThanOrEqual(alpha);
+      expect(counted[i + 2]).toBeLessThanOrEqual(alpha);
     }
   });
 });

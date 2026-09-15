@@ -11,6 +11,9 @@ import {
   expectedReleaseArtifactNames,
   parseChecksumManifest,
   verifyReleaseArtifactSet,
+  writeSha256Manifest,
+  RELEASE_PLATFORMS,
+  type ReleasePlatform,
 } from '../scripts/release-artifacts.js';
 
 const execFileAsync = promisify(execFile);
@@ -24,11 +27,15 @@ function sha256(contents: string): string {
   return createHash('sha256').update(contents).digest('hex');
 }
 
-async function createArtifactFixture(version = '0.2.0') {
+async function createArtifactFixture(
+  version = '0.2.0',
+  platform?: ReleasePlatform,
+  withManifest = true,
+) {
   const directory = await mkdtemp(path.join(tmpdir(), 'devbar-release-'));
   temporaryDirectories.push(directory);
 
-  const artifactNames = expectedReleaseArtifactNames(version);
+  const artifactNames = expectedReleaseArtifactNames(version, platform);
   const manifestLines = [];
 
   for (const artifactName of artifactNames) {
@@ -37,10 +44,12 @@ async function createArtifactFixture(version = '0.2.0') {
     manifestLines.push(`${sha256(contents)}  ${artifactName}`);
   }
 
-  await writeFile(
-    path.join(directory, 'SHA256SUMS.txt'),
-    `${manifestLines.join('\n')}\n`,
-  );
+  if (withManifest) {
+    await writeFile(
+      path.join(directory, 'SHA256SUMS.txt'),
+      `${manifestLines.join('\n')}\n`,
+    );
+  }
 
   return { artifactNames, directory, version };
 }
@@ -54,13 +63,58 @@ afterEach(async () => {
 });
 
 describe('release artifact contract', () => {
-  it('defines both DMG and ZIP artifacts for each supported architecture', () => {
-    expect(expectedReleaseArtifactNames('0.2.0')).toEqual([
+  it('lists every artifact of every platform for the full release', () => {
+    const names = expectedReleaseArtifactNames('0.2.0');
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'DevBar-0.2.0-macos-arm64.dmg',
+        'DevBar-0.2.0-macos-arm64.zip',
+        'DevBar-0.2.0-macos-x64.dmg',
+        'DevBar-0.2.0-macos-x64.zip',
+        'DevBar-0.2.0-win-x64-setup.exe',
+        'DevBar-0.2.0-win-x64-portable.exe',
+        'DevBar-0.2.0-win-arm64-setup.exe',
+        'DevBar-0.2.0-win-arm64-portable.exe',
+        'DevBar-0.2.0-linux-x64.AppImage',
+        'DevBar-0.2.0-linux-x64.deb',
+        'DevBar-0.2.0-linux-arm64.AppImage',
+        'DevBar-0.2.0-linux-arm64.deb',
+        'DevBar-0.2.0-linux-armv7.AppImage',
+        'DevBar-0.2.0-linux-armv7.deb',
+      ]),
+    );
+    expect(names).toHaveLength(14);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('filters to one platform when asked', () => {
+    expect(expectedReleaseArtifactNames('0.2.0', 'macos')).toEqual([
       'DevBar-0.2.0-macos-arm64.dmg',
       'DevBar-0.2.0-macos-arm64.zip',
       'DevBar-0.2.0-macos-x64.dmg',
       'DevBar-0.2.0-macos-x64.zip',
     ]);
+    expect(expectedReleaseArtifactNames('0.2.0', 'win')).toEqual([
+      'DevBar-0.2.0-win-x64-setup.exe',
+      'DevBar-0.2.0-win-x64-portable.exe',
+      'DevBar-0.2.0-win-arm64-setup.exe',
+      'DevBar-0.2.0-win-arm64-portable.exe',
+    ]);
+    expect(expectedReleaseArtifactNames('0.2.0', 'linux')).toEqual([
+      'DevBar-0.2.0-linux-x64.AppImage',
+      'DevBar-0.2.0-linux-x64.deb',
+      'DevBar-0.2.0-linux-arm64.AppImage',
+      'DevBar-0.2.0-linux-arm64.deb',
+      'DevBar-0.2.0-linux-armv7.AppImage',
+      'DevBar-0.2.0-linux-armv7.deb',
+    ]);
+  });
+
+  it('covers every declared platform', () => {
+    for (const platform of RELEASE_PLATFORMS)
+      expect(
+        expectedReleaseArtifactNames('0.2.0', platform).length,
+      ).toBeGreaterThan(0);
   });
 
   it('rejects unsafe and duplicate manifest entries', () => {
@@ -89,6 +143,48 @@ describe('release artifact contract', () => {
       directory: fixture.directory,
       version: fixture.version,
     });
+  });
+
+  it('verifies a per-platform set without a manifest', async () => {
+    const fixture = await createArtifactFixture('0.2.0', 'win', false);
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: fixture.version,
+        platform: 'win',
+      }),
+    ).resolves.toMatchObject({
+      artifactNames: fixture.artifactNames,
+    });
+  });
+
+  it('verifies a per-platform set against a full manifest', async () => {
+    const platformFixture = await createArtifactFixture('0.2.0', 'win', false);
+    const fullFixture = await createArtifactFixture();
+    // Simulate the publish job: full set + full manifest in one directory.
+    for (const name of fullFixture.artifactNames)
+      await readFile(path.join(fullFixture.directory, name), 'utf8').then(
+        (contents) =>
+          writeFile(path.join(platformFixture.directory, name), contents),
+      );
+    await readFile(
+      path.join(fullFixture.directory, 'SHA256SUMS.txt'),
+      'utf8',
+    ).then((contents) =>
+      writeFile(
+        path.join(platformFixture.directory, 'SHA256SUMS.txt'),
+        contents,
+      ),
+    );
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: platformFixture.directory,
+        version: '0.2.0',
+        platform: 'win',
+      }),
+    ).resolves.toMatchObject({ artifactNames: platformFixture.artifactNames });
   });
 
   it('fails when an expected artifact is missing', async () => {
@@ -153,6 +249,39 @@ describe('release artifact contract', () => {
     ).rejects.toThrow(`Checksum mismatch for ${fixture.artifactNames[0]}`);
   });
 
+  it('fails the full-set check when the manifest is missing', async () => {
+    const fixture = await createArtifactFixture('0.2.0', undefined, false);
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: fixture.version,
+      }),
+    ).rejects.toThrow('SHA256SUMS.txt is missing');
+  });
+
+  it('writeSha256Manifest writes sorted, verifiable hashes', async () => {
+    const fixture = await createArtifactFixture('0.2.0', 'win', false);
+    await writeSha256Manifest(fixture.directory, fixture.artifactNames);
+    const manifest = await readFile(
+      path.join(fixture.directory, 'SHA256SUMS.txt'),
+      'utf8',
+    );
+    const lines = manifest.trimEnd().split('\n');
+    expect(lines).toEqual(
+      [...lines].sort(
+        (a, b) => b.split('  ')[1].localeCompare(a.split('  ')[1]) * -1,
+      ),
+    );
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: fixture.version,
+        platform: 'win',
+      }),
+    ).resolves.toMatchObject({ artifactNames: fixture.artifactNames });
+  });
+
   it('runs independently from the caller working directory', async () => {
     const fixture = await createArtifactFixture();
     const callerDirectory = await mkdtemp(
@@ -177,6 +306,6 @@ describe('release artifact contract', () => {
       { cwd: callerDirectory, timeout: 15_000 },
     );
 
-    expect(stdout).toContain('Verified 4 release artifacts for v0.2.0');
+    expect(stdout).toContain('Verified 14 release artifacts for v0.2.0');
   }, 20_000);
 });

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import https from 'node:https';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -14,13 +15,17 @@ import {
   shell,
   powerMonitor,
   nativeTheme,
+  nativeImage,
+  Tray,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
   type MessageBoxOptions,
   type OpenDialogOptions,
+  type Rectangle,
   type SaveDialogOptions,
 } from 'electron';
 import { menubar, type Menubar } from 'menubar';
+import { appHome } from './app-paths.js';
 import { isDue } from './scheduler.js';
 import * as configStore from './config-store.js';
 import {
@@ -29,16 +34,35 @@ import {
   type ImportPayload,
 } from './config-io.js';
 import { ProcessManager, deriveColor } from './process-manager.js';
+import {
+  SessionResumeTracker,
+  consumeSnapshot,
+  type ResumeExitReason,
+} from './session-resume.js';
 import * as gitManager from './git-manager.js';
 import * as trayIcon from './tray-icon.js';
 import * as logger from './logger.js';
-import { checkForUpdate, fetchReleases } from './update-check.js';
 import {
-  bundlePathFromExecutable,
+  checkForUpdate,
+  fetchReleases,
+  fetchReleaseSha256,
+} from './update-check.js';
+import {
   canInstallInPlace,
   extractUpdate,
+  installedAppPath,
+  stageableAsset,
+  stageDownloadedArtifact,
   spawnSwap,
+  verifySha256,
+  windowsUpdateMode,
 } from './self-update.js';
+import {
+  setLinuxAutostart,
+  wasOpenedAtLoginFromArgv,
+  LOGIN_ARG,
+} from './autostart.js';
+import { isLinux, isMac, isWin, platformLabel } from './platform.js';
 import { loadShellPath, expandTilde } from './path-helper.js';
 import { mergeNewestByTs } from './merge-logs.js';
 import { RepoWatcher } from './repo-watcher.js';
@@ -172,6 +196,15 @@ function ipcGlobalSettingsPatch(
       patch[field] = raw[field];
     }
   }
+  if (raw['theme'] !== undefined) {
+    if (
+      raw['theme'] !== 'auto' &&
+      raw['theme'] !== 'light' &&
+      raw['theme'] !== 'dark'
+    )
+      throw new TypeError('Invalid IPC theme');
+    patch['theme'] = raw['theme'];
+  }
   for (const field of ['maxLogLines'] as const) {
     if (raw[field] !== undefined) patch[field] = ipcNumber(raw[field], field);
   }
@@ -205,6 +238,16 @@ function showSaveDialog(
     : dialog.showSaveDialog(options);
 }
 
+// Keep the app identity consistent across platforms. macOS already gets
+// "DevBar" from the bundle (CFBundleName); Windows and Linux would fall back
+// to the package.json `name` ("devbar"). The pin moves the name (and, on
+// Windows, the default paths); on Linux the XDG directory is resolved at
+// process start, so the data locations are pinned explicitly in app-paths.ts
+// instead — packaged builds own one per-OS "DevBar" folder for config, logs
+// and update staging. (Dev mode is left untouched so existing dev stores
+// keep working.)
+if (app.isPackaged) app.name = 'DevBar';
+
 loadShellPath();
 
 // ─── File logger ────────────────────────────────────────────────────
@@ -212,12 +255,18 @@ loadShellPath();
 // from the main process. The renderer side is hooked later, when each
 // BrowserWindow is created (we need its `webContents` to subscribe).
 //
-// File lives at `app.getPath('logs')/app.log` which is
-// `~/Library/Logs/DevBar/app.log` on macOS. `install-local.sh` drops a
-// symlink at the repo root so the user can `tail -f app.log` from the
-// project directory.
+// File lives at app.log under the per-OS log dir: `app.getPath('logs')`
+// (~/Library/Logs/DevBar on macOS), or the pinned "DevBar" folder on
+// Windows/Linux packaged builds — there app.getPath('logs') would stay
+// under the package.json name, splitting logs from config and updates
+// (see app-paths.ts). `install-local.sh` drops a symlink at the repo
+// root (macOS) so the user can `tail -f app.log` from the workspace.
 try {
-  logger.init({ filePath: path.join(app.getPath('logs'), 'app.log') });
+  const logsDir =
+    app.isPackaged && process.platform !== 'darwin'
+      ? path.join(appHome(), 'logs')
+      : app.getPath('logs');
+  logger.init({ filePath: path.join(logsDir, 'app.log') });
   logger.attachMainConsole();
 } catch (e) {
   // Logger is best-effort; never block startup.
@@ -226,6 +275,66 @@ try {
 }
 
 const processManager = new ProcessManager(configStore);
+
+// ── Session resume ─────────────────────────────────────────────────────
+// Persists the running set so a restart (reinstall, update, kill, crash)
+// can bring the services back. Created in whenReady (needs the app-data
+// dir); null until then.
+let sessionResume: SessionResumeTracker | null = null;
+/** How this exit should be recorded in the snapshot. `quit` is the
+ *  default (tray "Salir", `app:quit`, window quits); the signal handler
+ *  rewrites it to `kill` and the update flows rewrite it to `update`
+ *  right before they quit. A `quit` snapshot is never resumed — a
+ *  deliberate stop stays a stop. */
+let pendingExitReason: ResumeExitReason = 'quit';
+function markUpdateExit(): void {
+  pendingExitReason = 'update';
+}
+/** The command services currently running (actions/pre-scripts never
+ *  resume: they are one-shots). */
+function runningCommandIds(): string[] {
+  return processManager
+    .allStates()
+    .filter((entry) => entry.kind === 'command' && entry.status === 'running')
+    .map((entry) => entry.id);
+}
+
+/**
+ * Launch: consume the previous session's snapshot and restart what it says
+ * was running. Only commands that are still configured, still have a
+ * command, and are NOT confirm-gated are started — an unattended launch
+ * must never bypass a confirmation gate. The snapshot file is already
+ * deleted by `consumeSnapshot` in every branch: this launch had the only
+ * right to it, and the content must not outlive the restart (even for the
+ * ids that failed to start — the user sees them stopped in the tray).
+ */
+function resumeSavedServices(): void {
+  const canResume = (id: string): boolean => {
+    const resolved = processManager.resolveTarget(id);
+    if (!resolved || resolved.kind !== 'command') return false;
+    if (!resolved.target.command || !resolved.target.command.trim())
+      return false;
+    return !resolved.target.confirm;
+  };
+  const decision = consumeSnapshot(appHome(), canResume);
+  if (decision.resume.length === 0) return;
+  let started = 0;
+  for (const id of decision.resume) {
+    const result = processManager.start(id);
+    if (result.ok) started++;
+    else console.warn(`[resume] ${id}: ${result.error ?? 'start failed'}`);
+  }
+  console.log(
+    `[resume] ${started}/${decision.resume.length} services restored (reason: ${decision.reason})`,
+  );
+  // No window may exist yet (tray app) — then this is a harmless no-op.
+  broadcastToast(
+    'ok',
+    started === decision.resume.length
+      ? `Servicios restaurados: ${started}`
+      : `Servicios restaurados: ${started} de ${decision.resume.length}`,
+  );
+}
 
 // ── Pre-script confirmation orchestrator ────────────────────────────────
 // Owns ALL Electron concerns for the confirmation gate: the token → pending
@@ -826,10 +935,10 @@ async function runUpdateCheck({ manual = false } = {}) {
   if (!devUpdateSimulated) availableUpdate = found || null;
   refreshTrayIcon();
   if (found && !devUpdateSimulated) {
-    // When we can swap the bundle ourselves, stay quiet until the download is
-    // on disk — one notice ("reinicia") beats two ("hay una" / "ya está").
-    if (found.zipUrl && canInstallInPlace(installedBundlePath()))
-      void stageUpdate(found);
+    // When this install shape supports an in-place update, stay quiet until
+    // the download is on disk — one notice ("reinicia") beats two
+    // ("hay una" / "ya está"). Otherwise the assisted download flow.
+    if (stageableAsset(found, installedAppPath())) void stageUpdate(found);
     else notifyUpdateAvailable(found, manual);
   }
   broadcastUpdateStatus();
@@ -860,8 +969,8 @@ function notifyUpdateAvailable(update: AvailableUpdate, manual: boolean): void {
  * what was packaged.
  */
 function installedBundleId(): string | null {
-  const bundle = installedBundlePath();
-  if (!bundle) return null;
+  const bundle = installedAppPath();
+  if (!bundle || !isMac) return null;
   try {
     const plist = fs.readFileSync(
       path.join(bundle, 'Contents', 'Info.plist'),
@@ -875,30 +984,61 @@ function installedBundleId(): string | null {
   }
 }
 
-/** The installed `.app` we would replace, or null when that isn't our shape. */
-function installedBundlePath(): string | null {
-  return app.isPackaged ? bundlePathFromExecutable(app.getPath('exe')) : null;
-}
-
 /**
- * Download the release .zip in the background and unpack it next to our config,
- * so applying the update later is just a swap-and-relaunch. Any failure falls
- * back to the old "grab the DMG yourself" notice rather than going silent.
+ * Download the platform's update artifact in the background and stage it next
+ * to our config, so applying the update later is just a swap-and-relaunch. Any
+ * failure falls back to the assisted "download it yourself" notice rather than
+ * going silent.
  */
 async function stageUpdate(update: AvailableUpdate): Promise<void> {
-  if (!update.zipUrl) return;
   if (stagedUpdate && stagedUpdate.version === update.version) return;
   if (stagingVersion === update.version) return;
   // The check loop runs every 5 minutes; without this, a version that fails to
   // download would re-pull ~100 MB on every tick.
   if (stagingFailedVersions.has(update.version)) return;
+  const plan = stageableAsset(update, installedAppPath());
+  if (!plan) return;
   stagingVersion = update.version;
-  const updatesDir = path.join(app.getPath('userData'), 'updates');
-  const zipPath = path.join(updatesDir, `DevBar-${update.version}.zip`);
+  const updatesDir = path.join(appHome(), 'updates');
+  const filePath = path.join(updatesDir, plan.fileName);
   try {
     fs.mkdirSync(updatesDir, { recursive: true });
-    await downloadFile(update.zipUrl, zipPath);
-    await stageFromZip(zipPath, update.version);
+    await downloadFile(plan.url, filePath);
+    // Integrity seal: the release's SHA256SUMS.txt. On macOS the bundle is
+    // re-sealed by codesign when it is unpacked, so a missing manifest degrades
+    // to that; on Windows/Linux the manifest is the ONLY trust anchor, so a
+    // fetch failure aborts staging instead of installing an unverified file.
+    const manifest = await fetchReleaseSha256(
+      UPDATE_REPO.owner,
+      UPDATE_REPO.repo,
+      update.version,
+    );
+    if (manifest) {
+      const verified = await verifySha256(
+        filePath,
+        manifest.get(plan.fileName),
+      );
+      if (!verified)
+        throw new Error(
+          'el hash de la descarga no coincide con SHA256SUMS.txt',
+        );
+    } else if (!isMac) {
+      throw new Error('no se pudo obtener SHA256SUMS.txt');
+    }
+    stagedUpdate = await stageDownloadedArtifact({
+      filePath,
+      destDir: path.join(updatesDir, update.version),
+      version: update.version,
+      kind: plan.kind,
+    });
+    console.log(`[updates] v${update.version} descargada, lista para instalar`);
+    broadcastUpdateStatus();
+    refreshTrayIcon();
+    showBannerNotification(
+      'DevBar — actualización',
+      `v${update.version} lista. Reinicia para instalarla.`,
+      { cta: { label: 'Reiniciar', action: 'install-update' } },
+    );
   } catch (err) {
     stagingFailedVersions.add(update.version);
     console.warn(
@@ -906,7 +1046,7 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
     );
     notifyUpdateAvailable(update, false);
   } finally {
-    fs.rmSync(zipPath, { force: true });
+    fs.rmSync(filePath, { force: true });
     stagingVersion = null;
     // Housekeeping, deliberately outside the try: a prune that trips over a
     // dangling entry must not mark a perfectly good download as failed and
@@ -922,7 +1062,7 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
  * — the half where a bad bundle or a failed swap would actually bite.
  */
 async function stageFromZip(zipPath: string, version: string): Promise<void> {
-  const updatesDir = path.join(app.getPath('userData'), 'updates');
+  const updatesDir = path.join(appHome(), 'updates');
   stagedUpdate = await extractUpdate({
     zipPath,
     destDir: path.join(updatesDir, version),
@@ -989,10 +1129,11 @@ function downloadFile(
 }
 
 /**
- * Install the already-downloaded update: confirm → hand the bundle swap to a
- * detached script → quit. The script waits for us to exit, replaces the .app
- * and reopens it, so the user never touches the Finder. Only the confirmation
- * is asked of them, and only once.
+ * Install the already-downloaded update: confirm → hand the swap to a detached
+ * process → quit. macOS/Linux run a swap script that waits for us to exit,
+ * replaces the app and relaunches it; Windows runs the new installer (or a
+ * folder-swap bat for portable installs), which does the same. The user never
+ * touches the Finder/Explorer. Only the confirmation is asked of them, once.
  */
 async function installStagedUpdate(staged: StagedUpdate, target: string) {
   const owner =
@@ -1015,83 +1156,142 @@ async function installStagedUpdate(staged: StagedUpdate, target: string) {
 
   try {
     spawnSwap({
-      scriptPath: path.join(app.getPath('userData'), 'updates', 'swap.sh'),
-      pid: process.pid,
+      staged,
       target,
-      staged: staged.appPath,
+      scriptDir: path.join(appHome(), 'updates'),
+      pid: process.pid,
     });
   } catch (err) {
     broadcastToast('error', `No se pudo instalar: ${errorMessage(err)}`);
     return { ok: false, error: errorMessage(err) };
   }
   // The script polls for our exit, so a short delay is enough to let this IPC
-  // reply reach the renderer before we go.
+  // reply reach the renderer before we go. The exit is an UPDATE (not a
+  // user quit): the relaunched version may resume the running services.
+  markUpdateExit();
   setTimeout(() => app.quit(), 200);
   return { ok: true, quitting: true, inPlace: true };
 }
 
 /**
- * Assisted update: confirm (no timeout) → download the .dmg to Downloads →
- * open it → QUIT DevBar so the drag-into-Applications isn't blocked by the
- * running app. Only reached when the in-place swap isn't possible (no zip
- * asset, or the bundle lives somewhere we can't write).
+ * Assisted update — reached when an in-place update is not possible for this
+ * install shape (or before a staged download exists). Per platform:
+ *
+ * - macOS:  download the .dmg to Downloads, open the Finder volume, QUIT so
+ *           the drag-into-Applications isn't blocked by the running app.
+ * - Windows: download the NSIS installer to Downloads, run it (it upgrades the
+ *           install and relaunches), QUIT so the locked exe can be replaced.
+ * - Linux:  download the .deb (or AppImage) to Downloads and point the user at
+ *           it — system installs need the package manager, which needs the
+ *           user's own terminal/elevation.
  */
 async function applyUpdate() {
   if (!availableUpdate) return { ok: false, error: 'no_update' };
-  const { version, dmgUrl, url } = availableUpdate;
+  const { version, dmgUrl, setupUrl, debUrl, appImageUrl, url } =
+    availableUpdate;
   const staged = stagedUpdate;
-  const target = installedBundlePath();
+  const target = installedAppPath();
   if (staged && staged.version === version && canInstallInPlace(target))
     return installStagedUpdate(staged, target);
   const owner =
     configWindow || (mb && mb.window) || BrowserWindow.getFocusedWindow();
+
+  let downloadUrl: string | null = null;
+  let destName = '';
+  let detail =
+    'Se abrirá la página de la release para descargar la nueva versión.';
+  let buttons = ['Cancelar', 'Descargar'];
+  if (isMac && dmgUrl) {
+    downloadUrl = dmgUrl;
+    destName = `DevBar-${version}-macos-${process.arch}.dmg`;
+    buttons = ['Cancelar', 'Descargar y cerrar'];
+    detail =
+      'Se descargará el instalador y DevBar se CERRARÁ para que puedas sustituirla (macOS no deja reemplazar la app mientras está abierta).\n\nSe abrirá una ventana del Finder: arrastra DevBar a Aplicaciones y vuelve a abrirla.';
+  } else if (!isMac && setupUrl) {
+    downloadUrl = setupUrl;
+    destName = `DevBar-${version}-win-${process.arch}-setup.exe`;
+    buttons = ['Cancelar', 'Descargar y cerrar'];
+    detail =
+      'Se descargará el instalador, DevBar se CERRARÁ y el instalador actualizará la aplicación en su sitio.';
+  } else if (!isMac && debUrl) {
+    downloadUrl = debUrl;
+    destName = `DevBar-${version}-linux-${process.arch}.deb`;
+  } else if (!isMac && appImageUrl) {
+    downloadUrl = appImageUrl;
+    destName = `DevBar-${version}-linux-${process.arch}.AppImage`;
+    detail =
+      'Se descargará la AppImage a Descargas. Cierra DevBar y ejecútala desde ahí (o cópiala a ~/Applications).';
+  }
+
   let res;
   try {
     res = await showMessageBox(owner, {
       type: 'question',
-      buttons: ['Cancelar', dmgUrl ? 'Descargar y cerrar' : 'Descargar'],
+      buttons,
       defaultId: 1,
       cancelId: 0,
       message: `Actualizar a DevBar v${version}`,
-      detail: dmgUrl
-        ? 'Se descargará el instalador y DevBar se CERRARÁ para que puedas sustituirla (macOS no deja reemplazar la app mientras está abierta).\n\nSe abrirá una ventana del Finder: arrastra DevBar a Aplicaciones y vuelve a abrirla.'
-        : 'Se abrirá la página de la release para descargar la nueva versión.',
+      detail,
     });
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
   if (res.response !== 1) return { ok: false, cancelled: true };
 
-  if (!dmgUrl) {
+  if (!downloadUrl) {
     shell.openExternal(url);
     return { ok: true, opened: 'page' };
   }
 
-  const dest = path.join(
-    app.getPath('downloads'),
-    `DevBar-${version}-macos-${process.arch}.dmg`,
-  );
+  const dest = path.join(app.getPath('downloads'), destName);
   showBannerNotification('DevBar — actualización', `Descargando v${version}…`);
   try {
-    await downloadFile(dmgUrl, dest);
+    await downloadFile(downloadUrl, dest);
   } catch (err) {
     broadcastToast('error', `Descarga falló: ${errorMessage(err)}`);
     shell.openExternal(url); // fall back to the release page
     return { ok: false, error: errorMessage(err), fellBack: true };
   }
-  const openErr = await shell.openPath(dest); // mount the dmg → Finder window
-  if (openErr) {
-    // Mount failed — don't quit and strand the user; open the release page.
-    broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
-    shell.openExternal(url);
-    return { ok: false, error: openErr, fellBack: true };
+
+  if (isMac) {
+    const openErr = await shell.openPath(dest); // mount the dmg → Finder
+    if (openErr) {
+      // Mount failed — don't quit and strand the user; open the release page.
+      broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
+      shell.openExternal(url);
+      return { ok: false, error: openErr, fellBack: true };
+    }
+    // Quit so the .app can be replaced. The DMG mount is an OS-owned Finder
+    // volume that outlives us; the single-instance lock means this is the
+    // only instance. Small delay lets the Finder window surface first.
+    // ponytail: fixed 1.2s delay, not a mount-completion watch.
+    markUpdateExit();
+    setTimeout(() => app.quit(), 1200);
+    return { ok: true, path: dest, quitting: true };
   }
-  // Quit so the .app can be replaced. The DMG mount is an OS-owned Finder
-  // volume that outlives us; the single-instance lock means this is the only
-  // instance. Small delay lets the Finder window surface before we vanish.
-  // ponytail: fixed 1.2s delay, not a mount-completion watch.
-  setTimeout(() => app.quit(), 1200);
-  return { ok: true, path: dest, quitting: true };
+
+  if (!isMac && setupUrl) {
+    // Launch the installer (upgrades in place, relaunches DevBar), then quit
+    // so the locked exe/DLLs can be replaced.
+    const openErr = await shell.openPath(dest);
+    if (openErr) {
+      broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
+      return { ok: false, error: openErr, fellBack: true };
+    }
+    // The installer relaunches DevBar: mark the exit as an update so the
+    // new version may resume the running services.
+    markUpdateExit();
+    setTimeout(() => app.quit(), 1200);
+    return { ok: true, path: dest, quitting: true };
+  }
+
+  // Linux package/AppImage: the user installs it with the package manager or
+  // a double-click — no quit needed from us.
+  broadcastToast(
+    'ok',
+    `v${version} descargada a ${dest}. Cierra DevBar e instálala/éjecútala.`,
+  );
+  return { ok: true, path: dest };
 }
 
 /**
@@ -1153,9 +1353,16 @@ function buildLogsWindow({
     minWidth: detached ? 480 : 720,
     minHeight: 320,
     title,
-    backgroundColor: '#1e1e1e',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 12, y: 14 },
+    // hiddenInset + traffic lights are macOS chrome; elsewhere the native
+    // titlebar is the least-surprising option.
+    icon: appWindowIcon(),
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 12, y: 14 },
+          backgroundColor: themeWindowBackground(),
+        }
+      : { backgroundColor: themeWindowBackground() }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1191,9 +1398,13 @@ function ensureSilencedWindow(
     minWidth: 360,
     minHeight: 320,
     title: `Silenciados — ${command.name}`,
-    backgroundColor: '#1e1e1e',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 12, y: 14 },
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 12, y: 14 },
+          backgroundColor: '#1e1e1e',
+        }
+      : { backgroundColor: '#1e1e1e' }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1204,7 +1415,7 @@ function ensureSilencedWindow(
   // NOT visible-on-all-workspaces (see logs/config): avoids the secondary-display
   // minimize-everything quirk for accessory-app windows.
   win.loadFile(path.join(__dirname, '..', 'renderer', 'silenced.html'), {
-    query: { groupId, commandId },
+    query: { groupId, commandId, platform: platformLabel() },
   });
   win.on('closed', () => {
     silencedWindows.delete(key);
@@ -1231,11 +1442,17 @@ function syncRepoWatchers() {
 }
 
 let lastTrayColor: TrayColor = 'stopped'; // remembered so a theme flip can re-render
+// Errors/warnings badge drawn into the tray icon on win/linux (tray titles
+// only render on macOS). Remembered so a theme flip re-renders it too.
+let lastTrayCount = 0;
 
 // Dev-only overrides, driven by the simulation panel (src/dev, excluded from
 // packaged builds). Both stay null in a real run.
 let devTrayColor: TrayColor | null = null;
 let devUpdateSimulated = false;
+// Dev-panel override for the tray count, so the badge can be exercised
+// without real errors. null = follow the real aggregated state.
+let devTrayCount: number | null = null;
 
 /**
  * Repaint the menubar mark for the current state. The mark carries a small red
@@ -1245,8 +1462,15 @@ let devUpdateSimulated = false;
 function refreshTrayIcon(): void {
   if (!mb || !mb.tray) return;
   try {
+    // macOS carries the count as tray title text; win/linux don't render
+    // titles, so the count is drawn into the icon itself. The dev panel
+    // can force it (devTrayCount) without real errors.
     mb.tray.setImage(
-      trayIcon.loadIcon(devTrayColor ?? lastTrayColor, !!availableUpdate),
+      trayIcon.loadIcon(
+        devTrayColor ?? lastTrayColor,
+        !!availableUpdate,
+        isMac ? 0 : (devTrayCount ?? lastTrayCount),
+      ),
     );
   } catch (err) {
     console.error('setImage failed:', err);
@@ -1259,7 +1483,6 @@ function updateTrayTitle(payload: GroupState[]): void {
   const colorStubs = payload.map((gs) => ({ color: gs.color }));
   const overall = aggregateColor(colorStubs);
   lastTrayColor = overall;
-  refreshTrayIcon();
   // Count non-silenced warns/errors across all command states
   let warns = 0;
   let errs = 0;
@@ -1270,10 +1493,23 @@ function updateTrayTitle(payload: GroupState[]): void {
       if (!cs.muteErr) errs += cs.errorCount;
     }
   }
-  let badge = '';
-  if (errs > 0) badge = ` ${errs}`;
-  else if (warns > 0) badge = ` ${warns}`;
-  mb.tray.setTitle(badge);
+  const count = devTrayCount ?? trayIcon.badgeCount(errs, warns);
+  // macOS: count as text next to the icon. win/linux don't render tray
+  // titles, so the count is drawn into the icon instead. The dev panel's
+  // override (devTrayCount) wins over the real aggregated state.
+  if (isMac) {
+    mb.tray.setTitle(count ? ` ${count}` : '');
+  } else {
+    lastTrayCount = count;
+  }
+  // Hover affordance where the count can't be displayed next to the icon:
+  // the tray tooltip carries it too.
+  mb.tray.setToolTip(
+    count
+      ? `DevBar — ${count === 1 ? '1 error' : `${count} errores`}`
+      : 'DevBar',
+  );
+  refreshTrayIcon();
 }
 
 function adaptiveSize(maxW: number, maxH: number, marginW = 60, marginH = 100) {
@@ -1294,15 +1530,19 @@ function adaptiveSize(maxW: number, maxH: number, marginW = 60, marginH = 100) {
 
 function ensureLogsWindow(
   processId: string,
-  { filter, detached }: { filter?: string; detached?: boolean } = {},
+  {
+    filter,
+    detached,
+    level,
+  }: { filter?: string; detached?: boolean; level?: 'warn' | 'error' } = {},
 ): BrowserWindow {
   const key = detached ? processId : MAIN_LOGS_KEY;
   const existing = logsWindows.get(key);
   if (existing && !existing.isDestroyed()) {
     // Re-selecting the log already on screen would clear and refetch it for
     // nothing; only tell the renderer when something actually changes.
-    if (detached || processId !== mainLogsWatching || filter) {
-      existing.webContents.send('logs:select', { processId, filter });
+    if (detached || processId !== mainLogsWatching || filter || level) {
+      existing.webContents.send('logs:select', { processId, filter, level });
     }
     if (!detached) mainLogsWatching = processId;
     existing.show();
@@ -1318,6 +1558,7 @@ function ensureLogsWindow(
     : processId;
   const query: Record<string, string> = { id: processId };
   if (filter) query.filter = filter;
+  if (level) query.level = level;
   if (detached) query.detached = '1';
   else mainLogsWatching = processId;
   const win = buildLogsWindow({
@@ -1397,11 +1638,18 @@ function ensureConfigWindow({ goto }: { goto?: string } = {}): void {
     minWidth: 460,
     minHeight: 380,
     title: 'DevBar — Configuración',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 16 },
-    vibrancy: 'sidebar',
-    visualEffectState: 'active',
-    backgroundColor: '#00000000',
+    icon: appWindowIcon(),
+    // macOS: frameless-ish hiddenInset with vibrancy. Elsewhere: a normal
+    // titled window (vibrancy/traffic-light positions don't exist).
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 14, y: 16 },
+          vibrancy: 'sidebar' as const,
+          visualEffectState: 'active' as const,
+          backgroundColor: '#00000000',
+        }
+      : { backgroundColor: themeWindowBackground() }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1438,17 +1686,39 @@ function ensureConfigWindow({ goto }: { goto?: string } = {}): void {
   updateDockVisibility();
 }
 
+/**
+ * Apply the "open at login" setting to the OS. Dev runs are a no-op: the
+ * entry would point at Electron's own binary and boot a bare shell.
+ */
 function applyAutostart(enabled: boolean): void {
-  if (process.platform !== 'darwin') return;
   if (!app.isPackaged) return;
   try {
-    app.setLoginItemSettings({
-      openAtLogin: !!enabled,
-      openAsHidden: true,
-    });
+    if (isMac) {
+      app.setLoginItemSettings({
+        openAtLogin: !!enabled,
+        openAsHidden: true,
+      });
+    } else if (isWin) {
+      // The --login argument is the boot signal on Windows (see autostart.ts).
+      app.setLoginItemSettings({
+        openAtLogin: !!enabled,
+        args: enabled ? [LOGIN_ARG] : [],
+      });
+    } else {
+      setLinuxAutostart(process.execPath, !!enabled);
+    }
   } catch (err) {
     console.error('Failed to set login item:', err);
   }
+}
+
+/** Per-platform "was this launch the OS login one" (pre-script gate). */
+function wasOpenedAtLogin(): boolean {
+  if (isMac)
+    return !!(
+      app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin
+    );
+  return wasOpenedAtLoginFromArgv();
 }
 
 // ─────────────────────── IPC handlers ────────────────────────────────
@@ -2213,9 +2483,14 @@ function registerIpc() {
         typeof payload === 'string'
           ? false
           : ipcRecord(payload).detached === true;
+      const rawLevel =
+        typeof payload === 'string' ? undefined : ipcRecord(payload).level;
+      const level =
+        rawLevel === 'warn' || rawLevel === 'error' ? rawLevel : undefined;
       ensureLogsWindow(processId, {
         ...(filter === undefined ? {} : { filter }),
         ...(detached ? { detached: true } : {}),
+        ...(level === undefined ? {} : { level }),
       });
       if (mb && mb.window && mb.window.isVisible()) mb.hideWindow();
       return { ok: true };
@@ -2264,6 +2539,7 @@ function registerIpc() {
         ipcGlobalSettingsPatch(rawPatch),
       );
       applyAutostart(next.autostart);
+      if (next.theme !== undefined) refreshWindowBackgrounds();
       broadcast();
       return next;
     },
@@ -2488,6 +2764,15 @@ function registerIpc() {
             devTrayColor = color;
             refreshTrayIcon();
           },
+          setSimulatedTrayCount: (count) => {
+            devTrayCount = count;
+            // macOS renders the count as title text; set it immediately so
+            // the simulation is visible before the next state tick.
+            if (isMac && mb && mb.tray) {
+              mb.tray.setTitle(count ? ` ${count}` : '');
+            }
+            refreshTrayIcon();
+          },
           showBanner: (title, body, options) =>
             showBannerNotification(title, body, options),
           showFallbackBanner: (title, body, options) =>
@@ -2509,9 +2794,9 @@ function registerIpc() {
           toast: (kind, message) => broadcastToast(kind, message),
           // Not process.execPath: unpackaged that resolves to Electron's own
           // bundle, which passes the guard and then fails deep inside the copy.
-          installedBundle: () => installedBundlePath(),
+          installedBundle: () => installedAppPath(),
           updatesDir: () => {
-            const dir = path.join(app.getPath('userData'), 'updates');
+            const dir = path.join(appHome(), 'updates');
             fs.mkdirSync(dir, { recursive: true });
             return dir;
           },
@@ -2525,7 +2810,7 @@ function registerIpc() {
               // `stagedUpdate` would still point into that directory.
               if (stagedUpdate)
                 pruneStagedUpdates(
-                  path.join(app.getPath('userData'), 'updates'),
+                  path.join(appHome(), 'updates'),
                   stagedUpdate.version,
                 );
             }
@@ -2553,23 +2838,41 @@ function registerIpc() {
   }));
 
   /**
-   * Open the macOS Notifications pane. Separate from `app:openExternal`, which
-   * is deliberately https-only so a renderer bug cannot fire arbitrary schemes
-   * — this URL is a constant built in main and never comes from the renderer.
+   * Open the OS notification settings for this app. Separate from
+   * `app:openExternal`, which is deliberately https-only so a renderer bug
+   * cannot fire arbitrary schemes — these URLs are constants built in main
+   * and never come from the renderer.
    *
-   * The `?id=` form deep-links to this app's own row. The id is read back from
-   * the running bundle rather than repeated here, so it cannot drift from what
-   * was actually packaged; without a bundle to read (a dev run) the plain pane
-   * is opened instead, which is still where the user needs to be. System
-   * Settings reports success either way, so a wrong id degrades quietly rather
-   * than failing.
+   * macOS deep-links to this app's own Notifications row (the bundle id is
+   * read back from the running bundle rather than repeated here, so it cannot
+   * drift from what was packaged). Windows opens the notifications settings
+   * page. Linux has no universal URI, so we open the distro's best-effort
+   * control center and let the user find the pane.
    */
   ipcMain.handle('app:openNotificationSettings', async () => {
-    const pane =
-      'x-apple.systempreferences:com.apple.Notifications-Settings.extension';
-    const bundleId = installedBundleId();
     try {
-      await shell.openExternal(bundleId ? `${pane}?id=${bundleId}` : pane);
+      if (isMac) {
+        const pane =
+          'x-apple.systempreferences:com.apple.Notifications-Settings.extension';
+        const bundleId = installedBundleId();
+        await shell.openExternal(bundleId ? `${pane}?id=${bundleId}` : pane);
+      } else if (process.platform === 'win32') {
+        await shell.openExternal('ms-settings:notifications');
+      } else {
+        // Linux: no universal URI. xdg-settings maps "notifications" to the
+        // right pane on GNOME/KDE; if it is absent the command just fails
+        // quietly and the user navigates manually (the in-app hint names the
+        // pane for each desktop).
+        const { spawn } = await import('node:child_process');
+        const child = spawn('xdg-settings', ['open', 'notifications'], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.on('error', () => {
+          /* no xdg-settings — best effort only */
+        });
+        child.unref();
+      }
       return { ok: true };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
@@ -2634,18 +2937,15 @@ function registerIpc() {
  *   the group's autoStart commands are NOT started and a toast is shown.
  */
 async function autoStartAllMarkedCommands() {
-  // Only run pre-scripts when DevBar was launched by macOS at login —
+  // Only run pre-scripts when DevBar was launched by the OS at login —
   // i.e. on system boot — not on every manual app restart. This protects
   // the user from re-running expensive `make setup` style scripts every
-  // time they quit and reopen DevBar.
+  // time they quit and reopen DevBar. The signal is per-platform: native on
+  // macOS, the --login flag the autostart entries pass on Windows/Linux.
   // DEVBAR_FORCE_LOGIN=1 forces the "opened at login" path — for testing the
-  // boot auto-run flow without rebooting. Otherwise use the real signal.
-  const wasOpenedAtLogin =
-    process.env.DEVBAR_FORCE_LOGIN === '1' ||
-    (process.platform === 'darwin' &&
-      !!(
-        app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin
-      ));
+  // boot auto-run flow without rebooting.
+  const openedAtLogin =
+    process.env.DEVBAR_FORCE_LOGIN === '1' || wasOpenedAtLogin();
 
   const groups = configStore.listGroups();
   await Promise.all(
@@ -2663,7 +2963,7 @@ async function autoStartAllMarkedCommands() {
         group.preSteps &&
         group.preSteps.length > 0 &&
         group.preScriptsAutoRun === true &&
-        wasOpenedAtLogin;
+        openedAtLogin;
       if (shouldRunPre) {
         const res = await preScriptRunner.run(group.id);
         // A user cancellation (declined confirmation) is NOT a failure —
@@ -2811,11 +3111,72 @@ function startScheduleLoop() {
 
 // ─────────────────────── App lifecycle ───────────────────────────────
 
+/**
+ * Window icon for dev mode: `electron .` runs on the Electron shell, so the
+ * taskbar/titlebar would otherwise show Electron's default icon. Setting it
+ * explicitly gives the app its own identity in dev (packaged Windows builds
+ * already pick it up from the .exe icon — same design, so it's consistent).
+ */
+function appWindowIcon(): Electron.NativeImage {
+  try {
+    const name = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+    const p = path.join(__dirname, '..', 'assets', name);
+    if (!fs.existsSync(p)) return nativeImage.createEmpty();
+    const image = nativeImage.createFromPath(p);
+    return image.isEmpty() ? nativeImage.createEmpty() : image;
+  } catch {
+    return nativeImage.createEmpty();
+  }
+}
+
+/** Resolved theme (user preference, falling back to the OS in auto mode). */
+function resolvedThemeIsDark(): boolean {
+  const t = configStore.getGlobalSettings().theme;
+  if (t === 'light') return false;
+  if (t === 'dark') return true;
+  return nativeTheme.shouldUseDarkColors;
+}
+
+function themeWindowBackground(): string {
+  return resolvedThemeIsDark() ? '#1e1e1e' : '#f5f5f7';
+}
+
+// Apply the theme-appropriate opaque background to every visible app window
+// (macOS vibrancy windows keep their translucent background). Called after a
+// theme change so open windows follow the new setting.
+function refreshWindowBackgrounds(): void {
+  const bg = themeWindowBackground();
+  const menuBarWindow = (mb as { browserWindow?: BrowserWindow } | undefined)
+    ?.browserWindow;
+  for (const win of [configWindow, menuBarWindow, ...logsWindows.values()]) {
+    if (win && !win.isDestroyed()) win.setBackgroundColor(bg);
+  }
+}
+
 // Single-instance lock. DevBar is a menubar app backed by one electron-store
 // file; a second launch (e.g. login item + manual open) would spawn a duelling
 // tray icon writing the same store. The second instance focuses config on the
 // primary and exits. `isPrimary` also guards the ready handlers, since a
 // second instance may still emit 'ready' before app.quit() takes effect.
+/**
+ * CI smoke mode (`--devbar-smoke` or DEVBAR_SMOKE=1). Proves the PACKAGED
+ * binary boots on its target OS and owns a system tray, then self-terminates
+ * with a DEVBAR_SMOKE_OK marker the build jobs grep for. Skips windows,
+ * commands, schedules and update checks.
+ */
+const SMOKE_MODE =
+  process.argv.includes('--devbar-smoke') || process.env.DEVBAR_SMOKE === '1';
+
+/**
+ * Smoke result marker. Some launchers (notably the Windows portable exe,
+ * whose NSIS wrapper runs the real app as a child process without
+ * redirecting stdio) never deliver the app's stdout to the caller, so CI
+ * jobs also check for this file: removed at smoke start, written on
+ * success — a missing marker means the packaged binary did not complete
+ * its smoke.
+ */
+const SMOKE_MARKER_PATH = path.join(os.tmpdir(), 'devbar-smoke-ok');
+
 const isPrimary = app.requestSingleInstanceLock();
 if (!isPrimary) {
   app.quit();
@@ -2834,8 +3195,14 @@ app.on('ready', () => {
 app.whenReady().then(() => {
   if (!isPrimary) return;
   registerIpc();
-  applyAutostart(configStore.getGlobalSettings().autostart);
-  processManager.on('change', () => broadcast());
+  // Smoke mode must not touch the user's auto-start registration on a CI host.
+  if (!SMOKE_MODE) applyAutostart(configStore.getGlobalSettings().autostart);
+  processManager.on('change', () => {
+    broadcast();
+    // Session resume: keep the snapshot's running set current (debounced,
+    // and a no-op when the set is unchanged).
+    if (!SMOKE_MODE && sessionResume) sessionResume.track(runningCommandIds());
+  });
   processManager.on('log', (payload) => broadcastLog(payload));
   processManager.on('action:done', ({ processId, code, group, target }) => {
     // Pre-script exits are handled by pre-script-runner (pipeline aggregator).
@@ -2863,7 +3230,169 @@ app.whenReady().then(() => {
   repoWatcher.on('change', (repoPath) => broadcastBranchesChanged(repoPath));
   syncRepoWatchers();
 
+  if (!SMOKE_MODE) {
+    sessionResume = new SessionResumeTracker(appHome());
+    resumeSavedServices();
+  }
+
   trayIcon.preload();
+
+  if (SMOKE_MODE) {
+    // Two CI shapes on top of the plain proof of life:
+    //  - HOLD (--devbar-smoke-hold / DEVBAR_SMOKE_HOLD=1): stay resident so a
+    //    following `pnpm install-local` has a real running process to kill —
+    //    the "reinstall while running" test.
+    //  - UPDATE (DEVBAR_SMOKE_UPDATE=1): run the REAL staging + swap handoff
+    //    with a locally built artifact (DEVBAR_SMOKE_ARTIFACT + _SHA +
+    //    _VERSION), then exit. The swap script relaunches the app with
+    //    --devbar-smoke, so the new version proves itself through the same
+    //    marker — end-to-end "automatic update" coverage in CI.
+    const smokeHold =
+      process.argv.includes('--devbar-smoke-hold') ||
+      process.env.DEVBAR_SMOKE_HOLD === '1';
+    const smokeUpdate = process.env.DEVBAR_SMOKE_UPDATE === '1';
+
+    // Headless-friendly proof of life: create only the platform tray (no
+    // BrowserWindow, no menubar chrome, no commands). Owning a tray is the
+    // platform-specific part worth proving — menu bar on macOS,
+    // StatusNotifier/XEmbed on Linux, notification area on Windows. The
+    // update phase swaps the app and exits, so it skips the tray.
+    try {
+      fs.rmSync(SMOKE_MARKER_PATH, { force: true });
+      if (!smokeUpdate) void new Tray(trayIcon.defaultIcon());
+    } catch (error) {
+      console.error('DEVBAR_SMOKE_TRAY_FAILED:', error);
+      app.exit(1);
+    }
+
+    if (smokeUpdate) {
+      const artifact = process.env.DEVBAR_SMOKE_ARTIFACT;
+      const sha = process.env.DEVBAR_SMOKE_SHA;
+      const version = process.env.DEVBAR_SMOKE_VERSION;
+      const target = installedAppPath();
+      const fail = (reason: string): void => {
+        console.error(`DEVBAR_SMOKE_UPDATE_FAILED ${reason}`);
+        app.exit(1);
+      };
+      if (!artifact || !sha || !version)
+        return fail('missing DEVBAR_SMOKE_ARTIFACT/_SHA/_VERSION');
+      if (!target) return fail('not running from an installed location');
+      void (async () => {
+        try {
+          // The production staging path, byte for byte: hash seal, artifact
+          // magic checks, copy into the per-version staging dir.
+          const verified = await verifySha256(artifact, sha);
+          if (!verified) throw new Error('el hash del artefacto no coincide');
+          const updatesDir = path.join(appHome(), 'updates');
+          const kind = isMac
+            ? 'macBundle'
+            : isLinux
+              ? 'appImage'
+              : windowsUpdateMode(target) === 'nsis'
+                ? 'winInstaller'
+                : 'winPortable';
+          const staged = await stageDownloadedArtifact({
+            filePath: artifact,
+            destDir: path.join(updatesDir, version),
+            version,
+            kind,
+          });
+          // The swap waits for this pid to die, replaces the app and
+          // relaunches it with --devbar-smoke, so the new version writes the
+          // marker CI is about to wait for. On Windows the install bat plays
+          // the swap's role (installer = swap), relaunching with the same
+          // args once the installer exits 0.
+          spawnSwap({
+            staged,
+            target,
+            scriptDir: updatesDir,
+            pid: process.pid,
+            relaunchArgs: ['--devbar-smoke'],
+            markerPath: path.join(updatesDir, 'swap-ok'),
+          });
+          console.log(`DEVBAR_SMOKE_UPDATE_HANDOFF ${version}`);
+          app.exit(0);
+        } catch (error) {
+          fail(errorMessage(error));
+        }
+      })();
+      return;
+    }
+
+    setTimeout(() => {
+      try {
+        fs.writeFileSync(
+          SMOKE_MARKER_PATH,
+          `DEVBAR_SMOKE_OK ${process.platform} ${app.getVersion()}\n`,
+        );
+      } catch {
+        // Marker is a CI convenience; the stdout marker below is primary.
+      }
+      console.log('DEVBAR_SMOKE_OK');
+      if (smokeHold) {
+        // Resident proof of life: CI checks this pid, then expects the next
+        // install-local to kill exactly this process.
+        console.log(`DEVBAR_SMOKE_HOLDING ${process.pid}`);
+        return;
+      }
+      app.exit(0);
+    }, 1500);
+    return;
+  }
+
+  /**
+   * Which edge of the display the taskbar/panel sits on, from the tray
+   * icon's bounds: the work area is the screen minus the taskbar, so the
+   * offset between workArea and display bounds reveals the taskbar side.
+   * Same idea as menubar's internal taskbarLocation, but based on the
+   * display that actually contains the icon (multi-monitor friendly).
+   */
+  function taskbarSideOf(
+    trayPos: Rectangle,
+  ): 'top' | 'bottom' | 'left' | 'right' {
+    const display = screen.getDisplayMatching(trayPos);
+    const offX = display.workArea.x - display.bounds.x;
+    const offY = display.workArea.y - display.bounds.y;
+    if (offX > 0) return 'left';
+    if (offY > 0) return 'top';
+    if (display.workArea.width < display.bounds.width) return 'right';
+    return 'bottom';
+  }
+
+  /**
+   * Tray-relative electron-positioner position for each taskbar side: top
+   * bar → the panel hangs from the bar, centered on the icon (exactly what
+   * macOS gets with menubar's default 'trayCenter'); bottom bar → right
+   * above the bar, centered; left/right bar → next to the bar edge.
+   */
+  function trayPositionForTaskbarSide(
+    side: 'top' | 'bottom' | 'left' | 'right',
+  ): 'trayCenter' | 'trayBottomCenter' | 'trayLeft' | 'trayRight' {
+    switch (side) {
+      case 'top':
+        return 'trayCenter';
+      case 'bottom':
+        return 'trayBottomCenter';
+      case 'left':
+        return 'trayLeft';
+      case 'right':
+        return 'trayRight';
+    }
+  }
+
+  /**
+   * Keep the panel fully inside the work area (electron-positioner only
+   * guards the right edge; a tray icon near the left edge would push the
+   * panel off-screen otherwise).
+   */
+  function clampXToWorkArea(
+    x: number,
+    width: number,
+    trayPos: Rectangle,
+  ): number {
+    const wa = screen.getDisplayMatching(trayPos).workArea;
+    return Math.max(wa.x, Math.min(x, wa.x + wa.width - width));
+  }
 
   const menuBar = menubar({
     index: `file://${path.join(__dirname, '..', 'renderer', 'tray.html')}`,
@@ -2875,6 +3404,12 @@ app.whenReady().then(() => {
       height: 500,
       transparent: false,
       resizable: false,
+      // The tray popover is a utility surface, not a window: it must not
+      // claim a taskbar entry on win/linux. Real windows (config, logs)
+      // are separate BrowserWindows and keep their entries.
+      skipTaskbar: true,
+      icon: appWindowIcon(),
+      backgroundColor: themeWindowBackground(),
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         contextIsolation: true,
@@ -2886,7 +3421,61 @@ app.whenReady().then(() => {
 
   menuBar.on('ready', () => {
     menuBar.tray.setImage(trayIcon.defaultIcon());
-    menuBar.tray.setTitle('');
+    if (isMac) menuBar.tray.setTitle('');
+
+    // menubar v9 deliberately does NOT place the Linux panel next to the
+    // tray icon: it overwrites the position with a screen-corner fallback
+    // (its own taskbarLocation), so the panel opens in a corner — or
+    // wherever the compositor decides — instead of "justo donde está el
+    // icono" like macOS. When Electron reports the icon's real bounds
+    // (X11), redirect the calculation to a tray-relative position. On
+    // Wayland the bounds are (0,0) and the compositor owns window
+    // placement, so menubar's behavior is kept there.
+    if (isLinux) {
+      type Calc = (
+        position: string,
+        trayBounds?: Rectangle,
+      ) => { x: number; y: number };
+      const positioner = menuBar.positioner as unknown as { calculate: Calc };
+      const originalCalculate = positioner.calculate.bind(positioner);
+      let logged = false;
+      positioner.calculate = (
+        position: string,
+        trayPos?: Rectangle,
+      ): { x: number; y: number } => {
+        if (
+          trayPos &&
+          trayPos.x > 0 &&
+          trayPos.y > 0 &&
+          trayPos.width > 0 &&
+          trayPos.height > 0
+        ) {
+          const win = menuBar.window;
+          if (!win) return originalCalculate(position, trayPos);
+          const result = originalCalculate(
+            trayPositionForTaskbarSide(taskbarSideOf(trayPos)),
+            trayPos,
+          );
+          const [w = 0] = win.getSize();
+          if (!logged) {
+            logged = true;
+            console.log(
+              `[tray] icono en (${trayPos.x},${trayPos.y} ${trayPos.width}x${trayPos.height}, ` +
+                `sesión ${process.env.XDG_SESSION_TYPE ?? 'desconocida'}) → panel junto al icono`,
+            );
+          }
+          return { x: clampXToWorkArea(result.x, w, trayPos), y: result.y };
+        }
+        if (!logged) {
+          logged = true;
+          console.log(
+            `[tray] sin bounds del icono (sesión ${process.env.XDG_SESSION_TYPE ?? 'desconocida'}) → ` +
+              'posición por defecto de menubar',
+          );
+        }
+        return originalCalculate(position, trayPos);
+      };
+    }
 
     menuBar.tray.on('right-click', () => {
       menuBar.tray.popUpContextMenu(buildTrayContextMenu());
@@ -2929,27 +3518,133 @@ app.on('window-all-closed', () => {
   // listener is registered for this event.
 });
 
-app.on('before-quit', async () => {
-  // The config window vetoes its own `close` to ask about unsaved changes.
-  // During a quit that veto silently ABORTS the whole shutdown — "Salir" and
-  // the update install both did nothing while config was open. By the time
-  // `before-quit` fires the decision to quit is already made, so drop the veto.
-  forceCloseConfig = true;
-  repoWatcher.closeAll();
-  // Cancel any running pre-script pipelines
-  for (const groupId of preScriptRunner.running.keys()) {
-    try {
-      preScriptRunner.cancel(groupId);
-    } catch (_) {}
-  }
-  // Stop all running processes
-  const groups = configStore.listGroups();
-  for (const group of groups) {
-    for (const cmd of group.commands || []) {
-      const pid = makeCommandId(group.id, cmd.id);
+// ── Shutdown: never orphan a service ────────────────────────────────────
+// A service that outlives DevBar keeps its port and breaks the next start
+// ("address already in use"), so EVERY exit path funnels into one cleanup:
+//
+//   * `before-quit` — tray "Salir", `app:quit`, the update swap. Electron
+//     does not await an async before-quit handler: the old code signaled
+//     only the first service and the event loop moved on to will-quit,
+//     orphaning the rest. `preventDefault` + cleanup + `app.quit()` is the
+//     supported "quit when ready" pattern.
+//   * SIGINT / SIGTERM — Ctrl+C in the `pnpm start` terminal, or
+//     `kill <pid>`. Node's default is to exit instantly, leaving every
+//     service tree alive (on Linux the services are detached into their
+//     own process groups precisely so a stop kills them as a unit — a
+//     bare kill of the app never reached them).
+//
+// A hard kill (SIGKILL, `taskkill` without /T) runs none of this code;
+// that remains the only way a service can outlive DevBar. (Modern Windows
+// Task Manager "End task" kills the tree itself.)
+let shutdownPhase: 'idle' | 'cleaning' | 'done' = 'idle';
+
+function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`cleanup still not done after ${ms} ms`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+async function shutdownCleanup(): Promise<void> {
+  if (shutdownPhase !== 'idle') return;
+  shutdownPhase = 'cleaning';
+  try {
+    // The config window vetoes its own `close` to ask about unsaved
+    // changes. During a quit that veto silently ABORTS the whole shutdown,
+    // so drop it before the windows go.
+    forceCloseConfig = true;
+    repoWatcher.closeAll();
+    // Cancel any running pre-script pipelines.
+    for (const groupId of preScriptRunner.running.keys()) {
       try {
-        await processManager.stop(pid);
+        preScriptRunner.cancel(groupId);
       } catch (_) {}
     }
+    // Session resume: capture the running set BEFORE the services are
+    // stopped (after stopAll there is nothing left to hand over), with the
+    // exit reason that decides whether the next launch may resume it.
+    // Smoke mode runs on CI hosts without user services — skip it.
+    if (!SMOKE_MODE && sessionResume) {
+      sessionResume.flush(pendingExitReason, runningCommandIds());
+    }
+    // Every running service — commands, actions AND pre-scripts: stopAll
+    // walks the manager's own state, not just the configured commands.
+    // Each stop escalates to SIGKILL / taskkill /F after 5 s; the overall
+    // deadline keeps one wedged service from holding the quit hostage.
+    await withDeadline(processManager.stopAll(), 8000);
+  } catch (_) {
+    // Cleanup is best-effort; the quit itself must always proceed.
+  } finally {
+    shutdownPhase = 'done';
   }
+}
+
+// Exactly one follow-up quit per cleanup. Re-queueing on every prevented
+// before-quit would spin a microtask storm (each app.quit() re-fires
+// before-quit while the cleanup is still running) and starve the very
+// cleanup it is supposed to wait for.
+let quitFollowUpScheduled = false;
+function scheduleQuitAfterCleanup(): void {
+  if (quitFollowUpScheduled) return;
+  quitFollowUpScheduled = true;
+  void shutdownCleanup().then(() => {
+    quitFollowUpScheduled = false;
+    app.quit();
+  });
+}
+
+app.on('before-quit', (event) => {
+  // A second instance quit must be INSTANT: it runs no services and must
+  // not touch the primary's session-resume snapshot (an empty flush would
+  // delete it).
+  if (!isPrimary) return;
+  if (shutdownPhase === 'done') return; // cleanup finished — let it die
+  event.preventDefault(); // still cleaning (or not started) — hold the quit
+  scheduleQuitAfterCleanup();
 });
+
+let terminalSignals = 0;
+function onTerminalSignal(): void {
+  terminalSignals += 1;
+  if (!isPrimary) {
+    process.exit(0);
+    return;
+  }
+  // install-local / `kill` / Ctrl+C: the next launch may resume the
+  // services (reason recorded when the snapshot is flushed on cleanup).
+  pendingExitReason = 'kill';
+  if (terminalSignals > 1) {
+    // Second Ctrl+C / kill: the user wants out NOW.
+    process.exit(0);
+  }
+  if (shutdownPhase === 'idle') {
+    void shutdownCleanup().then(() => {
+      // app.quit (not app.exit): a bare exit skips Electron's own shutdown
+      // sequence, which is what tears down its child processes (GPU /
+      // renderer / utility helpers). A helper that outlives the main
+      // process still holds the inherited single-instance socket, and the
+      // next launch then dies as a silent second instance. The safety net
+      // covers a quit that gets stuck.
+      app.quit();
+      setTimeout(() => process.exit(0), 4000);
+    });
+  } else if (shutdownPhase === 'done') {
+    process.exit(0); // already clean
+  }
+  // 'cleaning': a cleanup is already running and will terminate the
+  // process (the before-quit follow-up or the first signal's exit).
+}
+process.on('SIGINT', onTerminalSignal);
+process.on('SIGTERM', onTerminalSignal);

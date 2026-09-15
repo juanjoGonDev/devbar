@@ -64,14 +64,21 @@ describe('release impact workflow integration', () => {
     );
   });
 
-  it('preserves exact release commit publication and explicit recovery', () => {
-    expect(releaseWorkflow).toContain('workflow_dispatch:');
-    expect(releaseWorkflow).toContain(
+  it('keeps checkouts CodeQL-clean while tagging the release commit', () => {
+    // No checkout may use a ref derived from another job's outputs: in a
+    // cache-writable workflow CodeQL treats those as untrusted code
+    // (cache-poisoning alerts). Build jobs use the plain immutable
+    // event-sha checkout; detect still resolves the version-introducing
+    // commit, which the release tag targets.
+    expect(releaseWorkflow).not.toContain(
       'ref: ${{ needs.detect.outputs.release_sha }}',
     );
+    expect(releaseWorkflow).toContain('Checkout release HEAD');
+    expect(releaseWorkflow).toContain('workflow_dispatch:');
     expect(releaseWorkflow).toContain('pnpm run release:mac');
     expect(releaseWorkflow).toContain('Create immutable release tag');
     expect(releaseWorkflow).toContain('Create or validate GitHub release');
+    expect(releaseWorkflow).toContain('--target "$RELEASE_SHA"');
     expect(releaseWorkflow).toContain('Verify published release');
   });
 });

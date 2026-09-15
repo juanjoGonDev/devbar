@@ -15,23 +15,52 @@ const iconCache: Partial<Record<string, NativeImage>> = {};
 function outlineColor(dark: boolean): readonly [number, number, number] {
   return dark ? [235, 235, 240] : [28, 28, 30];
 }
-export function loadIcon(state: TrayColor, hasUpdate = false): NativeImage {
+/**
+ * The number shown for the tray: errors first, warnings when there are no
+ * errors, nothing when both are zero. Same rule for the macOS title and
+ * the badge drawn into the win/linux icon.
+ */
+export function badgeCount(errs: number, warns: number): number {
+  return errs > 0 ? errs : warns;
+}
+
+/**
+ * Validates a dev-panel count payload: non-negative integer (numbers or
+ * numeric strings), capped; null/empty/invalid → null (release the
+ * override). The dev panel uses it to force the badge without real errors.
+ */
+export function parseTrayCount(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return null;
+  return n > 9999 ? 9999 : n;
+}
+
+export function loadIcon(
+  state: TrayColor,
+  hasUpdate = false,
+  count = 0,
+): NativeImage {
   const dark = nativeTheme.shouldUseDarkColors,
-    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}`,
+    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}:${count}`,
     cached = iconCache[key];
   if (cached) return cached;
   const rgb = COLORS[state] ?? COLORS.stopped,
     out = outlineColor(dark),
-    badge = hasUpdate ? BADGE_RGB : undefined,
-    image = nativeImage.createFromBitmap(drawGlyphBGRA(18, rgb, out, badge), {
-      width: 18,
-      height: 18,
-    });
+    // The count bubble reuses the update-badge red; with no count, the
+    // pending-update cue is the small dot.
+    badge = count > 0 || hasUpdate ? BADGE_RGB : undefined,
+    image = nativeImage.createFromBitmap(
+      drawGlyphBGRA(18, rgb, out, badge, count),
+      { width: 18, height: 18 },
+    );
   image.addRepresentation({
     scaleFactor: 2,
     width: 36,
     height: 36,
-    buffer: drawGlyphBGRA(36, rgb, out, badge),
+    buffer: drawGlyphBGRA(36, rgb, out, badge, count),
   });
   image.setTemplateImage(false);
   iconCache[key] = image;
