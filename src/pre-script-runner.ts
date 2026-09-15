@@ -4,12 +4,15 @@ import type {
   LogEntry,
   PreScript,
   PreStep,
+  PreStepScriptRef,
 } from './domain-types.js';
 import { makeAggregatorId, makePreScriptId } from './compound-id.js';
 import { formatUptime } from './format-uptime.js';
+import { formatStepCount, formatStepMode } from './pipeline-labels.js';
 
 interface ConfigStoreLike {
   getGroup(groupId: string): Group | null;
+  getPreSteps(): PreStep[];
 }
 
 export interface PreScriptProcessManager {
@@ -44,25 +47,30 @@ export interface PreScriptProcessManager {
   stop(processId: string): Promise<{ ok: boolean; error?: string | undefined }>;
 }
 
+/** Fired synchronously, at most once per step, in ascending step order. */
+export interface StepCompleteEvent {
+  stepIndex: number;
+  stepId: string;
+  totalSteps: number;
+  runId: number;
+}
+
 interface RunnerDeps {
   processManager: PreScriptProcessManager;
   configStore: ConfigStoreLike;
   broadcastUpdate: () => void;
+  onStepComplete?: (event: StepCompleteEvent) => void;
   onError?: (
     error: string,
-    context: { groupId: string; runId?: number },
+    context: { runId?: number; failedStepIndex?: number },
   ) => void;
-  onSuccess?: (context: {
-    groupId: string;
-    group: Group;
-    runId: number;
-  }) => void;
+  onSuccess?: (context: { runId: number; stepCount: number }) => void;
   confirmScript?: (
     script: PreScript,
     group: Group | null,
     groupId: string,
   ) => Promise<boolean>;
-  cancelConfirm?: (groupId: string) => void;
+  cancelConfirm?: () => void;
 }
 type RunnerStatus = 'running' | 'done' | 'error' | 'idle';
 interface RunHandle {
@@ -82,86 +90,133 @@ interface RecentResult {
   expiresAt: number;
 }
 export type RunResult =
-  | { ok: true; runId?: number }
-  | { ok: false; error: string; cancelled?: boolean };
+  | { ok: true; runId: number }
+  | {
+      ok: false;
+      error: string;
+      cancelled?: boolean;
+      runId?: number;
+      aggregatorId?: string;
+    };
 interface OneResult {
   ok: boolean;
   code: number | null;
   error?: string | undefined;
   cancelled?: boolean;
+  skipped?: boolean;
+}
+interface PipelineRunState {
+  status: RunnerStatus;
+  currentStep: number;
+  totalSteps: number;
+  runId: number;
+  aggregatorId: string;
+  startedAt: number;
 }
 export interface PreScriptRunner {
-  run(groupId: string): Promise<RunResult>;
-  cancel(groupId: string): { ok: boolean; error?: string | undefined };
-  isRunning(groupId: string): boolean;
-  getRunState(groupId: string): {
-    status: RunnerStatus;
-    currentStep: number;
-    totalSteps: number;
-    runId: number;
-    aggregatorId: string;
-    startedAt: number;
-  } | null;
-  getRecentResult(groupId: string): RecentResult | null;
-  running: Map<string, RunHandle>;
+  run(): Promise<RunResult>;
+  cancel(): { ok: boolean; error?: string | undefined };
+  isRunning(): boolean;
+  getRunState(): PipelineRunState | null;
+  getRecentResult(): RecentResult | null;
+  /** The in-flight `run()` promise, or `null` when idle. Lets a caller that
+   * got `already_running` wait for the run already underway and adopt ITS
+   * result, instead of treating another caller's run as a failure of its
+   * own. */
+  current(): Promise<RunResult> | null;
 }
 
 export function createPreScriptRunner({
   processManager,
   configStore,
   broadcastUpdate,
+  onStepComplete,
   onError,
   onSuccess,
   confirmScript,
   cancelConfirm,
 }: RunnerDeps): PreScriptRunner {
-  const running = new Map<string, RunHandle>();
-  const recentResult = new Map<string, RecentResult>();
-  const pushAggregatorLog = (
-    aggregatorId: string,
+  // Singleton: one global pipeline, not one per group.
+  let running: RunHandle | null = null;
+  let recentResult: RecentResult | null = null;
+  // The promise backing the in-flight `run()` call, or null when idle.
+  // Exposed via `current()` so a caller who got `already_running` can await
+  // the SAME run instead of misreporting it as its own failure.
+  let currentRunPromise: Promise<RunResult> | null = null;
+  const pushSysLog = (
+    bufferId: string,
     line: string,
     level: 'warn' | 'error' | null = null,
   ): void =>
-    processManager.pushLog(aggregatorId, {
+    processManager.pushLog(bufferId, {
       ts: Date.now(),
       stream: 'sys',
       level,
       line,
     });
+  /** Pipeline-level narration: the run itself, never one script. */
+  const pushAggregatorLog = pushSysLog;
+  /**
+   * Narration ABOUT one script goes into that script's OWN buffer, so the
+   * merged view tags it `[Back] [Make setup]` from a real source instead of
+   * attributing it to the pipeline. The tag now carries the identity, so the
+   * message no longer repeats `Script "Grupo · Script"` in its text.
+   */
+  const pushScriptLog = pushSysLog;
   function setRecentResult(
-    groupId: string,
     status: 'done' | 'error',
     error: string | null,
     runId: number,
     delayMs: number,
   ): void {
     const expiresAt = Date.now() + delayMs;
-    recentResult.set(groupId, { status, error, runId, expiresAt });
+    recentResult = { status, error, runId, expiresAt };
     setTimeout(() => {
-      const entry = recentResult.get(groupId);
-      if (entry?.runId === runId) {
-        recentResult.delete(groupId);
+      if (recentResult?.runId === runId) {
+        recentResult = null;
         broadcastUpdate();
       }
     }, delayMs);
   }
 
+  /**
+   * Resolves `ref` against its OWN group for every run-time concern (script
+   * definition, cwd, env) — never the step's or the pipeline's — since a
+   * step can now mix refs from different groups. An unresolvable ref (a
+   * dangling reference the write-time prune could not catch, e.g. hand-
+   * edited JSON) is skipped with a warning rather than failing the step: a
+   * leftover ref must not deadlock boot auto-start (D6).
+   */
   async function runOne(
-    script: PreScript,
-    step: PreStep,
-    groupId: string,
+    ref: PreStepScriptRef,
     handle: RunHandle,
   ): Promise<OneResult> {
+    const group = configStore.getGroup(ref.groupId);
+    const script = group?.preScripts.find(
+      (candidate) => candidate.id === ref.scriptId,
+    );
+    if (!group || !script) {
+      pushAggregatorLog(
+        handle.aggregatorId,
+        `── Referencia rota (grupo o script inexistente), omitida ──`,
+        'warn',
+      );
+      return { ok: true, code: null, skipped: true };
+    }
+    const pid = makePreScriptId(ref.groupId, script.id);
+    const groupPath = group.path.trim();
+    if (!groupPath) {
+      // An ordinary per-script failure, not a whole-pipeline abort: siblings
+      // already spawned in the same parallel step still complete.
+      pushScriptLog(pid, `── Sin ruta configurada en su grupo ──`, 'error');
+      return { ok: false, code: -1, error: 'no_group_path' };
+    }
     if (script.confirm) {
-      const group = configStore.getGroup(groupId);
       const confirmed = confirmScript
-        ? await confirmScript(script, group, groupId)
+        ? await confirmScript(script, group, ref.groupId)
         : false;
       if (!confirmed) {
-        pushAggregatorLog(
-          handle.aggregatorId,
-          `── Script "${script.name}" cancelado por el usuario ──`,
-        );
+        pushScriptLog(pid, `── Cancelado por el usuario ──`);
         return {
           ok: false,
           code: -1,
@@ -170,25 +225,8 @@ export function createPreScriptRunner({
         };
       }
     }
-    const pid = makePreScriptId(groupId, step.id, script.id);
     handle.childPids.add(pid);
-    const tag = `[${script.name}]`;
     return new Promise<OneResult>((resolve) => {
-      const logHandler = ({
-        id,
-        entry,
-      }: {
-        id: string;
-        entry: LogEntry;
-      }): void => {
-        if (id !== pid || entry.stream === 'sys') return;
-        pushAggregatorLog(
-          handle.aggregatorId,
-          `${tag} ${entry.line}`,
-          entry.level,
-        );
-      };
-      processManager.on('log', logHandler);
       let timeoutToken: NodeJS.Timeout | null = null;
       const scriptStartedAt = Date.now();
       const handler = ({
@@ -204,16 +242,15 @@ export function createPreScriptRunner({
           timeoutToken = null;
         }
         processManager.removeListener('action:done', handler);
-        processManager.removeListener('log', logHandler);
         handle.childPids.delete(pid);
         const elapsed = formatUptime(Date.now() - scriptStartedAt),
           ok = code === 0;
         if (!handle._timedOutScripts.has(pid))
-          pushAggregatorLog(
-            handle.aggregatorId,
+          pushScriptLog(
+            pid,
             ok
-              ? `── Script "${script.name}" finished ok (${elapsed}) ──`
-              : `── Script "${script.name}" failed (exit ${code}, ${elapsed}) ──`,
+              ? `── Finalizado correctamente (${elapsed}) ──`
+              : `── Ha fallado (salida ${code}, ${elapsed}) ──`,
             ok ? null : 'error',
           );
         resolve({ ok, code });
@@ -221,15 +258,16 @@ export function createPreScriptRunner({
       processManager.on('action:done', handler);
       if (script.timeoutMs) {
         timeoutToken = setTimeout(() => {
-          pushAggregatorLog(
-            handle.aggregatorId,
-            `── Script "${script.name}" timed out (${formatUptime(Date.now() - scriptStartedAt)}) ──`,
+          pushScriptLog(
+            pid,
+            `── Ha excedido el tiempo límite (${formatUptime(Date.now() - scriptStartedAt)}) ──`,
             'error',
           );
           handle._timedOutScripts.add(pid);
           void processManager.stop(pid);
         }, script.timeoutMs);
       }
+      pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
       const result = processManager.start(pid);
       if (!result.ok) {
         if (timeoutToken) {
@@ -237,11 +275,10 @@ export function createPreScriptRunner({
           timeoutToken = null;
         }
         processManager.removeListener('action:done', handler);
-        processManager.removeListener('log', logHandler);
         handle.childPids.delete(pid);
-        pushAggregatorLog(
-          handle.aggregatorId,
-          `── Script "${script.name}" failed to start: ${result.error ?? 'unknown error'} ──`,
+        pushScriptLog(
+          pid,
+          `── No ha podido arrancar: ${result.error ?? 'error desconocido'} ──`,
           'error',
         );
         resolve({ ok: false, code: -1, error: result.error });
@@ -249,34 +286,31 @@ export function createPreScriptRunner({
     });
   }
 
-  async function run(groupId: string): Promise<RunResult> {
-    if (running.has(groupId)) return { ok: false, error: 'already_running' };
-    const group = configStore.getGroup(groupId);
-    if (!group) return { ok: false, error: 'group_not_found' };
-    const steps = group.preSteps;
-    if (!steps.length) return { ok: true };
-    const groupPath = group.path.trim();
-    if (!groupPath) {
-      const runId = Date.now(),
-        aggregatorId = makeAggregatorId(groupId, runId);
-      pushAggregatorLog(
-        aggregatorId,
-        `── Pipeline aborted: group "${group.name}" has no path configured ──`,
-        'error',
-      );
-      setRecentResult(
-        groupId,
-        'error',
-        'Group has no path configured',
-        runId,
-        5000,
-      );
-      broadcastUpdate();
-      onError?.('Group has no path configured', { groupId });
-      return { ok: false, error: 'no_group_path' };
+  /**
+   * Thin guard + bookkeeping wrapper. The guard runs synchronously, exactly
+   * as before, so a concurrent call still gets `already_running` immediately
+   * (see the still-passing `returns already_running when called twice`
+   * test). Once past the guard, `performRun`'s own promise is published via
+   * `currentRunPromise` — read through `current()` — for the ENTIRE run,
+   * cleared only once it settles, so a caller who awaits `current()` sees
+   * exactly the same result this call resolves to.
+   */
+  async function run(): Promise<RunResult> {
+    if (running) return { ok: false, error: 'already_running' };
+    const runPromise = performRun();
+    currentRunPromise = runPromise;
+    try {
+      return await runPromise;
+    } finally {
+      currentRunPromise = null;
     }
+  }
+
+  async function performRun(): Promise<RunResult> {
+    const steps = configStore.getPreSteps();
+    if (!steps.length) return { ok: true, runId: Date.now() };
     const runId = Date.now(),
-      aggregatorId = makeAggregatorId(groupId, runId),
+      aggregatorId = makeAggregatorId(runId),
       handle: RunHandle = {
         runId,
         aggregatorId,
@@ -287,13 +321,12 @@ export function createPreScriptRunner({
         status: 'running',
         _timedOutScripts: new Set(),
       };
-    running.set(groupId, handle);
+    running = handle;
     broadcastUpdate();
     pushAggregatorLog(
       aggregatorId,
-      `── Pipeline started (${steps.length} steps) ──`,
+      `── Pipeline iniciado (${formatStepCount(steps.length)}) ──`,
     );
-    pushAggregatorLog(aggregatorId, `── Working directory: ${groupPath} ──`);
     let pipelineOk = true,
       pipelineCancelled = false,
       failedStepIdx = -1;
@@ -309,18 +342,18 @@ export function createPreScriptRunner({
       }
       pushAggregatorLog(
         aggregatorId,
-        `── Step ${index + 1}/${steps.length} (${step.mode}) starting ──`,
+        `── Paso ${index + 1}/${steps.length} (${formatStepMode(step.mode)}) iniciando ──`,
       );
       const stepStartedAt = Date.now();
       let stepOk = false;
       if (step.mode === 'serial') {
         stepOk = true;
-        for (const script of step.scripts) {
+        for (const ref of step.scripts) {
           if (handle.cancelled) {
             stepOk = false;
             break;
           }
-          const result = await runOne(script, step, groupId, handle);
+          const result = await runOne(ref, handle);
           if (result.cancelled) {
             pipelineCancelled = true;
             stepOk = false;
@@ -333,7 +366,7 @@ export function createPreScriptRunner({
         }
       } else {
         const results = await Promise.all(
-          step.scripts.map((script) => runOne(script, step, groupId, handle)),
+          step.scripts.map((ref) => runOne(ref, handle)),
         );
         if (
           results.some((result) => result.cancelled) &&
@@ -342,81 +375,109 @@ export function createPreScriptRunner({
           pipelineCancelled = true;
         stepOk = results.every((result) => result.ok);
       }
-      if (stepOk && !handle.cancelled)
+      if (stepOk && !handle.cancelled) {
         pushAggregatorLog(
           aggregatorId,
-          `── Step ${index + 1} completed (${formatUptime(Date.now() - stepStartedAt)}) ──`,
+          `── Paso ${index + 1} completado (${formatUptime(Date.now() - stepStartedAt)}) ──`,
         );
+        // Synchronous and non-awaited: every command released by this step
+        // must be spawned before step N+1's first runOne. A throwing
+        // callback is contained here so a main-process bug cannot abort the
+        // pipeline (D3).
+        try {
+          onStepComplete?.({
+            stepIndex: index,
+            stepId: step.id,
+            totalSteps: steps.length,
+            runId,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          pushAggregatorLog(
+            aggregatorId,
+            `── Fallo en el aviso de fin de paso: ${message} ──`,
+            'error',
+          );
+        }
+      }
       if (!stepOk || handle.cancelled) {
         pipelineOk = false;
         failedStepIdx = index + 1;
         break;
       }
     }
-    running.delete(groupId);
+    running = null;
     const duration = formatUptime(Date.now() - handle.runId);
     if (!pipelineOk) {
       if (pipelineCancelled || handle.cancelled) {
         pushAggregatorLog(
           aggregatorId,
-          `── Pipeline cancelled (${duration}) ──`,
+          `── Pipeline cancelado (${duration}) ──`,
         );
         handle.status = 'idle';
         broadcastUpdate();
-        return { ok: false, cancelled: true, error: 'cancelled' };
+        return {
+          ok: false,
+          cancelled: true,
+          error: 'cancelled',
+          runId,
+          aggregatorId,
+        };
       }
       const reason = `step_${failedStepIdx}_failed`;
       pushAggregatorLog(
         aggregatorId,
-        `── Pipeline failed at step ${failedStepIdx} (${duration}) ──`,
+        `── Pipeline fallido en el paso ${failedStepIdx} (${duration}) ──`,
         'error',
       );
       handle.status = 'error';
-      setRecentResult(groupId, 'error', reason, runId, 5000);
+      setRecentResult('error', reason, runId, 5000);
       broadcastUpdate();
-      onError?.(reason, { groupId, runId });
-      return { ok: false, error: reason };
+      onError?.(reason, { runId, failedStepIndex: failedStepIdx });
+      return { ok: false, error: reason, runId, aggregatorId };
     }
     handle.status = 'done';
-    pushAggregatorLog(aggregatorId, `── Pipeline complete (${duration}) ──`);
-    setRecentResult(groupId, 'done', null, runId, 3000);
+    pushAggregatorLog(aggregatorId, `── Pipeline completado (${duration}) ──`);
+    setRecentResult('done', null, runId, 3000);
     broadcastUpdate();
-    onSuccess?.({ groupId, group, runId });
+    onSuccess?.({ runId, stepCount: steps.length });
     return { ok: true, runId };
   }
-  function cancel(groupId: string): {
-    ok: boolean;
-    error?: string | undefined;
-  } {
-    const handle = running.get(groupId);
-    if (!handle) return { ok: false, error: 'not_running' };
-    handle.cancelled = true;
-    for (const pid of handle.childPids) void processManager.stop(pid);
-    cancelConfirm?.(groupId);
+  function cancel(): { ok: boolean; error?: string | undefined } {
+    if (!running) return { ok: false, error: 'not_running' };
+    running.cancelled = true;
+    for (const pid of running.childPids) void processManager.stop(pid);
+    cancelConfirm?.();
     return { ok: true };
   }
-  const isRunning = (groupId: string): boolean => running.has(groupId);
-  function getRunState(groupId: string) {
-    const handle = running.get(groupId);
-    return handle
+  const isRunning = (): boolean => running !== null;
+  function getRunState(): PipelineRunState | null {
+    return running
       ? {
-          status: handle.status,
-          currentStep: handle.currentStep,
-          totalSteps: handle.totalSteps,
-          runId: handle.runId,
-          aggregatorId: handle.aggregatorId,
-          startedAt: handle.runId,
+          status: running.status,
+          currentStep: running.currentStep,
+          totalSteps: running.totalSteps,
+          runId: running.runId,
+          aggregatorId: running.aggregatorId,
+          startedAt: running.runId,
         }
       : null;
   }
-  function getRecentResult(groupId: string): RecentResult | null {
-    const entry = recentResult.get(groupId);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-      recentResult.delete(groupId);
+  function getRecentResult(): RecentResult | null {
+    if (!recentResult) return null;
+    if (Date.now() > recentResult.expiresAt) {
+      recentResult = null;
       return null;
     }
-    return entry;
+    return recentResult;
   }
-  return { run, cancel, isRunning, getRunState, getRecentResult, running };
+  const current = (): Promise<RunResult> | null => currentRunPromise;
+  return {
+    run,
+    cancel,
+    isRunning,
+    getRunState,
+    getRecentResult,
+    current,
+  };
 }

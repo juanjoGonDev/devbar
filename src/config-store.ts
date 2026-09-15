@@ -11,16 +11,21 @@ import type {
   LegacyService,
   PreScript,
   PreStep,
+  PreStepScriptRef,
 } from './domain-types.js';
 import {
   enforceSingleModeAutoStart,
-  migrateServicesToGroups,
   normalizeAction,
   normalizeCommand,
   normalizeGroup,
   normalizePreScript,
   normalizePreStep,
+  planStoreMigration,
+  prunePipelineRefs,
+  reorderByIds,
   regenerateLegacyServices,
+  assignScriptToStep as assignRefToStep,
+  unassignScriptFromStep as unassignRefFromStep,
 } from './groups-model.js';
 import { serializeConfig } from './config-io.js';
 
@@ -30,12 +35,14 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   silenceErrors: false,
   maxLogLines: DEFAULT_MAX_LOG_LINES,
   notifySuccess: true,
+  preScriptsAutoRun: false,
 };
 
 type StoreState = {
   version: number;
   services: LegacyService[];
   groups: Group[];
+  preSteps: PreStep[];
   globalSettings: GlobalSettings;
   scheduleState: Record<string, string>;
   _services_pre_v3_backup: unknown[];
@@ -49,9 +56,10 @@ function clampMaxLogLines(value: unknown): number {
 }
 
 const schema = {
-  version: { type: 'number', default: 3 },
+  version: { type: 'number', default: 4 },
   services: { type: 'array', default: [] },
   groups: { type: 'array', default: [] },
+  preSteps: { type: 'array', default: [] },
   globalSettings: { type: 'object', default: DEFAULT_GLOBAL_SETTINGS },
   scheduleState: { type: 'object', default: {} },
   _services_pre_v3_backup: { type: 'array', default: [] },
@@ -60,13 +68,26 @@ const schema = {
 const store = new Store<StoreState>({ name: 'config', schema });
 
 function runMigration(): void {
-  const result = migrateServicesToGroups(store.store);
-  if (!result.changed) return;
-  store.set('version', result.state.version);
-  store.set('groups', result.state.groups);
-  store.set('services', result.state.services);
-  if (Array.isArray(result.state._services_pre_v3_backup)) {
-    store.set('_services_pre_v3_backup', result.state._services_pre_v3_backup);
+  // The whole decision — pipeline hoisting (seeing the PRISTINE raw group
+  // before normalizeGroup can strip its legacy keys), THEN the v1/v2->v3
+  // conversion or v3/v4 id-repair canonical pass, and the version label
+  // itself — lives in the pure, unit-tested `planStoreMigration` (see
+  // `tests/groups-model.test.ts`). This function is only the store-write
+  // side effect.
+  const plan = planStoreMigration(store.store);
+  if (!plan.changed) return;
+  store.set('version', plan.version);
+  store.set('groups', plan.groups);
+  store.set('services', plan.services);
+  store.set('preSteps', plan.preSteps);
+  if (plan.preScriptsAutoRun !== null) {
+    store.set('globalSettings', {
+      ...getGlobalSettings(),
+      preScriptsAutoRun: plan.preScriptsAutoRun,
+    });
+  }
+  if (plan.servicesBackup !== null) {
+    store.set('_services_pre_v3_backup', plan.servicesBackup);
   }
 }
 runMigration();
@@ -74,9 +95,22 @@ runMigration();
 function getGroupsInternal(): Group[] {
   return store.get('groups', []).map(normalizeGroup);
 }
-function persistGroups(groups: Group[]): void {
+function getPreStepsInternal(): PreStep[] {
+  return store.get('preSteps', []).map(normalizePreStep);
+}
+/**
+ * Successor to the old `persistGroups`: writes `groups`, regenerates
+ * `services`, and re-derives `preSteps` through `prunePipelineRefs` against
+ * the NEW `groups` on every write (D5) — the same "recompute a derived
+ * artifact from groups[] on every persist" template as `services` itself,
+ * so every current and future write path gets referential-integrity
+ * pruning for free instead of a bolt-on prune at each delete call site.
+ */
+function persistState(groups: Group[], steps?: readonly PreStep[]): void {
+  const prunedSteps = prunePipelineRefs(steps ?? getPreStepsInternal(), groups);
   store.set('groups', groups);
   store.set('services', regenerateLegacyServices(groups));
+  store.set('preSteps', prunedSteps);
 }
 
 export function listGroups(): Group[] {
@@ -98,34 +132,17 @@ export function saveGroup(
     safeGroup.order = groups.length;
     groups.push(safeGroup);
   }
-  persistGroups(groups);
+  persistState(groups);
   return { ...safeGroup, _autoStartEnforced: enforced.changed };
 }
 export function deleteGroup(id: string): void {
-  persistGroups(getGroupsInternal().filter((group) => group.id !== id));
-}
-function reorderByIds<T extends { id: string }>(
-  items: readonly T[],
-  orderedIds: readonly string[],
-): T[] {
-  const byId = new Map(items.map((item) => [item.id, item]));
-  const seen = new Set<string>();
-  const sorted: T[] = [];
-  for (const id of orderedIds) {
-    const item = byId.get(id);
-    if (item && !seen.has(id)) {
-      sorted.push(item);
-      seen.add(id);
-    }
-  }
-  for (const item of items) if (!seen.has(item.id)) sorted.push(item);
-  return sorted;
+  persistState(getGroupsInternal().filter((group) => group.id !== id));
 }
 export function reorderGroups(orderedIds: readonly string[]): Group[] {
   const sorted = reorderByIds(getGroupsInternal(), orderedIds).map(
     (group, index) => ({ ...group, order: index }),
   );
-  persistGroups(sorted);
+  persistState(sorted);
   return sorted;
 }
 
@@ -144,7 +161,7 @@ export function saveCommand(
     );
   if (commandIndex >= 0) group.commands[commandIndex] = normalized;
   else group.commands.push(normalized);
-  persistGroups(groups);
+  persistState(groups);
   return normalized;
 }
 export function deleteCommand(groupId: string, commandId: string): void {
@@ -153,7 +170,7 @@ export function deleteCommand(groupId: string, commandId: string): void {
     group = groups[index];
   if (!group) return;
   group.commands = group.commands.filter((command) => command.id !== commandId);
-  persistGroups(groups);
+  persistState(groups);
 }
 export function reorderCommands(
   groupId: string,
@@ -164,7 +181,7 @@ export function reorderCommands(
     group = groups[index];
   if (!group) return;
   group.commands = reorderByIds(group.commands, orderedIds);
-  persistGroups(groups);
+  persistState(groups);
 }
 
 export function saveAction(
@@ -181,7 +198,7 @@ export function saveAction(
     );
   if (actionIndex >= 0) group.actions[actionIndex] = normalized;
   else group.actions.push(normalized);
-  persistGroups(groups);
+  persistState(groups);
   return normalized;
 }
 export function deleteAction(groupId: string, actionId: string): void {
@@ -190,7 +207,7 @@ export function deleteAction(groupId: string, actionId: string): void {
     group = groups[index];
   if (!group) return;
   group.actions = group.actions.filter((action) => action.id !== actionId);
-  persistGroups(groups);
+  persistState(groups);
 }
 export function reorderActions(
   groupId: string,
@@ -201,85 +218,96 @@ export function reorderActions(
     group = groups[index];
   if (!group) return;
   group.actions = reorderByIds(group.actions, orderedIds);
-  persistGroups(groups);
+  persistState(groups);
 }
 
-export function savePreStep(groupId: string, data: unknown): PreStep | null {
-  const groups = getGroupsInternal(),
-    index = groups.findIndex((group) => group.id === groupId),
-    group = groups[index];
-  if (!group) return null;
-  const normalized = normalizePreStep(data),
-    stepIndex = group.preSteps.findIndex((step) => step.id === normalized.id);
-  if (stepIndex >= 0) group.preSteps[stepIndex] = normalized;
-  else group.preSteps.push(normalized);
-  persistGroups(groups);
+// Pipeline steps are now a GLOBAL, top-level slice — no `groupId`, since a
+// step can hold refs into more than one group's scripts.
+export function getPreSteps(): PreStep[] {
+  return getPreStepsInternal();
+}
+export function savePreStep(data: unknown): PreStep {
+  const steps = getPreStepsInternal();
+  const normalized = normalizePreStep(data);
+  const index = steps.findIndex((step) => step.id === normalized.id);
+  if (index >= 0) steps[index] = normalized;
+  else steps.push(normalized);
+  persistState(getGroupsInternal(), steps);
   return normalized;
 }
-export function deletePreStep(groupId: string, stepId: string): void {
-  const groups = getGroupsInternal(),
-    index = groups.findIndex((group) => group.id === groupId),
-    group = groups[index];
-  if (!group) return;
-  group.preSteps = group.preSteps.filter((step) => step.id !== stepId);
-  persistGroups(groups);
+export function deletePreStep(stepId: string): void {
+  const steps = getPreStepsInternal().filter((step) => step.id !== stepId);
+  persistState(getGroupsInternal(), steps);
 }
-export function reorderPreSteps(
-  groupId: string,
-  orderedIds: readonly string[],
-): void {
-  const groups = getGroupsInternal(),
-    index = groups.findIndex((group) => group.id === groupId),
-    group = groups[index];
-  if (!group) return;
-  group.preSteps = reorderByIds(group.preSteps, orderedIds);
-  persistGroups(groups);
+export function reorderPreSteps(orderedIds: readonly string[]): PreStep[] {
+  const sorted = reorderByIds(getPreStepsInternal(), orderedIds);
+  persistState(getGroupsInternal(), sorted);
+  return sorted;
 }
 
+// Script DEFINITIONS stay per-group (cwd/env come from their own group) but
+// are now a flat `group.preScripts` list — no `stepId`, since placement into
+// the pipeline is a separate concern (assignScriptToStep/unassignScriptFromStep
+// below).
 export function savePreScript(
   groupId: string,
-  stepId: string,
   data: unknown,
 ): PreScript | null {
   const groups = getGroupsInternal(),
     groupIndex = groups.findIndex((group) => group.id === groupId),
     group = groups[groupIndex];
   if (!group) return null;
-  const stepIndex = group.preSteps.findIndex((step) => step.id === stepId),
-    step = group.preSteps[stepIndex];
-  if (!step) return null;
   const normalized = normalizePreScript(data),
-    scriptIndex = step.scripts.findIndex(
+    scriptIndex = group.preScripts.findIndex(
       (script) => script.id === normalized.id,
     );
-  if (scriptIndex >= 0) step.scripts[scriptIndex] = normalized;
-  else step.scripts.push(normalized);
-  persistGroups(groups);
+  if (scriptIndex >= 0) group.preScripts[scriptIndex] = normalized;
+  else group.preScripts.push(normalized);
+  persistState(groups);
   return normalized;
 }
-export function deletePreScript(
-  groupId: string,
-  stepId: string,
-  scriptId: string,
-): void {
+export function deletePreScript(groupId: string, scriptId: string): void {
   const groups = getGroupsInternal(),
-    group = groups.find((candidate) => candidate.id === groupId),
-    step = group?.preSteps.find((candidate) => candidate.id === stepId);
-  if (!group || !step) return;
-  step.scripts = step.scripts.filter((script) => script.id !== scriptId);
-  persistGroups(groups);
+    group = groups.find((candidate) => candidate.id === groupId);
+  if (!group) return;
+  // persistState prunes any now-dangling pipeline ref to this script (D5).
+  group.preScripts = group.preScripts.filter(
+    (script) => script.id !== scriptId,
+  );
+  persistState(groups);
 }
 export function reorderPreScripts(
   groupId: string,
-  stepId: string,
   orderedIds: readonly string[],
 ): void {
   const groups = getGroupsInternal(),
-    group = groups.find((candidate) => candidate.id === groupId),
-    step = group?.preSteps.find((candidate) => candidate.id === stepId);
-  if (!group || !step) return;
-  step.scripts = reorderByIds(step.scripts, orderedIds);
-  persistGroups(groups);
+    group = groups.find((candidate) => candidate.id === groupId);
+  if (!group) return;
+  group.preScripts = reorderByIds(group.preScripts, orderedIds);
+  persistState(groups);
+}
+
+// Placement of an already-defined script into (or out of) a global step.
+export function assignScriptToStep(
+  stepId: string,
+  groupId: string,
+  scriptId: string,
+  position?: number,
+): PreStep[] {
+  const ref: PreStepScriptRef = { groupId, scriptId };
+  const steps = assignRefToStep(getPreStepsInternal(), stepId, ref, position);
+  persistState(getGroupsInternal(), steps);
+  return steps;
+}
+export function unassignScriptFromStep(
+  stepId: string,
+  groupId: string,
+  scriptId: string,
+): PreStep[] {
+  const ref: PreStepScriptRef = { groupId, scriptId };
+  const steps = unassignRefFromStep(getPreStepsInternal(), stepId, ref);
+  persistState(getGroupsInternal(), steps);
+  return steps;
 }
 
 type SilenceLevel = 'warn' | 'error';
@@ -298,7 +326,7 @@ export function addSilencedPattern(
   const list = [...command.silencedPatterns[level]];
   if (!list.includes(trimmed)) list.push(trimmed);
   command.silencedPatterns = { ...command.silencedPatterns, [level]: list };
-  persistGroups(groups);
+  persistState(groups);
   return command;
 }
 export function removeSilencedPattern(
@@ -315,7 +343,7 @@ export function removeSilencedPattern(
     ...command.silencedPatterns,
     [level]: command.silencedPatterns[level].filter((item) => item !== pattern),
   };
-  persistGroups(groups);
+  persistState(groups);
   return command;
 }
 export function setCommandSilence(
@@ -330,7 +358,7 @@ export function setCommandSilence(
   if (!group || !command) return null;
   if (level === 'warn') command.silenceWarnings = enabled;
   else command.silenceErrors = enabled;
-  persistGroups(groups);
+  persistState(groups);
   return command;
 }
 export function setGroupSilence(
@@ -343,7 +371,7 @@ export function setGroupSilence(
   if (!group) return null;
   if (level === 'warn') group.silenceWarnings = enabled;
   else group.silenceErrors = enabled;
-  persistGroups(groups);
+  persistState(groups);
   return group;
 }
 
@@ -362,6 +390,7 @@ export function saveGlobalSettings(
   next.silenceErrors = Boolean(next.silenceErrors);
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
   next.notifySuccess = Boolean(next.notifySuccess);
+  next.preScriptsAutoRun = Boolean(next.preScriptsAutoRun);
   store.set('globalSettings', next);
   return next;
 }
@@ -377,8 +406,9 @@ export function setScheduleLastRun(processId: string, iso: string): void {
 export function exportConfig(): ReturnType<typeof serializeConfig> {
   return serializeConfig(
     {
-      version: store.get('version', 3),
+      version: store.get('version', 4),
       groups: getGroupsInternal(),
+      preSteps: getPreStepsInternal(),
       globalSettings: getGlobalSettings(),
     },
     app.getVersion(),
@@ -387,6 +417,7 @@ export function exportConfig(): ReturnType<typeof serializeConfig> {
 export function replaceConfig(payload: {
   version: number;
   groups: unknown[];
+  preSteps?: unknown[];
   globalSettings: Partial<GlobalSettings>;
 }): void {
   store.set('version', payload.version);
@@ -394,7 +425,10 @@ export function replaceConfig(payload: {
   const safeGroups = payload.groups
     .map(normalizeGroup)
     .map((group) => enforceSingleModeAutoStart(group).group ?? group);
-  persistGroups(safeGroups);
+  const safeSteps = Array.isArray(payload.preSteps)
+    ? payload.preSteps.map(normalizePreStep)
+    : [];
+  persistState(safeGroups, safeSteps);
 }
 export function writeImportBackup(): string {
   const backupPath = path.join(
@@ -403,8 +437,9 @@ export function writeImportBackup(): string {
   );
   const snapshot = {
     backedUpAt: new Date().toISOString(),
-    version: store.get('version', 3),
+    version: store.get('version', 4),
     groups: getGroupsInternal(),
+    preSteps: getPreStepsInternal(),
     globalSettings: getGlobalSettings(),
   };
   fs.writeFileSync(backupPath, JSON.stringify(snapshot, null, 2), 'utf8');

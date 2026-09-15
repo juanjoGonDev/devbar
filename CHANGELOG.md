@@ -5,6 +5,63 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-10
+
+### Añadido
+
+- **Pipeline de pre-scripts global.** Los pasos de pre-scripts dejan de vivir
+  dentro de cada grupo por separado: ahora hay **un único pipeline ordenado**,
+  compartido por todos los grupos, con una nueva sección **«Pipeline»** en
+  Configuración. Cada paso puede mezclar scripts de distintos grupos y
+  ejecutarlos en paralelo o en serie; arrastra un script entre pasos para
+  reordenar el arranque.
+- El disparador **▶▶** de la barra pasa a ser **uno solo para todo el
+  pipeline**, con su propio log agregado, indicador de progreso y botón de
+  cancelar — ya no hay un disparador por grupo.
+- Al arrancar sesión, los comandos de auto-arranque de cada grupo esperan,
+  **por defecto, a que termine todo el pipeline** antes de arrancar: un paso
+  posterior de OTRO grupo (por ejemplo, un segundo `make setup` que reinicia
+  Docker) podía romper un grupo que ya había arrancado. Cada grupo tiene un
+  nuevo interruptor **«Esperar a que termine todo el pipeline antes de
+  arrancar»** en su configuración para liberarlo antes —en cuanto termina el
+  último paso que usa alguno de sus scripts— si es realmente independiente
+  del resto del pipeline.
+- **Todas las listas reordenables ahora se pueden manejar con el teclado**:
+  grupos, la biblioteca de pre-scripts de cada grupo, comandos, acciones, los
+  pasos del pipeline y los scripts dentro de cada paso. Con el foco en el
+  asa (**⋮⋮**), Espacio o Intro la agarra, las flechas la mueven —incluso
+  entre pasos del pipeline—, y Espacio, Intro o Escape la suelta o cancela el
+  movimiento.
+
+### Cambiado
+
+- **El interruptor «ejecutar automáticamente al arrancar el Mac» de los
+  pre-scripts ahora es global**, no por grupo. Al actualizar, DevBar migra tu
+  configuración anterior de forma conservadora: el ajuste global sólo queda
+  **activado** si TODOS los grupos que aportaban pasos al pipeline lo tenían
+  activado; si alguno lo tenía desactivado, el nuevo ajuste global queda
+  **desactivado**. **Revisa este ajuste en la sección «Pipeline» después de
+  actualizar** si dependías del auto-arranque de pre-scripts al iniciar
+  sesión.
+- **La actualización de la configuración no tiene vuelta atrás.** En cuanto
+  abres DevBar 0.8.0, tu configuración se convierte al nuevo formato de forma
+  automática. Hecho esto, ya no podrás abrirla con una versión anterior de
+  DevBar (0.7.1 o anterior): esa versión antigua no sabe leer el formato
+  nuevo. Si quieres conservar la posibilidad de volver atrás, haz una copia
+  de seguridad desde **Configuración → Copias de seguridad** antes de
+  actualizar.
+- Si el pipeline falla o cancelas su confirmación a mitad de camino, los
+  grupos cuyos pasos aún no habían llegado se **retienen** (no arrancan sus
+  comandos de auto-arranque); se avisa con un log y una notificación
+  nombrándolos.
+
+## [0.7.1] - 2026-09-09
+
+Solo cambios internos de mantenimiento (dependencias y proceso de
+compilación/publicación); sin novedades de cara al usuario.
+
+## [0.7.0] - 2026-08-26
+
 ### Añadido
 
 - **Actualizaciones automáticas de verdad.** Cuando DevBar detecta una versión
