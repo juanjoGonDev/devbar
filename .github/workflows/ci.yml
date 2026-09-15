@@ -294,11 +294,20 @@ jobs:
           SHA=$(shasum -a 256 "$ZIP" | awk '{print $1}')
           # 2) The running app runs the PRODUCTION handoff: sha seal, staging
           #    (ditto + codesign --verify), swap script, quit.
+          # Any still-running DevBar instance (e.g. a slow-dying one from the
+          # previous step) holds the single-instance lock and would turn this
+          # launch into a silent second instance — surface it if present.
+          echo "::warning::macos-update-sim: DevBar procs before launch: $(pgrep -af 'DevBar.app/Contents/MacOS/DevBar' || echo none)"
           rm -f "$TMPDIR/devbar-smoke-ok"
           DEVBAR_SMOKE=1 DEVBAR_SMOKE_UPDATE=1 DEVBAR_SMOKE_ARTIFACT="$ZIP" \
             DEVBAR_SMOKE_SHA="$SHA" DEVBAR_SMOKE_VERSION="$V2" \
             "$APP" 2>&1 | tee smoke-macos-update.log
-          grep -q "DEVBAR_SMOKE_UPDATE_HANDOFF $V2" smoke-macos-update.log
+          if ! grep -q "DEVBAR_SMOKE_UPDATE_HANDOFF $V2" smoke-macos-update.log; then
+            echo "::error::macos-update-sim: app never logged HANDOFF. output tail: $(tail -15 smoke-macos-update.log | tr '\n' '|')"
+            echo "::error::macos-update-sim: app log tail: $(tail -15 "$HOME/Library/Logs/DevBar/app.log" 2>/dev/null | tr '\n' '|' || echo none)"
+            echo "::error::macos-update-sim: procs now: $(pgrep -af 'DevBar.app/Contents/MacOS/DevBar' || echo none)"
+            exit 1
+          fi
           # 3) The swap relaunches the replaced bundle with --devbar-smoke,
           #    so the new version proves itself through the same marker.
           for i in $(seq 1 90); do
@@ -321,6 +330,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe"
+          # Diagnostic: surface any DevBar instance still alive at step start
+          # (a leftover would tangle the single-instance lock with the
+          # resident we are about to spawn).
+          $before = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
+          Write-Host "::warning::win-reinstall: DevBar procs before resident start: $($before ?: 'none')"
           # 1) Resident instance of the installed app (from the earlier NSIS
           #    install): writes the smoke marker, then stays alive.
           $old = Start-Process -PassThru -FilePath $exe -ArgumentList '--devbar-smoke','--devbar-smoke-hold'
@@ -335,13 +349,23 @@ jobs:
           $env:DEVBAR_SMOKE = '1'
           $env:DEVBAR_SMOKE_HOLD = '1'
           pnpm install-local --no-build
+          if ($LASTEXITCODE -ne 0) {
+            $procs = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
+            Write-Error "::error::win-reinstall: pnpm install-local --no-build exited $LASTEXITCODE. DevBar procs: $procs"
+          }
           Start-Sleep -Seconds 5
           if (-not $old.HasExited) {
+            $procs = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
+            Write-Error "::error::win-reinstall: old instance $($old.Id) survived. DevBar procs: $procs"
             throw "old instance ($($old.Id)) survived the reinstall"
           }
           # 3) The new instance must be alive; stop it so later steps are clean.
           $new = Get-Process DevBar -ErrorAction SilentlyContinue
-          if (-not $new) { throw 'no new instance after reinstall' }
+          if (-not $new) {
+            $procs = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar|electron' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
+            Write-Error "::error::win-reinstall: no new instance after reinstall. procs: $procs"
+            throw 'no new instance after reinstall'
+          }
           $new | Stop-Process -Force
           Remove-Item Env:\DEVBAR_SMOKE, Env:\DEVBAR_SMOKE_HOLD
 
@@ -555,6 +579,7 @@ jobs:
           sleep 4
           OLDPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
           if [ -z "$OLDPID" ]; then
+            echo "::error::linux-reinstall: no resident after first install. procs: $(pgrep -af 'local/share/DevBar' || echo none). app log tail: $(tail -8 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null | tr '\n' '|' || echo none)"
             echo "no resident instance after first install"
             kill -0 "$XVFB_PID" 2>/dev/null && echo 'Xvfb alive' || echo 'Xvfb DEAD'
             echo "--- app log ---"
@@ -572,13 +597,20 @@ jobs:
           # 2) Reinstall: install-local must kill OLDPID, replace the files
           #    and relaunch — a leftover process is the classic half-update.
           pnpm install-local --no-build
+          if [ $? -ne 0 ]; then
+            echo "::error::linux-reinstall: pnpm install-local --no-build (2nd) failed. procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+          fi
           sleep 4
           if kill -0 "$OLDPID" 2>/dev/null; then
+            echo "::error::linux-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < /proc/$OLDPID/cmdline 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
             echo "old instance ($OLDPID) survived the reinstall"
             exit 1
           fi
           NEWPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
-          [ -n "$NEWPID" ] || { echo "no new instance after reinstall"; exit 1; }
+          if [ -z "$NEWPID" ]; then
+            echo "::error::linux-reinstall: no new instance after reinstall. procs: $(pgrep -af 'local/share/DevBar' || echo none). app log tail: $(tail -5 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null | tr '\n' '|' || echo none)"
+            echo "no new instance after reinstall"; exit 1
+          fi
           kill "$NEWPID" 2>/dev/null || true
           kill "$XVFB_PID" 2>/dev/null || true
 
