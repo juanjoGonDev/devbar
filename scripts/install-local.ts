@@ -30,6 +30,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  posixKillServiceTrees,
+  windowsKillDevInstanceCommand,
+  windowsKillImageTreeArgs,
+} from './lib/kill-trees.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isDev = process.argv.includes('--dev');
@@ -104,28 +109,35 @@ function layout(): InstallLayout {
  * DevBar.exe, so the image-name kill alone would leave a dev instance
  * alive). Linux: exact paths of the installed copy, a dist/ run, and a
  * dev run from this checkout — no assumptions about the repo folder name.
+ *
+ * Every kill is TREE-aware (taskkill /T, and the POSIX service-group walk
+ * for the detached service processes): the running instance's commands —
+ * the user's dev servers — must die with it, or the reinstall leaves them
+ * holding their ports.
  */
 function killRunningInstances(installDir: string): void {
   step('Stopping any running DevBar…');
   if (platform === 'win32') {
-    tryQuiet('taskkill', ['/F', '/IM', 'DevBar.exe']);
+    tryQuiet('taskkill', windowsKillImageTreeArgs('DevBar.exe'));
     // Dev mode: electron.exe whose command line references this checkout.
     // (Killing every electron.exe on the machine would be too aggressive.)
-    // NOTE: backslashes are NOT doubled — PowerShell single-quoted strings
-    // treat `\` as literal and `-like` has no backslash metacharacters, so
-    // the pattern must contain the path exactly as the command line does.
     tryQuiet('powershell', [
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      `Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue | ` +
-        `Where-Object { $_.CommandLine -like '*${ROOT}*' } | ` +
-        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+      windowsKillDevInstanceCommand(ROOT),
     ]);
   } else {
-    tryQuiet('pkill', ['-f', path.join(installDir)]);
-    tryQuiet('pkill', ['-f', path.join(ROOT, 'dist', 'electron-builder')]);
-    tryQuiet('pkill', ['-f', path.join(ROOT, 'node_modules')]);
+    const patterns = [
+      path.join(installDir),
+      path.join(ROOT, 'dist', 'electron-builder'),
+      path.join(ROOT, 'node_modules'),
+    ];
+    // The services first (they outlive a bare pkill of the app), then the
+    // instances themselves — TERM, so a current build can also run its own
+    // graceful shutdown; the wave-2 verify catches anything that survives.
+    posixKillServiceTrees(patterns);
+    for (const pattern of patterns) tryQuiet('pkill', ['-f', pattern]);
   }
 }
 

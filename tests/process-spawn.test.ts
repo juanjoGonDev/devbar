@@ -61,3 +61,21 @@ describe('buildSpawnArgs — Windows', () => {
     }
   });
 });
+
+describe('serviceSpawnOptions — POSIX', () => {
+  it('detached: the service owns its process group so a stop signals the whole tree', async () => {
+    vi.resetModules();
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+    const mod = await import('../src/process-manager.js');
+    expect(mod.serviceSpawnOptions()).toStrictEqual({ detached: true });
+  });
+});
+
+describe('serviceSpawnOptions — Windows', () => {
+  it('attached, and NO windowsHide: a terminal-launched DevBar shares its console so Ctrl+C / closing the window reaches the service too', async () => {
+    vi.resetModules();
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const mod = await import('../src/process-manager.js');
+    expect(mod.serviceSpawnOptions()).toStrictEqual({ detached: false });
+  });
+});

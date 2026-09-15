@@ -91,6 +91,25 @@ export function buildSpawnArgs(cmdline: string): {
   return { file, args: [...baseArgs, cmdline], description };
 }
 
+/**
+ * Per-platform spawn options for a service child process.
+ *
+ * POSIX: `detached` puts the service in its own process group (group
+ * leader == the child's pid) so a stop can signal the whole tree — shell +
+ * user command + whatever it spawned — with a single `kill(-pgid)`.
+ *
+ * Windows: stay attached, and — deliberately — NO `windowsHide`. When
+ * DevBar runs from a terminal (`pnpm start`) the service inherits that
+ * console, so Ctrl+C — or closing the terminal window — reaches the
+ * user's command directly, alongside the main process's own signal
+ * handlers. With `windowsHide` the child had no console, so a Ctrl+C on
+ * `pnpm start` left every service alive (holding its port) after the app
+ * died. A GUI launch has no console to inherit, so nothing changes there.
+ */
+export function serviceSpawnOptions(): { detached: boolean } {
+  return { detached: !isWin };
+}
+
 interface ConfigStoreLike {
   getGroup(id: string): Group | null;
   listGroups(): Group[];
@@ -349,16 +368,11 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     }
     let child: ChildProcessWithoutNullStreams;
     try {
-      // POSIX: `detached` gives the service its own process group so a stop
-      // can kill the whole tree at once. Windows: detached would pop a
-      // console per service, so we stay attached and hide the window
-      // instead; killing the tree goes through taskkill /T.
       child = spawn(spawnSpec.file, spawnSpec.args, {
         cwd,
         env: spawnEnv,
         shell: false,
-        detached: !isWin,
-        ...(isWin ? { windowsHide: true } : {}),
+        ...serviceSpawnOptions(),
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

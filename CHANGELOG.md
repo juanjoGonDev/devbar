@@ -7,6 +7,19 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Corregido
 
+- **Los comandos que DevBar ejecuta ya no se quedan huérfanos cuando la app
+  se cierra.** Antes, al salir (o en la swap de la actualización
+  automática) solo se detenía el primer servicio y el resto seguía vivo
+  ocupando su puerto —el siguiente arranque fallaba con «dirección ya en
+  uso»—. Ahora TODAS las salidas (menú «Salir», `app:quit`, swap de
+  actualización) esperan a que termine de pararse cada servicio (escalando
+  a fuerza si hace falta) antes de morir, y Ctrl+C en el terminal de
+  `pnpm start` o `kill <pid>` limpian igual. En Windows, además, los
+  servicios heredan la consola del terminal (antes no la recibían y un
+  Ctrl+C los dejaba vivos), y `install-local` mata el árbol completo de la
+  instancia en los tres sistemas (antes dejaba los servicios corriendo).
+  La única vía que aún puede dejar un huérfano es un kill duro
+  (SIGKILL / `taskkill` sin /T), que no permite ejecutar ninguna limpieza.
 - **En Windows y Linux, el panel de la bandeja ya no aparece en la barra de
   tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
   Configuración y/o Logs cuando esas ventanas están abiertas; el panel es

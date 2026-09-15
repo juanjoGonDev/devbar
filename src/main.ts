@@ -3437,27 +3437,106 @@ app.on('window-all-closed', () => {
   // listener is registered for this event.
 });
 
-app.on('before-quit', async () => {
-  // The config window vetoes its own `close` to ask about unsaved changes.
-  // During a quit that veto silently ABORTS the whole shutdown — "Salir" and
-  // the update install both did nothing while config was open. By the time
-  // `before-quit` fires the decision to quit is already made, so drop the veto.
-  forceCloseConfig = true;
-  repoWatcher.closeAll();
-  // Cancel any running pre-script pipelines
-  for (const groupId of preScriptRunner.running.keys()) {
-    try {
-      preScriptRunner.cancel(groupId);
-    } catch (_) {}
-  }
-  // Stop all running processes
-  const groups = configStore.listGroups();
-  for (const group of groups) {
-    for (const cmd of group.commands || []) {
-      const pid = makeCommandId(group.id, cmd.id);
+// ── Shutdown: never orphan a service ────────────────────────────────────
+// A service that outlives DevBar keeps its port and breaks the next start
+// ("address already in use"), so EVERY exit path funnels into one cleanup:
+//
+//   * `before-quit` — tray "Salir", `app:quit`, the update swap. Electron
+//     does not await an async before-quit handler: the old code signaled
+//     only the first service and the event loop moved on to will-quit,
+//     orphaning the rest. `preventDefault` + cleanup + `app.quit()` is the
+//     supported "quit when ready" pattern.
+//   * SIGINT / SIGTERM — Ctrl+C in the `pnpm start` terminal, or
+//     `kill <pid>`. Node's default is to exit instantly, leaving every
+//     service tree alive (on Linux the services are detached into their
+//     own process groups precisely so a stop kills them as a unit — a
+//     bare kill of the app never reached them).
+//
+// A hard kill (SIGKILL, `taskkill` without /T) runs none of this code;
+// that remains the only way a service can outlive DevBar. (Modern Windows
+// Task Manager "End task" kills the tree itself.)
+let shutdownPhase: 'idle' | 'cleaning' | 'done' = 'idle';
+
+function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`cleanup still not done after ${ms} ms`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+async function shutdownCleanup(): Promise<void> {
+  if (shutdownPhase !== 'idle') return;
+  shutdownPhase = 'cleaning';
+  try {
+    // The config window vetoes its own `close` to ask about unsaved
+    // changes. During a quit that veto silently ABORTS the whole shutdown,
+    // so drop it before the windows go.
+    forceCloseConfig = true;
+    repoWatcher.closeAll();
+    // Cancel any running pre-script pipelines.
+    for (const groupId of preScriptRunner.running.keys()) {
       try {
-        await processManager.stop(pid);
+        preScriptRunner.cancel(groupId);
       } catch (_) {}
     }
+    // Every running service — commands, actions AND pre-scripts: stopAll
+    // walks the manager's own state, not just the configured commands.
+    // Each stop escalates to SIGKILL / taskkill /F after 5 s; the overall
+    // deadline keeps one wedged service from holding the quit hostage.
+    await withDeadline(processManager.stopAll(), 8000);
+  } catch (_) {
+    // Cleanup is best-effort; the quit itself must always proceed.
+  } finally {
+    shutdownPhase = 'done';
   }
+}
+
+// Exactly one follow-up quit per cleanup. Re-queueing on every prevented
+// before-quit would spin a microtask storm (each app.quit() re-fires
+// before-quit while the cleanup is still running) and starve the very
+// cleanup it is supposed to wait for.
+let quitFollowUpScheduled = false;
+function scheduleQuitAfterCleanup(): void {
+  if (quitFollowUpScheduled) return;
+  quitFollowUpScheduled = true;
+  void shutdownCleanup().then(() => {
+    quitFollowUpScheduled = false;
+    app.quit();
+  });
+}
+
+app.on('before-quit', (event) => {
+  if (shutdownPhase === 'done') return; // cleanup finished — let it die
+  event.preventDefault(); // still cleaning (or not started) — hold the quit
+  scheduleQuitAfterCleanup();
 });
+
+let terminalSignals = 0;
+function onTerminalSignal(): void {
+  terminalSignals += 1;
+  if (terminalSignals > 1) {
+    // Second Ctrl+C / kill: the user wants out NOW.
+    process.exit(0);
+  }
+  if (shutdownPhase === 'idle') {
+    void shutdownCleanup().then(() => app.exit(0));
+  } else if (shutdownPhase === 'done') {
+    process.exit(0); // already clean
+  }
+  // 'cleaning': a cleanup is already running and will terminate the
+  // process (the before-quit follow-up or the first signal's exit).
+}
+process.on('SIGINT', onTerminalSignal);
+process.on('SIGTERM', onTerminalSignal);

@@ -19,6 +19,15 @@ warn() { printf "\033[1;33m!\033[0m %s\n" "$*"; }
 
 # ─── 1. stop running instances ─────────────────────────────────────────
 step "Stopping any running DevBar…"
+# The service trees FIRST. The running instance's commands spawn detached
+# into their own process groups, so the pkill wave below would leave the
+# user's dev servers alive (holding their ports). The shared helper walks
+# each matching instance's children and signals their process groups.
+node --experimental-strip-types scripts/lib/kill-trees.ts \
+  "/Applications/DevBar.app" \
+  "${ROOT}/dist/DevBar-darwin" \
+  "${ROOT}/node_modules" \
+  "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
 # Installed bundle (either /Applications or ~/Applications)
 pkill -f "/Applications/DevBar.app" 2>/dev/null || true
 # Bundle running straight from this repo's dist/ (orphan from a previous
