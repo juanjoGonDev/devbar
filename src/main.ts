@@ -34,6 +34,11 @@ import {
   type ImportPayload,
 } from './config-io.js';
 import { ProcessManager, deriveColor } from './process-manager.js';
+import {
+  SessionResumeTracker,
+  consumeSnapshot,
+  type ResumeExitReason,
+} from './session-resume.js';
 import * as gitManager from './git-manager.js';
 import * as trayIcon from './tray-icon.js';
 import * as logger from './logger.js';
@@ -270,6 +275,66 @@ try {
 }
 
 const processManager = new ProcessManager(configStore);
+
+// ── Session resume ─────────────────────────────────────────────────────
+// Persists the running set so a restart (reinstall, update, kill, crash)
+// can bring the services back. Created in whenReady (needs the app-data
+// dir); null until then.
+let sessionResume: SessionResumeTracker | null = null;
+/** How this exit should be recorded in the snapshot. `quit` is the
+ *  default (tray "Salir", `app:quit`, window quits); the signal handler
+ *  rewrites it to `kill` and the update flows rewrite it to `update`
+ *  right before they quit. A `quit` snapshot is never resumed — a
+ *  deliberate stop stays a stop. */
+let pendingExitReason: ResumeExitReason = 'quit';
+function markUpdateExit(): void {
+  pendingExitReason = 'update';
+}
+/** The command services currently running (actions/pre-scripts never
+ *  resume: they are one-shots). */
+function runningCommandIds(): string[] {
+  return processManager
+    .allStates()
+    .filter((entry) => entry.kind === 'command' && entry.status === 'running')
+    .map((entry) => entry.id);
+}
+
+/**
+ * Launch: consume the previous session's snapshot and restart what it says
+ * was running. Only commands that are still configured, still have a
+ * command, and are NOT confirm-gated are started — an unattended launch
+ * must never bypass a confirmation gate. The snapshot file is already
+ * deleted by `consumeSnapshot` in every branch: this launch had the only
+ * right to it, and the content must not outlive the restart (even for the
+ * ids that failed to start — the user sees them stopped in the tray).
+ */
+function resumeSavedServices(): void {
+  const canResume = (id: string): boolean => {
+    const resolved = processManager.resolveTarget(id);
+    if (!resolved || resolved.kind !== 'command') return false;
+    if (!resolved.target.command || !resolved.target.command.trim())
+      return false;
+    return !resolved.target.confirm;
+  };
+  const decision = consumeSnapshot(appHome(), canResume);
+  if (decision.resume.length === 0) return;
+  let started = 0;
+  for (const id of decision.resume) {
+    const result = processManager.start(id);
+    if (result.ok) started++;
+    else console.warn(`[resume] ${id}: ${result.error ?? 'start failed'}`);
+  }
+  console.log(
+    `[resume] ${started}/${decision.resume.length} services restored (reason: ${decision.reason})`,
+  );
+  // No window may exist yet (tray app) — then this is a harmless no-op.
+  broadcastToast(
+    'ok',
+    started === decision.resume.length
+      ? `Servicios restaurados: ${started}`
+      : `Servicios restaurados: ${started} de ${decision.resume.length}`,
+  );
+}
 
 // ── Pre-script confirmation orchestrator ────────────────────────────────
 // Owns ALL Electron concerns for the confirmation gate: the token → pending
@@ -1101,7 +1166,9 @@ async function installStagedUpdate(staged: StagedUpdate, target: string) {
     return { ok: false, error: errorMessage(err) };
   }
   // The script polls for our exit, so a short delay is enough to let this IPC
-  // reply reach the renderer before we go.
+  // reply reach the renderer before we go. The exit is an UPDATE (not a
+  // user quit): the relaunched version may resume the running services.
+  markUpdateExit();
   setTimeout(() => app.quit(), 200);
   return { ok: true, quitting: true, inPlace: true };
 }
@@ -1198,6 +1265,7 @@ async function applyUpdate() {
     // volume that outlives us; the single-instance lock means this is the
     // only instance. Small delay lets the Finder window surface first.
     // ponytail: fixed 1.2s delay, not a mount-completion watch.
+    markUpdateExit();
     setTimeout(() => app.quit(), 1200);
     return { ok: true, path: dest, quitting: true };
   }
@@ -1210,6 +1278,9 @@ async function applyUpdate() {
       broadcastToast('error', `No se pudo abrir el instalador: ${openErr}`);
       return { ok: false, error: openErr, fellBack: true };
     }
+    // The installer relaunches DevBar: mark the exit as an update so the
+    // new version may resume the running services.
+    markUpdateExit();
     setTimeout(() => app.quit(), 1200);
     return { ok: true, path: dest, quitting: true };
   }
@@ -3126,7 +3197,12 @@ app.whenReady().then(() => {
   registerIpc();
   // Smoke mode must not touch the user's auto-start registration on a CI host.
   if (!SMOKE_MODE) applyAutostart(configStore.getGlobalSettings().autostart);
-  processManager.on('change', () => broadcast());
+  processManager.on('change', () => {
+    broadcast();
+    // Session resume: keep the snapshot's running set current (debounced,
+    // and a no-op when the set is unchanged).
+    if (!SMOKE_MODE && sessionResume) sessionResume.track(runningCommandIds());
+  });
   processManager.on('log', (payload) => broadcastLog(payload));
   processManager.on('action:done', ({ processId, code, group, target }) => {
     // Pre-script exits are handled by pre-script-runner (pipeline aggregator).
@@ -3153,6 +3229,11 @@ app.whenReady().then(() => {
   });
   repoWatcher.on('change', (repoPath) => broadcastBranchesChanged(repoPath));
   syncRepoWatchers();
+
+  if (!SMOKE_MODE) {
+    sessionResume = new SessionResumeTracker(appHome());
+    resumeSavedServices();
+  }
 
   trayIcon.preload();
 
@@ -3491,6 +3572,13 @@ async function shutdownCleanup(): Promise<void> {
         preScriptRunner.cancel(groupId);
       } catch (_) {}
     }
+    // Session resume: capture the running set BEFORE the services are
+    // stopped (after stopAll there is nothing left to hand over), with the
+    // exit reason that decides whether the next launch may resume it.
+    // Smoke mode runs on CI hosts without user services — skip it.
+    if (!SMOKE_MODE && sessionResume) {
+      sessionResume.flush(pendingExitReason, runningCommandIds());
+    }
     // Every running service — commands, actions AND pre-scripts: stopAll
     // walks the manager's own state, not just the configured commands.
     // Each stop escalates to SIGKILL / taskkill /F after 5 s; the overall
@@ -3518,6 +3606,10 @@ function scheduleQuitAfterCleanup(): void {
 }
 
 app.on('before-quit', (event) => {
+  // A second instance quit must be INSTANT: it runs no services and must
+  // not touch the primary's session-resume snapshot (an empty flush would
+  // delete it).
+  if (!isPrimary) return;
   if (shutdownPhase === 'done') return; // cleanup finished — let it die
   event.preventDefault(); // still cleaning (or not started) — hold the quit
   scheduleQuitAfterCleanup();
@@ -3526,6 +3618,13 @@ app.on('before-quit', (event) => {
 let terminalSignals = 0;
 function onTerminalSignal(): void {
   terminalSignals += 1;
+  if (!isPrimary) {
+    process.exit(0);
+    return;
+  }
+  // install-local / `kill` / Ctrl+C: the next launch may resume the
+  // services (reason recorded when the snapshot is flushed on cleanup).
+  pendingExitReason = 'kill';
   if (terminalSignals > 1) {
     // Second Ctrl+C / kill: the user wants out NOW.
     process.exit(0);
