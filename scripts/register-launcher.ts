@@ -87,7 +87,14 @@ export function renderDesktopEntry(
   const quote = (value: string): string => {
     let out = value.replace(/%/g, '%%');
     if (!/[\t\n "'\\><~|&;$*?#()`]/.test(value)) return out;
-    out = out.replace(/\\/g, '\\\\\\\\').replace(/([\"`$])/g, '\\$1');
+    // A literal \ must end as FOUR backslashes in the file: the parser
+    // applies the generic string unescape (\\ -> \) BEFORE the quoting
+    // unescape, so each stage consumes one level — doubling in two passes
+    // (one per stage). Only " ` $ are backslash-escaped afterwards.
+    out = out
+      .replace(/\\/g, '\\\\')
+      .replace(/\\/g, '\\\\')
+      .replace(/([\"`$])/g, '\\$1');
     return `"${out}"`;
   };
   const iconString = (value: string): string =>
