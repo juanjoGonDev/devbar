@@ -68,10 +68,13 @@ if devbar_alive; then
     sleep 0.5
   done
   if devbar_alive; then
-    warn "A DevBar process survived even the forced stop — it may keep the single-instance lock; quit it manually and re-run."
-  else
-    ok "all previous instances stopped"
+    # A process that outlives SIGKILL still holds the single-instance
+    # socket: the relaunch would become a silent second instance.
+    # Fail loudly instead of installing under a surviving process.
+    warn "A DevBar process survived even the forced stop — it keeps the single-instance lock; quit it manually and re-run."
+    exit 1
   fi
+  ok "all previous instances stopped"
 fi
 # Give the OS a moment to release file locks on the bundle.
 sleep 1

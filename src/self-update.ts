@@ -266,6 +266,13 @@ export function spawnSwap({
     });
     return;
   }
+  // Defense in depth: stageableAsset is null on unsupported platforms, so
+  // this is unreachable in the normal flow — but never fall through into
+  // Windows swap orchestration (it would write a .bat and taskkill calls
+  // on a host that is not Windows).
+  if (!isWin) {
+    throw new Error(`in-place update is not supported on ${process.platform}`);
+  }
   const mode = windowsUpdateMode(target);
   if (mode === 'nsis') {
     // The bat waits for our exit first: the installer replacing a locked exe

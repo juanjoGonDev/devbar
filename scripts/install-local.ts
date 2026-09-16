@@ -331,10 +331,16 @@ function killLeftovers(installDir: string): void {
     }
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
   }
+  // A process that outlives SIGKILL/taskkill /F still holds the
+  // single-instance socket: replacing the install under it would turn
+  // the relaunch into a silent second instance. Fail loudly instead —
+  // continuing "with a warning" is how a reinstall half-resolves.
   warn(
-    'A DevBar process survived even the forced stop — it may keep the ' +
-      'single-instance lock; close it manually before the next launch.',
+    'A DevBar process survived even the forced stop — it keeps the ' +
+      'single-instance lock and this install cannot safely continue. ' +
+      'Close it manually (check for a stuck Electron process) and re-run.',
   );
+  process.exit(1);
 }
 
 function main(): void {
