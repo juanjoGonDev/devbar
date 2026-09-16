@@ -81,9 +81,24 @@ export function migrateLegacyLinuxStore(
     return 'moved';
   } catch {
     try {
-      // rename can fail across devices (EXDEV) — copy instead; the stale
-      // leftover is harmless because the target now wins.
+      // rename can fail across devices (EXDEV) — copy instead, then remove
+      // the legacy file so it is not re-imported on a later startup if the
+      // new location is ever deleted.
       fs.copyFileSync(legacy, target);
+      try {
+        fs.unlinkSync(legacy);
+      } catch {
+        // Deletion failure is not a migration failure: the new location
+        // now wins, and a stale legacy copy that cannot be removed is
+        // inert (the skip check above sees the target first). Still not
+        // reported as 'moved' being "clean" — but the data IS migrated,
+        // which is what the callers care about.
+        console.warn(
+          `[app-paths] legacy config copied to ${target} but the old file at ` +
+            `${legacy} could not be removed — delete it manually if you see ` +
+            `unexpected config behavior.`,
+        );
+      }
       return 'moved';
     } catch {
       return 'failed';

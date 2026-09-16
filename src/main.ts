@@ -1341,7 +1341,10 @@ async function applyUpdate() {
     buttons = ['Cancelar', 'Descargar y cerrar'];
     detail =
       'Se descargará el instalador y DevBar se CERRARÁ para que puedas sustituirla (macOS no deja reemplazar la app mientras está abierta).\n\nSe abrirá una ventana del Finder: arrastra DevBar a Aplicaciones y vuelve a abrirla.';
-  } else if (!isMac && setupUrl) {
+  } else if (isWin && setupUrl) {
+    // The NSIS installer is Windows-only: a `!isMac` guard would make
+    // LINUX download the .exe (it is published for every platform) and
+    // quit instead of reaching the deb/AppImage branches below.
     downloadUrl = setupUrl;
     destName = `DevBar-${version}-win-${process.arch}-setup.exe`;
     buttons = ['Cancelar', 'Descargar y cerrar'];
@@ -1434,7 +1437,9 @@ async function applyUpdate() {
     return { ok: true, path: dest, quitting: true };
   }
 
-  if (!isMac && setupUrl) {
+  if (isWin && setupUrl) {
+    // Same isWin guard as the selection above (the .exe only exists for
+    // Windows; Linux must fall through to the package/AppImage handoff).
     // Launch the installer (upgrades in place, relaunches DevBar), then quit
     // so the locked exe/DLLs can be replaced.
     const openErr = await shell.openPath(dest);

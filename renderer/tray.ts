@@ -583,11 +583,11 @@ function buildBranchSelector(gs: GroupState): HTMLElement {
           'error',
         );
         // Reload branches to restore correct state
-        loadBranchesIntoCombo(groupId, combo);
+        loadBranchesIntoCombo(groupId, combo, group.name);
       } else {
         showToast(`${group.name} → ${branch}`, 'ok');
         // Update cache and combo without full re-render
-        loadBranchesIntoCombo(groupId, combo);
+        loadBranchesIntoCombo(groupId, combo, group.name);
       }
     },
   });
@@ -595,7 +595,7 @@ function buildBranchSelector(gs: GroupState): HTMLElement {
   // If no cache, load branches asynchronously
   if (!cached) {
     combo.setLoading(true);
-    loadBranchesIntoCombo(groupId, combo);
+    loadBranchesIntoCombo(groupId, combo, group.name);
   }
 
   return combo;
@@ -609,7 +609,15 @@ function branchDataToOptions(data: BranchCacheEntry): ComboboxOption[] {
   }));
 }
 
-function loadBranchesIntoCombo(groupId: string, combo: ComboboxControl): void {
+/** Delay before retrying an operational branch-query failure. */
+const BRANCH_RETRY_DELAY_MS = 3000;
+
+function loadBranchesIntoCombo(
+  groupId: string,
+  combo: ComboboxControl,
+  label?: string,
+  retriesLeft = 1,
+): void {
   const gen = branchGeneration.get(groupId) ?? 0;
   const stillValid = () => (branchGeneration.get(groupId) ?? 0) === gen;
   window.api.listBranches(groupId).then((res) => {
@@ -631,6 +639,22 @@ function loadBranchesIntoCombo(groupId: string, combo: ComboboxControl): void {
           checkedAt: Date.now(),
         });
         combo.replaceWith(branchNone());
+      } else {
+        // Operational failure (git unavailable, query timed out): the
+        // verdict says nothing about the folder, so it is NOT cached —
+        // and the selector must not sit on "Cargando…" without a way out:
+        // notify and retry once after a pause (bounded, so a persistently
+        // broken git does not toast-loop).
+        showToast(
+          `${label ?? 'Ramas'}: no se pudieron listar las ramas — reintento en ${BRANCH_RETRY_DELAY_MS / 1000} s`,
+          'error',
+        );
+        if (retriesLeft > 0) {
+          setTimeout(() => {
+            if (stillValid())
+              loadBranchesIntoCombo(groupId, combo, label, retriesLeft - 1);
+          }, BRANCH_RETRY_DELAY_MS);
+        }
       }
       return;
     }

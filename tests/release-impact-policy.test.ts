@@ -109,6 +109,10 @@ describe('release impact policy', () => {
     'scripts/package-electron.ts',
     'scripts/package-macos-app.sh',
     'scripts/package-win-linux.ts',
+    // The artifact contract and the SHA256SUMS manifest generator shape
+    // what publication ships: they must count too.
+    'scripts/release-artifacts.ts',
+    'scripts/release-manifest.ts',
   ])('classifies %s as release-impacting', (path) => {
     expect(classify([path], packageJson, packageJson)).toEqual({
       publish: true,

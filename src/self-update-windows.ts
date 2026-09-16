@@ -185,9 +185,17 @@ const BAT_ENV_CLEAR_LINES = [
   'set "DEVBAR_SMOKE_VERSION="',
 ];
 
-/** Double-quote for .bat embedding, doubling any inner quote. */
+/**
+ * Double literal percent signs for .bat embedding. cmd.exe expands `%x%`
+ * expressions on EVERY batch line before executing it — including the
+ * `set "name=value"` lines that STORE these values — so a literal `%` in
+ * a path or argument would be consumed before assignment or use.
+ */
+const batPct = (value: string): string => value.replaceAll('%', '%%');
+
+/** Double-quote for .bat embedding, doubling any inner quote AND percent. */
 function batQuote(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
+  return `"${batPct(value).replaceAll('"', '""')}"`;
 }
 
 /**
@@ -254,8 +262,9 @@ export function buildSwapBat({
     // expansions add their own pair. batQuote here would embed literal
     // quotes in %target%, producing double-quoted (broken) paths —
     // exactly the case with a space in the directory.
-    `set "target=${target}"`,
-    `set "staged=${staged}"`,
+    `set "target=${batPct(target)}"`,
+    `set "staged=${batPct(staged)}"`,
+    // (batPct: a literal % in a path would be expanded by cmd.exe on the SET line itself)
     'set "backup=%target%.devbar-old"',
     'set "log=%~dp0swap.log"',
     'echo [%date% %time%] swap bat started >> "%log%"',
@@ -371,7 +380,7 @@ export function buildInstallerBat({
     // NO quotes inside the stored value (same rule as buildSwapBat):
     // `set "name=value"` keeps everything to the final quote as the
     // value, and the later `start "" "%target%"` adds its own pair.
-    `set "target=${target}"`,
+    `set "target=${batPct(target)}"`,
     'set "log=%~dp0install.log"',
     'echo [%date% %time%] installer bat started (waiting for old pid) >> "%log%"',
     ...BAT_ENV_CLEAR_LINES,

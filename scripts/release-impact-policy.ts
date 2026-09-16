@@ -27,6 +27,11 @@ const RELEASE_EXACT_PATHS = new Set([
   'scripts/package-macos-app.sh',
   'scripts/package-win-linux.ts',
   'scripts/platform.ts',
+  // The published artifact names / checksum contract and the SHA256SUMS.txt
+  // manifest generator: a change to either is a change to what gets
+  // published, so it must count as release-impacting.
+  'scripts/release-artifacts.ts',
+  'scripts/release-manifest.ts',
   'tsconfig.node.json',
   'tsconfig.renderer.json',
 ]);

@@ -104,9 +104,15 @@ function windowsDevInstanceAlive(): boolean {
  * instances themselves. A service spawns `detached` (its own process
  * group), so a bare pkill of the app never reaches it: pgrep -P finds the
  * service shell (the group leader) and `kill -- -<pid>` signals the group.
- * Best effort: a pattern matching nothing must not fail the install.
+ * Returns the discovered group ids: a service whose command line matches
+ * none of the app's kill patterns is invisible to the instance pkill
+ * waves, so its group is SIGKILL'd in killLeftovers() if it outlives the
+ * graceful stop. Best effort: a pattern matching nothing must not fail
+ * the install. (Keep in sync with scripts/lib/kill-trees.ts — strip-only
+ * mode cannot import it from there.)
  */
-function posixKillServiceTrees(patterns: string[]): void {
+function posixKillServiceTrees(patterns: string[]): string[] {
+  const groups: string[] = [];
   for (const pattern of patterns) {
     const pidRes = spawnSync('pgrep', ['-f', pattern], {
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -135,10 +141,15 @@ function posixKillServiceTrees(patterns: string[]): void {
         // bare pid in case the group is already gone.
         tryQuiet('kill', ['-s', 'TERM', '--', `-${child}`]);
         tryQuiet('kill', ['-s', 'TERM', child]);
+        groups.push(child);
       }
     }
   }
+  return groups;
 }
+
+/** Service groups discovered by wave 1 and SIGKILL'd in wave 3. */
+let leftoverServiceGroups: string[] = [];
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isDev = process.argv.includes('--dev');
@@ -240,7 +251,7 @@ function killRunningInstances(installDir: string): void {
     // The services first (they outlive a bare pkill of the app), then the
     // instances themselves — TERM, so a current build can also run its own
     // graceful shutdown; the wave-2 verify catches anything that survives.
-    posixKillServiceTrees(patterns);
+    leftoverServiceGroups = posixKillServiceTrees(patterns);
     for (const pattern of patterns) tryQuiet('pkill', ['-f', pattern]);
   }
 }
@@ -317,7 +328,11 @@ function verifyStopped(installDir: string): void {
  * instance. The reinstall must not leave a lock holder behind.
  */
 function killLeftovers(installDir: string): void {
-  if (!isAnyDevBarAlive(installDir)) return;
+  // A service group survives on its own even when every app instance is
+  // gone — it matches none of the liveness patterns, so it needs its own
+  // entry condition.
+  if (!isAnyDevBarAlive(installDir) && leftoverServiceGroups.length === 0)
+    return;
   warn('A DevBar process ignored the graceful stop — forcing it.');
   if (platform === 'win32') {
     tryQuiet('taskkill', windowsKillImageTreeArgs('DevBar.exe'));
@@ -334,6 +349,13 @@ function killLeftovers(installDir: string): void {
       path.join(ROOT, 'node_modules', 'electron'),
     ].map(ereEscape);
     for (const pattern of patterns) tryQuiet('pkill', ['-9', '-f', pattern]);
+    // Escalation for the service groups from wave 1: SIGKILL any that
+    // outlived the graceful stop (no-op for the ones that honored TERM).
+    for (const child of leftoverServiceGroups) {
+      tryQuiet('kill', ['-s', 'KILL', '--', `-${child}`]);
+      tryQuiet('kill', ['-s', 'KILL', child]);
+    }
+    leftoverServiceGroups = [];
   }
   for (let i = 0; i < 10; i++) {
     if (!isAnyDevBarAlive(installDir)) {

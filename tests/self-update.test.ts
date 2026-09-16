@@ -429,6 +429,58 @@ describe('looksLikeAppImage', () => {
   });
 });
 
+describe('bat percent escaping (cmd.exe expands %x% on every batch line)', () => {
+  it('doubles a literal % in the stored target/staged values', () => {
+    const bat = buildSwapBat({
+      pid: 1,
+      target: 'C:\\Users\\99%dev\\DevBar\\DevBar.exe',
+      staged: 'C:\\Users\\99%dev\\updates\\DevBar.exe',
+    });
+    // The SET lines must store the literal % (doubled so cmd's own
+    // expansion of the line turns %% back into one %).
+    expect(bat).toContain(
+      'set "target=C:\\Users\\99%%dev\\DevBar\\DevBar.exe"',
+    );
+    expect(bat).toContain(
+      'set "staged=C:\\Users\\99%%dev\\updates\\DevBar.exe"',
+    );
+    // And the un-escaped form must not leak into the file.
+    expect(bat).not.toContain('99%dev\\DevBar.exe');
+  });
+
+  it('doubles % in relaunch args, the installer path and the marker path', () => {
+    const swap = buildSwapBat({
+      pid: 1,
+      target: 'C:\\a\\DevBar.exe',
+      staged: 'C:\\a\\new.exe',
+      relaunchArgs: ['--smoke-100%done'],
+      markerPath: 'C:\\tmp\\100%ok.flag',
+    });
+    expect(swap).toContain('"--smoke-100%%done"');
+    expect(swap).toContain('echo ok> "C:\\tmp\\100%%ok.flag" 2>nul');
+
+    const install = buildInstallerBat({
+      pid: 1,
+      installer: 'C:\\Users\\99%dev\\DevBar-Setup.exe',
+      target: 'C:\\Users\\99%dev\\DevBar\\DevBar.exe',
+    });
+    expect(install).toContain('"C:\\Users\\99%%dev\\DevBar-Setup.exe" /S');
+    expect(install).toContain(
+      'set "target=C:\\Users\\99%%dev\\DevBar\\DevBar.exe"',
+    );
+  });
+
+  it('leaves ordinary paths (no %) byte-identical', () => {
+    const bat = buildSwapBat({
+      pid: 1,
+      target: 'C:\\Users\\dev\\DevBar.exe',
+      staged: 'C:\\Users\\dev\\new.exe',
+    });
+    expect(bat).toContain('set "target=C:\\Users\\dev\\DevBar.exe"');
+    expect(bat).not.toContain('%%');
+  });
+});
+
 describe('swap scripts: CI relaunch args + success marker', () => {
   const mac = buildSwapScript({
     pid: 7,

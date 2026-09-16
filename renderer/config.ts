@@ -1996,9 +1996,17 @@ if (openNotifSettingsBtn) {
     const res = await window.api.openNotificationSettings();
     if (!res.ok) {
       // No known panel (or it could not be launched): give the manual
-      // route instead of pretending the system panel opened.
+      // route instead of pretending the system panel opened. Per-OS, the
+      // same way adaptOsTexts() picks its wording — GNOME/KDE guidance
+      // makes no sense on macOS or Windows.
+      const manualRoute =
+        window.api.platform === 'darwin'
+          ? 'en macOS, Ajustes del sistema → Notificaciones'
+          : window.api.platform === 'win32'
+            ? 'en Windows, Configuración → Sistema → Notificaciones'
+            : 'en GNOME, Ajustes → Notificaciones; en KDE, Configuración del sistema → Notificaciones';
       showToast(
-        'No se pudo abrir el panel del sistema — búscalo a mano: en GNOME, Ajustes → Notificaciones; en KDE, Configuración del sistema → Notificaciones.',
+        `No se pudo abrir el panel del sistema — búscalo a mano: ${manualRoute}.`,
         'error',
       );
     }

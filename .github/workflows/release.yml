@@ -539,10 +539,11 @@ jobs:
         run: |
           set -euo pipefail
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            # ?peel=commit: an EXISTING tag may be annotated (created outside
-            # this workflow) — its ref points at the tag object, not the
-            # commit, and the bare object SHA would mismatch RELEASE_SHA.
-            existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}?peel=commit" --jq '.object.sha')
+            # The /tags endpoint dereferences annotated tags (the git/ref
+            # endpoint has no peel support): .commit.sha is the commit for
+            # both lightweight and annotated tags, matching the
+            # 'git rev-list -n 1' comparison detect performs.
+            existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/tags/${RELEASE_TAG}" --jq '.commit.sha')
             [[ "$existing_sha" == "$RELEASE_SHA" ]]
             exit 0
           fi
@@ -627,9 +628,9 @@ jobs:
             < <(printf '%s\n' "${expected_assets[@]}" | sort)
           [[ "${actual_assets[*]}" == "${sorted_expected_assets[*]}" ]]
 
-          # ?peel=commit: compare the tag's COMMIT — an annotated tag's
-          # ref object is the tag object, not the commit.
-          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}?peel=commit" --jq '.object.sha')
+          # The /tags endpoint dereferences annotated tags: compare the
+          # tag's COMMIT, matching detect's 'git rev-list -n 1'.
+          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/tags/${RELEASE_TAG}" --jq '.commit.sha')
           [[ "$tag_sha" == "$RELEASE_SHA" ]]
 
           release_url=$(jq -r .url <<<"$release_json")

@@ -92,6 +92,18 @@ export function windowsKillDevInstanceCommand(checkoutPath: string): string {
 }
 
 /**
+ * Grace window between SIGTERM and the SIGKILL escalation: long enough
+ * for a normal dev server to finish its shutdown handler, short enough
+ * that an installer never hangs on one bad service.
+ */
+export const POSIX_SERVICE_GRACE_MS = 2000;
+
+const defaultWait = (ms: number): void => {
+  // A CLI script may block: no child process needed for a wait.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+
+/**
  * POSIX: kill each matching instance's service trees BEFORE the instance
  * itself (the caller still pkill -f's the instances).
  *
@@ -101,16 +113,32 @@ export function windowsKillDevInstanceCommand(checkoutPath: string): string {
  * and group leader — and `kill -TERM -- -<pid>` signals the group: the
  * shell plus everything the user command spawned.
  *
+ * Escalation: SIGTERM is a request, and a service whose command line
+ * matches none of the app's kill patterns is invisible to the instance
+ * pkill waves — if it ignores TERM it would keep its port while the
+ * install proceeds. So every discovered group id is retained, and after
+ * the grace window the groups get SIGKILL. KILLing an already-dead group
+ * is a harmless no-op, which keeps this best effort: "nothing to stop"
+ * is an expected outcome, and a pattern matching nothing must not fail
+ * the install.
+ *
  * Non-service children (Electron helpers) are NOT group leaders, so the
  * group form fails and the plain-pid form kills just that helper — which
- * the instance's own pkill takes down anyway. Best effort throughout:
- * "nothing to stop" is an expected outcome, and a pattern matching
- * nothing must not fail the install.
+ * the instance's own pkill takes down anyway.
  */
 export function posixKillServiceTrees(
   patterns: string[],
-  { run = defaultRun }: { run?: KillTreeRun } = {},
+  {
+    run = defaultRun,
+    wait = defaultWait,
+    graceMs = POSIX_SERVICE_GRACE_MS,
+  }: {
+    run?: KillTreeRun;
+    wait?: (ms: number) => void;
+    graceMs?: number;
+  } = {},
 ): void {
+  const groups: string[] = [];
   for (const pattern of patterns) {
     const pidOut = run('pgrep', ['-f', pattern]);
     if (pidOut == null) continue;
@@ -128,8 +156,17 @@ export function posixKillServiceTrees(
         // bare pid in case the group is already gone.
         run('kill', ['-s', 'TERM', '--', `-${child}`]);
         run('kill', ['-s', 'TERM', child]);
+        groups.push(child);
       }
     }
+  }
+  if (groups.length === 0) return;
+  wait(graceMs);
+  for (const child of groups) {
+    // Same group-then-pid order; a group that honored TERM is gone by now
+    // and the signal is a no-op for it.
+    run('kill', ['-s', 'KILL', '--', `-${child}`]);
+    run('kill', ['-s', 'KILL', child]);
   }
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  POSIX_SERVICE_GRACE_MS,
   posixKillServiceTrees,
   psLikeEscape,
   windowsKillDevInstanceCommand,
@@ -80,7 +81,7 @@ describe('posixKillServiceTrees', () => {
       'pgrep -P 100': '110\n',
       'pgrep -P 200': '210\n220\n',
     });
-    posixKillServiceTrees(['/install/path'], { run });
+    posixKillServiceTrees(['/install/path'], { run, wait: () => {} });
     expect(calls).toEqual([
       ['pgrep', '-f', '/install/path'],
       ['pgrep', '-P', '100'],
@@ -91,6 +92,13 @@ describe('posixKillServiceTrees', () => {
       ['kill', '-s', 'TERM', '210'],
       ['kill', '-s', 'TERM', '--', '-220'],
       ['kill', '-s', 'TERM', '220'],
+      // grace wait, then the SIGKILL escalation for every retained group.
+      ['kill', '-s', 'KILL', '--', '-110'],
+      ['kill', '-s', 'KILL', '110'],
+      ['kill', '-s', 'KILL', '--', '-210'],
+      ['kill', '-s', 'KILL', '210'],
+      ['kill', '-s', 'KILL', '--', '-220'],
+      ['kill', '-s', 'KILL', '220'],
     ]);
   });
 
@@ -98,7 +106,7 @@ describe('posixKillServiceTrees', () => {
     const { calls, run } = recordingRun({
       'pgrep -f /x': '100',
     });
-    posixKillServiceTrees(['/x'], { run });
+    posixKillServiceTrees(['/x'], { run, wait: () => {} });
     expect(calls).toEqual([
       ['pgrep', '-f', '/x'],
       ['pgrep', '-P', '100'],
@@ -109,7 +117,7 @@ describe('posixKillServiceTrees', () => {
     const { calls, run } = recordingRun({
       'pgrep -f /x': `${process.pid}\n`,
     });
-    posixKillServiceTrees(['/x'], { run });
+    posixKillServiceTrees(['/x'], { run, wait: () => {} });
     expect(calls).toEqual([['pgrep', '-f', '/x']]);
   });
 
@@ -117,7 +125,7 @@ describe('posixKillServiceTrees', () => {
     const { calls, run } = recordingRun({
       'pgrep -f /x': `${process.ppid}\n`,
     });
-    posixKillServiceTrees(['/x'], { run });
+    posixKillServiceTrees(['/x'], { run, wait: () => {} });
     expect(calls).toEqual([['pgrep', '-f', '/x']]);
   });
 
@@ -126,12 +134,14 @@ describe('posixKillServiceTrees', () => {
       'pgrep -f /x': `${process.ppid}\n999\n`,
       'pgrep -P 999': '998\n',
     });
-    posixKillServiceTrees(['/x'], { run });
+    posixKillServiceTrees(['/x'], { run, wait: () => {} });
     expect(calls).toEqual([
       ['pgrep', '-f', '/x'],
       ['pgrep', '-P', '999'],
       ['kill', '-s', 'TERM', '--', '-998'],
       ['kill', '-s', 'TERM', '998'],
+      ['kill', '-s', 'KILL', '--', '-998'],
+      ['kill', '-s', 'KILL', '998'],
     ]);
   });
 
@@ -151,7 +161,9 @@ describe('posixKillServiceTrees', () => {
       'pgrep -f /b': '200\n',
       'pgrep -P 200': '210\n',
     });
-    posixKillServiceTrees(['/a', '/b'], { run });
+    posixKillServiceTrees(['/a', '/b'], { run, wait: () => {} });
+    // Both patterns are walked first (TERM for each group as it is found),
+    // then a single grace wait, then the KILL escalation in discovery order.
     expect(calls).toEqual([
       ['pgrep', '-f', '/a'],
       ['pgrep', '-P', '100'],
@@ -161,6 +173,66 @@ describe('posixKillServiceTrees', () => {
       ['pgrep', '-P', '200'],
       ['kill', '-s', 'TERM', '--', '-210'],
       ['kill', '-s', 'TERM', '210'],
+      ['kill', '-s', 'KILL', '--', '-110'],
+      ['kill', '-s', 'KILL', '110'],
+      ['kill', '-s', 'KILL', '--', '-210'],
+      ['kill', '-s', 'KILL', '210'],
+    ]);
+  });
+
+  it('escalates a TERM-resistant group to SIGKILL after the grace wait', () => {
+    // The group survives the TERM signals (the fake run does not model
+    // deaths — every KILL issued stands). The escalation must come AFTER
+    // the wait, never before.
+    const events: string[] = [];
+    const run: KillTreeRun = (cmd, args) => {
+      events.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const waits: number[] = [];
+    posixKillServiceTrees(['/x'], {
+      run,
+      wait: (ms) => {
+        waits.push(ms);
+      },
+    });
+    expect(waits).toEqual([POSIX_SERVICE_GRACE_MS]);
+    // The KILLs come strictly after both TERM signals (the wait sits
+    // between them in the real flow; here it is injected as a no-op that
+    // only records it happened — see `waits` above).
+    expect(events).toEqual([
+      'pgrep -f /x',
+      'pgrep -P 100',
+      'kill -s TERM -- -110',
+      'kill -s TERM 110',
+      'kill -s KILL -- -110',
+      'kill -s KILL 110',
+    ]);
+  });
+
+  it('waits and kills at most once even with many groups in one pattern', () => {
+    const events: string[] = [];
+    let waited = 0;
+    const run: KillTreeRun = (cmd, args) => {
+      events.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n200\n';
+      if (cmd === 'pgrep') return args[1] === '100' ? '110\n' : '210\n';
+      return null;
+    };
+    posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {
+        waited += 1;
+      },
+    });
+    expect(waited).toBe(1);
+    expect(events.filter((e) => e.startsWith('kill -s KILL'))).toEqual([
+      'kill -s KILL -- -110',
+      'kill -s KILL 110',
+      'kill -s KILL -- -210',
+      'kill -s KILL 210',
     ]);
   });
 });
