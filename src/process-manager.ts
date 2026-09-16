@@ -165,9 +165,13 @@ function defaultState(id: string): InternalState {
 export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
   private readonly states = new Map<string, InternalState>();
   private readonly logs = new Map<string, LogEntry[]>();
-  // pids we asked to die. On Windows a killed process exits with a plain
-  // code (no signal), so this is how the exit handler still knows the stop
-  // was ours rather than a real crash.
+  // pids we asked to die — tracked on Windows ONLY: there a killed process
+  // exits with a plain code (no signal), so this is how the exit handler
+  // still knows the stop was ours rather than a real crash. On macOS/Linux
+  // a kill always arrives as SIGTERM/SIGKILL, so the set is never needed —
+  // and a stale entry (e.g. the 6.5 s give-up path, where the exit handler
+  // may already have run against a replaced state) could match a REUSED
+  // pid and mislabel an unrelated process's natural exit as "stopped".
   private readonly killRequested = new Set<number>();
   constructor(private readonly configStore: ConfigStoreLike) {
     super();
@@ -520,13 +524,20 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       return { ok: true };
     }
     const child = state.child;
-    if (child.pid != null) this.killRequested.add(child.pid);
+    // Windows-only: on macOS/Linux the kill arrives as a signal, which the
+    // exit handler sees directly (see killRequested).
+    if (isWin && child.pid != null) this.killRequested.add(child.pid);
     return new Promise((resolve) => {
       let settled = false;
       const timers = new Set<NodeJS.Timeout>();
       const finish = (ok: boolean, error?: string) => {
         if (settled) return;
         settled = true;
+        // Drop the pid BEFORE resolving: the 6.5 s give-up path settles
+        // while the child is still alive, so its later exit may run
+        // against a replaced state and never delete it — a stale entry
+        // could then match a reused pid.
+        if (child.pid != null) this.killRequested.delete(child.pid);
         for (const timer of timers) clearTimeout(timer);
         this.setState(id, {
           status: 'stopped',

@@ -288,7 +288,10 @@ jobs:
           fi
           # 3) The relaunched instance runs from /Applications: prove it is
           #    alive, then stop it so the next step owns the machine.
-          NEWPID=$(pgrep -f "Applications/DevBar.app/Contents/MacOS/DevBar" | head -1)
+          # pgrep exits 1 when nothing matches; under pipefail that would
+          # abort the step before the diagnostic below could run — the
+          # empty result is exactly what the [ -n ] check reports.
+          NEWPID=$(pgrep -f "Applications/DevBar.app/Contents/MacOS/DevBar" | head -1 || true)
           [ -n "$NEWPID" ] || { echo "no new instance after reinstall"; exit 1; }
           # Stop the new instance — TERM, then force anything that survives.
           # A helper that outlives the main process keeps the single-instance

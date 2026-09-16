@@ -333,8 +333,10 @@ async function saveDraft(): Promise<SavedGroup | null> {
   }
   const savedGroup = await window.api.saveGroup(draftGroup);
   if (!savedGroup) {
-    // IPC failure path: keep the draft as the clean baseline.
-    storedGroup = structuredClone(draftGroup);
+    // Validation failed (the toast is already shown). storedGroup must stay
+    // what it was: adopting the rejected draft as the "clean baseline"
+    // would make isDirty() lie, hiding the unsaved-changes bar and the
+    // retry/discard options for the user's real edits.
     return null;
   }
   const { _autoStartEnforced, ...canonical } = savedGroup;
@@ -2010,8 +2012,13 @@ const themeOpts = Array.from(
   document.querySelectorAll<HTMLButtonElement>('.theme-opt'),
 );
 function markThemeOption(): void {
-  for (const btn of themeOpts)
-    btn.classList.toggle('is-on', btn.dataset.themeValue === selectedTheme);
+  for (const btn of themeOpts) {
+    const on = btn.dataset.themeValue === selectedTheme;
+    btn.classList.toggle('is-on', on);
+    // The buttons are a radio group: expose the active theme to assistive
+    // technology, not just the is-on class.
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
 }
 for (const btn of themeOpts)
   btn.addEventListener('click', () => {

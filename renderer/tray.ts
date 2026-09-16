@@ -519,11 +519,18 @@ function renderGroupRow(gs: GroupState): HTMLElement {
  * Invisible stand-in for the branch selector on groups that do not use git
  * (no path, or a path that is not a repository). Keeps the row's right-edge
  * slot so the layout does not shift, without showing a dead control.
+ *
+ * Must stay in the layout: `hidden` (display:none) would collapse the
+ * 110px flex slot and pull the pre-scripts controls toward the edge on
+ * non-git rows. `visibility:hidden` keeps the box; pointer-events makes it
+ * inert so it cannot steal focus or clicks.
  */
 function branchNone(): HTMLElement {
   const el = document.createElement('span');
   el.className = 'branch-select branch-none';
-  el.hidden = true;
+  el.setAttribute('aria-hidden', 'true');
+  el.style.visibility = 'hidden';
+  el.style.pointerEvents = 'none';
   return el;
 }
 

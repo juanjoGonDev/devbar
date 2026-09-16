@@ -101,3 +101,25 @@ describe('renderer byId assertions match their window HTML', () => {
     });
   }
 });
+
+describe('theme picker a11y contract (config.html)', () => {
+  const markup = fs.readFileSync(path.join(rendererDir, 'config.html'), 'utf8');
+  const themeButtons = Array.from(
+    markup.matchAll(/<button\b[^>]*class="[^"]*theme-opt[^"]*"[^>]*>/g),
+  ).map((match) => match[0]);
+
+  it('declares the three theme options', () => {
+    expect(themeButtons.length).toBe(3);
+  });
+
+  it('every theme option starts with aria-pressed="false"', () => {
+    // markThemeOption() synchronizes aria-pressed with the loaded theme at
+    // runtime; the static initial state must already be a valid
+    // pressed/unpressed value for assistive technology before JS runs.
+    for (const button of themeButtons) {
+      expect(button, `theme button without aria-pressed:\n${button}`).toMatch(
+        /aria-pressed="(false|true)"/,
+      );
+    }
+  });
+});

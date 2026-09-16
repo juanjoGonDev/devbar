@@ -513,6 +513,11 @@ jobs:
     environment: admin
     permissions:
       contents: write
+    # No checkout in this job, so `gh` has no local .git to infer the repo
+    # from. GH_REPO gives every invocation — including `gh release view` in
+    # the Verify published release step, which omits --repo — the context.
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Download verified release set
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0

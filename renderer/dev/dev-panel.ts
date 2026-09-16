@@ -92,7 +92,14 @@ function buildGroups(version: HTMLInputElement, api = window.api): Group[] {
         })),
         {
           label: 'Soltar',
-          run: () => api.dev.simulateTrayColor(null),
+          // Release BOTH overrides — a forced count left in place would
+          // keep masking the real tray count after the color was released.
+          run: async () => {
+            await Promise.all([
+              api.dev.simulateTrayColor(null),
+              api.dev.simulateTrayCount(null),
+            ]);
+          },
         },
         {
           label: 'Errores: 5',
