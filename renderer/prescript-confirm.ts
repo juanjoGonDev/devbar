@@ -1,5 +1,7 @@
 import { byId } from './dom.js';
 import { installTooltips } from './tooltip.js';
+import { initTheme } from './theme.js';
+initTheme();
 const token = new URLSearchParams(window.location.search).get('token');
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
 let decided = false;

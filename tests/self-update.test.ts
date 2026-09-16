@@ -104,6 +104,32 @@ describe('appImagePathFromExecutable', () => {
       appImagePathFromExecutable('/repo/node_modules/electron/dist/electron'),
     ).toBeNull();
   });
+
+  it('resolves the image from $APPIMAGE when running a mounted type 2 image', () => {
+    // A running type 2 AppImage executes the payload from the tmp mount —
+    // execPath alone would never end in .AppImage and the in-place path
+    // would be dead for every real install.
+    expect(
+      appImagePathFromExecutable(
+        '/tmp/.mount_DevBarXYz/devbar',
+        '/home/u/Apps/DevBar.AppImage',
+      ),
+    ).toBe('/home/u/Apps/DevBar.AppImage');
+  });
+
+  it('prefers $APPIMAGE over the execPath and tolerates a blank value', () => {
+    expect(
+      appImagePathFromExecutable(
+        '/home/u/Apps/Other.AppImage',
+        '/home/u/Apps/DevBar.AppImage',
+      ),
+    ).toBe('/home/u/Apps/DevBar.AppImage');
+    // Blank env → falls back to the execPath rule.
+    expect(
+      appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage', '   '),
+    ).toBe('/home/u/Apps/DevBar.AppImage');
+    expect(appImagePathFromExecutable('/usr/bin/devbar', '   ')).toBeNull();
+  });
 });
 
 describe('buildLinuxSwapScript', () => {

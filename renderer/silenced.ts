@@ -2,6 +2,8 @@ import { renderPatternList, wireAddPattern } from './silence-ui.js';
 import { byId } from './dom.js';
 import type { SilencedPatterns } from '../src/domain-types.js';
 import { installTooltips } from './tooltip.js';
+import { initTheme } from './theme.js';
+initTheme();
 const params = new URLSearchParams(window.location.search);
 const groupId = params.get('groupId');
 const commandId = params.get('commandId');

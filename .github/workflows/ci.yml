@@ -276,6 +276,10 @@ jobs:
           ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
           APP="$WORK/DevBar.app/Contents/MacOS/DevBar"
           # 1) Resident instance: writes the smoke marker, then stays alive.
+          # The earlier smoke step left a marker behind (the app only removes
+          # its own at app.ready), so start from a clean state: polling the
+          # stale file would pass even if this instance never started.
+          rm -f "$TMPDIR/devbar-smoke-ok"
           "$APP" --devbar-smoke --devbar-smoke-hold >/dev/null 2>&1 &
           OLDPID=$!
           for i in $(seq 1 60); do

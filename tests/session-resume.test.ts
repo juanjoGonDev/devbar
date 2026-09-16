@@ -249,6 +249,23 @@ describe('consumeSnapshot', () => {
     expect(fileExists(dir)).toBe(false);
   });
 
+  it('rejects unknown schema versions, unknown exit reasons and non-finite timestamps', () => {
+    const corrupt = (snap: unknown) => {
+      fs.writeFileSync(path.join(dir, RESUME_STATE_FILE), JSON.stringify(snap));
+      expect(consumeSnapshot(dir, () => true, clock).reason).toBe('corrupt');
+      expect(fileExists(dir)).toBe(false);
+    };
+    // A future version's snapshot must not start services under unknown semantics.
+    corrupt({ v: 2, at: 0, exit: 'kill', services: ['cmd:g1:a'] });
+    corrupt({ v: undefined, at: 0, exit: 'kill', services: ['cmd:g1:a'] });
+    // An unrecognised exit reason has unknown resume semantics.
+    corrupt({ v: 1, at: 0, exit: 'crash', services: ['cmd:g1:a'] });
+    corrupt({ v: 1, at: 0, exit: null, services: ['cmd:g1:a'] });
+    // A non-finite timestamp cannot be aged (NaN would pass the window check).
+    corrupt({ v: 1, at: Number.NaN, exit: 'kill', services: ['cmd:g1:a'] });
+    corrupt({ v: 1, at: null, exit: 'kill', services: ['cmd:g1:a'] });
+  });
+
   it('drops non-string entries and resumes the rest', () => {
     fs.writeFileSync(
       path.join(dir, RESUME_STATE_FILE),

@@ -165,7 +165,16 @@ export function consumeSnapshot(
     if (
       typeof snap !== 'object' ||
       snap === null ||
+      // Full persisted contract: an unknown schema version or exit reason
+      // means the snapshot was written by another (future?) version —
+      // do not start services under unknown semantics.
+      snap.v !== 1 ||
       typeof snap.at !== 'number' ||
+      !Number.isFinite(snap.at) ||
+      (snap.exit !== 'live' &&
+        snap.exit !== 'kill' &&
+        snap.exit !== 'quit' &&
+        snap.exit !== 'update') ||
       !Array.isArray(snap.services)
     ) {
       return { resume: [], reason: 'corrupt' };

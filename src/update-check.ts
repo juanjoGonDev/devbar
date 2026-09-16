@@ -206,6 +206,10 @@ function httpGetText(
           res.on('data', (chunk: string) => {
             data += chunk;
           });
+          // A socket failure AFTER the headers (e.g. mid-body reset) emits
+          // on the IncomingMessage, not the request — without this handler
+          // it is unhandled and would crash the app during an update.
+          res.on('error', () => resolve(null));
           res.on('end', () => resolve(data));
         },
       );

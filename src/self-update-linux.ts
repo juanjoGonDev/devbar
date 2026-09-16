@@ -12,8 +12,21 @@ import path from 'node:path';
  * get the assisted "download the .deb" flow instead.
  */
 
-/** The running AppImage, or null when not one (dev run, .deb install). */
-export function appImagePathFromExecutable(execPath: string): string | null {
+/**
+ * The running AppImage, or null when not one (dev run, .deb install).
+ * A running type 2 AppImage executes the payload from a MOUNTED squashfs,
+ * so `process.execPath` is a path inside the tmp mount (e.g.
+ * /tmp/.mount_DevBarXXX/devbar) — never the .AppImage file. The runtime
+ * exposes the real file through $APPIMAGE ("shall be used every time the
+ * full path of the AppImage is needed"), so that is the primary source;
+ * the .AppImage execPath is the fallback for direct execution.
+ */
+export function appImagePathFromExecutable(
+  execPath: string,
+  appImageEnv: string | undefined = process.env.APPIMAGE,
+): string | null {
+  const fromEnv = (appImageEnv ?? '').trim();
+  if (fromEnv) return path.resolve(fromEnv);
   if (!execPath.endsWith('.AppImage')) return null;
   return path.resolve(execPath);
 }
