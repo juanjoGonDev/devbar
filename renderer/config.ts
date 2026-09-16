@@ -322,20 +322,35 @@ async function saveDraft(): Promise<SavedGroup | null> {
     return null;
   }
   const savedGroup = await window.api.saveGroup(draftGroup);
-  // The dirty-check baseline is the DRAFT itself: a successful save means
-  // exactly what the user is looking at is now persisted. Basing it on the
-  // IPC response leaves the group "dirty" after every save — the response is
-  // a re-normalized shape that also carries the transient
-  // `_autoStartEnforced` flag the draft never has, and the stringify
-  // comparison cannot ignore that.
-  storedGroup = structuredClone(draftGroup);
-  const canonicalId = savedGroup?.id ?? draftGroup.id;
-  const idx = allGroups.findIndex((group) => group.id === canonicalId);
-  if (idx >= 0 && savedGroup) {
-    const { _autoStartEnforced: _transient, ...canonical } = savedGroup;
-    allGroups[idx] = canonical;
+  if (!savedGroup) {
+    // IPC failure path: keep the draft as the clean baseline.
+    storedGroup = structuredClone(draftGroup);
+    return null;
   }
-  return savedGroup || structuredClone(storedGroup);
+  const { _autoStartEnforced, ...canonical } = savedGroup;
+  const idx = allGroups.findIndex((group) => group.id === canonical.id);
+  if (idx >= 0) allGroups[idx] = canonical;
+  if (_autoStartEnforced) {
+    // The server ENFORCED changes (single mode strips the extra
+    // auto-start flags), so the persisted group differs from what the
+    // editor is showing. Adopt the canonical group as BOTH the clean
+    // baseline and the draft, then re-render the detail pane — otherwise
+    // the form would display values that were never persisted, the group
+    // would read as "clean" while disagreeing with disk, and Discard
+    // would restore the stale pre-enforcement draft.
+    storedGroup = structuredClone(canonical);
+    draftGroup = structuredClone(canonical);
+    renderGroupDetail();
+  } else {
+    // No enforcement: the dirty-check baseline is the DRAFT itself — a
+    // successful save means exactly what the user is looking at is now
+    // persisted. Basing it on the IPC response leaves the group "dirty"
+    // after every save: the response is a re-normalized shape the draft
+    // does not byte-for-byte reproduce, and the stringify comparison
+    // cannot ignore that.
+    storedGroup = structuredClone(draftGroup);
+  }
+  return savedGroup;
 }
 
 // ────────────────────── Toast ──────────────────────────────────────────

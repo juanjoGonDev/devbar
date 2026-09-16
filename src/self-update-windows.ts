@@ -337,7 +337,10 @@ export function buildInstallerBat({
   return [
     '@echo off',
     'setlocal',
-    `set "target=${batQuote(target)}"`,
+    // NO quotes inside the stored value (same rule as buildSwapBat):
+    // `set "name=value"` keeps everything to the final quote as the
+    // value, and the later `start "" "%target%"` adds its own pair.
+    `set "target=${target}"`,
     'set "log=%~dp0install.log"',
     'echo [%date% %time%] installer bat started (waiting for old pid) >> "%log%"',
     ...BAT_ENV_CLEAR_LINES,

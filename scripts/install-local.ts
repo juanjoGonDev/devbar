@@ -41,19 +41,20 @@ function windowsKillImageTreeArgs(image: string): string[] {
 }
 /**
  * Escape a path for safe embedding in a PowerShell single-quoted
- * `-like` pattern: `'` is doubled (string terminator), and the pattern
- * wildcards `[ ] * ?` are bracketed (a filename may legally contain
- * `[` and `]`). Backslashes stay literal — PowerShell has no
- * backslash escape in single-quoted strings and `-like` treats `\`
- * as an ordinary character.
+ * `-like` pattern: `'` is doubled (string terminator), and the wildcard
+ * characters `[ ] * ?` — plus a literal backtick, which is `-like`'s
+ * own escape character — are escaped with the backtick, the documented
+ * wildcard escape (what `[WildcardPattern]::Escape()` produces).
+ * Backslashes stay literal — PowerShell has no backslash escape in
+ * single-quoted strings and `-like` treats `\` as an ordinary character.
  */
 function psLikeEscape(value: string): string {
   let out = '';
   for (const ch of value) {
     if (ch === "'") out += "''";
-    else if (ch === '[') out += '[]';
-    else if (ch === ']') out += '[]]';
-    else if (ch === '*' || ch === '?') out += `[${ch}]`;
+    else if (ch === '`') out += '``';
+    else if (ch === '[' || ch === ']' || ch === '*' || ch === '?')
+      out += `\`${ch}`;
     else out += ch;
   }
   return out;
@@ -224,7 +225,7 @@ function killRunningInstances(installDir: string): void {
     const patterns = [
       path.join(installDir),
       path.join(ROOT, 'dist', 'electron-builder'),
-      path.join(ROOT, 'node_modules'),
+      path.join(ROOT, 'node_modules', 'electron'),
     ];
     // The services first (they outlive a bare pkill of the app), then the
     // instances themselves — TERM, so a current build can also run its own
@@ -260,7 +261,7 @@ function isAnyDevBarAlive(installDir: string): boolean {
   for (const pattern of [
     path.join(installDir),
     path.join(ROOT, 'dist', 'electron-builder'),
-    path.join(ROOT, 'node_modules'),
+    path.join(ROOT, 'node_modules', 'electron'),
   ]) {
     const pids = spawnSync('pgrep', ['-f', pattern], {
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -268,9 +269,9 @@ function isAnyDevBarAlive(installDir: string): boolean {
       encoding: 'utf8',
     });
     if (pids.error) continue;
-    // A repo-local pnpm (grandparent of this script) carries
-    // node_modules in its own command line — never count the
-    // install's own process chain as a running instance.
+    // Defense in depth: never count the install's own process chain
+    // (a shell or editor whose command line mentions the electron
+    // path) as a running app instance.
     const real = (pids.stdout ?? '')
       .split(/\s+/)
       .filter(
@@ -320,7 +321,7 @@ function killLeftovers(installDir: string): void {
     const patterns = [
       path.join(installDir),
       path.join(ROOT, 'dist', 'electron-builder'),
-      path.join(ROOT, 'node_modules'),
+      path.join(ROOT, 'node_modules', 'electron'),
     ];
     for (const pattern of patterns) tryQuiet('pkill', ['-9', '-f', pattern]);
   }

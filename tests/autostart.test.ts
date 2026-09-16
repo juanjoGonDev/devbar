@@ -46,6 +46,15 @@ describe('desktopFileContent', () => {
     // Trailing newline so the file ends cleanly.
     expect(content.endsWith('\n')).toBe(true);
   });
+
+  it('quotes an install path containing whitespace (Exec is a desktop string)', () => {
+    const content = desktopFileContent('/home/u my app/DevBar.AppImage');
+    // Unquoted, the desktop environment would split the path on the
+    // space and autostart would launch a nonexistent binary.
+    expect(content).toContain(
+      `Exec="/home/u my app/DevBar.AppImage" ${LOGIN_ARG}`,
+    );
+  });
 });
 
 describe('autostartDesktopPath', () => {

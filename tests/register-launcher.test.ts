@@ -64,17 +64,28 @@ describe('renderDesktopEntry', () => {
     );
   });
 
-  it('quotes paths containing whitespace per the Desktop Entry spec', () => {
+  it('quotes the Exec path and emits Icon as an iconstring', () => {
     const content = renderDesktopEntry(
       '/home/u my name/.local/share/DevBar/devbar',
       '/home/u my name/.local/share/DevBar/resources/icon.png',
     );
+    // Exec is a desktop string: double-quoted.
     expect(content).toContain(
       `Exec="/home/u my name/.local/share/DevBar/devbar"`,
     );
+    // Icon is an iconstring: NOT double-quoted — whitespace is escaped
+    // as \s per the Desktop Entry spec.
     expect(content).toContain(
-      `Icon="/home/u my name/.local/share/DevBar/resources/icon.png"`,
+      'Icon=/home/u\\smy\\sname/.local/share/DevBar/resources/icon.png',
     );
+  });
+
+  it('escapes backslashes and ; in the icon path (icon-list separator)', () => {
+    const content = renderDesktopEntry(
+      '/home/u/devbar',
+      '/home/u/dir\\x;a/icon.png',
+    );
+    expect(content).toContain('Icon=/home/u/dir\\\\x\\;a/icon.png');
   });
 
   it('quotes and escapes a lone backslash (no whitespace needed)', () => {

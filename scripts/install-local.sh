@@ -33,8 +33,10 @@ pkill -f "/Applications/DevBar.app" 2>/dev/null || true
 # Bundle running straight from this repo's dist/ (orphan from a previous
 # build) — anchored to the actual checkout path, not a folder name guess.
 pkill -f "${ROOT}/dist/DevBar-darwin" 2>/dev/null || true
-# Dev mode (`npm start` / `pnpm start`) out of this checkout
-pkill -f "${ROOT}/node_modules" 2>/dev/null || true
+# Dev mode (`npm start` / `pnpm start`) out of this checkout — anchored
+# on the electron binary so the pnpm/node process running THIS
+# install (node_modules/.bin in its command line) is never hit.
+pkill -f "${ROOT}/node_modules/electron" 2>/dev/null || true
 # Generic fallback: any process whose path contains DevBar.app
 pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
 # Every pattern the kill wave uses — the verification must check the same
@@ -61,7 +63,7 @@ if devbar_alive; then
   warn "A DevBar process ignored the graceful stop — forcing it."
   pkill -9 -f "/Applications/DevBar.app" 2>/dev/null || true
   pkill -9 -f "${ROOT}/dist/DevBar-darwin" 2>/dev/null || true
-  pkill -9 -f "${ROOT}/node_modules" 2>/dev/null || true
+  pkill -9 -f "${ROOT}/node_modules/electron" 2>/dev/null || true
   pkill -9 -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
   for _ in 1 2 3 4 5 6; do
     devbar_alive || break

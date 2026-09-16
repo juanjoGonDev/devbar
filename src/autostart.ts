@@ -27,9 +27,23 @@ export function autostartDesktopPath(): string {
 }
 
 /**
+ * Desktop Entry quoting (spec: desktop-string). A value with whitespace
+ * or a special character (`"`, `$`, backtick, `\`) goes in double
+ * quotes, where those four must be backslash-escaped (backslash first,
+ * so the escaping backslashes are not re-escaped themselves).
+ */
+function desktopQuote(value: string): string {
+  return /[\s"'`$\\]/.test(value)
+    ? `"${value.replace(/([\\`$"])/g, '\\$1')}"`
+    : value;
+}
+
+/**
  * Render the XDG autostart file content. `exec` must be the packaged
  * executable; the `--login` argument is what makes a boot launch
- * recognisable later.
+ * recognisable later. The executable is quoted per the spec — the
+ * desktop environment splits the Exec field on whitespace, so an
+ * unquoted install path with a space would truncate the launch.
  */
 export function desktopFileContent(exec: string): string {
   return [
@@ -37,7 +51,7 @@ export function desktopFileContent(exec: string): string {
     'Type=Application',
     'Name=DevBar',
     'Comment=Menu bar launcher for local development services',
-    `Exec=${exec} ${LOGIN_ARG}`,
+    `Exec=${desktopQuote(exec)} ${LOGIN_ARG}`,
     'Terminal=false',
     'X-GNOME-Autostart-enabled=true',
     '',

@@ -62,20 +62,69 @@ describe('buildSpawnArgs — Windows', () => {
   });
 });
 
+/** Run fn with process.stdout.isTTY forced to a deterministic value.
+ *  process.stdout cannot be mocked with vi.spyOn, so the descriptor is
+ *  swapped and restored explicitly (vi.restoreAllMocks would not). */
+async function withStdoutIsTTY(
+  isTTY: boolean | undefined,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(process, 'stdout')!;
+  // stdout is an accessor property; swap it for a plain data descriptor.
+  Object.defineProperty(process, 'stdout', {
+    value: { isTTY },
+    writable: true,
+    configurable: true,
+  });
+  try {
+    await fn();
+  } finally {
+    Object.defineProperty(process, 'stdout', original);
+  }
+}
+
 describe('serviceSpawnOptions — POSIX', () => {
   it('detached: the service owns its process group so a stop signals the whole tree', async () => {
     vi.resetModules();
     vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
     const mod = await import('../src/process-manager.js');
-    expect(mod.serviceSpawnOptions()).toStrictEqual({ detached: true });
+    await withStdoutIsTTY(true, () =>
+      Promise.resolve(
+        expect(mod.serviceSpawnOptions()).toStrictEqual({
+          detached: true,
+          windowsHide: false, // from a terminal; ignored on POSIX anyway
+        }),
+      ),
+    );
   });
 });
 
 describe('serviceSpawnOptions — Windows', () => {
-  it('attached, and NO windowsHide: a terminal-launched DevBar shares its console so Ctrl+C / closing the window reaches the service too', async () => {
+  it('attached, and NO windowsHide from a terminal: the service shares the console so Ctrl+C / closing the window reaches it too', async () => {
     vi.resetModules();
     vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     const mod = await import('../src/process-manager.js');
-    expect(mod.serviceSpawnOptions()).toStrictEqual({ detached: false });
+    await withStdoutIsTTY(true, () =>
+      Promise.resolve(
+        expect(mod.serviceSpawnOptions()).toStrictEqual({
+          detached: false,
+          windowsHide: false,
+        }),
+      ),
+    );
+  });
+
+  it('windowsHide for a GUI launch: no console to share, and no visible cmd.exe window per service', async () => {
+    vi.resetModules();
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const mod = await import('../src/process-manager.js');
+    await withStdoutIsTTY(false, () =>
+      Promise.resolve(
+        expect(mod.serviceSpawnOptions()).toStrictEqual({
+          detached: false,
+          windowsHide: true,
+        }),
+      ),
+    );
   });
 });

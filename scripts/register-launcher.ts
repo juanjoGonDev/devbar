@@ -66,7 +66,10 @@ export function desktopLauncherPath(): string {
  * Quoting follows the Desktop Entry spec: a value with whitespace or a
  * special character (`"`, `$`, backtick, `\`) goes in double quotes,
  * where those four must be backslash-escaped (backslash first, so the
- * escaping backslashes are not re-escaped themselves).
+ * escaping backslashes are not re-escaped themselves). The `Icon` key is
+ * an ICONSTRING, not a desktop argument: it is not double-quoted —
+ * backslash and `;` (the icon-list separator) are backslash-escaped and
+ * whitespace is escaped as `\s`.
  */
 export function renderDesktopEntry(
   executable: string,
@@ -76,6 +79,8 @@ export function renderDesktopEntry(
     /[\s"'`$\\]/.test(value)
       ? `"${value.replace(/([\\`$"])/g, '\\$1')}"`
       : value;
+  const iconString = (value: string): string =>
+    value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/\s/g, '\\s');
   const lines = [
     '[Desktop Entry]',
     'Type=Application',
@@ -83,7 +88,7 @@ export function renderDesktopEntry(
     'Comment=Menu bar launcher for local development services',
     `Exec=${quote(executable)}`,
   ];
-  if (icon) lines.push(`Icon=${quote(icon)}`);
+  if (icon) lines.push(`Icon=${iconString(icon)}`);
   lines.push('Terminal=false', 'Categories=Development;Utility;');
   return `${lines.join('\n')}\n`;
 }

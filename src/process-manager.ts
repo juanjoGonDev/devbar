@@ -98,16 +98,23 @@ export function buildSpawnArgs(cmdline: string): {
  * leader == the child's pid) so a stop can signal the whole tree — shell +
  * user command + whatever it spawned — with a single `kill(-pgid)`.
  *
- * Windows: stay attached, and — deliberately — NO `windowsHide`. When
- * DevBar runs from a terminal (`pnpm start`) the service inherits that
- * console, so Ctrl+C — or closing the terminal window — reaches the
- * user's command directly, alongside the main process's own signal
- * handlers. With `windowsHide` the child had no console, so a Ctrl+C on
- * `pnpm start` left every service alive (holding its port) after the app
- * died. A GUI launch has no console to inherit, so nothing changes there.
+ * Windows: stay attached. `windowsHide` is a CAPABILITY, not a constant:
+ * - from a terminal (`pnpm start`) — no windowsHide: the service
+ *   inherits that console, so Ctrl+C or closing the terminal window
+ *   reaches the user's command directly. Forcing windowsHide here would
+ *   leave every service alive (holding its port) after the app dies.
+ * - from the packaged GUI — windowsHide: there is no console to show,
+ *   and without it each spawned cmd.exe can flash a visible terminal
+ *   window next to the taskbar.
  */
-export function serviceSpawnOptions(): { detached: boolean } {
-  return { detached: !isWin };
+export function serviceSpawnOptions(): {
+  detached: boolean;
+  windowsHide: boolean;
+} {
+  return {
+    detached: !isWin,
+    windowsHide: !process.stdout.isTTY,
+  };
 }
 
 interface ConfigStoreLike {

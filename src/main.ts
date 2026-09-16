@@ -1253,6 +1253,34 @@ async function applyUpdate() {
     return { ok: false, error: errorMessage(err), fellBack: true };
   }
 
+  // Integrity seal for the ASSISTED flow (CWE-494): the file is opened
+  // straight from Downloads — mounted, installed or executed by the OS —
+  // so, unlike the in-place flow (which verifies during staging), the
+  // verification must happen here, before anything opens the artifact.
+  // The release pipeline always publishes SHA256SUMS.txt (it is part of
+  // the 14-artifact contract); a missing manifest or a digest mismatch
+  // falls back to the release page instead of handing an unverified file
+  // to the OS.
+  try {
+    const manifest = await fetchReleaseSha256(
+      UPDATE_REPO.owner,
+      UPDATE_REPO.repo,
+      version,
+    );
+    if (!manifest) throw new Error('no se pudo obtener SHA256SUMS.txt');
+    const verified = await verifySha256(dest, manifest.get(destName));
+    if (!verified)
+      throw new Error('el hash de la descarga no coincide con SHA256SUMS.txt');
+  } catch (err) {
+    broadcastToast(
+      'error',
+      `Integridad de la descarga no verificada: ${errorMessage(err)}`,
+    );
+    fs.rmSync(dest, { force: true });
+    shell.openExternal(url); // fall back to the release page
+    return { ok: false, error: errorMessage(err), fellBack: true };
+  }
+
   if (isMac) {
     const openErr = await shell.openPath(dest); // mount the dmg → Finder
     if (openErr) {
@@ -1286,7 +1314,13 @@ async function applyUpdate() {
   }
 
   // Linux package/AppImage: the user installs it with the package manager or
-  // a double-click — no quit needed from us.
+  // a double-click — no quit needed from us. Record the exit as an UPDATE
+  // handoff: the user is told to close DevBar to install, and that
+  // deliberate close would otherwise flush the snapshot with reason
+  // `quit` (which never resumes), silently dropping every running
+  // service after the reinstall. Same rationale as the macOS/Windows
+  // assisted branches, which markUpdateExit() right before quitting.
+  markUpdateExit();
   broadcastToast(
     'ok',
     `v${version} descargada a ${dest}. Cierra DevBar e instálala/éjecútala.`,
@@ -1503,10 +1537,22 @@ function updateTrayTitle(payload: GroupState[]): void {
     lastTrayCount = count;
   }
   // Hover affordance where the count can't be displayed next to the icon:
-  // the tray tooltip carries it too.
+  // the tray tooltip carries it too. The noun follows the count's source:
+  // badgeCount falls back to warns when there are no errors, so a
+  // warning-only badge labelled "errores" would misreport the state. The
+  // dev-panel override keeps "error" — that is what the panel forces.
+  const fromErrors = devTrayCount != null || errs > 0;
   mb.tray.setToolTip(
     count
-      ? `DevBar — ${count === 1 ? '1 error' : `${count} errores`}`
+      ? `DevBar — ${
+          count === 1
+            ? fromErrors
+              ? '1 error'
+              : '1 aviso'
+            : fromErrors
+              ? `${count} errores`
+              : `${count} avisos`
+        }`
       : 'DevBar',
   );
   refreshTrayIcon();
@@ -3443,13 +3489,11 @@ app.whenReady().then(() => {
         position: string,
         trayPos?: Rectangle,
       ): { x: number; y: number } => {
-        if (
-          trayPos &&
-          trayPos.x > 0 &&
-          trayPos.y > 0 &&
-          trayPos.width > 0 &&
-          trayPos.height > 0
-        ) {
+        // Valid X11 bounds may sit at x=0 (left panel), y=0 (top panel)
+        // or at negative coordinates (secondary displays) — so only the
+        // dimensions distinguish real bounds from Wayland's empty
+        // rectangle, not the position.
+        if (trayPos && trayPos.width > 0 && trayPos.height > 0) {
           const win = menuBar.window;
           if (!win) return originalCalculate(position, trayPos);
           const result = originalCalculate(

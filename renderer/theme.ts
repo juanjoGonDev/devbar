@@ -30,6 +30,10 @@ export function initTheme(): void {
   // Windows/Linux the native titlebar already carries the title, and the
   // strip would duplicate it).
   document.documentElement.setAttribute('data-os', window.api.platform);
+  // Apply the OS-following theme SYNCHRONOUSLY: without this, <html> has no
+  // data-theme until getSettings() resolves, and the first paint falls back
+  // to the light defaults — a visible flash for dark-system users.
+  applyTheme('auto');
   void window.api
     .getSettings()
     .then((s) => applyTheme(s.theme ?? 'auto'))

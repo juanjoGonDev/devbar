@@ -51,8 +51,11 @@ describe('psLikeEscape', () => {
   it('doubles single quotes (PS single-quoted string terminator)', () => {
     expect(psLikeEscape("a'b")).toBe("a''b");
   });
-  it('brackets the -like pattern wildcards', () => {
-    expect(psLikeEscape('a[b]c*d?e')).toBe('a[]b[]]c[*]d[?]e');
+  it('escapes the -like wildcards with the backtick (the documented escape)', () => {
+    expect(psLikeEscape('a[b]c*d?e')).toBe('a`[b`]c`*d`?e');
+  });
+  it("doubles a literal backtick (it is -like's own escape character)", () => {
+    expect(psLikeEscape('a`b')).toBe('a``b');
   });
   it('is the identity for paths with no specials', () => {
     expect(psLikeEscape('/plain/path')).toBe('/plain/path');

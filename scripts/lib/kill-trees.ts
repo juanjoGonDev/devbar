@@ -41,19 +41,21 @@ export function windowsKillImageTreeArgs(image: string): string[] {
 /**
  * Escape a path for safe embedding in a PowerShell single-quoted
  * `-like` pattern: `'` is doubled (it would terminate the string), and
- * the pattern wildcards `[ ] * ?` are bracketed (filenames may legally
- * contain `[` and `]`). Backslashes stay literal — PowerShell single-
- * quoted strings have no backslash escape and `-like` treats `\` as an
- * ordinary character. (Keep in sync with the inline copy in
- * install-local.ts — strip-only mode cannot import it from here.)
+ * the wildcard characters `[ ] * ?` — plus a literal backtick, which is
+ * `-like`'s own escape character — are escaped with the backtick, the
+ * documented wildcard escape (what `[WildcardPattern]::Escape()`
+ * produces). Backslashes stay literal: PowerShell single-quoted strings
+ * have no backslash escape and `-like` has no backslash metacharacter.
+ * (Keep in sync with the inline copy in install-local.ts — strip-only
+ * mode cannot import it from here.)
  */
 export function psLikeEscape(value: string): string {
   let out = '';
   for (const ch of value) {
     if (ch === "'") out += "''";
-    else if (ch === '[') out += '[]';
-    else if (ch === ']') out += '[]]';
-    else if (ch === '*' || ch === '?') out += `[${ch}]`;
+    else if (ch === '`') out += '``';
+    else if (ch === '[' || ch === ']' || ch === '*' || ch === '?')
+      out += `\`${ch}`;
     else out += ch;
   }
   return out;

@@ -149,7 +149,8 @@ pnpm run logs
 
 Prints the per-OS log location and tails it live:
 `~/Library/Logs/DevBar/app.log` (macOS), `%APPDATA%\DevBar\logs\app.log`
-(Windows), `$XDG_CONFIG_HOME/DevBar/logs/app.log` (Linux).
+(Windows), `$XDG_CONFIG_HOME/DevBar/logs/app.log` (Linux — `~/.config`
+when `XDG_CONFIG_HOME` is unset).
 
 ## Simulating a login/boot launch
 
