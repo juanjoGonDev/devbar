@@ -101,7 +101,6 @@ describe('release impact policy', () => {
     'src/main.ts',
     'renderer/index.ts',
     'assets/icon.icns',
-    'pnpm-lock.yaml',
     '.npmrc',
     'tsconfig.node.json',
     'tsconfig.renderer.json',
@@ -128,10 +127,40 @@ describe('release impact policy', () => {
     'scripts/release-impact-policy.ts',
     'scripts/verify-macos-release.sh',
     'tsconfig.tests.json',
+    'pnpm-lock.yaml',
   ])('skips release-neutral path %s', (path) => {
     expect(classify([path], packageJson, packageJson)).toEqual({
       publish: false,
       paths: [],
+    });
+  });
+
+  it('skips a tooling-only dev dependency bump with its lockfile', () => {
+    const before = { ...packageJson, devDependencies: { vitest: '4.1.11' } };
+    const after = { ...packageJson, devDependencies: { vitest: '5.0.0' } };
+
+    expect(classify(['package.json', 'pnpm-lock.yaml'], before, after)).toEqual(
+      { publish: false, paths: [] },
+    );
+  });
+
+  it('classifies a packaged dev dependency bump as release-impacting', () => {
+    const before = { ...packageJson, devDependencies: { electron: '43.2.0' } };
+    const after = { ...packageJson, devDependencies: { electron: '44.0.0' } };
+
+    expect(classify(['package.json', 'pnpm-lock.yaml'], before, after)).toEqual(
+      { publish: true, paths: ['package.json', 'pnpm-lock.yaml'] },
+    );
+  });
+
+  it('classifies a production dependency bump as release-impacting', () => {
+    const after = { ...packageJson, dependencies: { menubar: '9.6.0' } };
+
+    expect(
+      classify(['package.json', 'pnpm-lock.yaml'], packageJson, after),
+    ).toEqual({
+      publish: true,
+      paths: ['package.json', 'pnpm-lock.yaml'],
     });
   });
 

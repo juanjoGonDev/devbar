@@ -22,6 +22,11 @@ async function init(): Promise<void> {
   const logo = byId('pc-logo', HTMLImageElement);
   if (context.logo) logo.src = context.logo;
   else logo.style.display = 'none';
+  // Qualifier line, subordinate to the title below: two groups can each
+  // define a script with the same name, so the group tells them apart.
+  const groupEl = byId('pc-group', HTMLElement);
+  if (context.groupName) groupEl.textContent = context.groupName;
+  else groupEl.style.display = 'none';
   byId('pc-title', HTMLElement).textContent = `¿Ejecutar «${context.name}»?`;
   byId('pc-cmd', HTMLElement).textContent = context.command;
   if (context.secs != null) {

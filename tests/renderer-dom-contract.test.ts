@@ -15,6 +15,7 @@ const rendererDir = path.resolve(
 
 const WINDOWS: ReadonlyArray<[script: string, html: string]> = [
   ['config.ts', 'config.html'],
+  ['pipeline-editor.ts', 'config.html'],
   ['tray.ts', 'tray.html'],
   ['logs.ts', 'logs.html'],
   ['notification.ts', 'notification.html'],

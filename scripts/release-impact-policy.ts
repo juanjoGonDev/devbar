@@ -20,7 +20,6 @@ const RELEASE_PREFIXES = ['assets/', 'renderer/', 'src/'];
 
 const RELEASE_EXACT_PATHS = new Set([
   '.npmrc',
-  'pnpm-lock.yaml',
   'scripts/build-macos-release.sh',
   'scripts/build.sh',
   'scripts/build.ts',
@@ -30,6 +29,28 @@ const RELEASE_EXACT_PATHS = new Set([
   'tsconfig.node.json',
   'tsconfig.renderer.json',
 ]);
+
+// Dev dependencies that never reach the packaged app: bumping them must not
+// trigger a release. Everything else in devDependencies (electron, esbuild,
+// @electron/packager, typescript) is packaged or shapes the built output, so a
+// dev dependency added later counts until it is listed here.
+const NON_SHIPPING_DEV_DEPENDENCIES = [
+  '@types/',
+  'dependency-cruiser',
+  'eslint',
+  'jiti',
+  'knip',
+  'lefthook',
+  'prettier',
+  'typescript-eslint',
+  'vitest',
+];
+
+function shipsInBuild(dependency: string): boolean {
+  return !NON_SHIPPING_DEV_DEPENDENCIES.some(
+    (name) => dependency === name || dependency.startsWith(name),
+  );
+}
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -69,6 +90,14 @@ function packageFingerprint(text: string, label: string): string | null {
 
   const buildRelevantPackage: JsonObject = { ...packageJson };
   delete buildRelevantPackage.version;
+
+  const devDependencies = buildRelevantPackage.devDependencies;
+  if (isJsonObject(devDependencies)) {
+    buildRelevantPackage.devDependencies = Object.fromEntries(
+      Object.entries(devDependencies).filter(([name]) => shipsInBuild(name)),
+    );
+  }
+
   return JSON.stringify(canonicalizeJson(buildRelevantPackage));
 }
 
@@ -91,12 +120,22 @@ export function classifyReleaseImpact(
   const uniquePaths = new Set(
     paths.map((path) => path.trim()).filter((path) => path.length > 0),
   );
+  const packageAffectsBuild =
+    uniquePaths.has('package.json') &&
+    packageChangeAffectsBuild(beforePackageText, afterPackageText);
 
   for (const path of uniquePaths) {
     if (path === 'package.json') {
-      if (packageChangeAffectsBuild(beforePackageText, afterPackageText)) {
-        impactedPaths.push(path);
-      }
+      if (packageAffectsBuild) impactedPaths.push(path);
+      continue;
+    }
+
+    // ponytail: the lockfile alone proves nothing about the app — it moves for
+    // tooling bumps too. It counts only alongside a build-relevant manifest
+    // change, so a transitive-only bump of a production dependency is missed;
+    // classify it by production dependency tree if that ever shows up.
+    if (path === 'pnpm-lock.yaml') {
+      if (packageAffectsBuild) impactedPaths.push(path);
       continue;
     }
 

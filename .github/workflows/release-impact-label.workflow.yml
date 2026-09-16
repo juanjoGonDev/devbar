@@ -1,0 +1,75 @@
+name: 🏷️ Release impact label
+
+# Marks pull requests that cannot change the packaged app, so the generated
+# release notes can drop them. The label is derived, never hand-applied: it is
+# recomputed on every revision, so the last run always describes the merged
+# content.
+#
+# pull_request_target runs with a writable token, which Dependabot-triggered
+# `pull_request` runs do not get. The pull request head is fetched but never
+# checked out and never executed: only the trusted base checkout runs, and it
+# reads the candidate through git alone.
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions: read-all
+
+concurrency:
+  group: release-impact-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  LABEL: release-neutral
+
+jobs:
+  label:
+    name: Classify release impact
+    if: github.repository == 'juanjoGonDev/devbar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout trusted base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js for release policy
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Apply release impact label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr-${PR_NUMBER}"
+
+          impact_json=$(node --experimental-strip-types scripts/release-impact-policy.ts range "$BASE_SHA" "$HEAD_SHA")
+          publish=$(jq -r '.publish' <<<"$impact_json")
+
+          labels=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
+          if [[ "$publish" == "true" ]]; then
+            if grep -Fxq "$LABEL" <<<"$labels"; then
+              gh pr edit "$PR_NUMBER" --remove-label "$LABEL"
+            fi
+            echo "Release-impacting: $(jq -r '.paths | join(", ")' <<<"$impact_json")" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if ! grep -Fxq "$LABEL" <<<"$labels"; then
+            gh pr edit "$PR_NUMBER" --add-label "$LABEL"
+          fi
+          echo "No release impact; labelled $LABEL and excluded from release notes." >> "$GITHUB_STEP_SUMMARY"
