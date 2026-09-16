@@ -1,9 +1,12 @@
+# The release-neutral label is applied automatically by
+# .github/workflows/release-impact-label.workflow.yml, from the same path
+# policy that gates releases. Action bumps, the release preparation pull
+# request, docs, tests and tooling-only dependency bumps all earn it on their
+# own, so nothing here has to be labelled by hand.
 changelog:
   exclude:
     labels:
-      - github_actions
-      - auto-release
-      - ci
+      - release-neutral
   categories:
     - title: Changes
       labels:

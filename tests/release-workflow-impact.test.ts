@@ -7,6 +7,11 @@ const autoReleaseWorkflow = readFileSync(
   'utf8',
 );
 const releaseWorkflow = readFileSync('.github/workflows/release.yml', 'utf8');
+const labelWorkflow = readFileSync(
+  '.github/workflows/release-impact-label.workflow.yml',
+  'utf8',
+);
+const releaseNotesConfig = readFileSync('.github/release.yml', 'utf8');
 const policyCommand =
   'node --experimental-strip-types scripts/release-impact-policy.ts';
 const nodeSetup = 'uses: actions/setup-node@';
@@ -22,6 +27,40 @@ describe('release impact workflow integration', () => {
     const releasePolicyIndex = releaseWorkflow.indexOf(policyCommand);
     expect(releaseSetupIndex).toBeGreaterThanOrEqual(0);
     expect(releasePolicyIndex).toBeGreaterThan(releaseSetupIndex);
+  });
+
+  it('labels pull requests from the same policy that gates releases', () => {
+    const labelSetupIndex = labelWorkflow.indexOf(nodeSetup);
+    const labelPolicyIndex = labelWorkflow.indexOf(policyCommand);
+    expect(labelSetupIndex).toBeGreaterThanOrEqual(0);
+    expect(labelPolicyIndex).toBeGreaterThan(labelSetupIndex);
+    expect(labelWorkflow).toContain(
+      `${policyCommand} range "$BASE_SHA" "$HEAD_SHA"`,
+    );
+  });
+
+  it('recomputes the label on every pull request revision', () => {
+    expect(labelWorkflow).toContain('pull_request_target:');
+    expect(labelWorkflow).toContain('types: [opened, reopened, synchronize]');
+  });
+
+  it('never checks out the pull request head it labels', () => {
+    expect(labelWorkflow).toContain(
+      'ref: ${{ github.event.pull_request.base.sha }}',
+    );
+    expect(labelWorkflow).not.toContain(
+      'ref: ${{ github.event.pull_request.head.sha }}',
+    );
+    expect(labelWorkflow).toContain('pull-requests: write');
+  });
+
+  it('drives the label in both directions', () => {
+    expect(labelWorkflow).toContain('--add-label "$LABEL"');
+    expect(labelWorkflow).toContain('--remove-label "$LABEL"');
+  });
+
+  it('excludes release-neutral pull requests from the generated notes', () => {
+    expect(releaseNotesConfig).toContain('release-neutral');
   });
 
   it('counts only release-impacting commits toward automatic releases', () => {
