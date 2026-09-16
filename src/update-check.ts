@@ -43,6 +43,9 @@ export function releaseAssetSuffixes(
   appImage?: string;
   deb?: string;
 } {
+  // DevBar ships for exactly these three platforms (Raspberry Pi = linux).
+  // Anything else gets no artifacts at all: selecting the "closest"
+  // platform would offer installers the system cannot use.
   if (platform === 'darwin')
     return { dmg: `macos-${arch}.dmg`, zip: `macos-${arch}.zip` };
   if (platform === 'win32')
@@ -50,14 +53,20 @@ export function releaseAssetSuffixes(
       setup: `win-${arch}-setup.exe`,
       zip: `win-${arch}-portable.exe`,
     };
-  return {
-    appImage: `linux-${arch}.AppImage`,
-    deb: `linux-${arch}.deb`,
-  };
+  if (platform === 'linux')
+    return {
+      appImage: `linux-${arch}.AppImage`,
+      deb: `linux-${arch}.deb`,
+    };
+  return {};
 }
 
 export function selectAssetUrl(assets: unknown, suffix: string): string | null {
-  if (!Array.isArray(assets)) return null;
+  // An empty suffix must never match: `endsWith('')` is true for every
+  // name, which would hand the FIRST asset of the release to any URL
+  // field the current platform does not use (a Linux box would be
+  // offered the .dmg as its "setup").
+  if (!Array.isArray(assets) || suffix === '') return null;
   for (const candidate of assets) {
     const asset = record(candidate);
     if (

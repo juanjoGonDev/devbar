@@ -169,13 +169,25 @@ describe('buildSwapBat', () => {
     expect(bat.match(/start "" "%target%"/g)).toHaveLength(2);
   });
 
-  it('doubles embedded quotes so they cannot break out of the bat quoting', () => {
-    const tricky = buildSwapBat({
+  it('stores space-containing paths unquoted so "%var%" expansion stays one quoted argument', () => {
+    // `set "name=value"` keeps everything to the final quote as the
+    // value. Wrapping the value in its own quotes (batQuote) would
+    // embed literal quotes in %target%, and every later `"%target%"`
+    // would expand to a broken double-quoted path — the exact failure
+    // for a directory with a space.
+    const spaced = buildSwapBat({
       pid: 1,
-      target: 'C:\\dir "x"\\DevBar.exe',
-      staged: 'C:\\z.exe',
+      target: 'C:\\Program Files (x86)\\DevBar\\DevBar.exe',
+      staged: 'C:\\Program Files (x86)\\DevBar\\staged\\DevBar.exe',
     });
-    expect(tricky).toContain('set "target="C:\\dir ""x""\\DevBar.exe""');
+    expect(spaced).toContain(
+      'set "target=C:\\Program Files (x86)\\DevBar\\DevBar.exe"',
+    );
+    expect(spaced).toContain(
+      'set "staged=C:\\Program Files (x86)\\DevBar\\staged\\DevBar.exe"',
+    );
+    expect(spaced).not.toContain('set "target="');
+    expect(spaced).toContain('move /y "%target%" "%backup%"');
   });
 });
 

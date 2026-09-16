@@ -42,11 +42,11 @@ describe('releaseAssetSuffixes', () => {
     });
   });
 
-  it('treats unknown platforms like linux', () => {
-    expect(releaseAssetSuffixes('freebsd', 'x64')).toEqual({
-      appImage: 'linux-x64.AppImage',
-      deb: 'linux-x64.deb',
-    });
+  it('offers no artifacts for unsupported platforms', () => {
+    // DevBar ships for darwin/win32/linux only. Falling back to the
+    // "closest" platform would offer installers the system cannot use.
+    expect(releaseAssetSuffixes('freebsd', 'x64')).toEqual({});
+    expect(releaseAssetSuffixes('aix', 'ppc64')).toEqual({});
   });
 });
 
@@ -95,6 +95,15 @@ describe('selectAssetUrl', () => {
     expect(selectAssetUrl(assets, 'win-ppc-setup.exe')).toBe(null);
     expect(selectAssetUrl([], 'macos-arm64.dmg')).toBe(null);
     expect(selectAssetUrl(null, 'macos-arm64.dmg')).toBe(null);
+  });
+
+  it('never matches on an empty suffix', () => {
+    // `endsWith('')` is true for every name: without the guard, an
+    // unused URL field (a platform with no such artifact) would
+    // receive the FIRST asset of the release.
+    expect(selectAssetUrl(assets, '')).toBe(null);
+    expect(selectAssetUrl([], '')).toBe(null);
+    expect(selectAssetUrl(null, '')).toBe(null);
   });
 });
 

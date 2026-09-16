@@ -39,15 +39,54 @@ import { fileURLToPath } from 'node:url';
 function windowsKillImageTreeArgs(image: string): string[] {
   return ['/F', '/T', '/IM', image];
 }
+/**
+ * Escape a path for safe embedding in a PowerShell single-quoted
+ * `-like` pattern: `'` is doubled (string terminator), and the pattern
+ * wildcards `[ ] * ?` are bracketed (a filename may legally contain
+ * `[` and `]`). Backslashes stay literal — PowerShell has no
+ * backslash escape in single-quoted strings and `-like` treats `\`
+ * as an ordinary character.
+ */
+function psLikeEscape(value: string): string {
+  let out = '';
+  for (const ch of value) {
+    if (ch === "'") out += "''";
+    else if (ch === '[') out += '[]';
+    else if (ch === ']') out += '[]]';
+    else if (ch === '*' || ch === '?') out += `[${ch}]`;
+    else out += ch;
+  }
+  return out;
+}
 /** Windows dev mode: electron.exe from this checkout, matched by command
  *  line. NOTE: backslashes are NOT doubled — PowerShell single-quoted
- *  strings treat `\` as literal and `-like` has no backslash metachars. */
+ *  strings treat `\` as literal and `-like` has no backslash metachars
+ *  (apart from the wildcard/quote escaping psLikeEscape applies). Keep
+ *  in sync with scripts/lib/kill-trees.ts — strip-only mode cannot
+ *  import it from there. */
 function windowsKillDevInstanceCommand(checkoutPath: string): string {
+  const escaped = psLikeEscape(checkoutPath);
   return (
     `Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue | ` +
-    `Where-Object { $_.CommandLine -like '*${checkoutPath}*' } | ` +
+    `Where-Object { $_.CommandLine -like '*${escaped}*' } | ` +
     `ForEach-Object { & taskkill /PID $($_.ProcessId) /T /F | Out-Null }`
   );
+}
+/** True while a dev-mode electron.exe from this checkout is alive. */
+function windowsDevInstanceAlive(): boolean {
+  const escaped = psLikeEscape(ROOT);
+  const res = spawnSync(
+    'powershell',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `if (Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*${escaped}*' }) { exit 1 }; exit 0`,
+    ],
+    { stdio: ['ignore', 'pipe', 'ignore'], cwd: ROOT, encoding: 'utf8' },
+  );
+  if (res.error) return false;
+  return res.status === 1;
 }
 /**
  * POSIX: signal each matching instance's service trees BEFORE the
@@ -199,7 +238,13 @@ function killRunningInstances(installDir: string): void {
  * Wave 2 — verify. Poll until the kill patterns match nothing; if a process
  * survives, warn instead of swapping files under a live process.
  */
-/** True while any DevBar instance (or its helpers) still matches. */
+/**
+ * True while any process the kill wave targets still matches. The
+ * verification must check the SAME set as the kill, or a surviving
+ * instance the other checks cannot see (a dev electron.exe on Windows,
+ * a dist/- or node_modules-rooted instance on Linux) would pass
+ * verification and the install would swap files under it.
+ */
 function isAnyDevBarAlive(installDir: string): boolean {
   if (platform === 'win32') {
     const list = spawnSync('tasklist', ['/FI', 'IMAGENAME eq DevBar.exe'], {
@@ -207,16 +252,34 @@ function isAnyDevBarAlive(installDir: string): boolean {
       cwd: ROOT,
       encoding: 'utf8',
     });
-    if (list.error) return false;
-    return /DevBar\.exe/i.test(list.stdout ?? '');
+    if (!list.error && /DevBar\.exe/i.test(list.stdout ?? '')) return true;
+    // Image-name check cannot see a dev-mode electron.exe from this
+    // checkout.
+    return windowsDevInstanceAlive();
   }
-  const pids = spawnSync('pgrep', ['-f', path.join(installDir)], {
-    stdio: ['ignore', 'pipe', 'ignore'],
-    cwd: ROOT,
-    encoding: 'utf8',
-  });
-  if (pids.error) return false;
-  return (pids.stdout ?? '').trim().length > 0;
+  for (const pattern of [
+    path.join(installDir),
+    path.join(ROOT, 'dist', 'electron-builder'),
+    path.join(ROOT, 'node_modules'),
+  ]) {
+    const pids = spawnSync('pgrep', ['-f', pattern], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    if (pids.error) continue;
+    // A repo-local pnpm (grandparent of this script) carries
+    // node_modules in its own command line — never count the
+    // install's own process chain as a running instance.
+    const real = (pids.stdout ?? '')
+      .split(/\s+/)
+      .filter(
+        (pid) =>
+          pid && Number(pid) !== process.pid && Number(pid) !== process.ppid,
+      );
+    if (real.length > 0) return true;
+  }
+  return false;
 }
 
 /**

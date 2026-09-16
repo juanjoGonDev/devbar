@@ -64,6 +64,23 @@ interface BranchCacheEntry {
   current: string | null;
 }
 const branchCache = new Map<string, BranchCacheEntry>();
+// Monotonic token per group. Every event that can make branch data
+// stale (path change, onBranchesChanged) bumps it, and an in-flight
+// listBranches result re-checks it before applying — otherwise a slow
+// response from before the clear repopulates the cache and the combo
+// with stale branches.
+const branchGeneration = new Map<string, number>();
+function bumpBranchGeneration(groupIds: Iterable<string>): void {
+  for (const id of groupIds) {
+    branchGeneration.set(id, (branchGeneration.get(id) ?? 0) + 1);
+  }
+}
+function clearBranchCache(groupIds: Iterable<string>): void {
+  branchCache.clear();
+  // Include groups that are loading but were never bumped: they have
+  // no key yet, and their in-flight response must be discarded too.
+  bumpBranchGeneration([...branchGeneration.keys(), ...groupIds]);
+}
 // Expanded/collapsed state: groupId → boolean
 const expandedState = new Map<string, boolean>();
 
@@ -559,8 +576,13 @@ function branchDataToOptions(data: BranchCacheEntry): ComboboxOption[] {
 }
 
 function loadBranchesIntoCombo(groupId: string, combo: ComboboxControl): void {
+  const gen = branchGeneration.get(groupId) ?? 0;
+  const stillValid = () => (branchGeneration.get(groupId) ?? 0) === gen;
   window.api.listBranches(groupId).then((res) => {
     combo.setLoading(false);
+    // A stale-branch-cache event bumped the generation while this
+    // query was in flight — its result is outdated, discard it.
+    if (!stillValid()) return;
     if (!res.ok) {
       if (res.isRepo === false) {
         // Not a git project: remember it (negative cache) and drop the
@@ -575,6 +597,7 @@ function loadBranchesIntoCombo(groupId: string, combo: ComboboxControl): void {
       return;
     }
     window.api.currentBranch(groupId).then((cur) => {
+      if (!stillValid()) return;
       const data: BranchCacheEntry = {
         branches: res.branches ?? [],
         current: cur.ok ? (cur.branch ?? null) : null,
@@ -800,14 +823,16 @@ window.api.onUpdate((groupStates) => {
     .join('|');
   if (signature !== lastPathSignature) {
     lastPathSignature = signature;
-    branchCache.clear();
+    clearBranchCache(groupStates.map((gs) => gs.groupId));
   }
   render(groupStates);
 });
 
 window.api.onBranchesChanged(() => {
-  branchCache.clear();
-  if (lastGroupStates.length) render(lastGroupStates);
+  if (lastGroupStates.length) {
+    clearBranchCache(lastGroupStates.map((gs) => gs.groupId));
+    render(lastGroupStates);
+  }
 });
 
 window.api.onToast(({ kind, message }) => {

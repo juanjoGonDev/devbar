@@ -97,6 +97,10 @@ export function canInstallInPlace(
   if (!installed) return false;
   if (isMac) return macCanInstallInPlace(installed);
   if (isLinux) return linuxCanInstallInPlace(installed);
+  // Never treat an unsupported platform as a Windows install: the fallback
+  // would select a Windows artifact and .bat update logic the system
+  // cannot run.
+  if (!isWin) return false;
   return windowsUpdateMode(installed) !== 'assisted';
 }
 
@@ -129,6 +133,9 @@ export function stageableAsset(
       kind: 'appImage',
     };
   }
+  // Unsupported platform: canInstallInPlace already returned false, but
+  // guard here too so a future caller cannot reach the Windows paths.
+  if (!isWin) return null;
   const mode = windowsUpdateMode(installed);
   if (mode === 'nsis' && update.setupUrl)
     return {

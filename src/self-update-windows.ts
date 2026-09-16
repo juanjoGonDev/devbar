@@ -227,8 +227,13 @@ export function buildSwapBat({
   return [
     '@echo off',
     'setlocal',
-    `set "target=${batQuote(target)}"`,
-    `set "staged=${batQuote(staged)}"`,
+    // NO quotes inside the stored value: `set "name=value"` keeps
+    // everything to the final quote as the value, and the later `"%var%"`
+    // expansions add their own pair. batQuote here would embed literal
+    // quotes in %target%, producing double-quoted (broken) paths —
+    // exactly the case with a space in the directory.
+    `set "target=${target}"`,
+    `set "staged=${staged}"`,
     'set "backup=%target%.devbar-old"',
     'set "log=%~dp0swap.log"',
     'echo [%date% %time%] swap bat started >> "%log%"',

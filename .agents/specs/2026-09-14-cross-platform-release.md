@@ -34,17 +34,17 @@ Raspberry Pi, Windows and Linux. The previous base was macOS only.
   userData/logs/notification folders are consistent (dev mode unchanged).
 - **CI**: `ci.yml` gains a 3-OS `build` job that compiles, verifies
   (`pnpm run verify` routed per-OS, `release:mac`) and LAUNCHES each packaged
+  binary via a built-in smoke mode (`--devbar-smoke` / `DEVBAR_SMOKE=1` prints
+  `DEVBAR_SMOKE_OK` and exits; creates the platform tray, skips windows/
+  commands/autostart). Windows smoke: NSIS install → installed exe + portable
+  exe. Linux smoke: AppImage under `xvfb` + `dpkg -i` → installed binary.
+  `release-validation.yml` gets matching Windows/Linux dry-run jobs.
 - **OS-agnostic dev commands**: `pack`, `dist`, `verify`, `dist:mac`,
   `release:verify`, `install-local[:dev]` keep their original names; a router
   (`scripts/platform.ts`) inspects process.platform and dispatches — darwin to
   the original bash pipeline, win32/linux to electron-builder. The dev build
   itself runs in Node (`scripts/build.ts`) so `pnpm start` needs no bash on
   Windows. `pnpm run pack` on win/linux produces the unpacked app (dir target).
-  binary via a built-in smoke mode (`--devbar-smoke` / `DEVBAR_SMOKE=1` prints
-  `DEVBAR_SMOKE_OK` and exits; creates the platform tray, skips windows/
-  commands/autostart). Windows smoke: NSIS install → installed exe + portable
-  exe. Linux smoke: AppImage under `xvfb` + `dpkg -i` → installed binary.
-  `release-validation.yml` gets matching Windows/Linux dry-run jobs.
 - **Release**: `release.yml` builds the three platforms in parallel, merges the
   artifacts in a read-only `assemble` job (writes the full `SHA256SUMS.txt`
   via `scripts/release-manifest.ts`, verifies the complete set with

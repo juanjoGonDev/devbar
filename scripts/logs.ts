@@ -42,14 +42,18 @@ if (!existsSync(LOG_PATH)) {
 console.log(`Tailing ${LOG_PATH} (Ctrl+C para parar):`);
 
 if (process.platform === 'win32') {
+  // The path is passed via environment, not interpolated into the
+  // command: a single quote in the path (e.g. a user profile named
+  // o'Brien) would otherwise break the single-quoted PowerShell
+  // string and spawn would fail to even parse the command.
   spawn(
     'powershell',
     [
       '-NoProfile',
       '-Command',
-      `Get-Content -LiteralPath '${LOG_PATH}' -Wait -Tail 100`,
+      'Get-Content -LiteralPath $env:DEVBAR_LOG_PATH -Wait -Tail 100',
     ],
-    { stdio: 'inherit' },
+    { stdio: 'inherit', env: { ...process.env, DEVBAR_LOG_PATH: LOG_PATH } },
   );
 } else {
   spawn('tail', ['-F', LOG_PATH], { stdio: 'inherit' });

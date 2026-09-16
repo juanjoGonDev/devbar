@@ -44,7 +44,14 @@ export function loadIcon(
   count = 0,
 ): NativeImage {
   const dark = nativeTheme.shouldUseDarkColors,
-    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}:${count}`,
+    // The bubble renders "99+" for any count above 99 (countLabel in
+    // glyph-bitmap.ts), so the key must be capped too — otherwise every
+    // new count value (10, 11, 12, …) creates a distinct cache entry
+    // for identical pixels.
+    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}:${Math.min(
+      count,
+      99,
+    )}`,
     cached = iconCache[key];
   if (cached) return cached;
   const rgb = COLORS[state] ?? COLORS.stopped,

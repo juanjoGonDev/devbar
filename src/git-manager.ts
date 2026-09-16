@@ -56,7 +56,14 @@ export async function listBranches(repo: string): Promise<{
   const probe = await git(repo, ['rev-parse', '--is-inside-work-tree'], {
     timeout: 5000,
   });
-  if (!probe.ok || probe.stdout !== 'true') {
+  if (!probe.ok) {
+    // git timed out, is missing, or the call failed: we learned
+    // nothing, so do NOT assert "not a repository" — that verdict
+    // would make the UI hide the selector (negative cache) even
+    // though the project may be a perfectly good repo.
+    return { ok: false, error: probe.error ?? 'git probe failed' };
+  }
+  if (probe.stdout !== 'true') {
     return { ok: false, isRepo: false, error: 'not a git repository' };
   }
   const result = await git(repo, [

@@ -37,15 +37,25 @@ pkill -f "${ROOT}/dist/DevBar-darwin" 2>/dev/null || true
 pkill -f "${ROOT}/node_modules" 2>/dev/null || true
 # Generic fallback: any process whose path contains DevBar.app
 pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+# Every pattern the kill wave uses — the verification must check the same
+# set, or a dev instance would pass verification and race the relaunch.
+# The dev check is anchored on the electron binary (a dev instance's
+# command line carries the node_modules/electron path; the pnpm/node
+# process running THIS install carries node_modules/.bin and must not
+# count as an app instance).
+devbar_alive() {
+  pgrep -f "/Applications/DevBar.app" >/dev/null 2>&1 \
+    || pgrep -f "${ROOT}/dist/DevBar-darwin" >/dev/null 2>&1 \
+    || pgrep -f "${ROOT}/node_modules/electron" >/dev/null 2>&1 \
+    || pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1
+}
 # Wave 2: a leftover process is exactly how a reinstall half-resolves, so
 # verify the kill instead of assuming it.
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if ! pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
-    break
-  fi
+  devbar_alive || break
   sleep 0.5
 done
-if pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
+if devbar_alive; then
   # Wave 3: a leftover process still holds the single-instance socket and
   # turns the relaunch into a silent second instance — force it.
   warn "A DevBar process ignored the graceful stop — forcing it."
@@ -54,12 +64,10 @@ if pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
   pkill -9 -f "${ROOT}/node_modules" 2>/dev/null || true
   pkill -9 -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
   for _ in 1 2 3 4 5 6; do
-    if ! pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
-      break
-    fi
+    devbar_alive || break
     sleep 0.5
   done
-  if pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1; then
+  if devbar_alive; then
     warn "A DevBar process survived even the forced stop — it may keep the single-instance lock; quit it manually and re-run."
   else
     ok "all previous instances stopped"

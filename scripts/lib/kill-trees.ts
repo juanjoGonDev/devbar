@@ -39,18 +39,41 @@ export function windowsKillImageTreeArgs(image: string): string[] {
 }
 
 /**
+ * Escape a path for safe embedding in a PowerShell single-quoted
+ * `-like` pattern: `'` is doubled (it would terminate the string), and
+ * the pattern wildcards `[ ] * ?` are bracketed (filenames may legally
+ * contain `[` and `]`). Backslashes stay literal — PowerShell single-
+ * quoted strings have no backslash escape and `-like` treats `\` as an
+ * ordinary character. (Keep in sync with the inline copy in
+ * install-local.ts — strip-only mode cannot import it from here.)
+ */
+export function psLikeEscape(value: string): string {
+  let out = '';
+  for (const ch of value) {
+    if (ch === "'") out += "''";
+    else if (ch === '[') out += '[]';
+    else if (ch === ']') out += '[]]';
+    else if (ch === '*' || ch === '?') out += `[${ch}]`;
+    else out += ch;
+  }
+  return out;
+}
+
+/**
  * Windows dev mode: the instance is electron.exe started from a given
  * checkout, so it cannot be matched by image name alone. Find those
  * processes by command line and taskkill each one with /T.
  *
  * NOTE: backslashes are NOT doubled — PowerShell single-quoted strings
  * treat `\` as literal and `-like` has no backslash metacharacters, so
- * the pattern must contain the path exactly as the command line does.
+ * the pattern must contain the path exactly as the command line does
+ * (apart from the wildcard/quote escaping psLikeEscape applies).
  */
 export function windowsKillDevInstanceCommand(checkoutPath: string): string {
+  const escaped = psLikeEscape(checkoutPath);
   return (
     `Get-CimInstance Win32_Process -Filter "Name='electron.exe'" -ErrorAction SilentlyContinue | ` +
-    `Where-Object { $_.CommandLine -like '*${checkoutPath}*' } | ` +
+    `Where-Object { $_.CommandLine -like '*${escaped}*' } | ` +
     `ForEach-Object { & taskkill /PID $($_.ProcessId) /T /F | Out-Null }`
   );
 }

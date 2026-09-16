@@ -518,23 +518,32 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     const child = state.child;
     if (child.pid != null) this.killRequested.add(child.pid);
     return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        killGroup(child, 'SIGKILL');
-      }, 5000);
-      child.once('exit', () => {
-        clearTimeout(timer);
-        resolve({ ok: true });
-      });
-      const error = killGroup(child, 'SIGTERM');
-      if (error) {
-        clearTimeout(timer);
+      let settled = false;
+      const timers = new Set<NodeJS.Timeout>();
+      const finish = (ok: boolean, error?: string) => {
+        if (settled) return;
+        settled = true;
+        for (const timer of timers) clearTimeout(timer);
         this.setState(id, {
           status: 'stopped',
           child: null,
-          lastError: error.message,
+          ...(error ? { lastError: error } : {}),
         });
-        resolve({ ok: false, error: error.message });
-      }
+        resolve({ ok, error });
+      };
+      timers.add(setTimeout(() => killGroup(child, 'SIGKILL'), 5000));
+      timers.add(
+        setTimeout(() => {
+          // Both kill attempts (initial + the 5 s SIGKILL / taskkill
+          // repeat) failed to reap the child. Resolve instead of
+          // hanging until the shutdown deadline — the caller can see
+          // the failure and the log line from killGroup says why.
+          finish(false, 'child still alive after forced kill');
+        }, 6500),
+      );
+      child.once('exit', () => finish(true));
+      const error = killGroup(child, 'SIGTERM');
+      if (error) finish(false, error.message);
     });
   }
 }
@@ -548,11 +557,20 @@ function killGroup(
     // (cmd.exe + whatever the user command spawned). /F because there is no
     // portable graceful equivalent that reaches grandchildren.
     try {
+      // Log the async failure: a swallowed taskkill error is the only
+      // way stop() can reach its 6.5 s give-up, and without this line
+      // the give-up would be unexplainable in the app log.
       execFile(
         'taskkill',
         ['/pid', String(child.pid), '/T', '/F'],
         { windowsHide: true },
-        () => {},
+        (error) => {
+          if (error) {
+            console.error(
+              `taskkill failed for pid ${child?.pid}: ${error.message}`,
+            );
+          }
+        },
       );
       return null;
     } catch (error: unknown) {

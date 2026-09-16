@@ -136,7 +136,8 @@ else
   if ! cp "$staged" "$target"; then
     rm -f "$target"
     mv "$backup" "$target"
-    setsid "$backup" >/dev/null 2>&1 < /dev/null &
+    # Relaunch the RESTORED target: after the mv, $backup no longer exists.
+    setsid "$target" >/dev/null 2>&1 < /dev/null &
     exit 1
   fi
   chmod 755 "$target"

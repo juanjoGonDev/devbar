@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   posixKillServiceTrees,
+  psLikeEscape,
   windowsKillDevInstanceCommand,
   windowsKillImageTreeArgs,
   type KillTreeRun,
@@ -31,6 +32,30 @@ describe('windowsKillDevInstanceCommand', () => {
     expect(cmd).toContain("Name='electron.exe'");
     expect(cmd).toContain(`*C:\\repo\\devbar*`);
     expect(cmd).toMatch(/taskkill \/PID \$\(\$_\.ProcessId\) \/T \/F/);
+  });
+
+  it('escapes single quotes so the path cannot break out of the PS string', () => {
+    // A path containing ' would otherwise terminate the single-quoted
+    // -like pattern early and inject PowerShell.
+    const cmd = windowsKillDevInstanceCommand("C:\\repo\\o'brien");
+    expect(cmd).toContain(`*C:\\repo\\o''brien*`);
+    // No raw unescaped quote from the path may appear.
+    expect(cmd).not.toContain("C:\\repo\\o'brien");
+  });
+});
+
+describe('psLikeEscape', () => {
+  it('leaves ordinary backslash paths untouched', () => {
+    expect(psLikeEscape('C:\\repo\\devbar')).toBe('C:\\repo\\devbar');
+  });
+  it('doubles single quotes (PS single-quoted string terminator)', () => {
+    expect(psLikeEscape("a'b")).toBe("a''b");
+  });
+  it('brackets the -like pattern wildcards', () => {
+    expect(psLikeEscape('a[b]c*d?e')).toBe('a[]b[]]c[*]d[?]e');
+  });
+  it('is the identity for paths with no specials', () => {
+    expect(psLikeEscape('/plain/path')).toBe('/plain/path');
   });
 });
 

@@ -288,8 +288,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            %LOCALAPPDATA%\electron\Cache
-            %LOCALAPPDATA%\electron-builder\Cache
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
           key: windows-installer-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install
@@ -383,11 +383,14 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ needs.detect.outputs.version }}"
-          # AppImage runs straight from the file; xvfb provides the display.
-          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
+          # Hosted runners have no /dev/fuse: extract-and-run executes the
+          # same payload a mounted AppImage would (same fix as ci.yml and
+          # release-validation.yml).
+          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --appimage-extract-and-run --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
           grep -q DEVBAR_SMOKE_OK smoke-linux-appimage.log
-          # .deb: full install + launch of the installed binary.
-          sudo dpkg -i "dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
+          # .deb: apt resolves the Electron runtime libraries the runner
+          # image lacks (plain dpkg -i fails on unmet dependencies).
+          sudo apt-get install -y "./dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
           xvfb-run -a /usr/bin/devbar --devbar-smoke 2>&1 | tee smoke-linux-deb.log
           grep -q DEVBAR_SMOKE_OK smoke-linux-deb.log
 
@@ -535,6 +538,14 @@ jobs:
               "dist/release/DevBar-$VERSION-linux-armv7.AppImage" \
               "dist/release/DevBar-$VERSION-linux-armv7.deb" \
               "dist/release/SHA256SUMS.txt"
+          fi
+          # The tag targets the version-introducing commit, but the
+          # artifacts are always built from the event HEAD. When the two
+          # differ, say which commit the binaries actually came from.
+          if [ "$RELEASE_SHA" != "$GITHUB_SHA" ]; then
+            body=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body)
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --notes "$(printf '%s\n\n---\nBuilt from commit: %s (release tag targets %s, the version-introducing commit).' "$body" "$GITHUB_SHA" "$RELEASE_SHA")"
           fi
 
       - name: Verify published release
