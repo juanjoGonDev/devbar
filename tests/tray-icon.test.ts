@@ -84,6 +84,17 @@ describe('loadIcon with a count badge', () => {
     expect(c).not.toBe(a);
   });
 
+  it('keeps 99 ("99") and 100 ("99+") as distinct cache entries', () => {
+    // Regression: the key used Math.min(count, 99), so 99 and 100
+    // collided and whichever was rendered first kept the wrong label.
+    const n99 = loadIcon('error', false, 99) as unknown as MockImage;
+    const n100 = loadIcon('error', false, 100) as unknown as MockImage;
+    const n101 = loadIcon('error', false, 101);
+    expect(n100.bitmap).not.toEqual(n99.bitmap);
+    // 100 and 101 both render "99+" — they DO share the cache.
+    expect(n101).toBe(n100);
+  });
+
   it('keeps the pending-update dot when there is no count', () => {
     const none = loadIcon('stopped') as unknown as MockImage;
     const update = loadIcon('stopped', true) as unknown as MockImage;

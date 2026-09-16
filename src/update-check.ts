@@ -33,6 +33,15 @@ export function isNewerVersion(latest: unknown, current: unknown): boolean {
  * emits exactly these, so in-app update selection and the release validator
  * both derive from `expectedReleaseArtifactNames`-style suffixes.
  */
+/**
+ * Node reports 32-bit ARM as `arm`, but the release artifacts are named
+ * `linux-armv7.*` (electron-builder's target name) — without this, a
+ * 32-bit Raspberry Pi would look for `linux-arm.*` and get no in-place
+ * update URLs. `arm64` is already the release naming and stays unchanged.
+ */
+export function normalizeArch(platform: NodeJS.Platform, arch: string): string {
+  return platform === 'linux' && arch === 'arm' ? 'armv7' : arch;
+}
 export function releaseAssetSuffixes(
   platform: NodeJS.Platform,
   arch: string,
@@ -46,6 +55,7 @@ export function releaseAssetSuffixes(
   // DevBar ships for exactly these three platforms (Raspberry Pi = linux).
   // Anything else gets no artifacts at all: selecting the "closest"
   // platform would offer installers the system cannot use.
+  arch = normalizeArch(platform, arch);
   if (platform === 'darwin')
     return { dmg: `macos-${arch}.dmg`, zip: `macos-${arch}.zip` };
   if (platform === 'win32')
@@ -286,7 +296,9 @@ export function fetchReleases({
         });
         res.on('end', () => {
           try {
-            resolve(parseReleases(JSON.parse(data) as unknown));
+            // The API call asked for `limit` entries (per_page) — the
+            // parse must honor the same limit, not its own default of 5.
+            resolve(parseReleases(JSON.parse(data) as unknown, limit));
           } catch {
             resolve([]);
           }

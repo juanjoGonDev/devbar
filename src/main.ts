@@ -46,6 +46,7 @@ import {
   checkForUpdate,
   fetchReleases,
   fetchReleaseSha256,
+  normalizeArch,
 } from './update-check.js';
 import {
   canInstallInPlace,
@@ -1004,10 +1005,10 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
   try {
     fs.mkdirSync(updatesDir, { recursive: true });
     await downloadFile(plan.url, filePath);
-    // Integrity seal: the release's SHA256SUMS.txt. On macOS the bundle is
-    // re-sealed by codesign when it is unpacked, so a missing manifest degrades
-    // to that; on Windows/Linux the manifest is the ONLY trust anchor, so a
-    // fetch failure aborts staging instead of installing an unverified file.
+    // Integrity seal: the release's SHA256SUMS.txt, required on every
+    // platform — the ad-hoc signature carries no publisher identity, so
+    // a missing manifest leaves no trust anchor anywhere. (macOS adds a
+    // codesign verification on top when the bundle is unpacked.)
     const manifest = await fetchReleaseSha256(
       UPDATE_REPO.owner,
       UPDATE_REPO.repo,
@@ -1022,7 +1023,12 @@ async function stageUpdate(update: AvailableUpdate): Promise<void> {
         throw new Error(
           'el hash de la descarga no coincide con SHA256SUMS.txt',
         );
-    } else if (!isMac) {
+    } else {
+      // Fail closed on every platform: the ad-hoc signature carries no
+      // publisher identity, so a missing manifest leaves macOS with no
+      // trust anchor either. Releases always publish SHA256SUMS.txt
+      // (it is part of the 14-artifact contract); when it cannot be
+      // fetched, abort staging instead of installing an unverified file.
       throw new Error('no se pudo obtener SHA256SUMS.txt');
     }
     stagedUpdate = await stageDownloadedArtifact({
@@ -1215,10 +1221,12 @@ async function applyUpdate() {
       'Se descargará el instalador, DevBar se CERRARÁ y el instalador actualizará la aplicación en su sitio.';
   } else if (!isMac && debUrl) {
     downloadUrl = debUrl;
-    destName = `DevBar-${version}-linux-${process.arch}.deb`;
+    // Must match the release asset naming (linux-armv7.*), otherwise the
+    // SHA256 manifest lookup for this file name would miss on 32-bit ARM.
+    destName = `DevBar-${version}-linux-${normalizeArch(process.platform, process.arch)}.deb`;
   } else if (!isMac && appImageUrl) {
     downloadUrl = appImageUrl;
-    destName = `DevBar-${version}-linux-${process.arch}.AppImage`;
+    destName = `DevBar-${version}-linux-${normalizeArch(process.platform, process.arch)}.AppImage`;
     detail =
       'Se descargará la AppImage a Descargas. Cierra DevBar y ejecútala desde ahí (o cópiala a ~/Applications).';
   }

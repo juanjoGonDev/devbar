@@ -1,5 +1,5 @@
 import { nativeImage, nativeTheme, type NativeImage } from 'electron';
-import { drawGlyphBGRA } from './glyph-bitmap.js';
+import { countLabel, drawGlyphBGRA } from './glyph-bitmap.js';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
 const STATES: readonly TrayColor[] = ['stopped', 'running', 'warn', 'error'];
 const COLORS: Record<TrayColor, readonly [number, number, number]> = {
@@ -44,13 +44,12 @@ export function loadIcon(
   count = 0,
 ): NativeImage {
   const dark = nativeTheme.shouldUseDarkColors,
-    // The bubble renders "99+" for any count above 99 (countLabel in
-    // glyph-bitmap.ts), so the key must be capped too — otherwise every
-    // new count value (10, 11, 12, …) creates a distinct cache entry
-    // for identical pixels.
-    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}:${Math.min(
+    // Key on the RENDERED label, not the raw count: the bubble draws
+    // "99+" for every count above 99, so counts >99 share pixels (no
+    // unbounded cache growth), while 99 and 100 render DIFFERENT labels
+    // and must not collide.
+    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}:${countLabel(
       count,
-      99,
     )}`,
     cached = iconCache[key];
   if (cached) return cached;

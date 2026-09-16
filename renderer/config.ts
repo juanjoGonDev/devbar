@@ -2015,6 +2015,7 @@ function adaptOsTexts(): void {
 
 // ────────────────────── Settings ───────────────────────────────────────
 
+let settingsLoaded = false;
 async function loadSettings() {
   const s = await window.api.getSettings();
   setAutostart.checked = !!s.autostart;
@@ -2027,6 +2028,7 @@ async function loadSettings() {
       s.maxLogLines != null ? s.maxLogLines : DEFAULT_MAX_LOG_LINES,
     );
   if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
+  settingsLoaded = true;
 }
 
 const openNotifSettingsBtn = byId<HTMLButtonElement>(
@@ -2047,6 +2049,10 @@ if (testNotifyBtn) {
 }
 
 async function persistSettings() {
+  // Before loadSettings() resolves the controls still hold their HTML
+  // initial values, not the stored ones: persisting now would overwrite
+  // autostart/notifications/log settings with those stale values.
+  if (!settingsLoaded) return;
   const maxLogLinesRaw = setMaxLogLines ? setMaxLogLines.value : '';
   const maxLogLines =
     maxLogLinesRaw === ''
@@ -2076,9 +2082,12 @@ function markThemeOption(): void {
 }
 for (const btn of themeOpts)
   btn.addEventListener('click', () => {
+    if (!settingsLoaded) return; // stale-control window: load will win
     selectedTheme = (btn.dataset.themeValue ?? 'auto') as ThemePreference;
     markThemeOption();
-    void persistSettings();
+    // Theme-only patch: persistSettings() would read every control and
+    // could persist stale values for the ones the user never touched.
+    void window.api.saveSettings({ theme: selectedTheme });
   });
 
 setAutostart.addEventListener('change', persistSettings);

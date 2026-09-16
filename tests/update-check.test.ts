@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import https from 'node:https';
+import { Readable } from 'node:stream';
 import {
   isNewerVersion,
   selectAssetUrl,
   parseReleases,
   releaseAssetSuffixes,
+  normalizeArch,
+  fetchReleases,
 } from '../src/update-check.js';
 
 describe('isNewerVersion', () => {
@@ -40,6 +44,17 @@ describe('releaseAssetSuffixes', () => {
       appImage: 'linux-arm64.AppImage',
       deb: 'linux-arm64.deb',
     });
+  });
+
+  it('maps Node "arm" to the release naming linux-armv7 (32-bit Pi)', () => {
+    expect(releaseAssetSuffixes('linux', 'arm')).toEqual({
+      appImage: 'linux-armv7.AppImage',
+      deb: 'linux-armv7.deb',
+    });
+    expect(normalizeArch('linux', 'arm')).toBe('armv7');
+    expect(normalizeArch('linux', 'arm64')).toBe('arm64');
+    expect(normalizeArch('darwin', 'arm64')).toBe('arm64');
+    expect(normalizeArch('win32', 'x64')).toBe('x64');
   });
 
   it('offers no artifacts for unsupported platforms', () => {
@@ -131,5 +146,46 @@ describe('parseReleases', () => {
     expect(parseReleases(raw, 1)).toHaveLength(1);
     expect(parseReleases(null)).toEqual([]);
     expect(parseReleases(undefined)).toEqual([]);
+  });
+});
+
+describe('fetchReleases', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('passes the requested limit through to the parse step', async () => {
+    // The HTTP request asks GitHub for `per_page=limit`; the parse used to
+    // silently re-apply its own default of 5, dropping entries 6+.
+    const releases = Array.from({ length: 12 }, (_, i) => ({
+      tag_name: `v1.0.${i + 1}`,
+      name: `release ${i + 1}`,
+      body: '',
+      html_url: `u/${i + 1}`,
+      published_at: '2026-01-01T00:00:00Z',
+    }));
+    vi.spyOn(https, 'get').mockImplementation(((
+      _opts: unknown,
+      cb: (res: Readable & { statusCode?: number }) => void,
+    ) => {
+      const res: Readable & { statusCode?: number } = new Readable({
+        read() {},
+      });
+      res.statusCode = 200;
+      setImmediate(() => {
+        cb(res);
+        res.emit('data', Buffer.from(JSON.stringify(releases)));
+        res.emit('end');
+      });
+      return { on: vi.fn(), destroy: vi.fn() };
+    }) as never);
+    const out = await fetchReleases({
+      owner: 'o',
+      repo: 'r',
+      limit: 12,
+      timeoutMs: 5000,
+    });
+    expect(out).toHaveLength(12);
+    expect(out[0].version).toBe('1.0.1');
   });
 });

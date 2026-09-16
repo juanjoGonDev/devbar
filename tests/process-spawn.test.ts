@@ -23,6 +23,10 @@ async function buildFor(
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // Vitest 5 does not unstub environments automatically: restoreAllMocks
+  // does not undo vi.stubEnv, so a stubbed ComSpec would leak into the
+  // next test file's expectations of a native process.
+  vi.unstubAllEnvs();
 });
 
 describe('buildSpawnArgs — POSIX', () => {

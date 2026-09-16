@@ -24,6 +24,20 @@ Todas las novedades relevantes de DevBar. El formato sigue
   tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
   Configuración y/o Logs cuando esas ventanas están abiertas; el panel es
   siempre sin marco y no genera botón.
+- **En 32-bit ARM (p. ej. Raspberry Pi), la actualización ya encontraba su
+  instalador.** Node informa la arquitectura como `arm`, pero los artefactos
+  se llaman `linux-armv7.*`: el chequeo no proponía ninguna actualización
+  en sitio.
+- **La insignia de la bandeja ya no puede mostrar «99+» con exactamente 99
+  errores** (colisión de caché entre las etiquetas «99» y «99+»).
+- **En macOS, la actualización se aborta si no se puede descargar
+  SHA256SUMS.txt**, igual que en Windows y Linux (antes seguía instalando
+  sin verificación).
+- **En la ventana de Configuración, elegir tema ya no puede sobrescribir
+  autostart/notificaciones** si se hace antes de que terminen de cargar los
+  ajustes, y ahora solo guarda el campo del tema.
+- **El historial de releases de GitHub mostraba como máximo 5 releases**
+  aunque se pidiera más.
 
 ### Cambiado
 

@@ -88,9 +88,10 @@ Click the icon to open the popover. Click **Configuración** to add and edit gro
 The commands are OS-agnostic: a thin router (`scripts/platform.ts`)
 detects the host and dispatches to the matching implementation — the
 original macOS bash pipeline, or electron-builder on Windows and Linux.
-All builds are cross-buildable (the app is pure JS; only the Electron
-runtime is platform-specific), so you can produce Windows/Linux
-artifacts from any host.
+The app is pure JS (only the Electron runtime is platform-specific), so
+Windows artifacts can be built from any host; **Linux artifacts require
+a Linux host or Docker** (electron-builder's contract for AppImage/deb
+targets), which is why CI builds them on `ubuntu-latest`.
 
 | What                         | Command (on that OS)           | Output                                                                                             |
 | ---------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------- |
@@ -190,7 +191,10 @@ platform. The install strategy is per-OS:
 - **Windows** — installed apps re-run the silent NSIS installer after quit;
   the portable exe swaps itself in place.
 
-Every downloaded artifact is verified against `SHA256SUMS.txt` before install.
+Every downloaded artifact is verified against `SHA256SUMS.txt` before install,
+on all three platforms — an update whose manifest cannot be fetched is
+aborted rather than installed unverified. macOS additionally verifies the
+bundle's ad-hoc code signature when it is unpacked.
 
 ## Tests
 

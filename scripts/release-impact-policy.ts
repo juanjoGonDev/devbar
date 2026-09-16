@@ -23,6 +23,7 @@ const RELEASE_EXACT_PATHS = new Set([
   'pnpm-lock.yaml',
   'scripts/build-macos-release.sh',
   'scripts/build.sh',
+  'scripts/build.ts',
   'scripts/package-electron.ts',
   'scripts/package-macos-app.sh',
   'scripts/package-win-linux.ts',

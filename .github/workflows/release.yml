@@ -297,7 +297,18 @@ jobs:
 
       - name: Build and verify NSIS + portable (x64, arm64)
         shell: bash
-        run: pnpm run dist && pnpm run verify
+        run: |
+          # electron-builder downloads Electron dists + toolsets (NSIS)
+          # from GitHub releases; a transient 5xx must not fail the
+          # release — retry before giving up (same wrapper as ci.yml).
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (win) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "dist (win) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
 
       - name: Launch smoke — NSIS install + portable
         shell: pwsh
@@ -382,7 +393,19 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build and verify AppImage + deb (x64, arm64, armv7)
-        run: pnpm run dist && pnpm run verify
+        run: |
+          # electron-builder downloads Electron dists + toolsets (NSIS,
+          # fpm, appimagetool) from GitHub releases; a transient 5xx must
+          # not fail the release — retry before giving up (same wrapper
+          # as ci.yml).
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (linux) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "dist (linux) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
 
       - name: Launch smoke — AppImage + deb (x64, host arch)
         run: |
