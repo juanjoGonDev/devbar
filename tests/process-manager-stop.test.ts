@@ -75,5 +75,9 @@ describe('stop() on POSIX — signal-based kill detection', () => {
       (pm as unknown as { killRequested: Set<number> }).killRequested.size,
     ).toBe(0);
     expect(pm.getState(pid).status).toBe('stopped');
+    // Confirmed exit releases the handle. (A FAILED stop — kill error or the
+    // 6.5 s give-up — must instead keep status 'running' + child, so a later
+    // start() cannot launch a duplicate while the original is alive.)
+    expect(pm.getState(pid).child).toBeNull();
   });
 });

@@ -539,12 +539,17 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
         // could then match a reused pid.
         if (child.pid != null) this.killRequested.delete(child.pid);
         for (const timer of timers) clearTimeout(timer);
-        this.setState(id, {
-          status: 'stopped',
-          child: null,
-          ...(error ? { lastError: error } : {}),
-        });
-        resolve({ ok, error });
+        if (!ok) {
+          // Failed stop (kill error or the 6.5 s give-up): the child may
+          // still be alive. Keep it tracked as RUNNING with its handle so
+          // a later start() cannot launch a duplicate on the same port —
+          // the exit handler settles it to stopped when it actually dies.
+          if (error) this.setState(id, { lastError: error });
+          resolve({ ok: false, error });
+          return;
+        }
+        this.setState(id, { status: 'stopped', child: null });
+        resolve({ ok: true });
       };
       timers.add(setTimeout(() => killGroup(child, 'SIGKILL'), 5000));
       timers.add(

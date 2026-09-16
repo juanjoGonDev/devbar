@@ -191,6 +191,11 @@ jobs:
           # reaches this console. The app writes a marker file on smoke
           # success (removed at smoke start), and the wrapper only returns
           # once the child exits — so the marker is settled now.
+          # Clear a marker the EARLIER smoke in this job (the NSIS install)
+          # may have left: the app only removes its own at app.ready, so an
+          # exe that dies before that would pass the Test-Path gate on the
+          # stale file.
+          Remove-Item (Join-Path $env:TEMP 'devbar-smoke-ok') -ErrorAction SilentlyContinue
           & ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |
             Out-File -FilePath smoke-win-portable.log -Encoding utf8
           if (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {

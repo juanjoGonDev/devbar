@@ -235,6 +235,11 @@ jobs:
           # reaches this console. The app writes a marker file on smoke
           # success (removed at smoke start), and the wrapper only returns
           # once the child exits — so the marker is settled now.
+          # Clear a marker the EARLIER smoke in this job (the NSIS install)
+          # may have left: the app only removes its own at app.ready, so an
+          # exe that dies before that would pass the Test-Path gate on the
+          # stale file.
+          Remove-Item (Join-Path $env:TEMP 'devbar-smoke-ok') -ErrorAction SilentlyContinue
           & ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |
             Out-File -FilePath smoke-win-portable.log -Encoding utf8
           if (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
@@ -711,11 +716,15 @@ jobs:
           rm -rf "$WORK"
 
       - name: Upload build evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build-${{ matrix.os }}-${{ github.sha }}
           retention-days: 3
-          if-no-files-found: error
+          # Evidence must survive a build/smoke failure (that is exactly
+          # when it is needed) — always() — and a failed early step may
+          # have produced no dist/ or smoke logs at all — warn, don't fail.
+          if-no-files-found: warn
           path: |
             dist/
             smoke-*.log

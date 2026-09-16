@@ -3926,9 +3926,24 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+// The in-flight cleanup, shared by every caller that arrives while it is
+// running: resolving them immediately would let that caller quit the
+// process the moment ITS (instant) promise settles — mid-stopAll.
+let activeCleanup: Promise<void> | null = null;
 async function shutdownCleanup(): Promise<void> {
-  if (shutdownPhase !== 'idle') return;
+  if (shutdownPhase === 'done') return;
+  if (shutdownPhase === 'cleaning' && activeCleanup) return activeCleanup;
   shutdownPhase = 'cleaning';
+  const run = performShutdownCleanup();
+  activeCleanup = run;
+  try {
+    await run;
+  } finally {
+    if (activeCleanup === run) activeCleanup = null;
+  }
+}
+
+async function performShutdownCleanup(): Promise<void> {
   try {
     // The config window vetoes its own `close` to ask about unsaved
     // changes. During a quit that veto silently ABORTS the whole shutdown,

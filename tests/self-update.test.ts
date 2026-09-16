@@ -270,10 +270,16 @@ describe('looksLikeAppImage', () => {
     return file;
   }
 
-  it('rejects files shorter than the magic window', () => {
-    const file = withFile(Buffer.from('short'));
-    expect(looksLikeAppImage(file)).toBe(false);
-    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  it('rejects a file that is ELF-prefixed but shorter than the magic window', () => {
+    // 9 bytes: the 4-byte ELF read at offset 0 succeeds, so execution
+    // reaches the 3-byte magic read at offset 8, which only gets 1 byte
+    // and must return false via the short-read guard.
+    const buf = Buffer.concat([
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46]),
+      Buffer.from('short', 'latin1'),
+    ]);
+    expect(buf.length).toBe(9);
+    expect(looksLikeAppImage(withFile(buf))).toBe(false);
   });
 
   it('accepts the AppImageSpec magic (ELF + AI + type byte)', () => {
@@ -282,7 +288,10 @@ describe('looksLikeAppImage', () => {
   });
 
   it('rejects the legacy "AppImage" string at offset 8 — real images do not carry it', () => {
+    // ELF-prefixed so the check gets PAST the header guard and actually
+    // exercises the magic comparison: 'A' matches, 'p' does not.
     const buf = Buffer.alloc(64);
+    buf.write('\x7fELF', 0, 'latin1');
     buf.write('AppImage', 8, 'latin1');
     expect(looksLikeAppImage(withFile(buf))).toBe(false);
   });
