@@ -509,13 +509,30 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     });
     return { ok: true };
   }
-  async stopAll(): Promise<void> {
+  /**
+   * Stops every running service. A service whose stop FAILED (kill error or
+   * the 6.5 s give-up) keeps its running state + handle: it is reported in
+   * `failed`, so callers can refuse to proceed on a half-stopped fleet
+   * (config import) or log what is still alive (shutdown) — the entry also
+   * survives for a later stop() to retry/escalate.
+   */
+  async stopAll(): Promise<{ ok: boolean; failed: string[] }> {
     const running = [...this.states]
       .filter(([, state]) => state.status === 'running' && state.child)
       .map(([id]) => id);
-    await Promise.all(running.map((id) => this.stop(id)));
-    this.states.clear();
-    this.logs.clear();
+    const results = await Promise.all(
+      running.map(async (id) => ({ id, result: await this.stop(id) })),
+    );
+    const failed = results.filter((r) => !r.result.ok).map((r) => r.id);
+    // Confirmed-stopped entries (including earlier stopped ones) release
+    // their state and log buffers; failed running ones are kept on purpose.
+    for (const [id, state] of [...this.states]) {
+      if (state.status !== 'running' || !state.child) {
+        this.states.delete(id);
+        this.logs.delete(id);
+      }
+    }
+    return { ok: failed.length === 0, failed };
   }
   async stop(id: string): Promise<{ ok: boolean; error?: string | undefined }> {
     const state = this.states.get(id);

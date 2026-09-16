@@ -57,27 +57,35 @@ async function waitGroupReady(pm: ProcessManager, pid: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
-describe('stop() on POSIX — signal-based kill detection', () => {
-  it('logs a signal-based stop and leaves killRequested empty', async () => {
-    const pm = new ProcessManager(store);
-    const pid = makeCommandId('g1', 'c1');
-    const res = pm.start(pid);
-    expect(res.ok).toBe(true);
-    await waitGroupReady(pm, pid);
+// POSIX only: this suite spawns `sleep 30` through the user shell and
+// asserts on the SIGTERM/SIGKILL signal-based kill path. On Windows the
+// service launch shape (ComSpec /d /s /c) and the kill shape (taskkill
+// /T /F, no signals) are entirely different, and `sleep` does not exist —
+// skip the suite there rather than let it fail.
+describe.skipIf(process.platform === 'win32')(
+  'stop() on POSIX — signal-based kill detection',
+  () => {
+    it('logs a signal-based stop and leaves killRequested empty', async () => {
+      const pm = new ProcessManager(store);
+      const pid = makeCommandId('g1', 'c1');
+      const res = pm.start(pid);
+      expect(res.ok).toBe(true);
+      await waitGroupReady(pm, pid);
 
-    await pm.stop(pid);
+      await pm.stop(pid);
 
-    const lines = pm.getLogs(pid).map((entry) => entry.line);
-    // The stop is recognized from the SIGTERM the group received — no
-    // killRequested entry was ever added on POSIX.
-    expect(lines).toContain('■ stopped (SIGTERM)');
-    expect(
-      (pm as unknown as { killRequested: Set<number> }).killRequested.size,
-    ).toBe(0);
-    expect(pm.getState(pid).status).toBe('stopped');
-    // Confirmed exit releases the handle. (A FAILED stop — kill error or the
-    // 6.5 s give-up — must instead keep status 'running' + child, so a later
-    // start() cannot launch a duplicate while the original is alive.)
-    expect(pm.getState(pid).child).toBeNull();
-  });
-});
+      const lines = pm.getLogs(pid).map((entry) => entry.line);
+      // The stop is recognized from the SIGTERM the group received — no
+      // killRequested entry was ever added on POSIX.
+      expect(lines).toContain('■ stopped (SIGTERM)');
+      expect(
+        (pm as unknown as { killRequested: Set<number> }).killRequested.size,
+      ).toBe(0);
+      expect(pm.getState(pid).status).toBe('stopped');
+      // Confirmed exit releases the handle. (A FAILED stop — kill error or the
+      // 6.5 s give-up — must instead keep status 'running' + child, so a later
+      // start() cannot launch a duplicate while the original is alive.)
+      expect(pm.getState(pid).child).toBeNull();
+    });
+  },
+);

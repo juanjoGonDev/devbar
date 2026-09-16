@@ -2975,7 +2975,16 @@ function registerIpc() {
       pendingImports.delete(token);
       try {
         const backupPath = configStore.writeImportBackup();
-        await processManager.stopAll(); // wipes all log buffers…
+        const stopped = await processManager.stopAll();
+        if (!stopped.ok) {
+          // Half-stopped fleet: replacing the config now would leave the
+          // still-running services on the OLD config. Refuse the import.
+          return {
+            ok: false,
+            error: `No se pudieron detener todos los servicios (${stopped.failed.join(', ')}) — la importación se canceló. Detén los servicios e inténtalo de nuevo.`,
+          };
+        }
+        // stopAll wiped the log buffers of every confirmed-stopped service…
         lastPipelineRunId = null; // …so a stale run id must not linger
         configStore.replaceConfig(payload);
         syncRepoWatchers();
@@ -3517,8 +3526,9 @@ function themeWindowBackground(): string {
 // theme change so open windows follow the new setting.
 function refreshWindowBackgrounds(): void {
   const bg = themeWindowBackground();
-  const menuBarWindow = (mb as { browserWindow?: BrowserWindow } | undefined)
-    ?.browserWindow;
+  // menubar exposes the popover as `.window` (there is no browserWindow
+  // property — reading it silently skipped the popover from theme updates).
+  const menuBarWindow = (mb as { window?: BrowserWindow } | undefined)?.window;
   for (const win of [configWindow, menuBarWindow, ...logsWindows.values()]) {
     if (win && !win.isDestroyed()) win.setBackgroundColor(bg);
   }
@@ -3968,9 +3978,17 @@ async function performShutdownCleanup(): Promise<void> {
     // walks the manager's own state, not just the configured commands.
     // Each stop escalates to SIGKILL / taskkill /F after 5 s; the overall
     // deadline keeps one wedged service from holding the quit hostage.
-    await withDeadline(processManager.stopAll(), 8000);
-  } catch (_) {
+    const stopped = await withDeadline(processManager.stopAll(), 8000);
+    if (!stopped.ok) {
+      // Best effort: the quit still proceeds, but log WHAT survived — a
+      // wedged child left running after quit is an "address in use" bomb.
+      console.error(
+        `shutdown cleanup: ${stopped.failed.length} service(s) still running after forced stop: ${stopped.failed.join(', ')}`,
+      );
+    }
+  } catch (err) {
     // Cleanup is best-effort; the quit itself must always proceed.
+    console.error(`shutdown cleanup failed: ${errorMessage(err)}`);
   } finally {
     shutdownPhase = 'done';
   }

@@ -1951,8 +1951,23 @@ function adaptOsTexts(): void {
 // ────────────────────── Settings ───────────────────────────────────────
 
 let settingsLoaded = false;
-async function loadSettings() {
-  const s = await window.api.getSettings();
+/**
+ * Returns true when the settings were applied. On a rejected getSettings()
+ * the controls stay BLOCKED (settingsLoaded remains false — persistSettings
+ * and the theme clicks all no-op) instead of silently dying: the failure is
+ * surfaced, and the window `focus` retry below re-runs the load.
+ */
+async function loadSettings(): Promise<boolean> {
+  let s: Awaited<ReturnType<typeof window.api.getSettings>>;
+  try {
+    s = await window.api.getSettings();
+  } catch (err) {
+    showToast(
+      `No se pudieron cargar los ajustes: ${errorMessage(err)}. Los controles de esta ventana están bloqueados; vuelve a enfocar la ventana para reintentar.`,
+      'error',
+    );
+    return false;
+  }
   setAutostart.checked = !!s.autostart;
   selectedTheme = s.theme ?? 'auto';
   markThemeOption();
@@ -1964,7 +1979,13 @@ async function loadSettings() {
     );
   if (setNotifySuccess) setNotifySuccess.checked = s.notifySuccess !== false;
   settingsLoaded = true;
+  return true;
 }
+
+// Retry path for a failed load: re-enfocando la ventana reintenta la carga.
+window.addEventListener('focus', () => {
+  if (!settingsLoaded) void loadSettings();
+});
 
 const openNotifSettingsBtn = byId<HTMLButtonElement>(
   'open-notification-settings',
@@ -2101,13 +2122,20 @@ if (setNotifySuccess)
       return;
     }
 
-    // Reload the UI to reflect the newly imported config
-    await loadSettings();
+    // Reload the UI to reflect the newly imported config. If the settings
+    // read fails, do NOT claim the import finished: the controls are still
+    // on stale values and the error toast explains the retry.
+    const settingsOk = await loadSettings();
     await loadGroups();
     selectedGroupId = null;
     renderGroupDetail();
     await refreshPipeline(); // import replaces the whole pipeline wholesale
-    showToast('Configuración importada', 'ok');
+    showToast(
+      settingsOk
+        ? 'Configuración importada'
+        : 'Importado, pero los ajustes no se cargaron — reenfoca la ventana para reintentar',
+      settingsOk ? 'ok' : 'error',
+    );
   });
 })();
 
@@ -2272,7 +2300,7 @@ if (window.api && window.api.getUpdateStatus) {
 // ────────────────────── Init ───────────────────────────────────────────
 
 adaptOsTexts();
-loadSettings();
+void loadSettings();
 
 // Captured in a `const` rather than read back off the mutable `pipelineEditor`
 // module binding: a `let` narrowed non-null by this very assignment is not

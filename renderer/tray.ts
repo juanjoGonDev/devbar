@@ -63,8 +63,16 @@ interface BranchCacheEntry {
   branches: string[];
   isRepo?: boolean | undefined;
   current: string | null;
+  /** When this entry was written (used to re-verify stale negatives). */
+  checkedAt?: number | undefined;
 }
 const branchCache = new Map<string, BranchCacheEntry>();
+// A "this folder is not a repository" verdict is not permanent: a `git init`
+// in the folder fires NO watcher event (the watcher only follows repositories
+// that already are), so a forever-negative verdict would hide the branch
+// selector even after the folder became a repository. Re-verify negatives
+// after this window; positives stay cached until a real event clears them.
+const NEGATIVE_BRANCH_VERDICT_TTL_MS = 60_000;
 // Monotonic token per group. Every event that can make branch data
 // stale (path change, onBranchesChanged) bumps it, and an in-flight
 // listBranches result re-checks it before applying — otherwise a slow
@@ -541,7 +549,19 @@ function buildBranchSelector(gs: GroupState): HTMLElement {
   // Groups without a path don't use git: no selector at all.
   if (!group.path) return branchNone();
 
-  const cached = branchCache.get(groupId);
+  let cached = branchCache.get(groupId);
+  // A cached "not a repository" verdict is only honored while fresh: after
+  // the TTL it is dropped so the async path below re-verifies (a folder can
+  // become a repo with NO watcher event — `git init` is invisible to a
+  // watcher that only follows existing repositories).
+  if (
+    cached?.isRepo === false &&
+    cached.checkedAt != null &&
+    Date.now() - cached.checkedAt >= NEGATIVE_BRANCH_VERDICT_TTL_MS
+  ) {
+    branchCache.delete(groupId);
+    cached = undefined;
+  }
   // Known non-git project: nothing to show and nothing to query.
   if (cached && cached.isRepo === false) return branchNone();
   const initOptions = cached ? branchDataToOptions(cached) : [];
@@ -601,10 +621,14 @@ function loadBranchesIntoCombo(groupId: string, combo: ComboboxControl): void {
       if (res.isRepo === false) {
         // Not a git project: remember it (negative cache) and drop the
         // selector entirely — a stuck "Cargando…" box is a dead control.
+        // checkedAt gives the verdict a TTL: buildBranchSelector re-verifies
+        // after NEGATIVE_BRANCH_VERDICT_TTL_MS, because a `git init` in the
+        // folder produces no watcher event.
         branchCache.set(groupId, {
           branches: [],
           current: null,
           isRepo: false,
+          checkedAt: Date.now(),
         });
         combo.replaceWith(branchNone());
       }

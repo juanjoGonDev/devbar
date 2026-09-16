@@ -63,22 +63,33 @@ export function desktopLauncherPath(): string {
  * executable of this install; the icon (when one was found next to the
  * app) is an absolute path — legal for user-local entries.
  *
- * Quoting follows the Desktop Entry spec: a value with whitespace or a
- * special character (`"`, `$`, backtick, `\`) goes in double quotes,
- * where those four must be backslash-escaped (backslash first, so the
- * escaping backslashes are not re-escaped themselves). The `Icon` key is
- * an ICONSTRING, not a desktop argument: it is not double-quoted —
- * backslash and `;` (the icon-list separator) are backslash-escaped and
- * whitespace is escaped as `\s`.
+ * Quoting follows the Desktop Entry spec (§7): a literal % is doubled
+ * everywhere (field codes), a value containing any reserved character
+ * goes in double quotes, and inside those only " ` $ \ are escaped —
+ * a literal \ takes four backslashes (string unescape runs before quote
+ * unescape). The `Icon` key is an ICONSTRING, not a desktop argument:
+ * it is not double-quoted — backslash and `;` (the icon-list separator)
+ * are backslash-escaped and whitespace is escaped as `\s`.
  */
 export function renderDesktopEntry(
   executable: string,
   icon?: string | null,
 ): string {
-  const quote = (value: string): string =>
-    /[\s"'`$\\]/.test(value)
-      ? `"${value.replace(/([\\`$"])/g, '\\$1')}"`
-      : value;
+  // Exec-line quoting per the Desktop Entry spec (§7 "The Exec key"):
+  //  - A literal % must be doubled ANYWHERE on the command line: field
+  //    codes (%u, %f, …) are expanded once, AFTER undo-quoting, so an
+  //    unescaped % in the path would be mangled by the launcher.
+  //  - A value containing any RESERVED character (whitespace plus
+  //    " ' \ > < ~ | & ; $ * ? # ( ) and backtick) must be double-quoted.
+  //  - Inside double quotes only " ` $ and \ are backslash-escaped — and a
+  //    literal \ needs FOUR backslashes in the file, because the generic
+  //    string unescape (\\ -> \) runs BEFORE the quoting unescape.
+  const quote = (value: string): string => {
+    let out = value.replace(/%/g, '%%');
+    if (!/[\t\n "'\\><~|&;$*?#()`]/.test(value)) return out;
+    out = out.replace(/\\/g, '\\\\\\\\').replace(/([\"`$])/g, '\\$1');
+    return `"${out}"`;
+  };
   const iconString = (value: string): string =>
     value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/\s/g, '\\s');
   const lines = [

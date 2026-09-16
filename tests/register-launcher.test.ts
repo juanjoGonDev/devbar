@@ -88,18 +88,37 @@ describe('renderDesktopEntry', () => {
     expect(content).toContain('Icon=/home/u/dir\\\\x\\;a/icon.png');
   });
 
-  it('quotes and escapes a lone backslash (no whitespace needed)', () => {
+  it('quotes a lone backslash and doubles it to FOUR (string unescape runs before quote unescape)', () => {
     // A backslash is special in Exec even unquoted: it would escape the
-    // following character, so the value must be quoted and the `\` doubled.
+    // following character, so the value must be quoted — and a literal \
+    // needs FOUR backslashes in the file, because the generic string
+    // unescape (\\ -> \) runs BEFORE the quoting unescape.
     const content = renderDesktopEntry('/home/u/odd\\path/devbar');
-    expect(content).toContain(`Exec="/home/u/odd\\\\path/devbar"`);
+    expect(content).toContain(`Exec="/home/u/odd\\\\\\\\path/devbar"`);
+  });
+
+  it('doubles literal % (field codes are expanded after unquoting)', () => {
+    // Unquoted % would be read as a field-code start (%u, %f, …).
+    const content = renderDesktopEntry('/home/u/a%ub/devbar');
+    expect(content).toContain('Exec=/home/u/a%%ub/devbar');
+    // Inside a quoted value the % is doubled too.
+    const quoted = renderDesktopEntry('/home/u/my %u app/devbar');
+    expect(quoted).toContain(`Exec="/home/u/my %%u app/devbar"`);
+  });
+
+  it('quotes reserved characters beyond whitespace (no escaping inside quotes)', () => {
+    // & ; ( ) etc. are reserved in Exec: unquoted they would be parsed as
+    // command separators / field codes — so the value must be quoted,
+    // though inside the quotes they need no backslash.
+    const content = renderDesktopEntry('/home/u/a&b;c(d)/devbar');
+    expect(content).toContain(`Exec="/home/u/a&b;c(d)/devbar"`);
   });
 
   it('escapes backslash, dollar, backtick and quote inside quoted values', () => {
     const tricky = '/home/u/a \\b$c`d"x/devbar'; // \ $ ` " and a space
     const content = renderDesktopEntry(tricky);
     expect(content).toContain(
-      `Exec="/home/u/a \\\\b\\$c` + '\\' + '`' + `d\\"x/devbar"`,
+      `Exec="/home/u/a \\\\\\\\b\\$c` + '\\' + '`' + `d\\"x/devbar"`,
     );
   });
 });
