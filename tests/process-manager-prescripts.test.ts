@@ -34,26 +34,20 @@ const GROUP: Group = normalizeGroup({
   env: [],
   commands: [{ id: 'c1', name: 'Dev', command: 'pnpm dev', env: [] }],
   actions: [{ id: 'a1', name: 'Install', command: 'pnpm install', env: [] }],
-  preSteps: [
+  preScripts: [
     {
-      id: 's1',
-      mode: 'parallel',
-      scripts: [
-        {
-          id: 'sc1',
-          name: 'Build',
-          command: 'pnpm build',
-          env: [],
-          inheritGroupEnv: false,
-        },
-        {
-          id: 'sc2',
-          name: 'Lint',
-          command: 'pnpm lint',
-          env: [],
-          inheritGroupEnv: true,
-        },
-      ],
+      id: 'sc1',
+      name: 'Build',
+      command: 'pnpm build',
+      env: [],
+      inheritGroupEnv: false,
+    },
+    {
+      id: 'sc2',
+      name: 'Lint',
+      command: 'pnpm lint',
+      env: [],
+      inheritGroupEnv: true,
     },
   ],
 });
@@ -64,6 +58,7 @@ const GLOBAL_SETTINGS: GlobalSettings = {
   silenceErrors: false,
   maxLogLines: 2000,
   notifySuccess: true,
+  preScriptsAutoRun: false,
 };
 
 function makeConfigStoreStub(group: Group = GROUP) {
@@ -155,7 +150,7 @@ describe('ProcessManager.resolveTarget — all 4 pid kinds', () => {
   });
 
   it('resolves prescript pid', () => {
-    const pid = makePreScriptId('g1', 's1', 'sc1');
+    const pid = makePreScriptId('g1', 'sc1');
     const r = pm.resolveTarget(pid);
     expect(r).not.toBeNull();
     if (!r) throw new Error('Expected resolved target');
@@ -163,8 +158,8 @@ describe('ProcessManager.resolveTarget — all 4 pid kinds', () => {
     expect(r.target.id).toBe('sc1');
   });
 
-  it('resolves prescript pid for second script in step', () => {
-    const pid = makePreScriptId('g1', 's1', 'sc2');
+  it('resolves prescript pid for the second script (flat group.preScripts)', () => {
+    const pid = makePreScriptId('g1', 'sc2');
     const r = pm.resolveTarget(pid);
     expect(r).not.toBeNull();
     if (!r) throw new Error('Expected resolved target');
@@ -175,7 +170,7 @@ describe('ProcessManager.resolveTarget — all 4 pid kinds', () => {
   });
 
   it('returns null for preAggregator pid (virtual — no spawn)', () => {
-    const pid = makeAggregatorId('g1', '1234567890');
+    const pid = makeAggregatorId('1234567890');
     const r = pm.resolveTarget(pid);
     expect(r).toBeNull();
   });
@@ -187,17 +182,12 @@ describe('ProcessManager.resolveTarget — all 4 pid kinds', () => {
   });
 
   it('returns null when group not found', () => {
-    const pid = makePreScriptId('nonexistent', 's1', 'sc1');
+    const pid = makePreScriptId('nonexistent', 'sc1');
     expect(pm.resolveTarget(pid)).toBeNull();
   });
 
-  it('returns null when step not found in group', () => {
-    const pid = makePreScriptId('g1', 'missing-step', 'sc1');
-    expect(pm.resolveTarget(pid)).toBeNull();
-  });
-
-  it('returns null when script not found in step', () => {
-    const pid = makePreScriptId('g1', 's1', 'missing-script');
+  it('returns null when script not found in group.preScripts', () => {
+    const pid = makePreScriptId('g1', 'missing-script');
     expect(pm.resolveTarget(pid)).toBeNull();
   });
 });
@@ -222,26 +212,24 @@ describe('parseProcessId — all 4 pid kinds resolve correctly', () => {
   });
 
   it('pre: → kind prescript', () => {
-    const p = parseProcessId(makePreScriptId('g1', 's1', 'sc1'));
+    const p = parseProcessId(makePreScriptId('g1', 'sc1'));
     expect(p.kind).toBe('prescript');
     if (p.kind !== 'prescript') throw new Error('Expected prescript pid');
     expect(p.groupId).toBe('g1');
-    expect(p.stepId).toBe('s1');
     expect(p.scriptId).toBe('sc1');
   });
 
   it('pre-pipeline: → kind preAggregator', () => {
-    const p = parseProcessId(makeAggregatorId('g1', '1234567890'));
+    const p = parseProcessId(makeAggregatorId('1234567890'));
     expect(p.kind).toBe('preAggregator');
     if (p.kind !== 'preAggregator') throw new Error('Expected aggregator pid');
-    expect(p.groupId).toBe('g1');
     expect(p.runId).toBe('1234567890');
   });
 
   it('malformed → kind unknown', () => {
     expect(parseProcessId('bad')).toEqual({ kind: 'unknown' });
     expect(parseProcessId(null)).toEqual({ kind: 'unknown' });
-    expect(parseProcessId('pre:g1:s1')).toEqual({ kind: 'unknown' }); // only 3 segments
+    expect(parseProcessId('pre:g1')).toEqual({ kind: 'unknown' }); // no scriptId segment
   });
 });
 

@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-  makeCommandId,
+  belongsToMergedScope,
   makeActionId,
-  makePreScriptId,
   makeAggregatorId,
+  makeCommandId,
+  makePreScriptId,
   parseProcessId,
 } from '../src/compound-id.js';
+import { PIPELINE_LOG_GROUP_ID } from '../src/pipeline-labels.js';
 
 describe('compound-id', () => {
   // ─── makeCommandId ───────────────────────────────────────────────────
@@ -100,24 +102,21 @@ describe('compound-id', () => {
 
   // ─── makePreScriptId ─────────────────────────────────────────────────
   describe('makePreScriptId', () => {
-    it('returns the correct 4-segment format', () => {
-      expect(makePreScriptId('g1', 's1', 'sc1')).toBe('pre:g1:s1:sc1');
+    it('returns the correct 2-arg format (stepId dropped: pid stable across drag-and-drop)', () => {
+      expect(makePreScriptId('g1', 'sc1')).toBe('pre:g1:sc1');
     });
 
     it('handles uuid-like values', () => {
       const gid = 'aaaa-1111';
-      const sid = 'bbbb-2222';
       const scid = 'cccc-3333';
-      expect(makePreScriptId(gid, sid, scid)).toBe(`pre:${gid}:${sid}:${scid}`);
+      expect(makePreScriptId(gid, scid)).toBe(`pre:${gid}:${scid}`);
     });
   });
 
   // ─── makeAggregatorId ────────────────────────────────────────────────
   describe('makeAggregatorId', () => {
-    it('returns the correct pre-pipeline format', () => {
-      expect(makeAggregatorId('g1', '1234567890')).toBe(
-        'pre-pipeline:g1:1234567890',
-      );
+    it('returns the correct pre-pipeline format (groupId dropped: one global pipeline)', () => {
+      expect(makeAggregatorId('1234567890')).toBe('pre-pipeline:1234567890');
     });
   });
 
@@ -125,45 +124,51 @@ describe('compound-id', () => {
   describe('parseProcessId — prescript roundtrip', () => {
     it('roundtrips a pre-script id', () => {
       const gid = 'group-uuid-1234';
-      const sid = 'step-uuid-5678';
       const scid = 'script-uuid-9012';
-      const pid = makePreScriptId(gid, sid, scid);
+      const pid = makePreScriptId(gid, scid);
       const parsed = parseProcessId(pid);
       expect(parsed.kind).toBe('prescript');
       if (parsed.kind !== 'prescript')
         throw new Error('Expected prescript process id');
       expect(parsed.groupId).toBe(gid);
-      expect(parsed.stepId).toBe(sid);
       expect(parsed.scriptId).toBe(scid);
     });
 
     it('roundtrips a pre-pipeline aggregator id', () => {
-      const gid = 'group-uuid-abcd';
       const runId = '1717000000000';
-      const pid = makeAggregatorId(gid, runId);
+      const pid = makeAggregatorId(runId);
       const parsed = parseProcessId(pid);
       expect(parsed.kind).toBe('preAggregator');
       if (parsed.kind !== 'preAggregator')
         throw new Error('Expected preAggregator process id');
-      expect(parsed.groupId).toBe(gid);
       expect(parsed.runId).toBe(runId);
     });
 
     it('distinguishes pre: from pre-pipeline:', () => {
-      const preParsed = parseProcessId('pre:g:s:sc');
-      const aggParsed = parseProcessId('pre-pipeline:g:run123');
+      const preParsed = parseProcessId('pre:g:sc');
+      const aggParsed = parseProcessId('pre-pipeline:run123');
       expect(preParsed.kind).toBe('prescript');
       expect(aggParsed.kind).toBe('preAggregator');
     });
 
     it('pre: does not match pre-pipeline: prefix', () => {
       // A pre-pipeline: id must NOT be parsed as prescript kind
-      const aggId = makeAggregatorId('groupX', '9999');
+      const aggId = makeAggregatorId('9999');
       expect(parseProcessId(aggId).kind).toBe('preAggregator');
     });
 
-    it('incomplete pre: id (only 3 segments) returns unknown', () => {
-      expect(parseProcessId('pre:g:s')).toEqual({ kind: 'unknown' });
+    it('a script id that itself contains colons is captured verbatim (greedy last segment)', () => {
+      const pid = 'pre:group1:sub1:sub2';
+      const parsed = parseProcessId(pid);
+      expect(parsed.kind).toBe('prescript');
+      if (parsed.kind !== 'prescript')
+        throw new Error('Expected prescript process id');
+      expect(parsed.groupId).toBe('group1');
+      expect(parsed.scriptId).toBe('sub1:sub2');
+    });
+
+    it('incomplete pre: id (only 1 segment after the prefix) returns unknown', () => {
+      expect(parseProcessId('pre:g')).toEqual({ kind: 'unknown' });
     });
 
     it('existing cmd/act paths unchanged after adding pre: branches', () => {
@@ -180,6 +185,64 @@ describe('compound-id', () => {
         throw new Error('Expected action process id');
       expect(actParsed.groupId).toBe('g');
       expect(actParsed.actionId).toBe('a');
+    });
+  });
+});
+
+describe('belongsToMergedScope', () => {
+  const cmd = parseProcessId(makeCommandId('back', 'c1'));
+  const action = parseProcessId(makeActionId('back', 'a1'));
+  const script = parseProcessId(makePreScriptId('back', 's1'));
+  const otherScript = parseProcessId(makePreScriptId('front', 's2'));
+  const aggregator = parseProcessId(makeAggregatorId(1789107788205));
+
+  // One rule for BOTH the snapshot (`collectMergedSources`) and the live
+  // stream (`broadcastLog`). They were written separately once and drifted:
+  // the pipeline view listed a script's buffer but never received its new
+  // lines, so it only filled in on reload.
+  describe('the "Todo" scope', () => {
+    it('takes everything that parses', () => {
+      for (const parsed of [cmd, action, script, otherScript, aggregator])
+        expect(belongsToMergedScope(parsed, null)).toBe(true);
+    });
+
+    it('still rejects an unparseable id', () => {
+      expect(belongsToMergedScope(parseProcessId('nonsense'), null)).toBe(
+        false,
+      );
+    });
+  });
+
+  describe('the pipeline scope', () => {
+    it('takes the aggregator and EVERY group’s pre-scripts', () => {
+      expect(belongsToMergedScope(aggregator, PIPELINE_LOG_GROUP_ID)).toBe(
+        true,
+      );
+      expect(belongsToMergedScope(script, PIPELINE_LOG_GROUP_ID)).toBe(true);
+      expect(belongsToMergedScope(otherScript, PIPELINE_LOG_GROUP_ID)).toBe(
+        true,
+      );
+    });
+
+    it('takes no commands or actions', () => {
+      expect(belongsToMergedScope(cmd, PIPELINE_LOG_GROUP_ID)).toBe(false);
+      expect(belongsToMergedScope(action, PIPELINE_LOG_GROUP_ID)).toBe(false);
+    });
+  });
+
+  describe('a real group scope', () => {
+    it('takes that group’s commands, actions and pre-scripts', () => {
+      expect(belongsToMergedScope(cmd, 'back')).toBe(true);
+      expect(belongsToMergedScope(action, 'back')).toBe(true);
+      expect(belongsToMergedScope(script, 'back')).toBe(true);
+    });
+
+    it('takes nothing from another group', () => {
+      expect(belongsToMergedScope(otherScript, 'back')).toBe(false);
+    });
+
+    it('never nests the pipeline aggregator under a real group', () => {
+      expect(belongsToMergedScope(aggregator, 'back')).toBe(false);
     });
   });
 });

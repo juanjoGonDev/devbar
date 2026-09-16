@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePreStep, normalizePreScript } from '../src/groups-model.js';
+import {
+  normalizePreStep,
+  normalizePreScript,
+  reorderByIds,
+  assignScriptToStep,
+  unassignScriptFromStep,
+} from '../src/groups-model.js';
 
 /**
  * config-store-prescripts.test.js
@@ -7,36 +13,25 @@ import { normalizePreStep, normalizePreScript } from '../src/groups-model.js';
  * config-store requires electron-store (Electron context) and cannot be
  * imported in a pure Vitest environment. We therefore test the CRUD logic
  * that lives in the normalizer layer (normalizePreStep / normalizePreScript)
- * and verify the reorder algorithm inline — both mirror exactly what
- * config-store's savePreStep / reorderPreSteps / savePreScript etc. do.
+ * and exercise the REAL reorder algorithm via `reorderByIds` — both mirror
+ * exactly what config-store's savePreStep / reorderPreSteps / savePreScript
+ * etc. do.
  *
  * The normalizer tests ensure the data shapes produced by each CRUD
- * function are correct; the reorder tests validate the id-based splice
- * logic (same algorithm used in reorderPreSteps / reorderPreScripts /
- * reorderActions in config-store.js).
+ * function are correct; the reorder tests below call the same
+ * `reorderByIds` function config-store.ts imports for reorderGroups /
+ * reorderCommands / reorderActions / reorderPreSteps / reorderPreScripts
+ * (sdd-verify W3: previously this file hand-copied the algorithm instead of
+ * importing it, so a real drift between the two would have gone unnoticed;
+ * dedicated coverage for `reorderByIds` itself lives in
+ * `groups-model.test.ts`).
+ *
+ * Since the pipeline migration: `preSteps` is a GLOBAL top-level slice (no
+ * `groupId` on save/delete/reorder), `preScripts` stays per-group but flat
+ * (no `stepId`), and step placement is a distinct concern handled by
+ * `assignScriptToStep` / `unassignScriptFromStep` (real imports from
+ * `groups-model.ts` — genuinely testable, unlike the rest of this file).
  */
-
-// ─── Reorder algorithm (mirrors config-store's reorder helpers) ───────────────
-
-function reorderById<T extends { id: string }>(
-  items: readonly T[],
-  orderedIds: readonly string[],
-): T[] {
-  const byId = new Map(items.map((x) => [x.id, x]));
-  const seen = new Set<string>();
-  const sorted: T[] = [];
-  for (const id of orderedIds) {
-    if (byId.has(id) && !seen.has(id)) {
-      const item = byId.get(id);
-      if (item) sorted.push(item);
-      seen.add(id);
-    }
-  }
-  for (const x of items) {
-    if (!seen.has(x.id)) sorted.push(x);
-  }
-  return sorted;
-}
 
 // ─── normalizePreStep (savePreStep contract) ──────────────────────────────────
 
@@ -54,14 +49,13 @@ describe('savePreStep contract — normalizePreStep', () => {
     expect(step.id).toBe('step-abc');
   });
 
-  it('normalizes scripts within the step', () => {
+  it('normalizes scripts within the step as {groupId,scriptId} refs', () => {
     const step = normalizePreStep({
       id: 'step-1',
       mode: 'serial',
-      scripts: [{ id: 'sc-1', name: 'Install', command: 'pnpm install' }],
+      scripts: [{ groupId: 'g1', scriptId: 'sc-1' }],
     });
-    expect(step.scripts).toHaveLength(1);
-    expect(step.scripts[0].id).toBe('sc-1');
+    expect(step.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc-1' }]);
   });
 
   it('defaults unknown mode to parallel', () => {
@@ -124,7 +118,7 @@ describe('savePreScript contract — normalizePreScript', () => {
   });
 });
 
-// ─── deletePreStep contract ───────────────────────────────────────────────────
+// ─── deletePreStep contract (global pipeline, no groupId) ─────────────────────
 
 describe('deletePreStep contract', () => {
   it('removes a step by id', () => {
@@ -144,7 +138,7 @@ describe('deletePreStep contract', () => {
   });
 });
 
-// ─── reorderPreSteps contract ─────────────────────────────────────────────────
+// ─── reorderPreSteps contract (global pipeline, no groupId) ───────────────────
 
 describe('reorderPreSteps contract — reorder algorithm', () => {
   it('reorders steps to match orderedIds', () => {
@@ -153,35 +147,35 @@ describe('reorderPreSteps contract — reorder algorithm', () => {
       { id: 's2', mode: 'serial', scripts: [] },
       { id: 's3', mode: 'parallel', scripts: [] },
     ];
-    const result = reorderById(steps, ['s3', 's1', 's2']);
+    const result = reorderByIds(steps, ['s3', 's1', 's2']);
     expect(result.map((s) => s.id)).toEqual(['s3', 's1', 's2']);
   });
 
   it('appends unknown ids at the end', () => {
     const steps = [{ id: 's1' }, { id: 's2' }];
-    const result = reorderById(steps, ['s2']); // s1 not mentioned
+    const result = reorderByIds(steps, ['s2']); // s1 not mentioned
     expect(result.map((s) => s.id)).toEqual(['s2', 's1']);
   });
 
   it('ignores ids not in the current list', () => {
     const steps = [{ id: 's1' }, { id: 's2' }];
-    const result = reorderById(steps, ['s3', 's1', 's2']); // s3 doesn't exist
+    const result = reorderByIds(steps, ['s3', 's1', 's2']); // s3 doesn't exist
     expect(result.map((s) => s.id)).toEqual(['s1', 's2']);
   });
 
   it('does not duplicate items', () => {
     const steps = [{ id: 's1' }, { id: 's2' }];
-    const result = reorderById(steps, ['s1', 's1', 's2']); // duplicate
+    const result = reorderByIds(steps, ['s1', 's1', 's2']); // duplicate
     const ids = result.map((s) => s.id);
     const deduped = [...new Set(ids)];
     expect(ids).toEqual(deduped);
   });
 });
 
-// ─── deletePreScript contract ─────────────────────────────────────────────────
+// ─── deletePreScript contract (flat group.preScripts, groupId + scriptId) ─────
 
 describe('deletePreScript contract', () => {
-  it('removes a script by id from a step', () => {
+  it('removes a script by id from the group flat preScripts list', () => {
     const scripts = [{ id: 'sc1' }, { id: 'sc2' }];
     const result = scripts.filter((sc) => sc.id !== 'sc1');
     expect(result).toHaveLength(1);
@@ -189,12 +183,45 @@ describe('deletePreScript contract', () => {
   });
 });
 
-// ─── reorderPreScripts contract ───────────────────────────────────────────────
+// ─── reorderPreScripts contract (flat group.preScripts, no stepId) ────────────
 
 describe('reorderPreScripts contract', () => {
-  it('reorders scripts within a step', () => {
+  it('reorders a group flat preScripts list', () => {
     const scripts = [{ id: 'sc1' }, { id: 'sc2' }, { id: 'sc3' }];
-    const result = reorderById(scripts, ['sc3', 'sc1', 'sc2']);
+    const result = reorderByIds(scripts, ['sc3', 'sc1', 'sc2']);
     expect(result.map((sc) => sc.id)).toEqual(['sc3', 'sc1', 'sc2']);
+  });
+});
+
+// ─── assignScriptToStep / unassignScriptFromStep contract ─────────────────────
+// config-store's assignScriptToStep(stepId, groupId, scriptId, position?) and
+// unassignScriptFromStep(stepId, groupId, scriptId) are thin wrappers around
+// these real, imported groups-model.ts functions — full coverage of the
+// placement algorithm itself (moves, reorders, no-ops) lives in
+// groups-model.test.ts; this documents the config-store-facing contract.
+
+describe('assignScriptToStep / unassignScriptFromStep contract', () => {
+  it('assignScriptToStep places a ref into the target step', () => {
+    const steps = [{ id: 'step1', mode: 'parallel' as const, scripts: [] }];
+    const result = assignScriptToStep(steps, 'step1', {
+      groupId: 'g1',
+      scriptId: 'sc1',
+    });
+    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
+  });
+
+  it('unassignScriptFromStep removes a placed ref from its step', () => {
+    const steps = [
+      {
+        id: 'step1',
+        mode: 'parallel' as const,
+        scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+      },
+    ];
+    const result = unassignScriptFromStep(steps, 'step1', {
+      groupId: 'g1',
+      scriptId: 'sc1',
+    });
+    expect(result[0]?.scripts).toEqual([]);
   });
 });

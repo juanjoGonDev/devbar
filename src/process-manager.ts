@@ -175,10 +175,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       );
       return target ? { group, target, kind: 'action' } : null;
     }
-    const step = group.preSteps.find(
-      (candidate) => candidate.id === parsed.stepId,
-    );
-    const target = step?.scripts.find(
+    const target = group.preScripts.find(
       (script) => script.id === parsed.scriptId,
     );
     return target ? { group, target, kind: 'prescript' } : null;

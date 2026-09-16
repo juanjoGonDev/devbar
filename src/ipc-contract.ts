@@ -51,12 +51,20 @@ export interface GroupState {
   commands: CommandRuntimeState[];
   actions: ActionRuntimeState[];
   lastError: string | null;
-  preScriptsStatus: 'running' | 'done' | 'error' | 'idle';
-  preScriptsCurrentStep: number | null;
-  preScriptsTotalSteps: number;
-  preScriptsLastError: string | null;
-  preScriptsLastRunId: string | null;
-  preScriptsStartedAt: number | null;
+}
+/**
+ * Runtime state of the ONE global pre-script pipeline (D2/D7). Sibling of
+ * `GroupState` now that pipeline steps are no longer per-group — broadcast on
+ * its own `pipeline:update` channel instead of nested per-group fields.
+ */
+export interface PipelineState {
+  status: 'running' | 'done' | 'error' | 'idle';
+  currentStep: number | null;
+  totalSteps: number;
+  lastError: string | null;
+  /** Survives after the transient status clears, so "ver logs" keeps working. */
+  lastRunId: string | null;
+  startedAt: number | null;
 }
 export type LogsTarget =
   | { kind: 'command'; group: Group; target: Command }
@@ -136,6 +144,11 @@ export interface PrescriptConfirmContext {
   secs: number | null;
   onTimeout: 'confirm' | 'cancel';
   logo: string | null;
+  /** The script's own group — `null` only for the dev-panel's simulated
+   * trigger, which has no real group behind it. Two groups can each define a
+   * script with the same name, so the group is shown as a qualifier next to
+   * the script name it belongs to. */
+  groupName: string | null;
 }
 interface ChangelogPayload {
   releases: ReleaseSummary[];
@@ -304,31 +317,39 @@ export interface DevBarApi {
     error?: string | undefined;
     canceled?: boolean | undefined;
   }>;
-  runPreScripts(groupId: string): Promise<{
+  runPreScripts(): Promise<{
     ok: boolean;
     runId?: number | undefined;
     error?: string | undefined;
     cancelled?: boolean | undefined;
   }>;
-  cancelPreScripts(groupId: string): Promise<SimpleResult>;
-  savePreStep(groupId: string, data: unknown): Promise<PreStep | null>;
-  deletePreStep(groupId: string, stepId: string): Promise<SimpleResult>;
-  reorderPreSteps(groupId: string, orderedIds: string[]): Promise<SimpleResult>;
-  savePreScript(
-    groupId: string,
-    stepId: string,
-    data: unknown,
-  ): Promise<PreScript | null>;
-  deletePreScript(
-    groupId: string,
-    stepId: string,
-    scriptId: string,
-  ): Promise<SimpleResult>;
+  cancelPreScripts(): Promise<SimpleResult>;
+  /** The pipeline's CONFIG (global, ordered steps) — mirrors `listGroups()`. */
+  getPreSteps(): Promise<PreStep[]>;
+  savePreStep(data: unknown): Promise<PreStep | null>;
+  deletePreStep(stepId: string): Promise<SimpleResult>;
+  reorderPreSteps(orderedIds: string[]): Promise<SimpleResult>;
+  savePreScript(groupId: string, data: unknown): Promise<PreScript | null>;
+  deletePreScript(groupId: string, scriptId: string): Promise<SimpleResult>;
   reorderPreScripts(
     groupId: string,
-    stepId: string,
     orderedIds: string[],
   ): Promise<SimpleResult>;
+  /** Places an already-defined script into a step, at an optional position. */
+  assignScriptToStep(
+    stepId: string,
+    groupId: string,
+    scriptId: string,
+    position?: number,
+  ): Promise<PreStep[]>;
+  unassignScriptFromStep(
+    stepId: string,
+    groupId: string,
+    scriptId: string,
+  ): Promise<PreStep[]>;
+  /** The pipeline's RUNTIME state — mirrors `getGroupStates()`. */
+  getPipelineState(): Promise<PipelineState>;
+  onPipelineUpdate(callback: (payload: PipelineState) => void): () => void;
   getPrescriptConfirmContext(
     token: string,
   ): Promise<PrescriptConfirmContext | null>;

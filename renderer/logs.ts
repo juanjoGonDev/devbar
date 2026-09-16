@@ -22,6 +22,7 @@ import {
 } from './log-window.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 import type { LogEntry } from '../src/domain-types.js';
+import { PIPELINE_LOG_GROUP_ID } from '../src/pipeline-labels.js';
 import type {
   LogListGroup,
   LogListItem,
@@ -594,8 +595,11 @@ function buildRow(entry: LogEntry, entryIndex: number): HTMLElement {
   if (source) {
     div.dataset.src = source.name;
     div.dataset.group = source.groupName;
-    // The group tag is redundant inside a single group's view.
-    if (mergedIsAll) {
+    // The group tag is redundant inside a single real group's own view,
+    // where every source shares that same group — but not in the pipeline's
+    // own merged view, whose sources are whichever real groups' scripts
+    // took part, exactly like "Todo".
+    if (mergedGroupId === null || mergedGroupId === PIPELINE_LOG_GROUP_ID) {
       const grp = document.createElement('button');
       grp.type = 'button';
       grp.className = 'src grp';
@@ -1451,6 +1455,48 @@ function buildAllRow(): HTMLElement {
   return row;
 }
 
+/**
+ * The pipeline aggregator's own row, pinned right after "Todo" and above the
+ * real groups: it is a cross-cutting view like "Todo", not one group among
+ * the others. Unlike a real group it renders NO per-run children — with a
+ * single run the bucket and its one child showed the exact same thing, which
+ * read as duplication. The whole row opens the merged pipeline view
+ * directly (the same view the `g-all` control opens for a real group); every
+ * run's lines stay reachable there, each already prefixed with its own run
+ * label, so nothing is lost by not expanding.
+ */
+function buildPipelineRow(group: LogListGroup): HTMLElement {
+  const details = document.createElement('details');
+  details.className = 'side-group';
+  details.dataset.groupId = group.groupId;
+  const summary = document.createElement('summary');
+  summary.title = `Ver todos los logs de ${group.groupName} juntos`;
+  const gIco = document.createElement('span');
+  gIco.className = 'g-ico';
+  gIco.textContent = group.groupIcon || '🧬';
+  const gMain = document.createElement('span');
+  gMain.className = 'g-main';
+  const gName = document.createElement('span');
+  gName.className = 'g-name';
+  gName.textContent = group.groupName;
+  const gBadges = document.createElement('span');
+  gBadges.className = 'g-badges';
+  gMain.append(gName, gBadges);
+  const gDot = document.createElement('span');
+  gDot.className = 'g-dot';
+  summary.append(gIco, gMain, gDot);
+  // No chevron, no `side-items` box to expand into: `preventDefault` stops
+  // the native <details> toggle so the whole row acts as one open button,
+  // exactly like the "Todo" row above it.
+  summary.addEventListener('click', (event) => {
+    event.preventDefault();
+    void openScope({ kind: 'group', groupId: group.groupId });
+  });
+  details.appendChild(summary);
+  paintGroupSummary(details, group);
+  return details;
+}
+
 function renderSidebar(): void {
   sideTreeEl.textContent = '';
   if (!sideData.length) {
@@ -1461,7 +1507,14 @@ function renderSidebar(): void {
     return;
   }
   sideTreeEl.appendChild(buildAllRow());
+  // Right after "Todo", above every real group (Aggregator Log Placement):
+  // a cross-cutting view, not one group among the others.
+  const pipelineGroup = sideData.find(
+    (group) => group.groupId === PIPELINE_LOG_GROUP_ID,
+  );
+  if (pipelineGroup) sideTreeEl.appendChild(buildPipelineRow(pipelineGroup));
   for (const group of sideData) {
+    if (group.groupId === PIPELINE_LOG_GROUP_ID) continue; // rendered above
     const details = document.createElement('details');
     details.className = 'side-group';
     details.dataset.groupId = group.groupId;
@@ -1604,12 +1657,16 @@ function repaintSidebar(): boolean {
   const allRow = sideTreeEl.querySelector<HTMLElement>('.side-all');
   if (allRow) paintAllRow(allRow);
   for (const group of sideData) {
-    for (const item of group.items) {
-      const row = sideTreeEl.querySelector<HTMLElement>(
-        `.side-item[data-id="${CSS.escape(item.id)}"]`,
-      );
-      if (!row) return false;
-      paintSideItem(row, item);
+    // The pipeline bucket has no per-run rows to repaint (buildPipelineRow
+    // renders none) — only its own rollup summary below.
+    if (group.groupId !== PIPELINE_LOG_GROUP_ID) {
+      for (const item of group.items) {
+        const row = sideTreeEl.querySelector<HTMLElement>(
+          `.side-item[data-id="${CSS.escape(item.id)}"]`,
+        );
+        if (!row) return false;
+        paintSideItem(row, item);
+      }
     }
     // The rollup tracks live counts too, or a collapsed group would go stale.
     const details = sideTreeEl.querySelector<HTMLElement>(
@@ -1631,6 +1688,9 @@ function applySideFilter(): void {
   for (const details of Array.from(
     sideTreeEl.querySelectorAll<HTMLElement>('.side-group'),
   )) {
+    // A cross-cutting view like "Todo" (which this same filter never
+    // touches), not a group of filterable items — it has none to search.
+    if (details.dataset.groupId === PIPELINE_LOG_GROUP_ID) continue;
     let visible = 0;
     for (const row of Array.from(
       details.querySelectorAll<HTMLElement>('.side-item'),
