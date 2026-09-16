@@ -12,7 +12,9 @@ import {
   canInstallInPlace,
   isInstalledExe,
   isPortableContainer,
+  isUnderTempDir,
   looksLikeAppImage,
+  winInstalledAppPath,
   windowsUpdateMode,
 } from '../src/self-update.js';
 
@@ -117,18 +119,81 @@ describe('appImagePathFromExecutable', () => {
     ).toBe('/home/u/Apps/DevBar.AppImage');
   });
 
-  it('prefers $APPIMAGE over the execPath and tolerates a blank value', () => {
+  it('accepts a FOREIGN-free $APPIMAGE for a directly executed image', () => {
+    // Direct execution: the execPath IS the image file; an env pointing at
+    // the same image is consistent (and a blank one falls through).
     expect(
       appImagePathFromExecutable(
-        '/home/u/Apps/Other.AppImage',
+        '/home/u/Apps/DevBar.AppImage',
         '/home/u/Apps/DevBar.AppImage',
       ),
     ).toBe('/home/u/Apps/DevBar.AppImage');
-    // Blank env → falls back to the execPath rule.
     expect(
       appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage', '   '),
     ).toBe('/home/u/Apps/DevBar.AppImage');
     expect(appImagePathFromExecutable('/usr/bin/devbar', '   ')).toBeNull();
+  });
+
+  it('rejects an inherited $APPIMAGE (child of another AppImage)', () => {
+    // DevBar running INSIDE another image: the parent's runtime set
+    // $APPIMAGE to the parent file. The mount dir stem must match the env
+    // stem — otherwise the update would replace the PARENT APPLICATION.
+    expect(
+      appImagePathFromExecutable(
+        '/tmp/.mount_DevBarXYz/devbar',
+        '/opt/Tools/Tool.AppImage',
+      ),
+    ).toBeNull();
+    // …while the env that names the running image itself is accepted.
+    expect(
+      appImagePathFromExecutable(
+        '/tmp/.mount_DevBarXYz/devbar',
+        '/home/u/Apps/DevBar.AppImage',
+      ),
+    ).toBe('/home/u/Apps/DevBar.AppImage');
+  });
+
+  it('matches the mount stem case-insensitively on the extension', () => {
+    expect(
+      appImagePathFromExecutable(
+        '/tmp/.mount_devbar12/devbar',
+        '/home/u/devbar.appimage',
+      ),
+    ).toBe('/home/u/devbar.appimage');
+  });
+});
+
+describe('winInstalledAppPath (temp payload without a resolvable container)', () => {
+  const tmp = os.tmpdir();
+  const tempPayload = path.join(tmp, 'devbar-portable-payload', 'devbar.exe');
+  const container = 'C:\\Users\\dev\\Downloads\\DevBar-Portable.exe';
+
+  it('returns the portable container when it is known', () => {
+    expect(winInstalledAppPath(tempPayload, container)).toBe(container);
+  });
+
+  it('returns null when the container lookup failed for a temp payload', () => {
+    // Targeting the ephemeral extraction copy would "update" a file that
+    // dies with the temp dir while the user's real portable file keeps the
+    // old version — no target beats a wrong target.
+    expect(winInstalledAppPath(tempPayload, null)).toBeNull();
+  });
+
+  it('keeps the execPath fallback for non-temp installs', () => {
+    const nsis = 'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe';
+    expect(winInstalledAppPath(nsis, null)).toBe(nsis);
+    expect(winInstalledAppPath('D:\\Tools\\DevBar\\DevBar.exe', null)).toBe(
+      'D:\\Tools\\DevBar\\DevBar.exe',
+    );
+  });
+
+  it('isUnderTempDir: temp paths only, with the separator boundary intact', () => {
+    expect(isUnderTempDir(tempPayload)).toBe(true);
+    // Sibling dir that merely shares the prefix must NOT match.
+    const sep = tmp.includes('\\') ? '\\' : '/';
+    expect(isUnderTempDir(`${tmp}${sep}x`)).toBe(true);
+    expect(isUnderTempDir(`${tmp.replace(/[/\\]$/u, '')}other/x`)).toBe(false);
+    expect(isUnderTempDir('C:\\Tools\\devbar.exe')).toBe(false);
   });
 });
 
@@ -253,28 +318,63 @@ describe('isPortableContainer (the swap must target the stub, not the temp paylo
 });
 
 describe('windows update mode + helpers', () => {
-  it('detects the NSIS per-user install location', () => {
+  const localAppData = 'C:\\Users\\dev\\AppData\\Local';
+
+  it('detects the NSIS per-user install location (exact match)', () => {
     expect(
       isInstalledExe(
         'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+        localAppData,
       ),
     ).toBe(true);
     expect(
       windowsUpdateMode(
         'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+        localAppData,
       ),
     ).toBe('nsis');
   });
 
+  it('is case-insensitive but not suffix-matching', () => {
+    expect(
+      isInstalledExe(
+        'c:\\users\\dev\\appdata\\local\\programs\\devbar\\devbar.exe',
+        'c:\\Users\\dev\\AppData\\Local',
+      ),
+    ).toBe(true);
+    // A folder that merely ENDS in "programs" on another drive / with a
+    // "programs" suffix is a portable install, not a per-user NSIS one.
+    expect(
+      isInstalledExe('D:\\Programs\\DevBar\\DevBar.exe', localAppData),
+    ).toBe(false);
+    expect(
+      isInstalledExe('C:\\NotPrograms\\DevBar\\DevBar.exe', localAppData),
+    ).toBe(false);
+    expect(
+      windowsUpdateMode('D:\\Programs\\DevBar\\DevBar.exe', localAppData),
+    ).toBe('portable');
+    // No LOCALAPPDATA (unknown install root) is never an NSIS install.
+    expect(
+      isInstalledExe(
+        'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+        '',
+      ),
+    ).toBe(false);
+  });
+
   it('treats Program Files as assisted-only (needs elevation)', () => {
-    expect(windowsUpdateMode('C:\\Program Files\\DevBar\\DevBar.exe')).toBe(
-      'assisted',
-    );
+    expect(
+      windowsUpdateMode('C:\\Program Files\\DevBar\\DevBar.exe', localAppData),
+    ).toBe('assisted');
   });
 
   it('treats any other folder as a portable install', () => {
-    expect(isInstalledExe('D:\\Tools\\DevBar\\DevBar.exe')).toBe(false);
-    expect(windowsUpdateMode('D:\\Tools\\DevBar\\DevBar.exe')).toBe('portable');
+    expect(isInstalledExe('D:\\Tools\\DevBar\\DevBar.exe', localAppData)).toBe(
+      false,
+    );
+    expect(
+      windowsUpdateMode('D:\\Tools\\DevBar\\DevBar.exe', localAppData),
+    ).toBe('portable');
   });
 });
 

@@ -22,14 +22,27 @@ import path from 'node:path';
  *   those files needs elevation, which the app must not silently request.
  */
 
-/** True when the exe sits where a per-user NSIS install puts it. */
-export function isInstalledExe(execPath: string): boolean {
+/**
+ * True when the exe sits where a per-user NSIS install puts it:
+ * `%LOCALAPPDATA%\Programs\DevBar\DevBar.exe` — an EXACT (case-insensitive)
+ * match, because a suffix check would also accept `D:\Programs\...` or
+ * `C:\NotPrograms\...` and misroute a portable file through the NSIS flow.
+ * `localAppData` is injectable so the check stays testable off Windows.
+ */
+export function isInstalledExe(
+  execPath: string,
+  localAppData: string = process.env.LOCALAPPDATA ?? '',
+): boolean {
   const name = path.win32.basename(execPath).toLowerCase();
   const dir = path.win32.basename(path.win32.dirname(execPath)).toLowerCase();
-  const parent = path.win32.dirname(path.win32.dirname(execPath)).toLowerCase();
-  return (
-    name === 'devbar.exe' && dir === 'devbar' && parent.endsWith('programs')
-  );
+  if (name !== 'devbar.exe' || dir !== 'devbar' || !localAppData) return false;
+  const expected = path.win32
+    .normalize(path.win32.join(localAppData, 'Programs'))
+    .toLowerCase();
+  const parent = path.win32
+    .normalize(path.win32.dirname(path.win32.dirname(execPath)))
+    .toLowerCase();
+  return parent === expected;
 }
 
 /** The two-byte MZ header every Windows PE file carries. */
@@ -85,6 +98,17 @@ let portableContainerCache: {
  * this is not a portable instance (or it cannot be established). Resolved
  * once per process and cached: the answer is stable for the app's lifetime.
  */
+/** True when the path lives under the system temp dir (a portable NSIS
+ *  stub extracts its payload there, so a temp-dir execPath is a portable
+ *  candidate). Separator-aware: Windows tmpdirs end in `\`, POSIX ones
+ *  don't. */
+export function isUnderTempDir(execPath: string): boolean {
+  const tmp = os.tmpdir().toLowerCase();
+  const sep = tmp.includes('\\') ? '\\' : '/';
+  const tmpPrefix = tmp.endsWith(sep) ? tmp : `${tmp}${sep}`;
+  return execPath.toLowerCase().startsWith(tmpPrefix);
+}
+
 export function portableContainerPath(execPath: string): string | null {
   if (process.platform !== 'win32') return null;
   if (portableContainerCache?.execPath === execPath)
@@ -93,9 +117,7 @@ export function portableContainerPath(execPath: string): string | null {
     try {
       // Only a payload extracted under the temp dir can be a portable
       // instance; every other case short-circuits without a process query.
-      const tmp = os.tmpdir().toLowerCase();
-      const tmpPrefix = tmp.endsWith('\\') ? tmp : `${tmp}\\`;
-      if (!execPath.toLowerCase().startsWith(tmpPrefix)) return null;
+      if (!isUnderTempDir(execPath)) return null;
       const ppid = process.ppid;
       if (!ppid || ppid <= 1) return null;
       // wmic is gone from current Windows images; CIM via powershell is

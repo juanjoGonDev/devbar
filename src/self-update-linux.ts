@@ -20,13 +20,28 @@ import path from 'node:path';
  * exposes the real file through $APPIMAGE ("shall be used every time the
  * full path of the AppImage is needed"), so that is the primary source;
  * the .AppImage execPath is the fallback for direct execution.
+ *
+ * Provenance: a DevBar running as a CHILD of some other AppImage
+ * inherits that parent's $APPIMAGE. Targeting the inherited file would
+ * let an update REPLACE THE PARENT APPLICATION — so the env value is
+ * only accepted when it identifies THIS running image: the runtime
+ * mounts a `<name>.AppImage` under `/tmp/.mount_<name><random>` and
+ * execPath's directory is that mount point, so the mount dir must carry
+ * the same stem as the env file's name. Anything else falls back to the
+ * execPath check (directly executed image: the path IS the file).
  */
 export function appImagePathFromExecutable(
   execPath: string,
   appImageEnv: string | undefined = process.env.APPIMAGE,
 ): string | null {
   const fromEnv = (appImageEnv ?? '').trim();
-  if (fromEnv) return path.resolve(fromEnv);
+  if (fromEnv) {
+    const mountDir = path.basename(path.dirname(execPath));
+    const stem = path.basename(fromEnv).replace(/\.appimage$/iu, '');
+    if (stem && mountDir.startsWith(`.mount_${stem}`)) {
+      return path.resolve(fromEnv);
+    }
+  }
   if (!execPath.endsWith('.AppImage')) return null;
   return path.resolve(execPath);
 }

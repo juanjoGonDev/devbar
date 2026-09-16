@@ -27,7 +27,11 @@ import {
   assignScriptToStep as assignRefToStep,
   unassignScriptFromStep as unassignRefFromStep,
 } from './groups-model.js';
-import { appHome, packagedAppHome } from './app-paths.js';
+import {
+  appHome,
+  migrateLegacyLinuxStore,
+  packagedAppHome,
+} from './app-paths.js';
 import { serializeConfig } from './config-io.js';
 
 const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
@@ -79,7 +83,19 @@ const storeOptions: {
   cwd?: string;
 } = { name: 'config', schema };
 const storeDir = packagedAppHome();
-if (storeDir !== undefined) storeOptions.cwd = storeDir;
+if (storeDir !== undefined) {
+  storeOptions.cwd = storeDir;
+  // BEFORE the Store is constructed: pre-"DevBar"-pin packaged builds
+  // stored the config at $XDG_CONFIG_HOME/devbar/config.json; move it so
+  // runMigration() below runs on the user's real data.
+  if (process.platform === 'linux') {
+    migrateLegacyLinuxStore(
+      storeDir,
+      app.getPath('home'),
+      process.env.XDG_CONFIG_HOME,
+    );
+  }
+}
 const store = new Store<StoreState>(storeOptions);
 
 function runMigration(): void {

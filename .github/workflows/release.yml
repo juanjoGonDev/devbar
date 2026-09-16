@@ -539,7 +539,10 @@ jobs:
         run: |
           set -euo pipefail
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')
+            # ?peel=commit: an EXISTING tag may be annotated (created outside
+            # this workflow) — its ref points at the tag object, not the
+            # commit, and the bare object SHA would mismatch RELEASE_SHA.
+            existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}?peel=commit" --jq '.object.sha')
             [[ "$existing_sha" == "$RELEASE_SHA" ]]
             exit 0
           fi
@@ -624,7 +627,9 @@ jobs:
             < <(printf '%s\n' "${expected_assets[@]}" | sort)
           [[ "${actual_assets[*]}" == "${sorted_expected_assets[*]}" ]]
 
-          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')
+          # ?peel=commit: compare the tag's COMMIT — an annotated tag's
+          # ref object is the tag object, not the commit.
+          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}?peel=commit" --jq '.object.sha')
           [[ "$tag_sha" == "$RELEASE_SHA" ]]
 
           release_url=$(jq -r .url <<<"$release_json")

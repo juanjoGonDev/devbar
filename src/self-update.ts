@@ -16,6 +16,7 @@ import {
 } from './self-update-linux.js';
 import {
   isInstalledExe,
+  isUnderTempDir,
   portableContainerPath,
   stageWindowsArtifact,
   spawnSwapBat,
@@ -50,6 +51,7 @@ export {
   buildInstallerBat,
   isInstalledExe,
   isPortableContainer,
+  isUnderTempDir,
 } from './self-update-windows.js';
 
 type StagedKind = 'macBundle' | 'appImage' | 'winInstaller' | 'winPortable';
@@ -71,17 +73,41 @@ export function installedAppPath(): string | null {
   if (process.defaultApp) return null; // dev run out of node_modules/electron
   if (isMac) return bundlePathFromExecutable(process.execPath);
   if (isLinux) return appImagePathFromExecutable(process.execPath);
-  if (isWin) {
-    const container = portableContainerPath(process.execPath);
-    if (container) return container;
-  }
+  if (isWin)
+    return winInstalledAppPath(
+      process.execPath,
+      portableContainerPath(process.execPath),
+    );
   return process.execPath;
+}
+
+/**
+ * Windows: the file the in-place swap would replace. `container` is the
+ * portable stub resolved from the running temp payload (see
+ * portableContainerPath); it always wins when known. When it could NOT be
+ * established (parent gone, CIM query failed, parent not recognized) and
+ * the execPath is still a temp-dir payload, there is NO safe target: a
+ * swap would replace an EPHEMERAL extraction copy that dies with the temp
+ * dir while the user's real portable file silently keeps the old version.
+ * Non-temp execPaths (NSIS per-user, Program Files, any other folder) fall
+ * back to the execPath itself.
+ */
+export function winInstalledAppPath(
+  execPath: string,
+  container: string | null,
+): string | null {
+  if (container) return container;
+  if (isUnderTempDir(execPath)) return null;
+  return execPath;
 }
 
 type WindowsUpdateMode = 'nsis' | 'portable' | 'assisted';
 
-export function windowsUpdateMode(installed: string): WindowsUpdateMode {
-  if (isInstalledExe(installed)) return 'nsis';
+export function windowsUpdateMode(
+  installed: string,
+  localAppData: string = process.env.LOCALAPPDATA ?? '',
+): WindowsUpdateMode {
+  if (isInstalledExe(installed, localAppData)) return 'nsis';
   const parent = path.win32
     .basename(path.win32.dirname(path.win32.dirname(installed)))
     .toLowerCase();

@@ -23,7 +23,15 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { appHome, packagedAppHome } from '../src/app-paths.js';
+import fs from 'node:fs';
+import os from 'node:os';
+
+import {
+  appHome,
+  legacyLinuxConfigFile,
+  migrateLegacyLinuxStore,
+  packagedAppHome,
+} from '../src/app-paths.js';
 
 const savedEnv: Record<string, string | undefined> = {};
 const savedPlatform = process.platform;
@@ -101,5 +109,66 @@ describe('appHome', () => {
   it('uses the pinned folder in packaged builds', () => {
     setPlatform('linux');
     expect(appHome()).toBe(path.join(state.home, '.config', 'DevBar'));
+  });
+});
+
+describe('legacyLinuxConfigFile', () => {
+  it('points at the lowercase package-name folder under the default XDG', () => {
+    expect(legacyLinuxConfigFile('/home/u', undefined)).toBe(
+      '/home/u/.config/devbar/config.json',
+    );
+  });
+
+  it('honors XDG_CONFIG_HOME', () => {
+    expect(legacyLinuxConfigFile('/home/u', '/custom/xdg')).toBe(
+      '/custom/xdg/devbar/config.json',
+    );
+  });
+});
+
+describe('migrateLegacyLinuxStore', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-migrate-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function writeLegacy(config: string, content: string): string {
+    const legacy = path.join(config, 'devbar', 'config.json');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(legacy, content);
+    return legacy;
+  }
+
+  it('moves the legacy config into the new store dir', () => {
+    const config = path.join(dir, 'xdg');
+    const newDir = path.join(dir, 'DevBar');
+    writeLegacy(config, '{\"version\":3}');
+    expect(migrateLegacyLinuxStore(newDir, dir, config)).toBe('moved');
+    expect(fs.existsSync(path.join(newDir, 'config.json'))).toBe(true);
+    expect(fs.readFileSync(path.join(newDir, 'config.json'), 'utf8')).toBe(
+      '{\"version\":3}',
+    );
+    expect(fs.existsSync(path.join(config, 'devbar', 'config.json'))).toBe(
+      false,
+    );
+  });
+
+  it('skips when there is no legacy file or the target already exists', () => {
+    const config = path.join(dir, 'xdg');
+    const newDir = path.join(dir, 'DevBar');
+    expect(migrateLegacyLinuxStore(newDir, dir, config)).toBe('skipped');
+    writeLegacy(config, '{\"version\":2}');
+    fs.mkdirSync(newDir, { recursive: true });
+    fs.writeFileSync(path.join(newDir, 'config.json'), '{\"version\":4}');
+    expect(migrateLegacyLinuxStore(newDir, dir, config)).toBe('skipped');
+    // the user data in the NEW location is never overwritten
+    expect(fs.readFileSync(path.join(newDir, 'config.json'), 'utf8')).toBe(
+      '{\"version\":4}',
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -41,4 +42,51 @@ export function packagedAppHome(): string | undefined {
  */
 export function appHome(): string {
   return packagedAppHome() ?? app.getPath('userData');
+}
+
+/**
+ * Where pre-"DevBar"-pin packaged builds stored their config on Linux:
+ * Electron resolved the XDG config dir from the package.json name
+ * ("devbar", lowercase) — so upgrading users' real config lives in
+ * `$XDG_CONFIG_HOME/devbar/config.json` while the store now opens
+ * `$XDG_CONFIG_HOME/DevBar/config.json`.
+ */
+export function legacyLinuxConfigFile(
+  home: string,
+  xdgConfigHome: string | undefined,
+): string {
+  const xdg = xdgConfigHome || path.join(home, '.config');
+  return path.join(xdg, 'devbar', 'config.json');
+}
+
+/**
+ * Move the legacy Linux config into the new store dir so the v1→v4
+ * migrations run on the user's real data. Must run BEFORE the Store is
+ * constructed (the Store creates the file on first write, which would
+ * make the legacy file invisible to them). Never overwrites an existing
+ * target; best effort — a failure yields 'failed' and the new empty
+ * store is used rather than crashing startup.
+ */
+export function migrateLegacyLinuxStore(
+  newStoreDir: string,
+  home: string,
+  xdgConfigHome: string | undefined,
+): 'moved' | 'skipped' | 'failed' {
+  const legacy = legacyLinuxConfigFile(home, xdgConfigHome);
+  const target = path.join(newStoreDir, 'config.json');
+  if (!fs.existsSync(legacy) || fs.existsSync(target)) return 'skipped';
+  try {
+    fs.mkdirSync(newStoreDir, { recursive: true });
+    fs.renameSync(legacy, target);
+    return 'moved';
+  } catch {
+    try {
+      // rename can fail across devices (EXDEV) — copy instead; the stale
+      // leftover is harmless because the target now wins.
+      fs.copyFileSync(legacy, target);
+      return 'moved';
+    } catch {
+      return 'failed';
+    }
+  }
 }

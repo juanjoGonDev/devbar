@@ -2050,13 +2050,26 @@ function markThemeOption(): void {
   }
 }
 for (const btn of themeOpts)
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     if (!settingsLoaded) return; // stale-control window: load will win
+    const previous = selectedTheme;
     selectedTheme = (btn.dataset.themeValue ?? 'auto') as ThemePreference;
     markThemeOption();
     // Theme-only patch: persistSettings() would read every control and
     // could persist stale values for the ones the user never touched.
-    void window.api.saveSettings({ theme: selectedTheme });
+    // A rejected save (electron-store writes synchronously and throws on
+    // failure) must not leave the selector on a theme that was never
+    // persisted — roll back to the previous one.
+    try {
+      await window.api.saveSettings({ theme: selectedTheme });
+    } catch {
+      selectedTheme = previous;
+      markThemeOption();
+      showToast(
+        'No se pudo guardar el tema — se ha restaurado el anterior.',
+        'error',
+      );
+    }
   });
 
 setAutostart.addEventListener('change', persistSettings);

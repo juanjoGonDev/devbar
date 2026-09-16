@@ -360,7 +360,7 @@ function main(): void {
   killRunningInstances(installDir);
 
   if (noBuild) {
-    step('Building…');
+    step('Skipping build (--no-build)…');
     if (!fs.existsSync(path.join(unpackedDir, executable))) {
       console.error(
         `--no-build: no packaged app at ${unpackedDir} — run without the flag first`,
