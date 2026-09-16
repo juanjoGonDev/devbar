@@ -286,6 +286,7 @@ export function spawnSwap({
       installer: staged.appPath,
       target,
       relaunchArgs,
+      markerPath,
     });
   } else {
     // Portable = a single self-extracting exe: plain file swap.

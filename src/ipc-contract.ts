@@ -385,8 +385,9 @@ export interface DevBarApi {
   openExternal(url: string): Promise<SimpleResult>;
   /**
    * Open the OS notification settings: macOS deep-links to this app's own
-   * row, Windows to the notifications page, Linux best-effort via
-   * xdg-settings (the pane name varies per desktop environment).
+   * row, Windows to the notifications page, Linux to the detected desktop's
+   * pane (gnome-control-center / kcmshell6). Fails on Linux when no known
+   * desktop tool is available so the renderer can show manual hints.
    */
   openNotificationSettings(): Promise<SimpleResult>;
   confirmDirty(

@@ -59,6 +59,16 @@ function psLikeEscape(value: string): string {
   }
   return out;
 }
+/**
+ * Escape a filesystem path for use as a pgrep/pkill -f pattern: both take
+ * EXTENDED regexes, so a checkout under a directory with metacharacters
+ * (parens, brackets, dots…) would stop matching — or worse, over-match
+ * unrelated processes. Keeps the same escape set as install-local.sh's
+ * ere_escape (strip-only mode cannot share the helper).
+ */
+function ereEscape(value: string): string {
+  return value.replace(/[][\\.^$*+?(){}|]/g, '\\$&');
+}
 /** Windows dev mode: electron.exe from this checkout, matched by command
  *  line. NOTE: backslashes are NOT doubled — PowerShell single-quoted
  *  strings treat `\` as literal and `-like` has no backslash metachars
@@ -226,7 +236,7 @@ function killRunningInstances(installDir: string): void {
       path.join(installDir),
       path.join(ROOT, 'dist', 'electron-builder'),
       path.join(ROOT, 'node_modules', 'electron'),
-    ];
+    ].map(ereEscape);
     // The services first (they outlive a bare pkill of the app), then the
     // instances themselves — TERM, so a current build can also run its own
     // graceful shutdown; the wave-2 verify catches anything that survives.
@@ -262,7 +272,7 @@ function isAnyDevBarAlive(installDir: string): boolean {
     path.join(installDir),
     path.join(ROOT, 'dist', 'electron-builder'),
     path.join(ROOT, 'node_modules', 'electron'),
-  ]) {
+  ].map(ereEscape)) {
     const pids = spawnSync('pgrep', ['-f', pattern], {
       stdio: ['ignore', 'pipe', 'ignore'],
       cwd: ROOT,
@@ -322,7 +332,7 @@ function killLeftovers(installDir: string): void {
       path.join(installDir),
       path.join(ROOT, 'dist', 'electron-builder'),
       path.join(ROOT, 'node_modules', 'electron'),
-    ];
+    ].map(ereEscape);
     for (const pattern of patterns) tryQuiet('pkill', ['-9', '-f', pattern]);
   }
   for (let i = 0; i < 10; i++) {

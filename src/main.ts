@@ -3153,19 +3153,50 @@ function registerIpc() {
       } else if (process.platform === 'win32') {
         await shell.openExternal('ms-settings:notifications');
       } else {
-        // Linux: no universal URI. xdg-settings maps "notifications" to the
-        // right pane on GNOME/KDE; if it is absent the command just fails
-        // quietly and the user navigates manually (the in-app hint names the
-        // pane for each desktop).
+        // Linux: no universal URI. xdg-settings supports only
+        // get/check/set — there is no "open" command, so detect the
+        // desktop's own settings tool and open its notifications pane.
+        // When nothing is known (or the binary is absent) return a
+        // failure: the renderer then shows the manual navigation hint
+        // instead of a button that pretends to have worked.
+        const desktop = (process.env.XDG_CURRENT_DESKTOP ?? '').toLowerCase();
+        let launch: [string, string[]] | null = null;
+        if (desktop.includes('gnome')) {
+          // Pane ids are lowercase names per gnome-control-center's man
+          // page (`notifications` included).
+          launch = ['gnome-control-center', ['notifications']];
+        } else if (desktop.includes('kde')) {
+          // Plasma's System Settings KCM for notifications.
+          launch = ['kcmshell6', ['kcm_notify']];
+        }
+        if (!launch) {
+          return {
+            ok: false,
+            error: 'No se detectó un panel de notificaciones conocido',
+          };
+        }
         const { spawn } = await import('node:child_process');
-        const child = spawn('xdg-settings', ['open', 'notifications'], {
+        const child = spawn(launch[0], launch[1], {
           detached: true,
           stdio: 'ignore',
         });
-        child.on('error', () => {
-          /* no xdg-settings — best effort only */
+        // An absent binary arrives as an async 'error' (ENOENT) — surface
+        // it as a failure instead of a silent success.
+        const launched = await new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => resolve(true), 3000);
+          child.once('error', () => {
+            clearTimeout(timer);
+            resolve(false);
+          });
+          child.once('spawn', () => {
+            clearTimeout(timer);
+            resolve(true);
+          });
         });
         child.unref();
+        if (!launched) {
+          return { ok: false, error: 'No se pudo abrir el panel del sistema' };
+        }
       }
       return { ok: true };
     } catch (err) {
@@ -3971,8 +4002,10 @@ async function performShutdownCleanup(): Promise<void> {
     // stopped (after stopAll there is nothing left to hand over), with the
     // exit reason that decides whether the next launch may resume it.
     // Smoke mode runs on CI hosts without user services — skip it.
+    let resumeIds: string[] | null = null;
     if (!SMOKE_MODE && sessionResume) {
-      sessionResume.flush(pendingExitReason, runningCommandIds());
+      resumeIds = runningCommandIds();
+      sessionResume.flush(pendingExitReason, resumeIds);
     }
     // Every running service — commands, actions AND pre-scripts: stopAll
     // walks the manager's own state, not just the configured commands.
@@ -3985,6 +4018,17 @@ async function performShutdownCleanup(): Promise<void> {
       console.error(
         `shutdown cleanup: ${stopped.failed.length} service(s) still running after forced stop: ${stopped.failed.join(', ')}`,
       );
+      // A service that survived the quit is STILL RUNNING: resuming it on
+      // the next launch would start a second copy (port conflicts,
+      // duplicate work). Rewrite the snapshot without it — successfully
+      // stopped commands keep their resume entries.
+      if (resumeIds && sessionResume) {
+        const survivors = new Set(stopped.failed);
+        sessionResume.flush(
+          pendingExitReason,
+          resumeIds.filter((id) => !survivors.has(id)),
+        );
+      }
     }
   } catch (err) {
     // Cleanup is best-effort; the quit itself must always proceed.

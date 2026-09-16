@@ -551,7 +551,7 @@ jobs:
             $old | Stop-Process -Force
             throw 'swap.bat was not generated'
           }
-          Start-Process -FilePath cmd.exe -ArgumentList '/d','/s','/c',"$work\swap.bat" -WindowStyle Hidden
+          Start-Process -FilePath cmd.exe -ArgumentList '/d','/c',"$work\swap.bat" -WindowStyle Hidden
           Start-Sleep -Seconds 4
           # While the old pid is alive: nothing may have been touched.
           if (Test-Path "$work\swap-ok") { throw 'marker written before the old pid died' }

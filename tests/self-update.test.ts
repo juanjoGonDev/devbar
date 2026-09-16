@@ -401,4 +401,26 @@ describe('buildInstallerBat', () => {
     });
     expect(withArgs).toContain('start "" "%target%" "--devbar-smoke"');
   });
+  it('writes the success marker only on the installer+relaunch success path', () => {
+    // No markerPath → no marker line at all.
+    expect(bat).not.toContain('echo ok>');
+    const withMarker = buildInstallerBat({
+      pid: 1,
+      installer: 'C:\\u\\setup.exe',
+      target: 'C:\\p\\DevBar.exe',
+      markerPath: 'C:\\work\\install-ok',
+    });
+    const marker = withMarker.indexOf('echo ok> "C:\\work\\install-ok"');
+    const relaunch = withMarker.indexOf('start "" "%target%"');
+    const failExit = withMarker.indexOf(
+      'exit /b 1',
+      withMarker.indexOf('installer FAILED'),
+    );
+    expect(marker).toBeGreaterThan(-1);
+    // After the relaunch…
+    expect(marker).toBeGreaterThan(relaunch);
+    // …and only AFTER the installer-failure exit (a failed install must
+    // not mark success).
+    expect(marker).toBeGreaterThan(failExit);
+  });
 });

@@ -1992,8 +1992,16 @@ const openNotifSettingsBtn = byId<HTMLButtonElement>(
   HTMLButtonElement,
 );
 if (openNotifSettingsBtn) {
-  openNotifSettingsBtn.addEventListener('click', () => {
-    void window.api.openNotificationSettings();
+  openNotifSettingsBtn.addEventListener('click', async () => {
+    const res = await window.api.openNotificationSettings();
+    if (!res.ok) {
+      // No known panel (or it could not be launched): give the manual
+      // route instead of pretending the system panel opened.
+      showToast(
+        'No se pudo abrir el panel del sistema — búscalo a mano: en GNOME, Ajustes → Notificaciones; en KDE, Configuración del sistema → Notificaciones.',
+        'error',
+      );
+    }
   });
 }
 

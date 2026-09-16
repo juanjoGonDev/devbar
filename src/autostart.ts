@@ -27,12 +27,16 @@ export function autostartDesktopPath(): string {
 }
 
 /**
- * Desktop Entry quoting (spec: desktop-string). A value with whitespace
- * or a special character (`"`, `$`, backtick, `\`) goes in double
- * quotes, where those four must be backslash-escaped (backslash first,
- * so the escaping backslashes are not re-escaped themselves).
+ * Desktop Entry quoting (spec: desktop-string). A literal % is doubled
+ * FIRST — field codes (%f, %u, …) are expanded once by the desktop
+ * environment after unquoting, so an install path containing one would
+ * launch with a mangled path. Then: a value with whitespace or a special
+ * character (`"`, `$`, backtick, `\`) goes in double quotes, where those
+ * four must be backslash-escaped (backslash first, so the escaping
+ * backslashes are not re-escaped themselves).
  */
 function desktopQuote(value: string): string {
+  value = value.replace(/%/g, '%%');
   return /[\s"'`$\\]/.test(value)
     ? `"${value.replace(/([\\`$"])/g, '\\$1')}"`
     : value;

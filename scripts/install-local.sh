@@ -19,26 +19,35 @@ warn() { printf "\033[1;33m!\033[0m %s\n" "$*"; }
 
 # ─── 1. stop running instances ─────────────────────────────────────────
 step "Stopping any running DevBar…"
+# pgrep/pkill -f take EXTENDED regexes: a checkout under a directory with
+# metacharacters (parens, brackets, dots…) would stop matching — or worse,
+# over-match. Escape the four patterns once and reuse them everywhere
+# (kill waves, verification, service-tree walk).
+ere_escape() { printf '%s' "$1" | sed -e 's/[][\\.^$*+?(){}|]/\\&/g'; }
+PAT_APP="$(ere_escape "/Applications/DevBar.app")"
+PAT_DIST="$(ere_escape "${ROOT}/dist/DevBar-darwin")"
+PAT_DEV="$(ere_escape "${ROOT}/node_modules/electron")"
+PAT_BIN="$(ere_escape "DevBar.app/Contents/MacOS/DevBar")"
 # The service trees FIRST. The running instance's commands spawn detached
 # into their own process groups, so the pkill wave below would leave the
 # user's dev servers alive (holding their ports). The shared helper walks
 # each matching instance's children and signals their process groups.
 node --experimental-strip-types scripts/lib/kill-trees.ts \
-  "/Applications/DevBar.app" \
-  "${ROOT}/dist/DevBar-darwin" \
-  "${ROOT}/node_modules" \
-  "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+  "$PAT_APP" \
+  "$PAT_DIST" \
+  "$PAT_DEV" \
+  "$PAT_BIN" 2>/dev/null || true
 # Installed bundle (either /Applications or ~/Applications)
-pkill -f "/Applications/DevBar.app" 2>/dev/null || true
+pkill -f "$PAT_APP" 2>/dev/null || true
 # Bundle running straight from this repo's dist/ (orphan from a previous
 # build) — anchored to the actual checkout path, not a folder name guess.
-pkill -f "${ROOT}/dist/DevBar-darwin" 2>/dev/null || true
+pkill -f "$PAT_DIST" 2>/dev/null || true
 # Dev mode (`npm start` / `pnpm start`) out of this checkout — anchored
 # on the electron binary so the pnpm/node process running THIS
 # install (node_modules/.bin in its command line) is never hit.
-pkill -f "${ROOT}/node_modules/electron" 2>/dev/null || true
+pkill -f "$PAT_DEV" 2>/dev/null || true
 # Generic fallback: any process whose path contains DevBar.app
-pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+pkill -f "$PAT_BIN" 2>/dev/null || true
 # Every pattern the kill wave uses — the verification must check the same
 # set, or a dev instance would pass verification and race the relaunch.
 # The dev check is anchored on the electron binary (a dev instance's
@@ -46,10 +55,10 @@ pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
 # process running THIS install carries node_modules/.bin and must not
 # count as an app instance).
 devbar_alive() {
-  pgrep -f "/Applications/DevBar.app" >/dev/null 2>&1 \
-    || pgrep -f "${ROOT}/dist/DevBar-darwin" >/dev/null 2>&1 \
-    || pgrep -f "${ROOT}/node_modules/electron" >/dev/null 2>&1 \
-    || pgrep -f "DevBar.app/Contents/MacOS/DevBar" >/dev/null 2>&1
+  pgrep -f "$PAT_APP" >/dev/null 2>&1 \
+    || pgrep -f "$PAT_DIST" >/dev/null 2>&1 \
+    || pgrep -f "$PAT_DEV" >/dev/null 2>&1 \
+    || pgrep -f "$PAT_BIN" >/dev/null 2>&1
 }
 # Wave 2: a leftover process is exactly how a reinstall half-resolves, so
 # verify the kill instead of assuming it.
@@ -61,10 +70,10 @@ if devbar_alive; then
   # Wave 3: a leftover process still holds the single-instance socket and
   # turns the relaunch into a silent second instance — force it.
   warn "A DevBar process ignored the graceful stop — forcing it."
-  pkill -9 -f "/Applications/DevBar.app" 2>/dev/null || true
-  pkill -9 -f "${ROOT}/dist/DevBar-darwin" 2>/dev/null || true
-  pkill -9 -f "${ROOT}/node_modules/electron" 2>/dev/null || true
-  pkill -9 -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+  pkill -9 -f "$PAT_APP" 2>/dev/null || true
+  pkill -9 -f "$PAT_DIST" 2>/dev/null || true
+  pkill -9 -f "$PAT_DEV" 2>/dev/null || true
+  pkill -9 -f "$PAT_BIN" 2>/dev/null || true
   for _ in 1 2 3 4 5 6; do
     devbar_alive || break
     sleep 0.5

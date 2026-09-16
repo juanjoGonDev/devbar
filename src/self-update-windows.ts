@@ -330,14 +330,19 @@ export function buildInstallerBat({
   installer,
   target,
   relaunchArgs,
+  markerPath,
 }: {
   pid: number;
   installer: string;
   target: string;
   relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): string {
   const args = (relaunchArgs ?? []).map((a) => batQuote(a)).join(' ');
   const relaunch = args ? `start "" "%target%" ${args}` : `start "" "%target%"`;
+  // Same contract as buildSwapBat: the marker proves the update FINISHED
+  // (installer ok + relaunch issued) — CI smoke runs wait on it.
+  const markerLine = markerPath ? `echo ok> ${batQuote(markerPath)} 2>nul` : '';
   return [
     '@echo off',
     'setlocal',
@@ -365,6 +370,7 @@ export function buildInstallerBat({
     ':relaunch',
     'echo [%date% %time%] installer done, relaunching app >> "%log%"',
     relaunch,
+    ...(markerLine ? [markerLine] : []),
     'exit /b 0',
     '',
   ].join('\r\n');
@@ -377,17 +383,19 @@ export function spawnInstallerBat({
   installer,
   target,
   relaunchArgs,
+  markerPath,
 }: {
   scriptPath: string;
   pid: number;
   installer: string;
   target: string;
   relaunchArgs?: string[] | null | undefined;
+  markerPath?: string | null | undefined;
 }): void {
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
   fs.writeFileSync(
     scriptPath,
-    buildInstallerBat({ pid, installer, target, relaunchArgs }),
+    buildInstallerBat({ pid, installer, target, relaunchArgs, markerPath }),
   );
   spawnBat(scriptPath);
 }

@@ -55,6 +55,15 @@ describe('desktopFileContent', () => {
       `Exec="/home/u my app/DevBar.AppImage" ${LOGIN_ARG}`,
     );
   });
+
+  it('doubles a literal % (field codes are expanded by the desktop env)', () => {
+    // An unescaped %f/%u in the path would be expanded as a field code
+    // after autostart — the launch target would change under the user.
+    const content = desktopFileContent('/home/u/Apps/DevBar%u.AppImage');
+    expect(content).toContain(
+      `Exec=/home/u/Apps/DevBar%%u.AppImage ${LOGIN_ARG}`,
+    );
+  });
 });
 
 describe('autostartDesktopPath', () => {

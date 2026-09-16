@@ -18,8 +18,12 @@ Todas las novedades relevantes de DevBar. El formato sigue
   servicios heredan la consola del terminal (antes no la recibían y un
   Ctrl+C los dejaba vivos), y `install-local` mata el árbol completo de la
   instancia en los tres sistemas (antes dejaba los servicios corriendo).
-  La única vía que aún puede dejar un huérfano es un kill duro
-  (SIGKILL / `taskkill` sin /T), que no permite ejecutar ninguna limpieza.
+  Las únicas vías que aún pueden dejar un huérfano son un kill duro
+  (SIGKILL / `taskkill` sin /T), que no permite ejecutar ninguna limpieza,
+  y un servicio que se desprende de su propio grupo de procesos
+  (por ejemplo con `setsid`, doble fork o re-padronaje): el cierre
+  trabaja por grupos, así que un descendiente que se salga del grupo
+  escapa tanto al kill como al cierre de DevBar.
 - **En Windows y Linux, el panel de la bandeja ya no aparece en la barra de
   tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
   Configuración y/o Logs cuando esas ventanas están abiertas; el panel es

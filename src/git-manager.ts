@@ -8,6 +8,8 @@ interface GitResult {
 }
 interface GitOptions {
   timeout?: number;
+  /** Extra env merged over enhancedEnv() (e.g. a forced diagnostic locale). */
+  env?: NodeJS.ProcessEnv;
 }
 function git(
   repo: string,
@@ -21,7 +23,7 @@ function git(
       {
         timeout: options.timeout ?? 30000,
         maxBuffer: 4 * 1024 * 1024,
-        env: enhancedEnv(),
+        env: { ...enhancedEnv(), ...options.env },
       },
       (error, stdout, stderr) => {
         resolve(
@@ -51,16 +53,25 @@ export async function listBranches(repo: string): Promise<{
   if (!repo)
     return { ok: false, isRepo: false, error: 'No git repo configured' };
   // Probe first: `rev-parse --is-inside-work-tree` succeeds only inside a
-  // repository, and its verdict is locale-independent (parsing the
-  // "fatal: not a git repository" message would depend on git's locale).
+  // work tree. Outside one it exits 128 with git's diagnostic — so the
+  // probe's FAILURE is the ordinary non-repository result and must be
+  // classified as such, or the UI never sees isRepo: false for a
+  // configured non-repo directory. The diagnostic text is localized, so
+  // the probe forces the C locale to make it parseable.
   const probe = await git(repo, ['rev-parse', '--is-inside-work-tree'], {
     timeout: 5000,
+    env: { LC_ALL: 'C', LANG: 'C' },
   });
   if (!probe.ok) {
-    // git timed out, is missing, or the call failed: we learned
-    // nothing, so do NOT assert "not a repository" — that verdict
-    // would make the UI hide the selector (negative cache) even
-    // though the project may be a perfectly good repo.
+    // The canonical non-repository diagnostic (stable in the C locale
+    // across git versions) is the ONLY failure we can classify:
+    if ((probe.stderr || '').includes('fatal: not a git repository')) {
+      return { ok: false, isRepo: false, error: 'not a git repository' };
+    }
+    // git timed out, is missing, or failed for another operational
+    // reason: we learned nothing, so do NOT assert "not a repository" —
+    // that verdict would make the UI hide the selector (negative cache)
+    // even though the project may be a perfectly good repo.
     return { ok: false, error: probe.error ?? 'git probe failed' };
   }
   if (probe.stdout !== 'true') {
