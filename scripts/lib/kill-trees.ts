@@ -10,6 +10,17 @@
  *
  * Kept out of install-local.ts so the exact argument shapes are
  * unit-testable without running an install.
+ *
+ * Known limitation: killing is done per process GROUP (pgid). A
+ * descendant that detaches itself from the group — `setsid`, double
+ * fork, systemd-run, `start` in a new Windows process group — escapes
+ * the kill and survives. That is a fundamental limit of group-based
+ * killing; the only full fix is a per-service supervisor process
+ * (e.g. a subreaper on Linux), which is tracked as a follow-up. The
+ * services DevBar manages are long-running user commands launched by
+ * DevBar itself, and the escalated wait (SIGTERM -> SIGKILL per pgid)
+ * covers all of them; only a service that deliberately re-parents
+ * itself can leave an orphan.
  */
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
