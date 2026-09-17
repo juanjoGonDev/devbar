@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, openSync, readSync, closeSync } from 'node:fs';
+import { existsSync, fstatSync, openSync, readSync, closeSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import packageJson from '../package.json' with { type: 'json' };
 import { verifyReleaseArtifactSet } from './release-artifacts.js';
 
@@ -28,11 +28,84 @@ const outputDirectory =
 const version = process.argv[3] || packageJson.version;
 
 /**
+ * SquashFS superblock fields, little-endian (squashfs.h):
+ *   +0  magic "hsqs"     +8   block size  (4 KiB..1 MiB, power of 2)
+ *   +12 block log        +16  compression id
+ * A type-2 AppImage appends the SquashFS right after the runtime ELF, so
+ * a well-formed image carries a valid superblock somewhere in the file.
+ * The 4-byte magic alone is NOT proof: the runtime ELF embeds SquashFS
+ * reader code and can contain raw "hsqs" bytes of its own. The block
+ * size / block log / compression fields are validated for
+ * self-consistency (block size === 2^block log, sane ranges) — random
+ * ELF bytes will not satisfy that.
+ */
+const SQUASHFS_MAGIC = Buffer.from('hsqs', 'latin1');
+
+function isValidSquashfsSuperblock(data: Buffer, at: number): boolean {
+  if (at + 18 > data.length) return false;
+  const blockSize = data.readUInt32LE(at + 8);
+  const blockLog = data.readUInt16LE(at + 12);
+  const compressionId = data.readUInt16LE(at + 16);
+  if (blockLog < 12 || blockLog > 20) return false;
+  if (blockSize !== 2 ** blockLog) return false;
+  return compressionId <= 7;
+}
+
+/**
+ * True when the file carries an appended filesystem, i.e. contains a
+ * structurally valid SquashFS superblock. Images run 50–300 MiB, so the
+ * file is scanned in 1 MiB chunks (a 17-byte carry keeps a superblock
+ * that straddles a boundary searchable).
+ */
+function hasSquashfsSuperblock(filePath: string): boolean {
+  const fd = openSync(filePath, 'r');
+  try {
+    const size = fstatSync(fd).size;
+    const chunk = Buffer.alloc(1 << 20);
+    const CARRY = 17; // the fields read 17 bytes past the magic
+    let offset = 0;
+    let carry = Buffer.alloc(0);
+    while (offset < size) {
+      const n = readSync(
+        fd,
+        chunk,
+        0,
+        Math.min(chunk.length, size - offset),
+        offset,
+      );
+      if (n <= 0) break;
+      const data =
+        carry.length > 0
+          ? Buffer.concat([carry, chunk.subarray(0, n)])
+          : chunk.subarray(0, n);
+      let from = 0;
+      for (;;) {
+        const at = data.indexOf(SQUASHFS_MAGIC, from);
+        if (at === -1) break;
+        if (isValidSquashfsSuperblock(data, at)) return true;
+        from = at + 1;
+      }
+      carry =
+        data.length > CARRY
+          ? Buffer.from(data.subarray(data.length - CARRY))
+          : Buffer.from(data);
+      offset += n;
+    }
+    return false;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
  * AppImageSpec structure, not just the marker: "AI" + type byte at
  * offset 8 PLUS the container the spec mandates for that type —
  *  - type 2 (0x414902, what electron-builder produces): MUST be a valid
  *    ELF executable (the marker lives in the ELF ident padding), so the
- *    ELF magic `\x7fELF` at offset 0 is required;
+ *    ELF magic `\x7fELF` at offset 0 is required, AND it must carry the
+ *    appended filesystem (a valid SquashFS superblock) — a truncated
+ *    image keeps a valid ELF header, so the header + marker alone do
+ *    not prove the payload is there;
  *  - type 1 (0x414901): an ISO 9660 image — its primary volume
  *    descriptor sits in sector 16 (2048-byte sectors) and carries the
  *    "CD001" signature at offset 1 of that sector.
@@ -41,7 +114,7 @@ const version = process.argv[3] || packageJson.version;
  * image is launched in CI). The remaining ident padding is zeroes, so
  * the legacy "AppImage" string check is checking the wrong convention.
  */
-function looksLikeAppImage(filePath: string): boolean {
+export function looksLikeAppImage(filePath: string): boolean {
   const fd = openSync(filePath, 'r');
   try {
     const magic = Buffer.alloc(3);
@@ -50,7 +123,9 @@ function looksLikeAppImage(filePath: string): boolean {
     if (magic[2] === 0x02) {
       const elf = Buffer.alloc(4);
       if (readSync(fd, elf, 0, 4, 0) < 4) return false;
-      return elf.toString('latin1') === '\x7fELF';
+      if (elf.toString('latin1') !== '\x7fELF') return false;
+      // The runtime is there — now the payload (see above).
+      return hasSquashfsSuperblock(filePath);
     }
     if (magic[2] !== 0x01) return false;
     const pvd = Buffer.alloc(5);
@@ -88,9 +163,10 @@ async function main(): Promise<void> {
     const filePath = path.join(outputDirectory, name);
     if (!looksLikeAppImage(filePath))
       throw new Error(
-        `${name} is not a valid AppImage (marker or container structure missing)`,
+        `${name} is not a valid AppImage (marker, container structure, or ` +
+          `appended filesystem missing)`,
       );
-    console.log(`ok: ${name} (AppImage magic)`);
+    console.log(`ok: ${name} (AppImage structure: marker + container + filesystem)`);
   }
 
   // 3. Contents: dpkg structure on every .deb when dpkg-deb is available
@@ -127,7 +203,16 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+// Entrypoint guard so the checks stay importable from tests (same
+// pattern as package-electron.ts).
+const entrypointPath = process.argv[1];
+const isEntrypoint =
+  entrypointPath !== undefined &&
+  import.meta.url === pathToFileURL(entrypointPath).href;
+
+if (isEntrypoint) {
+  void main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
