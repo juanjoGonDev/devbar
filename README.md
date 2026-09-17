@@ -17,8 +17,9 @@
 Download the latest installers from
 [GitHub Releases](https://github.com/juanjoGonDev/devbar/releases/latest):
 
-**macOS** (unsigned & not notarized — the first launch may need an explicit
-approval in **System Settings → Privacy & Security**):
+**macOS** (ad-hoc signed, but not Developer ID signed or notarized — the
+first launch may need an explicit approval in **System Settings → Privacy
+& Security**):
 
 - `DevBar-<version>-macos-arm64.dmg` — Apple Silicon Macs.
 - `DevBar-<version>-macos-x64.dmg` — Intel Macs.
@@ -131,7 +132,8 @@ files under a live process:
 
 - **macOS** — replaces `/Applications/DevBar.app` (falls back to
   `~/Applications` if not writable) and strips the Gatekeeper quarantine
-  flag (the bundle is unsigned).
+  flag (the bundle is ad-hoc signed, not Developer ID signed or
+  notarized).
 - **Windows** — replaces `%LOCALAPPDATA%\Programs\DevBar`, the same
   per-user location the NSIS installer uses (the in-app updater keeps
   working).

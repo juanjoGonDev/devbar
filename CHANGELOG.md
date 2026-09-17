@@ -82,8 +82,9 @@ Todas las novedades relevantes de DevBar. El formato sigue
   0.7.0 ahora cubre Windows (instalado: reinstalación silenciosa; portable:
   sustituye el propio ejecutable en su sitio) y Linux (AppImage in-place con
   rollback; .deb con reinstalación asistida). En Windows y Linux cada descarga
-  se verifica contra SHA-256 antes de instalarse, y si la copia falla a medias
-  la versión anterior se restaura y se relanza.
+  se verifica contra SHA-256 antes de instalarse. En Windows portable y
+  Linux AppImage, si la copia falla a medias la versión anterior se
+  restaura y se relanza.
 - **Arranque con el sistema en los tres SO.** «Arrancar con DevBar al iniciar»
   funciona en Windows (clave Run de usuario) y en Linux (entrada XDG
   `~/.config/autostart/devbar.desktop`), además del login item de macOS. En

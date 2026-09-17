@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { isWin, userShell } from './platform.js';
@@ -24,15 +24,24 @@ const POSIX_STANDARD_PATH_DIRS = [
   '/sbin',
 ] as const;
 
-const WIN_STANDARD_PATH_DIRS = [
-  'C:\\Windows\\system32',
-  'C:\\Windows',
-  'C:\\Windows\\System32\\Wbem',
-  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
-] as const;
+/** Windows fallback dirs derived from %SystemRoot% (a Windows install is
+ *  not guaranteed to live on C:). Built with win32 path semantics so the
+ *  strings stay correct no matter what OS builds/tests them. */
+function winStandardPathDirs(): string[] {
+  const systemRoot = (process.env.SystemRoot || 'C:\\Windows').replace(
+    /[/\\]+$/u,
+    '',
+  );
+  return [
+    path.win32.join(systemRoot, 'system32'),
+    systemRoot,
+    path.win32.join(systemRoot, 'System32', 'Wbem'),
+    path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0'),
+  ];
+}
 
 function standardPathDirs(): readonly string[] {
-  return isWin ? WIN_STANDARD_PATH_DIRS : POSIX_STANDARD_PATH_DIRS;
+  return isWin ? winStandardPathDirs() : POSIX_STANDARD_PATH_DIRS;
 }
 
 export function ensureStandardPaths(
@@ -50,7 +59,11 @@ export function ensureStandardPaths(
 function posixShellPath(): string {
   const shell = userShell();
   try {
-    const out = execSync(`${shell} -ilc 'printf %s "$PATH"'`, {
+    // execFileSync with an explicit argv: userShell() returns an executable
+    // PATH, and interpolating it into an execSync command string breaks on
+    // spaces or shell metacharacters (a quoted ~/.nvm/.../zsh, a $ in a
+    // path) — silently leaving the user's CLIs unreachable.
+    const out = execFileSync(shell, ['-ilc', 'printf %s "$PATH"'], {
       encoding: 'utf8',
       timeout: 5000,
       stdio: ['ignore', 'pipe', 'ignore'],

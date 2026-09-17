@@ -63,9 +63,14 @@ export async function listBranches(repo: string): Promise<{
     env: { LC_ALL: 'C', LANG: 'C' },
   });
   if (!probe.ok) {
-    // The canonical non-repository diagnostic (stable in the C locale
-    // across git versions) is the ONLY failure we can classify:
-    if ((probe.stderr || '').includes('fatal: not a git repository')) {
+    // The non-repository diagnostics (stable in the forced C locale across
+    // git versions) are the ONLY failures we can classify: "not a git
+    // repository" for a plain directory, and "cannot change to …" when the
+    // configured path itself no longer exists (deleted/renamed folder).
+    if (
+      (probe.stderr || '').includes('fatal: not a git repository') ||
+      (probe.stderr || '').includes('fatal: cannot change to')
+    ) {
       return { ok: false, isRepo: false, error: 'not a git repository' };
     }
     // git timed out, is missing, or failed for another operational

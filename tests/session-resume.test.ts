@@ -316,6 +316,12 @@ describe('consumeSnapshot', () => {
 
   it('still returns its decision when the file cannot be deleted', () => {
     if (process.platform === 'win32') return; // no chmod on Windows
+    // A privileged process (root, or CAP_DAC_OVERRIDE — the default in many
+    // container CI images) deletes through chmod 0o555 anyway, so the
+    // "rm fails" premise does not hold and the suite must skip rather than
+    // fail for reasons unrelated to the code under test.
+    if (typeof process.geteuid === 'function' && process.geteuid() === 0)
+      return;
     saveSnapshot(dir, ['cmd:g1:a'], 'kill', clock);
     fs.chmodSync(dir, 0o555); // read+traverse, no write: rm fails
     try {

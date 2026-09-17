@@ -2085,6 +2085,11 @@ async function selectLog(
   muteWarnEl.checked = false;
   muteErrEl.checked = false;
   if (filter !== undefined) filterEl.value = filter;
+  else if (level)
+    // A severity entry point (tray counter) pins the level chip but sent no
+    // filter: a stale text filter from the previous view would hide the very
+    // entries the counter represents.
+    filterEl.value = '';
   filterRe = buildFilter(filterEl.value);
   // A counter-button entry point (tray, in-window nav) pins the level chip;
   // a plain log switch keeps whatever the user has on screen.
