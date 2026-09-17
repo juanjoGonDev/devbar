@@ -200,6 +200,10 @@ describe('parse-command', () => {
       // break right after each %, the child's parser would split the
       // argument at the following unquoted space.
       expect(quoteWindowsArg('in %TEMP% now')).toBe('"in "^%TEMP^%" now"');
+      // After a % the cmd span is CLOSED, so following operators would be
+      // command syntax to cmd.exe — they must be ^-escaped (the simulated
+      // round-trip cannot catch this: operators don't alter the string).
+      expect(quoteWindowsArg('x %& whoami')).toBe('"x "^%^&" whoami"');
     });
 
     it('wraps in quotes when whitespace and operators combine', () => {
@@ -391,6 +395,14 @@ describe('parse-command', () => {
       '%a%b% c',
       'He said "hi"',
       'a"b\\',
+      // a % can close the cmd span; the operators after it must be
+      // ^-escaped or cmd would chain/pipe/redirect instead of pass
+      'x %& whoami',
+      'a %|b c',
+      'd %< e',
+      'f %>g h',
+      'i %^j k',
+      '%&',
     ];
 
     it.each(BATTERY)(

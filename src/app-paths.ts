@@ -82,8 +82,12 @@ export function migrateLegacyLinuxStore(
   }
   try {
     // rename is atomic where the filesystem allows it — the preferred
-    // path.
+    // path. It also REMOVES `legacy`, so there is nothing left to clean
+    // up: returning here keeps the unlink below for the copy fallback
+    // only (an unlink right after a successful rename would throw
+    // ENOENT and log a false manual-deletion warning).
     fs.renameSync(legacy, target);
+    return 'moved';
   } catch {
     // rename can fail across devices (EXDEV) or because the target
     // appeared after the check above. Copy EXCLUSIVELY: an existing

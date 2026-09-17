@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -94,6 +94,47 @@ describe('buildSwapScript', () => {
 });
 
 describe('appImagePathFromExecutable', () => {
+  // The $APPIMAGE branch requires the payload next to the executable to
+  // be DevBar's own (resources/app/package.json carrying the devbar
+  // package name) — these fixtures stand in for the mounted squashfs.
+  // Dir names mimic the type 2 runtime's mount naming (.mount_<6 chars>).
+  let devbarMount: string;
+  let devbarLowerMount: string;
+  let devbarShortMount: string;
+  let parentMount: string;
+  let bareMount: string;
+  beforeAll(() => {
+    const make = (template: string, name: string | null): string => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), template));
+      if (name !== null) {
+        fs.mkdirSync(path.join(root, 'resources', 'app'), {
+          recursive: true,
+        });
+        fs.writeFileSync(
+          path.join(root, 'resources', 'app', 'package.json'),
+          JSON.stringify({ name }),
+        );
+      }
+      return root;
+    };
+    devbarMount = make('.mount_DevBar', 'devbar');
+    devbarLowerMount = make('.mount_devbar', 'devbar');
+    devbarShortMount = make('.mount_devb.A', 'devbar');
+    parentMount = make('.mount_Paren-', 'parent-tool');
+    bareMount = make('.mount_DevBar', null);
+  });
+  afterAll(() => {
+    for (const root of [
+      devbarMount,
+      devbarLowerMount,
+      devbarShortMount,
+      parentMount,
+      bareMount,
+    ]) {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('accepts a running .AppImage path', () => {
     expect(appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage')).toBe(
       '/home/u/Apps/DevBar.AppImage',
@@ -113,7 +154,7 @@ describe('appImagePathFromExecutable', () => {
     // would be dead for every real install.
     expect(
       appImagePathFromExecutable(
-        '/tmp/.mount_DevBarXYz/devbar',
+        path.join(devbarMount, 'devbar'),
         '/home/u/Apps/DevBar.AppImage',
       ),
     ).toBe('/home/u/Apps/DevBar.AppImage');
@@ -134,29 +175,50 @@ describe('appImagePathFromExecutable', () => {
     expect(appImagePathFromExecutable('/usr/bin/devbar', '   ')).toBeNull();
   });
 
-  it('rejects an inherited $APPIMAGE (child of another AppImage)', () => {
-    // DevBar running INSIDE another image: the parent's runtime set
-    // $APPIMAGE to the parent file. The mount dir stem must match the env
-    // stem — otherwise the update would replace the PARENT APPLICATION.
+  it('rejects an inherited $APPIMAGE whose stem does not match the mount', () => {
     expect(
       appImagePathFromExecutable(
-        '/tmp/.mount_DevBarXYz/devbar',
+        path.join(devbarMount, 'devbar'),
         '/opt/Tools/Tool.AppImage',
       ),
     ).toBeNull();
-    // …while the env that names the running image itself is accepted.
+  });
+
+  it('rejects the PARENT image when DevBar is its payload (circular stem)', () => {
+    // The hostile case: DevBar runs as a payload file INSIDE another
+    // AppImage. The parent runtime set $APPIMAGE to the parent file and
+    // named the mount after that SAME file — the six-char stem check is
+    // circular and matches. Only the payload identity gate can tell the
+    // difference: the payload next to the executable is the parent's app,
+    // not devbar.
     expect(
       appImagePathFromExecutable(
-        '/tmp/.mount_DevBarXYz/devbar',
+        path.join(parentMount, 'devbar'),
+        '/opt/Tools/Parent-App-2.0.AppImage',
+      ),
+    ).toBeNull();
+    // …while the same mount with DevBar's own payload is accepted.
+    expect(
+      appImagePathFromExecutable(
+        path.join(devbarMount, 'devbar'),
+        '/opt/Tools/DevBar-9.9.9.AppImage',
+      ),
+    ).toBe('/opt/Tools/DevBar-9.9.9.AppImage');
+  });
+
+  it('fails closed when the mount matches but the payload is missing', () => {
+    expect(
+      appImagePathFromExecutable(
+        path.join(bareMount, 'devbar'),
         '/home/u/Apps/DevBar.AppImage',
       ),
-    ).toBe('/home/u/Apps/DevBar.AppImage');
+    ).toBeNull();
   });
 
   it('matches the mount stem case-insensitively on the extension', () => {
     expect(
       appImagePathFromExecutable(
-        '/tmp/.mount_devbar12/devbar',
+        path.join(devbarLowerMount, 'devbar'),
         '/home/u/devbar.appimage',
       ),
     ).toBe('/home/u/devbar.appimage');
@@ -169,7 +231,7 @@ describe('appImagePathFromExecutable', () => {
     // (DevBar-0.9.0-linux-x64.AppImage mounts under /tmp/.mount_DevBar…).
     expect(
       appImagePathFromExecutable(
-        '/tmp/.mount_DevBarXk2mQp/devbar',
+        path.join(devbarMount, 'devbar'),
         '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
       ),
     ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
@@ -181,13 +243,13 @@ describe('appImagePathFromExecutable', () => {
     // NOT be accepted for the mount of the other.
     expect(
       appImagePathFromExecutable(
-        '/tmp/.mount_devb.AxYz1/devbar',
+        path.join(devbarShortMount, 'devbar'),
         '/home/u/devb.AppImage',
       ),
     ).toBe('/home/u/devb.AppImage');
     expect(
       appImagePathFromExecutable(
-        '/tmp/.mount_devbarQw9rEz/devbar',
+        path.join(devbarMount, 'devbar'),
         '/home/u/devb.AppImage',
       ),
     ).toBeNull();

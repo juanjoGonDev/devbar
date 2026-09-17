@@ -167,6 +167,15 @@ function quoteWindowsArgQuoted(value: string): string {
         out += '\\'.repeat(n);
         i += n - 1;
       }
+    } else if (
+      !cmdQ &&
+      (ch === '&' || ch === '|' || ch === '<' || ch === '>' || ch === '^')
+    ) {
+      // Outside a cmd span these are command syntax (chain / pipe /
+      // redirect / escape) — escape them so cmd passes them through.
+      // Inside a span cmd treats them literally, so no escape there
+      // (and the child, which never sees carets, wants the raw char).
+      out += `^${ch}`;
     } else {
       out += ch;
     }

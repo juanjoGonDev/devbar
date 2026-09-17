@@ -196,9 +196,10 @@ jobs:
       - name: Launch smoke — macOS (packaged app)
         if: matrix.os == 'macos'
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           WORK=$(mktemp -d)
           ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
           "$WORK/DevBar.app/Contents/MacOS/DevBar" --devbar-smoke 2>&1 | tee smoke-macos.log
@@ -208,9 +209,11 @@ jobs:
       - name: Launch smoke — Windows (NSIS install + portable)
         if: matrix.os == 'win'
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '${{ steps.version.outputs.version }}'
+          $version = $env:VERSION
           # 1) NSIS installer: silent per-user install, then prove the
           #    installed exe launches — this also confirms the install path
           #    is %LOCALAPPDATA%\Programs\DevBar, the location the in-app
@@ -250,9 +253,10 @@ jobs:
       - name: Launch smoke — Linux (AppImage + deb)
         if: matrix.os == 'linux'
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           # AppImage: --appimage-extract-and-run — hosted runners have no
           # /dev/fuse, so mounting the image would fail; extract-and-run
           # executes the same payload (what the smoke validates). xvfb
@@ -269,9 +273,10 @@ jobs:
       - name: Reinstall while running — macOS (kill old process)
         if: matrix.os == 'macos'
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           WORK=$(mktemp -d)
           ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
           APP="$WORK/DevBar.app/Contents/MacOS/DevBar"
@@ -315,9 +320,10 @@ jobs:
       - name: Automatic update simulation — macOS (stage → swap → relaunch)
         if: matrix.os == 'macos'
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           WORK=$(mktemp -d)
           ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
           BUNDLE="$WORK/DevBar.app"
@@ -418,17 +424,19 @@ jobs:
       - name: Automatic update simulation — Windows (NSIS upgrade)
         if: matrix.os == 'win'
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '${{ steps.version.outputs.version }}'
+          $version = $env:VERSION
           $exe = "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe"
           $v2 = node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'"
           # 1) Build the REAL next-version installer (host arch only): bump
           #    the version, build, restore — the artifact keeps the bump.
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$v2';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const v=p.version.split('.').map(Number);p.version=v[0]+'.'+(v[1]+1)+'.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
           pnpm run build
           node --experimental-strip-types scripts/package-win-linux.ts win host
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$version';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
           $setup = "dist\electron-builder\DevBar-$v2-win-x64-setup.exe"
           if (-not (Test-Path $setup)) { throw "next-version installer missing: $setup" }
           $sha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
@@ -502,9 +510,11 @@ jobs:
       - name: Automatic update simulation — Windows (portable file swap)
         if: matrix.os == 'win'
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '${{ steps.version.outputs.version }}'
+          $version = $env:VERSION
           $v2 = node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'"
           $portableV1 = "dist\electron-builder\DevBar-$version-win-x64-portable.exe"
           # The previous step's v2 build produced the portable alongside the
@@ -676,18 +686,19 @@ jobs:
       - name: Automatic update simulation — Linux (AppImage swap)
         if: matrix.os == 'linux'
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
           V2=$(node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'")
           WORK=$(mktemp -d)
           cp "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" "$WORK/cur.AppImage"
           # 1) Build the REAL next-version AppImage (host arch only): bump
           #    the version, build, restore — the artifact keeps the bump.
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$V2';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const v=p.version.split('.').map(Number);p.version=v[0]+'.'+(v[1]+1)+'.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
           pnpm run build
           node --experimental-strip-types scripts/package-win-linux.ts linux host
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$VERSION';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
           cp "dist/electron-builder/DevBar-${V2}-linux-x64.AppImage" "$WORK/new.AppImage"
           # 2) Swap mechanics with a real target file: a dummy process stands
           #    in for the running app (hosted runners have no /dev/fuse, so

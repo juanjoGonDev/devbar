@@ -23,17 +23,46 @@ import path from 'node:path';
  *
  * Provenance: a DevBar running as a CHILD of some other AppImage
  * inherits that parent's $APPIMAGE. Targeting the inherited file would
- * let an update REPLACE THE PARENT APPLICATION — so the env value is
- * only accepted when it identifies THIS running image. The type 2
- * runtime names the mount after the executed file: `build_mount_point`
- * (AppImage/type2-runtime) creates `$TMPDIR/.mount_%.*sXXXXXX` from the
- * FIRST SIX CHARACTERS of the basename (maxnamelen = 6, template
- * truncated — the full name never appears in the mount dir), and
- * execPath's directory is that mount point. So the mount dir must start
- * with `.mount_` + the first six characters of the $APPIMAGE basename.
+ * let an update REPLACE THE PARENT APPLICATION — so the env value needs
+ * TWO independent proofs that it identifies THIS running image:
+ *  1. The type 2 runtime names the mount after the executed file:
+ *     `build_mount_point` (AppImage/type2-runtime) creates
+ *     `$TMPDIR/.mount_%.*sXXXXXX` from the FIRST SIX CHARACTERS of the
+ *     basename (maxnamelen = 6, template truncated — the full name never
+ *     appears in the mount dir), and execPath's directory is that mount
+ *     point. So the mount dir must start with `.mount_` + the first six
+ *     characters of the $APPIMAGE basename. (This alone is circular
+ *     inside a parent image: the parent runtime named the mount after
+ *     the PARENT file, so the prefix always matches there.)
+ *  2. The payload next to the executable must be DevBar's own: the app
+ *     package.json (`resources/app/package.json`, read asar-transparently
+ *     by Electron's patched fs) must carry the devbar package name.
+ *     A foreign payload (DevBar as a payload file of another AppImage)
+ *     fails the gate and the assisted update flow is used instead.
  * Anything else falls back to the execPath check (directly executed
- * image: the path IS the file).
+ * image: the path IS the file, no parent confusion possible).
  */
+const DEVBAR_PACKAGE_NAME = 'devbar';
+/**
+ * Read the app package name from the payload next to the executable.
+ * Returns null when the file is absent/unreadable/unparseable — the
+ * gate fails closed: no identity, no in-place update target.
+ */
+function payloadPackageName(execPath: string): string | null {
+  try {
+    const raw = fs.readFileSync(
+      path.join(path.dirname(execPath), 'resources', 'app', 'package.json'),
+      'utf8',
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === 'object' && parsed !== null && 'name' in parsed) {
+      if (typeof parsed.name === 'string') return parsed.name;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 export function appImagePathFromExecutable(
   execPath: string,
   appImageEnv: string | undefined = process.env.APPIMAGE,
@@ -45,7 +74,12 @@ export function appImagePathFromExecutable(
     // included), so it is the faithful — and stricter — identifier.
     const base = path.basename(fromEnv).slice(0, 6);
     if (base && mountDir.startsWith(`.mount_${base}`)) {
-      return path.resolve(fromEnv);
+      if (payloadPackageName(execPath) === DEVBAR_PACKAGE_NAME) {
+        return path.resolve(fromEnv);
+      }
+      // Mount prefix matched but the payload is not DevBar — e.g. DevBar
+      // running as a payload file inside ANOTHER AppImage (the prefix is
+      // circular there by construction). Never return the parent path.
     }
   }
   if (!execPath.endsWith('.AppImage')) return null;

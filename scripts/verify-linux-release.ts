@@ -28,19 +28,34 @@ const outputDirectory =
 const version = process.argv[3] || packageJson.version;
 
 /**
- * AppImageSpec magic: "AI" + type byte at offset 8 (0x414902 for the type 2
- * images electron-builder produces; 0x414901 for type 1). The remaining ELF
- * ident padding is zeroes, so no longer "AppImage" string — tooling that
- * greps for it is checking the wrong convention.
+ * AppImageSpec structure, not just the marker: "AI" + type byte at
+ * offset 8 PLUS the container the spec mandates for that type —
+ *  - type 2 (0x414902, what electron-builder produces): MUST be a valid
+ *    ELF executable (the marker lives in the ELF ident padding), so the
+ *    ELF magic `\x7fELF` at offset 0 is required;
+ *  - type 1 (0x414901): an ISO 9660 image — its primary volume
+ *    descriptor sits in sector 16 (2048-byte sectors) and carries the
+ *    "CD001" signature at offset 1 of that sector.
+ * The marker alone would accept a 16-byte marker-only blob, which could
+ * then ride along as a published arm64/armv7 artifact (only the x64
+ * image is launched in CI). The remaining ident padding is zeroes, so
+ * the legacy "AppImage" string check is checking the wrong convention.
  */
 function looksLikeAppImage(filePath: string): boolean {
   const fd = openSync(filePath, 'r');
   try {
-    const buf = Buffer.alloc(3);
-    if (readSync(fd, buf, 0, 3, 8) < 3) return false;
-    return (
-      buf[0] === 0x41 && buf[1] === 0x49 && (buf[2] === 0x01 || buf[2] === 0x02)
-    );
+    const magic = Buffer.alloc(3);
+    if (readSync(fd, magic, 0, 3, 8) < 3) return false;
+    if (magic[0] !== 0x41 || magic[1] !== 0x49) return false;
+    if (magic[2] === 0x02) {
+      const elf = Buffer.alloc(4);
+      if (readSync(fd, elf, 0, 4, 0) < 4) return false;
+      return elf.toString('latin1') === '\x7fELF';
+    }
+    if (magic[2] !== 0x01) return false;
+    const pvd = Buffer.alloc(5);
+    if (readSync(fd, pvd, 0, 5, 32769) < 5) return false;
+    return pvd.toString('latin1') === 'CD001';
   } finally {
     closeSync(fd);
   }
@@ -72,7 +87,9 @@ async function main(): Promise<void> {
     if (!name.endsWith('.AppImage')) continue;
     const filePath = path.join(outputDirectory, name);
     if (!looksLikeAppImage(filePath))
-      throw new Error(`${name} is not a valid AppImage (magic missing)`);
+      throw new Error(
+        `${name} is not a valid AppImage (marker or container structure missing)`,
+      );
     console.log(`ok: ${name} (AppImage magic)`);
   }
 
