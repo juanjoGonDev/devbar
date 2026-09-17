@@ -113,7 +113,13 @@ function findSquashfsSuperblock(filePath: string): {
             : !consistent
               ? `block ${blockSize} != 2^${blockLog}`
               : `compression ${compressionId} unknown`;
-          sample = `@${fileAt} block=${blockSize} log=${blockLog} comp=${compressionId} (${why})`;
+          // Raw bytes from the magic: when no candidate passes, the
+          // dump shows the ACTUAL field layout of the appended
+          // filesystem so the validation can be aligned to it.
+          const hex = data
+            .subarray(at, Math.min(at + 48, data.length))
+            .toString('hex');
+          sample = `@${fileAt} block=${blockSize} log=${blockLog} comp=${compressionId} (${why}) hex=${hex}`;
           if (consistent && plausibleSamples.length < 3)
             plausibleSamples.push(sample);
         }
