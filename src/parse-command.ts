@@ -72,7 +72,8 @@ export function buildCmdline(
  * 1. `cmd.exe` reads the line first and treats `& | < > ^` OUTSIDE double
  *    quotes as operators (chain / pipe / redirect / escape) — a raw `>`
  *    would redirect the child's output, `&` would chain. It also expands
- *    `%NAME%` environment references even inside quotes.
+ *    `%NAME%` environment references even inside double quotes, so a
+ *    literal `%` only survives as `^%` OUTSIDE a quoted span.
  * 2. The child re-parses the argument vector with the MSVCRT
  *    `CommandLineToArgvW` rules (double quotes group, backslashes escape
  *    quotes): an argument with whitespace needs `"…"` or the child would
@@ -80,33 +81,102 @@ export function buildCmdline(
  *    both cmd and the child — they would arrive as literal characters).
  *
  * Combined rules:
- * - empty, or containing whitespace/`"` → wrap in `"…"`, escaping `"` as
- *   `\"` and doubling backslash runs that precede a quote boundary. Literal
- *   percent signs briefly leave the quoted span so `^%` prevents expansion;
+ * - empty, or containing whitespace/`"` → a state machine tracks BOTH
+ *   parsers' quoted state at once (see quoteWindowsArgQuoted) so every
+ *   emitted character is legal for whichever parser reads it: spaces
+ *   only inside a child span, `%` only as `^%` outside a cmd span,
+ *   literal quotes only as `\"` outside a child span, backslash runs
+ *   doubled exactly where a quote follows in the OUTPUT;
  * - otherwise → emit as-is, but prefix each cmd operator and percent sign
  *   with `^` so cmd passes it through uninterpreted.
+ *
+ * The two reference parsers (cmd escape/expansion, then CommandLineToArgvW)
+ * are simulated in tests and the round-trip `parse(cmd(quote(v))) === v`
+ * is asserted for a battery of values, plus a real cmd.exe round-trip on
+ * Windows CI.
  */
-export function quoteWindowsArg(value: string): string {
-  if (value === '' || /[ \t\n\v"]/.test(value)) {
-    let out = '"';
-    for (let i = 0; i < value.length; i++) {
-      const ch = value[i];
-      if (ch !== '\\') {
-        if (ch === '"') out += '\\"';
-        else if (ch === '%') out += '"^%"';
-        else out += ch;
-        continue;
-      }
+function isArgSpace(ch: string | undefined): boolean {
+  return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\v';
+}
+/**
+ * The QUOTED encoding, as a single state machine tracking BOTH parsers
+ * simultaneously:
+ *  - `cmdQ`  — whether the next character is inside a cmd.exe quoted span
+ *             (cmd toggles on EVERY double-quote; it ignores backslashes);
+ *  - `childQ`— the child's CommandLineToArgvW quoted state (a `\"` does
+ *             NOT toggle it; an even backslash run before a quote still
+ *             does).
+ * Invariants the transitions maintain:
+ *  - a space is only ever emitted while `childQ` (or it would split the
+ *    argument in the child's parser);
+ *  - a `%` is only ever emitted as `^%` while `!cmdQ` (or cmd would
+ *    expand %NAME% — even inside quotes);
+ *  - a literal `"` is only ever emitted as `\"` while `!childQ` (a quote
+ *    inside a child span would close it, not be content).
+ */
+function quoteWindowsArgQuoted(value: string): string {
+  // Start inside the span: classic `"…"` form for the common case; the
+  // state machine closes/reopens it only where a parser requires it.
+  let out = '"';
+  let cmdQ = true;
+  let childQ = true;
+  // A bare quote toggles BOTH parsers.
+  const quote = (): void => {
+    out += '"';
+    cmdQ = !cmdQ;
+    childQ = !childQ;
+  };
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (isArgSpace(ch)) {
+      if (!childQ) quote();
+      out += ch;
+    } else if (ch === '%') {
+      if (cmdQ) quote();
+      out += '^%';
+    } else if (ch === '"') {
+      if (childQ) quote();
+      out += '\\"';
+      cmdQ = !cmdQ; // \" is a literal for the child, a toggle for cmd
+    } else if (ch === '\\') {
       let n = 0;
       while (i + n < value.length && value[i + n] === '\\') n++;
       const next = value[i + n];
-      if (next === '"') out += '\\'.repeat(2 * n + 1) + '"';
-      else if (next === '%') out += '\\'.repeat(2 * n);
-      else if (next === undefined) out += '\\'.repeat(2 * n);
-      else out += '\\'.repeat(n);
-      i += n - 1;
+      if (next === '"') {
+        // n literal backslashes + a LITERAL quote for the child: 2n+1
+        // backslashes before a quote. The quote is still a toggle for cmd.
+        out += '\\'.repeat(2 * n + 1) + '"';
+        cmdQ = !cmdQ;
+        i += n; // the loop's i++ then skips the consumed quote
+      } else if (next === undefined) {
+        // Argument end: the final closing quote (below) is adjacent when
+        // childQ; with !childQ no quote follows and the run is literal.
+        out += '\\'.repeat(childQ ? 2 * n : n);
+        i += n - 1;
+      } else if (isArgSpace(next)) {
+        // A space follows: when !childQ the space handler emits a span
+        // OPEN immediately after these backslashes — even them out.
+        out += '\\'.repeat(childQ ? n : 2 * n);
+        i += n - 1;
+      } else if (next === '%') {
+        // The % handler may emit a span CLOSE right after these
+        // backslashes (when cmdQ) — even them out.
+        out += '\\'.repeat(cmdQ ? 2 * n : n);
+        i += n - 1;
+      } else {
+        out += '\\'.repeat(n);
+        i += n - 1;
+      }
+    } else {
+      out += ch;
     }
-    return out + '"';
+  }
+  if (childQ) out += '"';
+  return out;
+}
+export function quoteWindowsArg(value: string): string {
+  if (value === '' || /[ \t\n\v"]/.test(value)) {
+    return quoteWindowsArgQuoted(value);
   }
   return value.replace(/[&|<>^%]/g, '^$&');
 }

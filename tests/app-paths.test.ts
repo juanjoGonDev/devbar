@@ -178,12 +178,17 @@ describe('migrateLegacyLinuxStore', () => {
     const newDir = path.join(dir, 'DevBar');
     const legacy = writeLegacy(config, '{\"version\":2}');
     const target = path.join(newDir, 'config.json');
+    // Force the copy path (rename is the atomic same-device preference).
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
+    });
     const copy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
       fs.writeFileSync(target, '{\"version\":4}');
       throw Object.assign(new Error('target exists'), { code: 'EEXIST' });
     });
 
     expect(migrateLegacyLinuxStore(newDir, dir, config)).toBe('skipped');
+    expect(rename).toHaveBeenCalledWith(legacy, target);
     expect(copy).toHaveBeenCalledWith(
       legacy,
       target,

@@ -77,10 +77,24 @@ export function migrateLegacyLinuxStore(
   if (!fs.existsSync(legacy) || fs.existsSync(target)) return 'skipped';
   try {
     fs.mkdirSync(newStoreDir, { recursive: true });
-    fs.copyFileSync(legacy, target, fs.constants.COPYFILE_EXCL);
-  } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 'skipped';
+  } catch {
     return 'failed';
+  }
+  try {
+    // rename is atomic where the filesystem allows it — the preferred
+    // path.
+    fs.renameSync(legacy, target);
+  } catch {
+    // rename can fail across devices (EXDEV) or because the target
+    // appeared after the check above. Copy EXCLUSIVELY: an existing
+    // target must WIN — overwriting it with legacy data would destroy
+    // config written by a newer instance.
+    try {
+      fs.copyFileSync(legacy, target, fs.constants.COPYFILE_EXCL);
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 'skipped';
+      return 'failed';
+    }
   }
   try {
     fs.unlinkSync(legacy);

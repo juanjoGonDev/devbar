@@ -1,6 +1,4 @@
 import { spawnSync } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   tokenize,
@@ -177,13 +175,16 @@ describe('parse-command', () => {
     });
 
     it('escapes embedded double quotes for the child parser', () => {
-      expect(quoteWindowsArg('He said "hi"')).toBe('"He said \\"hi\\""');
+      // The span closes before the literal quote (the state machine
+      // cannot emit `\"` from inside a child span) and the argument
+      // ends with its span left open — the child parser accepts that.
+      expect(quoteWindowsArg('He said "hi"')).toBe('"He said "\\"hi\\"');
     });
 
-    it('doubles backslashes that precede the closing quote', () => {
-      // The embedded quote forces wrapping; the trailing backslash
-      // must be doubled so the child parser yields the original bytes.
-      expect(quoteWindowsArg('a"b\\')).toBe('"a\\"b\\\\"');
+    it('keeps a trailing backslash literal at end of argument', () => {
+      // No closing quote is emitted, so the trailing backslash needs no
+      // doubling — the simulated round-trip below asserts the bytes.
+      expect(quoteWindowsArg('a"b\\')).toBe('"a"\\"b\\');
     });
 
     it('escapes cmd operators with ^ when the arg stays unquoted', () => {
@@ -195,7 +196,10 @@ describe('parse-command', () => {
 
     it('escapes percent signs so cmd does not expand environment references', () => {
       expect(quoteWindowsArg('%TEMP%')).toBe('^%TEMP^%');
-      expect(quoteWindowsArg('in %TEMP% now')).toBe('"in "^%"TEMP"^%" now"');
+      // The % span must run until the next SPACE (not just the %): with a
+      // break right after each %, the child's parser would split the
+      // argument at the following unquoted space.
+      expect(quoteWindowsArg('in %TEMP% now')).toBe('"in "^%TEMP^%" now"');
     });
 
     it('wraps in quotes when whitespace and operators combine', () => {
@@ -231,15 +235,12 @@ describe('parse-command', () => {
     it.runIf(process.platform === 'win32')(
       'round-trips literal percent signs through cmd.exe',
       () => {
-        const helper = path.join(
-          path.dirname(fileURLToPath(import.meta.url)),
-          'fixtures',
-          'print-argv.js',
+        // No fixture file: node -p prints its own argv, which keeps this
+        // inside the TypeScript-only source policy.
+        const cmdline = buildCmdlineWindows(
+          `${quoteWindowsArg(process.execPath)} -p "JSON.stringify(process.argv.slice(1))"`,
+          ['%TEMP%', 'in %TEMP% now'],
         );
-        const cmdline = buildCmdlineWindows(quoteWindowsArg(process.execPath), [
-          helper,
-          '%TEMP%',
-        ]);
         const result = spawnSync(
           process.env.ComSpec || 'cmd.exe',
           ['/d', '/s', '/c', cmdline],
@@ -250,7 +251,153 @@ describe('parse-command', () => {
         );
 
         expect(result.status, result.stderr).toBe(0);
-        expect(JSON.parse(result.stdout)).toEqual(['%TEMP%']);
+        // An unescaped % would arrive as 'expanded-by-cmd'.
+        expect(JSON.parse(result.stdout)).toEqual(['%TEMP%', 'in %TEMP% now']);
+      },
+    );
+  });
+
+  // ─── reference-parser round-trip ────────────────────────────────────
+  // Simulates the two real parsers (cmd.exe escape/expansion, then the
+  // child's CommandLineToArgvW) so the quoting can be verified on every
+  // OS, not only by the win32-only cmd.exe test below.
+  describe('quoteWindowsArg round-trip through simulated parsers', () => {
+    // cmd.exe layer: ^ escapes the next character (caret consumed);
+    // %NAME% expands from the env (a bare % reaching here is a quoting
+    // bug, so expansion uses a sentinel that fails the round-trip).
+    function cmdSimulate(line: string, env: Record<string, string>): string {
+      let out = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        // cmd passes " and ^ through literally INSIDE double quotes;
+        // only outside them is ^ the escape character. %VAR% expands
+        // inside AND outside quotes — that is the hazard the escaper
+        // must defeat.
+        if (ch === '"') {
+          inQuotes = !inQuotes;
+          out += ch;
+          continue;
+        }
+        if (ch === '^' && !inQuotes) {
+          i++;
+          out += line[i] ?? '';
+          continue;
+        }
+        if (ch === '%') {
+          const close = line.indexOf('%', i + 1);
+          if (close > i) {
+            out += env[line.slice(i + 1, close)] ?? '%UNDEFINED%';
+            i = close;
+            continue;
+          }
+        }
+        out += ch;
+      }
+      return out;
+    }
+    // MSVCRT CommandLineToArgvW: quotes toggle, backslash runs encode
+    // quotes, an unquoted space ends the current argument; a quoted span
+    // with no content still yields an (empty) argument.
+    function childParse(line: string): string[] {
+      const args: string[] = [];
+      let arg = '';
+      let inQuotes = false;
+      let touched = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          inQuotes = !inQuotes;
+          touched = true;
+          continue;
+        }
+        if (ch === '\\') {
+          let n = 1;
+          while (i + n < line.length && line[i + n] === '\\') n++;
+          if (i + n < line.length && line[i + n] === '"') {
+            arg += '\\'.repeat(Math.floor(n / 2));
+            if (n % 2 === 1) {
+              arg += '"';
+            } else {
+              // an even run encodes n/2 literal backslashes and the
+              // quote still TOGGLES the quoted state
+              inQuotes = !inQuotes;
+            }
+            i += n;
+            touched = true;
+          } else {
+            arg += '\\'.repeat(n);
+            i += n - 1;
+            touched = true;
+          }
+          continue;
+        }
+        if ((ch === ' ' || ch === '\t') && !inQuotes) {
+          if (touched) {
+            args.push(arg);
+            arg = '';
+            touched = false;
+          }
+          continue;
+        }
+        arg += ch;
+        touched = true;
+      }
+      if (touched) args.push(arg);
+      return args;
+    }
+
+    const ENV = { TEMP: 'expanded-by-cmd', HOMEDRIVE: 'C:' };
+    const BATTERY: string[] = [
+      'plain',
+      '--flag',
+      'a b',
+      '',
+      '%TEMP%',
+      'in %TEMP% now',
+      '% foo',
+      'foo %',
+      'a% b',
+      'a%% b',
+      '100% (done)',
+      '%UNC\\share\\file',
+      "a%'b",
+      'say "hi" now',
+      'C:\\',
+      'C:\\ new',
+      'a\\b c',
+      'a\\\\b c',
+      'path\\to "x" end',
+      'mixed & | < > ^ % " \\',
+      'a%\\\" b',
+      'a%\\ b',
+      'a%\\\\\" b',
+      'C%\\\\x\\" y',
+      '%HOMEDRIVE:%\dir',
+      'a^b c',
+      'trailing space ',
+      '  leading',
+      '%%',
+      '%',
+      '100%',
+      'a b%',
+      '%"%',
+      '%\\',
+      'a\tb % c',
+      '%a%b% c',
+      'He said "hi"',
+      'a"b\\',
+    ];
+
+    it.each(BATTERY)(
+      'round-trips %s through cmd.exe + CommandLineToArgvW',
+      (value) => {
+        const raw = quoteWindowsArg(value);
+        const afterCmd = cmdSimulate(raw, ENV);
+        expect(
+          childParse(afterCmd),
+          `value=${JSON.stringify(value)} raw=${JSON.stringify(raw)}`,
+        ).toEqual([value]);
       },
     );
   });
