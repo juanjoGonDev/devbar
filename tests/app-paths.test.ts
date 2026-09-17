@@ -52,6 +52,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const key of ['APPDATA', 'XDG_CONFIG_HOME'] as const) {
     if (savedEnv[key] === undefined) delete process.env[key];
     else process.env[key] = savedEnv[key];
@@ -170,5 +171,25 @@ describe('migrateLegacyLinuxStore', () => {
     expect(fs.readFileSync(path.join(newDir, 'config.json'), 'utf8')).toBe(
       '{\"version\":4}',
     );
+  });
+
+  it('skips without deleting legacy data when the target wins a creation race', () => {
+    const config = path.join(dir, 'xdg');
+    const newDir = path.join(dir, 'DevBar');
+    const legacy = writeLegacy(config, '{\"version\":2}');
+    const target = path.join(newDir, 'config.json');
+    const copy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      fs.writeFileSync(target, '{\"version\":4}');
+      throw Object.assign(new Error('target exists'), { code: 'EEXIST' });
+    });
+
+    expect(migrateLegacyLinuxStore(newDir, dir, config)).toBe('skipped');
+    expect(copy).toHaveBeenCalledWith(
+      legacy,
+      target,
+      fs.constants.COPYFILE_EXCL,
+    );
+    expect(fs.readFileSync(target, 'utf8')).toBe('{\"version\":4}');
+    expect(fs.readFileSync(legacy, 'utf8')).toBe('{\"version\":2}');
   });
 });

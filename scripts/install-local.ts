@@ -67,7 +67,7 @@ function psLikeEscape(value: string): string {
  * ere_escape (strip-only mode cannot share the helper).
  */
 function ereEscape(value: string): string {
-  return value.replace(/[][\\.^$*+?(){}|]/g, '\\$&');
+  return value.replace(/[\\.^$*+?()[\]{}|]/g, '\\$&');
 }
 /** Windows dev mode: electron.exe from this checkout, matched by command
  *  line. NOTE: backslashes are NOT doubled — PowerShell single-quoted

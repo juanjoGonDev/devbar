@@ -73,6 +73,11 @@ export function psLikeEscape(value: string): string {
   return out;
 }
 
+/** Escape a literal path for pgrep/pkill's extended-regex pattern. */
+export function ereEscape(value: string): string {
+  return value.replace(/[\\.^$*+?()[\]{}|]/g, '\\$&');
+}
+
 /**
  * Windows dev mode: the instance is electron.exe started from a given
  * checkout, so it cannot be matched by image name alone. Find those

@@ -1,3 +1,6 @@
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   tokenize,
@@ -190,6 +193,11 @@ describe('parse-command', () => {
       expect(quoteWindowsArg('g^h')).toBe('g^^h');
     });
 
+    it('escapes percent signs so cmd does not expand environment references', () => {
+      expect(quoteWindowsArg('%TEMP%')).toBe('^%TEMP^%');
+      expect(quoteWindowsArg('in %TEMP% now')).toBe('"in "^%"TEMP"^%" now"');
+    });
+
     it('wraps in quotes when whitespace and operators combine', () => {
       // operators are literal inside double quotes for cmd
       expect(quoteWindowsArg('My App & more')).toBe('"My App & more"');
@@ -219,5 +227,31 @@ describe('parse-command', () => {
         ]),
       ).toBe('node server.js --title "My App" a^&b "> log"');
     });
+
+    it.runIf(process.platform === 'win32')(
+      'round-trips literal percent signs through cmd.exe',
+      () => {
+        const helper = path.join(
+          path.dirname(fileURLToPath(import.meta.url)),
+          'fixtures',
+          'print-argv.js',
+        );
+        const cmdline = buildCmdlineWindows(quoteWindowsArg(process.execPath), [
+          helper,
+          '%TEMP%',
+        ]);
+        const result = spawnSync(
+          process.env.ComSpec || 'cmd.exe',
+          ['/d', '/s', '/c', cmdline],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, TEMP: 'expanded-by-cmd' },
+          },
+        );
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toEqual(['%TEMP%']);
+      },
+    );
   });
 });

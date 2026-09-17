@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ereEscape,
   POSIX_SERVICE_GRACE_MS,
   posixKillServiceTrees,
   psLikeEscape,
@@ -60,6 +61,14 @@ describe('psLikeEscape', () => {
   });
   it('is the identity for paths with no specials', () => {
     expect(psLikeEscape('/plain/path')).toBe('/plain/path');
+  });
+});
+
+describe('ereEscape', () => {
+  it('escapes ERE metacharacters, including both square brackets', () => {
+    expect(ereEscape('a[b].c(d){e}+f?g^h$i|j\\k')).toBe(
+      'a\\[b\\]\\.c\\(d\\)\\{e\\}\\+f\\?g\\^h\\$i\\|j\\\\k',
+    );
   });
 });
 

@@ -7,6 +7,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Corregido
 
+- **Los argumentos estructurados conservan los signos de porcentaje en
+  Windows**, sin que `cmd.exe` expanda por accidente valores como `%TEMP%`.
+  La migración de la configuración heredada en Linux tampoco puede sobrescribir
+  un archivo nuevo creado al mismo tiempo por otra instancia.
 - **Los comandos que DevBar ejecuta ya no se quedan huérfanos cuando la app
   se cierra.** Antes, al salir (o en la swap de la actualización
   automática) solo se detenía el primer servicio y el resto seguía vivo
