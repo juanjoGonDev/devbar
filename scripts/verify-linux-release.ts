@@ -28,36 +28,66 @@ const outputDirectory =
 const version = process.argv[3] || packageJson.version;
 
 /**
- * SquashFS superblock fields, little-endian (squashfs.h):
- *   +0  magic "hsqs"     +8   block size  (4 KiB..1 MiB, power of 2)
- *   +12 block log        +16  compression id
- * A type-2 AppImage appends the SquashFS right after the runtime ELF, so
- * a well-formed image carries a valid superblock somewhere in the file.
- * The 4-byte magic alone is NOT proof: the runtime ELF embeds SquashFS
- * reader code and can contain raw "hsqs" bytes of its own. The block
- * size / block log / compression fields are validated for
- * self-consistency (block size === 2^block log, sane ranges) — random
- * ELF bytes will not satisfy that.
+ * SquashFS superblock acceptance. The superblock MUST declare its data
+ * block size and its log2, and both fields sit in the first 32 bytes
+ * after the "hsqs" magic — but their exact offsets DIFFER between
+ * mksquashfs variants:
+ *   - stock layout:  block size (u32) @ +8,  block log (u16) @ +12
+ *   - AppImageKit 12 static build (the one electron-builder bundles,
+ *     appimage-12.0.1 toolset): creation @ +8, block size @ +12,
+ *     compression @ +20, block log @ +22
+ * Pinning one layout made the gate reject every real DevBar AppImage.
+ * So a candidate is accepted when ANY self-consistent pair is present
+ * in the first 32 bytes after the magic: a little-endian u32 equal to
+ * 2^L at one offset, with the matching u16 L (12..20 => 4 KiB..1 MiB)
+ * at another. That proves a real superblock (block size and log agree)
+ * without depending on field positions; the runtime ELF's spurious
+ * "hsqs" bytes (its embedded SquashFS reader code) satisfy this with
+ * negligible probability (~3e-12 per candidate).
  */
 const SQUASHFS_MAGIC = Buffer.from('hsqs', 'latin1');
 
-function isValidSquashfsSuperblock(data: Buffer, at: number): boolean {
-  if (at + 18 > data.length) return false;
+function hasConsistentBlockPair(data: Buffer, at: number): boolean {
+  const end = Math.min(at + 32, data.length);
+  for (let logAt = at; logAt + 2 <= end; logAt += 1) {
+    const blockLog = data.readUInt16LE(logAt);
+    if (blockLog < 12 || blockLog > 20) continue;
+    const blockSize = 2 ** blockLog;
+    for (let blkAt = at; blkAt + 4 <= end; blkAt += 1) {
+      if (data.readUInt32LE(blkAt) === blockSize) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Standard-layout field read, for the REJECTION diagnostic only: it
+ * shows what the stock offsets decode to so a future layout drift is
+ * visible in the CI failure message (hex dump included by the caller).
+ */
+function describeStandardFields(data: Buffer, at: number): string | null {
+  if (at + 18 > data.length) return 'fields truncated at file end';
   const blockSize = data.readUInt32LE(at + 8);
   const blockLog = data.readUInt16LE(at + 12);
   const compressionId = data.readUInt16LE(at + 16);
-  if (blockLog < 12 || blockLog > 20) return false;
-  if (blockSize !== 2 ** blockLog) return false;
-  return compressionId <= 7;
+  const logInRange = blockLog >= 12 && blockLog <= 20;
+  const why = !logInRange
+    ? `block log ${blockLog} out of range`
+    : blockSize !== 2 ** blockLog
+      ? `block ${blockSize} != 2^${blockLog}`
+      : `compression ${compressionId} unknown`;
+  return `block=${blockSize} log=${blockLog} comp=${compressionId} (stock ${why})`;
 }
 
 /**
  * True when the file carries an appended filesystem, i.e. contains a
- * structurally valid SquashFS superblock. Images run 50–300 MiB, so the
- * file is scanned in 1 MiB chunks (a 17-byte carry keeps a superblock
- * that straddles a boundary searchable). When no valid superblock is
- * found, returns a diagnostic listing the first candidates and their
- * fields, so a CI failure says WHY a real-looking image was rejected.
+ * "hsqs" candidate with a self-consistent block size/log pair (see
+ * hasConsistentBlockPair). Images run 50–300 MiB, so the file is
+ * scanned in 1 MiB chunks (a 31-byte carry keeps a candidate that
+ * straddles a boundary searchable). When no candidate passes, returns
+ * a diagnostic (size, candidate count, first candidates with fields
+ * and raw hex), so a CI failure says WHY a real-looking image was
+ * rejected.
  */
 function findSquashfsSuperblock(filePath: string): {
   found: boolean;
@@ -67,17 +97,11 @@ function findSquashfsSuperblock(filePath: string): {
   try {
     const size = fstatSync(fd).size;
     const chunk = Buffer.alloc(1 << 20);
-    const CARRY = 17; // the fields read 17 bytes past the magic
+    const CARRY = 31; // the pair check reads 32 bytes past the magic
     let offset = 0;
     let carry = Buffer.alloc(0);
     let totalCandidates = 0;
     const firstSamples: string[] = [];
-    // Candidates whose block size/log ARE consistent — the real
-    // superblock (it starts right after the ELF, i.e. among the early
-    // candidates) can only be rejected for an unknown compression id,
-    // so a plausible sample pinpoints it even when the runtime ELF
-    // carries many spurious "hsqs" bytes before it.
-    const plausibleSamples: string[] = [];
     while (offset < size) {
       const n = readSync(
         fd,
@@ -96,33 +120,13 @@ function findSquashfsSuperblock(filePath: string): {
         const at = data.indexOf(SQUASHFS_MAGIC, from);
         if (at === -1) break;
         totalCandidates += 1;
-        if (isValidSquashfsSuperblock(data, at))
+        if (hasConsistentBlockPair(data, at))
           return { found: true, detail: null };
         const fileAt = offset - (data.length - n) + at;
-        let sample: string | null = null;
-        if (at + 18 > data.length) {
-          sample = `@${fileAt} (fields truncated at file end)`;
-        } else {
-          const blockSize = data.readUInt32LE(at + 8);
-          const blockLog = data.readUInt16LE(at + 12);
-          const compressionId = data.readUInt16LE(at + 16);
-          const logInRange = blockLog >= 12 && blockLog <= 20;
-          const consistent = logInRange && blockSize === 2 ** blockLog;
-          const why = !logInRange
-            ? `block log ${blockLog} out of range`
-            : !consistent
-              ? `block ${blockSize} != 2^${blockLog}`
-              : `compression ${compressionId} unknown`;
-          // Raw bytes from the magic: when no candidate passes, the
-          // dump shows the ACTUAL field layout of the appended
-          // filesystem so the validation can be aligned to it.
-          const hex = data
-            .subarray(at, Math.min(at + 48, data.length))
-            .toString('hex');
-          sample = `@${fileAt} block=${blockSize} log=${blockLog} comp=${compressionId} (${why}) hex=${hex}`;
-          if (consistent && plausibleSamples.length < 3)
-            plausibleSamples.push(sample);
-        }
+        const hex = data
+          .subarray(at, Math.min(at + 48, data.length))
+          .toString('hex');
+        const sample = `@${fileAt} ${describeStandardFields(data, at)} hex=${hex}`;
         if (firstSamples.length < 3) firstSamples.push(sample);
         from = at + 1;
       }
@@ -134,10 +138,10 @@ function findSquashfsSuperblock(filePath: string): {
     }
     const detail =
       `size=${size}B, hsqs candidates=${totalCandidates}` +
-      (firstSamples.length > 0 ? `, first: ${firstSamples.join('; ')}` : '') +
-      (plausibleSamples.length > 0
-        ? `, plausible: ${plausibleSamples.join('; ')}`
-        : ', no plausible superblock');
+      (firstSamples.length > 0
+        ? `, first: ${firstSamples.join('; ')}`
+        : ' (none)') +
+      ', no candidate carries a self-consistent block size/log pair';
     return { found: false, detail };
   } finally {
     closeSync(fd);

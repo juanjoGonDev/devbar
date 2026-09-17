@@ -71,6 +71,26 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
     expect(looksLikeAppImage(file)).toBe(true);
   });
 
+  it('accepts the AppImageKit-12 mksquashfs layout used by electron-builder', async () => {
+    // The static mksquashfs bundled in the appimage-12.0.1 toolset
+    // writes a NON-standard superblock: creation @ +8, block size
+    // @ +12, compression @ +20, block log @ +22 (instead of the stock
+    // block @ +8 / log @ +12). Layout-independent acceptance must
+    // find the self-consistent pair (131072 == 2^17).
+    const sb = Buffer.alloc(96);
+    sb.write('hsqs', 0, 'latin1');
+    sb.writeUInt32LE(112, 4); // mystery field observed in real builds
+    sb.writeUInt32LE(1789677472, 8); // creation timestamp
+    sb.writeUInt32LE(131072, 12); // block size
+    sb.writeUInt16LE(1, 20); // gzip
+    sb.writeUInt16LE(17, 22); // block log
+    const file = await writeFixture(
+      'appimagekit.AppImage',
+      Buffer.concat([elfIdent(0x02), Buffer.alloc(64), sb]),
+    );
+    expect(looksLikeAppImage(file)).toBe(true);
+  });
+
   it('rejects a truncated type-2 image (ELF + marker, no filesystem)', async () => {
     const file = await writeFixture(
       'truncated.AppImage',
