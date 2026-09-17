@@ -68,11 +68,16 @@ function findSquashfsSuperblock(filePath: string): {
     const size = fstatSync(fd).size;
     const chunk = Buffer.alloc(1 << 20);
     const CARRY = 17; // the fields read 17 bytes past the magic
-    const MAX_SAMPLES = 5;
     let offset = 0;
     let carry = Buffer.alloc(0);
     let totalCandidates = 0;
-    const samples: string[] = [];
+    const firstSamples: string[] = [];
+    // Candidates whose block size/log ARE consistent — the real
+    // superblock (it starts right after the ELF, i.e. among the early
+    // candidates) can only be rejected for an unknown compression id,
+    // so a plausible sample pinpoints it even when the runtime ELF
+    // carries many spurious "hsqs" bytes before it.
+    const plausibleSamples: string[] = [];
     while (offset < size) {
       const n = readSync(
         fd,
@@ -93,25 +98,26 @@ function findSquashfsSuperblock(filePath: string): {
         totalCandidates += 1;
         if (isValidSquashfsSuperblock(data, at))
           return { found: true, detail: null };
-        if (samples.length < MAX_SAMPLES) {
-          const fileAt = offset - (data.length - n) + at;
-          if (at + 18 > data.length) {
-            samples.push(`@${fileAt} (fields truncated at file end)`);
-          } else {
-            const blockSize = data.readUInt32LE(at + 8);
-            const blockLog = data.readUInt16LE(at + 12);
-            const compressionId = data.readUInt16LE(at + 16);
-            const why =
-              blockLog < 12 || blockLog > 20
-                ? `block log ${blockLog} out of range`
-                : blockSize !== 2 ** blockLog
-                  ? `block ${blockSize} != 2^${blockLog}`
-                  : `compression ${compressionId} unknown`;
-            samples.push(
-              `@${fileAt} block=${blockSize} log=${blockLog} comp=${compressionId} (${why})`,
-            );
-          }
+        const fileAt = offset - (data.length - n) + at;
+        let sample: string | null = null;
+        if (at + 18 > data.length) {
+          sample = `@${fileAt} (fields truncated at file end)`;
+        } else {
+          const blockSize = data.readUInt32LE(at + 8);
+          const blockLog = data.readUInt16LE(at + 12);
+          const compressionId = data.readUInt16LE(at + 16);
+          const logInRange = blockLog >= 12 && blockLog <= 20;
+          const consistent = logInRange && blockSize === 2 ** blockLog;
+          const why = !logInRange
+            ? `block log ${blockLog} out of range`
+            : !consistent
+              ? `block ${blockSize} != 2^${blockLog}`
+              : `compression ${compressionId} unknown`;
+          sample = `@${fileAt} block=${blockSize} log=${blockLog} comp=${compressionId} (${why})`;
+          if (consistent && plausibleSamples.length < 3)
+            plausibleSamples.push(sample);
         }
+        if (firstSamples.length < 3) firstSamples.push(sample);
         from = at + 1;
       }
       carry =
@@ -122,7 +128,10 @@ function findSquashfsSuperblock(filePath: string): {
     }
     const detail =
       `size=${size}B, hsqs candidates=${totalCandidates}` +
-      (samples.length > 0 ? `, first: ${samples.join('; ')}` : ' (none)');
+      (firstSamples.length > 0 ? `, first: ${firstSamples.join('; ')}` : '') +
+      (plausibleSamples.length > 0
+        ? `, plausible: ${plausibleSamples.join('; ')}`
+        : ', no plausible superblock');
     return { found: false, detail };
   } finally {
     closeSync(fd);
@@ -287,7 +296,12 @@ const isEntrypoint =
 
 if (isEntrypoint) {
   void main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    // On CI, mirror the failure into the job annotations: the Checks UI
+    // shows it without opening logs, and it is readable via the
+    // check-runs annotations API.
+    if (process.env.GITHUB_ACTIONS) console.error(`::error::${message}`);
     process.exitCode = 1;
   });
 }
