@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, writeFileSync } from 'node:fs';
-import { stat, readFile } from 'node:fs/promises';
+import { readdir, stat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const STABLE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
@@ -169,6 +169,19 @@ export async function verifyReleaseArtifactSet({
       assertNonEmptyFile(path.join(outputDirectory, name), name),
     ),
   );
+
+  // The directory must hold exactly the artifact set (plus the manifest):
+  // an unknown regular file is an unexpected byproduct that must not ship
+  // or masquerade as a verified artifact.
+  const allowedNames = new Set([...artifactNames, 'SHA256SUMS.txt']);
+  for (const entry of await readdir(outputDirectory)) {
+    if (allowedNames.has(entry)) continue;
+    const entryStat = await stat(path.join(outputDirectory, entry)).catch(
+      () => null,
+    );
+    if (entryStat?.isFile())
+      throw new Error(`Unexpected file in release directory: ${entry}`);
+  }
 
   const manifest = (await stat(manifestPath).catch(() => null))
     ? parseChecksumManifest(await readFile(manifestPath, 'utf8'))

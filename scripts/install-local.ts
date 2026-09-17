@@ -380,6 +380,11 @@ function main(): void {
   const { unpackedDir, installDir, executable } = layout();
 
   killRunningInstances(installDir);
+  // Verification and forced cleanup complete BEFORE any fallible build or
+  // packaging step: if the build aborts, a surviving instance must not be
+  // left behind holding the single-instance lock.
+  verifyStopped(installDir);
+  killLeftovers(installDir);
 
   if (noBuild) {
     step('Skipping build (--no-build)…');
@@ -409,9 +414,6 @@ function main(): void {
     }
     ok(`built: ${unpackedDir}`);
   }
-
-  verifyStopped(installDir);
-  killLeftovers(installDir);
 
   step(`Installing to ${installDir}`);
   fs.rmSync(installDir, { recursive: true, force: true });

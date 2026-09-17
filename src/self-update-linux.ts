@@ -24,11 +24,15 @@ import path from 'node:path';
  * Provenance: a DevBar running as a CHILD of some other AppImage
  * inherits that parent's $APPIMAGE. Targeting the inherited file would
  * let an update REPLACE THE PARENT APPLICATION — so the env value is
- * only accepted when it identifies THIS running image: the runtime
- * mounts a `<name>.AppImage` under `/tmp/.mount_<name><random>` and
- * execPath's directory is that mount point, so the mount dir must carry
- * the same stem as the env file's name. Anything else falls back to the
- * execPath check (directly executed image: the path IS the file).
+ * only accepted when it identifies THIS running image. The type 2
+ * runtime names the mount after the executed file: `build_mount_point`
+ * (AppImage/type2-runtime) creates `$TMPDIR/.mount_%.*sXXXXXX` from the
+ * FIRST SIX CHARACTERS of the basename (maxnamelen = 6, template
+ * truncated — the full name never appears in the mount dir), and
+ * execPath's directory is that mount point. So the mount dir must start
+ * with `.mount_` + the first six characters of the $APPIMAGE basename.
+ * Anything else falls back to the execPath check (directly executed
+ * image: the path IS the file).
  */
 export function appImagePathFromExecutable(
   execPath: string,
@@ -37,8 +41,10 @@ export function appImagePathFromExecutable(
   const fromEnv = (appImageEnv ?? '').trim();
   if (fromEnv) {
     const mountDir = path.basename(path.dirname(execPath));
-    const stem = path.basename(fromEnv).replace(/\.appimage$/iu, '');
-    if (stem && mountDir.startsWith(`.mount_${stem}`)) {
+    // basename, not stem: the runtime truncates the basename (extension
+    // included), so it is the faithful — and stricter — identifier.
+    const base = path.basename(fromEnv).slice(0, 6);
+    if (base && mountDir.startsWith(`.mount_${base}`)) {
       return path.resolve(fromEnv);
     }
   }

@@ -1,6 +1,13 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -162,8 +169,9 @@ describe('release artifact contract', () => {
   it('verifies a per-platform set against a full manifest', async () => {
     const platformFixture = await createArtifactFixture('0.2.0', 'win', false);
     const fullFixture = await createArtifactFixture();
-    // Simulate the publish job: full set + full manifest in one directory.
-    for (const name of fullFixture.artifactNames)
+    // The platform job's directory holds ITS artifacts plus (optionally) a
+    // full manifest that must stay consistent.
+    for (const name of platformFixture.artifactNames)
       await readFile(path.join(fullFixture.directory, name), 'utf8').then(
         (contents) =>
           writeFile(path.join(platformFixture.directory, name), contents),
@@ -197,6 +205,54 @@ describe('release artifact contract', () => {
         version: fixture.version,
       }),
     ).rejects.toThrow(`${fixture.artifactNames[0]} is missing or empty`);
+  });
+
+  it('rejects an unknown regular file in the release directory', async () => {
+    const fixture = await createArtifactFixture();
+    await writeFile(
+      path.join(fixture.directory, 'suspicious-byproduct.txt'),
+      'not an artifact',
+    );
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: fixture.version,
+      }),
+    ).rejects.toThrow(
+      'Unexpected file in release directory: suspicious-byproduct.txt',
+    );
+  });
+
+  it('rejects an unknown file for a per-platform set too', async () => {
+    const fixture = await createArtifactFixture('0.2.0', 'win', false);
+    await writeFile(path.join(fixture.directory, 'leftover.log'), 'old build');
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: '0.2.0',
+        platform: 'win',
+      }),
+    ).rejects.toThrow('Unexpected file in release directory: leftover.log');
+  });
+
+  it('allows directories and the manifest next to the artifacts', async () => {
+    const fixture = await createArtifactFixture();
+    await mkdir(path.join(fixture.directory, 'build-notes'), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(fixture.directory, 'build-notes', 'readme.txt'),
+      'nested files do not ship at the top level',
+    );
+
+    await expect(
+      verifyReleaseArtifactSet({
+        directory: fixture.directory,
+        version: fixture.version,
+      }),
+    ).resolves.toMatchObject({ artifactNames: fixture.artifactNames });
   });
 
   it('fails when the manifest omits an expected artifact', async () => {

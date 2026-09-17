@@ -35,6 +35,27 @@ describe('listBranches failure classification', () => {
     expect(res.isRepo).toBe(false);
   });
 
+  it('a permission-denied path is an operational failure, not "not a repo"', async () => {
+    // Root (or CAP_DAC_OVERRIDE) traverses 0o000 anyway, so the premise
+    // only holds for unprivileged processes.
+    if (typeof process.geteuid === 'function' && process.geteuid() === 0)
+      return;
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-noperm-'));
+    const locked = path.join(base, 'locked');
+    fs.mkdirSync(locked, { mode: 0o000 });
+    try {
+      // git -C <locked>/inner fails with "fatal: cannot change to
+      // '…': Permission denied" — that diagnostic says nothing about
+      // whether the folder is a repository, so no isRepo verdict.
+      const res = await listBranches(path.join(locked, 'inner'));
+      expect(res.ok).toBe(false);
+      expect(res.isRepo).toBeUndefined();
+    } finally {
+      fs.chmodSync(locked, 0o755);
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   it('an actual repository resolves its branches', async () => {
     // The devbar checkout itself is a repository (tests run from the
     // repo root).

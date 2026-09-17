@@ -161,6 +161,37 @@ describe('appImagePathFromExecutable', () => {
       ),
     ).toBe('/home/u/devbar.appimage');
   });
+
+  it('accepts the mount of a release-named image (the runtime keeps 6 chars)', () => {
+    // build_mount_point truncates the basename to SIX characters
+    // (maxnamelen = 6) before adding the random suffix — a full-name or
+    // full-stem comparison would reject every real install
+    // (DevBar-0.9.0-linux-x64.AppImage mounts under /tmp/.mount_DevBar…).
+    expect(
+      appImagePathFromExecutable(
+        '/tmp/.mount_DevBarXk2mQp/devbar',
+        '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
+      ),
+    ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
+  });
+
+  it('matches the basename, not the stem (the runtime truncates the basename)', () => {
+    // A 4-char stem: the runtime template is `.mount_devb.AXXXXXX`
+    // (extension included), so a sibling image with a 6-char stem must
+    // NOT be accepted for the mount of the other.
+    expect(
+      appImagePathFromExecutable(
+        '/tmp/.mount_devb.AxYz1/devbar',
+        '/home/u/devb.AppImage',
+      ),
+    ).toBe('/home/u/devb.AppImage');
+    expect(
+      appImagePathFromExecutable(
+        '/tmp/.mount_devbarQw9rEz/devbar',
+        '/home/u/devb.AppImage',
+      ),
+    ).toBeNull();
+  });
 });
 
 describe('winInstalledAppPath (temp payload without a resolvable container)', () => {
