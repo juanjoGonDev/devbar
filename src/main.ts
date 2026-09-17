@@ -1895,7 +1895,12 @@ function applyAutostart(enabled: boolean): void {
         args: enabled ? [LOGIN_ARG] : [],
       });
     } else {
-      setLinuxAutostart(process.execPath, !!enabled);
+      // A RUNNING AppImage's process.execPath is the ephemeral squashfs
+      // mount (/tmp/.mount_XXX/…) — a .desktop entry pointing there would
+      // reference a path that dies with the app. installedAppPath()
+      // resolves the persistent image file; it is null for .deb installs,
+      // where execPath IS the installed binary.
+      setLinuxAutostart(installedAppPath() ?? process.execPath, !!enabled);
     }
   } catch (err) {
     console.error('Failed to set login item:', err);

@@ -95,23 +95,32 @@ describe('buildSwapScript', () => {
 
 describe('appImagePathFromExecutable', () => {
   // The $APPIMAGE branch requires the payload next to the executable to
-  // be DevBar's own (resources/app/package.json carrying the devbar
-  // package name) — these fixtures stand in for the mounted squashfs.
-  // Dir names mimic the type 2 runtime's mount naming (.mount_<6 chars>).
+  // be DevBar's own (resources/app.asar|app/package.json carrying the
+  // devbar package name) — these fixtures stand in for the mounted
+  // squashfs. Dir names mimic the type 2 runtime's mount naming
+  // (.mount_<6 chars>).
   let devbarMount: string;
   let devbarLowerMount: string;
   let devbarShortMount: string;
   let parentMount: string;
   let bareMount: string;
+  let devbarAsarMount: string;
+  let foreignAsarMount: string;
+  let mixedLayoutMount: string;
   beforeAll(() => {
-    const make = (template: string, name: string | null): string => {
+    const make = (
+      template: string,
+      name: string | null,
+      layout: 'app' | 'asar' = 'app',
+    ): string => {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), template));
       if (name !== null) {
-        fs.mkdirSync(path.join(root, 'resources', 'app'), {
+        const payload = layout === 'asar' ? 'app.asar' : 'app';
+        fs.mkdirSync(path.join(root, 'resources', payload), {
           recursive: true,
         });
         fs.writeFileSync(
-          path.join(root, 'resources', 'app', 'package.json'),
+          path.join(root, 'resources', payload, 'package.json'),
           JSON.stringify({ name }),
         );
       }
@@ -122,6 +131,23 @@ describe('appImagePathFromExecutable', () => {
     devbarShortMount = make('.mount_devb.A', 'devbar');
     parentMount = make('.mount_Paren-', 'parent-tool');
     bareMount = make('.mount_DevBar', null);
+    // Packaged-build layout: the payload is an asar archive, not a plain
+    // directory (a directory named app.asar stands in for the archive).
+    // Templates: '.mount_' + the FIRST SIX CHARS of the image basename
+    // (the runtime's maxnamelen = 6) + mkdtemp's 6 random suffix chars.
+    devbarAsarMount = make('.mount_DevBar', 'devbar', 'asar');
+    foreignAsarMount = make('.mount_Paren+', 'parent-tool', 'asar');
+    mixedLayoutMount = make('.mount_DevBm.', 'parent-tool', 'asar');
+    // …and ALSO carry an unpacked-layout payload with the devbar name:
+    // the asar layout must win (fail closed) instead of the fallback
+    // masking a foreign mount.
+    fs.mkdirSync(path.join(mixedLayoutMount, 'resources', 'app'), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(mixedLayoutMount, 'resources', 'app', 'package.json'),
+      JSON.stringify({ name: 'devbar' }),
+    );
   });
   afterAll(() => {
     for (const root of [
@@ -130,6 +156,9 @@ describe('appImagePathFromExecutable', () => {
       devbarShortMount,
       parentMount,
       bareMount,
+      devbarAsarMount,
+      foreignAsarMount,
+      mixedLayoutMount,
     ]) {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -251,6 +280,40 @@ describe('appImagePathFromExecutable', () => {
       appImagePathFromExecutable(
         path.join(devbarMount, 'devbar'),
         '/home/u/devb.AppImage',
+      ),
+    ).toBeNull();
+  });
+
+  it('resolves the packaged build, whose payload lives in resources/app.asar', () => {
+    // The regression the old code got wrong: packaged AppImages ship the
+    // payload as an asar archive, so resources/app/package.json does not
+    // exist — the gate failed and in-place update was silently disabled
+    // for every real install.
+    expect(
+      appImagePathFromExecutable(
+        path.join(devbarAsarMount, 'devbar'),
+        '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
+      ),
+    ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
+  });
+
+  it('rejects a foreign asar payload (DevBar inside another image)', () => {
+    expect(
+      appImagePathFromExecutable(
+        path.join(foreignAsarMount, 'devbar'),
+        '/opt/Tools/Paren+App.AppImage',
+      ),
+    ).toBeNull();
+  });
+
+  it('fails closed when the asar layout carries a foreign name', () => {
+    // Both layouts present: the asar archive is authoritative, so its
+    // foreign name must NOT be masked by the unpacked fallback carrying
+    // the devbar name.
+    expect(
+      appImagePathFromExecutable(
+        path.join(mixedLayoutMount, 'devbar'),
+        '/home/u/Apps/DevBm.AppImage',
       ),
     ).toBeNull();
   });

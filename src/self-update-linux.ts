@@ -35,8 +35,10 @@ import path from 'node:path';
  *     inside a parent image: the parent runtime named the mount after
  *     the PARENT file, so the prefix always matches there.)
  *  2. The payload next to the executable must be DevBar's own: the app
- *     package.json (`resources/app/package.json`, read asar-transparently
- *     by Electron's patched fs) must carry the devbar package name.
+ *     package.json (`resources/app.asar/package.json` for packaged
+ *     builds, `resources/app/package.json` for unpacked ones — both read
+ *     asar-transparently by Electron's patched fs) must carry the devbar
+ *     package name.
  *     A foreign payload (DevBar as a payload file of another AppImage)
  *     fails the gate and the assisted update flow is used instead.
  * Anything else falls back to the execPath check (directly executed
@@ -49,19 +51,36 @@ const DEVBAR_PACKAGE_NAME = 'devbar';
  * gate fails closed: no identity, no in-place update target.
  */
 function payloadPackageName(execPath: string): string | null {
-  try {
-    const raw = fs.readFileSync(
-      path.join(path.dirname(execPath), 'resources', 'app', 'package.json'),
-      'utf8',
-    );
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed === 'object' && parsed !== null && 'name' in parsed) {
-      if (typeof parsed.name === 'string') return parsed.name;
+  const resources = path.join(path.dirname(execPath), 'resources');
+  // Packaged builds ship the payload as an asar archive; unpacked builds
+  // (asar disabled, or an extracted image) keep it as a plain directory.
+  // Electron's patched fs reads .asar paths transparently, so the same
+  // readFileSync works for both.
+  for (const payload of ['app.asar', 'app']) {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(
+        path.join(resources, payload, 'package.json'),
+        'utf8',
+      );
+    } catch {
+      // This layout is absent — try the next one.
+      continue;
+    }
+    // Metadata present: a parse error or missing name means this mount is
+    // not a valid app payload — fail closed rather than falling through
+    // to the other layout.
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === 'object' && parsed !== null && 'name' in parsed) {
+        if (typeof parsed.name === 'string') return parsed.name;
+      }
+    } catch {
+      // unparseable metadata
     }
     return null;
-  } catch {
-    return null;
   }
+  return null;
 }
 export function appImagePathFromExecutable(
   execPath: string,

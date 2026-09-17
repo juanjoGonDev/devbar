@@ -116,13 +116,13 @@ describe('appHome', () => {
 describe('legacyLinuxConfigFile', () => {
   it('points at the lowercase package-name folder under the default XDG', () => {
     expect(legacyLinuxConfigFile('/home/u', undefined)).toBe(
-      '/home/u/.config/devbar/config.json',
+      path.join('/home/u', '.config', 'devbar', 'config.json'),
     );
   });
 
   it('honors XDG_CONFIG_HOME', () => {
     expect(legacyLinuxConfigFile('/home/u', '/custom/xdg')).toBe(
-      '/custom/xdg/devbar/config.json',
+      path.join('/custom/xdg', 'devbar', 'config.json'),
     );
   });
 });

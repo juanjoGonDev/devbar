@@ -192,6 +192,10 @@ describe('parse-command', () => {
       expect(quoteWindowsArg('c>d')).toBe('c^>d');
       expect(quoteWindowsArg('e|f')).toBe('e^|f');
       expect(quoteWindowsArg('g^h')).toBe('g^^h');
+      // Parentheses are cmd compound-statement grouping: unescaped,
+      // foo(bar) would open a compound command, not reach the child.
+      expect(quoteWindowsArg('foo(bar)')).toBe('foo^(bar^)');
+      expect(quoteWindowsArg('a)b')).toBe('a^)b');
     });
 
     it('escapes percent signs so cmd does not expand environment references', () => {
@@ -261,6 +265,36 @@ describe('parse-command', () => {
         expect(result.status, result.stderr).toBe(0);
         // An unescaped % would arrive as 'expanded-by-cmd'.
         expect(JSON.parse(result.stdout)).toEqual(['%TEMP%', 'in %TEMP% now']);
+      },
+    );
+
+    it.runIf(process.platform === 'win32')(
+      'round-trips parentheses through cmd.exe (unquoted and in a span)',
+      () => {
+        // No fixture file: node -p prints its own argv, which keeps this
+        // inside the TypeScript-only source policy.
+        // Test-only: the command line is built by the escaper under test,
+        // and process.execPath is under developer/CI control (not
+        // attacker input) — the alert has no runtime consequence here.
+        // codeql-suppress js/shell-command-built-from-environment-values
+        const cmdline = buildCmdlineWindows(
+          `${quoteWindowsArg(process.execPath)} -p "JSON.stringify(process.argv.slice(1))"`,
+          ['foo(bar)', 'a)b', 'keep ( ) in a span'],
+        );
+        const result = spawnSync(
+          process.env.ComSpec || 'cmd.exe',
+          ['/d', '/s', '/c', cmdline],
+          { encoding: 'utf8' },
+        );
+
+        expect(result.status, result.stderr).toBe(0);
+        // An unescaped ( ) would make cmd treat the rest as compound
+        // command syntax — the child would never receive these argv.
+        expect(JSON.parse(result.stdout)).toEqual([
+          'foo(bar)',
+          'a)b',
+          'keep ( ) in a span',
+        ]);
       },
     );
   });
