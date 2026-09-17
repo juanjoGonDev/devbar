@@ -1931,15 +1931,30 @@ function registerIpc() {
       const groupId = ipcString(rawGroupId, 'groupId');
       const group = configStore.getGroup(groupId);
       if (group) {
-        // Stop all running commands in the group
+        // Stop all running commands in the group. A FAILED stop means a
+        // child may still be alive: abort the deletion (state + config)
+        // instead of removing the tracking of a live process — the group
+        // stays, visible, so the user can retry once it settles.
         for (const cmd of group.commands || []) {
           const pid = makeCommandId(groupId, cmd.id);
-          await processManager.stop(pid);
+          const stopped = await processManager.stop(pid);
+          if (!stopped.ok)
+            return {
+              ok: false,
+              error:
+                stopped.error ?? `No se pudo parar «${cmd.name}» para borrarlo`,
+            };
           processManager.removeState(pid);
         }
         for (const act of group.actions || []) {
           const pid = makeActionId(groupId, act.id);
-          await processManager.stop(pid);
+          const stopped = await processManager.stop(pid);
+          if (!stopped.ok)
+            return {
+              ok: false,
+              error:
+                stopped.error ?? `No se pudo parar «${act.name}» para borrarlo`,
+            };
           processManager.removeState(pid);
         }
       }
@@ -1984,7 +1999,14 @@ function registerIpc() {
       const groupId = ipcStringField(payload, 'groupId');
       const commandId = ipcStringField(payload, 'commandId');
       const pid = makeCommandId(groupId, commandId);
-      await processManager.stop(pid);
+      // Same contract as groups:delete — a failed stop aborts the
+      // deletion so a live process is never left untracked.
+      const stopped = await processManager.stop(pid);
+      if (!stopped.ok)
+        return {
+          ok: false,
+          error: stopped.error ?? 'No se pudo parar el comando para borrarlo',
+        };
       processManager.removeState(pid);
       configStore.deleteCommand(groupId, commandId);
       broadcast();

@@ -111,8 +111,10 @@ function windowsDevInstanceAlive(): boolean {
  * the install. (Keep in sync with scripts/lib/kill-trees.ts — strip-only
  * mode cannot import it from there.)
  */
-function posixKillServiceTrees(patterns: string[]): string[] {
-  const groups: string[] = [];
+function posixKillServiceTrees(
+  patterns: string[],
+): { pid: string; identity: string | null }[] {
+  const groups: { pid: string; identity: string | null }[] = [];
   for (const pattern of patterns) {
     const pidRes = spawnSync('pgrep', ['-f', pattern], {
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -141,15 +143,19 @@ function posixKillServiceTrees(patterns: string[]): string[] {
         // bare pid in case the group is already gone.
         tryQuiet('kill', ['-s', 'TERM', '--', `-${child}`]);
         tryQuiet('kill', ['-s', 'TERM', child]);
-        groups.push(child);
+        groups.push({ pid: child, identity: processIdentity(child) });
       }
     }
   }
   return groups;
 }
 
-/** Service groups discovered by wave 1 and SIGKILL'd in wave 3. */
-let leftoverServiceGroups: string[] = [];
+/** Service groups discovered by wave 1 and SIGKILL'd in wave 3. Each
+ *  entry carries the leader's STABLE identity captured at discovery:
+ *  PIDs are recycled, and a leader that exits during the grace window
+ *  could hand its pid (and even its pgid) to an unrelated process,
+ *  which the delayed escalation must never kill. */
+let leftoverServiceGroups: { pid: string; identity: string | null }[] = [];
 
 /** True while the service group (pgid == the leader pid) has a member:
  *  `kill -0` on the group id (ESRCH => gone). */
@@ -158,6 +164,29 @@ function serviceGroupAlive(leaderPid: string): boolean {
     stdio: 'ignore',
   });
   return res.status === 0;
+}
+
+/** Stable identity for a pid, or null when gone/unknown (same
+ *  /proc-starttime → ps-lstart ladder as scripts/lib/kill-trees.ts —
+ *  strip-only mode cannot import it). */
+function processIdentity(pid: string): string | null {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    const starttime = fields[19]; // stat field 22
+    return starttime != null ? `starttime:${starttime}` : null;
+  } catch {
+    try {
+      const res = spawnSync('ps', ['-o', 'lstart=', '-p', pid], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        encoding: 'utf8',
+      });
+      const lstart = (res.stdout ?? '').trim();
+      return res.status === 0 && lstart !== '' ? `lstart:${lstart}` : null;
+    } catch {
+      return null;
+    }
+  }
 }
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -360,22 +389,35 @@ function killLeftovers(installDir: string): void {
     for (const pattern of patterns) tryQuiet('pkill', ['-9', '-f', pattern]);
     // Escalation for the service groups from wave 1: SIGKILL any that
     // outlived the graceful stop (no-op for the ones that honored TERM).
-    for (const child of leftoverServiceGroups) {
-      tryQuiet('kill', ['-s', 'KILL', '--', `-${child}`]);
-      tryQuiet('kill', ['-s', 'KILL', child]);
+    for (const entry of leftoverServiceGroups) {
+      // Revalidate the identity captured at wave 1: if the leader exited
+      // and its pid was REUSED, the group kill would target a new group
+      // and the plain-pid kill an unrelated process — skip both. (A null
+      // identity means the primitive was unavailable: the signal is then
+      // a no-op for a gone group.)
+      if (
+        entry.identity !== null &&
+        processIdentity(entry.pid) !== entry.identity
+      )
+        continue;
+      tryQuiet('kill', ['-s', 'KILL', '--', `-${entry.pid}`]);
+      tryQuiet('kill', ['-s', 'KILL', entry.pid]);
     }
     // Retain each group until it is CONFIRMED gone: a service group
     // survives on its own (its command line matches none of the
     // instance liveness patterns above), so the verification must probe
     // the groups directly.
-    const survivingGroups = leftoverServiceGroups.filter(serviceGroupAlive);
+    const survivingGroups = leftoverServiceGroups.filter((entry) =>
+      serviceGroupAlive(entry.pid),
+    );
     leftoverServiceGroups = survivingGroups;
     if (survivingGroups.length > 0) {
       // SIGKILL cannot be caught: a group still here holds its port and
       // the reinstall must not proceed under a live service.
       console.error(
-        `Service group(s) survived SIGKILL: ${survivingGroups.join(', ')} — ` +
-          'aborting before install.',
+        `Service group(s) survived SIGKILL: ${survivingGroups
+          .map((entry) => entry.pid)
+          .join(', ')} — aborting before install.`,
       );
       process.exit(1);
     }

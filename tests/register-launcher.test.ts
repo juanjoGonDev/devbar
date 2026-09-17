@@ -148,6 +148,23 @@ describe('desktopLauncherPath', () => {
       );
     });
   });
+
+  it('ignores a RELATIVE XDG_DATA_HOME (the XDG spec requires absolute paths)', () => {
+    // A relative value would resolve against the process CWD — the
+    // launcher would land in some random ./foo/applications while the
+    // install reports success, so it must fall back to the default.
+    withEnvVar('XDG_DATA_HOME', 'relative/data', () => {
+      expect(desktopLauncherPath()).toBe(
+        path.join(
+          os.homedir(),
+          '.local',
+          'share',
+          'applications',
+          DESKTOP_FILE_NAME,
+        ),
+      );
+    });
+  });
 });
 
 describe('startMenuLnkPath', () => {

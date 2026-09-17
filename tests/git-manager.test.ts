@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -62,10 +63,16 @@ describe('listBranches failure classification', () => {
 
   it('an actual repository resolves its branches', async () => {
     // The devbar checkout itself is a repository (tests run from the
-    // repo root).
+    // repo root). The skip guard is about the ENVIRONMENT (no git
+    // binary), not about the result: an enumeration failure on a real
+    // repo must fail the test, not pass vacuously.
+    try {
+      execFileSync('git', ['--version'], { stdio: 'ignore' });
+    } catch {
+      return; // no git binary in this environment
+    }
     const res = await listBranches(process.cwd());
-    if (!res.ok) return; // no git in the environment: classification
-    // is covered by the two cases above.
+    expect(res.ok).toBe(true);
     expect(res.isRepo).toBe(true);
     expect(Array.isArray(res.branches)).toBe(true);
   });

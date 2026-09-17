@@ -44,12 +44,18 @@ export const DESKTOP_FILE_NAME = 'devbar.desktop';
 
 /**
  * XDG user applications dir: $XDG_DATA_HOME/applications when set, else
- * ~/.local/share/applications.
+ * ~/.local/share/applications. The XDG Base Directory Specification
+ * requires these paths to be ABSOLUTE — a relative value would resolve
+ * against the process CWD and the launcher could be written to a
+ * directory that is not the application menu (while the script still
+ * reports success), so only a non-empty absolute value is honored.
  */
 export function desktopApplicationsDir(): string {
-  const xdg = process.env.XDG_DATA_HOME;
+  const xdg = (process.env.XDG_DATA_HOME ?? '').trim();
   const base =
-    xdg && xdg.trim() !== '' ? xdg : path.join(os.homedir(), '.local', 'share');
+    xdg !== '' && path.isAbsolute(xdg)
+      ? xdg
+      : path.join(os.homedir(), '.local', 'share');
   return path.join(base, 'applications');
 }
 

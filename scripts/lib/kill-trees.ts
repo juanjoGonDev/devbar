@@ -23,6 +23,7 @@
  * itself can leave an orphan.
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /** Spawn a process, ignoring its exit status. Returns stdout or null. */
@@ -113,6 +114,40 @@ const defaultGroupAlive = (leaderPid: string): boolean => {
 };
 
 /**
+ * A STABLE identity for a pid, or null when the process is gone (or no
+ * primitive is available on this platform). Used to revalidate a
+ * discovered service before a DELAYED signal: PIDs are recycled, and a
+ * leader that exited during the grace window could hand its pid — and
+ * even its process group id — to an unrelated process, which the
+ * escalation must never kill.
+ *
+ * Linux: /proc/<pid>/stat field 22 (starttime, jiffies since boot —
+ * cannot be forged without the kernel). Other POSIX: `ps lstart`.
+ */
+const defaultProcessIdentity = (pid: string): string | null => {
+  try {
+    // Field 2 is the command name in parentheses and may itself contain
+    // spaces/parens — anchor on the LAST ')' to split the fields.
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    // fields[0] is stat field 3 (state); field 22 (starttime) is index 19.
+    const starttime = fields[19];
+    return starttime != null ? `starttime:${starttime}` : null;
+  } catch {
+    try {
+      const res = spawnSync('ps', ['-o', 'lstart=', '-p', pid], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        encoding: 'utf8',
+      });
+      const lstart = (res.stdout ?? '').trim();
+      return res.status === 0 && lstart !== '' ? `lstart:${lstart}` : null;
+    } catch {
+      return null;
+    }
+  }
+};
+
+/**
  * POSIX: kill each matching instance's service trees BEFORE the instance
  * itself (the caller still pkill -f's the instances).
  *
@@ -147,15 +182,21 @@ export function posixKillServiceTrees(
     wait = defaultWait,
     graceMs = POSIX_SERVICE_GRACE_MS,
     groupAlive = defaultGroupAlive,
+    processIdentity = defaultProcessIdentity,
   }: {
     run?: KillTreeRun;
     wait?: (ms: number) => void;
     graceMs?: number;
     /** Liveness probe for a service group (pgid == the leader pid). */
     groupAlive?: (leaderPid: string) => boolean;
+    /** Stable-identity probe for a pid (null when gone/unknown). */
+    processIdentity?: (pid: string) => string | null;
   } = {},
 ): string[] {
   const groups: string[] = [];
+  // Identity captured at DISCOVERY: the delayed SIGKILL must revalidate
+  // against it (pid reuse during the grace window).
+  const identities = new Map<string, string | null>();
   for (const pattern of patterns) {
     const pidOut = run('pgrep', ['-f', pattern]);
     if (pidOut == null) continue;
@@ -174,12 +215,21 @@ export function posixKillServiceTrees(
         run('kill', ['-s', 'TERM', '--', `-${child}`]);
         run('kill', ['-s', 'TERM', child]);
         groups.push(child);
+        identities.set(child, processIdentity(child));
       }
     }
   }
   if (groups.length === 0) return [];
   wait(graceMs);
   for (const child of groups) {
+    // Revalidate the identity captured at discovery: if the leader
+    // exited and its pid was REUSED, the group kill would target a new
+    // group and the plain-pid kill an unrelated process — skip both.
+    // (A null capture means the identity primitive was unavailable or
+    // the process was already gone: nothing to revalidate, and the
+    // signal is then a no-op.)
+    const captured = identities.get(child) ?? null;
+    if (captured !== null && processIdentity(child) !== captured) continue;
     // Same group-then-pid order; a group that honored TERM is gone by now
     // and the signal is a no-op for it.
     run('kill', ['-s', 'KILL', '--', `-${child}`]);

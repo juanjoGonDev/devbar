@@ -1261,10 +1261,15 @@ function buildSubItemRow(
   delBtn.className = 'small-btn danger';
   delBtn.addEventListener('click', async () => {
     if (!confirm(`¿Borrar "${item.name}"?`)) return;
-    if (kind === 'command') {
-      await window.api.deleteCommand(groupId, item.id);
-    } else {
-      await window.api.deleteAction(groupId, item.id);
+    const res =
+      kind === 'command'
+        ? await window.api.deleteCommand(groupId, item.id)
+        : await window.api.deleteAction(groupId, item.id);
+    if (!res.ok) {
+      // The main side aborts the deletion when the stop of a running
+      // process fails — surface why, and leave the item visible.
+      showToast(res.error || 'No se pudo borrar el elemento', 'error');
+      return;
     }
     await loadGroups();
     renderGroupDetail();

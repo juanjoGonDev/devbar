@@ -236,6 +236,61 @@ describe('posixKillServiceTrees', () => {
     ]);
   });
 
+  it('skips the KILL when the leader pid was REUSED during the grace wait', () => {
+    // The original leader exits after discovery and its pid is handed to
+    // an unrelated process: the identity captured at discovery no longer
+    // matches, so both the group kill and the plain-pid kill must be
+    // skipped — and the reuse must not be reported as a survivor.
+    let phase = 'discovery';
+    const processIdentity = (pid: string): string | null => {
+      if (pid !== '110') return null;
+      return phase === 'discovery' ? 'starttime:1234' : 'starttime:9999';
+    };
+    const events: string[] = [];
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'kill') events.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const wait = () => {
+      phase = 'kill'; // the leader died and the pid was recycled
+    };
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait,
+      groupAlive: () => false,
+      processIdentity,
+    });
+    expect(survivors).toEqual([]);
+    // TERM went out at discovery (before the grace window) — but the
+    // DELAYED KILL was skipped: the reused pid was never signaled.
+    expect(events).toEqual(['kill -s TERM -- -110', 'kill -s TERM 110']);
+  });
+
+  it('keeps the KILL when the identity is unchanged', () => {
+    const events: string[] = [];
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'kill') events.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+      processIdentity: () => 'starttime:1234',
+    });
+    expect(survivors).toEqual([]);
+    expect(events).toEqual([
+      'kill -s TERM -- -110',
+      'kill -s TERM 110',
+      'kill -s KILL -- -110',
+      'kill -s KILL 110',
+    ]);
+  });
+
   it('reports a group that survives SIGKILL so the installer can fail', () => {
     // SIGKILL cannot be caught; a survivor (uninterruptible I/O) means
     // the installer must abort instead of swapping under a live service.

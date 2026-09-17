@@ -644,9 +644,12 @@ function loadBranchesIntoCombo(
         // verdict says nothing about the folder, so it is NOT cached —
         // and the selector must not sit on "Cargando…" without a way out:
         // notify and retry once after a pause (bounded, so a persistently
-        // broken git does not toast-loop).
+        // broken git does not toast-loop). Only announce a retry when
+        // one is actually scheduled below.
         showToast(
-          `${label ?? 'Ramas'}: no se pudieron listar las ramas — reintento en ${BRANCH_RETRY_DELAY_MS / 1000} s`,
+          retriesLeft > 0
+            ? `${label ?? 'Ramas'}: no se pudieron listar las ramas — reintento en ${BRANCH_RETRY_DELAY_MS / 1000} s`
+            : `${label ?? 'Ramas'}: no se pudieron listar las ramas — reintento agotado`,
           'error',
         );
         if (retriesLeft > 0) {
