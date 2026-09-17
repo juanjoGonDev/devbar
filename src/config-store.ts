@@ -28,7 +28,6 @@ import {
   unassignScriptFromStep as unassignRefFromStep,
 } from './groups-model.js';
 import {
-  appHome,
   legacyLinuxConfigFile,
   migrateLegacyLinuxStore,
   packagedAppHome,
@@ -481,7 +480,15 @@ export function replaceConfig(payload: {
   persistState(safeGroups, safeSteps);
 }
 export function writeImportBackup(): string {
-  const backupPath = path.join(appHome(), 'pre-import-backup.json');
+  // The active store directory, NOT appHome(): when the Linux migration
+  // fails, the store is served from the LEGACY dir for this run while
+  // appHome() still points at the (unavailable) new dir — writing the
+  // backup there would throw before the import could apply. In dev mode
+  // cwd is unset and conf's Store default (userData) applies, as here.
+  const backupPath = path.join(
+    storeOptions.cwd ?? app.getPath('userData'),
+    'pre-import-backup.json',
+  );
   const snapshot = {
     backedUpAt: new Date().toISOString(),
     version: store.get('version', 4),

@@ -268,6 +268,39 @@ describe('posixKillServiceTrees', () => {
     expect(events).toEqual(['kill -s TERM -- -110', 'kill -s TERM 110']);
   });
 
+  it('does not report a reused-alive group as a survivor', () => {
+    // The leader dies right after TERM and its pid (and even its pgid)
+    // is handed to an unrelated group that stays ALIVE: the identity no
+    // longer matches, so the KILL is skipped AND the live replacement
+    // must not be reported as a surviving service (that would fail a
+    // healthy install).
+    let phase = 'discovery';
+    const processIdentity = (pid: string): string | null => {
+      if (pid !== '110') return null;
+      return phase === 'discovery' ? 'starttime:1234' : 'starttime:9999';
+    };
+    const events: string[] = [];
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'kill') events.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const wait = () => {
+      phase = 'kill'; // leader exited, pid + pgid reused
+    };
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait,
+      // The REPLACEMENT group is alive on its own...
+      groupAlive: () => true,
+      processIdentity,
+    });
+    // ...but it is not OUR service: no survivor reported, no KILL sent.
+    expect(survivors).toEqual([]);
+    expect(events).toEqual(['kill -s TERM -- -110', 'kill -s TERM 110']);
+  });
+
   it('keeps the KILL when the identity is unchanged', () => {
     const events: string[] = [];
     const run: KillTreeRun = (cmd, args) => {

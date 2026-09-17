@@ -632,12 +632,27 @@ function loadBranchesIntoCombo(
         // checkedAt gives the verdict a TTL: buildBranchSelector re-verifies
         // after NEGATIVE_BRANCH_VERDICT_TTL_MS, because a `git init` in the
         // folder produces no watcher event.
+        const checkedAt = Date.now();
         branchCache.set(groupId, {
           branches: [],
           current: null,
           isRepo: false,
-          checkedAt: Date.now(),
+          checkedAt,
         });
+        // `git init` emits no watcher event, so this verdict can outlive
+        // its folder's reality while the group stays idle — nothing else
+        // would trigger a render. When the TTL expires, drop THIS entry
+        // and re-render so buildBranchSelector re-verifies async. The
+        // generation guard skips refreshes a newer query cycle has
+        // superseded, and the checkedAt check only removes the exact
+        // entry stored here (a later re-verification owns its own timer).
+        setTimeout(() => {
+          if ((branchGeneration.get(groupId) ?? 0) !== gen) return;
+          const entry = branchCache.get(groupId);
+          if (entry?.isRepo !== false || entry.checkedAt !== checkedAt) return;
+          branchCache.delete(groupId);
+          render(lastGroupStates);
+        }, NEGATIVE_BRANCH_VERDICT_TTL_MS);
         combo.replaceWith(branchNone());
       } else {
         // Operational failure (git unavailable, query timed out): the

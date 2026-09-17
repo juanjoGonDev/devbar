@@ -139,11 +139,15 @@ function posixKillServiceTrees(
         .split('\n')
         .map((line) => line.trim())) {
         if (!child) continue;
+        // Capture the leader's identity BEFORE any signal: if the process
+        // exits in the gap between the two TERM signals, a post-signal
+        // capture could record a REPLACEMENT that already took the pid.
+        const identity = processIdentity(child);
         // Group first (leader == child pid: shell + user command), then the
         // bare pid in case the group is already gone.
         tryQuiet('kill', ['-s', 'TERM', '--', `-${child}`]);
         tryQuiet('kill', ['-s', 'TERM', child]);
-        groups.push({ pid: child, identity: processIdentity(child) });
+        groups.push({ pid: child, identity });
       }
     }
   }
@@ -406,10 +410,18 @@ function killLeftovers(installDir: string): void {
     // Retain each group until it is CONFIRMED gone: a service group
     // survives on its own (its command line matches none of the
     // instance liveness patterns above), so the verification must probe
-    // the groups directly.
-    const survivingGroups = leftoverServiceGroups.filter((entry) =>
-      serviceGroupAlive(entry.pid),
-    );
+    // the groups directly. An identity-mismatched entry is NOT a
+    // survivor: its original leader exited and the live group at that
+    // pgid is an unrelated replacement (reporting it would fail a
+    // healthy install).
+    const survivingGroups = leftoverServiceGroups.filter((entry) => {
+      if (
+        entry.identity !== null &&
+        processIdentity(entry.pid) !== entry.identity
+      )
+        return false;
+      return serviceGroupAlive(entry.pid);
+    });
     leftoverServiceGroups = survivingGroups;
     if (survivingGroups.length > 0) {
       // SIGKILL cannot be caught: a group still here holds its port and

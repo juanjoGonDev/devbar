@@ -210,12 +210,15 @@ export function posixKillServiceTrees(
       if (childOut == null) continue;
       for (const child of childOut.split('\n').map((line) => line.trim())) {
         if (!child) continue;
+        // Capture the leader's identity BEFORE any signal: if the process
+        // exits in the gap between the two TERM signals, a post-signal
+        // capture could record a REPLACEMENT that already took the pid.
+        identities.set(child, processIdentity(child));
         // Group first (leader == child pid: shell + user command), then the
         // bare pid in case the group is already gone.
         run('kill', ['-s', 'TERM', '--', `-${child}`]);
         run('kill', ['-s', 'TERM', child]);
         groups.push(child);
-        identities.set(child, processIdentity(child));
       }
     }
   }
@@ -235,7 +238,16 @@ export function posixKillServiceTrees(
     run('kill', ['-s', 'KILL', '--', `-${child}`]);
     run('kill', ['-s', 'KILL', child]);
   }
-  return groups.filter((child) => groupAlive(child));
+  // A survivor is a leader whose identity STILL MATCHES and whose group
+  // still has members: an identity-mismatched entry means the original
+  // exited and its pid/pgid was reused — that live group is an unrelated
+  // process, not a surviving service (reporting it would fail a healthy
+  // install).
+  return groups.filter((child) => {
+    const captured = identities.get(child) ?? null;
+    if (captured !== null && processIdentity(child) !== captured) return false;
+    return groupAlive(child);
+  });
 }
 
 // ── CLI entry: `node --experimental-strip-types scripts/lib/kill-trees.ts <pattern>…` ──
