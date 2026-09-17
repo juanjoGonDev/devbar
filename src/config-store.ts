@@ -29,6 +29,7 @@ import {
 } from './groups-model.js';
 import {
   appHome,
+  legacyLinuxConfigFile,
   migrateLegacyLinuxStore,
   packagedAppHome,
 } from './app-paths.js';
@@ -89,11 +90,27 @@ if (storeDir !== undefined) {
   // stored the config at $XDG_CONFIG_HOME/devbar/config.json; move it so
   // runMigration() below runs on the user's real data.
   if (process.platform === 'linux') {
-    migrateLegacyLinuxStore(
+    const outcome = migrateLegacyLinuxStore(
       storeDir,
       app.getPath('home'),
       process.env.XDG_CONFIG_HOME,
     );
+    if (outcome === 'failed') {
+      // A failed migration must NOT fall through to a fresh empty store:
+      // the first store.set() would create the target file, and every
+      // later startup would skip the migration (target exists), orphaning
+      // the user's legacy config forever. Keep serving the legacy
+      // location for THIS run and retry the migration on the next start.
+      const legacyDir = path.dirname(
+        legacyLinuxConfigFile(app.getPath('home'), process.env.XDG_CONFIG_HOME),
+      );
+      storeOptions.cwd = legacyDir;
+      console.error(
+        `[config-store] legacy config migration failed — using the legacy ` +
+          `store at ${legacyDir} for this run (it will be retried on the ` +
+          `next start).`,
+      );
+    }
   }
 }
 const store = new Store<StoreState>(storeOptions);

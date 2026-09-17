@@ -103,6 +103,15 @@ const defaultWait = (ms: number): void => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 };
 
+/** True while the process group (pgid == the leader pid) still has a
+ *  member: `kill -0` on the group id (ESRCH => gone). */
+const defaultGroupAlive = (leaderPid: string): boolean => {
+  const res = spawnSync('kill', ['-0', '--', `-${leaderPid}`], {
+    stdio: 'ignore',
+  });
+  return res.status === 0;
+};
+
 /**
  * POSIX: kill each matching instance's service trees BEFORE the instance
  * itself (the caller still pkill -f's the instances).
@@ -122,6 +131,11 @@ const defaultWait = (ms: number): void => {
  * is an expected outcome, and a pattern matching nothing must not fail
  * the install.
  *
+ * Returns the group leader pids that SURVIVE the SIGKILL escalation:
+ * SIGKILL cannot be caught, so a survivor (stuck in uninterruptible I/O)
+ * is not something the installer can clear — the caller must fail rather
+ * than installing under a live service.
+ *
  * Non-service children (Electron helpers) are NOT group leaders, so the
  * group form fails and the plain-pid form kills just that helper — which
  * the instance's own pkill takes down anyway.
@@ -132,12 +146,15 @@ export function posixKillServiceTrees(
     run = defaultRun,
     wait = defaultWait,
     graceMs = POSIX_SERVICE_GRACE_MS,
+    groupAlive = defaultGroupAlive,
   }: {
     run?: KillTreeRun;
     wait?: (ms: number) => void;
     graceMs?: number;
+    /** Liveness probe for a service group (pgid == the leader pid). */
+    groupAlive?: (leaderPid: string) => boolean;
   } = {},
-): void {
+): string[] {
   const groups: string[] = [];
   for (const pattern of patterns) {
     const pidOut = run('pgrep', ['-f', pattern]);
@@ -160,7 +177,7 @@ export function posixKillServiceTrees(
       }
     }
   }
-  if (groups.length === 0) return;
+  if (groups.length === 0) return [];
   wait(graceMs);
   for (const child of groups) {
     // Same group-then-pid order; a group that honored TERM is gone by now
@@ -168,6 +185,7 @@ export function posixKillServiceTrees(
     run('kill', ['-s', 'KILL', '--', `-${child}`]);
     run('kill', ['-s', 'KILL', child]);
   }
+  return groups.filter((child) => groupAlive(child));
 }
 
 // ── CLI entry: `node --experimental-strip-types scripts/lib/kill-trees.ts <pattern>…` ──
@@ -189,7 +207,15 @@ if (isDirectRun()) {
     );
     process.exit(1);
   }
-  posixKillServiceTrees(patterns);
-  // Best effort: exit 0 even when nothing matched — a clean machine is the
-  // normal case and the installer must not treat it as a failure.
+  const survivors = posixKillServiceTrees(patterns);
+  if (survivors.length > 0) {
+    // A group that outlives SIGKILL still holds whatever port or lock it
+    // held: the installer must fail loudly instead of swapping files
+    // under a live service. (A clean machine — nothing matched — still
+    // exits 0; that is the normal case.)
+    console.error(
+      `[kill-trees] service group(s) survived SIGKILL: ${survivors.join(', ')} — aborting.`,
+    );
+    process.exit(1);
+  }
 }

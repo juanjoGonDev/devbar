@@ -151,6 +151,15 @@ function posixKillServiceTrees(patterns: string[]): string[] {
 /** Service groups discovered by wave 1 and SIGKILL'd in wave 3. */
 let leftoverServiceGroups: string[] = [];
 
+/** True while the service group (pgid == the leader pid) has a member:
+ *  `kill -0` on the group id (ESRCH => gone). */
+function serviceGroupAlive(leaderPid: string): boolean {
+  const res = spawnSync('kill', ['-0', '--', `-${leaderPid}`], {
+    stdio: 'ignore',
+  });
+  return res.status === 0;
+}
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const isDev = process.argv.includes('--dev');
 const noBuild = process.argv.includes('--no-build');
@@ -355,7 +364,21 @@ function killLeftovers(installDir: string): void {
       tryQuiet('kill', ['-s', 'KILL', '--', `-${child}`]);
       tryQuiet('kill', ['-s', 'KILL', child]);
     }
-    leftoverServiceGroups = [];
+    // Retain each group until it is CONFIRMED gone: a service group
+    // survives on its own (its command line matches none of the
+    // instance liveness patterns above), so the verification must probe
+    // the groups directly.
+    const survivingGroups = leftoverServiceGroups.filter(serviceGroupAlive);
+    leftoverServiceGroups = survivingGroups;
+    if (survivingGroups.length > 0) {
+      // SIGKILL cannot be caught: a group still here holds its port and
+      // the reinstall must not proceed under a live service.
+      console.error(
+        `Service group(s) survived SIGKILL: ${survivingGroups.join(', ')} — ` +
+          'aborting before install.',
+      );
+      process.exit(1);
+    }
   }
   for (let i = 0; i < 10; i++) {
     if (!isAnyDevBarAlive(installDir)) {

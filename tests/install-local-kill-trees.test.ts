@@ -81,7 +81,11 @@ describe('posixKillServiceTrees', () => {
       'pgrep -P 100': '110\n',
       'pgrep -P 200': '210\n220\n',
     });
-    posixKillServiceTrees(['/install/path'], { run, wait: () => {} });
+    posixKillServiceTrees(['/install/path'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+    });
     expect(calls).toEqual([
       ['pgrep', '-f', '/install/path'],
       ['pgrep', '-P', '100'],
@@ -106,7 +110,11 @@ describe('posixKillServiceTrees', () => {
     const { calls, run } = recordingRun({
       'pgrep -f /x': '100',
     });
-    posixKillServiceTrees(['/x'], { run, wait: () => {} });
+    posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+    });
     expect(calls).toEqual([
       ['pgrep', '-f', '/x'],
       ['pgrep', '-P', '100'],
@@ -117,7 +125,11 @@ describe('posixKillServiceTrees', () => {
     const { calls, run } = recordingRun({
       'pgrep -f /x': `${process.pid}\n`,
     });
-    posixKillServiceTrees(['/x'], { run, wait: () => {} });
+    posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+    });
     expect(calls).toEqual([['pgrep', '-f', '/x']]);
   });
 
@@ -125,7 +137,11 @@ describe('posixKillServiceTrees', () => {
     const { calls, run } = recordingRun({
       'pgrep -f /x': `${process.ppid}\n`,
     });
-    posixKillServiceTrees(['/x'], { run, wait: () => {} });
+    posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+    });
     expect(calls).toEqual([['pgrep', '-f', '/x']]);
   });
 
@@ -134,7 +150,11 @@ describe('posixKillServiceTrees', () => {
       'pgrep -f /x': `${process.ppid}\n999\n`,
       'pgrep -P 999': '998\n',
     });
-    posixKillServiceTrees(['/x'], { run, wait: () => {} });
+    posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+    });
     expect(calls).toEqual([
       ['pgrep', '-f', '/x'],
       ['pgrep', '-P', '999'],
@@ -161,7 +181,11 @@ describe('posixKillServiceTrees', () => {
       'pgrep -f /b': '200\n',
       'pgrep -P 200': '210\n',
     });
-    posixKillServiceTrees(['/a', '/b'], { run, wait: () => {} });
+    posixKillServiceTrees(['/a', '/b'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+    });
     // Both patterns are walked first (TERM for each group as it is found),
     // then a single grace wait, then the KILL escalation in discovery order.
     expect(calls).toEqual([
@@ -210,6 +234,46 @@ describe('posixKillServiceTrees', () => {
       'kill -s KILL -- -110',
       'kill -s KILL 110',
     ]);
+  });
+
+  it('reports a group that survives SIGKILL so the installer can fail', () => {
+    // SIGKILL cannot be caught; a survivor (uninterruptible I/O) means
+    // the installer must abort instead of swapping under a live service.
+    const events: string[] = [];
+    const run: KillTreeRun = (cmd, args) => {
+      events.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {},
+      groupAlive: () => true, // the group is still here after the KILL
+    });
+    expect(survivors).toEqual(['110']);
+    expect(events).toEqual([
+      'pgrep -f /x',
+      'pgrep -P 100',
+      'kill -s TERM -- -110',
+      'kill -s TERM 110',
+      'kill -s KILL -- -110',
+      'kill -s KILL 110',
+    ]);
+  });
+
+  it('reports nothing when every group died on the signals', () => {
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+    });
+    expect(survivors).toEqual([]);
   });
 
   it('waits and kills at most once even with many groups in one pattern', () => {

@@ -32,11 +32,17 @@ PAT_BIN="$(ere_escape "DevBar.app/Contents/MacOS/DevBar")"
 # into their own process groups, so the pkill wave below would leave the
 # user's dev servers alive (holding their ports). The shared helper walks
 # each matching instance's children and signals their process groups.
-node --experimental-strip-types scripts/lib/kill-trees.ts \
+# The helper only exits non-zero when a detached service group SURVIVES
+# SIGKILL — such a group still holds its port, so the install must fail
+# loudly instead of swapping the bundle under a live service.
+if ! node --experimental-strip-types scripts/lib/kill-trees.ts \
   "$PAT_APP" \
   "$PAT_DIST" \
   "$PAT_DEV" \
-  "$PAT_BIN" 2>/dev/null || true
+  "$PAT_BIN"; then
+  warn "A service group survived the forced stop — aborting before install."
+  exit 1
+fi
 # Installed bundle (either /Applications or ~/Applications)
 pkill -f "$PAT_APP" 2>/dev/null || true
 # Bundle running straight from this repo's dist/ (orphan from a previous

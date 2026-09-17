@@ -1958,6 +1958,11 @@ let settingsLoaded = false;
  * surfaced, and the window `focus` retry below re-runs the load.
  */
 async function loadSettings(): Promise<boolean> {
+  // Reset BEFORE the read: a rejection on a retry (e.g. the post-import
+  // reload) must re-block the controls and re-arm the focus retry — if a
+  // previous load had succeeded, settingsLoaded would still be true and
+  // stale controls could persist over the imported settings.
+  settingsLoaded = false;
   let s: Awaited<ReturnType<typeof window.api.getSettings>>;
   try {
     s = await window.api.getSettings();

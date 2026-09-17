@@ -36,6 +36,10 @@ describe('listBranches failure classification', () => {
   });
 
   it('a permission-denied path is an operational failure, not "not a repo"', async () => {
+    // POSIX-only setup: 0o000 does not block traversal on Windows, where
+    // the path would then read as "missing" (isRepo: false) and the
+    // assertion below would fail for the wrong reason.
+    if (process.platform === 'win32') return;
     // Root (or CAP_DAC_OVERRIDE) traverses 0o000 anyway, so the premise
     // only holds for unprivileged processes.
     if (typeof process.geteuid === 'function' && process.geteuid() === 0)
