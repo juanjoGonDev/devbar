@@ -167,7 +167,13 @@ const mode = process.argv[3] ?? 'full';
 const dirOnly = mode === 'dir';
 const hostOnly = mode === 'host';
 if (target !== 'win' && target !== 'linux') {
-  console.error('Usage: package-win-linux.ts win|linux [dir|host]');
+  console.error('Usage: package-win-linux.ts win|linux [full|dir|host]');
+  process.exit(1);
+}
+// Without this, a misspelled mode (e.g. `hots`) sets both flags to false
+// and silently starts the FULL multi-architecture build.
+if (mode !== 'full' && mode !== 'dir' && mode !== 'host') {
+  console.error('Usage: package-win-linux.ts win|linux [full|dir|host]');
   process.exit(1);
 }
 

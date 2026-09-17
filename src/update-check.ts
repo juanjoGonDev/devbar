@@ -118,6 +118,12 @@ export function checkForUpdate({
         timeout: timeoutMs,
       },
       (res) => {
+        // Same protection as httpGetText: a socket failure AFTER the
+        // headers (mid-body reset, or a non-200 body drained by resume())
+        // emits on the IncomingMessage, not the request — without this
+        // handler it would be unhandled and crash the app during an
+        // update.
+        res.on('error', () => resolve(null));
         if (res.statusCode !== 200) {
           res.resume();
           resolve(null);
@@ -186,6 +192,12 @@ function httpGetText(
         target,
         { headers: { 'User-Agent': 'DevBar-Updater' } },
         (res) => {
+          // A socket failure AFTER the headers (e.g. mid-body reset, or a
+          // failed redirect/non-200 body being drained by resume()) emits
+          // on the IncomingMessage, not the request — without a handler at
+          // the TOP it would be unhandled and crash the app during an
+          // update.
+          res.on('error', () => resolve(null));
           const status = res.statusCode;
           if (
             status !== undefined &&
@@ -206,10 +218,6 @@ function httpGetText(
           res.on('data', (chunk: string) => {
             data += chunk;
           });
-          // A socket failure AFTER the headers (e.g. mid-body reset) emits
-          // on the IncomingMessage, not the request — without this handler
-          // it is unhandled and would crash the app during an update.
-          res.on('error', () => resolve(null));
           res.on('end', () => resolve(data));
         },
       );

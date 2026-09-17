@@ -8,6 +8,8 @@ import {
   releaseAssetSuffixes,
   normalizeArch,
   fetchReleases,
+  fetchReleaseSha256,
+  checkForUpdate,
 } from '../src/update-check.js';
 
 describe('isNewerVersion', () => {
@@ -187,5 +189,61 @@ describe('fetchReleases', () => {
     });
     expect(out).toHaveLength(12);
     expect(out[0].version).toBe('1.0.1');
+  });
+});
+
+describe('response error handling (mid-drain socket failures)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('httpGetText: a non-200 body that errors while draining resolves null', async () => {
+    // Before the error listener moved to the top of the response callback,
+    // the non-200 branch drained the body with resume() and any socket
+    // failure there emitted an UNHANDLED 'error' on the IncomingMessage —
+    // an uncaught exception that would crash DevBar during an update.
+    vi.spyOn(https, 'get').mockImplementation(((
+      _url: unknown,
+      _opts: unknown,
+      cb: (
+        res: Readable & {
+          statusCode?: number;
+          headers?: Record<string, unknown>;
+        },
+      ) => void,
+    ) => {
+      const res: Readable & {
+        statusCode?: number;
+        headers?: Record<string, unknown>;
+      } = new Readable({ read() {} });
+      res.statusCode = 500;
+      res.headers = {};
+      setImmediate(() => {
+        cb(res);
+        setImmediate(() => res.emit('error', new Error('ECONNRESET')));
+      });
+      return { on: vi.fn(), destroy: vi.fn(), setTimeout: vi.fn() } as never;
+    }) as never);
+    await expect(fetchReleaseSha256('o', 'r', '1.0.0')).resolves.toBeNull();
+  });
+
+  it('checkForUpdate: a non-200 body that errors while draining resolves null', async () => {
+    vi.spyOn(https, 'get').mockImplementation(((
+      _opts: unknown,
+      cb: (res: Readable & { statusCode?: number }) => void,
+    ) => {
+      const res: Readable & { statusCode?: number } = new Readable({
+        read() {},
+      });
+      res.statusCode = 500;
+      setImmediate(() => {
+        cb(res);
+        setImmediate(() => res.emit('error', new Error('ECONNRESET')));
+      });
+      return { on: vi.fn(), destroy: vi.fn() } as never;
+    }) as never);
+    await expect(
+      checkForUpdate({ owner: 'o', repo: 'r', currentVersion: '0.0.1' }),
+    ).resolves.toBeNull();
   });
 });
