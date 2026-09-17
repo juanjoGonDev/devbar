@@ -26,13 +26,30 @@ const outputDirectory =
   process.argv[2] || path.join(ROOT, 'dist', 'electron-builder');
 const version = process.argv[3] || packageJson.version;
 
-/** The two-byte MZ header every Windows PE file carries. */
+/**
+ * A real Windows PE executable: the two-byte MZ header AND the PE
+ * signature at the offset the DOS header's e_lfanew field points to.
+ * The bare MZ prefix alone would also accept a non-empty file that
+ * happens to start with those bytes (e.g. a truncated or corrupted
+ * arm64 artifact that never gets smoke-launched).
+ */
 function looksLikeWindowsExe(filePath: string): boolean {
   const fd = openSync(filePath, 'r');
   try {
-    const buf = Buffer.alloc(2);
-    if (readSync(fd, buf, 0, 2, 0) < 2) return false;
-    return buf.toString('latin1') === 'MZ';
+    const dosHeader = Buffer.alloc(64);
+    if (readSync(fd, dosHeader, 0, dosHeader.length, 0) < dosHeader.length)
+      return false;
+    if (dosHeader.toString('latin1', 0, 2) !== 'MZ') return false;
+
+    // e_lfanew — byte offset of the PE signature — is the last field of
+    // the 64-byte DOS header. A garbage offset reads past EOF (0 bytes)
+    // or points at wrong bytes, both of which fail the check below.
+    const peOffset = dosHeader.readUInt32LE(0x3c);
+    const signature = Buffer.alloc(4);
+    return (
+      readSync(fd, signature, 0, signature.length, peOffset) ===
+        signature.length && signature.equals(Buffer.from('PE\0\0', 'latin1'))
+    );
   } finally {
     closeSync(fd);
   }

@@ -7,7 +7,7 @@ import readline from 'node:readline';
 import { EventEmitter } from 'node:events';
 import { isWin, userShell } from './platform.js';
 import { expandTilde, enhancedEnv } from './path-helper.js';
-import { buildCmdline } from './parse-command.js';
+import { buildCmdline, buildCmdlineWindows } from './parse-command.js';
 import { parseProcessId } from './compound-id.js';
 import { materializeEnv } from './groups-model.js';
 import type {
@@ -359,7 +359,13 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     const cwd =
         expandTilde(('cwd' in target ? target.cwd : null) || group.path) ||
         process.cwd(),
-      cmdline = buildCmdline(target.command, target.args),
+      // Windows: cmd.exe-compatible quoting (MSVCRT double quotes + ^
+      // escapes). The POSIX builder's single quotes are meaningless to
+      // cmd, and its raw join for metacharacter args would let `>`/`&`
+      // become redirects and chains in cmd /c.
+      cmdline = isWin
+        ? buildCmdlineWindows(target.command, target.args)
+        : buildCmdline(target.command, target.args),
       spawnSpec = buildSpawnArgs(cmdline);
     let spawnEnv: NodeJS.ProcessEnv;
     if (kind === 'command')

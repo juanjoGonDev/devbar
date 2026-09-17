@@ -212,11 +212,11 @@ binary on each of macOS, Windows and Linux.
 
 ## Where is the config?
 
-| OS      | Path                                               |
-| ------- | -------------------------------------------------- |
-| macOS   | `~/Library/Application Support/DevBar/config.json` |
-| Windows | `%APPDATA%\DevBar\config.json`                     |
-| Linux   | `~/.config/DevBar/config.json`                     |
+| OS      | Path                                                   |
+| ------- | ------------------------------------------------------ |
+| macOS   | `~/Library/Application Support/DevBar/config.json`     |
+| Windows | `%APPDATA%\DevBar\config.json`                         |
+| Linux   | `${XDG_CONFIG_HOME:-$HOME/.config}/DevBar/config.json` |
 
 You can also export it to JSON or import another machine's config from
 **Configuración → Copia de seguridad**.

@@ -3,6 +3,8 @@ import {
   tokenize,
   splitCommand,
   buildCmdline,
+  buildCmdlineWindows,
+  quoteWindowsArg,
   hasShellMeta,
 } from '../src/parse-command.js';
 
@@ -152,6 +154,70 @@ describe('parse-command', () => {
       expect(result).toContain(
         "it's alive".replace(/'/g, "'\\''") || "it's alive",
       );
+    });
+  });
+  // --- quoteWindowsArg / buildCmdlineWindows -----------------------------------
+  // The child is reached as: cmd.exe /d /s /c <line> - cmd parses
+  // operators first, then the child applies CommandLineToArgvW rules.
+  describe('quoteWindowsArg (cmd.exe + CommandLineToArgvW)', () => {
+    it('passes plain args through unchanged', () => {
+      expect(quoteWindowsArg('--port')).toBe('--port');
+      expect(quoteWindowsArg('8080')).toBe('8080');
+    });
+
+    it('quotes args with whitespace (MSVCRT double quotes, not POSIX)', () => {
+      expect(quoteWindowsArg('My App')).toBe('"My App"');
+    });
+
+    it('quotes empty args so the argument survives', () => {
+      expect(quoteWindowsArg('')).toBe('""');
+    });
+
+    it('escapes embedded double quotes for the child parser', () => {
+      expect(quoteWindowsArg('He said "hi"')).toBe('"He said \\"hi\\""');
+    });
+
+    it('doubles backslashes that precede the closing quote', () => {
+      // The embedded quote forces wrapping; the trailing backslash
+      // must be doubled so the child parser yields the original bytes.
+      expect(quoteWindowsArg('a"b\\')).toBe('"a\\"b\\\\"');
+    });
+
+    it('escapes cmd operators with ^ when the arg stays unquoted', () => {
+      expect(quoteWindowsArg('a&b')).toBe('a^&b');
+      expect(quoteWindowsArg('c>d')).toBe('c^>d');
+      expect(quoteWindowsArg('e|f')).toBe('e^|f');
+      expect(quoteWindowsArg('g^h')).toBe('g^^h');
+    });
+
+    it('wraps in quotes when whitespace and operators combine', () => {
+      // operators are literal inside double quotes for cmd
+      expect(quoteWindowsArg('My App & more')).toBe('"My App & more"');
+    });
+  });
+
+  describe('buildCmdlineWindows', () => {
+    it('returns the command untouched when it has no args', () => {
+      expect(buildCmdlineWindows('npm run dev', [])).toBe('npm run dev');
+    });
+
+    it('keeps cmd syntax typed in the command (free-form shell string)', () => {
+      expect(buildCmdlineWindows('cd /d C:\\x && npm run dev', [])).toBe(
+        'cd /d C:\\x && npm run dev',
+      );
+    });
+
+    it('quotes spaced args and escapes metacharacter args', () => {
+      // 'a&b' stays unquoted -> ^ escape; '> log' has whitespace ->
+      // quoted, and cmd treats > literally inside double quotes.
+      expect(
+        buildCmdlineWindows('node server.js', [
+          '--title',
+          'My App',
+          'a&b',
+          '> log',
+        ]),
+      ).toBe('node server.js --title "My App" a^&b "> log"');
     });
   });
 });

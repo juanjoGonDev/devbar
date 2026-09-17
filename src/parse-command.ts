@@ -64,3 +64,64 @@ export function buildCmdline(
   if (!args?.length) return cmd;
   return `${cmd} ${args.some(hasShellMeta) ? args.join(' ') : args.map(shellQuote).join(' ')}`;
 }
+
+/**
+ * Quote one ARGUMENT for a Windows command line. There are two parsers
+ * between this string and the child process:
+ *
+ * 1. `cmd.exe` reads the line first and treats `& | < > ^` OUTSIDE double
+ *    quotes as operators (chain / pipe / redirect / escape) — a raw `>`
+ *    would redirect the child's output, `&` would chain. Inside double
+ *    quotes those characters are literal.
+ * 2. The child re-parses the argument vector with the MSVCRT
+ *    `CommandLineToArgvW` rules (double quotes group, backslashes escape
+ *    quotes): an argument with whitespace needs `"…"` or the child would
+ *    see it as several arguments (POSIX single quotes are meaningless to
+ *    both cmd and the child — they would arrive as literal characters).
+ *
+ * Combined rules:
+ * - empty, or containing whitespace/`"` → wrap in `"…"` (cmd then treats
+ *   metacharacters inside literally), escaping `"` as `\"` and doubling
+ *   backslash runs that precede a `"` or end the argument, exactly so the
+ *   child's parser yields the original bytes;
+ * - otherwise → emit as-is, but prefix each cmd operator with `^` so cmd
+ *   passes it through uninterpreted.
+ */
+export function quoteWindowsArg(value: string): string {
+  if (value === '' || /[ \t\n\v"]/.test(value)) {
+    let out = '"';
+    for (let i = 0; i < value.length; i++) {
+      const ch = value[i];
+      if (ch !== '\\') {
+        out += ch === '"' ? '\\"' : ch;
+        continue;
+      }
+      let n = 0;
+      while (i + n < value.length && value[i + n] === '\\') n++;
+      const next = value[i + n];
+      if (next === '"') out += '\\'.repeat(2 * n + 1) + '"';
+      else if (next === undefined) out += '\\'.repeat(2 * n);
+      else out += '\\'.repeat(n);
+      i += n - 1;
+    }
+    return out + '"';
+  }
+  return value.replace(/[&|<>^]/g, '^$&');
+}
+
+/**
+ * Windows counterpart of buildCmdline: the command itself stays free
+ * form (the user may write cmd syntax in it, e.g. `cd /d dir && run`),
+ * but the structured args are literal and must survive both cmd.exe and
+ * CommandLineToArgvW — hence per-argument quoteWindowsArg, never POSIX
+ * quoting, never raw joining (raw joining is what let `>`/`&` turn into
+ * redirects and chains).
+ */
+export function buildCmdlineWindows(
+  command: string | null | undefined,
+  args: readonly string[] | null | undefined,
+): string {
+  const cmd = (command ?? '').trim();
+  if (!args?.length) return cmd;
+  return `${cmd} ${args.map(quoteWindowsArg).join(' ')}`;
+}
