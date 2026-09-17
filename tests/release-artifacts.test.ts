@@ -224,9 +224,23 @@ describe('release artifact contract', () => {
     );
   });
 
-  it('rejects an unknown file for a per-platform set too', async () => {
+  it('tolerates electron-builder byproducts for a per-platform set (raw outDir)', async () => {
+    // Per-platform verification runs against dist/electron-builder, the
+    // raw build output: blockmaps, latest.yml, builder-debug.yml and the
+    // unpacked dirs live there by design and must not fail the verify.
     const fixture = await createArtifactFixture('0.2.0', 'win', false);
-    await writeFile(path.join(fixture.directory, 'leftover.log'), 'old build');
+    await writeFile(
+      path.join(fixture.directory, 'builder-debug.yml'),
+      'electron-builder debug log',
+    );
+    await writeFile(
+      path.join(fixture.directory, 'latest.yml'),
+      'version: 0.2.0',
+    );
+    await writeFile(
+      path.join(fixture.directory, 'DevBar-0.2.0-win-x64-setup.exe.blockmap'),
+      'blockmap',
+    );
 
     await expect(
       verifyReleaseArtifactSet({
@@ -234,7 +248,7 @@ describe('release artifact contract', () => {
         version: '0.2.0',
         platform: 'win',
       }),
-    ).rejects.toThrow('Unexpected file in release directory: leftover.log');
+    ).resolves.toMatchObject({ artifactNames: fixture.artifactNames });
   });
 
   it('allows directories and the manifest next to the artifacts', async () => {

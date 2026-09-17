@@ -170,17 +170,22 @@ export async function verifyReleaseArtifactSet({
     ),
   );
 
-  // The directory must hold exactly the artifact set (plus the manifest):
-  // an unknown regular file is an unexpected byproduct that must not ship
-  // or masquerade as a verified artifact.
-  const allowedNames = new Set([...artifactNames, 'SHA256SUMS.txt']);
-  for (const entry of await readdir(outputDirectory)) {
-    if (allowedNames.has(entry)) continue;
-    const entryStat = await stat(path.join(outputDirectory, entry)).catch(
-      () => null,
-    );
-    if (entryStat?.isFile())
-      throw new Error(`Unexpected file in release directory: ${entry}`);
+  // Publish gate only (no platform): the assembled release directory is
+  // what gets uploaded as release assets, so it must hold EXACTLY the
+  // artifact set plus the manifest — an unknown regular file would ship
+  // unverified. Per-platform verification runs against electron-builder's
+  // raw outDir, which legitimately carries build metadata (unpacked dirs,
+  // blockmaps, latest.yml, builder-debug.yml) alongside the artifacts.
+  if (platform === undefined) {
+    const allowedNames = new Set([...artifactNames, 'SHA256SUMS.txt']);
+    for (const entry of await readdir(outputDirectory)) {
+      if (allowedNames.has(entry)) continue;
+      const entryStat = await stat(path.join(outputDirectory, entry)).catch(
+        () => null,
+      );
+      if (entryStat?.isFile())
+        throw new Error(`Unexpected file in release directory: ${entry}`);
+    }
   }
 
   const manifest = (await stat(manifestPath).catch(() => null))
