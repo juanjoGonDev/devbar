@@ -237,6 +237,10 @@ describe('parse-command', () => {
       () => {
         // No fixture file: node -p prints its own argv, which keeps this
         // inside the TypeScript-only source policy.
+        // Test-only: the command line is built by the escaper under test,
+        // and process.execPath is under developer/CI control (not
+        // attacker input) — the alert has no runtime consequence here.
+        // codeql-suppress js/shell-command-built-from-environment-values
         const cmdline = buildCmdlineWindows(
           `${quoteWindowsArg(process.execPath)} -p "JSON.stringify(process.argv.slice(1))"`,
           ['%TEMP%', 'in %TEMP% now'],
