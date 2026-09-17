@@ -397,13 +397,16 @@ describe('SessionResumeTracker', () => {
     expect(fake.pendingTimeouts()).toBe(1);
   });
 
-  it('deletes the file when the set becomes empty', () => {
+  it('deletes the file IMMEDIATELY when the set becomes empty', () => {
     tracker.track(['cmd:g1:a']);
     fake.fireNextTimeout();
     expect(fileExists(dir)).toBe(true);
     tracker.track([]);
-    fake.fireNextTimeout();
+    // No debounce: a crash between "the user stopped everything" and the
+    // old debounce expiry must not resurrect the services on the next
+    // launch. The delete is written at once, with nothing pending after.
     expect(fileExists(dir)).toBe(false);
+    expect(fake.pendingTimeouts()).toBe(0);
   });
 
   it('refreshes a non-empty set periodically so a crash leaves a fresh file', () => {
@@ -433,9 +436,10 @@ describe('SessionResumeTracker', () => {
     fake.fireNextTimeout();
     expect(fake.pendingIntervals()).toBe(1);
     tracker.track([]);
-    // The empty change cancels the refresh immediately (no write needed:
-    // the debounced delete handles the file).
+    // The empty change cancels the refresh immediately and writes the
+    // (empty => deleting) snapshot at once.
     expect(fake.pendingIntervals()).toBe(0);
+    expect(fileExists(dir)).toBe(false);
   });
 
   it('flush writes immediately with the exit reason and given ids', () => {

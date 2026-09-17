@@ -241,12 +241,22 @@ export class SessionResumeTracker {
 
   /**
    * Report the current running set. A no-op when the set is unchanged, so
-   * log-driven state churn never re-arms the debounce.
+   * log-driven state churn never re-arms the debounce. An EMPTY set is
+   * written immediately (and deletes the snapshot file): left to the
+   * debounce, a crash within that window would leave the previous
+   * non-empty snapshot on disk and the next launch would restart
+   * services the user already stopped.
    */
   track(ids: readonly string[]): void {
     if (sameSet(this.pending, ids)) return;
-    this.pending = [...ids];
     if (this.writeTimer !== null) this.timers.clearTimeout(this.writeTimer);
+    this.writeTimer = null;
+    this.pending = [...ids];
+    if (this.pending.length === 0) {
+      this.stopRefresh();
+      saveSnapshot(this.dir, this.pending, 'live', this.clock);
+      return;
+    }
     this.writeTimer = this.timers.setTimeout(() => {
       this.writeTimer = null;
       saveSnapshot(this.dir, this.pending, 'live', this.clock);

@@ -227,6 +227,31 @@ describe('response error handling (mid-drain socket failures)', () => {
     await expect(fetchReleaseSha256('o', 'r', '1.0.0')).resolves.toBeNull();
   });
 
+  it('fetchReleases: a 200 body that errors mid-stream resolves an empty list', async () => {
+    // A mid-body socket failure emits 'error' on the RESPONSE — before the
+    // listener moved to the top of the response callback this was an
+    // unhandled 'error' event, an uncaught exception that would crash
+    // DevBar while it loads release data.
+    vi.spyOn(https, 'get').mockImplementation(((
+      _opts: unknown,
+      cb: (res: Readable & { statusCode?: number }) => void,
+    ) => {
+      const res: Readable & { statusCode?: number } = new Readable({
+        read() {},
+      });
+      res.statusCode = 200;
+      setImmediate(() => {
+        cb(res);
+        res.emit('data', Buffer.from('["partial'));
+        setImmediate(() => res.emit('error', new Error('ECONNRESET')));
+      });
+      return { on: vi.fn(), destroy: vi.fn() } as never;
+    }) as never);
+    await expect(
+      fetchReleases({ owner: 'o', repo: 'r', timeoutMs: 5000 }),
+    ).resolves.toEqual([]);
+  });
+
   it('checkForUpdate: a non-200 body that errors while draining resolves null', async () => {
     vi.spyOn(https, 'get').mockImplementation(((
       _opts: unknown,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   ereEscape,
+  POSIX_POST_KILL_POLL_MS,
+  POSIX_POST_KILL_POLLS,
   POSIX_SERVICE_GRACE_MS,
   posixKillServiceTrees,
   psLikeEscape,
@@ -356,6 +358,59 @@ describe('posixKillServiceTrees', () => {
       'kill -s TERM 110',
       'kill -s KILL -- -110',
       'kill -s KILL 110',
+    ]);
+  });
+
+  it('does not report a group that dies within the post-kill poll window', () => {
+    // SIGKILL is async: the group is still visible on the immediate probe
+    // after the signal, but the kernel reaps it during the bounded
+    // post-kill polling — it must not be reported as a false survivor
+    // (that would fail a healthy install).
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const waits: number[] = [];
+    let probes = 0;
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait: (ms) => {
+        waits.push(ms);
+      },
+      groupAlive: () => {
+        probes += 1;
+        return probes === 1; // alive on the first probe, reaped by the second
+      },
+    });
+    expect(survivors).toEqual([]);
+    expect(waits).toEqual([POSIX_SERVICE_GRACE_MS, POSIX_POST_KILL_POLL_MS]);
+  });
+
+  it('reports a group still alive after the entire post-kill budget, once the budget is spent', () => {
+    // A true survivor (stuck in uninterruptible I/O) stays alive through
+    // every poll — it is still reported, and the polling is bounded
+    // (grace wait + exactly POSIX_POST_KILL_POLLS poll waits).
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const waits: number[] = [];
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait: (ms) => {
+        waits.push(ms);
+      },
+      groupAlive: () => true,
+    });
+    expect(survivors).toEqual(['110']);
+    expect(waits).toEqual([
+      POSIX_SERVICE_GRACE_MS,
+      ...Array.from(
+        { length: POSIX_POST_KILL_POLLS },
+        () => POSIX_POST_KILL_POLL_MS,
+      ),
     ]);
   });
 

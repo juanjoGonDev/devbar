@@ -407,12 +407,38 @@ function killLeftovers(installDir: string): void {
       tryQuiet('kill', ['-s', 'KILL', '--', `-${entry.pid}`]);
       tryQuiet('kill', ['-s', 'KILL', entry.pid]);
     }
-    // Retain each group until it is CONFIRMED gone: a service group
-    // survives on its own (its command line matches none of the
-    // instance liveness patterns above), so the verification must probe
-    // the groups directly. An identity-mismatched entry is NOT a
-    // survivor: its original leader exited and the live group at that
-    // pgid is an unrelated replacement (reporting it would fail a
+    // SIGKILL is async: the kernel reaps a group a few ms after the
+    // signal, and an immediate probe can report a group that is already
+    // dying as a false survivor (failing a healthy install). Re-probe
+    // within a shared budget — the same rule lib/kill-trees.ts applies,
+    // mirrored here because this script runs in strip-only mode and
+    // cannot import it.
+    const POST_KILL_POLL_MS = 100;
+    let pollsLeft = 20;
+    const waitPollMs = (ms: number): void => {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    };
+    const settled = new Map<string, boolean>();
+    for (const entry of leftoverServiceGroups) {
+      if (
+        entry.identity !== null &&
+        processIdentity(entry.pid) !== entry.identity
+      )
+        continue;
+      let alive = serviceGroupAlive(entry.pid);
+      while (alive && pollsLeft > 0) {
+        waitPollMs(POST_KILL_POLL_MS);
+        pollsLeft -= 1;
+        alive = serviceGroupAlive(entry.pid);
+      }
+      settled.set(entry.pid, alive);
+    }
+    // Retain each group until it is CONFIRMED gone (after the budget):
+    // a service group survives on its own (its command line matches
+    // none of the instance liveness patterns above), so the verification
+    // must probe the groups directly. An identity-mismatched entry is
+    // NOT a survivor: its original leader exited and the live group at
+    // that pgid is an unrelated replacement (reporting it would fail a
     // healthy install).
     const survivingGroups = leftoverServiceGroups.filter((entry) => {
       if (
@@ -420,7 +446,7 @@ function killLeftovers(installDir: string): void {
         processIdentity(entry.pid) !== entry.identity
       )
         return false;
-      return serviceGroupAlive(entry.pid);
+      return settled.get(entry.pid) ?? serviceGroupAlive(entry.pid);
     });
     leftoverServiceGroups = survivingGroups;
     if (survivingGroups.length > 0) {

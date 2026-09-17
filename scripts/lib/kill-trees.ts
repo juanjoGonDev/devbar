@@ -104,6 +104,16 @@ export function windowsKillDevInstanceCommand(checkoutPath: string): string {
  */
 export const POSIX_SERVICE_GRACE_MS = 2000;
 
+/**
+ * Bounded re-probing AFTER the SIGKILL escalation. Kill is async: the
+ * kernel reaps a group within a few milliseconds, but on a loaded
+ * runner that can exceed an immediate probe. Poll each identity-
+ * matching group within a shared budget so a group that is still in
+ * the middle of dying is not reported as a (false) survivor.
+ */
+export const POSIX_POST_KILL_POLL_MS = 100;
+export const POSIX_POST_KILL_POLLS = 20; // ~2 s of worst-case total
+
 const defaultWait = (ms: number): void => {
   // A CLI script may block: no child process needed for a wait.
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -243,15 +253,32 @@ export function posixKillServiceTrees(
     run('kill', ['-s', 'KILL', '--', `-${child}`]);
     run('kill', ['-s', 'KILL', child]);
   }
+  // SIGKILL is async: the kernel reaps the group a few ms after the
+  // signal, and an immediate probe can see a group that is already in
+  // the middle of dying. Re-probe each identity-matching group within
+  // a shared budget before declaring it a survivor.
+  let pollsLeft = POSIX_POST_KILL_POLLS;
+  const settled = new Map<string, boolean>();
+  for (const child of groups) {
+    const captured = identities.get(child) ?? null;
+    if (captured !== null && processIdentity(child) !== captured) continue;
+    let alive = groupAlive(child);
+    while (alive && pollsLeft > 0) {
+      wait(POSIX_POST_KILL_POLL_MS);
+      pollsLeft -= 1;
+      alive = groupAlive(child);
+    }
+    settled.set(child, alive);
+  }
   // A survivor is a leader whose identity STILL MATCHES and whose group
-  // still has members: an identity-mismatched entry means the original
-  // exited and its pid/pgid was reused — that live group is an unrelated
-  // process, not a surviving service (reporting it would fail a healthy
-  // install).
+  // still has members after the post-kill budget: an identity-mismatched
+  // entry means the original exited and its pid/pgid was reused — that
+  // live group is an unrelated process, not a surviving service
+  // (reporting it would fail a healthy install).
   return groups.filter((child) => {
     const captured = identities.get(child) ?? null;
     if (captured !== null && processIdentity(child) !== captured) return false;
-    return groupAlive(child);
+    return settled.get(child) ?? groupAlive(child);
   });
 }
 

@@ -297,6 +297,10 @@ export function fetchReleases({
         timeout: timeoutMs,
       },
       (res) => {
+        // A mid-body failure (ECONNRESET/timeout) emits 'error' on the
+        // RESPONSE, not on req — without a listener it would be an
+        // unhandled 'error' event that crashes the main process.
+        res.on('error', () => resolve([]));
         if (res.statusCode !== 200) {
           res.resume();
           resolve([]);

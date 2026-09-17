@@ -4,6 +4,7 @@ import os from 'node:os';
 import https from 'node:https';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { pipeline } from 'node:stream/promises';
 import {
   app,
   BrowserWindow,
@@ -1252,9 +1253,11 @@ function downloadFile(
           return reject(new Error(`HTTP ${statusCode}`));
         }
         const file = fs.createWriteStream(dest);
-        res.pipe(file);
-        file.on('finish', () => file.close(() => resolve(dest)));
-        file.on('error', reject);
+        // pipeline (not res.pipe): a response-stream failure (server/CDN
+        // abort mid-body) must REJECT this promise — plain pipe leaves it
+        // pending until the 120 s request timeout, blocking the update
+        // fallback handlers — and would surface as an unhandled 'error'.
+        void pipeline(res, file).then(() => resolve(dest), reject);
       },
     );
     req.on('error', reject);
@@ -3639,8 +3642,12 @@ app.whenReady().then(() => {
   processManager.on('change', () => {
     broadcast();
     // Session resume: keep the snapshot's running set current (debounced,
-    // and a no-op when the set is unchanged).
-    if (!SMOKE_MODE && sessionResume) sessionResume.track(runningCommandIds());
+    // and a no-op when the set is unchanged). Never track DURING shutdown:
+    // stopAll() emits 'change' for each service as it stops, and a
+    // re-armed 'live' write after flush() would overwrite the
+    // authoritative kill/update snapshot with an incomplete set.
+    if (!SMOKE_MODE && sessionResume && shutdownPhase === 'idle')
+      sessionResume.track(runningCommandIds());
   });
   processManager.on('log', (payload) => broadcastLog(payload));
   processManager.on('action:done', ({ processId, code, group, target }) => {

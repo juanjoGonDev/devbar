@@ -914,7 +914,14 @@ function renderGroupDetail(): void {
       )
     )
       return;
-    await window.api.deleteGroup(group.id);
+    const res = await window.api.deleteGroup(group.id);
+    if (!res.ok) {
+      // The main side aborts the deletion when a running command cannot
+      // be stopped — surface why and leave the group visible for a retry
+      // (same contract as the sub-item deletion handler).
+      showToast(res.error || 'No se pudo borrar el grupo', 'error');
+      return;
+    }
     selectedGroupId = null;
     draftGroup = null;
     storedGroup = null;
