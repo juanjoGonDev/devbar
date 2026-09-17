@@ -55,16 +55,24 @@ function isValidSquashfsSuperblock(data: Buffer, at: number): boolean {
  * True when the file carries an appended filesystem, i.e. contains a
  * structurally valid SquashFS superblock. Images run 50–300 MiB, so the
  * file is scanned in 1 MiB chunks (a 17-byte carry keeps a superblock
- * that straddles a boundary searchable).
+ * that straddles a boundary searchable). When no valid superblock is
+ * found, returns a diagnostic listing the first candidates and their
+ * fields, so a CI failure says WHY a real-looking image was rejected.
  */
-function hasSquashfsSuperblock(filePath: string): boolean {
+function findSquashfsSuperblock(filePath: string): {
+  found: boolean;
+  detail: string | null;
+} {
   const fd = openSync(filePath, 'r');
   try {
     const size = fstatSync(fd).size;
     const chunk = Buffer.alloc(1 << 20);
     const CARRY = 17; // the fields read 17 bytes past the magic
+    const MAX_SAMPLES = 5;
     let offset = 0;
     let carry = Buffer.alloc(0);
+    let totalCandidates = 0;
+    const samples: string[] = [];
     while (offset < size) {
       const n = readSync(
         fd,
@@ -82,7 +90,28 @@ function hasSquashfsSuperblock(filePath: string): boolean {
       for (;;) {
         const at = data.indexOf(SQUASHFS_MAGIC, from);
         if (at === -1) break;
-        if (isValidSquashfsSuperblock(data, at)) return true;
+        totalCandidates += 1;
+        if (isValidSquashfsSuperblock(data, at))
+          return { found: true, detail: null };
+        if (samples.length < MAX_SAMPLES) {
+          const fileAt = offset - (data.length - n) + at;
+          if (at + 18 > data.length) {
+            samples.push(`@${fileAt} (fields truncated at file end)`);
+          } else {
+            const blockSize = data.readUInt32LE(at + 8);
+            const blockLog = data.readUInt16LE(at + 12);
+            const compressionId = data.readUInt16LE(at + 16);
+            const why =
+              blockLog < 12 || blockLog > 20
+                ? `block log ${blockLog} out of range`
+                : blockSize !== 2 ** blockLog
+                  ? `block ${blockSize} != 2^${blockLog}`
+                  : `compression ${compressionId} unknown`;
+            samples.push(
+              `@${fileAt} block=${blockSize} log=${blockLog} comp=${compressionId} (${why})`,
+            );
+          }
+        }
         from = at + 1;
       }
       carry =
@@ -91,7 +120,10 @@ function hasSquashfsSuperblock(filePath: string): boolean {
           : Buffer.from(data);
       offset += n;
     }
-    return false;
+    const detail =
+      `size=${size}B, hsqs candidates=${totalCandidates}` +
+      (samples.length > 0 ? `, first: ${samples.join('; ')}` : ' (none)');
+    return { found: false, detail };
   } finally {
     closeSync(fd);
   }
@@ -113,27 +145,69 @@ function hasSquashfsSuperblock(filePath: string): boolean {
  * then ride along as a published arm64/armv7 artifact (only the x64
  * image is launched in CI). The remaining ident padding is zeroes, so
  * the legacy "AppImage" string check is checking the wrong convention.
+ * On rejection, `detail` explains WHY — the release jobs log it so a
+ * CI failure on a real-looking image is diagnosable from the step
+ * output instead of a bare "not a valid AppImage".
  */
-export function looksLikeAppImage(filePath: string): boolean {
+export function checkAppImage(filePath: string): {
+  ok: boolean;
+  detail: string | null;
+} {
   const fd = openSync(filePath, 'r');
   try {
     const magic = Buffer.alloc(3);
-    if (readSync(fd, magic, 0, 3, 8) < 3) return false;
-    if (magic[0] !== 0x41 || magic[1] !== 0x49) return false;
-    if (magic[2] === 0x02) {
+    if (readSync(fd, magic, 0, 3, 8) < 3)
+      return {
+        ok: false,
+        detail: 'file too small for the AI marker at offset 8',
+      };
+    const markerType = magic.readUInt8(2);
+    if (magic.readUInt8(0) !== 0x41 || magic.readUInt8(1) !== 0x49)
+      return {
+        ok: false,
+        detail: `bad marker bytes 0x${magic
+          .readUInt8(0)
+          .toString(
+            16,
+          )} 0x${magic.readUInt8(1).toString(16)} at offset 8 (expected 'AI')`,
+      };
+    if (markerType === 0x02) {
       const elf = Buffer.alloc(4);
-      if (readSync(fd, elf, 0, 4, 0) < 4) return false;
-      if (elf.toString('latin1') !== '\x7fELF') return false;
+      if (readSync(fd, elf, 0, 4, 0) < 4)
+        return { ok: false, detail: 'file too small for the ELF header' };
+      if (elf.toString('latin1') !== '\x7fELF')
+        return { ok: false, detail: 'no \\x7fELF magic at offset 0' };
       // The runtime is there — now the payload (see above).
-      return hasSquashfsSuperblock(filePath);
+      const squashfs = findSquashfsSuperblock(filePath);
+      return squashfs.found
+        ? { ok: true, detail: null }
+        : {
+            ok: false,
+            detail: `no valid SquashFS superblock — ${squashfs.detail}`,
+          };
     }
-    if (magic[2] !== 0x01) return false;
+    if (markerType !== 0x01)
+      return {
+        ok: false,
+        detail: `unknown AppImage type byte 0x${markerType.toString(16)}`,
+      };
     const pvd = Buffer.alloc(5);
-    if (readSync(fd, pvd, 0, 5, 32769) < 5) return false;
-    return pvd.toString('latin1') === 'CD001';
+    if (readSync(fd, pvd, 0, 5, 32769) < 5)
+      return {
+        ok: false,
+        detail: 'file too small for the ISO PVD at sector 16',
+      };
+    return pvd.toString('latin1') === 'CD001'
+      ? { ok: true, detail: null }
+      : { ok: false, detail: 'no CD001 PVD signature at offset 32769' };
   } finally {
     closeSync(fd);
   }
+}
+
+/** Boolean convenience wrapper around checkAppImage (unit tests). */
+export function looksLikeAppImage(filePath: string): boolean {
+  return checkAppImage(filePath).ok;
 }
 
 function dpkgDebAvailable(): boolean {
@@ -157,16 +231,17 @@ async function main(): Promise<void> {
     `Verified ${result.artifactNames.length} linux artifacts for v${version} in ${result.directory}`,
   );
 
-  // 2. Contents: AppImage magic on every AppImage.
+  // 2. Contents: AppImage structure on every AppImage (marker +
+  //    container +, for type 2, the appended filesystem).
   for (const name of result.artifactNames) {
     if (!name.endsWith('.AppImage')) continue;
     const filePath = path.join(outputDirectory, name);
-    if (!looksLikeAppImage(filePath))
-      throw new Error(
-        `${name} is not a valid AppImage (marker, container structure, or ` +
-          `appended filesystem missing)`,
-      );
-    console.log(`ok: ${name} (AppImage structure: marker + container + filesystem)`);
+    const check = checkAppImage(filePath);
+    if (!check.ok)
+      throw new Error(`${name} is not a valid AppImage: ${check.detail}`);
+    console.log(
+      `ok: ${name} (AppImage structure: marker + container + filesystem)`,
+    );
   }
 
   // 3. Contents: dpkg structure on every .deb when dpkg-deb is available

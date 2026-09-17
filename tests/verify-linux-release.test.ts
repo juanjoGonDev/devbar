@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { looksLikeAppImage } from '../scripts/verify-linux-release.js';
+import {
+  checkAppImage,
+  looksLikeAppImage,
+} from '../scripts/verify-linux-release.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -156,5 +159,68 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
       Buffer.concat([header, superblock()]),
     );
     expect(looksLikeAppImage(file)).toBe(false);
+  });
+});
+
+describe('checkAppImage diagnostics (scripts/verify-linux-release.ts)', () => {
+  it('accepts a valid image with no detail', async () => {
+    const file = await writeFixture(
+      'good.AppImage',
+      Buffer.concat([elfIdent(0x02), Buffer.alloc(32), superblock()]),
+    );
+    const result = checkAppImage(file);
+    expect(result.ok).toBe(true);
+    expect(result.detail).toBe(null);
+  });
+
+  it('explains a truncated image with the candidate fields', async () => {
+    // ELF + marker, then a "hsqs" with inconsistent fields and no valid
+    // superblock — the detail must point at the candidate and its
+    // failing field so a real CI rejection is diagnosable.
+    const bad = Buffer.concat([
+      Buffer.from('hsqs', 'latin1'),
+      Buffer.alloc(4), // creation time
+      Buffer.alloc(4), // block size 0
+      Buffer.from([0x11, 0x00]), // block log 17
+      Buffer.from([0x01, 0x00]), // compression 1
+      Buffer.alloc(82),
+    ]);
+    const file = await writeFixture(
+      'truncated.AppImage',
+      Buffer.concat([elfIdent(0x02), bad]),
+    );
+    const result = checkAppImage(file);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toMatch(/size=\d+B/);
+    expect(result.detail).toMatch(/block=0 log=17/);
+    expect(result.detail).toMatch(/block 0 != 2\^17/);
+  });
+
+  it('explains a marker-only blob', async () => {
+    const file = await writeFixture('blob.AppImage', elfIdent(0x02));
+    const result = checkAppImage(file);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toMatch(/no valid SquashFS superblock/);
+  });
+
+  it('explains a non-ELF type-2 header', async () => {
+    const header = Buffer.alloc(16);
+    header[8] = 0x41;
+    header[9] = 0x49;
+    header[10] = 0x02;
+    const file = await writeFixture(
+      'noelf.AppImage',
+      Buffer.concat([header, superblock()]),
+    );
+    const result = checkAppImage(file);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toMatch(/ELF magic/);
+  });
+
+  it('explains an unknown type byte', async () => {
+    const file = await writeFixture('unknown.AppImage', elfIdent(0x03));
+    const result = checkAppImage(file);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toMatch(/unknown AppImage type byte/);
   });
 });
