@@ -121,34 +121,36 @@ async function runCreateDmg(
   return { code, calls: calls.filter((call) => call.startsWith('create ')) };
 }
 
-afterEach(async () => {
-  while (temporaryDirectories.length) {
-    const directory = temporaryDirectories.pop();
-    if (directory) await rm(directory, { recursive: true, force: true });
-  }
-});
-
-describe('DMG creation', () => {
-  it('succeeds first time when hdiutil is healthy', async () => {
-    const { code, calls } = await runCreateDmg(await fakeHdiutil(0));
-    expect(code).toBe(0);
-    expect(calls).toHaveLength(1);
+describe('scripts/build-macos-release.sh — DMG retry', () => {
+  afterEach(async () => {
+    while (temporaryDirectories.length) {
+      const directory = temporaryDirectories.pop();
+      if (directory) await rm(directory, { recursive: true, force: true });
+    }
   });
 
-  it('retries past a transient "Resource busy" and still succeeds', async () => {
-    const { code, calls } = await runCreateDmg(await fakeHdiutil(2));
-    expect(code).toBe(0);
-    expect(calls).toHaveLength(3);
-  });
+  describe('DMG creation', () => {
+    it('succeeds first time when hdiutil is healthy', async () => {
+      const { code, calls } = await runCreateDmg(await fakeHdiutil(0));
+      expect(code).toBe(0);
+      expect(calls).toHaveLength(1);
+    });
 
-  it('gives up after the attempt budget instead of retrying forever', async () => {
-    const { code, calls } = await runCreateDmg(await fakeHdiutil(99));
-    expect(code).not.toBe(0);
-    expect(calls).toHaveLength(3);
-  });
+    it('retries past a transient "Resource busy" and still succeeds', async () => {
+      const { code, calls } = await runCreateDmg(await fakeHdiutil(2));
+      expect(code).toBe(0);
+      expect(calls).toHaveLength(3);
+    });
 
-  it('skips Spotlight indexing, which is one cause of the collision', async () => {
-    const { calls } = await runCreateDmg(await fakeHdiutil(0));
-    expect(calls[0]).toContain('-nospotlight');
+    it('gives up after the attempt budget instead of retrying forever', async () => {
+      const { code, calls } = await runCreateDmg(await fakeHdiutil(99));
+      expect(code).not.toBe(0);
+      expect(calls).toHaveLength(3);
+    });
+
+    it('skips Spotlight indexing, which is one cause of the collision', async () => {
+      const { calls } = await runCreateDmg(await fakeHdiutil(0));
+      expect(calls[0]).toContain('-nospotlight');
+    });
   });
 });

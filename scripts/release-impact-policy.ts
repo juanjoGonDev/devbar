@@ -44,6 +44,10 @@ const RELEASE_EXACT_PATHS = new Set([
 // dev dependency added later counts until it is listed here.
 const NON_SHIPPING_DEV_DEPENDENCIES = [
   '@types/',
+  // The whole @vitest scope is test tooling (coverage provider, ESLint
+  // plugin). Listing bare 'vitest' does not cover it: the prefix match is on
+  // the raw name, and '@vitest/coverage-v8' starts with '@', not 'vitest'.
+  '@vitest/',
   'dependency-cruiser',
   'eslint',
   'jiti',

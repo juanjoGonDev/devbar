@@ -1,3 +1,4 @@
+import vitest from '@vitest/eslint-plugin';
 import tseslint from 'typescript-eslint';
 
 const typedFiles = [
@@ -13,10 +14,41 @@ const engineeringRules = {
   'max-params': ['error', 7],
 } as const;
 
+const testFiles = ['tests/**/*.test.ts'];
+
+const vitestLayoutRules = {
+  'vitest/consistent-test-it': ['error', { fn: 'it' }],
+  'vitest/expect-expect': [
+    'error',
+    {
+      assertFunctionNames: [
+        'expect',
+        'expectValid',
+        'expectInvalid',
+        'expectFailed',
+        'expectSucceeded',
+        'expectPresent',
+        'expectOccurrence',
+      ],
+    },
+  ],
+  'vitest/no-focused-tests': 'error',
+  'vitest/no-identical-title': 'error',
+  'vitest/no-standalone-expect': 'error',
+  'vitest/require-top-level-describe': 'error',
+  'vitest/valid-describe-callback': 'error',
+  'vitest/valid-expect': ['error', { maxArgs: 2 }],
+  'vitest/valid-expect-in-promise': 'error',
+  'vitest/valid-title': ['error', { ignoreTypeOfDescribeName: true }],
+} as const;
+
 export default tseslint.config(
   {
     ignores: [
       'build/**',
+      // `pnpm test:coverage` writes an HTML report here whose vendored
+      // scripts are not ours to lint.
+      'coverage/**',
       'dist/**',
       'node_modules/**',
       'eslint.config.ts',
@@ -58,6 +90,13 @@ export default tseslint.config(
       '@typescript-eslint/prefer-nullish-coalescing': 'off',
       '@typescript-eslint/prefer-optional-chain': 'off',
       ...engineeringRules,
+    },
+  },
+  {
+    files: testFiles,
+    plugins: { vitest },
+    rules: {
+      ...vitestLayoutRules,
     },
   },
   {

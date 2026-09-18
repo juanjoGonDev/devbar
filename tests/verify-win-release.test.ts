@@ -15,53 +15,55 @@ async function writeFixture(name: string, contents: Buffer): Promise<string> {
   return filePath;
 }
 
-afterEach(async () => {
-  while (temporaryDirectories.length > 0) {
-    const dir = temporaryDirectories.pop();
-    if (dir) await rm(dir, { recursive: true, force: true });
+describe('scripts/verify-win-release.ts', () => {
+  afterEach(async () => {
+    while (temporaryDirectories.length > 0) {
+      const dir = temporaryDirectories.pop();
+      if (dir) await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * Minimal PE: 64-byte DOS header (MZ + e_lfanew → peOffset) followed by
+   * the PE signature. The check is deliberately architecture-independent —
+   * both win targets are NSIS stubs, PE32 for every target arch.
+   */
+  function peFixture(peOffset = 64): Buffer {
+    const buf = Buffer.alloc(peOffset + 4);
+    buf.write('MZ', 0, 'latin1');
+    buf.writeUInt32LE(peOffset, 0x3c);
+    buf.write('PE\0\0', peOffset, 'latin1');
+    return buf;
   }
-});
 
-/**
- * Minimal PE: 64-byte DOS header (MZ + e_lfanew → peOffset) followed by
- * the PE signature. The check is deliberately architecture-independent —
- * both win targets are NSIS stubs, PE32 for every target arch.
- */
-function peFixture(peOffset = 64): Buffer {
-  const buf = Buffer.alloc(peOffset + 4);
-  buf.write('MZ', 0, 'latin1');
-  buf.writeUInt32LE(peOffset, 0x3c);
-  buf.write('PE\0\0', peOffset, 'latin1');
-  return buf;
-}
+  describe('looksLikeWindowsExe', () => {
+    it('accepts a PE with the signature at e_lfanew', async () => {
+      const filePath = await writeFixture('setup.exe', peFixture());
+      expect(looksLikeWindowsExe(filePath)).toBe(true);
+    });
 
-describe('looksLikeWindowsExe', () => {
-  it('accepts a PE with the signature at e_lfanew', async () => {
-    const filePath = await writeFixture('setup.exe', peFixture());
-    expect(looksLikeWindowsExe(filePath)).toBe(true);
-  });
+    it('rejects a file with MZ but no PE signature at e_lfanew', async () => {
+      const buf = peFixture();
+      buf.write('XXXX', 64, 'latin1'); // clobber the PE signature
+      const filePath = await writeFixture('broken.exe', buf);
+      expect(looksLikeWindowsExe(filePath)).toBe(false);
+    });
 
-  it('rejects a file with MZ but no PE signature at e_lfanew', async () => {
-    const buf = peFixture();
-    buf.write('XXXX', 64, 'latin1'); // clobber the PE signature
-    const filePath = await writeFixture('broken.exe', buf);
-    expect(looksLikeWindowsExe(filePath)).toBe(false);
-  });
+    it('rejects a garbage e_lfanew pointing past EOF', async () => {
+      const buf = peFixture();
+      buf.writeUInt32LE(0x7fffffff, 0x3c);
+      const filePath = await writeFixture('garbage.exe', buf);
+      expect(looksLikeWindowsExe(filePath)).toBe(false);
+    });
 
-  it('rejects a garbage e_lfanew pointing past EOF', async () => {
-    const buf = peFixture();
-    buf.writeUInt32LE(0x7fffffff, 0x3c);
-    const filePath = await writeFixture('garbage.exe', buf);
-    expect(looksLikeWindowsExe(filePath)).toBe(false);
-  });
-
-  it('rejects non-PE files (HTML error page, short file)', async () => {
-    const html = await writeFixture(
-      'page.html',
-      Buffer.from('<html>502 Bad Gateway</html>'),
-    );
-    expect(looksLikeWindowsExe(html)).toBe(false);
-    const short = await writeFixture('short.bin', Buffer.from('MZ'));
-    expect(looksLikeWindowsExe(short)).toBe(false);
+    it('rejects non-PE files (HTML error page, short file)', async () => {
+      const html = await writeFixture(
+        'page.html',
+        Buffer.from('<html>502 Bad Gateway</html>'),
+      );
+      expect(looksLikeWindowsExe(html)).toBe(false);
+      const short = await writeFixture('short.bin', Buffer.from('MZ'));
+      expect(looksLikeWindowsExe(short)).toBe(false);
+    });
   });
 });

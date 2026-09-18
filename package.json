@@ -46,6 +46,7 @@
     "@types/js-yaml": "4.0.9",
     "@types/node": "26.5.0",
     "@vitest/coverage-v8": "5.0.0",
+    "@vitest/eslint-plugin": "1.6.27",
     "dependency-cruiser": "18.2.0",
     "electron": "43.2.0",
     "electron-builder": "26.16.1",

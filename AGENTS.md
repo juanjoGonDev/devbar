@@ -59,6 +59,32 @@ opens`). No AI attribution / `Co-Authored-By` lines.
    the repo. `CHANGELOG.md` is the exception: it stays in Spanish because it is
    the user-facing product record.
 
+## Test layout (enforced by ESLint, not advisory)
+
+`eslint.config.ts` runs `@vitest/eslint-plugin` over `tests/**/*.test.ts`, so a
+test that breaks the layout fails `pnpm lint:strict` — it is a gate, not a
+convention.
+
+1. Every `it` and every hook lives inside a `describe`. A file's outermost
+   `describe` is named after the module under test (e.g. `src/app-paths.ts`),
+   which is what keeps a file-wide `beforeEach`/`afterEach` covering the whole
+   file. Never move a file-wide hook into one of several sibling describes:
+   it silently stops running for the others.
+2. Use `it`, never `test`.
+3. The generic budget is 15s (`testTimeout`/`hookTimeout` in
+   `vitest.config.ts`). A test that genuinely needs longer passes its own
+   timeout as the third argument to `it`; do not raise the generic budget to
+   accommodate one slow test.
+4. A test that asserts only through a custom helper must have that helper
+   registered in `vitest/expect-expect`'s `assertFunctionNames` in
+   `eslint.config.ts`, or it is reported as assertion-less.
+5. `expect(actual, message)` is allowed on purpose: the message is often what
+   makes a CI-only failure diagnosable.
+6. No `.only` reaches CI — `vitest/no-focused-tests` is an error.
+7. Coverage is opt-in via `pnpm test:coverage`; `pnpm test` stays fast. Its
+   thresholds are a ratchet set at the numbers the suite produces today —
+   raise them, never lower them.
+
 ## Quality gate
 
 Before considering a change done, run `pnpm quality`

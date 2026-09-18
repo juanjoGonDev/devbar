@@ -84,189 +84,216 @@ function commitFile(
   return git(directory, 'rev-parse', 'HEAD');
 }
 
-afterEach(() => {
-  for (const directory of temporaryDirectories.splice(0)) {
-    rmSync(directory, { force: true, recursive: true });
-  }
-});
-
-describe('release impact policy', () => {
-  const packageJson = {
-    name: 'devbar',
-    version: '1.0.0',
-    dependencies: { menubar: '9.5.2' },
-  };
-
-  it.each([
-    'src/main.ts',
-    'renderer/index.ts',
-    'assets/icon.icns',
-    '.npmrc',
-    'tsconfig.node.json',
-    'tsconfig.renderer.json',
-    'scripts/build.ts',
-    'scripts/platform.ts',
-    'scripts/lib/script-runtime.ts',
-    'scripts/build-macos-release.sh',
-    'scripts/package-electron.ts',
-    'scripts/package-macos-app.sh',
-    'scripts/package-win-linux.ts',
-    // The artifact contract and the SHA256SUMS manifest generator shape
-    // what publication ships: they must count too.
-    'scripts/release-artifacts.ts',
-    'scripts/release-manifest.ts',
-  ])('classifies %s as release-impacting', (path) => {
-    expect(classify([path], packageJson, packageJson)).toEqual({
-      publish: true,
-      paths: [path],
-    });
+describe('scripts/release-impact-policy.ts', () => {
+  afterEach(() => {
+    for (const directory of temporaryDirectories.splice(0)) {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 
-  it.each([
-    'README.md',
-    'CHANGELOG.md',
-    'AGENTS.md',
-    'tests/changelog-view.test.ts',
-    '.agents/specs/release.md',
-    '.github/workflows/release.yml',
-    '.github/workflows/dependabot-auto-merge.workflow.yml',
-    'scripts/release-impact-policy.ts',
-    'scripts/verify-macos-release.sh',
-    'tsconfig.tests.json',
-    'pnpm-lock.yaml',
-  ])('skips release-neutral path %s', (path) => {
-    expect(classify([path], packageJson, packageJson)).toEqual({
-      publish: false,
-      paths: [],
-    });
-  });
-
-  it('skips a tooling-only dev dependency bump with its lockfile', () => {
-    const before = { ...packageJson, devDependencies: { vitest: '4.1.11' } };
-    const after = { ...packageJson, devDependencies: { vitest: '5.0.0' } };
-
-    expect(classify(['package.json', 'pnpm-lock.yaml'], before, after)).toEqual(
-      { publish: false, paths: [] },
-    );
-  });
-
-  it('classifies a packaged dev dependency bump as release-impacting', () => {
-    const before = { ...packageJson, devDependencies: { electron: '43.2.0' } };
-    const after = { ...packageJson, devDependencies: { electron: '44.0.0' } };
-
-    expect(classify(['package.json', 'pnpm-lock.yaml'], before, after)).toEqual(
-      { publish: true, paths: ['package.json', 'pnpm-lock.yaml'] },
-    );
-  });
-
-  it('classifies a production dependency bump as release-impacting', () => {
-    const after = { ...packageJson, dependencies: { menubar: '9.6.0' } };
-
-    expect(
-      classify(['package.json', 'pnpm-lock.yaml'], packageJson, after),
-    ).toEqual({
-      publish: true,
-      paths: ['package.json', 'pnpm-lock.yaml'],
-    });
-  });
-
-  it('skips a package.json version-only change', () => {
-    expect(
-      classify(['package.json'], packageJson, {
-        ...packageJson,
-        version: '1.0.1',
-      }),
-    ).toEqual({ publish: false, paths: [] });
-  });
-
-  it('skips a top-level package.json key reorder', () => {
-    const reorderedPackageJson = {
-      dependencies: { menubar: '9.5.2' },
-      version: '1.0.0',
+  describe('release impact policy', () => {
+    const packageJson = {
       name: 'devbar',
+      version: '1.0.0',
+      dependencies: { menubar: '9.5.2' },
     };
 
-    expect(
-      classify(['package.json'], packageJson, reorderedPackageJson),
-    ).toEqual({ publish: false, paths: [] });
-  });
-
-  it('skips a nested dependency key reorder', () => {
-    const beforePackage = {
-      ...packageJson,
-      dependencies: {
-        menubar: '9.5.2',
-        'electron-store': '11.0.2',
-      },
-    };
-    const afterPackage = {
-      ...packageJson,
-      dependencies: {
-        'electron-store': '11.0.2',
-        menubar: '9.5.2',
-      },
-    };
-
-    expect(classify(['package.json'], beforePackage, afterPackage)).toEqual({
-      publish: false,
-      paths: [],
-    });
-  });
-
-  it('publishes for a semantic package.json dependency change', () => {
-    expect(
-      classify(['package.json'], packageJson, {
-        ...packageJson,
-        version: '1.0.1',
-        dependencies: { menubar: '9.6.0' },
-      }),
-    ).toEqual({ publish: true, paths: ['package.json'] });
-  });
-
-  it('publishes mixed changes when one build input changes', () => {
-    expect(
-      classify(['README.md', 'src/main.ts'], packageJson, packageJson),
-    ).toEqual({ publish: true, paths: ['src/main.ts'] });
-  });
-
-  it('counts only release-impacting first-parent commits', () => {
-    const directory = temporaryDirectory('devbar-release-history-');
-    git(directory, 'init');
-    git(directory, 'config', 'user.name', 'DevBar Test');
-    git(directory, 'config', 'user.email', 'devbar@example.test');
-
-    commitFile(
-      directory,
-      'package.json',
-      JSON.stringify(packageJson),
-      'chore: baseline',
-    );
-    git(directory, 'tag', 'v1.0.0');
-
-    commitFile(directory, 'README.md', 'docs', 'docs: update readme');
-    const releaseCommit = commitFile(
-      directory,
+    it.each([
       'src/main.ts',
-      'export const value = 1;\n',
-      'feat: add product behavior',
-    );
-    commitFile(
-      directory,
-      '.github/workflows/ci.yml',
-      'name: CI\n',
-      'chore(actions): pin checkout',
-    );
-    commitFile(
-      directory,
-      'package.json',
-      JSON.stringify({ ...packageJson, version: '1.0.1' }),
-      'chore(release): prepare v1.0.1',
+      'renderer/index.ts',
+      'assets/icon.icns',
+      '.npmrc',
+      'tsconfig.node.json',
+      'tsconfig.renderer.json',
+      'scripts/build.ts',
+      'scripts/platform.ts',
+      'scripts/lib/script-runtime.ts',
+      'scripts/build-macos-release.sh',
+      'scripts/package-electron.ts',
+      'scripts/package-macos-app.sh',
+      'scripts/package-win-linux.ts',
+      // The artifact contract and the SHA256SUMS manifest generator shape
+      // what publication ships: they must count too.
+      'scripts/release-artifacts.ts',
+      'scripts/release-manifest.ts',
+    ])('classifies %s as release-impacting', (path) => {
+      expect(classify([path], packageJson, packageJson)).toEqual({
+        publish: true,
+        paths: [path],
+      });
+    });
+
+    it.each([
+      'README.md',
+      'CHANGELOG.md',
+      'AGENTS.md',
+      'tests/changelog-view.test.ts',
+      '.agents/specs/release.md',
+      '.github/workflows/release.yml',
+      '.github/workflows/dependabot-auto-merge.workflow.yml',
+      'scripts/release-impact-policy.ts',
+      'scripts/verify-macos-release.sh',
+      'tsconfig.tests.json',
+      'pnpm-lock.yaml',
+    ])('skips release-neutral path %s', (path) => {
+      expect(classify([path], packageJson, packageJson)).toEqual({
+        publish: false,
+        paths: [],
+      });
+    });
+
+    it('skips a tooling-only dev dependency bump with its lockfile', () => {
+      const before = { ...packageJson, devDependencies: { vitest: '4.1.11' } };
+      const after = { ...packageJson, devDependencies: { vitest: '5.0.0' } };
+
+      expect(
+        classify(['package.json', 'pnpm-lock.yaml'], before, after),
+      ).toEqual({ publish: false, paths: [] });
+    });
+
+    // The prefix match runs on the raw dependency name, so a bare 'vitest'
+    // entry never covers the scoped packages: '@vitest/coverage-v8' starts
+    // with '@'. Without the '@vitest/' entry these bumps published a
+    // byte-identical app.
+    it.each(['@vitest/coverage-v8', '@vitest/eslint-plugin'])(
+      'skips a scoped %s dev dependency bump with its lockfile',
+      (dependency) => {
+        const before = {
+          ...packageJson,
+          devDependencies: { [dependency]: '1.0.0' },
+        };
+        const after = {
+          ...packageJson,
+          devDependencies: { [dependency]: '1.0.1' },
+        };
+
+        expect(
+          classify(['package.json', 'pnpm-lock.yaml'], before, after),
+        ).toEqual({ publish: false, paths: [] });
+      },
     );
 
-    expect(runPolicy(['pending', 'v1.0.0', 'HEAD'], directory)).toEqual({
-      publish: true,
-      commitCount: 1,
-      commits: [releaseCommit],
+    it('classifies a packaged dev dependency bump as release-impacting', () => {
+      const before = {
+        ...packageJson,
+        devDependencies: { electron: '43.2.0' },
+      };
+      const after = { ...packageJson, devDependencies: { electron: '44.0.0' } };
+
+      expect(
+        classify(['package.json', 'pnpm-lock.yaml'], before, after),
+      ).toEqual({ publish: true, paths: ['package.json', 'pnpm-lock.yaml'] });
+    });
+
+    it('classifies a production dependency bump as release-impacting', () => {
+      const after = { ...packageJson, dependencies: { menubar: '9.6.0' } };
+
+      expect(
+        classify(['package.json', 'pnpm-lock.yaml'], packageJson, after),
+      ).toEqual({
+        publish: true,
+        paths: ['package.json', 'pnpm-lock.yaml'],
+      });
+    });
+
+    it('skips a package.json version-only change', () => {
+      expect(
+        classify(['package.json'], packageJson, {
+          ...packageJson,
+          version: '1.0.1',
+        }),
+      ).toEqual({ publish: false, paths: [] });
+    });
+
+    it('skips a top-level package.json key reorder', () => {
+      const reorderedPackageJson = {
+        dependencies: { menubar: '9.5.2' },
+        version: '1.0.0',
+        name: 'devbar',
+      };
+
+      expect(
+        classify(['package.json'], packageJson, reorderedPackageJson),
+      ).toEqual({ publish: false, paths: [] });
+    });
+
+    it('skips a nested dependency key reorder', () => {
+      const beforePackage = {
+        ...packageJson,
+        dependencies: {
+          menubar: '9.5.2',
+          'electron-store': '11.0.2',
+        },
+      };
+      const afterPackage = {
+        ...packageJson,
+        dependencies: {
+          'electron-store': '11.0.2',
+          menubar: '9.5.2',
+        },
+      };
+
+      expect(classify(['package.json'], beforePackage, afterPackage)).toEqual({
+        publish: false,
+        paths: [],
+      });
+    });
+
+    it('publishes for a semantic package.json dependency change', () => {
+      expect(
+        classify(['package.json'], packageJson, {
+          ...packageJson,
+          version: '1.0.1',
+          dependencies: { menubar: '9.6.0' },
+        }),
+      ).toEqual({ publish: true, paths: ['package.json'] });
+    });
+
+    it('publishes mixed changes when one build input changes', () => {
+      expect(
+        classify(['README.md', 'src/main.ts'], packageJson, packageJson),
+      ).toEqual({ publish: true, paths: ['src/main.ts'] });
+    });
+
+    it('counts only release-impacting first-parent commits', () => {
+      const directory = temporaryDirectory('devbar-release-history-');
+      git(directory, 'init');
+      git(directory, 'config', 'user.name', 'DevBar Test');
+      git(directory, 'config', 'user.email', 'devbar@example.test');
+
+      commitFile(
+        directory,
+        'package.json',
+        JSON.stringify(packageJson),
+        'chore: baseline',
+      );
+      git(directory, 'tag', 'v1.0.0');
+
+      commitFile(directory, 'README.md', 'docs', 'docs: update readme');
+      const releaseCommit = commitFile(
+        directory,
+        'src/main.ts',
+        'export const value = 1;\n',
+        'feat: add product behavior',
+      );
+      commitFile(
+        directory,
+        '.github/workflows/ci.yml',
+        'name: CI\n',
+        'chore(actions): pin checkout',
+      );
+      commitFile(
+        directory,
+        'package.json',
+        JSON.stringify({ ...packageJson, version: '1.0.1' }),
+        'chore(release): prepare v1.0.1',
+      );
+
+      expect(runPolicy(['pending', 'v1.0.0', 'HEAD'], directory)).toEqual({
+        publish: true,
+        commitCount: 1,
+        commits: [releaseCommit],
+      });
     });
   });
 });

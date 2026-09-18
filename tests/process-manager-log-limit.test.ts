@@ -62,91 +62,93 @@ function push(pm: InstanceType<typeof ProcessManager>, count: number): void {
     pm.pushLog(CMD_ID, { ts: i, stream: 'stdout', level: null, line: `l${i}` });
 }
 
-beforeEach(() => {
-  current = group(100);
-  settings = { maxLogLines: 10_000 } as GlobalSettings;
-});
-
-describe('getLogLimit', () => {
-  it('prefers a command override over the global setting', () => {
-    expect(manager().getLogLimit(CMD_ID)).toBe(100);
+describe('src/process-manager.ts — log limit', () => {
+  beforeEach(() => {
+    current = group(100);
+    settings = { maxLogLines: 10_000 } as GlobalSettings;
   });
 
-  it('falls back to the global setting without an override', () => {
-    current = group();
-    expect(manager().getLogLimit(CMD_ID)).toBe(10_000);
+  describe('getLogLimit', () => {
+    it('prefers a command override over the global setting', () => {
+      expect(manager().getLogLimit(CMD_ID)).toBe(100);
+    });
+
+    it('falls back to the global setting without an override', () => {
+      current = group();
+      expect(manager().getLogLimit(CMD_ID)).toBe(10_000);
+    });
+
+    it('reports the global default for an id that resolves to nothing', () => {
+      expect(manager().getLogLimit('cmd:nope:nope')).toBe(2000);
+    });
+
+    it('keeps the limit a running process started with when config changes', () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      expect(pm.getLogLimit(CMD_ID)).toBe(100);
+
+      current = group(10_000); // raised while it runs, without a restart
+      expect(pm.getLogLimit(CMD_ID)).toBe(100);
+    });
   });
 
-  it('reports the global default for an id that resolves to nothing', () => {
-    expect(manager().getLogLimit('cmd:nope:nope')).toBe(2000);
+  describe('a new run starts from an empty buffer', () => {
+    it("drops the previous run's lines, so a viewer holding them is stale", () => {
+      const pm = manager();
+      push(pm, 20);
+      expect(pm.getLogs(CMD_ID)).toHaveLength(20);
+
+      pm.start(CMD_ID);
+
+      // Only the '▶ start' line start() writes itself. Anything the log viewer
+      // still holds from before this belongs to a run that no longer exists,
+      // which is why it reloads on a startedAt change.
+      expect(pm.getLogs(CMD_ID)).toHaveLength(1);
+      expect(pm.getLogs(CMD_ID)[0]?.line).toContain('start:');
+      expect(pm.getState(CMD_ID).startedAt).not.toBeNull();
+    });
   });
 
-  it('keeps the limit a running process started with when config changes', () => {
-    const pm = manager();
-    pm.start(CMD_ID);
-    expect(pm.getLogLimit(CMD_ID)).toBe(100);
+  describe('getLogSeq', () => {
+    it('counts every line the buffer was ever given', () => {
+      const pm = manager();
+      push(pm, 3);
+      expect(pm.getLogSeq(CMD_ID)).toBe(3);
+      expect(pm.getLogs(CMD_ID).map((entry) => entry.seq)).toEqual([1, 2, 3]);
+    });
 
-    current = group(10_000); // raised while it runs, without a restart
-    expect(pm.getLogLimit(CMD_ID)).toBe(100);
-  });
-});
+    it('keeps counting across a restart, so old lines stay below the new', () => {
+      const pm = manager();
+      push(pm, 5);
+      pm.start(CMD_ID); // empties the buffer, not the count
+      expect(pm.getLogSeq(CMD_ID)).toBe(6);
+      expect(pm.getLogs(CMD_ID)[0]?.seq).toBe(6);
+    });
 
-describe('a new run starts from an empty buffer', () => {
-  it("drops the previous run's lines, so a viewer holding them is stale", () => {
-    const pm = manager();
-    push(pm, 20);
-    expect(pm.getLogs(CMD_ID)).toHaveLength(20);
+    it('keeps counting past the retention limit', () => {
+      // The count is the snapshot/stream boundary, not a buffer index: it must
+      // not restart when the buffer starts dropping from the front.
+      const pm = manager();
+      push(pm, 150);
+      expect(pm.getLogs(CMD_ID)).toHaveLength(100);
+      expect(pm.getLogSeq(CMD_ID)).toBe(150);
+      expect(pm.getLogs(CMD_ID).at(-1)?.seq).toBe(150);
+    });
 
-    pm.start(CMD_ID);
-
-    // Only the '▶ start' line start() writes itself. Anything the log viewer
-    // still holds from before this belongs to a run that no longer exists,
-    // which is why it reloads on a startedAt change.
-    expect(pm.getLogs(CMD_ID)).toHaveLength(1);
-    expect(pm.getLogs(CMD_ID)[0]?.line).toContain('start:');
-    expect(pm.getState(CMD_ID).startedAt).not.toBeNull();
-  });
-});
-
-describe('getLogSeq', () => {
-  it('counts every line the buffer was ever given', () => {
-    const pm = manager();
-    push(pm, 3);
-    expect(pm.getLogSeq(CMD_ID)).toBe(3);
-    expect(pm.getLogs(CMD_ID).map((entry) => entry.seq)).toEqual([1, 2, 3]);
+    it('is zero for a buffer that has never been written', () => {
+      expect(manager().getLogSeq(CMD_ID)).toBe(0);
+    });
   });
 
-  it('keeps counting across a restart, so old lines stay below the new', () => {
-    const pm = manager();
-    push(pm, 5);
-    pm.start(CMD_ID); // empties the buffer, not the count
-    expect(pm.getLogSeq(CMD_ID)).toBe(6);
-    expect(pm.getLogs(CMD_ID)[0]?.seq).toBe(6);
-  });
-
-  it('keeps counting past the retention limit', () => {
-    // The count is the snapshot/stream boundary, not a buffer index: it must
-    // not restart when the buffer starts dropping from the front.
-    const pm = manager();
-    push(pm, 150);
-    expect(pm.getLogs(CMD_ID)).toHaveLength(100);
-    expect(pm.getLogSeq(CMD_ID)).toBe(150);
-    expect(pm.getLogs(CMD_ID).at(-1)?.seq).toBe(150);
-  });
-
-  it('is zero for a buffer that has never been written', () => {
-    expect(manager().getLogSeq(CMD_ID)).toBe(0);
-  });
-});
-
-describe('the buffer honours the same number', () => {
-  it('trims a running process to its frozen limit, not the new config', () => {
-    const pm = manager();
-    pm.start(CMD_ID);
-    current = group(10_000);
-    push(pm, 500);
-    // 100 is what the viewer is told; anything more would be lines it could
-    // show and copy while the buffer behind them is already gone.
-    expect(pm.getLogs(CMD_ID)).toHaveLength(pm.getLogLimit(CMD_ID));
+  describe('the buffer honours the same number', () => {
+    it('trims a running process to its frozen limit, not the new config', () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      current = group(10_000);
+      push(pm, 500);
+      // 100 is what the viewer is told; anything more would be lines it could
+      // show and copy while the buffer behind them is already gone.
+      expect(pm.getLogs(CMD_ID)).toHaveLength(pm.getLogLimit(CMD_ID));
+    });
   });
 });
