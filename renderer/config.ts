@@ -2,6 +2,7 @@ import { attachDragHandlers } from './dnd-helper.js';
 import { openChangelog } from './changelog.js';
 import { wireModal } from './modal.js';
 import { byId } from './dom.js';
+import { latestWins } from './latest-wins.js';
 import { initPipelineEditor } from './pipeline-editor.js';
 import type {
   Action,
@@ -325,12 +326,24 @@ function updateSaveBar(): void {
  * is already shown; callers must abort any follow-up like switching or closing).
  * Throws only on an unexpected IPC error, which callers surface as a toast.
  */
+/**
+ * Ticket for the in-flight group save. The save bar only disables itself when
+ * the pane is CLEAN, never while a save is in flight, so a second edit and
+ * save overlaps the first — and the older response landing last would put its
+ * canonical group back into `allGroups`, showing the previous name in the nav
+ * while disk already holds the newer one.
+ */
+const groupSaves = latestWins();
+
 async function saveDraft(): Promise<SavedGroup | null> {
   if (!draftGroup) return null;
   if (!draftGroup.path) {
     showToast('El path no puede estar vacío', 'error');
     return null;
   }
+  // Issuing this save retires every older one still in flight.
+  groupSaves.invalidate();
+  const current = groupSaves.claim();
   const savedGroup = await window.api.saveGroup(draftGroup);
   if (!savedGroup) {
     // Validation failed (the toast is already shown). storedGroup must stay
@@ -339,6 +352,10 @@ async function saveDraft(): Promise<SavedGroup | null> {
     // retry/discard options for the user's real edits.
     return null;
   }
+  // A newer save already owns the state. This one still SUCCEEDED, so it is
+  // reported as such — callers use `null` to mean "rejected, abort the
+  // follow-up", and a window close must not be blocked by a save that worked.
+  if (!current()) return savedGroup;
   const { _autoStartEnforced, ...canonical } = savedGroup;
   const idx = allGroups.findIndex((group) => group.id === canonical.id);
   if (idx >= 0) allGroups[idx] = canonical;
@@ -540,8 +557,23 @@ function buildEnvEditor(
 
 // ────────────────────── Groups list (left pane) ────────────────────────
 
+/**
+ * Ticket for the in-flight groups read. Every entry point into this window
+ * re-reads the whole list — boot, `onUpdate`, and a dozen save/delete
+ * handlers — and none of them waits for the one before it. Two reads in
+ * flight at once means the LAST one to answer wins, which is not necessarily
+ * the newest: a slow early read landing last puts groups back in the nav that
+ * main has already dropped.
+ */
+const groupListReads = latestWins();
+
 async function loadGroups(): Promise<void> {
-  allGroups = await window.api.listGroups();
+  // Issuing this read retires every older one still in flight.
+  groupListReads.invalidate();
+  const current = groupListReads.claim();
+  const groups = await window.api.listGroups();
+  if (!current()) return; // a newer read already answered
+  allGroups = groups;
   renderGroupsList();
 }
 
@@ -2343,12 +2375,22 @@ if (checkUpdatesBtn) {
 }
 
 if (window.api && window.api.getUpdateStatus) {
+  const pushedUpdateStatus = latestWins();
+  const initialUpdateStatus = pushedUpdateStatus.claim();
   window.api
     .getUpdateStatus()
-    .then(renderUpdateStatus)
+    .then((status) => {
+      // The automatic check can broadcast while this read is still pending;
+      // applying the older status on top would announce "al día" over an
+      // update main is already holding.
+      if (initialUpdateStatus()) renderUpdateStatus(status);
+    })
     .catch(() => {});
   // Live refresh from the automatic 5-minute checks.
-  window.api.onUpdateStatus(renderUpdateStatus);
+  window.api.onUpdateStatus((status) => {
+    pushedUpdateStatus.invalidate();
+    renderUpdateStatus(status);
+  });
 }
 
 // ────────────────────── Init ───────────────────────────────────────────

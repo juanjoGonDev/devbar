@@ -16,6 +16,7 @@ import type {
 } from '../src/ipc-contract.js';
 import type { Command, Action } from '../src/domain-types.js';
 import { byId } from './dom.js';
+import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
 initTheme();
@@ -893,7 +894,11 @@ byId('quit-app', HTMLButtonElement).addEventListener('click', () => {
 });
 
 let lastPathSignature = '';
+const pushedGroupStates = latestWins();
 window.api.onUpdate((groupStates) => {
+  // This pushed snapshot is now the truth: the initial read below may still
+  // be in flight, and it carries an older one.
+  pushedGroupStates.invalidate();
   // A group's path moving (added, retargeted, cleared) invalidates every
   // branch verdict — including "this project has no git" — so the selector
   // reappears as soon as the project becomes a repository.
@@ -924,8 +929,11 @@ window.api.onToast(({ kind, message }) => {
 });
 
 // Initial load
+const initialGroupStates = pushedGroupStates.claim();
 window.api.getGroupStates().then((groupStates) => {
-  render(groupStates);
+  // A pushed update can land while this read is still pending; applying the
+  // older snapshot on top would leave the list stale until the next push.
+  if (initialGroupStates()) render(groupStates);
 });
 window.api.getPipelineState().then((state) => {
   // A pushed update can land while this read is still pending; applying the
@@ -964,11 +972,21 @@ function markVersionUpdate(status: UpdateStatus): void {
 }
 
 if (window.api.getUpdateStatus) {
+  const pushedUpdateStatus = latestWins();
+  const initialUpdateStatus = pushedUpdateStatus.claim();
   window.api
     .getUpdateStatus()
-    .then(markVersionUpdate)
+    .then((status) => {
+      // Same race as the group states: a pushed status that landed first
+      // would be undone here, dropping the dot from the version chip until
+      // the next check hours later.
+      if (initialUpdateStatus()) markVersionUpdate(status);
+    })
     .catch(() => {});
-  window.api.onUpdateStatus(markVersionUpdate);
+  window.api.onUpdateStatus((status) => {
+    pushedUpdateStatus.invalidate();
+    markVersionUpdate(status);
+  });
 }
 
 installTooltips();

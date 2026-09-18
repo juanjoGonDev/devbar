@@ -29,16 +29,16 @@ export default defineConfig({
       // product code and would dilute the numbers either way.
       exclude: ['tests/**', 'build/**', 'dist/**', '**/*.d.ts', '*.config.ts'],
       // A ratchet, not a target: these sit just under the numbers the suite
-      // actually produces today (21.8 / 26.34 / 22.77 / 21.39), so coverage
-      // can only be raised from here, never quietly dropped. The absolute
-      // values are low because the never-imported entry points (src/main.ts,
-      // renderer/logs.ts, renderer/config.ts, renderer/tray.ts) are ~10k
-      // uncovered lines of the total and stay in scope on purpose.
+      // actually produces today (35.4 / 31.58 / 30.46 / 36.15), so coverage
+      // can only be raised from here, never quietly dropped. The window entry
+      // points (renderer/tray.ts, renderer/logs.ts, renderer/config.ts) are
+      // now loaded under jsdom by `tests/*-window.test.ts`; src/main.ts is
+      // still never imported and stays in scope on purpose.
       thresholds: {
-        statements: 21,
-        branches: 26,
-        functions: 22,
-        lines: 21,
+        statements: 35,
+        branches: 31,
+        functions: 30,
+        lines: 36,
       },
     },
   },

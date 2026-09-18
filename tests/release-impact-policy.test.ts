@@ -151,6 +151,17 @@ describe('scripts/release-impact-policy.ts', () => {
       ).toEqual({ publish: false, paths: [] });
     });
 
+    // The DOM the renderer tests run in. It never reaches the packaged app,
+    // so bumping it must not publish a byte-identical build.
+    it('skips a jsdom bump with its lockfile', () => {
+      const before = { ...packageJson, devDependencies: { jsdom: '27.0.0' } };
+      const after = { ...packageJson, devDependencies: { jsdom: '27.1.0' } };
+
+      expect(
+        classify(['package.json', 'pnpm-lock.yaml'], before, after),
+      ).toEqual({ publish: false, paths: [] });
+    });
+
     // The prefix match runs on the raw dependency name, so a bare 'vitest'
     // entry never covers the scoped packages: '@vitest/coverage-v8' starts
     // with '@'. Without the '@vitest/' entry these bumps published a

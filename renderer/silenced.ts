@@ -1,5 +1,6 @@
 import { renderPatternList, wireAddPattern } from './silence-ui.js';
 import { byId } from './dom.js';
+import { latestWins } from './latest-wins.js';
 import type { SilencedPatterns } from '../src/domain-types.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
@@ -33,12 +34,25 @@ function render(): void {
       window.api.removeSilencePattern(groupId, commandId, 'error', pattern),
   });
 }
+/**
+ * Ticket for the in-flight command read. Every `groups:update` re-enters
+ * `load()` without waiting for the one already running — and adding or
+ * removing a pattern in this very window is what emits that update, so the
+ * two overlap on the user's own click. The older answer landing last puts the
+ * pattern back on screen after it was removed.
+ */
+const commandReads = latestWins();
+
 async function load(): Promise<void> {
   if (!groupId || !commandId) {
     title.textContent = 'Parámetros inválidos';
     return;
   }
+  // Issuing this read retires every older one still in flight.
+  commandReads.invalidate();
+  const current = commandReads.claim();
   const result = await window.api.getSilencedForCommand(groupId, commandId);
+  if (!current()) return; // a newer read already answered
   if (!result.ok || !result.command) {
     title.textContent = 'Comando no encontrado';
     return;

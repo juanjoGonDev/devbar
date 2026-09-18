@@ -51,6 +51,9 @@ const NON_SHIPPING_DEV_DEPENDENCIES = [
   'dependency-cruiser',
   'eslint',
   'jiti',
+  // The DOM the renderer tests run in. Node is the default environment; only
+  // the jsdom-tagged test files ask for it, and none of it is packaged.
+  'jsdom',
   'knip',
   'lefthook',
   'prettier',
