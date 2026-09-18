@@ -313,11 +313,20 @@ describe('src/main/electron-host.ts', () => {
       expect(electron.calls).toEqual([]);
     });
 
-    it('registers the login item in a packaged build', () => {
+    it('registers a packaged build through the layer its platform uses', () => {
+      // The three-way branch itself is covered platform-independently in
+      // main-os-integration.test.ts against a fake host. What this asserts is
+      // the wiring: macOS and Windows go through Electron's login item, and
+      // Linux deliberately does NOT — it writes an XDG autostart entry, so
+      // seeing a login-item call here would mean the branch was wired wrong.
       electron.isPackaged = true;
       electron.calls.length = 0;
       host().applyAutostart(true);
-      expect(electron.calls[0]).toMatch(/^login:/);
+      const loginCalls = electron.calls.filter((call) =>
+        call.startsWith('login:'),
+      );
+      if (process.platform === 'linux') expect(loginCalls).toEqual([]);
+      else expect(loginCalls[0]).toMatch(/^login:/);
       electron.isPackaged = false;
     });
 
