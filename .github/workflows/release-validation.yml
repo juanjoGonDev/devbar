@@ -3,7 +3,8 @@ name: Release validation
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    # No base filter: a pull request stacked on another branch must be
+    # validated too — without this it merges with no CI having run.
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - '.github/workflows/auto-release.workflow.yml'

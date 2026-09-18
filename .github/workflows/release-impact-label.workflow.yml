@@ -12,7 +12,8 @@ name: 🏷️ Release impact label
 
 on:
   pull_request_target:
-    branches: [main]
+    # No base filter: a pull request stacked on another branch must be
+    # validated too — without this it merges with no CI having run.
     types: [opened, reopened, synchronize]
 
 permissions: read-all
