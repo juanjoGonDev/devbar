@@ -3,60 +3,7 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
-## [Unreleased]
-
-### Corregido
-
-- **Los argumentos estructurados conservan los signos de porcentaje en
-  Windows**, sin que `cmd.exe` expanda por accidente valores como `%TEMP%`.
-  La migración de la configuración heredada en Linux tampoco puede sobrescribir
-  un archivo nuevo creado al mismo tiempo por otra instancia.
-- **Los comandos que DevBar ejecuta ya no se quedan huérfanos cuando la app
-  se cierra.** Antes, al salir (o en la swap de la actualización
-  automática) solo se detenía el primer servicio y el resto seguía vivo
-  ocupando su puerto —el siguiente arranque fallaba con «dirección ya en
-  uso»—. Ahora TODAS las salidas (menú «Salir», `app:quit`, swap de
-  actualización) esperan a que termine de pararse cada servicio (escalando
-  a fuerza si hace falta) antes de morir, y Ctrl+C en el terminal de
-  `pnpm start` o `kill <pid>` limpian igual. En Windows, además, los
-  servicios heredan la consola del terminal (antes no la recibían y un
-  Ctrl+C los dejaba vivos), y `install-local` mata el árbol completo de la
-  instancia en los tres sistemas (antes dejaba los servicios corriendo).
-  Las únicas vías que aún pueden dejar un huérfano son un kill duro
-  (SIGKILL / `taskkill` sin /T), que no permite ejecutar ninguna limpieza,
-  y un servicio que se desprende de su propio grupo de procesos
-  (por ejemplo con `setsid`, doble fork o re-padronaje): el cierre
-  trabaja por grupos, así que un descendiente que se salga del grupo
-  escapa tanto al kill como al cierre de DevBar.
-- **En Windows y Linux, el panel de la bandeja ya no aparece en la barra de
-  tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
-  Configuración y/o Logs cuando esas ventanas están abiertas; el panel es
-  siempre sin marco y no genera botón.
-- **En 32-bit ARM (p. ej. Raspberry Pi), la actualización ya encontraba su
-  instalador.** Node informa la arquitectura como `arm`, pero los artefactos
-  se llaman `linux-armv7.*`: el chequeo no proponía ninguna actualización
-  en sitio.
-- **La insignia de la bandeja ya no puede mostrar «99+» con exactamente 99
-  errores** (colisión de caché entre las etiquetas «99» y «99+»).
-- **En macOS, la actualización se aborta si no se puede descargar
-  SHA256SUMS.txt**, igual que en Windows y Linux (antes seguía instalando
-  sin verificación).
-- **En la ventana de Configuración, elegir tema ya no puede sobrescribir
-  autostart/notificaciones** si se hace antes de que terminen de cargar los
-  ajustes, y ahora solo guarda el campo del tema.
-- **El historial de releases de GitHub mostraba como máximo 5 releases**
-  aunque se pidiera más.
-
-### Cambiado
-
-- **En Windows y Linux, la insignia de errores del icono de la bandeja es
-  más grande y más gruesa** para que se lea de un vistazo (burbuja redonda
-  con el número en blanco sobre el icono). El número también aparece en el
-  tooltip del icono («DevBar — 14 errores»); que el número se dibuje _junto_
-  al icono, como en macOS, no es posible en estos sistemas porque el área de
-  la bandeja es un cuadrado fijo fijado por el sistema operativo.
-
-## [0.9.0] - 2026-09-15
+## [0.9.1] - 2026-09-18
 
 ### Añadido
 
@@ -89,7 +36,7 @@ Todas las novedades relevantes de DevBar. El formato sigue
   se verifica contra SHA-256 antes de instalarse. En Windows portable y
   Linux AppImage, si la copia falla a medias la versión anterior se
   restaura y se relanza.
-- **Arranque con el sistema en los tres SO.** «Arrancar con DevBar al iniciar»
+- **Arranque con el sistema en los tres SO.** «Iniciar al arrancar el sistema»
   funciona en Windows (clave Run de usuario) y en Linux (entrada XDG
   `~/.config/autostart/devbar.desktop`), además del login item de macOS. En
   Windows y Linux la app distingue un arranque de inicio de uno manual, de
@@ -119,6 +66,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   detiene la copia instalada y la de desarrollo, instala y relanza; el ciclo
   completo se prueba en CI tanto con una instancia corriendo como simulando
   una actualización automática.
+- **En Windows y Linux, la insignia de errores del icono de la bandeja es
+  más grande y más gruesa** para que se lea de un vistazo (burbuja redonda
+  con el número en blanco sobre el icono). El número también aparece en el
+  tooltip del icono («DevBar — 14 errores»); que el número se dibuje _junto_
+  al icono, como en macOS, no es posible en estos sistemas porque el área de
+  la bandeja es un cuadrado de tamaño fijo impuesto por el sistema
+  operativo.
 
 ### Corregido
 
@@ -143,6 +97,45 @@ Todas las novedades relevantes de DevBar. El formato sigue
   aviso. La comparación se hacía contra una forma normalizada que el borrador
   nunca tiene, así que nunca coincidía; ahora se compara contra el estado real
   del borrador.
+- **Los argumentos estructurados conservan los signos de porcentaje en
+  Windows**, sin que `cmd.exe` expanda por accidente valores como `%TEMP%`.
+  La migración de la configuración heredada en Linux tampoco puede sobrescribir
+  un archivo nuevo creado al mismo tiempo por otra instancia.
+- **Los comandos que DevBar ejecuta ya no se quedan huérfanos cuando la app
+  se cierra.** Antes, al salir (o en la swap de la actualización
+  automática) solo se detenía el primer servicio y el resto seguía vivo
+  ocupando su puerto —el siguiente arranque fallaba con «dirección ya en
+  uso»—. Ahora TODAS las salidas (menú «Salir», `app:quit`, swap de
+  actualización) esperan a que termine de pararse cada servicio (escalando
+  a fuerza si hace falta) antes de morir, y Ctrl+C en el terminal de
+  `pnpm start` o `kill <pid>` limpian igual. En Windows, además, los
+  servicios heredan la consola del terminal (antes no la recibían y un
+  Ctrl+C los dejaba vivos), y `install-local` mata el árbol completo de la
+  instancia en los tres sistemas (antes dejaba los servicios corriendo).
+  Las únicas vías que aún pueden dejar un huérfano son un kill duro
+  (SIGKILL / `taskkill` sin /T), que no permite ejecutar ninguna limpieza,
+  y un servicio que se desprende de su propio grupo de procesos
+  (por ejemplo con `setsid`, doble fork o reasignación de proceso
+  padre): el cierre trabaja por grupos, así que un descendiente que se
+  salga del grupo escapa tanto al kill como al cierre de DevBar.
+- **En Windows y Linux, el panel de la bandeja ya no aparece en la barra de
+  tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
+  Configuración y/o Logs cuando esas ventanas están abiertas; el panel es
+  siempre sin marco y no genera botón.
+- **En 32-bit ARM (p. ej. Raspberry Pi), la actualización ya encuentra su
+  instalador.** Node informa la arquitectura como `arm`, pero los artefactos
+  se llaman `linux-armv7.*`: el chequeo no proponía ninguna actualización
+  en sitio.
+- **La insignia de la bandeja ya no puede mostrar «99+» con exactamente 99
+  errores** (colisión de caché entre las etiquetas «99» y «99+»).
+- **En macOS, la actualización se aborta si no se puede descargar
+  SHA256SUMS.txt**, igual que en Windows y Linux (antes seguía instalando
+  sin verificación).
+- **En la ventana de Configuración, elegir tema ya no puede sobrescribir
+  autostart/notificaciones** si se hace antes de que terminen de cargar los
+  ajustes, y ahora solo guarda el campo del tema.
+- **El historial de releases de GitHub mostraba como máximo 5 releases**
+  aunque se pidiera más.
 
 ## [0.8.0] - 2026-09-10
 

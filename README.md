@@ -38,6 +38,8 @@ first launch may need an explicit approval in **System Settings → Privacy
   (recommended; the in-app updater swaps it in place).
 - `DevBar-<version>-linux-<arch>.deb` — `sudo dpkg -i …`.
 
+**All platforms**:
+
 - `SHA256SUMS.txt` — integrity hashes for every artifact.
 
 ## Features
@@ -89,10 +91,11 @@ Click the icon to open the popover. Click **Configuración** to add and edit gro
 The commands are OS-agnostic: a thin router (`scripts/platform.ts`)
 detects the host and dispatches to the matching implementation — the
 original macOS bash pipeline, or electron-builder on Windows and Linux.
-The app is pure JS (only the Electron runtime is platform-specific), so
-Windows artifacts can be built from any host; **Linux artifacts require
-a Linux host or Docker** (electron-builder's contract for AppImage/deb
-targets), which is why CI builds them on `ubuntu-latest`.
+The app ships no native modules (only the Electron runtime is
+platform-specific), so Windows artifacts can be built from any host;
+**Linux artifacts require a Linux host or Docker** (electron-builder's
+contract for AppImage/deb targets), which is why CI builds them on
+`ubuntu-latest`.
 
 | What                         | Command (on that OS)           | Output                                                                                             |
 | ---------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------- |
@@ -113,9 +116,9 @@ verifier in one step. On macOS it is exactly `release:mac`; on Windows and
 Linux it is `dist` + `release:verify`, so a release is one command on every
 OS instead of a macOS-specific name.
 
-The release workflow builds all three platforms in parallel, launches each
-packaged binary as a smoke test (NSIS install + portable on Windows, AppImage +
-deb under `xvfb` on Linux, packaged app on macOS), assembles the full
+The release workflow builds all three platforms in parallel, launches the
+packaged Windows and Linux binaries as a smoke test (NSIS install + portable
+on Windows, AppImage + deb under `xvfb` on Linux), assembles the full
 `SHA256SUMS.txt`, and publishes all 14 artifacts.
 
 ## Install / reinstall

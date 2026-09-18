@@ -22,8 +22,10 @@ Raspberry Pi, Windows and Linux. The previous base was macOS only.
   `src/self-update-macos.ts` (bundle swap), `src/self-update-linux.ts`
   (AppImage in-place swap with wait/rollback, `deb` → assisted reinstall) and
   `src/self-update-windows.ts` (installed → silent NSIS re-run; portable single
-  exe → in-place file swap via a generated `.bat`). Every non-macOS download
-  is SHA-256 verified against `SHA256SUMS.txt` before install.
+  exe → in-place file swap via a generated `.bat`). Every download is SHA-256
+  verified against `SHA256SUMS.txt` before install on all three platforms;
+  macOS additionally verifies the bundle's ad-hoc code signature on unpack
+  (`src/self-update-macos.ts`).
 - **Packaging**: macOS keeps the `@electron/packager` + DMG/ZIP pipeline
   (ad-hoc signing and notification identity care). Windows and Linux use
   electron-builder (programmatic API in `scripts/package-win-linux.ts`):
@@ -64,7 +66,7 @@ Raspberry Pi, Windows and Linux. The previous base was macOS only.
 ## Acceptance criteria
 
 - `pnpm typecheck`, `pnpm lint:strict`, `pnpm format:check`, `pnpm deadcode`,
-  `pnpm deps:check` and `pnpm test` pass (739 tests).
+  `pnpm deps:check` and `pnpm test` pass.
 - Each OS job in CI builds, verifies contents (PE `MZ` header, AppImage magic,
   `dpkg -c` desktop entry + icon, mac `hdiutil`/`lipo` checks) and launches
   the packaged binary, asserting `DEVBAR_SMOKE_OK`.
