@@ -17,7 +17,9 @@ const WINDOWS: ReadonlyArray<[script: string, html: string]> = [
   ['config.ts', 'config.html'],
   ['pipeline-editor.ts', 'config.html'],
   ['tray.ts', 'tray.html'],
-  ['logs.ts', 'logs.html'],
+  // The logs window resolves every element it binds in one module, so that is
+  // where its contract with `logs.html` is written down.
+  ['logs/elements.ts', 'logs.html'],
   ['notification.ts', 'notification.html'],
   ['prescript-confirm.ts', 'prescript-confirm.html'],
   ['silenced.ts', 'silenced.html'],

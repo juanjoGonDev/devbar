@@ -8,8 +8,11 @@
  * trees", otherwise the services outlive the reinstall and the next start
  * fails with "address already in use".
  *
- * Kept out of install-local.ts so the exact argument shapes are
- * unit-testable without running an install.
+ * Kept in its own module so the exact argument shapes are unit-testable
+ * without running an install. install-local.ts imports the same helpers
+ * (it used to carry a verbatim copy, and the same defect then had to be
+ * fixed twice); the `.ts` specifier is deliberate — see
+ * ./script-runtime.ts.
  *
  * Known limitation: killing is done per process GROUP (pgid). A
  * descendant that detaches itself from the group — `setsid`, double
@@ -58,8 +61,6 @@ export function windowsKillImageTreeArgs(image: string): string[] {
  * documented wildcard escape (what `[WildcardPattern]::Escape()`
  * produces). Backslashes stay literal: PowerShell single-quoted strings
  * have no backslash escape and `-like` has no backslash metacharacter.
- * (Keep in sync with the inline copy in install-local.ts — strip-only
- * mode cannot import it from here.)
  */
 export function psLikeEscape(value: string): string {
   let out = '';
@@ -121,7 +122,7 @@ const defaultWait = (ms: number): void => {
 
 /** True while the process group (pgid == the leader pid) still has a
  *  member: `kill -0` on the group id (ESRCH => gone). */
-const defaultGroupAlive = (leaderPid: string): boolean => {
+export const isServiceGroupAlive = (leaderPid: string): boolean => {
   const res = spawnSync('kill', ['-0', '--', `-${leaderPid}`], {
     stdio: 'ignore',
   });
@@ -139,7 +140,7 @@ const defaultGroupAlive = (leaderPid: string): boolean => {
  * Linux: /proc/<pid>/stat field 22 (starttime, jiffies since boot —
  * cannot be forged without the kernel). Other POSIX: `ps lstart`.
  */
-const defaultProcessIdentity = (pid: string): string | null => {
+export const readProcessIdentity = (pid: string): string | null => {
   try {
     // Field 2 is the command name in parentheses and may itself contain
     // spaces/parens — anchor on the LAST ')' to split the fields.
@@ -188,8 +189,21 @@ function revalidateGroup(
 }
 
 /**
- * POSIX: kill each matching instance's service trees BEFORE the instance
- * itself (the caller still pkill -f's the instances).
+ * A service group discovered by the SIGTERM wave: the leader pid plus the
+ * STABLE identity captured at that moment. The identity travels with the
+ * group because the SIGKILL escalation is DELAYED: pids are recycled, and
+ * a leader that exits in between could hand its pid — and even its pgid —
+ * to an unrelated process the escalation must never kill.
+ */
+export interface ServiceGroup {
+  readonly pid: string;
+  readonly identity: string | null;
+}
+
+/**
+ * POSIX, wave 1: find each matching instance's service trees and SIGTERM
+ * them, BEFORE the instances themselves (the caller still pkill -f's
+ * those).
  *
  * A service spawns `detached`, so it is the leader of its own process
  * group (pgid == its own pid) and a bare `pkill` of the app never reaches
@@ -197,46 +211,25 @@ function revalidateGroup(
  * and group leader — and `kill -TERM -- -<pid>` signals the group: the
  * shell plus everything the user command spawned.
  *
- * Escalation: SIGTERM is a request, and a service whose command line
- * matches none of the app's kill patterns is invisible to the instance
- * pkill waves — if it ignores TERM it would keep its port while the
- * install proceeds. So every discovered group id is retained, and after
- * the grace window the groups get SIGKILL. KILLing an already-dead group
- * is a harmless no-op, which keeps this best effort: "nothing to stop"
- * is an expected outcome, and a pattern matching nothing must not fail
- * the install.
- *
- * Returns the group leader pids that SURVIVE the SIGKILL escalation:
- * SIGKILL cannot be caught, so a survivor (stuck in uninterruptible I/O)
- * is not something the installer can clear — the caller must fail rather
- * than installing under a live service.
+ * Best effort: "nothing to stop" is an expected outcome, and a pattern
+ * matching nothing must not fail the install.
  *
  * Non-service children (Electron helpers) are NOT group leaders, so the
- * group form fails and the plain-pid form kills just that helper — which
- * the instance's own pkill takes down anyway.
+ * group form fails and the plain-pid form signals just that helper —
+ * which the instance's own pkill takes down anyway.
  */
-export function posixKillServiceTrees(
-  patterns: string[],
+export function posixTermServiceTrees(
+  patterns: readonly string[],
   {
     run = defaultRun,
-    wait = defaultWait,
-    graceMs = POSIX_SERVICE_GRACE_MS,
-    groupAlive = defaultGroupAlive,
-    processIdentity = defaultProcessIdentity,
+    processIdentity = readProcessIdentity,
   }: {
     run?: KillTreeRun;
-    wait?: (ms: number) => void;
-    graceMs?: number;
-    /** Liveness probe for a service group (pgid == the leader pid). */
-    groupAlive?: (leaderPid: string) => boolean;
     /** Stable-identity probe for a pid (null when gone/unknown). */
     processIdentity?: (pid: string) => string | null;
   } = {},
-): string[] {
-  const groups: string[] = [];
-  // Identity captured at DISCOVERY: the delayed SIGKILL must revalidate
-  // against it (pid reuse during the grace window).
-  const identities = new Map<string, string | null>();
+): ServiceGroup[] {
+  const groups: ServiceGroup[] = [];
   for (const pattern of patterns) {
     const pidOut = run('pgrep', ['-f', pattern]);
     if (pidOut == null) continue;
@@ -253,31 +246,65 @@ export function posixKillServiceTrees(
         // Capture the leader's identity BEFORE any signal: if the process
         // exits in the gap between the two TERM signals, a post-signal
         // capture could record a REPLACEMENT that already took the pid.
-        identities.set(child, processIdentity(child));
+        const identity = processIdentity(child);
         // Group first (leader == child pid: shell + user command), then the
         // bare pid in case the group is already gone.
         run('kill', ['-s', 'TERM', '--', `-${child}`]);
         run('kill', ['-s', 'TERM', child]);
-        groups.push(child);
+        groups.push({ pid: child, identity });
       }
     }
   }
+  return groups;
+}
+
+/**
+ * POSIX, wave 3: SIGKILL the groups wave 1 discovered, and report the ones
+ * that survive it.
+ *
+ * SIGTERM is a request, and a service whose command line matches none of
+ * the app's kill patterns is invisible to the instance pkill waves — if it
+ * ignores TERM it would keep its port while the install proceeds. So every
+ * discovered group gets SIGKILL here. KILLing an already-dead group is a
+ * harmless no-op, which keeps this best effort.
+ *
+ * SIGKILL cannot be caught, so a survivor (stuck in uninterruptible I/O)
+ * is not something the installer can clear — the caller must fail rather
+ * than installing under a live service.
+ *
+ * Split from `posixTermServiceTrees` because the callers put DIFFERENT
+ * work in the grace window: the CLI form just waits (see
+ * `posixKillServiceTrees` below), while install-local.ts spends it polling
+ * the app's own liveness patterns.
+ */
+export function posixKillServiceGroups(
+  groups: readonly ServiceGroup[],
+  {
+    run = defaultRun,
+    wait = defaultWait,
+    groupAlive = isServiceGroupAlive,
+    processIdentity = readProcessIdentity,
+  }: {
+    run?: KillTreeRun;
+    wait?: (ms: number) => void;
+    /** Liveness probe for a service group (pgid == the leader pid). */
+    groupAlive?: (leaderPid: string) => boolean;
+    /** Stable-identity probe for a pid (null when gone/unknown). */
+    processIdentity?: (pid: string) => string | null;
+  } = {},
+): ServiceGroup[] {
   if (groups.length === 0) return [];
-  wait(graceMs);
-  for (const child of groups) {
+  for (const group of groups) {
     // Revalidate the identity captured at discovery. A leader that exited
     // is NOT a dead group: a member that ignored TERM keeps the port (and
     // keeps the pgid reserved), so the group signal still goes out — only
     // a REUSED pid suppresses it.
-    const verdict = revalidateGroup(
-      identities.get(child) ?? null,
-      processIdentity(child),
-    );
+    const verdict = revalidateGroup(group.identity, processIdentity(group.pid));
     if (verdict === 'reused') continue;
     // Same group-then-pid order; a group that honored TERM is gone by now
     // and the signal is a no-op for it.
-    run('kill', ['-s', 'KILL', '--', `-${child}`]);
-    if (verdict === 'leader') run('kill', ['-s', 'KILL', child]);
+    run('kill', ['-s', 'KILL', '--', `-${group.pid}`]);
+    if (verdict === 'leader') run('kill', ['-s', 'KILL', group.pid]);
   }
   // SIGKILL is async: the kernel reaps the group a few ms after the
   // signal, and an immediate probe can see a group that is already in
@@ -289,30 +316,66 @@ export function posixKillServiceTrees(
   // and a group still being reaped would be reported as a survivor — which
   // aborts a perfectly healthy install.
   const settled = new Map<string, boolean>();
-  for (const child of groups) {
-    const captured = identities.get(child) ?? null;
-    if (revalidateGroup(captured, processIdentity(child)) === 'reused')
+  for (const group of groups) {
+    if (
+      revalidateGroup(group.identity, processIdentity(group.pid)) === 'reused'
+    )
       continue;
-    settled.set(child, groupAlive(child));
+    settled.set(group.pid, groupAlive(group.pid));
   }
   let pollsLeft = POSIX_POST_KILL_POLLS;
   while (pollsLeft > 0 && [...settled.values()].some((alive) => alive)) {
     wait(POSIX_POST_KILL_POLL_MS);
     pollsLeft -= 1;
-    for (const [child, alive] of settled)
-      if (alive) settled.set(child, groupAlive(child));
+    for (const [pid, alive] of settled)
+      if (alive) settled.set(pid, groupAlive(pid));
   }
   // A survivor is a group that still has members after the post-kill
   // budget — whether or not its leader is one of them. Only a REUSED pid
   // is filtered out: there the original exited AND its group emptied, so
   // the live group at that pgid is an unrelated process, not a surviving
   // service (reporting it would fail a healthy install).
-  return groups.filter((child) => {
-    const captured = identities.get(child) ?? null;
-    if (revalidateGroup(captured, processIdentity(child)) === 'reused')
+  return groups.filter((group) => {
+    if (
+      revalidateGroup(group.identity, processIdentity(group.pid)) === 'reused'
+    )
       return false;
-    return settled.get(child) ?? groupAlive(child);
+    return settled.get(group.pid) ?? groupAlive(group.pid);
   });
+}
+
+/**
+ * The whole POSIX cycle for a caller with nothing to do in the grace
+ * window: SIGTERM every discovered service group, wait it out, then
+ * escalate. Returns the leader pids that survive the SIGKILL.
+ */
+export function posixKillServiceTrees(
+  patterns: readonly string[],
+  {
+    run = defaultRun,
+    wait = defaultWait,
+    graceMs = POSIX_SERVICE_GRACE_MS,
+    groupAlive = isServiceGroupAlive,
+    processIdentity = readProcessIdentity,
+  }: {
+    run?: KillTreeRun;
+    wait?: (ms: number) => void;
+    graceMs?: number;
+    /** Liveness probe for a service group (pgid == the leader pid). */
+    groupAlive?: (leaderPid: string) => boolean;
+    /** Stable-identity probe for a pid (null when gone/unknown). */
+    processIdentity?: (pid: string) => string | null;
+  } = {},
+): string[] {
+  const groups = posixTermServiceTrees(patterns, { run, processIdentity });
+  if (groups.length === 0) return [];
+  wait(graceMs);
+  return posixKillServiceGroups(groups, {
+    run,
+    wait,
+    groupAlive,
+    processIdentity,
+  }).map((group) => group.pid);
 }
 
 // ── CLI entry: `node --experimental-strip-types scripts/lib/kill-trees.ts <pattern>…` ──

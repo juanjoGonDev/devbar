@@ -2,48 +2,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
-  loadRendererWindow,
-  type RendererWindow,
-} from './helpers/renderer-dom.js';
-import type { UpdateStatus } from '../src/ipc-contract.js';
-import type { Group } from '../src/domain-types.js';
-
-function group(name: string): Group {
-  return {
-    id: `group-${name}`,
-    name,
-    icon: '📦',
-    path: `/tmp/${name}`,
-    mode: 'single',
-    order: 0,
-    silenceWarnings: false,
-    silenceErrors: false,
-    env: [],
-    commands: [],
-    actions: [],
-    preScripts: [],
-    waitForPipeline: true,
-  };
-}
-
-function updateStatus(version: string | null): UpdateStatus {
-  return {
-    available: version
-      ? {
-          version,
-          url: `https://example.invalid/${version}`,
-          dmgUrl: null,
-          zipUrl: null,
-          setupUrl: null,
-          appImageUrl: null,
-          debUrl: null,
-        }
-      : null,
-    staged: null,
-    lastCheckAt: null,
-    currentVersion: '0.0.0',
-  };
-}
+  group,
+  openConfigWindow,
+  updateStatus,
+} from './helpers/config-window.js';
+import type { RendererWindow } from './helpers/renderer-dom.js';
 
 function nameInput(): HTMLInputElement {
   const el = document.querySelector<HTMLInputElement>('.detail-name-input');
@@ -80,11 +43,7 @@ describe('renderer/config.ts', () => {
   });
 
   async function openConfig(): Promise<RendererWindow> {
-    config = await loadRendererWindow({
-      html: 'config.html',
-      load: () => import('../renderer/config.js'),
-      values: { platform: 'macos' },
-    });
+    config = await openConfigWindow();
     return config;
   }
 
@@ -161,6 +120,138 @@ describe('renderer/config.ts', () => {
       expect(document.getElementById('update-status')?.textContent).toContain(
         'v9.9.9',
       );
+    });
+  });
+
+  describe('add group', () => {
+    it('selects the group main just created', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', []);
+      document.getElementById('add-group')?.click();
+      await win.settle('saveGroup', { ...group('nuevo'), id: 'group-nuevo' });
+      await win.settle('listGroups', [
+        { ...group('nuevo'), id: 'group-nuevo' },
+      ]);
+      expect(nameInput().value).toBe('nuevo');
+    });
+
+    it('surfaces a creation that blew up', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', []);
+      document.getElementById('add-group')?.click();
+      await win.fail('saveGroup', new Error('disk full'));
+      expect(document.getElementById('toast')?.textContent).toBe(
+        'Error: disk full',
+      );
+    });
+  });
+
+  describe('window close guard', () => {
+    it('closes straight away with nothing unsaved', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', [group('api')]);
+      await win.push('onConfigCloseRequested');
+      expect(win.callCount('confirmDirty')).toBe(0);
+      expect(win.callCount('confirmCloseConfig')).toBe(1);
+    });
+
+    it('stays open when the user cancels', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', [group('api')]);
+      rename('api-2');
+      await win.push('onConfigCloseRequested');
+      await win.settle('confirmDirty', { choice: 'cancel' });
+      expect(win.callCount('confirmCloseConfig')).toBe(0);
+    });
+
+    it('treats a failed prompt as a cancel', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', [group('api')]);
+      rename('api-2');
+      await win.push('onConfigCloseRequested');
+      await win.fail('confirmDirty', new Error('no window'));
+      expect(win.callCount('confirmCloseConfig')).toBe(0);
+    });
+
+    it('throws the edits away and closes on discard', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', [group('api')]);
+      rename('api-2');
+      await win.push('onConfigCloseRequested');
+      await win.settle('confirmDirty', { choice: 'discard' });
+      expect(win.callCount('saveGroup')).toBe(0);
+      expect(win.callCount('confirmCloseConfig')).toBe(1);
+    });
+
+    it('saves first, then closes', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', [group('api')]);
+      rename('api-2');
+      await win.push('onConfigCloseRequested');
+      await win.settle('confirmDirty', { choice: 'save' });
+      await win.settle('saveGroup', { ...group('api'), name: 'api-2' });
+      expect(win.callCount('confirmCloseConfig')).toBe(1);
+    });
+
+    it('stays open when the save is refused', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', [group('api', { path: '' })]);
+      rename('api-2');
+      await win.push('onConfigCloseRequested');
+      await win.settle('confirmDirty', { choice: 'save' });
+      expect(win.callCount('confirmCloseConfig')).toBe(0);
+      expect(document.getElementById('toast')?.textContent).toBe(
+        'El path no puede estar vacío',
+      );
+    });
+
+    it('stays open when the save blows up', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', [group('api')]);
+      rename('api-2');
+      await win.push('onConfigCloseRequested');
+      await win.settle('confirmDirty', { choice: 'save' });
+      await win.fail('saveGroup', new Error('disk full'));
+      expect(win.callCount('confirmCloseConfig')).toBe(0);
+      expect(document.getElementById('toast')?.textContent).toBe(
+        'Error: disk full',
+      );
+    });
+
+    it('ignores a second close request while the first is still asking', async () => {
+      const win = await openConfig();
+      await win.settle('listGroups', [group('api')]);
+      rename('api-2');
+      await win.push('onConfigCloseRequested');
+      await win.push('onConfigCloseRequested');
+      expect(
+        win.callCount('confirmDirty'),
+        'the user must not be asked twice',
+      ).toBe(1);
+    });
+  });
+
+  describe('version label', () => {
+    it('shows the running version and opens the changelog on click', async () => {
+      const win = await openConfig();
+      await win.settle('getAppVersion', '1.2.3');
+      const chip = document.getElementById('app-version');
+      expect(chip?.textContent).toBe('v1.2.3');
+      chip?.click();
+      expect(document.querySelector('.modal-changelog')).not.toBeNull();
+      await win.settle('getChangelog', { releases: [], repoUrl: null });
+    });
+
+    it('leaves the label empty when main reports no version', async () => {
+      const win = await openConfig();
+      await win.settle('getAppVersion', '');
+      expect(document.getElementById('app-version')?.textContent).toBe('');
+    });
+
+    it('leaves the label empty when the read fails', async () => {
+      const win = await openConfig();
+      await win.fail('getAppVersion', new Error('no app'));
+      expect(document.getElementById('app-version')?.textContent).toBe('');
     });
   });
 });

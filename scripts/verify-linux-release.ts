@@ -24,9 +24,14 @@ function findRepoRoot(): string {
 
 const ROOT = findRepoRoot();
 
-const outputDirectory =
+/**
+ * CLI defaults, read once at load exactly as before. `main` takes them as
+ * parameters so a test can point the verification at a fixture directory
+ * without rewriting process.argv.
+ */
+const DEFAULT_OUTPUT_DIRECTORY =
   process.argv[2] || path.join(ROOT, 'dist', 'electron-builder');
-const version = process.argv[3] || packageJson.version;
+const DEFAULT_VERSION = process.argv[3] || packageJson.version;
 
 const LINUX_ARCHITECTURES = ['x64', 'arm64', 'armv7'] as const;
 type LinuxArchitecture = (typeof LINUX_ARCHITECTURES)[number];
@@ -51,7 +56,7 @@ const DEB_ARCHITECTURE: Record<LinuxArchitecture, string> = {
  * under the arm64 name, and only the x64 artifacts are ever launched in
  * CI, so nothing downstream would catch the swap.
  */
-function artifactArchitecture(name: string): LinuxArchitecture {
+export function artifactArchitecture(name: string): LinuxArchitecture {
   const parsed = /-linux-(x64|arm64|armv7)\./.exec(name)?.[1];
   const architecture = LINUX_ARCHITECTURES.find((value) => value === parsed);
   if (architecture === undefined)
@@ -289,11 +294,45 @@ function dpkgDebAvailable(): boolean {
   }
 }
 
-async function main(): Promise<void> {
+/**
+ * The .deb reader, isolated so the checks around it are testable: a test
+ * host has no dpkg-deb (and no real .deb to feed it), while the check that
+ * matters is what main() does with the fields it reads back.
+ */
+export interface DpkgReader {
+  available: () => boolean;
+  /** `dpkg-deb -f <file> <field>`, trimmed. */
+  field: (filePath: string, fieldName: string) => string;
+  /** `dpkg-deb -c <file>`. */
+  contents: (filePath: string) => string;
+}
+
+const systemDpkg: DpkgReader = {
+  available: dpkgDebAvailable,
+  field: (filePath, fieldName) =>
+    execFileSync('dpkg-deb', ['-f', filePath, fieldName], {
+      encoding: 'utf8',
+    }).trim(),
+  contents: (filePath) =>
+    execFileSync('dpkg-deb', ['-c', filePath], { encoding: 'utf8' }),
+};
+
+export async function main({
+  directory = DEFAULT_OUTPUT_DIRECTORY,
+  version = DEFAULT_VERSION,
+  dpkg = systemDpkg,
+  // Evaluated per call, like the `process.env.CI` read it replaces.
+  requireDpkg = Boolean(process.env.CI),
+}: {
+  directory?: string;
+  version?: string;
+  dpkg?: DpkgReader;
+  requireDpkg?: boolean;
+} = {}): Promise<void> {
   // 1. Contract: exactly the expected linux artifacts exist (non-empty),
   //    and any manifest present is consistent.
   const result = await verifyReleaseArtifactSet({
-    directory: outputDirectory,
+    directory,
     version,
     platform: 'linux',
   });
@@ -307,7 +346,7 @@ async function main(): Promise<void> {
   for (const name of result.artifactNames) {
     if (!name.endsWith('.AppImage')) continue;
     const architecture = artifactArchitecture(name);
-    const filePath = path.join(outputDirectory, name);
+    const filePath = path.join(directory, name);
     const check = checkAppImage(filePath, ELF_MACHINE[architecture]);
     if (!check.ok)
       throw new Error(
@@ -322,23 +361,17 @@ async function main(): Promise<void> {
   //    (ubuntu runners have it; elsewhere the check is skipped with a
   //    warning — presence + checksums are still verified above).
   const debNames = result.artifactNames.filter((name) => name.endsWith('.deb'));
-  if (dpkgDebAvailable()) {
+  if (dpkg.available()) {
     for (const name of debNames) {
       const architecture = artifactArchitecture(name);
-      const filePath = path.join(outputDirectory, name);
-      const declaredArchitecture = execFileSync(
-        'dpkg-deb',
-        ['-f', filePath, 'Architecture'],
-        { encoding: 'utf8' },
-      ).trim();
+      const filePath = path.join(directory, name);
+      const declaredArchitecture = dpkg.field(filePath, 'Architecture');
       const expectedArchitecture = DEB_ARCHITECTURE[architecture];
       if (declaredArchitecture !== expectedArchitecture)
         throw new Error(
           `${name} declares Architecture: ${declaredArchitecture || '<missing>'}, expected ${expectedArchitecture}`,
         );
-      const contents = execFileSync('dpkg-deb', ['-c', filePath], {
-        encoding: 'utf8',
-      });
+      const contents = dpkg.contents(filePath);
       if (
         !/\/usr\/share\/applications\/[A-Za-z0-9._-]+\.desktop/.test(contents)
       )
@@ -364,7 +397,7 @@ async function main(): Promise<void> {
     // turns a broken package into a green release job, so on CI the
     // missing (or unusable) tool is an error, not a log line.
     const reason = `dpkg-deb is unavailable on this host, so the .deb content check cannot run: ${debNames.join(', ')}`;
-    if (process.env.CI) throw new Error(reason);
+    if (requireDpkg) throw new Error(reason);
     for (const name of debNames)
       console.log(`skip: ${name} (dpkg-deb unavailable on this host)`);
   }

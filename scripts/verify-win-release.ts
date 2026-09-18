@@ -23,9 +23,14 @@ function findRepoRoot(): string {
 
 const ROOT = findRepoRoot();
 
-const outputDirectory =
+/**
+ * CLI defaults, read once at load exactly as before. `main` takes them as
+ * parameters so a test can point the verification at a fixture directory
+ * without rewriting process.argv.
+ */
+const DEFAULT_OUTPUT_DIRECTORY =
   process.argv[2] || path.join(ROOT, 'dist', 'electron-builder');
-const version = process.argv[3] || packageJson.version;
+const DEFAULT_VERSION = process.argv[3] || packageJson.version;
 
 /**
  * A real Windows PE executable: the two-byte MZ header AND the PE
@@ -59,10 +64,13 @@ export function looksLikeWindowsExe(filePath: string): boolean {
   }
 }
 
-async function main(): Promise<void> {
+export async function main({
+  directory = DEFAULT_OUTPUT_DIRECTORY,
+  version = DEFAULT_VERSION,
+}: { directory?: string; version?: string } = {}): Promise<void> {
   // 1. Contract: exactly the expected win artifacts exist (non-empty).
   const result = await verifyReleaseArtifactSet({
-    directory: outputDirectory,
+    directory,
     version,
     platform: 'win',
   });
@@ -73,7 +81,7 @@ async function main(): Promise<void> {
   // 2. Contents: every artifact (NSIS installer + portable) is a real PE
   //    executable, so an HTML error page or truncated download cannot ship.
   for (const name of result.artifactNames) {
-    const filePath = path.join(outputDirectory, name);
+    const filePath = path.join(directory, name);
     if (!looksLikeWindowsExe(filePath))
       throw new Error(`${name} is not a valid Windows executable`);
     console.log(`ok: ${name} (MZ header)`);

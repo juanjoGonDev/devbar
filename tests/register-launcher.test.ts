@@ -3,16 +3,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  defaultInstallDir,
   desktopApplicationsDir,
   desktopLauncherPath,
   ensureInstallIcon,
   findAppIcon,
   lnkCommand,
   pickRepoIcon,
+  registerLauncher,
   renderDesktopEntry,
   startMenuLnkPath,
   startMenuProgramsDir,
   DESKTOP_FILE_NAME,
+  type LauncherReporter,
+  type LauncherSpawn,
+  type LauncherSpawnResult,
+  type RegisterLauncherOptions,
 } from '../scripts/register-launcher.js';
 
 const tmpDirs: string[] = [];
@@ -351,6 +357,309 @@ describe('scripts/register-launcher.ts', () => {
       const repo = makeTempDir('devbar-repo-');
       const install = makeTempDir('devbar-install-');
       expect(ensureInstallIcon(install, '.png', repo)).toBeNull();
+    });
+  });
+
+  describe('defaultInstallDir', () => {
+    it('is ~/.local/share/DevBar off Windows', () => {
+      expect(defaultInstallDir('linux')).toBe(
+        path.join(os.homedir(), '.local', 'share', 'DevBar'),
+      );
+      expect(defaultInstallDir('darwin')).toBe(
+        path.join(os.homedir(), '.local', 'share', 'DevBar'),
+      );
+    });
+
+    it('is %LOCALAPPDATA%\\Programs\\DevBar on Windows', () => {
+      // The location the NSIS one-click installer uses, and the one the
+      // in-app updater recognises.
+      const localAppData = path.join(
+        path.sep,
+        'Users',
+        'u',
+        'AppData',
+        'Local',
+      );
+      withEnvVar('LOCALAPPDATA', localAppData, () => {
+        expect(defaultInstallDir('win32')).toBe(
+          path.join(localAppData, 'Programs', 'DevBar'),
+        );
+      });
+    });
+
+    it('ignores a relative LOCALAPPDATA', () => {
+      withEnvVar('LOCALAPPDATA', path.join('relative', 'local'), () => {
+        expect(defaultInstallDir('win32')).toBe(
+          path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'DevBar'),
+        );
+      });
+    });
+  });
+
+  describe('registerLauncher', () => {
+    interface Recorder {
+      messages: string[];
+      report: LauncherReporter;
+    }
+
+    function recordingReporter(): Recorder {
+      const messages: string[] = [];
+      return {
+        messages,
+        report: {
+          step: (message) => messages.push(`→ ${message}`),
+          ok: (message) => messages.push(`✓ ${message}`),
+          warn: (message) => messages.push(`! ${message}`),
+        },
+      };
+    }
+
+    interface SpawnRecorder {
+      calls: Array<{ command: string; args: string[] }>;
+      spawn: LauncherSpawn;
+    }
+
+    function recordingSpawn(
+      result: LauncherSpawnResult | Error = { status: 0 },
+    ): SpawnRecorder {
+      const calls: Array<{ command: string; args: string[] }> = [];
+      return {
+        calls,
+        spawn: (command, args) => {
+          calls.push({ command, args: [...args] });
+          if (result instanceof Error) throw result;
+          return result;
+        },
+      };
+    }
+
+    /**
+     * A finished install-local: the executable in place, plus a checkout
+     * that carries the icon sources. Everything lives in temp directories —
+     * the real ~/.local/share/applications must never be touched.
+     */
+    function makeInstall(platform: NodeJS.Platform, withRepoIcon = true) {
+      const install = makeTempDir('devbar-install-');
+      const repo = makeTempDir('devbar-repo-');
+      const output = makeTempDir('devbar-out-');
+      const executable = platform === 'win32' ? 'DevBar.exe' : 'devbar';
+      fs.writeFileSync(path.join(install, executable), 'binary');
+      if (withRepoIcon) {
+        fs.mkdirSync(path.join(repo, 'buildResources', 'icons'), {
+          recursive: true,
+        });
+        fs.writeFileSync(
+          path.join(repo, 'buildResources', 'icons', '256.png'),
+          'png-256',
+        );
+        fs.mkdirSync(path.join(repo, 'assets'), { recursive: true });
+        fs.writeFileSync(path.join(repo, 'assets', 'icon.ico'), 'ico');
+      }
+      return {
+        install,
+        repo,
+        appPath: path.join(install, executable),
+        desktopFile: path.join(output, 'applications', DESKTOP_FILE_NAME),
+        lnkPath: path.join(output, 'Programs', 'DevBar.lnk'),
+      };
+    }
+
+    function optionsFor(
+      platform: NodeJS.Platform,
+      fixture: ReturnType<typeof makeInstall>,
+      recorder: Recorder,
+      spawner: SpawnRecorder,
+    ): RegisterLauncherOptions {
+      return {
+        platform,
+        installDir: fixture.install,
+        repoRoot: fixture.repo,
+        desktopFile: fixture.desktopFile,
+        lnkPath: fixture.lnkPath,
+        spawn: spawner.spawn,
+        report: recorder.report,
+      };
+    }
+
+    it('warns and registers nothing when no install exists', () => {
+      const fixture = makeInstall('linux');
+      fs.rmSync(fixture.appPath);
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn();
+      registerLauncher(optionsFor('linux', fixture, recorder, spawner));
+      expect(recorder.messages).toEqual([
+        `! no DevBar install at ${fixture.install} — nothing to register`,
+      ]);
+      expect(spawner.calls).toEqual([]);
+      expect(fs.existsSync(fixture.desktopFile)).toBe(false);
+    });
+
+    it('writes the .desktop entry and refreshes the menu database', () => {
+      const fixture = makeInstall('linux');
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn();
+      registerLauncher(optionsFor('linux', fixture, recorder, spawner));
+
+      const icon = path.join(fixture.install, 'resources', 'icon.png');
+      expect(fs.readFileSync(icon, 'utf8')).toBe('png-256');
+      expect(fs.readFileSync(fixture.desktopFile, 'utf8').split('\n')).toEqual([
+        '[Desktop Entry]',
+        'Type=Application',
+        'Name=DevBar',
+        'Comment=Menu bar launcher for local development services',
+        `Exec=${fixture.appPath}`,
+        `Icon=${icon}`,
+        'Terminal=false',
+        'Categories=Development;Utility;',
+        '',
+      ]);
+      expect(spawner.calls).toEqual([
+        {
+          command: 'update-desktop-database',
+          args: [path.dirname(fixture.desktopFile)],
+        },
+      ]);
+      expect(recorder.messages).toEqual([
+        '→ Registering in the app menu…',
+        `✓ App menu entry: ${fixture.desktopFile}`,
+      ]);
+    });
+
+    it('registers without an icon when neither install nor repo has one', () => {
+      const fixture = makeInstall('linux', false);
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn();
+      registerLauncher(optionsFor('linux', fixture, recorder, spawner));
+      const content = fs.readFileSync(fixture.desktopFile, 'utf8');
+      expect(content).not.toContain('Icon=');
+      expect(content).toContain(`Exec=${fixture.appPath}`);
+      expect(recorder.messages).toEqual([
+        '→ Registering in the app menu…',
+        '! no icon available — the launcher entry will have none',
+        `✓ App menu entry: ${fixture.desktopFile}`,
+      ]);
+    });
+
+    it('warns but still registers when the icon cannot be installed', () => {
+      const fixture = makeInstall('linux');
+      // A FILE where the icon directory has to go: the copy fails for real.
+      fs.writeFileSync(path.join(fixture.install, 'resources'), 'not-a-dir');
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn();
+      registerLauncher(optionsFor('linux', fixture, recorder, spawner));
+      expect(recorder.messages[0]).toBe('→ Registering in the app menu…');
+      expect(recorder.messages[1]).toMatch(/^! icon not installed \(/);
+      expect(recorder.messages).toContain(
+        '! no icon available — the launcher entry will have none',
+      );
+      expect(recorder.messages).toContain(
+        `✓ App menu entry: ${fixture.desktopFile}`,
+      );
+      expect(fs.readFileSync(fixture.desktopFile, 'utf8')).not.toContain(
+        'Icon=',
+      );
+    });
+
+    it('warns instead of throwing when the entry cannot be written', () => {
+      const fixture = makeInstall('linux');
+      // A FILE where the applications directory has to go: mkdir fails.
+      fs.writeFileSync(path.dirname(fixture.desktopFile), 'not-a-dir');
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn();
+      expect(() =>
+        registerLauncher(optionsFor('linux', fixture, recorder, spawner)),
+      ).not.toThrow();
+      expect(fs.statSync(path.dirname(fixture.desktopFile)).isFile()).toBe(
+        true,
+      );
+      const failure = recorder.messages.at(-1) ?? '';
+      expect(failure).toMatch(/^! App menu entry not created \(/);
+      expect(failure).toContain(`launch it with: ${fixture.appPath}`);
+      expect(recorder.messages).not.toContain(
+        `✓ App menu entry: ${fixture.desktopFile}`,
+      );
+      expect(spawner.calls).toEqual([]);
+    });
+
+    it('still registers when update-desktop-database is missing', () => {
+      const fixture = makeInstall('linux');
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn(new Error('spawn ENOENT'));
+      registerLauncher(optionsFor('linux', fixture, recorder, spawner));
+      expect(spawner.calls).toHaveLength(1);
+      expect(fs.existsSync(fixture.desktopFile)).toBe(true);
+      expect(recorder.messages).toContain(
+        `✓ App menu entry: ${fixture.desktopFile}`,
+      );
+    });
+
+    it('creates the Start Menu shortcut through powershell on win32', () => {
+      const fixture = makeInstall('win32');
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn();
+      registerLauncher(optionsFor('win32', fixture, recorder, spawner));
+
+      expect(spawner.calls).toHaveLength(1);
+      const call = spawner.calls[0];
+      expect(call.command).toBe('powershell');
+      expect(call.args.slice(0, 3)).toEqual([
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+      ]);
+      const script = call.args[3] ?? '';
+      expect(script).toContain(`$l = $s.CreateShortcut('${fixture.lnkPath}')`);
+      expect(script).toContain(
+        `$l.TargetPath = '${fixture.install}${path.sep}DevBar.exe'`,
+      );
+      expect(script).toContain(`$l.WorkingDirectory = '${fixture.install}'`);
+      expect(script).toContain(
+        `$l.IconLocation = '${path.join(fixture.install, 'resources', 'icon.ico')},0'`,
+      );
+      expect(script.endsWith('; $l.Save()')).toBe(true);
+      // The parent directory has to exist before WScript.Shell saves there.
+      expect(fs.existsSync(path.dirname(fixture.lnkPath))).toBe(true);
+      expect(recorder.messages).toEqual([
+        '→ Registering in the Start Menu…',
+        `✓ Start Menu shortcut: ${fixture.lnkPath}`,
+      ]);
+    });
+
+    it('warns when powershell exits non-zero', () => {
+      const fixture = makeInstall('win32');
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn({ status: 1 });
+      registerLauncher(optionsFor('win32', fixture, recorder, spawner));
+      expect(recorder.messages).toEqual([
+        '→ Registering in the Start Menu…',
+        '! Start Menu shortcut not created (powershell exit 1) — pin DevBar.exe from the Start Menu instead.',
+      ]);
+    });
+
+    it('warns when powershell cannot be spawned at all', () => {
+      const fixture = makeInstall('win32');
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn({
+        status: null,
+        error: new Error('spawn powershell ENOENT'),
+      });
+      registerLauncher(optionsFor('win32', fixture, recorder, spawner));
+      expect(recorder.messages).toEqual([
+        '→ Registering in the Start Menu…',
+        '! Start Menu shortcut not created (spawn powershell ENOENT).',
+      ]);
+    });
+
+    it('registers nothing on a platform with no launcher UI to touch', () => {
+      // macOS installs go through the .app bundle, not through this script.
+      const fixture = makeInstall('darwin');
+      const recorder = recordingReporter();
+      const spawner = recordingSpawn();
+      registerLauncher(optionsFor('darwin', fixture, recorder, spawner));
+      expect(recorder.messages).toEqual([]);
+      expect(spawner.calls).toEqual([]);
+      expect(fs.existsSync(fixture.desktopFile)).toBe(false);
+      expect(fs.existsSync(fixture.lnkPath)).toBe(false);
     });
   });
 });

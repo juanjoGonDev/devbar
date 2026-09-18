@@ -26,16 +26,44 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { absoluteEnvDir, isEntrypoint } from './lib/script-runtime.ts';
 
-const platform = process.platform;
 /** Repo root: this script lives in <repo>/scripts/. */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const step = (message: string): void => console.log(`→ ${message}`);
-const ok = (message: string): void => console.log(`✓ ${message}`);
-const warn = (message: string): void => console.log(`! ${message}`);
 
-function tryQuiet(cmd: string, args: string[]): void {
+/** The only part of a spawnSync result this script reacts to. */
+export interface LauncherSpawnResult {
+  status: number | null;
+  error?: Error | undefined;
+}
+
+/** Subprocess seam: the real spawnSync in production, a fake in tests. */
+export type LauncherSpawn = (
+  command: string,
+  args: readonly string[],
+) => LauncherSpawnResult;
+
+/** Progress output seam — the three prefixes this script speaks in. */
+export interface LauncherReporter {
+  step(message: string): void;
+  ok(message: string): void;
+  warn(message: string): void;
+}
+
+const consoleReporter: LauncherReporter = {
+  step: (message) => console.log(`→ ${message}`),
+  ok: (message) => console.log(`✓ ${message}`),
+  warn: (message) => console.log(`! ${message}`),
+};
+
+const spawnQuiet: LauncherSpawn = (command, args) =>
+  spawnSync(command, [...args], { stdio: 'ignore' });
+
+function tryQuiet(
+  spawn: LauncherSpawn,
+  cmd: string,
+  args: readonly string[],
+): void {
   try {
-    spawnSync(cmd, args, { stdio: 'ignore' });
+    spawn(cmd, args);
     /* best effort */
   } catch {
     /* binary missing is an expected outcome */
@@ -234,8 +262,8 @@ export function ensureInstallIcon(
   return target;
 }
 
-/** Where install-local puts the app on this platform. */
-function installDir(): string {
+/** Where install-local puts the app on the given platform. */
+export function defaultInstallDir(platform: NodeJS.Platform): string {
   if (platform === 'win32') {
     const localAppData = absoluteEnvDir(
       'LOCALAPPDATA',
@@ -246,84 +274,126 @@ function installDir(): string {
   return path.join(os.homedir(), '.local', 'share', 'DevBar');
 }
 
-function main(): void {
-  const dir = installDir();
+/**
+ * Everything the registration touches, injected. The tests must never write
+ * into the real ~/.local/share/applications or Start Menu, and the win32
+ * branch has to be exercisable from a POSIX host.
+ */
+export interface RegisterLauncherOptions {
+  platform: NodeJS.Platform;
+  /** Where install-local put the app. */
+  installDir: string;
+  /** Checkout root: the fallback icon source. */
+  repoRoot: string;
+  /** Destination .desktop file (linux). */
+  desktopFile: string;
+  /** Destination .lnk file (win32). */
+  lnkPath: string;
+  spawn: LauncherSpawn;
+  report: LauncherReporter;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Best effort: a missing or uncopyable icon warns, it never fails. */
+function launcherIcon(
+  installDir: string,
+  extension: '.png' | '.ico',
+  repoRoot: string,
+  report: LauncherReporter,
+): string | null {
+  try {
+    return ensureInstallIcon(installDir, extension, repoRoot);
+  } catch (error) {
+    report.warn(`icon not installed (${errorMessage(error)})`);
+    return null;
+  }
+}
+
+function registerDesktopEntry(
+  { installDir, repoRoot, desktopFile, spawn, report }: RegisterLauncherOptions,
+  appPath: string,
+): void {
+  // App-menu entry: what makes the install show up in the GNOME/KDE app
+  // grid, same as the .desktop entry the .deb ships.
+  report.step('Registering in the app menu…');
+  const icon = launcherIcon(installDir, '.png', repoRoot, report);
+  if (!icon)
+    report.warn('no icon available — the launcher entry will have none');
+  try {
+    fs.mkdirSync(path.dirname(desktopFile), { recursive: true });
+    fs.writeFileSync(desktopFile, renderDesktopEntry(appPath, icon));
+    // Some desktops cache the menu database; a refresh is best effort.
+    tryQuiet(spawn, 'update-desktop-database', [path.dirname(desktopFile)]);
+    report.ok(`App menu entry: ${desktopFile}`);
+  } catch (error) {
+    report.warn(
+      `App menu entry not created (${errorMessage(
+        error,
+      )}) — launch it with: ${appPath}`,
+    );
+  }
+}
+
+function registerStartMenuShortcut(
+  { installDir, repoRoot, lnkPath, spawn, report }: RegisterLauncherOptions,
+  appPath: string,
+): void {
+  // Start Menu shortcut — the Windows equivalent of the app-menu entry.
+  report.step('Registering in the Start Menu…');
+  try {
+    fs.mkdirSync(path.dirname(lnkPath), { recursive: true });
+    const icon = launcherIcon(installDir, '.ico', repoRoot, report);
+    const result = spawn('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      lnkCommand(lnkPath, appPath, installDir, icon),
+    ]);
+    if (result.error) throw result.error;
+    if (result.status === 0) {
+      report.ok(`Start Menu shortcut: ${lnkPath}`);
+    } else {
+      report.warn(
+        `Start Menu shortcut not created (powershell exit ${result.status}) — pin DevBar.exe from the Start Menu instead.`,
+      );
+    }
+  } catch (error) {
+    report.warn(`Start Menu shortcut not created (${errorMessage(error)}).`);
+  }
+}
+
+/**
+ * Register an installed copy in the OS launcher UI. Best effort by design:
+ * the install itself is already done, so a broken launcher only warns.
+ */
+export function registerLauncher(options: RegisterLauncherOptions): void {
+  const { platform, installDir, report } = options;
   const executable = platform === 'win32' ? 'DevBar.exe' : 'devbar';
-  const appPath = path.join(dir, executable);
+  const appPath = path.join(installDir, executable);
   if (!fs.existsSync(appPath)) {
     // Nothing installed yet (or a different user ran the install): a
     // warning, not an error — platform.ts runs us right after install-local.
-    warn(`no DevBar install at ${dir} — nothing to register`);
+    report.warn(`no DevBar install at ${installDir} — nothing to register`);
     return;
   }
+  if (platform === 'linux') registerDesktopEntry(options, appPath);
+  else if (platform === 'win32') registerStartMenuShortcut(options, appPath);
+}
 
-  if (platform === 'linux') {
-    // App-menu entry: what makes the install show up in the GNOME/KDE app
-    // grid, same as the .desktop entry the .deb ships.
-    step('Registering in the app menu…');
-    let icon: string | null = null;
-    try {
-      icon = ensureInstallIcon(dir, '.png', ROOT);
-    } catch (error) {
-      warn(
-        `icon not installed (${error instanceof Error ? error.message : String(error)})`,
-      );
-    }
-    if (!icon) warn('no icon available — the launcher entry will have none');
-    const desktopFile = desktopLauncherPath();
-    try {
-      fs.mkdirSync(path.dirname(desktopFile), { recursive: true });
-      fs.writeFileSync(desktopFile, renderDesktopEntry(appPath, icon));
-      // Some desktops cache the menu database; a refresh is best effort.
-      tryQuiet('update-desktop-database', [path.dirname(desktopFile)]);
-      ok(`App menu entry: ${desktopFile}`);
-    } catch (error) {
-      warn(
-        `App menu entry not created (${
-          error instanceof Error ? error.message : String(error)
-        }) — launch it with: ${appPath}`,
-      );
-    }
-  } else if (platform === 'win32') {
-    // Start Menu shortcut — the Windows equivalent of the app-menu entry.
-    step('Registering in the Start Menu…');
-    const lnk = startMenuLnkPath();
-    try {
-      fs.mkdirSync(path.dirname(lnk), { recursive: true });
-      let icon: string | null = null;
-      try {
-        icon = ensureInstallIcon(dir, '.ico', ROOT);
-      } catch (error) {
-        warn(
-          `icon not installed (${error instanceof Error ? error.message : String(error)})`,
-        );
-      }
-      const result = spawnSync(
-        'powershell',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          lnkCommand(lnk, appPath, dir, icon),
-        ],
-        { stdio: 'ignore' },
-      );
-      if (result.error) throw result.error;
-      if (result.status === 0) {
-        ok(`Start Menu shortcut: ${lnk}`);
-      } else {
-        warn(
-          `Start Menu shortcut not created (powershell exit ${result.status}) — pin DevBar.exe from the Start Menu instead.`,
-        );
-      }
-    } catch (error) {
-      warn(
-        `Start Menu shortcut not created (${
-          error instanceof Error ? error.message : String(error)
-        }).`,
-      );
-    }
-  }
+function main(): void {
+  const platform = process.platform;
+  registerLauncher({
+    platform,
+    installDir: defaultInstallDir(platform),
+    repoRoot: ROOT,
+    desktopFile: desktopLauncherPath(),
+    lnkPath: startMenuLnkPath(),
+    spawn: spawnQuiet,
+    report: consoleReporter,
+  });
 }
 
 // Direct execution only (platform.ts spawns us); importing us for the pure

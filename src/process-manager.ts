@@ -1,199 +1,37 @@
-import {
-  execFile,
-  spawn,
-  type ChildProcessWithoutNullStreams,
-} from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import readline from 'node:readline';
 import { EventEmitter } from 'node:events';
-import { isWin, userShell } from './platform.js';
-import { expandTilde, enhancedEnv } from './path-helper.js';
+import { isWin } from './platform.js';
+import { expandTilde } from './path-helper.js';
 import { buildCmdline, buildCmdlineWindows } from './parse-command.js';
 import { parseProcessId } from './compound-id.js';
-import { materializeEnv } from './groups-model.js';
-import type {
-  Action,
-  Command,
-  GlobalSettings,
-  Group,
-  LogEntry,
-  LogLevel,
-  PreScript,
-  ProcessState,
-} from './domain-types.js';
-import type { TrayColor } from './tray-icon.js';
+import {
+  isShellNoise,
+  matchesPattern,
+  safeRegex,
+  stripAnsi,
+} from './process/log-filters.js';
+import {
+  buildSpawnArgs,
+  killGroup,
+  resolveSpawnEnv,
+  serviceSpawnOptions,
+} from './process/spawn.js';
+import {
+  DEFAULT_LOG_BUFFER_LIMIT,
+  defaultState,
+  publicState,
+  type ConfigStoreLike,
+  type InternalState,
+  type ProcessEntry,
+  type ProcessManagerEvents,
+  type ResolvedTarget,
+} from './process/state.js';
+import type { LogEntry, LogLevel } from './domain-types.js';
 
-const DEFAULT_LOG_BUFFER_LIMIT = 2000;
-const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
-const SHELL_NOISE_PATTERNS = [
-  /^\(anon\):setopt:\d+: can't change option: monitor$/,
-  /^\[ERROR\]: gitstatus failed to initialize/,
-  /^Add the following parameter to/,
-  /^GITSTATUS_LOG_LEVEL=DEBUG$/,
-  /^Restart Zsh to retry gitstatus/,
-  /^exec zsh$/,
-  /^zsh: no job control in this shell$/,
-];
-function stripAnsi(value: string): string {
-  return value.replace(ANSI_RE, '');
-}
-function isShellNoise(line: string): boolean {
-  const clean = stripAnsi(line).trim();
-  return (
-    Boolean(clean) &&
-    SHELL_NOISE_PATTERNS.some((pattern) => pattern.test(clean))
-  );
-}
-function safeRegex(source: string | null | undefined): RegExp | null {
-  if (!source) return null;
-  try {
-    return new RegExp(source, 'i');
-  } catch {
-    return null;
-  }
-}
-function matchesPattern(pattern: string, cleaned: string): boolean {
-  if (!pattern) return false;
-  if (!pattern.includes('\\')) return cleaned.includes(pattern);
-  const regex = safeRegex(pattern);
-  return regex ? regex.test(cleaned) : cleaned.includes(pattern);
-}
-
-/**
- * The interpreter that runs a user command, per platform.
- *
- * POSIX uses the user's login shell in interactive-login mode (`-ic`) so the
- * same PATH / aliases / rc files their terminal sees apply. Windows has no
- * comparable login shell, so commands run through `cmd.exe /d /s /c`; the
- * environment has already been enriched by `enhancedEnv`.
- */
-function spawnShellForPlatform(): {
-  file: string;
-  baseArgs: readonly string[];
-} {
-  if (isWin)
-    return {
-      file: process.env.ComSpec || 'cmd.exe',
-      baseArgs: ['/d', '/s', '/c'],
-    };
-  return { file: userShell(), baseArgs: ['-ic'] };
-}
-
-/**
- * Compose the full argv for running `cmdline` under the platform shell.
- *
- * Windows: the `/c` payload is wrapped in one extra quote pair, exactly as
- * Node's own `shell: true` path does (`['/d','/s','/c','"'+command+'"']`).
- * `/s` makes cmd strip precisely that first/last quote pair and take the
- * rest VERBATIM, which is what lets a payload that itself begins and ends
- * with a quote (`"C:\Program Files\x.exe" arg`) survive intact. The wrap
- * only works together with `windowsVerbatimArguments` (see
- * serviceSpawnOptions): without it libuv would re-escape every inner `"`
- * as `\"` and cmd, which has no backslash escape, would hand those
- * backslashes straight to the child's CommandLineToArgvW as literal
- * quotes.
- */
-export function buildSpawnArgs(cmdline: string): {
-  file: string;
-  args: string[];
-  description: string;
-} {
-  const { file, baseArgs } = spawnShellForPlatform();
-  const description = isWin
-    ? `${file} /d /s /c "${cmdline}"`
-    : `${file} -ic '${cmdline}'`;
-  return {
-    file,
-    args: [...baseArgs, isWin ? `"${cmdline}"` : cmdline],
-    description,
-  };
-}
-
-/**
- * Per-platform spawn options for a service child process.
- *
- * POSIX: `detached` puts the service in its own process group (group
- * leader == the child's pid) so a stop can signal the whole tree — shell +
- * user command + whatever it spawned — with a single `kill(-pgid)`.
- *
- * Windows: stay attached. `windowsHide` is a CAPABILITY, not a constant:
- * - from a terminal (`pnpm start`) — no windowsHide: the service
- *   inherits that console, so Ctrl+C or closing the terminal window
- *   reaches the user's command directly. Forcing windowsHide here would
- *   leave every service alive (holding its port) after the app dies.
- * - from the packaged GUI — windowsHide: there is no console to show,
- *   and without it each spawned cmd.exe can flash a visible terminal
- *   window next to the taskbar.
- *
- * `windowsVerbatimArguments` is MANDATORY on win32 and is what makes the
- * quoting in parse-command.ts correct. Windows has no argv array: libuv
- * builds one command line string, and without this flag it runs
- * `quote_cmd_arg` over each argument — wrapping the `/c` payload and
- * backslash-escaping every `"` inside it as `\"`. `cmd.exe` has no
- * backslash escape, so those backslashes reach the child untouched and
- * `CommandLineToArgvW` reads `\"` as a LITERAL quote instead of the span
- * toggle the escaper emitted: `--title "My App"` would arrive as three
- * arguments (`--title`, `"My`, `App"`). Setting it hands libuv the line
- * verbatim, leaving cmd + CommandLineToArgvW as the only two parsers —
- * which is exactly the pair quoteWindowsArg is written against. Node's own
- * `shell: true` path sets the same flag for the same reason. Ignored on
- * POSIX, where the argv array is passed through as-is.
- */
-export function serviceSpawnOptions(): {
-  detached: boolean;
-  windowsHide: boolean;
-  windowsVerbatimArguments: boolean;
-} {
-  return {
-    detached: !isWin,
-    windowsHide: !process.stdout.isTTY,
-    windowsVerbatimArguments: isWin,
-  };
-}
-
-interface ConfigStoreLike {
-  getGroup(id: string): Group | null;
-  listGroups(): Group[];
-  getGlobalSettings(): GlobalSettings;
-}
-interface InternalState extends ProcessState {
-  child: ChildProcessWithoutNullStreams | null;
-  logLimit: number;
-}
-type ResolvedTarget =
-  | { group: Group; target: Command; kind: 'command' }
-  | { group: Group; target: Action; kind: 'action' }
-  | { group: Group; target: PreScript; kind: 'prescript' };
-export interface ProcessEntry extends ProcessState {
-  group: Group;
-  target: Command | Action;
-  kind: 'command' | 'action';
-}
-interface ProcessManagerEvents {
-  log: [payload: { id: string; entry: LogEntry }];
-  change: [state: InternalState];
-  'action:done': [
-    payload: {
-      processId: string;
-      code: number | null;
-      group: Group;
-      target: Action | PreScript;
-    },
-  ];
-}
-function defaultState(id: string): InternalState {
-  return {
-    id,
-    status: 'stopped',
-    warnCount: 0,
-    errorCount: 0,
-    lastError: null,
-    startedAt: null,
-    lastExitCode: null,
-    lastFinishedAt: null,
-    child: null,
-    logLimit: DEFAULT_LOG_BUFFER_LIMIT,
-  };
-}
+export { buildSpawnArgs, serviceSpawnOptions } from './process/spawn.js';
+export { deriveColor } from './process/tray-color.js';
+export type { ProcessEntry } from './process/state.js';
 
 export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
   private readonly states = new Map<string, InternalState>();
@@ -328,7 +166,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     for (const group of this.configStore.listGroups()) {
       for (const command of group.commands) {
         entries.push({
-          ...this.publicState(this.getState(`cmd:${group.id}:${command.id}`)),
+          ...publicState(this.getState(`cmd:${group.id}:${command.id}`)),
           group,
           target: command,
           kind: 'command',
@@ -336,7 +174,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       }
       for (const action of group.actions) {
         entries.push({
-          ...this.publicState(this.getState(`act:${group.id}:${action.id}`)),
+          ...publicState(this.getState(`act:${group.id}:${action.id}`)),
           group,
           target: action,
           kind: 'action',
@@ -344,28 +182,6 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       }
     }
     return entries;
-  }
-  private publicState(state: InternalState): ProcessState {
-    const {
-      id,
-      status,
-      warnCount,
-      errorCount,
-      lastError,
-      startedAt,
-      lastExitCode,
-      lastFinishedAt,
-    } = state;
-    return {
-      id,
-      status,
-      warnCount,
-      errorCount,
-      lastError,
-      startedAt,
-      lastExitCode,
-      lastFinishedAt,
-    };
   }
   private readonly logSeqs = new Map<string, number>();
   private resolveLogLimit(resolved: ResolvedTarget): number {
@@ -400,22 +216,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
         ? buildCmdlineWindows(target.command, target.args)
         : buildCmdline(target.command, target.args),
       spawnSpec = buildSpawnArgs(cmdline);
-    // Only the CONFIGURED overrides go in: `enhancedEnv` spreads
-    // `process.env` itself and then replaces PATH with the login shell's one.
-    // Re-spreading `process.env` here put the inherited PATH back on top of
-    // that, so a GUI-launched app (Finder, login item, autostart) handed its
-    // reduced PATH to every service — the exact failure path-helper exists to
-    // prevent, invisible under `pnpm start` from a terminal.
-    let spawnEnv: NodeJS.ProcessEnv;
-    if (kind === 'command')
-      spawnEnv = enhancedEnv({
-        ...materializeEnv(group.env),
-        ...materializeEnv(target.env),
-      });
-    else {
-      const groupEnv = target.inheritGroupEnv ? materializeEnv(group.env) : {};
-      spawnEnv = enhancedEnv({ ...groupEnv, ...materializeEnv(target.env) });
-    }
+    const spawnEnv = resolveSpawnEnv(resolved);
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn(spawnSpec.file, spawnSpec.args, {
@@ -630,68 +431,4 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       if (error) finish(false, error.message);
     });
   }
-}
-function killGroup(
-  child: ChildProcessWithoutNullStreams | null,
-  signal: NodeJS.Signals,
-): Error | null {
-  if (!child?.pid) return null;
-  if (isWin) {
-    // No process groups on Windows: taskkill /T walks the whole tree
-    // (cmd.exe + whatever the user command spawned). /F because there is no
-    // portable graceful equivalent that reaches grandchildren.
-    try {
-      // Log the async failure: a swallowed taskkill error is the only
-      // way stop() can reach its 6.5 s give-up, and without this line
-      // the give-up would be unexplainable in the app log.
-      execFile(
-        'taskkill',
-        ['/pid', String(child.pid), '/T', '/F'],
-        { windowsHide: true },
-        (error) => {
-          if (error) {
-            console.error(
-              `taskkill failed for pid ${child?.pid}: ${error.message}`,
-            );
-          }
-        },
-      );
-      return null;
-    } catch (error: unknown) {
-      return error instanceof Error ? error : new Error(String(error));
-    }
-  }
-  try {
-    process.kill(-child.pid, signal);
-    return null;
-  } catch {
-    try {
-      child.kill(signal);
-      return null;
-    } catch (error: unknown) {
-      return error instanceof Error ? error : new Error(String(error));
-    }
-  }
-}
-export function deriveColor(
-  state: Pick<
-    ProcessState,
-    'status' | 'lastError' | 'errorCount' | 'warnCount'
-  >,
-  command: Partial<Command> | null | undefined,
-  group: Partial<Group> | null | undefined,
-  globals: Partial<GlobalSettings> | null | undefined,
-): TrayColor {
-  if (state.status !== 'running') return state.lastError ? 'error' : 'stopped';
-  const muteError = Boolean(
-      globals?.silenceErrors || group?.silenceErrors || command?.silenceErrors,
-    ),
-    muteWarn = Boolean(
-      globals?.silenceWarnings ||
-      group?.silenceWarnings ||
-      command?.silenceWarnings,
-    );
-  if (state.errorCount > 0 && !muteError) return 'error';
-  if (state.warnCount > 0 && !muteWarn) return 'warn';
-  return 'running';
 }

@@ -60,7 +60,7 @@ function functionSource(source: string, name: string): string {
 
 describe('warn/error entry points open logs with the level chip', () => {
   const counterBtn = functionSource(
-    read('renderer/tray.ts'),
+    read('renderer/tray/group-row.ts'),
     'buildCounterBtn',
   );
 
@@ -83,7 +83,7 @@ describe('warn/error entry points open logs with the level chip', () => {
   });
 
   const ensureLogsWindow = functionSource(
-    read('src/main.ts'),
+    read('src/main/log-windows.ts'),
     'ensureLogsWindow',
   );
 
@@ -99,12 +99,25 @@ describe('warn/error entry points open logs with the level chip', () => {
     );
   });
 
-  const selectLog = functionSource(read('renderer/logs.ts'), 'selectLog');
+  // The logs window's scope switcher: `selectLog` moved out of the entry
+  // point into `renderer/logs/scope.ts` when the window was split into panes,
+  // but it is still the one place a level reaches the view from.
+  const selectLog = functionSource(read('renderer/logs/scope.ts'), 'selectLog');
 
   it('the logs window pins the level chip when selectLog receives one', () => {
     expect(normalize(selectLog)).toContain('level?: SilenceLevel');
     expect(normalize(selectLog)).toContain(
       'if (level) setLevelFilter([level]);',
     );
+  });
+
+  it('the logs window never turns that level into a text filter', () => {
+    // The same contract as the tray button, at the other end: a level must
+    // reach the view as the chip, never as something typed into the search
+    // box — the one thing `showInContext` and the pill's ✕ can clear.
+    const assignments = Array.from(
+      selectLog.matchAll(/filterEl\.value = ([^;]*);/gu),
+    ).map((match) => normalize(match[1] ?? '').trim());
+    expect(assignments).toEqual(['filter', "''"]);
   });
 });

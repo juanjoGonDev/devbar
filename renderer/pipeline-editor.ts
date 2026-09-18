@@ -3,87 +3,22 @@ import {
   attachCrossContainerDragHandlers,
 } from './dnd-helper.js';
 import { latestWins } from './latest-wins.js';
+import { buildAutoRunToggle } from './pipeline/auto-run-toggle.js';
+import {
+  buildSummaryStrip,
+  dataIdToRef,
+  groupColor,
+  refToDataId,
+} from './pipeline/summary.js';
 import type { Group, PreScript, PreStep } from '../src/domain-types.js';
 
-/** Joins/splits a `PreStepScriptRef` for use as a DOM `data-id` — UUIDs never
- * contain `::`, so the split is unambiguous. */
-const REF_SEP = '::';
-function refToDataId(groupId: string, scriptId: string): string {
-  return `${groupId}${REF_SEP}${scriptId}`;
-}
-function dataIdToRef(
-  dataId: string,
-): { groupId: string; scriptId: string } | null {
-  const [groupId, scriptId] = dataId.split(REF_SEP);
-  return groupId && scriptId ? { groupId, scriptId } : null;
-}
-
-/** Same deterministic name→hue hash as `renderer/logs.ts`'s `sourceColor` —
- * duplicated rather than shared, matching this codebase's existing pattern
- * of small per-module helpers (e.g. `errorMessage` in config.ts/tray.ts). */
-function groupColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1)
-    hash = (hash * 31 + name.charCodeAt(i)) | 0;
-  return `hsl(${Math.abs(hash) % 360} 70% 68%)`;
-}
+export {
+  summarizePipeline,
+  type PipelineSummaryLane,
+  type PipelineSummaryStep,
+} from './pipeline/summary.js';
 
 const PIPELINE_DND_ZONE = 'pipeline-scripts';
-
-/** One lane of the summary strip: a resolved `{group, script}` pair, or a
- * broken marker when the ref no longer resolves (matches the dimmed "ref
- * rota" treatment `buildScriptRow` already gives a dangling ref). */
-export interface PipelineSummaryLane {
-  readonly groupName: string;
-  readonly scriptName: string;
-  readonly broken: boolean;
-}
-
-/** The summary strip's view model for one step — everything `buildSummaryStrip`
- * needs and nothing it has to compute itself. */
-export interface PipelineSummaryStep {
-  readonly index: number;
-  readonly mode: PreStep['mode'];
-  /** Worth the accent treatment: parallel AND more than one script. A
-   * single-script "parallel" step behaves identically to serial, so it is
-   * never highlighted (matches `arranque-prototipo.html`'s `.par` rule). */
-  readonly isParallel: boolean;
-  readonly isEmpty: boolean;
-  readonly lanes: readonly PipelineSummaryLane[];
-}
-
-/**
- * Pure view-model builder for the pipeline summary strip — no DOM, so it is
- * directly unit-testable (`tests/pipeline-summary.test.ts`) the same way
- * `renderer/tooltip.ts` keeps `placeTip` pure alongside its DOM-touching code.
- */
-export function summarizePipeline(
-  steps: readonly PreStep[],
-  resolveScript: (
-    groupId: string,
-    scriptId: string,
-  ) => { groupName: string; scriptName: string } | null,
-): readonly PipelineSummaryStep[] {
-  return steps.map((step, i) => {
-    const lanes: PipelineSummaryLane[] = step.scripts.map((ref) => {
-      const resolved = resolveScript(ref.groupId, ref.scriptId);
-      return resolved
-        ? {
-            groupName: resolved.groupName,
-            scriptName: resolved.scriptName,
-            broken: false,
-          }
-        : { groupName: '', scriptName: '', broken: true };
-    });
-    return {
-      index: i + 1,
-      mode: step.mode,
-      isParallel: step.mode === 'parallel' && lanes.length > 1,
-      isEmpty: lanes.length === 0,
-      lanes,
-    };
-  });
-}
 
 export interface PipelineEditorDeps {
   /** Read-only — the editor never reads `draftGroup` (one-way dependency,
@@ -182,54 +117,18 @@ export function initPipelineEditor(
       });
   }
 
-  // ── Auto-run toggle (now a GLOBAL setting, not per-group) ───────────────
-  //
-  // Reads the cached `autoRunEnabled`/`autoRunSettingLoaded` state (set once
-  // by `loadAutoRunSetting`, below) instead of firing its own getSettings()
-  // call — this function now runs on every render() without re-fetching or
-  // re-disabling the control.
-  function buildAutoRunToggle(): HTMLElement {
-    const section = document.createElement('div');
-    section.className = 'detail-section';
-    const label = document.createElement('label');
-    label.className = 'toggle';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = autoRunEnabled;
-    // Disabled until the cached value has loaded once: an early click would
-    // be saved and then silently overwritten by the resolving read, leaving
-    // the control contradicting the setting it just wrote.
-    input.disabled = !autoRunSettingLoaded;
-    input.addEventListener('change', async () => {
-      // Issuing this save retires every older one still in flight.
-      autoRunSaves.invalidate();
-      const current = autoRunSaves.claim();
-      try {
-        await window.api.saveSettings({ preScriptsAutoRun: input.checked });
-        if (!current()) return; // a later click owns the control and its toast
-        autoRunEnabled = input.checked;
-        deps.showToast('Ajustes guardados', 'ok');
-      } catch {
-        // A later click already owns the control (and its own save decides
-        // the outcome); rolling back here would silently revert it.
-        if (!current()) return;
-        // Put the control back where the stored setting still is, so it
-        // never claims a value that was not persisted.
-        input.checked = !input.checked;
-        deps.showToast('No se pudo guardar el ajuste', 'error');
-      }
+  /** The global auto-run control; `buildAutoRunToggle` owns its markup, this
+   *  only hands it the cached state and the save ticket. */
+  function autoRunToggle(): HTMLElement {
+    return buildAutoRunToggle({
+      enabled: autoRunEnabled,
+      loaded: autoRunSettingLoaded,
+      saves: autoRunSaves,
+      onSaved: (enabled) => {
+        autoRunEnabled = enabled;
+      },
+      showToast: (message, kind) => deps.showToast(message, kind),
     });
-    label.appendChild(input);
-    const span = document.createElement('span');
-    span.textContent = 'Ejecutar automáticamente al arrancar el Mac';
-    label.appendChild(span);
-    const hint = document.createElement('small');
-    hint.className = 'muted';
-    hint.style.cssText = 'display:block; margin:2px 0 0 42px; font-size:10px;';
-    hint.textContent =
-      'Solo dispara cuando DevBar abre como Login Item del sistema; no en relanzados manuales.';
-    section.append(label, hint);
-    return section;
   }
 
   /**
@@ -256,76 +155,15 @@ export function initPipelineEditor(
     }
   }
 
-  // ── Summary strip ────────────────────────────────────────────────────────
-  //
-  // `summarizePipeline` is the pure view-model seam: it turns raw steps into
-  // exactly what the strip below renders, with no DOM involved, so the
-  // approved layout (header line + one lane per script, matching
-  // `arranque-prototipo.html`) can be driven from plain fixtures in
-  // `tests/pipeline-summary.test.ts`.
-  function buildSummaryStrip(): HTMLElement {
-    const strip = document.createElement('div');
-    strip.className = 'pipeline-summary';
-    const track = document.createElement('div');
-    track.className = 'pipeline-summary-steps';
-
-    for (const step of summarizePipeline(draftSteps, (groupId, scriptId) => {
+  /** The read-only strip above the step list; `buildSummaryStrip` owns its
+   *  markup, this only feeds it the current steps and a name resolver. */
+  function summaryStrip(): HTMLElement {
+    return buildSummaryStrip(draftSteps, (groupId, scriptId) => {
       const resolved = findScript(groupId, scriptId);
       return resolved
         ? { groupName: resolved.group.name, scriptName: resolved.script.name }
         : null;
-    })) {
-      const block = document.createElement('div');
-      block.className = 'pipeline-summary-step';
-      if (step.isEmpty) block.classList.add('is-empty');
-      if (step.isParallel) block.classList.add('is-parallel');
-      block.title = `Paso ${step.index} (${step.mode === 'serial' ? 'serie' : 'paralelo'})`;
-
-      const head = document.createElement('span');
-      head.className = 'pipeline-summary-step-head';
-      head.textContent =
-        step.lanes.length > 1
-          ? `${step.index} · ${step.mode === 'parallel' ? '∥' : '→'}`
-          : `${step.index}`;
-      block.appendChild(head);
-
-      if (step.isEmpty) {
-        const lane = document.createElement('span');
-        lane.className = 'pipeline-summary-lane is-muted';
-        lane.textContent = 'vacío';
-        block.appendChild(lane);
-      } else {
-        for (const lane of step.lanes) {
-          const laneEl = document.createElement('span');
-          laneEl.className = 'pipeline-summary-lane';
-          if (lane.broken) {
-            laneEl.classList.add('is-muted');
-            laneEl.textContent = 'Referencia rota';
-          } else {
-            const dot = document.createElement('span');
-            dot.className = 'pipeline-group-dot';
-            dot.style.setProperty('--group-color', groupColor(lane.groupName));
-            laneEl.append(dot, document.createTextNode(lane.scriptName));
-          }
-          block.appendChild(laneEl);
-        }
-      }
-      track.appendChild(block);
-    }
-    strip.appendChild(track);
-
-    const scriptCount = draftSteps.reduce(
-      (sum, step) => sum + step.scripts.length,
-      0,
-    );
-    const groupCount = new Set(
-      draftSteps.flatMap((step) => step.scripts.map((ref) => ref.groupId)),
-    ).size;
-    const count = document.createElement('div');
-    count.className = 'pipeline-summary-count muted small';
-    count.textContent = `${draftSteps.length} paso${draftSteps.length === 1 ? '' : 's'} · ${scriptCount} script${scriptCount === 1 ? '' : 's'} · ${groupCount} grupo${groupCount === 1 ? '' : 's'}`;
-    strip.appendChild(count);
-    return strip;
+    });
   }
 
   // ── Script picker ("+ Añadir script") ───────────────────────────────────
@@ -574,7 +412,7 @@ export function initPipelineEditor(
 
   function render(): void {
     host.innerHTML = '';
-    host.appendChild(buildAutoRunToggle());
+    host.appendChild(autoRunToggle());
 
     const helpText = document.createElement('p');
     helpText.className = 'help-text muted';
@@ -583,7 +421,7 @@ export function initPipelineEditor(
       'Un único pipeline ordenado, compartido por todos los grupos. Cada paso puede correr en paralelo o en serie.';
     host.appendChild(helpText);
 
-    host.appendChild(buildSummaryStrip());
+    host.appendChild(summaryStrip());
 
     const headerRow = document.createElement('div');
     headerRow.className = 'sub-list-header';

@@ -1,12 +1,15 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  artifactArchitecture,
   checkAppImage,
   ELF_MACHINE,
   looksLikeAppImage,
+  main,
+  type DpkgReader,
 } from '../scripts/verify-linux-release.js';
 
 const temporaryDirectories: string[] = [];
@@ -299,6 +302,300 @@ describe('scripts/verify-linux-release.ts', () => {
       const result = checkAppImage(file, ELF_MACHINE.x64);
       expect(result.ok).toBe(false);
       expect(result.detail).toContain('e_machine');
+    });
+  });
+
+  describe('artifactArchitecture', () => {
+    it.each([
+      ['DevBar-1.0.0-linux-x64.AppImage', 'x64'],
+      ['DevBar-1.0.0-linux-arm64.AppImage', 'arm64'],
+      ['DevBar-1.0.0-linux-armv7.AppImage', 'armv7'],
+      ['DevBar-1.0.0-linux-x64.deb', 'x64'],
+      ['DevBar-1.0.0-linux-armv7.deb', 'armv7'],
+    ])('reads %s as %s', (name, architecture) => {
+      expect(artifactArchitecture(name)).toBe(architecture);
+    });
+
+    it('refuses a name carrying no linux architecture segment', () => {
+      expect(() => artifactArchitecture('DevBar-1.0.0-macos-x64.dmg')).toThrow(
+        'cannot determine architecture from DevBar-1.0.0-macos-x64.dmg',
+      );
+    });
+
+    it('refuses an architecture outside the release contract', () => {
+      expect(() =>
+        artifactArchitecture('DevBar-1.0.0-linux-riscv64.deb'),
+      ).toThrow('cannot determine architecture from');
+    });
+  });
+
+  describe('main', () => {
+    const VERSION = '1.0.0';
+    /** Debian `Architecture:` value a correctly built package declares. */
+    const DEB_ARCHITECTURE: Record<string, string> = {
+      x64: 'amd64',
+      arm64: 'arm64',
+      armv7: 'armhf',
+    };
+    const DESKTOP_ENTRY =
+      '-rw-r--r-- root/root 231 2024-01-01 00:00 ./usr/share/applications/devbar.desktop\n';
+    const ICON_256 =
+      '-rw-r--r-- root/root 918 2024-01-01 00:00 ./usr/share/icons/hicolor/256x256/apps/devbar.png\n';
+    const ICON_128 =
+      '-rw-r--r-- root/root 412 2024-01-01 00:00 ./usr/share/icons/hicolor/128x128/apps/devbar.png\n';
+    const DEB_LISTING = `${DESKTOP_ENTRY}${ICON_256}`;
+
+    function declaredArchitecture(artifact: string): string {
+      const architecture =
+        /-linux-([a-z0-9]+)\.deb$/u.exec(artifact)?.[1] ?? '';
+      return DEB_ARCHITECTURE[architecture] ?? '';
+    }
+
+    /**
+     * A complete linux artifact set: an AppImage valid for its own
+     * architecture plus a non-empty .deb per architecture. `overrides`
+     * replaces one artifact's bytes by name.
+     */
+    async function artifactSet(
+      overrides: Record<string, Buffer> = {},
+    ): Promise<string> {
+      const directory = await mkdtemp(path.join(tmpdir(), 'devbar-linux-set-'));
+      temporaryDirectories.push(directory);
+      for (const [architecture, machine] of Object.entries(ELF_MACHINE)) {
+        const image = `DevBar-${VERSION}-linux-${architecture}.AppImage`;
+        const deb = `DevBar-${VERSION}-linux-${architecture}.deb`;
+        await writeFile(
+          path.join(directory, image),
+          overrides[image] ??
+            Buffer.concat([
+              elfIdent(0x02, machine),
+              Buffer.alloc(32),
+              superblock(),
+            ]),
+        );
+        await writeFile(
+          path.join(directory, deb),
+          overrides[deb] ?? Buffer.from('!<arch>\ndebian-binary', 'latin1'),
+        );
+      }
+      return directory;
+    }
+
+    interface DpkgCall {
+      operation: string;
+      artifact: string;
+      field?: string;
+    }
+
+    /** A dpkg-deb stand-in that records what main() asked it for. */
+    function recordingDpkg(
+      options: {
+        available?: boolean;
+        architectureOf?: (artifact: string) => string;
+        listingOf?: (artifact: string) => string;
+      } = {},
+    ): { calls: DpkgCall[]; reader: DpkgReader } {
+      const calls: DpkgCall[] = [];
+      const reader: DpkgReader = {
+        available: () => options.available ?? true,
+        field: (filePath, fieldName) => {
+          const artifact = path.basename(filePath);
+          calls.push({ operation: 'field', artifact, field: fieldName });
+          return (options.architectureOf ?? declaredArchitecture)(artifact);
+        },
+        contents: (filePath) => {
+          const artifact = path.basename(filePath);
+          calls.push({ operation: 'contents', artifact });
+          return (options.listingOf ?? (() => DEB_LISTING))(artifact);
+        },
+      };
+      return { calls, reader };
+    }
+
+    function captureLogs(): string[] {
+      const lines: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        lines.push(args.join(' '));
+      });
+      return lines;
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('verifies every AppImage and .deb of a complete set', async () => {
+      const directory = await artifactSet();
+      const { calls, reader } = recordingDpkg();
+      const lines = captureLogs();
+
+      await main({ directory, version: VERSION, dpkg: reader });
+
+      expect(lines[0]).toBe(
+        `Verified 6 linux artifacts for v1.0.0 in ${directory}`,
+      );
+      expect(lines.slice(1)).toEqual([
+        'ok: DevBar-1.0.0-linux-x64.AppImage (AppImage structure: marker + container + filesystem, ELF x64)',
+        'ok: DevBar-1.0.0-linux-arm64.AppImage (AppImage structure: marker + container + filesystem, ELF arm64)',
+        'ok: DevBar-1.0.0-linux-armv7.AppImage (AppImage structure: marker + container + filesystem, ELF armv7)',
+        'ok: DevBar-1.0.0-linux-x64.deb (dpkg -c: desktop entry + icon present, Architecture: amd64)',
+        'ok: DevBar-1.0.0-linux-arm64.deb (dpkg -c: desktop entry + icon present, Architecture: arm64)',
+        'ok: DevBar-1.0.0-linux-armv7.deb (dpkg -c: desktop entry + icon present, Architecture: armhf)',
+      ]);
+      expect(calls).toEqual([
+        {
+          operation: 'field',
+          artifact: 'DevBar-1.0.0-linux-x64.deb',
+          field: 'Architecture',
+        },
+        { operation: 'contents', artifact: 'DevBar-1.0.0-linux-x64.deb' },
+        {
+          operation: 'field',
+          artifact: 'DevBar-1.0.0-linux-arm64.deb',
+          field: 'Architecture',
+        },
+        { operation: 'contents', artifact: 'DevBar-1.0.0-linux-arm64.deb' },
+        {
+          operation: 'field',
+          artifact: 'DevBar-1.0.0-linux-armv7.deb',
+          field: 'Architecture',
+        },
+        { operation: 'contents', artifact: 'DevBar-1.0.0-linux-armv7.deb' },
+      ]);
+    });
+
+    it('rejects an AppImage built for an architecture its name does not promise', async () => {
+      const directory = await artifactSet({
+        [`DevBar-${VERSION}-linux-arm64.AppImage`]: Buffer.concat([
+          elfIdent(0x02, ELF_MACHINE.x64),
+          Buffer.alloc(32),
+          superblock(),
+        ]),
+      });
+      captureLogs();
+
+      await expect(
+        main({ directory, version: VERSION, dpkg: recordingDpkg().reader }),
+      ).rejects.toThrow(
+        /^DevBar-1\.0\.0-linux-arm64\.AppImage is not a valid arm64 AppImage: ELF e_machine 0x3e/u,
+      );
+    });
+
+    it('rejects a .deb that declares another architecture', async () => {
+      const directory = await artifactSet();
+      const { reader } = recordingDpkg({
+        architectureOf: (artifact) =>
+          artifact.includes('-x64.') ? 'i386' : declaredArchitecture(artifact),
+      });
+      captureLogs();
+
+      await expect(
+        main({ directory, version: VERSION, dpkg: reader }),
+      ).rejects.toThrow(
+        'DevBar-1.0.0-linux-x64.deb declares Architecture: i386, expected amd64',
+      );
+    });
+
+    it('reports an absent Architecture field as <missing>', async () => {
+      const directory = await artifactSet();
+      const { reader } = recordingDpkg({ architectureOf: () => '' });
+      captureLogs();
+
+      await expect(
+        main({ directory, version: VERSION, dpkg: reader }),
+      ).rejects.toThrow(
+        'DevBar-1.0.0-linux-x64.deb declares Architecture: <missing>, expected amd64',
+      );
+    });
+
+    it('rejects a .deb without its .desktop entry', async () => {
+      const directory = await artifactSet();
+      const { reader } = recordingDpkg({ listingOf: () => ICON_256 });
+      captureLogs();
+
+      await expect(
+        main({ directory, version: VERSION, dpkg: reader }),
+      ).rejects.toThrow(
+        'DevBar-1.0.0-linux-x64.deb is missing its .desktop entry',
+      );
+    });
+
+    it('rejects a .deb whose only icon is the wrong size, listing what it found', async () => {
+      const directory = await artifactSet();
+      const { reader } = recordingDpkg({
+        listingOf: () => `${DESKTOP_ENTRY}${ICON_128}`,
+      });
+      captureLogs();
+
+      const failure = await main({
+        directory,
+        version: VERSION,
+        dpkg: reader,
+      }).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toContain(
+        'DevBar-1.0.0-linux-x64.deb is missing its 256px icon',
+      );
+      expect((failure as Error).message).toContain(
+        './usr/share/icons/hicolor/128x128/apps/devbar.png',
+      );
+    });
+
+    it('says (none) when the .deb carries no icon entries at all', async () => {
+      const directory = await artifactSet();
+      const { reader } = recordingDpkg({ listingOf: () => DESKTOP_ENTRY });
+      captureLogs();
+
+      const failure = await main({
+        directory,
+        version: VERSION,
+        dpkg: reader,
+      }).catch((error: unknown) => error);
+
+      expect((failure as Error).message).toContain('missing its 256px icon');
+      expect((failure as Error).message).toContain('(none)');
+    });
+
+    it('fails when dpkg-deb is unavailable and the check is required', async () => {
+      const directory = await artifactSet();
+      const { reader } = recordingDpkg({ available: false });
+      captureLogs();
+
+      await expect(
+        main({ directory, version: VERSION, dpkg: reader, requireDpkg: true }),
+      ).rejects.toThrow(
+        'dpkg-deb is unavailable on this host, so the .deb content check cannot run: ' +
+          'DevBar-1.0.0-linux-x64.deb, DevBar-1.0.0-linux-arm64.deb, DevBar-1.0.0-linux-armv7.deb',
+      );
+    });
+
+    it('skips the .deb content check when dpkg-deb is unavailable and not required', async () => {
+      const directory = await artifactSet();
+      const { calls, reader } = recordingDpkg({ available: false });
+      const lines = captureLogs();
+
+      await main({ directory, version: VERSION, dpkg: reader });
+
+      expect(calls).toEqual([]);
+      expect(lines.filter((line) => line.startsWith('skip:'))).toEqual([
+        'skip: DevBar-1.0.0-linux-x64.deb (dpkg-deb unavailable on this host)',
+        'skip: DevBar-1.0.0-linux-arm64.deb (dpkg-deb unavailable on this host)',
+        'skip: DevBar-1.0.0-linux-armv7.deb (dpkg-deb unavailable on this host)',
+      ]);
+    });
+
+    it('fails before any content check when an expected artifact is missing', async () => {
+      const directory = await artifactSet();
+      await rm(path.join(directory, `DevBar-${VERSION}-linux-armv7.deb`));
+      const { calls, reader } = recordingDpkg();
+      const lines = captureLogs();
+
+      await expect(
+        main({ directory, version: VERSION, dpkg: reader }),
+      ).rejects.toThrow('DevBar-1.0.0-linux-armv7.deb is missing or empty');
+      expect(calls).toEqual([]);
+      expect(lines).toEqual([]);
     });
   });
 });

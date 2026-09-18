@@ -40,6 +40,17 @@ function git(
     ),
   );
 }
+/**
+ * The name to offer for a ref: `refs/heads/x` and `refs/remotes/origin/x` are
+ * the same branch seen from two sides, so both read as `x`; any other remote
+ * keeps its prefix, the way git itself prints it.
+ */
+function branchName(refname: string): string {
+  for (const prefix of ['refs/heads/', 'refs/remotes/origin/', 'refs/remotes/'])
+    if (refname.startsWith(prefix)) return refname.slice(prefix.length);
+  return refname;
+}
+
 export async function listBranches(repo: string): Promise<{
   ok: boolean;
   branches?: string[];
@@ -89,8 +100,13 @@ export async function listBranches(repo: string): Promise<{
     return { ok: false, isRepo: false, error: 'not a git repository' };
   }
   const result = await git(repo, [
+    // Full refnames, not `%(refname:short)`. The short form of
+    // `refs/remotes/origin/HEAD` — the pointer every `git clone` writes — is
+    // just `origin`, indistinguishable from a branch of that name, so the
+    // guard below could never see it and the selector offered the remote
+    // itself as somewhere to switch to.
     'for-each-ref',
-    '--format=%(refname:short)',
+    '--format=%(refname)',
     'refs/heads',
     'refs/remotes',
   ]);
@@ -100,7 +116,7 @@ export async function listBranches(repo: string): Promise<{
   for (const raw of result.stdout.split('\n')) {
     const line = raw.trim();
     if (!line || line.endsWith('/HEAD')) continue;
-    const name = line.startsWith('origin/') ? line.slice(7) : line;
+    const name = branchName(line);
     if (!seen.has(name)) {
       seen.add(name);
       branches.push(name);

@@ -162,6 +162,52 @@ Todas las novedades relevantes de DevBar. El formato sigue
   anterior, la casilla se revertía por encima del clic siguiente, que sí se
   había guardado.
 
+- **Al actualizar desde una versión antigua se perdía la lista de servicios.**
+  La conversión al formato de grupos guarda antes una copia de seguridad de
+  los servicios originales, y solo la escribe si no había una ya. El almacén
+  creaba esa copia vacía por su cuenta al arrancar, antes de la conversión, de
+  modo que esta creía que el respaldo ya existía y no lo hacía: la única copia
+  de los servicios originales desaparecía.
+
+- **En Windows, una actualización podía descargar el paquete de Linux.** Si la
+  release no traía instalador de Windows, el aviso ofrecía el `.deb` y lo
+  dejaba en Descargas pidiendo instalarlo a mano. Ahora, sin instalador para
+  tu sistema, se abre la página de la release.
+
+- **En el selector de rama, Enter cambiaba a una rama distinta de la
+  resaltada.** La lista sube arriba la rama activa, pero el teclado contaba
+  las posiciones sobre la lista sin reordenar: con cualquier rama checkouteada,
+  bajar una posición y pulsar Enter hacía checkout de otra. Pasaba igual al
+  elegir con el ratón.
+
+- **El selector de rama solo mostraba la rama actual al abrirlo.** Filtraba por
+  el texto de la caja, que el propio selector rellena con la rama activa, así
+  que había que borrarlo a mano para ver las demás.
+
+- **El selector de rama era invisible para un lector de pantalla.** No se
+  anunciaba como lista desplegable ni decía qué opción estaba resaltada al
+  moverse con las flechas.
+
+- **Renombrar un grupo no se veía en una ventana de logs ya abierta.** El
+  nombre y los iconos se quedaban como estaban hasta reabrirla.
+
+- **La ventana de logs aparecía vacía si no había nada configurado**, en vez de
+  decir que no hay grupos.
+
+- **Guardar un grupo deshacía el rayo de arranque automático y devolvía
+  comandos borrados.** Ambas acciones se aplican al momento, pero el formulario
+  seguía trabajando con la lista anterior, así que al guardar la reescribía.
+
+- **Reordenar grupos arrastrando enviaba el cambio varias veces.** Cada
+  repintado de la lista añadía otro manejador, así que un solo arrastre
+  disparaba tantas reordenaciones y recargas como veces se hubiera repintado.
+
+- **En un repositorio clonado, el selector de rama ofrecía una rama «origin»
+  que no existe.** Es el puntero que `git clone` deja apuntando a la rama por
+  defecto del remoto, y se colaba en la lista como si fuera una rama más.
+
+- **«Nuevo acción» y «Acción guardado»** ahora concuerdan en femenino.
+
 ## [0.8.0] - 2026-09-10
 
 ### Añadido

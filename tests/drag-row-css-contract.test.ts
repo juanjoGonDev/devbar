@@ -22,8 +22,14 @@ const pipelineEditorSource = fs.readFileSync(
   path.join(rendererDir, 'pipeline-editor.ts'),
   'utf8',
 );
-const configSource = fs.readFileSync(
-  path.join(rendererDir, 'config.ts'),
+// The config window builds each of its draggable rows in the module that owns
+// that list, so that is where each half of this contract is now written down.
+const groupsListSource = fs.readFileSync(
+  path.join(rendererDir, 'config/groups-list.ts'),
+  'utf8',
+);
+const subListsSource = fs.readFileSync(
+  path.join(rendererDir, 'config/sub-lists.ts'),
   'utf8',
 );
 const dndHelperSource = fs.readFileSync(
@@ -201,8 +207,8 @@ describe('shared .drag-row pattern (defect 2+3 remediation)', () => {
   });
 
   it('the group nav card and sub-item row creation sites opt into the shared pattern', () => {
-    expect(/nav-card drag-row/.test(configSource)).toBe(true);
-    expect(/['"]sub-item-row drag-row['"]/.test(configSource)).toBe(true);
+    expect(/nav-card drag-row/.test(groupsListSource)).toBe(true);
+    expect(/['"]sub-item-row drag-row['"]/.test(subListsSource)).toBe(true);
   });
 
   it('keeps the existing empty-container drop-zone affordance working', () => {

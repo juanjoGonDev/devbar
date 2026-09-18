@@ -10,7 +10,13 @@
  *
  * tsc runs through node directly (node_modules/typescript/bin/tsc) so no
  * shell or .bin shim resolution is involved — identical output on Windows,
- * macOS and Linux.
+ * macOS and Linux. It is handed `cwd: root` rather than the process being
+ * chdir'd into it: the relative `-p tsconfig.*.json` resolves the same way,
+ * without a build script mutating the cwd of whatever started it.
+ *
+ * The two expensive steps (tsc, esbuild) are injected so the copy/clean
+ * choreography around them — what is wiped, what order the projects compile
+ * in, which renderer files ship — is testable without a real compile.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -20,40 +26,66 @@ import esbuild from 'esbuild';
 import { isEntrypoint } from './lib/script-runtime.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const TSC = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
 
-export async function buildApp(): Promise<void> {
-  process.chdir(ROOT);
-  fs.rmSync(path.join(ROOT, 'build'), { recursive: true, force: true });
+export interface BuildDeps {
+  /** Compile one tsconfig project, resolved against the build root. */
+  compile: (project: string) => void;
+  /** Bundle the preload entry point into a single CommonJS file. */
+  bundlePreload: (entry: string, outfile: string) => Promise<void>;
+}
 
-  execFileSync(process.execPath, [TSC, '-p', 'tsconfig.renderer.json'], {
-    stdio: 'inherit',
-  });
-  execFileSync(process.execPath, [TSC, '-p', 'tsconfig.node.json'], {
-    stdio: 'inherit',
-  });
+/** The real toolchain: the repo's own tsc and esbuild. */
+export function defaultBuildDeps(root: string): BuildDeps {
+  const tsc = path.join(root, 'node_modules', 'typescript', 'bin', 'tsc');
+  return {
+    compile: (project) => {
+      execFileSync(process.execPath, [tsc, '-p', project], {
+        stdio: 'inherit',
+        cwd: root,
+      });
+    },
+    bundlePreload: async (entry, outfile) => {
+      await esbuild.build({
+        entryPoints: [entry],
+        bundle: true,
+        platform: 'node',
+        format: 'cjs',
+        target: 'node22',
+        // Electron is provided by the runtime, not by the bundle.
+        external: ['electron'],
+        outfile,
+      });
+    },
+  };
+}
 
-  await esbuild.build({
-    entryPoints: [path.join(ROOT, 'src', 'preload.ts')],
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    target: 'node22',
-    external: ['electron'],
-    outfile: path.join(ROOT, 'build', 'src', 'preload.cjs'),
-  });
+export async function buildApp(
+  root: string = ROOT,
+  deps: BuildDeps = defaultBuildDeps(root),
+): Promise<void> {
+  fs.rmSync(path.join(root, 'build'), { recursive: true, force: true });
 
-  const rendererOut = path.join(ROOT, 'build', 'renderer');
+  deps.compile('tsconfig.renderer.json');
+  deps.compile('tsconfig.node.json');
+
+  await deps.bundlePreload(
+    path.join(root, 'src', 'preload.ts'),
+    path.join(root, 'build', 'src', 'preload.cjs'),
+  );
+
+  const rendererOut = path.join(root, 'build', 'renderer');
   fs.mkdirSync(rendererOut, { recursive: true });
-  for (const name of fs.readdirSync(path.join(ROOT, 'renderer'))) {
+  for (const name of fs.readdirSync(path.join(root, 'renderer'))) {
+    // Only the assets the window loads as-is: the renderer's .ts sources are
+    // the tsc emit's job, and copying them would ship source into the build.
     if (name.endsWith('.html') || name.endsWith('.css')) {
       fs.copyFileSync(
-        path.join(ROOT, 'renderer', name),
+        path.join(root, 'renderer', name),
         path.join(rendererOut, name),
       );
     }
   }
-  fs.cpSync(path.join(ROOT, 'assets'), path.join(ROOT, 'build', 'assets'), {
+  fs.cpSync(path.join(root, 'assets'), path.join(root, 'build', 'assets'), {
     recursive: true,
   });
 }

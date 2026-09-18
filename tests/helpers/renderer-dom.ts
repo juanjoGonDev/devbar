@@ -44,6 +44,8 @@ export interface RendererWindowOptions {
 export interface RendererWindow {
   /** How many times the renderer has called `name`. */
   callCount(name: string): number;
+  /** The argument lists of every call to `name`, oldest first. */
+  argsFor(name: string): readonly unknown[][];
   /** Answers the oldest unanswered call of `name` and drains what it wakes. */
   settle(name: string, value: unknown): Promise<void>;
   /**
@@ -91,6 +93,7 @@ export async function loadRendererWindow(
   const pending = new Map<string, PendingCall[]>();
   const listeners = new Map<string, Listener[]>();
   const counts = new Map<string, number>();
+  const callArgs = new Map<string, unknown[][]>();
   const members = new Map<string, unknown>();
   const intervals: ReturnType<typeof setInterval>[] = [];
 
@@ -105,8 +108,9 @@ export async function loadRendererWindow(
           registered.push(listener);
           listeners.set(name, registered);
         }
-      : () => {
+      : (...called: unknown[]) => {
           counts.set(name, (counts.get(name) ?? 0) + 1);
+          callArgs.set(name, [...(callArgs.get(name) ?? []), called]);
           return new Promise<unknown>((resolve, reject) => {
             const queue = pending.get(name) ?? [];
             queue.push({ resolve, reject });
@@ -158,6 +162,7 @@ export async function loadRendererWindow(
 
   return {
     callCount: (name) => counts.get(name) ?? 0,
+    argsFor: (name) => callArgs.get(name) ?? [],
     settle: async (name, value) => {
       take(name, false).resolve(value);
       await drain();

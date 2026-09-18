@@ -1,9 +1,9 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { looksLikeWindowsExe } from '../scripts/verify-win-release.js';
+import { looksLikeWindowsExe, main } from '../scripts/verify-win-release.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -64,6 +64,104 @@ describe('scripts/verify-win-release.ts', () => {
       expect(looksLikeWindowsExe(html)).toBe(false);
       const short = await writeFixture('short.bin', Buffer.from('MZ'));
       expect(looksLikeWindowsExe(short)).toBe(false);
+    });
+  });
+
+  describe('main', () => {
+    const VERSION = '1.0.0';
+    const WIN_ARTIFACTS = [
+      `DevBar-${VERSION}-win-x64-setup.exe`,
+      `DevBar-${VERSION}-win-x64-portable.exe`,
+      `DevBar-${VERSION}-win-arm64-setup.exe`,
+      `DevBar-${VERSION}-win-arm64-portable.exe`,
+    ];
+
+    /**
+     * A complete win artifact set, every file a real PE. `overrides`
+     * replaces one artifact's bytes by name.
+     */
+    async function artifactSet(
+      overrides: Record<string, Buffer> = {},
+    ): Promise<string> {
+      const directory = await mkdtemp(path.join(tmpdir(), 'devbar-win-set-'));
+      temporaryDirectories.push(directory);
+      for (const name of WIN_ARTIFACTS) {
+        await writeFile(
+          path.join(directory, name),
+          overrides[name] ?? peFixture(),
+        );
+      }
+      return directory;
+    }
+
+    function captureLogs(): string[] {
+      const lines: string[] = [];
+      vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        lines.push(args.join(' '));
+      });
+      return lines;
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('verifies every artifact of a complete set', async () => {
+      const directory = await artifactSet();
+      const lines = captureLogs();
+
+      await main({ directory, version: VERSION });
+
+      expect(lines[0]).toBe(
+        `Verified 4 win artifacts for v1.0.0 in ${directory}`,
+      );
+      expect(lines.slice(1)).toEqual([
+        'ok: DevBar-1.0.0-win-x64-setup.exe (MZ header)',
+        'ok: DevBar-1.0.0-win-x64-portable.exe (MZ header)',
+        'ok: DevBar-1.0.0-win-arm64-setup.exe (MZ header)',
+        'ok: DevBar-1.0.0-win-arm64-portable.exe (MZ header)',
+      ]);
+    });
+
+    it('rejects a set in which one artifact is not a PE executable', async () => {
+      // A downloaded error page is non-empty, so the artifact-set contract
+      // alone accepts it; only the PE check catches it.
+      const directory = await artifactSet({
+        [`DevBar-${VERSION}-win-arm64-portable.exe`]: Buffer.from(
+          '<html>502 Bad Gateway</html>',
+        ),
+      });
+      const lines = captureLogs();
+
+      await expect(main({ directory, version: VERSION })).rejects.toThrow(
+        'DevBar-1.0.0-win-arm64-portable.exe is not a valid Windows executable',
+      );
+      // The three artifacts before it were accepted, so the failure is the
+      // per-file check and not an aborted set.
+      expect(lines.slice(1)).toEqual([
+        'ok: DevBar-1.0.0-win-x64-setup.exe (MZ header)',
+        'ok: DevBar-1.0.0-win-x64-portable.exe (MZ header)',
+        'ok: DevBar-1.0.0-win-arm64-setup.exe (MZ header)',
+      ]);
+    });
+
+    it('fails before any content check when an expected artifact is missing', async () => {
+      const directory = await artifactSet();
+      await rm(path.join(directory, `DevBar-${VERSION}-win-arm64-setup.exe`));
+      const lines = captureLogs();
+
+      await expect(main({ directory, version: VERSION })).rejects.toThrow(
+        'DevBar-1.0.0-win-arm64-setup.exe is missing or empty',
+      );
+      expect(lines).toEqual([]);
+    });
+
+    it('refuses a version that is not a stable release version', async () => {
+      const directory = await artifactSet();
+
+      await expect(main({ directory, version: '1.0.0-rc.1' })).rejects.toThrow(
+        'Invalid stable release version: 1.0.0-rc.1',
+      );
     });
   });
 });
