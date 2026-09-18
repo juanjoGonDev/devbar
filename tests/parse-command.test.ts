@@ -244,23 +244,18 @@ describe('parse-command', () => {
       'round-trips literal percent signs through cmd.exe',
       () => {
         // No fixture file: node -p prints its own argv, which keeps this
-        // inside the TypeScript-only source policy.
-        // Test-only: the command line is built by the escaper under test,
-        // and process.execPath is under developer/CI control (not
-        // attacker input) — the alert has no runtime consequence here.
-        // codeql-suppress js/shell-command-built-from-environment-values
+        // inside the TypeScript-only source policy. The program and the
+        // shell are static literals (node and cmd.exe both resolve from
+        // PATH), so the command line carries no uncontrolled data — only
+        // the escaper's output for the args under test.
         const cmdline = buildCmdlineWindows(
-          `${quoteWindowsArg(process.execPath)} -p "JSON.stringify(process.argv.slice(1))"`,
+          'node -p "JSON.stringify(process.argv.slice(1))"',
           ['%TEMP%', 'in %TEMP% now'],
         );
-        const result = spawnSync(
-          process.env.ComSpec || 'cmd.exe',
-          ['/d', '/s', '/c', cmdline],
-          {
-            encoding: 'utf8',
-            env: { ...process.env, TEMP: 'expanded-by-cmd' },
-          },
-        );
+        const result = spawnSync('cmd.exe', ['/d', '/s', '/c', cmdline], {
+          encoding: 'utf8',
+          env: { ...process.env, TEMP: 'expanded-by-cmd' },
+        });
 
         expect(result.status, result.stderr).toBe(0);
         // An unescaped % would arrive as 'expanded-by-cmd'.
@@ -272,20 +267,17 @@ describe('parse-command', () => {
       'round-trips parentheses through cmd.exe (unquoted and in a span)',
       () => {
         // No fixture file: node -p prints its own argv, which keeps this
-        // inside the TypeScript-only source policy.
-        // Test-only: the command line is built by the escaper under test,
-        // and process.execPath is under developer/CI control (not
-        // attacker input) — the alert has no runtime consequence here.
-        // codeql-suppress js/shell-command-built-from-environment-values
+        // inside the TypeScript-only source policy. The program and the
+        // shell are static literals (node and cmd.exe both resolve from
+        // PATH), so the command line carries no uncontrolled data — only
+        // the escaper's output for the args under test.
         const cmdline = buildCmdlineWindows(
-          `${quoteWindowsArg(process.execPath)} -p "JSON.stringify(process.argv.slice(1))"`,
+          'node -p "JSON.stringify(process.argv.slice(1))"',
           ['foo(bar)', 'a)b', 'keep ( ) in a span'],
         );
-        const result = spawnSync(
-          process.env.ComSpec || 'cmd.exe',
-          ['/d', '/s', '/c', cmdline],
-          { encoding: 'utf8' },
-        );
+        const result = spawnSync('cmd.exe', ['/d', '/s', '/c', cmdline], {
+          encoding: 'utf8',
+        });
 
         expect(result.status, result.stderr).toBe(0);
         // An unescaped ( ) would make cmd treat the rest as compound
