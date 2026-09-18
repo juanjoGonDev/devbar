@@ -575,7 +575,14 @@ describe('scripts/verify-linux-release.ts', () => {
       const { calls, reader } = recordingDpkg({ available: false });
       const lines = captureLogs();
 
-      await main({ directory, version: VERSION, dpkg: reader });
+      // Stated, not inherited: `requireDpkg` defaults to Boolean(process.env.CI),
+      // so leaving it out makes this assert the opposite thing on a CI runner.
+      await main({
+        directory,
+        version: VERSION,
+        dpkg: reader,
+        requireDpkg: false,
+      });
 
       expect(calls).toEqual([]);
       expect(lines.filter((line) => line.startsWith('skip:'))).toEqual([
