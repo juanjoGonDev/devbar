@@ -272,3 +272,105 @@ describe('response error handling (mid-drain socket failures)', () => {
     ).resolves.toBeNull();
   });
 });
+
+describe('httpGetText: redirect handling', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // sha256sum format: 64 hex chars, a space separator, then a space (or *) before the name.
+  const MANIFEST_LINE = `${'a'.repeat(64)}  SHA256SUMS.txt`;
+  const BASE_URL =
+    'https://github.com/o/r/releases/download/v1.0.0/SHA256SUMS.txt';
+
+  /**
+   * Mocks https.get with a scripted sequence of responses and records
+   * every URL requested. Each entry: the status + Location (or 200 with
+   * the manifest body) to serve on that call.
+   */
+  function mockSequence(
+    responses: Array<{
+      status: number;
+      location?: string;
+    }>,
+  ): string[] {
+    const requested: string[] = [];
+    vi.spyOn(https, 'get').mockImplementation(((
+      url: unknown,
+      _opts: unknown,
+      cb: (
+        res: Readable & {
+          statusCode?: number;
+          headers?: Record<string, unknown>;
+        },
+      ) => void,
+    ) => {
+      const u = String(url);
+      requested.push(u);
+      const entry = responses[Math.min(requested.length, responses.length) - 1];
+      const res: Readable & {
+        statusCode?: number;
+        headers?: Record<string, unknown>;
+      } = new Readable({ read() {} });
+      res.statusCode = entry.status;
+      res.headers = entry.location ? { location: entry.location } : {};
+      setImmediate(() => {
+        cb(res);
+        if (entry.status === 200) {
+          // httpGetText relies on res.setEncoding('utf8'), which a manual
+          // emit bypasses — feed the already-encoded string, as a real
+          // response would deliver it.
+          res.emit('data', MANIFEST_LINE);
+          res.emit('end');
+        }
+      });
+      return { on: vi.fn(), destroy: vi.fn(), setTimeout: vi.fn() } as never;
+    }) as never);
+    return requested;
+  }
+
+  it('resolves a relative Location against the target URL', async () => {
+    const requested = mockSequence([
+      { status: 302, location: './SHA256SUMS.txt' },
+      { status: 200 },
+    ]);
+    const out = await fetchReleaseSha256('o', 'r', '1.0.0');
+    // A relative reference must be resolved, never passed raw to
+    // https.get (which would fail).
+    expect(requested).toEqual([BASE_URL, BASE_URL]);
+    expect(out?.size).toBe(1);
+  });
+
+  it('follows an absolute https Location', async () => {
+    const target = 'https://github.com/o/r/other/SHA256SUMS.txt';
+    const requested = mockSequence([
+      { status: 301, location: target },
+      { status: 200 },
+    ]);
+    const out = await fetchReleaseSha256('o', 'r', '1.0.0');
+    expect(requested).toEqual([BASE_URL, target]);
+    expect(out?.size).toBe(1);
+  });
+
+  it('rejects a redirect to a non-https protocol', async () => {
+    const requested = mockSequence([
+      { status: 302, location: 'http://github.com/o/r/SHA256SUMS.txt' },
+      { status: 200 },
+    ]);
+    const out = await fetchReleaseSha256('o', 'r', '1.0.0');
+    expect(out).toBeNull();
+    // The non-https target must never be requested.
+    expect(requested).toEqual([BASE_URL]);
+  });
+
+  it('resolves null on a malformed Location', async () => {
+    // Unterminated IPv6 host: new URL() throws.
+    const requested = mockSequence([
+      { status: 302, location: 'https://[::1' },
+      { status: 200 },
+    ]);
+    const out = await fetchReleaseSha256('o', 'r', '1.0.0');
+    expect(out).toBeNull();
+    expect(requested).toEqual([BASE_URL]);
+  });
+});

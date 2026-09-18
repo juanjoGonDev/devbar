@@ -199,15 +199,26 @@ function httpGetText(
           // update.
           res.on('error', () => resolve(null));
           const status = res.statusCode;
+          const location = res.headers.location;
           if (
             status !== undefined &&
             [301, 302, 303, 307, 308].includes(status) &&
-            typeof res.headers.location === 'string'
+            typeof location === 'string'
           ) {
             res.resume();
             if (remaining <= 0) return resolve(null);
+            // A Location header MAY be a relative reference (RFC 7231) —
+            // resolve it against the target, and stay on https: the
+            // updater must never follow a redirect to another protocol.
+            let next: URL;
+            try {
+              next = new URL(location, target);
+            } catch {
+              return resolve(null);
+            }
+            if (next.protocol !== 'https:') return resolve(null);
             remaining -= 1;
-            return fetchOnce(res.headers.location);
+            return fetchOnce(next.href);
           }
           if (status !== 200) {
             res.resume();

@@ -486,7 +486,12 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
         ts: Date.now(),
         stream: 'sys',
         level: killed ? null : code !== 0 ? 'error' : null,
-        line: killed ? `■ stopped (${signal})` : `■ exited with code ${code}`,
+        // On Windows the kill arrives via taskkill with a NULL signal (the
+        // killRequested set is win-only, so a signalless killed exit can
+        // only be a taskkill) — label it instead of logging "(null)".
+        line: killed
+          ? `■ stopped (${signal ?? 'taskkill'})`
+          : `■ exited with code ${code}`,
       });
       if (kind === 'action' || kind === 'prescript') {
         this.setState(processId, {
