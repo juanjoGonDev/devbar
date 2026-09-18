@@ -1,7 +1,10 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
+
+import { classifyReleaseImpact } from '../scripts/release-impact-policy.ts';
 
 const autoReleaseWorkflow = readFileSync(
   '.github/workflows/auto-release.workflow.yml',
@@ -199,5 +202,38 @@ describe('release impact workflow integration', () => {
           step.run.includes('pnpm run release:mac'),
       ),
     ).toBe(true);
+  });
+
+  // The policy decides whether a change needs a release; release-validation.yml
+  // decides whether that change gets a packaging dry run. If a script the
+  // policy calls release-impacting is missing from the workflow filter, it
+  // ships without ever being dry-run. Both lists have silently drifted before,
+  // so assert the containment instead of trusting two hand-maintained copies.
+  it('dry-runs every release-impacting script in release-validation.yml', () => {
+    const validationDoc = yaml.load(
+      readFileSync('.github/workflows/release-validation.yml', 'utf8'),
+    ) as { on?: { pull_request?: { paths?: string[] } } };
+    const filtered = new Set(validationDoc.on?.pull_request?.paths ?? []);
+    expect(filtered.size).toBeGreaterThan(0);
+
+    // --others so a newly added, not-yet-committed script is covered too:
+    // that is exactly when the two lists drift apart.
+    const trackedScripts = spawnSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard', 'scripts/'],
+      { encoding: 'utf8' },
+    )
+      .stdout.split('\n')
+      .filter((path) => path.length > 0);
+    expect(trackedScripts.length).toBeGreaterThan(0);
+
+    const uncovered = trackedScripts.filter(
+      (path) =>
+        classifyReleaseImpact([path]).publish === true && !filtered.has(path),
+    );
+    expect(
+      uncovered,
+      'release-impacting scripts missing from the release-validation.yml path filter',
+    ).toEqual([]);
   });
 });

@@ -113,7 +113,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -155,6 +155,14 @@ jobs:
 
       - name: Install reproducibly
         run: pnpm install --frozen-lockfile
+
+      # Scoped to this one file on purpose: the `ci` job runs the full
+      # suite on ubuntu, and running it again here would surface unrelated
+      # POSIX-shaped failures. These are the win32-gated cmd.exe escaping
+      # tests, which are skipped everywhere else in CI.
+      - name: Tests — Windows command-line escaping
+        if: matrix.os == 'win'
+        run: pnpm test tests/parse-command.test.ts
 
       - name: Build and verify macOS release
         if: matrix.os == 'macos'
@@ -594,13 +602,24 @@ jobs:
           $new = $null
           $deadline = (Get-Date).AddSeconds(90)
           while ((Get-Date) -lt $deadline) {
-            $new = Get-Process DevBar -ErrorAction SilentlyContinue
+            # Match the swapped file itself. Electron's GPU/utility/
+            # renderer children are also named DevBar and outlive the
+            # killed broker by seconds, so a bare name poll would be
+            # satisfied by those leftovers (which run from
+            # %LOCALAPPDATA%\Programs\DevBar) even if the relaunch never
+            # happened.
+            $new = Get-Process DevBar -ErrorAction SilentlyContinue |
+              Where-Object { $_.Path -eq $target }
             if ($new) { break }
             Start-Sleep -Seconds 1
           }
           if (-not $new) { throw 'the swap bat did not relaunch the portable' }
           # Clean slate: stop the relaunched app, then the scratch dir.
-          Get-Process DevBar | Stop-Process -Force
+          # Reuse the polled handle: the portable wrapper returns as soon
+          # as its child exits, so a fresh Get-Process can match nothing
+          # and throw under $ErrorActionPreference = 'Stop' — failing the
+          # job after every assertion above already passed.
+          $new | Stop-Process -Force -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 2
           Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -738,8 +757,11 @@ jobs:
           retention-days: 3
           # Evidence must survive a build/smoke failure (that is exactly
           # when it is needed) — always() — and a failed early step may
-          # have produced no dist/ or smoke logs at all — warn, don't fail.
+          # have produced no logs at all — warn, don't fail.
           if-no-files-found: warn
-          path: |
-            dist/
-            smoke-*.log
+          # Logs only. dist/ carried the full artifact set, the
+          # *-unpacked/ trees and the update-simulation v2 build — ~3 GB
+          # per run, on every push, for installers rebuildable from the
+          # commit. Every log this job writes (smoke-*, pack-linux-*,
+          # install-local-*) lands in the workspace root.
+          path: '*.log'
