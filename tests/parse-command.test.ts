@@ -190,9 +190,20 @@ describe('parse-command', () => {
     });
 
     it('keeps a trailing backslash literal at end of argument', () => {
-      // No closing quote is emitted, so the trailing backslash needs no
-      // doubling — the simulated round-trip below asserts the bytes.
-      expect(quoteWindowsArg('a"b\\')).toBe('"a"\\"b\\');
+      // The `"^"` parity suffix puts a quote after the run, so the run is
+      // doubled — the simulated round-trip below asserts it decodes to one.
+      expect(quoteWindowsArg('a"b\\')).toBe('"a"\\"b\\\\"^"');
+    });
+
+    it('closes the cmd span an odd number of quotes leaves open', () => {
+      // cmd counts EVERY quote, and each literal `"` costs the child one
+      // that nothing pairs with: without the suffix the encoding ends with
+      // cmd INSIDE a span, and the next argument is encoded for outside.
+      // `^"` is a quote cmd passes through without counting, so the child
+      // sees an empty span and decodes the same argument.
+      expect(quoteWindowsArg('a"')).toBe('"a"\\""^"');
+      // An even number needs no suffix: cmd is already outside the span.
+      expect(quoteWindowsArg('He said "hi"')).toBe('"He said "\\"hi\\"');
     });
 
     it('escapes cmd operators with ^ when the arg stays unquoted', () => {
@@ -270,6 +281,38 @@ describe('parse-command', () => {
         expect(result.status, result.stderr).toBe(0);
         // An unescaped % would arrive as 'expanded-by-cmd'.
         expect(JSON.parse(result.stdout)).toEqual(['%TEMP%', 'in %TEMP% now']);
+      },
+    );
+
+    it.runIf(process.platform === 'win32')(
+      'round-trips an embedded quote followed by a percent sign through cmd.exe',
+      () => {
+        // No fixture file: node -p prints its own argv, which keeps this
+        // inside the TypeScript-only source policy. The program and the
+        // shell are static literals (node and cmd.exe both resolve from
+        // PATH), so the command line carries no uncontrolled data — only
+        // the escaper's output for the args under test.
+        //
+        // This is the real-cmd.exe proof for the `"^"` parity suffix: an
+        // odd number of quotes used to leave cmd INSIDE a span, where the
+        // next argument's `^%` is literal and `%TEMP%` still expands.
+        const cmdline = buildCmdlineWindows(
+          'node -p "JSON.stringify(process.argv.slice(1))"',
+          ['say "hi', '100%', '%TEMP%'],
+        );
+        const spec = buildSpawnArgs(cmdline);
+        const result = spawnSync(spec.file, spec.args, {
+          encoding: 'utf8',
+          env: { ...process.env, TEMP: 'expanded-by-cmd' },
+          ...serviceSpawnOptions(),
+        });
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toEqual([
+          'say "hi',
+          '100%',
+          '%TEMP%',
+        ]);
       },
     );
 
@@ -447,7 +490,7 @@ describe('parse-command', () => {
       'a%\\ b',
       'a%\\\\\" b',
       'C%\\\\x\\" y',
-      '%HOMEDRIVE:%\dir',
+      '%HOMEDRIVE:%\\dir',
       'a^b c',
       'trailing space ',
       '  leading',
@@ -482,5 +525,31 @@ describe('parse-command', () => {
         ).toEqual([value]);
       },
     );
+
+    it('leaves cmd outside its span after an argument with an odd quote count', () => {
+      // The battery above encodes ONE argument, so it cannot see this: an
+      // embedded `"` used to leave cmd inside a quoted span, and the next
+      // argument is encoded for outside one. cmd then took its `^` escapes
+      // literally and still expanded `%NAME%`, so the percent argument
+      // arrived mangled AND glued to the previous argv element.
+      const line = buildCmdlineWindows('prog', ['say "hi', '100%', '%TEMP%']);
+      expect(childParse(cmdSimulate(line, ENV))).toEqual([
+        'prog',
+        'say "hi',
+        '100%',
+        '%TEMP%',
+      ]);
+    });
+
+    it('keeps a trailing backslash literal when the parity suffix follows it', () => {
+      // The suffix puts a quote after the trailing run, so the run must be
+      // doubled or the child reads it as an escape and decodes `a"b"`.
+      const line = buildCmdlineWindows('prog', ['a"b\\', '%TEMP%']);
+      expect(childParse(cmdSimulate(line, ENV))).toEqual([
+        'prog',
+        'a"b\\',
+        '%TEMP%',
+      ]);
+    });
   });
 });

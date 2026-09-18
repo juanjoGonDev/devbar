@@ -22,6 +22,11 @@ body {
   --border-strong: rgba(0, 0, 0, 0.14);
   --muted: #8a8a8e;
   --accent: #007aff;
+  /* Accent as a FILL behind white text: 5.567:1. --accent itself is only
+     4.017:1 on white — under the WCAG AA 4.5:1 minimum for normal text,
+     and these chips are 11px/500, which is not large text. One value for
+     both themes, because --accent is one value for both too. */
+  --accent-strong: #0066cc;
   --bg-card: rgba(255, 255, 255, 0.72);
   --bg-card-strong: rgba(255, 255, 255, 0.92);
   --bg-row-hover: rgba(0, 0, 0, 0.04);
@@ -518,7 +523,7 @@ body.config {
   filter: none;
 }
 .nav-item.active {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
 }
@@ -1200,7 +1205,7 @@ dialog h2 {
   font-size: 10px;
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
 }
 .cl-tag.pre {
@@ -1775,7 +1780,7 @@ dialog h2 {
   background: rgba(0, 122, 255, 0.08);
 }
 .small-btn.autostart-toggle.is-on {
-  background: var(--accent);
+  background: var(--accent-strong);
   border-color: transparent;
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
@@ -1793,7 +1798,7 @@ dialog h2 {
   margin: 2px 0 6px;
 }
 .small-btn.theme-opt.is-on {
-  background: var(--accent);
+  background: var(--accent-strong);
   border-color: transparent;
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
@@ -1872,7 +1877,7 @@ fieldset.schedule-group legend {
   background: var(--bg-row-hover);
 }
 .day-chip.is-on {
-  background: var(--accent);
+  background: var(--accent-strong);
   border-color: transparent;
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
@@ -2286,7 +2291,7 @@ fieldset.schedule-group legend {
 }
 
 .combobox-item.is-highlighted {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
 }
 .combobox-item.is-highlighted .combobox-check {
@@ -2483,7 +2488,7 @@ dialog form {
 }
 .app-version:hover {
   filter: none;
-  background: var(--accent);
+  background: var(--accent-strong);
   border-color: transparent;
   color: #fff;
 }
@@ -2726,7 +2731,7 @@ dialog form {
   cursor: pointer;
 }
 .prestep-mode-toggle .mode-btn[aria-pressed='true'] {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
 }
 

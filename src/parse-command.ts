@@ -129,7 +129,9 @@ function isArgSpace(ch: string | undefined): boolean {
  *  - a `%` is only ever emitted as `^%` while `!cmdQ` (or cmd would
  *    expand %NAME% — even inside quotes);
  *  - a literal `"` is only ever emitted as `\"` while `!childQ` (a quote
- *    inside a child span would close it, not be content).
+ *    inside a child span would close it, not be content);
+ *  - the encoding ends with `!cmdQ`, so the NEXT argument is encoded from
+ *    the cmd state it assumes (outside a span).
  */
 function quoteWindowsArgQuoted(value: string): string {
   // Start inside the span: classic `"…"` form for the common case; the
@@ -166,9 +168,11 @@ function quoteWindowsArgQuoted(value: string): string {
         cmdQ = !cmdQ;
         i += n; // the loop's i++ then skips the consumed quote
       } else if (next === undefined) {
-        // Argument end: the final closing quote (below) is adjacent when
-        // childQ; with !childQ no quote follows and the run is literal.
-        out += '\\'.repeat(childQ ? 2 * n : n);
+        // Argument end: a quote follows when the child's span still has to
+        // be closed (childQ) or when the cmd-parity suffix below has to run
+        // (cmdQ) — even the run out in both cases, or the child would read
+        // the odd run as an escape and decode a literal quote.
+        out += '\\'.repeat(childQ || cmdQ ? 2 * n : n);
         i += n - 1;
       } else if (isArgSpace(next)) {
         // A space follows: when !childQ the space handler emits a span
@@ -204,7 +208,16 @@ function quoteWindowsArgQuoted(value: string): string {
       out += ch;
     }
   }
-  if (childQ) out += '"';
+  if (childQ) quote();
+  // Every literal `"` costs the child one quote character that cmd counts
+  // but nothing pairs with, so a value with an odd number of them ends with
+  // cmd still INSIDE a span — where the next argument's `^` escapes would
+  // be literal and its `%NAME%` would still expand. Close that span with a
+  // bare quote, then hand the child the matching one as `^"`: outside a
+  // span cmd consumes the caret and passes the quote through WITHOUT
+  // counting it, so the child sees an empty trailing span and decodes the
+  // same argument.
+  if (cmdQ) out += '"^"';
   return out;
 }
 export function quoteWindowsArg(value: string): string {
