@@ -36,15 +36,21 @@ function withEnvVar<T>(
   }
 }
 
+/**
+ * Snapshot the WHOLE argv: removing argv[1] shifts every later argument
+ * left, so restoring index 1 alone would write the original argv[1] over
+ * what is now the original argv[2] — losing an argument and corrupting
+ * process.argv for every later test in this worker. Restored in place so
+ * anything holding a reference to the array sees the original contents.
+ */
 function withArgv1<T>(value: string | undefined, fn: () => T): T {
-  const previous = process.argv[1];
+  const previous = [...process.argv];
   if (value === undefined) process.argv.splice(1, 1);
   else process.argv[1] = value;
   try {
     return fn();
   } finally {
-    if (previous === undefined) process.argv.splice(1, 1);
-    else process.argv[1] = previous;
+    process.argv.splice(0, process.argv.length, ...previous);
   }
 }
 
@@ -53,6 +59,22 @@ describe('scripts/lib/script-runtime.ts', () => {
     for (const directory of temporaryDirectories.splice(0)) {
       rmSync(directory, { force: true, recursive: true });
     }
+  });
+
+  describe('withArgv1 (the helper below these tests)', () => {
+    it('restores the whole argv, not just argv[1]', () => {
+      // Removing argv[1] shifts the rest left; a restore that only writes
+      // index 1 back drops the last argument and every later test in this
+      // worker inherits the damage.
+      const original = [...process.argv];
+      process.argv.push('--devbar-argv-guard');
+      try {
+        withArgv1(undefined, () => undefined);
+        expect(process.argv).toEqual([...original, '--devbar-argv-guard']);
+      } finally {
+        process.argv.splice(0, process.argv.length, ...original);
+      }
+    });
   });
 
   describe('absoluteEnvDir', () => {

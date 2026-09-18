@@ -163,6 +163,31 @@ const defaultProcessIdentity = (pid: string): string | null => {
 };
 
 /**
+ * Verdict for a DELAYED signal, from the identity captured at discovery
+ * and the one the pid answers with now.
+ *
+ * - `leader`: same process (or nothing to revalidate against, because the
+ *   identity primitive was unavailable at discovery) — both the group and
+ *   the plain-pid form are safe.
+ * - `orphaned`: the leader itself is gone, but its pid answers for NOBODY.
+ *   A pid is never handed out while it is still a live pgid, so the group
+ *   id can only still resolve to OUR group — and its remaining members are
+ *   exactly what this escalation exists for. Signal the group; the
+ *   plain-pid form now points at no process and is dropped.
+ * - `reused`: the pid came back as a DIFFERENT process, which can only
+ *   happen once the group is empty — both signals would hit strangers.
+ */
+type GroupVerdict = 'leader' | 'orphaned' | 'reused';
+
+function revalidateGroup(
+  captured: string | null,
+  current: string | null,
+): GroupVerdict {
+  if (captured === null || current === captured) return 'leader';
+  return current === null ? 'orphaned' : 'reused';
+}
+
+/**
  * POSIX: kill each matching instance's service trees BEFORE the instance
  * itself (the caller still pkill -f's the instances).
  *
@@ -240,18 +265,19 @@ export function posixKillServiceTrees(
   if (groups.length === 0) return [];
   wait(graceMs);
   for (const child of groups) {
-    // Revalidate the identity captured at discovery: if the leader
-    // exited and its pid was REUSED, the group kill would target a new
-    // group and the plain-pid kill an unrelated process — skip both.
-    // (A null capture means the identity primitive was unavailable or
-    // the process was already gone: nothing to revalidate, and the
-    // signal is then a no-op.)
-    const captured = identities.get(child) ?? null;
-    if (captured !== null && processIdentity(child) !== captured) continue;
+    // Revalidate the identity captured at discovery. A leader that exited
+    // is NOT a dead group: a member that ignored TERM keeps the port (and
+    // keeps the pgid reserved), so the group signal still goes out — only
+    // a REUSED pid suppresses it.
+    const verdict = revalidateGroup(
+      identities.get(child) ?? null,
+      processIdentity(child),
+    );
+    if (verdict === 'reused') continue;
     // Same group-then-pid order; a group that honored TERM is gone by now
     // and the signal is a no-op for it.
     run('kill', ['-s', 'KILL', '--', `-${child}`]);
-    run('kill', ['-s', 'KILL', child]);
+    if (verdict === 'leader') run('kill', ['-s', 'KILL', child]);
   }
   // SIGKILL is async: the kernel reaps the group a few ms after the
   // signal, and an immediate probe can see a group that is already in
@@ -261,7 +287,8 @@ export function posixKillServiceTrees(
   const settled = new Map<string, boolean>();
   for (const child of groups) {
     const captured = identities.get(child) ?? null;
-    if (captured !== null && processIdentity(child) !== captured) continue;
+    if (revalidateGroup(captured, processIdentity(child)) === 'reused')
+      continue;
     let alive = groupAlive(child);
     while (alive && pollsLeft > 0) {
       wait(POSIX_POST_KILL_POLL_MS);
@@ -270,14 +297,15 @@ export function posixKillServiceTrees(
     }
     settled.set(child, alive);
   }
-  // A survivor is a leader whose identity STILL MATCHES and whose group
-  // still has members after the post-kill budget: an identity-mismatched
-  // entry means the original exited and its pid/pgid was reused — that
-  // live group is an unrelated process, not a surviving service
-  // (reporting it would fail a healthy install).
+  // A survivor is a group that still has members after the post-kill
+  // budget — whether or not its leader is one of them. Only a REUSED pid
+  // is filtered out: there the original exited AND its group emptied, so
+  // the live group at that pgid is an unrelated process, not a surviving
+  // service (reporting it would fail a healthy install).
   return groups.filter((child) => {
     const captured = identities.get(child) ?? null;
-    if (captured !== null && processIdentity(child) !== captured) return false;
+    if (revalidateGroup(captured, processIdentity(child)) === 'reused')
+      return false;
     return settled.get(child) ?? groupAlive(child);
   });
 }

@@ -62,30 +62,41 @@ opens`). No AI attribution / `Co-Authored-By` lines.
 ## Test layout (enforced by ESLint, not advisory)
 
 `eslint.config.ts` runs `@vitest/eslint-plugin` over `tests/**/*.test.ts`, so a
-test that breaks the layout fails `pnpm lint:strict` — it is a gate, not a
-convention.
+test that breaks one of these fails `pnpm lint:strict` — a gate, not a
+convention. Each rule below is the one that catches it.
 
-1. Every `it` and every hook lives inside a `describe`. A file's outermost
-   `describe` is named after the module under test (e.g. `src/app-paths.ts`),
-   which is what keeps a file-wide `beforeEach`/`afterEach` covering the whole
-   file. Never move a file-wide hook into one of several sibling describes:
-   it silently stops running for the others.
-2. Use `it`, never `test`.
-3. The generic budget is 15s (`testTimeout`/`hookTimeout` in
+1. Every `it` and every hook lives inside a top-level `describe`
+   (`vitest/require-top-level-describe`).
+2. Use `it`, never `test` (`vitest/consistent-test-it`).
+3. No two tests in the same `describe` share a title
+   (`vitest/no-identical-title`).
+4. Every test asserts. One that asserts only through a custom helper must have
+   that helper registered in `vitest/expect-expect`'s `assertFunctionNames` in
+   `eslint.config.ts`, or it is reported as assertion-less.
+5. `expect(actual, message)` is allowed on purpose (`vitest/valid-expect` runs
+   with `maxArgs: 2`): the message is often what makes a CI-only failure
+   diagnosable.
+6. No `.only` reaches CI (`vitest/no-focused-tests`).
+7. The plugin's validity rules are on too — `vitest/valid-title`,
+   `vitest/valid-describe-callback`, `vitest/valid-expect-in-promise`,
+   `vitest/no-standalone-expect`.
+
+## Test conventions (NOT enforced — no rule catches these)
+
+1. A file's outermost `describe` is named after the module under test (e.g.
+   `src/app-paths.ts`). That is what keeps a file-wide `beforeEach`/`afterEach`
+   covering the whole file: never move a file-wide hook into one of several
+   sibling describes, it silently stops running for the others. ESLint only
+   checks that the hook is inside SOME top-level describe, not which one.
+2. The generic budget is 15s (`testTimeout`/`hookTimeout` in
    `vitest.config.ts`). A test that genuinely needs longer passes its own
    timeout as the third argument to `it`; do not raise the generic budget to
    accommodate one slow test.
-4. A test that asserts only through a custom helper must have that helper
-   registered in `vitest/expect-expect`'s `assertFunctionNames` in
-   `eslint.config.ts`, or it is reported as assertion-less.
-5. `expect(actual, message)` is allowed on purpose: the message is often what
-   makes a CI-only failure diagnosable.
-6. No `.only` reaches CI — `vitest/no-focused-tests` is an error.
-7. Coverage is opt-in via `pnpm test:coverage`; `pnpm test` stays fast. Its
-   thresholds are a ratchet set at the numbers the suite produces today —
-   raise them, never lower them.
+3. Coverage is opt-in via `pnpm test:coverage`; `pnpm test` stays fast. Its
+   thresholds are a ratchet sitting just under the numbers the suite produces
+   today — raise them, never lower them.
 
 ## Quality gate
 
 Before considering a change done, run `pnpm quality`
-(`lint:strict` + `deadcode` + `deps:check` + `test`) and `pnpm format`.
+(`typecheck` + `lint:strict` + `deadcode` + `deps:check` + `test`) and `pnpm format`.

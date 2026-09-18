@@ -19,6 +19,10 @@ html {
   --sil-surface-btn-hover: rgba(0, 0, 0, 0.1);
   --sil-line: rgba(0, 0, 0, 0.14);
   --sil-pattern: #3a3a3c;
+  /* Muted foreground for small controls. 4.66:1 on --sil-bg; the dark
+     theme's #8a8a8e would be 3.16:1 here — under the WCAG AA 4.5:1
+     minimum for normal text. */
+  --sil-muted: #6e6e73;
 }
 
 html[data-theme='dark'] {
@@ -32,6 +36,7 @@ html[data-theme='dark'] {
   --sil-surface-btn-hover: rgba(255, 255, 255, 0.14);
   --sil-line: rgba(255, 255, 255, 0.12);
   --sil-pattern: #c8c8c8;
+  --sil-muted: #8a8a8e; /* 4.85:1 on --sil-bg */
 }
 
 html,
@@ -113,7 +118,7 @@ body.non-mac .silenced-header {
 .silenced-header .muted {
   margin: 0;
   font-size: 12px;
-  color: #8a8a8e;
+  color: var(--sil-muted);
 }
 
 .silenced-body {
@@ -129,7 +134,7 @@ body.non-mac .silenced-header {
   margin: 0 0 10px;
   font-size: 12px;
   font-weight: 600;
-  color: #8a8a8e;
+  color: var(--sil-muted);
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
@@ -157,7 +162,7 @@ body.non-mac .silenced-header {
 }
 
 .pattern-list .empty {
-  color: #6e7681;
+  color: var(--sil-muted);
   font-style: italic;
   font-size: 12px;
   padding: 10px 12px;
@@ -176,7 +181,7 @@ body.non-mac .silenced-header {
 .pattern-list .unsilence {
   background: transparent;
   border: 1px solid var(--sil-line);
-  color: #8a8a8e;
+  color: var(--sil-muted);
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 11px;
@@ -217,7 +222,7 @@ body.non-mac .silenced-header {
 }
 
 .add-row input[type='text']::placeholder {
-  color: #6e7681;
+  color: var(--sil-muted);
 }
 
 .add-row button {

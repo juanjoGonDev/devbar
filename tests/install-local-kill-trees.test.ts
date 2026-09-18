@@ -370,6 +370,72 @@ describe('posixKillServiceTrees', () => {
     ]);
   });
 
+  it('still SIGKILLs the group when the LEADER exited but a member ignored TERM', () => {
+    // The leader honored TERM and exited during the grace window; another
+    // member of its group did not, and still holds the port. "Leader gone"
+    // is NOT "group dead": suppressing the group SIGKILL here — and the
+    // liveness check with it — reports success while a descendant keeps
+    // its port, and install-local.sh then swaps the bundle under it.
+    let leaderGone = false;
+    const processIdentity = (pid: string): string | null =>
+      pid === '110' && !leaderGone ? 'starttime:1234' : null;
+    const events: string[] = [];
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'kill') events.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {
+        leaderGone = true; // the leader died during the grace window
+      },
+      groupAlive: () => true, // ...but the group still has a member
+      processIdentity,
+    });
+    // The group signal still goes out. The plain-pid form does not: that
+    // pid now belongs to nobody, and could belong to a stranger at any
+    // moment.
+    expect(events).toEqual([
+      'kill -s TERM -- -110',
+      'kill -s TERM 110',
+      'kill -s KILL -- -110',
+    ]);
+    // And the member that outlived SIGKILL must reach the caller.
+    expect(survivors).toEqual(['110']);
+  });
+
+  it('reports no survivor when the leader exited and its group went with it', () => {
+    // Same "leader gone" shape as above, but the group is empty: the
+    // escalation is a harmless no-op and nothing is reported — a leader
+    // that simply honored TERM must not fail a healthy install.
+    let leaderGone = false;
+    const processIdentity = (pid: string): string | null =>
+      pid === '110' && !leaderGone ? 'starttime:1234' : null;
+    const events: string[] = [];
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'kill') events.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n';
+      if (cmd === 'pgrep') return '110\n';
+      return null;
+    };
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait: () => {
+        leaderGone = true;
+      },
+      groupAlive: () => false,
+      processIdentity,
+    });
+    expect(survivors).toEqual([]);
+    expect(events).toEqual([
+      'kill -s TERM -- -110',
+      'kill -s TERM 110',
+      'kill -s KILL -- -110',
+    ]);
+  });
+
   it('reports a group that survives SIGKILL so the installer can fail', () => {
     // SIGKILL cannot be caught; a survivor (uninterruptible I/O) means
     // the installer must abort instead of swapping under a live service.

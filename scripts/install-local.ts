@@ -171,6 +171,26 @@ function serviceGroupAlive(leaderPid: string): boolean {
   return res.status === 0;
 }
 
+/**
+ * Verdict for a DELAYED signal, from the identity captured at wave 1 and
+ * the one the pid answers with now. `leader` = same process (or nothing to
+ * revalidate against); `orphaned` = the leader exited but its pid answers
+ * for nobody, so the group id still resolves to OUR group (a pid is never
+ * handed out while it is a live pgid) and its remaining members are what
+ * the escalation is for; `reused` = a DIFFERENT process took the pid,
+ * which can only happen once the group emptied. (Keep in sync with
+ * scripts/lib/kill-trees.ts.)
+ */
+type GroupVerdict = 'leader' | 'orphaned' | 'reused';
+
+function revalidateGroup(
+  captured: string | null,
+  current: string | null,
+): GroupVerdict {
+  if (captured === null || current === captured) return 'leader';
+  return current === null ? 'orphaned' : 'reused';
+}
+
 /** Stable identity for a pid, or null when gone/unknown (same
  *  /proc-starttime → ps-lstart ladder as scripts/lib/kill-trees.ts —
  *  strip-only mode cannot import it). */
@@ -397,18 +417,17 @@ function killLeftovers(installDir: string): void {
     // Escalation for the service groups from wave 1: SIGKILL any that
     // outlived the graceful stop (no-op for the ones that honored TERM).
     for (const entry of leftoverServiceGroups) {
-      // Revalidate the identity captured at wave 1: if the leader exited
-      // and its pid was REUSED, the group kill would target a new group
-      // and the plain-pid kill an unrelated process — skip both. (A null
-      // identity means the primitive was unavailable: the signal is then
-      // a no-op for a gone group.)
-      if (
-        entry.identity !== null &&
-        processIdentity(entry.pid) !== entry.identity
-      )
-        continue;
+      // Revalidate the identity captured at wave 1. A leader that exited
+      // is NOT a dead group: a member that ignored TERM keeps the port
+      // (and keeps the pgid reserved), so the group signal still goes out
+      // — only a REUSED pid suppresses it.
+      const verdict = revalidateGroup(
+        entry.identity,
+        processIdentity(entry.pid),
+      );
+      if (verdict === 'reused') continue;
       tryQuiet('kill', ['-s', 'KILL', '--', `-${entry.pid}`]);
-      tryQuiet('kill', ['-s', 'KILL', entry.pid]);
+      if (verdict === 'leader') tryQuiet('kill', ['-s', 'KILL', entry.pid]);
     }
     // SIGKILL is async: the kernel reaps a group a few ms after the
     // signal, and an immediate probe can report a group that is already
@@ -424,8 +443,7 @@ function killLeftovers(installDir: string): void {
     const settled = new Map<string, boolean>();
     for (const entry of leftoverServiceGroups) {
       if (
-        entry.identity !== null &&
-        processIdentity(entry.pid) !== entry.identity
+        revalidateGroup(entry.identity, processIdentity(entry.pid)) === 'reused'
       )
         continue;
       let alive = serviceGroupAlive(entry.pid);
@@ -439,14 +457,13 @@ function killLeftovers(installDir: string): void {
     // Retain each group until it is CONFIRMED gone (after the budget):
     // a service group survives on its own (its command line matches
     // none of the instance liveness patterns above), so the verification
-    // must probe the groups directly. An identity-mismatched entry is
-    // NOT a survivor: its original leader exited and the live group at
-    // that pgid is an unrelated replacement (reporting it would fail a
-    // healthy install).
+    // must probe the groups directly. Only a REUSED pid is NOT a
+    // survivor: there the original leader exited AND its group emptied,
+    // so the live group at that pgid is an unrelated replacement
+    // (reporting it would fail a healthy install).
     const survivingGroups = leftoverServiceGroups.filter((entry) => {
       if (
-        entry.identity !== null &&
-        processIdentity(entry.pid) !== entry.identity
+        revalidateGroup(entry.identity, processIdentity(entry.pid)) === 'reused'
       )
         return false;
       return settled.get(entry.pid) ?? serviceGroupAlive(entry.pid);
@@ -554,15 +571,25 @@ function main(): void {
     cwd: installDir,
     env: isDev ? { ...process.env, DEVBAR_DEV_PANEL: '1' } : process.env,
   });
-  child.unref();
-
-  ok(
-    isDev
-      ? 'Installed (dev panel enabled) and launched'
-      : 'Installed and launched',
-  );
-  if (launcherPath) ok(`Launcher: ${launcherPath}`);
-  ok('Tail logs with: pnpm logs');
+  // spawn() reports failure ASYNCHRONOUSLY, through the returned handle:
+  // without these listeners a relaunch that never started would raise an
+  // unhandled 'error' AND still print "Installed and launched". Both are
+  // attached BEFORE unref(), which now happens only on a confirmed spawn —
+  // until then the handle keeps this process alive to hear the outcome.
+  child.on('error', (error) => {
+    console.error(`failed to launch ${appPath}: ${error.message}`);
+    process.exitCode = 1;
+  });
+  child.on('spawn', () => {
+    child.unref();
+    ok(
+      isDev
+        ? 'Installed (dev panel enabled) and launched'
+        : 'Installed and launched',
+    );
+    if (launcherPath) ok(`Launcher: ${launcherPath}`);
+    ok('Tail logs with: pnpm logs');
+  });
 }
 
 main();
