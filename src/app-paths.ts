@@ -3,6 +3,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 /**
+ * A base directory taken from the environment, honored ONLY when it is a
+ * non-empty ABSOLUTE path. `||` alone rejects `''` but still accepts
+ * `"relative/path"` or `"   "`, and the XDG Base Directory Specification
+ * requires absolute values. This matters beyond tidiness: appHome() feeds
+ * the config store, the log dir, the update staging dir AND the directory
+ * the generated swap script is written to and then RUN from — a relative
+ * value would resolve against whatever CWD the app inherited. Same rule
+ * (and same reasoning) as absoluteEnvDir in scripts/lib/script-runtime.ts.
+ *
+ * On win32 `path.isAbsolute` is `path.win32.isAbsolute`, which is exactly
+ * the semantics %APPDATA% needs.
+ */
+function absoluteEnvDir(name: string, fallback: string): string {
+  const value = (process.env[name] ?? '').trim();
+  return value !== '' && path.isAbsolute(value) ? value : fallback;
+}
+
+/**
  * Per-OS app-data home for PACKAGED builds, pinned to the "DevBar" folder:
  *   macOS   ~/Library/Application Support/DevBar
  *   Windows %APPDATA%\DevBar
@@ -27,11 +45,11 @@ export function packagedAppHome(): string | undefined {
     return path.join(home, 'Library', 'Application Support', 'DevBar');
   if (process.platform === 'win32')
     return path.join(
-      process.env.APPDATA || path.join(home, 'AppData', 'Roaming'),
+      absoluteEnvDir('APPDATA', path.join(home, 'AppData', 'Roaming')),
       'DevBar',
     );
   return path.join(
-    process.env.XDG_CONFIG_HOME || path.join(home, '.config'),
+    absoluteEnvDir('XDG_CONFIG_HOME', path.join(home, '.config')),
     'DevBar',
   );
 }
@@ -81,22 +99,25 @@ export function migrateLegacyLinuxStore(
     return 'failed';
   }
   try {
-    // rename is atomic where the filesystem allows it — the preferred
-    // path. It also REMOVES `legacy`, so there is nothing left to clean
-    // up: returning here keeps the unlink below for the copy fallback
-    // only (an unlink right after a successful rename would throw
-    // ENOENT and log a false manual-deletion warning).
-    fs.renameSync(legacy, target);
-    return 'moved';
-  } catch {
-    // rename can fail across devices (EXDEV) or because the target
-    // appeared after the check above. Copy EXCLUSIVELY: an existing
-    // target must WIN — overwriting it with legacy data would destroy
-    // config written by a newer instance.
+    // link + unlink, NOT rename: rename(2) silently REPLACES an existing
+    // target, which would destroy config written by a newer instance that
+    // created it after the existsSync check above. link(2) fails EEXIST
+    // atomically instead, so the same "an existing target must WIN"
+    // invariant the copy fallback enforces holds on the primary path too.
+    // It is equally atomic where the filesystem allows it: after the link
+    // both names refer to one inode, so the unlink below cannot lose data.
+    fs.linkSync(legacy, target);
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST') return 'skipped';
+    // Everything else falls through: EXDEV across devices, and
+    // EPERM/ENOSYS/EMLINK on filesystems with no hard links. Copy
+    // EXCLUSIVELY, for the same reason link is used above.
     try {
       fs.copyFileSync(legacy, target, fs.constants.COPYFILE_EXCL);
-    } catch (error: unknown) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 'skipped';
+    } catch (copyError: unknown) {
+      if ((copyError as NodeJS.ErrnoException).code === 'EEXIST')
+        return 'skipped';
       return 'failed';
     }
   }
@@ -107,7 +128,7 @@ export function migrateLegacyLinuxStore(
     // wins, and a stale legacy copy that cannot be removed is inert (the
     // skip check above sees the target first).
     console.warn(
-      `[app-paths] legacy config copied to ${target} but the old file at ` +
+      `[app-paths] legacy config migrated to ${target} but the old file at ` +
         `${legacy} could not be removed — delete it manually if you see ` +
         `unexpected config behavior.`,
     );

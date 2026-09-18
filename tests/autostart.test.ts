@@ -56,6 +56,30 @@ describe('desktopFileContent', () => {
     );
   });
 
+  it('escapes a literal backslash as FOUR (spec §7, matching register-launcher)', () => {
+    // The generic string unescape (\\ -> \) runs BEFORE the quoting
+    // unescape, so two levels are consumed: two backslashes would reach
+    // the launcher as NONE and the path would be wrong.
+    const content = desktopFileContent('/opt/dev\\bar/DevBar.AppImage');
+    expect(content).toContain(
+      `Exec=${String.raw`"/opt/dev\\\\bar/DevBar.AppImage"`} ${LOGIN_ARG}`,
+    );
+  });
+
+  it('escapes a newline and a tab instead of writing them raw', () => {
+    // A raw newline ends the Exec= line: everything after it would be
+    // read as further keys of the entry — persistent, at every login.
+    const content = desktopFileContent('/opt/dev\nbar\tx/DevBar.AppImage');
+    expect(content).toContain(
+      `Exec=${String.raw`"/opt/dev\nbar\tx/DevBar.AppImage"`} ${LOGIN_ARG}`,
+    );
+    expect(
+      content.split('\n').filter((line) => line.startsWith('Exec=')),
+    ).toHaveLength(1);
+    // 7 keys + the trailing newline: an escaped value adds no line.
+    expect(content.split('\n')).toHaveLength(8);
+  });
+
   it('doubles a literal % (field codes are expanded by the desktop env)', () => {
     // An unescaped %f/%u in the path would be expanded as a field code
     // after autostart — the launch target would change under the user.

@@ -27,19 +27,41 @@ export function autostartDesktopPath(): string {
 }
 
 /**
- * Desktop Entry quoting (spec: desktop-string). A literal % is doubled
- * FIRST — field codes (%f, %u, …) are expanded once by the desktop
- * environment after unquoting, so an install path containing one would
- * launch with a mangled path. Then: a value with whitespace or a special
- * character (`"`, `$`, backtick, `\`) goes in double quotes, where those
- * four must be backslash-escaped (backslash first, so the escaping
- * backslashes are not re-escaped themselves).
+ * Desktop Entry quoting (spec §7, "The Exec key"). Kept byte-for-byte
+ * equivalent to renderDesktopEntry in scripts/register-launcher.ts — the
+ * two write the same kind of file for the same executable, so they must
+ * not disagree about what a backslash or a newline becomes.
+ *
+ * A literal % is doubled FIRST: field codes (%f, %u, …) are expanded once
+ * by the desktop environment after unquoting, so an install path
+ * containing one would launch with a mangled path. Then a value with
+ * whitespace or a reserved character goes in double quotes, and inside
+ * those:
+ *
+ *  - `"`, `$` and backtick take ONE backslash (the quoting unescape);
+ *  - a literal `\` takes FOUR, because the generic string unescape
+ *    (`\\` -> `\`) runs BEFORE the quoting unescape, so two levels are
+ *    consumed — two backslashes would arrive at the launcher as none;
+ *  - a newline, tab or carriage return has NO literal form in a
+ *    line-based key file: emitted raw, a newline would end the `Exec=`
+ *    line and the remainder would be read as a second key. They take
+ *    their generic string escapes (`\n`, `\t`, `\r`) instead.
+ *
+ * One character-mapping pass, so an escape this function emits is never
+ * re-escaped by a later stage (chained replaces would double them, and
+ * static checkers flag them as single-stage anyway).
  */
 function desktopQuote(value: string): string {
-  value = value.replace(/%/g, '%%');
-  return /[\s"'`$\\]/.test(value)
-    ? `"${value.replace(/([\\`$"])/g, '\\$1')}"`
-    : value;
+  const escaped = value.replace(/%/g, '%%');
+  if (!/[\s"'`$\\]/.test(escaped)) return escaped;
+  const body = escaped.replace(/[\\`$"\n\t\r]/g, (ch) => {
+    if (ch === '\\') return '\\\\\\\\';
+    if (ch === '\n') return '\\n';
+    if (ch === '\t') return '\\t';
+    if (ch === '\r') return '\\r';
+    return `\\${ch}`;
+  });
+  return `"${body}"`;
 }
 
 /**

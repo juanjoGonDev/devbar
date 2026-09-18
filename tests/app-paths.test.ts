@@ -72,12 +72,43 @@ describe('packagedAppHome', () => {
     expect(packagedAppHome()).toBe(path.join('/xdg', 'DevBar'));
   });
 
+  // appHome() feeds the config store, the log dir, the update staging dir
+  // and the directory the generated swap script is written to and RUN
+  // from, so a non-absolute value must never be honored: it would resolve
+  // against whatever CWD the app inherited. The XDG spec requires
+  // absolute values anyway.
+  it.each([
+    ['empty', ''],
+    ['whitespace', '   '],
+    ['relative', 'relative/path'],
+    ['bare dot', '.'],
+  ])('ignores a %s XDG_CONFIG_HOME and uses ~/.config', (_label, value) => {
+    setPlatform('linux');
+    process.env.XDG_CONFIG_HOME = value;
+    expect(packagedAppHome()).toBe(path.join(state.home, '.config', 'DevBar'));
+  });
+
   it('pins %APPDATA% on win32', () => {
     setPlatform('win32');
     const appdata = path.join('/u', 'AppData', 'Roaming');
     process.env.APPDATA = appdata;
     expect(packagedAppHome()).toBe(path.join(appdata, 'DevBar'));
   });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace', '   '],
+    ['relative', 'relative\\path'],
+  ])(
+    'ignores a %s APPDATA and uses the home-relative AppData',
+    (_label, value) => {
+      setPlatform('win32');
+      process.env.APPDATA = value;
+      expect(packagedAppHome()).toBe(
+        path.join(state.home, 'AppData', 'Roaming', 'DevBar'),
+      );
+    },
+  );
 
   it('falls back to the home-relative AppData on win32', () => {
     setPlatform('win32');
@@ -173,13 +204,33 @@ describe('migrateLegacyLinuxStore', () => {
     );
   });
 
+  it('never replaces a target that appeared after the existence check', () => {
+    const config = path.join(dir, 'xdg');
+    const newDir = path.join(dir, 'DevBar');
+    const legacy = writeLegacy(config, '{\"version\":2}');
+    const target = path.join(newDir, 'config.json');
+    fs.mkdirSync(newDir, { recursive: true });
+    fs.writeFileSync(target, '{\"version\":4}');
+    // The race the primary path must survive: a newer instance created
+    // the target between the pre-flight existsSync and the move.
+    // renameSync would have replaced it silently; linkSync fails EEXIST.
+    const realExists = fs.existsSync;
+    vi.spyOn(fs, 'existsSync').mockImplementation((p: fs.PathLike) =>
+      p === target ? false : realExists(p),
+    );
+
+    expect(migrateLegacyLinuxStore(newDir, dir, config)).toBe('skipped');
+    expect(fs.readFileSync(target, 'utf8')).toBe('{\"version\":4}');
+    expect(fs.readFileSync(legacy, 'utf8')).toBe('{\"version\":2}');
+  });
+
   it('skips without deleting legacy data when the target wins a creation race', () => {
     const config = path.join(dir, 'xdg');
     const newDir = path.join(dir, 'DevBar');
     const legacy = writeLegacy(config, '{\"version\":2}');
     const target = path.join(newDir, 'config.json');
-    // Force the copy path (rename is the atomic same-device preference).
-    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+    // Force the copy path (link is the atomic same-device preference).
+    const link = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
     });
     const copy = vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
@@ -188,7 +239,7 @@ describe('migrateLegacyLinuxStore', () => {
     });
 
     expect(migrateLegacyLinuxStore(newDir, dir, config)).toBe('skipped');
-    expect(rename).toHaveBeenCalledWith(legacy, target);
+    expect(link).toHaveBeenCalledWith(legacy, target);
     expect(copy).toHaveBeenCalledWith(
       legacy,
       target,

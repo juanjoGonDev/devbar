@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -131,6 +131,39 @@ describe('saveSnapshot', () => {
     expect(
       saveSnapshot(path.join(blocker, 'sub'), ['cmd:g1:a'], 'live', clock),
     ).toBe(false);
+  });
+
+  it('leaves no tmp file behind when the rename fails', () => {
+    // EXDEV / EPERM / a Windows AV or indexer holding the destination
+    // open: without the cleanup each failing launch stranded one more
+    // session-resume.json.tmp-<pid> for ever.
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+    });
+    try {
+      expect(saveSnapshot(dir, ['cmd:g1:a'], 'live', clock)).toBe(false);
+    } finally {
+      rename.mockRestore();
+    }
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it('leaves no tmp file behind when the write fails midway', () => {
+    // Captured BEFORE the spy replaces the property: fs.appendFileSync
+    // would re-enter the mock and throw before writing anything, which
+    // would make this assertion vacuous.
+    const realWrite = fs.writeFileSync;
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation((p) => {
+      // Model a partial write (ENOSPC): bytes on disk, then a throw.
+      realWrite(p, '{"v":1,"at"');
+      throw Object.assign(new Error('no space left'), { code: 'ENOSPC' });
+    });
+    try {
+      expect(saveSnapshot(dir, ['cmd:g1:a'], 'live', clock)).toBe(false);
+    } finally {
+      write.mockRestore();
+    }
+    expect(fs.readdirSync(dir)).toEqual([]);
   });
 });
 

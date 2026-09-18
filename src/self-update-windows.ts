@@ -66,10 +66,24 @@ function looksLikeWindowsExe(filePath: string): boolean {
  *
  * Safety: this must never point a swap at a wrong file, so the candidate
  * parent is accepted only when it is a real PE whose name still says
- * "devbar" (the user may rename the file, the app name stays), living
- * outside Program Files (an assisted-only, elevation-requiring location).
- * Any failure returns null and the caller degrades to the payload path —
- * today's session-scoped behaviour — never another application's file.
+ * "devbar", living outside Program Files (an assisted-only,
+ * elevation-requiring location).
+ *
+ * The gate FAILS CLOSED. Any failure returns null, and winInstalledAppPath
+ * (self-update.ts) then returns null as well for a temp-dir execPath — so
+ * the caller degrades to the ASSISTED flow ("download the new version
+ * yourself"), NOT to a swap of the ephemeral payload, and never to another
+ * application's file. Swapping the payload would write an update into a
+ * temp copy that dies with the temp dir while the user's real portable
+ * file silently stayed on the old version.
+ *
+ * That is also why the "support portable executables that users rename"
+ * review note is a UX LIMITATION, not a bug, and should not be reopened:
+ * a portable stub renamed to something without "devbar" in it is simply
+ * not recognized, and the user gets the assisted flow instead of a wrong
+ * or useless swap. Widening the name check is the only way to change that,
+ * and it would trade a fail-closed gate for a guess at which neighbouring
+ * executable is ours.
  */
 
 /** Pure gate: is `parentPath` a plausible portable container for `execPath`? */
@@ -311,7 +325,11 @@ export function buildSwapBat({
  * run — verified on CI.
  */
 function spawnBat(scriptPath: string): void {
-  const comspec = process.env.COMSPEC ?? 'cmd.exe';
+  // `||`, not `??`: `??` only catches undefined, so COMSPEC="" would
+  // reach spawn('') — the swap bat would never launch, and since the app
+  // quits straight after, the user would be left with no update and no
+  // relaunch. platform.ts reads the same variable the same way.
+  const comspec = process.env.COMSPEC || 'cmd.exe';
   spawn(comspec, ['/d', '/c', scriptPath], {
     detached: true,
     stdio: 'ignore',

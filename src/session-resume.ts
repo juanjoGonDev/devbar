@@ -107,8 +107,9 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
 
 /**
  * Persist the running set. Atomic (tmp + rename) and best-effort: returns
- * false instead of throwing when the disk refuses. An empty set DELETES
- * the file — an app with nothing running has nothing to hand over.
+ * false instead of throwing when the disk refuses, and never leaves the
+ * tmp file behind when it does. An empty set DELETES the file — an app
+ * with nothing running has nothing to hand over.
  */
 export function saveSnapshot(
   dir: string,
@@ -130,8 +131,23 @@ export function saveSnapshot(
       services: [...services],
     };
     const tmp = `${file}.tmp-${process.pid}`;
-    fs.writeFileSync(tmp, JSON.stringify(snap));
-    fs.renameSync(tmp, file);
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(snap));
+      fs.renameSync(tmp, file);
+    } finally {
+      // The atomicity is fine; the DEBRIS is what this cleans up. A
+      // partial write (ENOSPC) or a failed rename (EXDEV, EPERM, a
+      // Windows AV/indexer holding the destination open) would otherwise
+      // strand one session-resume.json.tmp-<pid> per failing launch, for
+      // ever. After a successful rename the tmp name is already gone, so
+      // the happy path is untouched.
+      try {
+        fs.rmSync(tmp, { force: true });
+      } catch {
+        // Best effort: a tmp file we cannot remove must not turn a write
+        // that actually landed into a reported failure.
+      }
+    }
     return true;
   } catch {
     return false;
