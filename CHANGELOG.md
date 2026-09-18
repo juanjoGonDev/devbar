@@ -3,6 +3,35 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.9.2] - 2026-09-18
+
+### Corregido
+
+- **Algunas ventanas se quedaban con datos viejos hasta que algo sin relación
+  las refrescaba.** Al abrirse, cada ventana pide su estado al proceso
+  principal; si mientras tanto llegaba un cambio —arrancar un servicio,
+  renombrar un grupo, borrar otro—, la respuesta tardía pisaba lo recién
+  llegado y la pantalla se quedaba atrás sin ninguna señal. Pasaba en la lista
+  de grupos de la bandeja, en el listado lateral de la ventana de logs, en la
+  lista de grupos de Configuración, en los pasos del pipeline y en la ventana
+  de patrones silenciados. Ahora manda siempre el valor más reciente.
+
+- **Guardar un grupo dos veces seguidas podía dejar el nombre anterior en la
+  lista.** El botón «Guardar» solo se desactiva cuando no queda nada por
+  guardar, nunca mientras guarda, así que dos guardados rápidos se solapaban y
+  se veía el que respondía el último, no el más nuevo.
+
+- **El aviso de actualización disponible podía apagarse solo.** El punto rojo
+  junto al número de versión —en la bandeja y en Configuración— desaparecía si
+  la comprobación automática encontraba la actualización justo mientras la
+  ventana estaba leyendo el estado al abrirse, y no volvía hasta la siguiente
+  comprobación.
+
+- **El interruptor «Ejecutar automáticamente al arrancar el Mac» podía quedar
+  marcado al revés de lo guardado.** Si fallaba el guardado de un clic
+  anterior, la casilla se revertía por encima del clic siguiente, que sí se
+  había guardado.
+
 ## [0.9.1] - 2026-09-18
 
 ### Añadido

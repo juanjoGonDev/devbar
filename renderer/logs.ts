@@ -31,6 +31,7 @@ import type {
   SilenceLevel,
   SourcedLogEntry,
 } from '../src/ipc-contract.js';
+import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
 initTheme();
@@ -1714,8 +1715,24 @@ sideFilterEl.addEventListener('input', applySideFilter);
 
 let lastSignature = '';
 
+/**
+ * Ticket for the in-flight sidebar read, in the same spirit as `loadSeq` above
+ * but over its own state: `sideData`, not the line buffer.
+ *
+ * The debounce in `onUpdate` only collapses refreshes still WAITING to start —
+ * it never sees one already in flight. So the boot read and a pushed one can
+ * overlap, and if the older answer arrives last it puts services back in the
+ * sidebar that main has already dropped, until the next update redraws it.
+ */
+const sidebarLoads = latestWins();
+
 async function refreshSidebar(): Promise<void> {
-  sideData = (await window.api.listLogs()) || [];
+  // Issuing this read retires every older one still in flight.
+  sidebarLoads.invalidate();
+  const current = sidebarLoads.claim();
+  const listed = (await window.api.listLogs()) || [];
+  if (!current()) return; // a newer refresh already answered
+  sideData = listed;
   syncWatched();
   if (!isDetached) {
     const signature = sideSignature();

@@ -2,6 +2,7 @@ import {
   attachDragHandlers,
   attachCrossContainerDragHandlers,
 } from './dnd-helper.js';
+import { latestWins } from './latest-wins.js';
 import type { Group, PreScript, PreStep } from '../src/domain-types.js';
 
 /** Joins/splits a `PreStepScriptRef` for use as a DOM `data-id` — UUIDs never
@@ -115,6 +116,13 @@ export function initPipelineEditor(
   // renders that have nothing to do with this setting.
   let autoRunEnabled = false;
   let autoRunSettingLoaded = false;
+  /**
+   * Ticket for the in-flight auto-run save. The toggle writes on every change
+   * with nothing serializing the writes, so a rejected OLD save must not roll
+   * the control back over a NEWER value that already persisted — the same
+   * rule the theme picker in `config.ts` follows.
+   */
+  const autoRunSaves = latestWins();
 
   function findScript(
     groupId: string,
@@ -134,8 +142,21 @@ export function initPipelineEditor(
     return placed;
   }
 
+  /**
+   * Ticket for the in-flight steps read. Every mutation above is an instant
+   * write followed by a full re-read, and nothing serializes them: two quick
+   * clicks put two reads in flight, and the older answer landing last drops
+   * whatever the second click had just persisted.
+   */
+  const stepReads = latestWins();
+
   async function reload(): Promise<void> {
-    draftSteps = await window.api.getPreSteps();
+    // Issuing this read retires every older one still in flight.
+    stepReads.invalidate();
+    const current = stepReads.claim();
+    const steps = await window.api.getPreSteps();
+    if (!current()) return; // a newer read already answered
+    draftSteps = steps;
   }
 
   async function refresh(): Promise<void> {
@@ -180,11 +201,18 @@ export function initPipelineEditor(
     // the control contradicting the setting it just wrote.
     input.disabled = !autoRunSettingLoaded;
     input.addEventListener('change', async () => {
+      // Issuing this save retires every older one still in flight.
+      autoRunSaves.invalidate();
+      const current = autoRunSaves.claim();
       try {
         await window.api.saveSettings({ preScriptsAutoRun: input.checked });
+        if (!current()) return; // a later click owns the control and its toast
         autoRunEnabled = input.checked;
         deps.showToast('Ajustes guardados', 'ok');
       } catch {
+        // A later click already owns the control (and its own save decides
+        // the outcome); rolling back here would silently revert it.
+        if (!current()) return;
         // Put the control back where the stored setting still is, so it
         // never claims a value that was not persisted.
         input.checked = !input.checked;
