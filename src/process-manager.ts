@@ -400,18 +400,21 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
         ? buildCmdlineWindows(target.command, target.args)
         : buildCmdline(target.command, target.args),
       spawnSpec = buildSpawnArgs(cmdline);
+    // Only the CONFIGURED overrides go in: `enhancedEnv` spreads
+    // `process.env` itself and then replaces PATH with the login shell's one.
+    // Re-spreading `process.env` here put the inherited PATH back on top of
+    // that, so a GUI-launched app (Finder, login item, autostart) handed its
+    // reduced PATH to every service — the exact failure path-helper exists to
+    // prevent, invisible under `pnpm start` from a terminal.
     let spawnEnv: NodeJS.ProcessEnv;
     if (kind === 'command')
       spawnEnv = enhancedEnv({
-        ...process.env,
         ...materializeEnv(group.env),
         ...materializeEnv(target.env),
       });
     else {
-      let env = { ...process.env };
-      if (target.inheritGroupEnv)
-        env = { ...env, ...materializeEnv(group.env) };
-      spawnEnv = enhancedEnv({ ...env, ...materializeEnv(target.env) });
+      const groupEnv = target.inheritGroupEnv ? materializeEnv(group.env) : {};
+      spawnEnv = enhancedEnv({ ...groupEnv, ...materializeEnv(target.env) });
     }
     let child: ChildProcessWithoutNullStreams;
     try {

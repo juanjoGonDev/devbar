@@ -16,6 +16,7 @@ import {
 } from './self-update-linux.js';
 import {
   isInstalledExe,
+  isUnderProgramFiles,
   isUnderTempDir,
   portableContainerPath,
   stageWindowsArtifact,
@@ -108,11 +109,13 @@ export function windowsUpdateMode(
   localAppData: string = process.env.LOCALAPPDATA ?? '',
 ): WindowsUpdateMode {
   if (isInstalledExe(installed, localAppData)) return 'nsis';
-  const parent = path.win32
-    .basename(path.win32.dirname(path.win32.dirname(installed)))
-    .toLowerCase();
-  if (parent === 'program files' || parent === 'program files (x86)')
-    return 'assisted';
+  // Containment at ANY depth, not a fixed "two levels up" basename compare:
+  // that only ever saw the root for one particular depth, so
+  // `C:\Program Files\Tools\DevBar\DevBar.exe` (and a direct child of the
+  // root) were classified 'portable' and `canInstallInPlace` then offered an
+  // in-place swap of an elevation-requiring location. Shared with
+  // `isPortableContainer`, which had the same bug.
+  if (isUnderProgramFiles(installed)) return 'assisted';
   return 'portable';
 }
 

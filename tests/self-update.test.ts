@@ -480,6 +480,39 @@ describe('isPortableContainer (the swap must target the stub, not the temp paylo
       ),
     ).toBe(false);
   });
+  it('rejects Program Files at ANY depth, not only the expected one', () => {
+    // The regression: a fixed "two levels up" basename check compared
+    // `tools` — not `program files` — so an INSTALLED exe one level deeper
+    // was accepted and routed through the portable swap.
+    expect(
+      isPortableContainer(
+        payload,
+        'C:\\Program Files\\Tools\\DevBar\\DevBarPortable.exe',
+      ),
+    ).toBe(false);
+    // A direct child compared the drive root (an empty basename) and slipped
+    // through the same way.
+    expect(
+      isPortableContainer(payload, 'C:\\Program Files\\DevBarPortable.exe'),
+    ).toBe(false);
+    expect(
+      isPortableContainer(payload, 'C:\\Program Files (x86)\\a\\b\\devbar.exe'),
+    ).toBe(false);
+    // Windows treats `/` and case as equivalent here, so the gate must too.
+    expect(
+      isPortableContainer(payload, 'C:/PROGRAM FILES/Tools/DevBar/devbar.exe'),
+    ).toBe(false);
+  });
+  it('still accepts paths outside both roots (what the portable flow needs)', () => {
+    // Containment compares WHOLE segments: `Program FilesX` is an ordinary
+    // folder, not an elevation-requiring root.
+    expect(
+      isPortableContainer(payload, 'C:\\Program FilesX\\DevBar\\devbar.exe'),
+    ).toBe(true);
+    expect(
+      isPortableContainer(payload, 'D:\\Tools\\Apps\\DevBar\\devbar.exe'),
+    ).toBe(true);
+  });
 });
 
 describe('windows update mode + helpers', () => {
@@ -531,6 +564,50 @@ describe('windows update mode + helpers', () => {
     expect(
       windowsUpdateMode('C:\\Program Files\\DevBar\\DevBar.exe', localAppData),
     ).toBe('assisted');
+  });
+
+  it('treats Program Files at ANY depth as assisted-only', () => {
+    // The regression: a fixed "two levels up" basename compare looked at
+    // `Tools` here, called it 'portable', and canInstallInPlace then offered
+    // an in-place swap of a location that needs elevation.
+    expect(
+      windowsUpdateMode(
+        'C:\\Program Files\\Tools\\DevBar\\DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('assisted');
+    // A direct child compared the drive root (an empty basename) and slipped
+    // through the same way.
+    expect(
+      windowsUpdateMode('C:\\Program Files\\DevBar.exe', localAppData),
+    ).toBe('assisted');
+    expect(
+      windowsUpdateMode(
+        'D:\\Program Files (x86)\\a\\b\\DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('assisted');
+    // Windows treats `/` and case as equivalent here, so the check must too.
+    expect(
+      windowsUpdateMode(
+        'C:/PROGRAM FILES/Tools/DevBar/DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('assisted');
+  });
+
+  it('does not mistake a near-miss folder for a Program Files root', () => {
+    // WHOLE segments only: `Program FilesX` is an ordinary folder, and a
+    // `Program Files` that is not the FIRST segment is not the install root.
+    expect(
+      windowsUpdateMode('C:\\Program FilesX\\DevBar\\DevBar.exe', localAppData),
+    ).toBe('portable');
+    expect(
+      windowsUpdateMode(
+        'D:\\Tools\\Program Files\\DevBar\\DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('portable');
   });
 
   it('treats any other folder as a portable install', () => {

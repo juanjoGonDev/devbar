@@ -97,8 +97,50 @@ export function expandTilde(
   return value;
 }
 
+/**
+ * Windows environment names are case-insensitive at the OS level, but object
+ * keys are not: `extra` can carry `Path` (the spelling Windows itself uses)
+ * while this module writes `PATH`, and BOTH survive into the spawn env —
+ * where only one of them can reach the child. A group's or target's PATH
+ * override is then dropped silently, for no reason the user can see.
+ *
+ * Collapse every PATH-like key into one canonical `PATH`. The override wins:
+ * the value the caller set LAST (spread order) becomes the base, and
+ * `ensureStandardPaths` tops it up afterwards, exactly as `loadShellPath`
+ * does for the inherited PATH.
+ */
+function collapseWindowsPath(
+  env: NodeJS.ProcessEnv,
+  extra: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  let overrideKey: string | undefined;
+  for (const key of Object.keys(extra))
+    if (key.toUpperCase() === 'PATH') overrideKey = key;
+  const value =
+    overrideKey === undefined
+      ? env.PATH
+      : ensureStandardPaths(extra[overrideKey]);
+  const merged: NodeJS.ProcessEnv = {};
+  for (const [key, entry] of Object.entries(env))
+    if (key.toUpperCase() !== 'PATH') merged[key] = entry;
+  merged.PATH = value;
+  return merged;
+}
+
+/**
+ * The spawn environment: the current environment, with PATH replaced by the
+ * login shell's one (see `loadShellPath`).
+ *
+ * `extra` is for OVERRIDES ONLY — the caller's configured group/target env.
+ * `process.env` is already spread in below, so a caller that spreads it into
+ * `extra` as well silently reinstates the inherited PATH and defeats the whole
+ * module. Deliberately NOT guarded against here: the only signal available is
+ * `extra.PATH === process.env.PATH`, which is exactly what a caller that
+ * legitimately wants to force the inherited PATH produces, so a guard would
+ * have to break that case to catch this one.
+ */
 export function enhancedEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  return {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: loadShellPath(),
     // Keep the p10k gitstatus daemon out of the captured output: it prints
@@ -109,4 +151,5 @@ export function enhancedEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     GITSTATUS_AUTO_INSTALL: '0',
     ...extra,
   };
+  return isWin ? collapseWindowsPath(env, extra) : env;
 }

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -102,9 +102,26 @@ describe.skipIf(process.platform === 'win32')(
       fs.rmSync(emptyHome, { recursive: true, force: true });
     });
 
+    // The child is a REAL `sleep 30`. Both the manager and the id live at
+    // suite scope so cleanup can reach them however the test ends: a
+    // waitGroupReady timeout or an assertion throwing before stop() would
+    // otherwise leave the process running with its pipes attached, which
+    // keeps the vitest worker alive long after the failure (the very leak the
+    // `hanging-process` reporter exists to surface).
+    let pm: ProcessManager | null = null;
+    let pid: string | null = null;
+    afterEach(async () => {
+      // stop() is a no-op for anything not running, so this only ever acts on
+      // a child the test left behind.
+      if (pm && pid && pm.getState(pid).status === 'running')
+        await pm.stop(pid);
+      pm = null;
+      pid = null;
+    }, 15_000);
+
     it('logs a signal-based stop and leaves killRequested empty', async () => {
-      const pm = new ProcessManager(store);
-      const pid = makeCommandId('g1', 'c1');
+      pm = new ProcessManager(store);
+      pid = makeCommandId('g1', 'c1');
       const res = pm.start(pid);
       expect(res.ok).toBe(true);
       await waitGroupReady(pm, pid);

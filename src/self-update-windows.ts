@@ -86,6 +86,46 @@ function looksLikeWindowsExe(filePath: string): boolean {
  * executable is ours.
  */
 
+/**
+ * The 64-bit and 32-bit install roots, by NAME — the same literals this
+ * module has always compared against. Deliberately not read from
+ * `%ProgramFiles%` / `%ProgramFiles(x86)%`: matching the first directory
+ * under the path's own root covers a Windows installed on any drive, and
+ * keeps the gate testable off Windows, where those variables do not exist.
+ */
+const PROGRAM_FILES_ROOTS = ['program files', 'program files (x86)'];
+
+/**
+ * True when `candidate` lives anywhere under a Program Files root: a direct
+ * child (`C:\Program Files\DevBarPortable.exe`) or nested any number of
+ * levels down (`C:\Program Files\Tools\DevBar\DevBarPortable.exe`).
+ *
+ * CONTAINMENT, not a fixed-depth basename comparison. The previous check
+ * looked exactly two levels up, so it only ever saw the root for one
+ * particular depth: anything deeper compared a middle directory instead and
+ * an installed exe was accepted as a portable container — routing an
+ * elevation-requiring location through the swap, whose rollback cannot help
+ * when `move` fails before the backup exists (no backup, nothing relaunched,
+ * and the app has already quit).
+ *
+ * WHOLE segments only, so `C:\Program FilesX\...` is not contained; both
+ * separators are handled (`path.win32.normalize` folds `/` into `\`) and the
+ * comparison is case-insensitive, as Windows itself is.
+ */
+export function isUnderProgramFiles(candidate: string): boolean {
+  const normalized = path.win32.normalize(candidate);
+  const { root } = path.win32.parse(normalized);
+  // A relative path has no root to be contained by.
+  if (!root) return false;
+  const first = normalized
+    .slice(root.length)
+    .split('\\')
+    .find((segment) => segment.length > 0);
+  return (
+    first !== undefined && PROGRAM_FILES_ROOTS.includes(first.toLowerCase())
+  );
+}
+
 /** Pure gate: is `parentPath` a plausible portable container for `execPath`? */
 export function isPortableContainer(
   execPath: string,
@@ -95,11 +135,8 @@ export function isPortableContainer(
   const parent = parentPath.toLowerCase();
   if (parent === execPath.toLowerCase()) return false;
   if (!path.win32.basename(parent).includes('devbar')) return false;
-  // The "Program Files" check is two levels up: C:\Program Files\DevBar\...
-  const grandDir = path.win32
-    .basename(path.win32.dirname(path.win32.dirname(parent)))
-    .toLowerCase();
-  return grandDir !== 'program files' && grandDir !== 'program files (x86)';
+  // Both Program Files roots, at any depth, are assisted-only.
+  return !isUnderProgramFiles(parentPath);
 }
 
 let portableContainerCache: {
