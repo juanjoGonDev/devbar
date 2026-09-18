@@ -436,23 +436,27 @@ function killLeftovers(installDir: string): void {
     // mirrored here because this script runs in strip-only mode and
     // cannot import it.
     const POST_KILL_POLL_MS = 100;
-    let pollsLeft = 20;
     const waitPollMs = (ms: number): void => {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
     };
+    // The budget is spent on the CLOCK, not per group: one wait advances
+    // every group that is still dying. Draining it group by group would
+    // leave a later group with only its immediate probe and report it as a
+    // survivor, aborting a healthy install.
     const settled = new Map<string, boolean>();
     for (const entry of leftoverServiceGroups) {
       if (
         revalidateGroup(entry.identity, processIdentity(entry.pid)) === 'reused'
       )
         continue;
-      let alive = serviceGroupAlive(entry.pid);
-      while (alive && pollsLeft > 0) {
-        waitPollMs(POST_KILL_POLL_MS);
-        pollsLeft -= 1;
-        alive = serviceGroupAlive(entry.pid);
-      }
-      settled.set(entry.pid, alive);
+      settled.set(entry.pid, serviceGroupAlive(entry.pid));
+    }
+    let pollsLeft = 20;
+    while (pollsLeft > 0 && [...settled.values()].some((alive) => alive)) {
+      waitPollMs(POST_KILL_POLL_MS);
+      pollsLeft -= 1;
+      for (const [pid, alive] of settled)
+        if (alive) settled.set(pid, serviceGroupAlive(pid));
     }
     // Retain each group until it is CONFIRMED gone (after the budget):
     // a service group survives on its own (its command line matches

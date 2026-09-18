@@ -283,19 +283,24 @@ export function posixKillServiceTrees(
   // signal, and an immediate probe can see a group that is already in
   // the middle of dying. Re-probe each identity-matching group within
   // a shared budget before declaring it a survivor.
-  let pollsLeft = POSIX_POST_KILL_POLLS;
+  // The budget is shared, so it is spent on the CLOCK, not per group: one
+  // wait advances every group that is still dying. Draining it group by
+  // group would leave a later group with nothing but its immediate probe,
+  // and a group still being reaped would be reported as a survivor — which
+  // aborts a perfectly healthy install.
   const settled = new Map<string, boolean>();
   for (const child of groups) {
     const captured = identities.get(child) ?? null;
     if (revalidateGroup(captured, processIdentity(child)) === 'reused')
       continue;
-    let alive = groupAlive(child);
-    while (alive && pollsLeft > 0) {
-      wait(POSIX_POST_KILL_POLL_MS);
-      pollsLeft -= 1;
-      alive = groupAlive(child);
-    }
-    settled.set(child, alive);
+    settled.set(child, groupAlive(child));
+  }
+  let pollsLeft = POSIX_POST_KILL_POLLS;
+  while (pollsLeft > 0 && [...settled.values()].some((alive) => alive)) {
+    wait(POSIX_POST_KILL_POLL_MS);
+    pollsLeft -= 1;
+    for (const [child, alive] of settled)
+      if (alive) settled.set(child, groupAlive(child));
   }
   // A survivor is a group that still has members after the post-kill
   // budget — whether or not its leader is one of them. Only a REUSED pid

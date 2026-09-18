@@ -535,6 +535,46 @@ describe('posixKillServiceTrees', () => {
     expect(survivors).toEqual([]);
   });
 
+  it('spends the post-kill budget on the clock, not on the first group', () => {
+    // The budget is shared. Draining it group by group leaves a later group
+    // with nothing but its immediate probe: here '110' stays alive for
+    // almost the whole budget and '210' is reaped after a single interval,
+    // so a per-group drain would probe '210' once with the budget already
+    // spent and report a healthy, dying group as a survivor — aborting an
+    // install that should have proceeded.
+    const run: KillTreeRun = (cmd, args) => {
+      if (cmd === 'pgrep' && args[0] === '-f') return '100\n200\n';
+      if (cmd === 'pgrep') return args[1] === '100' ? '110\n' : '210\n';
+      return null;
+    };
+    const probes: Record<string, number> = { '110': 0, '210': 0 };
+    const waits: number[] = [];
+    const survivors = posixKillServiceTrees(['/x'], {
+      run,
+      wait: (ms) => {
+        waits.push(ms);
+      },
+      groupAlive: (pid) => {
+        probes[pid] = (probes[pid] ?? 0) + 1;
+        // '210' is gone by its second probe; '110' hangs on until the
+        // budget is nearly spent.
+        // '110' must outlast the ENTIRE budget and only then be reaped —
+        // that is what leaves a sequential drain with nothing for '210'.
+        return pid === '210'
+          ? probes[pid] < 2
+          : probes[pid] <= POSIX_POST_KILL_POLLS;
+      },
+      processIdentity: STABLE_IDENTITY,
+    });
+    expect(survivors).toEqual([]);
+    // One grace wait, then one wait per interval until the slowest group
+    // settles — not one budget per group.
+    expect(waits[0]).toBe(POSIX_SERVICE_GRACE_MS);
+    expect(waits.length).toBeLessThanOrEqual(POSIX_POST_KILL_POLLS + 1);
+    // Both groups were probed on every interval, which is the whole point.
+    expect(probes['210']).toBeGreaterThan(1);
+  });
+
   it('waits and kills at most once even with many groups in one pattern', () => {
     const events: string[] = [];
     let waited = 0;
