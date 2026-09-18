@@ -11,6 +11,7 @@ import type {
   ReleaseSummary,
   SilencedPatterns,
   StagedUpdate,
+  ThemePreference,
 } from './domain-types.js';
 
 export type SilenceLevel = 'warn' | 'error';
@@ -397,6 +398,12 @@ export interface DevBarApi {
   onConfigCloseRequested(callback: () => void): () => void;
   buildSilencePattern(line: string | null | undefined): string;
   onUpdate(callback: (payload: GroupState[]) => void): () => void;
+  /**
+   * Theme pushes, on their own channel. Deriving the theme from the
+   * `groups:update` fan-out instead would re-read (and re-validate) the whole
+   * config file on every warn/error log line, in every open window.
+   */
+  onThemeChange(callback: (payload: ThemePreference) => void): () => void;
   onLog(
     callback: (payload: { id: string; entry: LogEntry }) => void,
   ): () => void;

@@ -982,6 +982,20 @@ function rendererTargets() {
   return targets;
 }
 
+/**
+ * Theme fan-out targets: every renderer, plus the pre-script confirm modal.
+ * That modal deliberately stays OUT of `rendererTargets()` — it would then
+ * receive the whole group-state/pipeline/toast/update stream it has no use
+ * for — but it does paint themed chrome, so it must hear a theme change.
+ */
+function themeTargets() {
+  const targets = rendererTargets();
+  for (const win of prescriptConfirmWindows.values()) {
+    if (win && !win.isDestroyed()) targets.push(win.webContents);
+  }
+  return targets;
+}
+
 function updateDockVisibility() {
   if (process.platform !== 'darwin' || !app.dock) return;
   const anyOpen =
@@ -1246,7 +1260,17 @@ function downloadFile(
         ) {
           res.resume();
           if (redirects <= 0) return reject(new Error('too many redirects'));
-          return resolve(downloadFile(headers.location, dest, redirects - 1));
+          // Same handling as httpGetText: a Location MAY be a relative
+          // reference (RFC 7231), and the updater must never leave https.
+          let next: URL;
+          try {
+            next = new URL(headers.location, url);
+          } catch {
+            return reject(new Error('invalid redirect location'));
+          }
+          if (next.protocol !== 'https:')
+            return reject(new Error(`insecure redirect to ${next.protocol}`));
+          return resolve(downloadFile(next.href, dest, redirects - 1));
         }
         if (statusCode !== 200) {
           res.resume();
@@ -1458,13 +1482,12 @@ async function applyUpdate() {
   }
 
   // Linux package/AppImage: the user installs it with the package manager or
-  // a double-click — no quit needed from us. Record the exit as an UPDATE
-  // handoff: the user is told to close DevBar to install, and that
-  // deliberate close would otherwise flush the snapshot with reason
-  // `quit` (which never resumes), silently dropping every running
-  // service after the reinstall. Same rationale as the macOS/Windows
-  // assisted branches, which markUpdateExit() right before quitting.
-  markUpdateExit();
+  // a double-click — no quit needed from us. Deliberately NOT markUpdateExit():
+  // unlike the macOS/Windows branches (which quit within a second of marking),
+  // this path returns and the app keeps running for as long as the user wants.
+  // `pendingExitReason` has no reset, so marking here would make EVERY later
+  // exit — including a deliberate tray "Salir" hours afterwards — flush the
+  // snapshot as `update` and resume the services the user just stopped.
   broadcastToast(
     'ok',
     `v${version} descargada a ${dest}. Cierra DevBar e instálala/éjecútala.`,
@@ -1576,13 +1599,13 @@ function ensureSilencedWindow(
     minWidth: 360,
     minHeight: 320,
     title: `Silenciados — ${command.name}`,
+    backgroundColor: themeWindowBackground(),
     ...(isMac
       ? {
           titleBarStyle: 'hiddenInset' as const,
           trafficLightPosition: { x: 12, y: 14 },
-          backgroundColor: '#1e1e1e',
         }
-      : { backgroundColor: '#1e1e1e' }),
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1671,12 +1694,15 @@ function updateTrayTitle(payload: GroupState[]): void {
       if (!cs.muteErr) errs += cs.errorCount;
     }
   }
-  const count = devTrayCount ?? trayIcon.badgeCount(errs, warns);
+  const count = trayIcon.badgeCount(errs, warns);
+  // The dev panel's override wins over the real aggregate for what is
+  // PAINTED — but `lastTrayCount` remembers the real one, so releasing the
+  // override repaints the true count instead of freezing the forced one.
+  const shown = devTrayCount ?? count;
   // macOS: count as text next to the icon. win/linux don't render tray
-  // titles, so the count is drawn into the icon instead. The dev panel's
-  // override (devTrayCount) wins over the real aggregated state.
+  // titles, so the count is drawn into the icon instead.
   if (isMac) {
-    mb.tray.setTitle(count ? ` ${count}` : '');
+    mb.tray.setTitle(shown ? ` ${shown}` : '');
   } else {
     lastTrayCount = count;
   }
@@ -1687,15 +1713,15 @@ function updateTrayTitle(payload: GroupState[]): void {
   // dev-panel override keeps "error" — that is what the panel forces.
   const fromErrors = devTrayCount != null || errs > 0;
   mb.tray.setToolTip(
-    count
+    shown
       ? `DevBar — ${
-          count === 1
+          shown === 1
             ? fromErrors
               ? '1 error'
               : '1 aviso'
             : fromErrors
-              ? `${count} errores`
-              : `${count} avisos`
+              ? `${shown} errores`
+              : `${shown} avisos`
         }`
       : 'DevBar',
   );
@@ -1780,7 +1806,7 @@ function ensurePrescriptConfirmWindow(token: string): BrowserWindow {
     minimizable: false,
     maximizable: false,
     show: false, // show on ready-to-show to avoid a white flash
-    backgroundColor: '#1e1e1e',
+    backgroundColor: themeWindowBackground(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -2855,7 +2881,16 @@ function registerIpc() {
         ipcGlobalSettingsPatch(rawPatch),
       );
       applyAutostart(next.autostart);
-      if (next.theme !== undefined) refreshWindowBackgrounds();
+      if (next.theme !== undefined) {
+        refreshWindowBackgrounds();
+        // Push the resolved preference on its OWN channel. Renderers used to
+        // re-read the settings off the `groups:update` broadcast, which fires
+        // once per non-silenced warn/error line, in every open window — a
+        // synchronous full config read + schema validation per line on the
+        // main thread.
+        const theme = next.theme;
+        for (const wc of themeTargets()) wc.send('settings:theme', theme);
+      }
       broadcast();
       return next;
     },
@@ -3595,7 +3630,13 @@ function refreshWindowBackgrounds(): void {
   // menubar exposes the popover as `.window` (there is no browserWindow
   // property — reading it silently skipped the popover from theme updates).
   const menuBarWindow = (mb as { window?: BrowserWindow } | undefined)?.window;
-  for (const win of [configWindow, menuBarWindow, ...logsWindows.values()]) {
+  for (const win of [
+    configWindow,
+    menuBarWindow,
+    ...logsWindows.values(),
+    ...silencedWindows.values(),
+    ...prescriptConfirmWindows.values(),
+  ]) {
     if (win && !win.isDestroyed()) win.setBackgroundColor(bg);
   }
 }
@@ -3710,7 +3751,19 @@ app.whenReady().then(() => {
     // update phase swaps the app and exits, so it skips the tray.
     try {
       fs.rmSync(SMOKE_MARKER_PATH, { force: true });
-      if (!smokeUpdate) void new Tray(trayIcon.defaultIcon());
+    } catch (error) {
+      // A stale marker left behind would let CI read a PREVIOUS run's
+      // success, so this is fatal — and it is not a tray failure.
+      console.error('DEVBAR_SMOKE_MARKER_CLEANUP_FAILED:', error);
+      app.exit(1);
+    }
+    // Held in a variable the success timer below closes over: an
+    // unreferenced Tray is garbage-collected and its native icon destroyed,
+    // so dropping the reference here could let the tray vanish before the
+    // run is declared a success.
+    let smokeTray: Tray | null = null;
+    try {
+      if (!smokeUpdate) smokeTray = new Tray(trayIcon.defaultIcon());
     } catch (error) {
       console.error('DEVBAR_SMOKE_TRAY_FAILED:', error);
       app.exit(1);
@@ -3771,6 +3824,14 @@ app.whenReady().then(() => {
     }
 
     setTimeout(() => {
+      // What CI actually claims to prove is not "a tray was constructed" but
+      // "a tray was still alive 1.5 s later" — assert that before writing a
+      // success marker anyone will trust.
+      if (!smokeUpdate && (!smokeTray || smokeTray.isDestroyed())) {
+        console.error('DEVBAR_SMOKE_TRAY_GONE');
+        app.exit(1);
+        return;
+      }
       try {
         fs.writeFileSync(
           SMOKE_MARKER_PATH,
@@ -3952,6 +4013,10 @@ app.whenReady().then(() => {
     nativeTheme.on('updated', () => {
       trayIcon.invalidateCache();
       refreshTrayIcon();
+      // In `auto` (the default) the native window background resolves through
+      // the OS too — without this, a flip repaints the CSS but leaves the
+      // frame the old colour, flashing on the next resize/load.
+      refreshWindowBackgrounds();
     });
   });
 

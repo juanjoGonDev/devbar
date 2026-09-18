@@ -114,11 +114,11 @@ describe('theme picker a11y contract (config.html)', () => {
 
   it('every theme option starts with aria-pressed="false"', () => {
     // markThemeOption() synchronizes aria-pressed with the loaded theme at
-    // runtime; the static initial state must already be a valid
-    // pressed/unpressed value for assistive technology before JS runs.
+    // runtime; before JS runs, NONE may claim to be pressed — three
+    // simultaneously "pressed" toggles is what a screen reader would announce.
     for (const button of themeButtons) {
-      expect(button, `theme button without aria-pressed:\n${button}`).toMatch(
-        /aria-pressed="(false|true)"/,
+      expect(button, `theme button not starting unpressed:\n${button}`).toMatch(
+        /aria-pressed="false"/,
       );
     }
   });

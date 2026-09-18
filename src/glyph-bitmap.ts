@@ -126,6 +126,17 @@ export function drawGlyphBGRA(
       unit = Math.min(
         (2 * COUNT_R * size * 0.88) / unitsW,
         (2 * COUNT_R * size * 0.78) / 5,
+        // The two terms above bound the label's WIDTH and HEIGHT against
+        // the bubble's diameter, but the bubble is a CIRCLE: the corners
+        // of the fattened label block sit further out than either
+        // half-extent. For two digits (unitsW=7, width-limited) that
+        // corner landed at 0.3107*size against a 0.28*size radius — 11%
+        // outside, and the `bd <= 0` gate on onDigit below drops those
+        // samples back to the badge colour, clipping the digits. This
+        // third term bounds the corner DISTANCE itself (0.08 is the
+        // fatten ratio just below). Inert for one and three digits, where
+        // the terms above already win.
+        (COUNT_R * size) / Math.hypot(unitsW / 2 + 0.08, 5 / 2 + 0.08),
       ),
       // Bold the 3x5 strokes: at tray size a bare 1px stroke reads as a
       // pinprick, so each digit cell is expanded slightly in all directions.

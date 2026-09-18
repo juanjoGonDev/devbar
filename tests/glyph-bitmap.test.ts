@@ -269,3 +269,73 @@ describe('drawGlyphBGRA with a count bubble', () => {
     }
   });
 });
+
+describe('count bubble — the label must fit inside the CIRCLE, not its box', () => {
+  const red: RGB = [255, 69, 58];
+  const outline: RGB = [28, 28, 30];
+  const badge: RGB = [255, 59, 48];
+
+  /**
+   * How wide the topmost and bottommost white (digit) rows are, relative
+   * to the widest one.
+   *
+   * "88" is the probe: the 3x5 `8` carries a FULL 3-wide bar on its top,
+   * middle and bottom rows, so those three rows of the rendered block are
+   * analytically the same width. Anything narrower at the top or bottom
+   * is the block's CORNERS being cut.
+   */
+  function barRatios(
+    size: number,
+    count: number,
+  ): { top: number; bottom: number } {
+    const buf = drawGlyphBGRA(size, red, outline, badge, count);
+    const widths: number[] = [];
+    for (let y = 0; y < size; y++) {
+      let first = -1;
+      let last = -1;
+      for (let x = 0; x < size; x++) {
+        const [r, g, b, a] = px(buf, size, x, y);
+        if (a > 200 && r > 240 && g > 240 && b > 240) {
+          if (first < 0) first = x;
+          last = x;
+        }
+      }
+      if (first >= 0) widths.push(last - first + 1);
+    }
+    const max = Math.max(...widths);
+    return {
+      top: (widths[0] ?? 0) / max,
+      bottom: (widths[widths.length - 1] ?? 0) / max,
+    };
+  }
+
+  // Bounding the label by the bubble's WIDTH and HEIGHT does not bound
+  // its corners: the bubble is a circle, and for two digits the fattened
+  // block's corner sat at 0.3107*size against a 0.28*size radius — 11%
+  // outside. drawGlyphBGRA gates `onDigit` on `bd <= 0`, so every sample
+  // beyond the circle falls through to the badge colour and the top and
+  // bottom bars are cut short at both ends.
+  it('keeps the two-digit top and bottom bars full width', () => {
+    // 120px: far enough above the Math.floor/ceil snapping in digitMask
+    // that this measures geometry alone. Clipped it is 0.81; bounded by
+    // the corner distance, 0.96.
+    const { top, bottom } = barRatios(120, 88);
+    expect(top).toBeGreaterThan(0.95);
+    expect(bottom).toBeGreaterThan(0.95);
+  });
+
+  it('holds at a real tray size too', () => {
+    // Clipped: 0.68. Bounded: 0.88. The remaining gap is that pixel
+    // snapping, which already clips "99+" today — a separate, larger
+    // change, deliberately not chased here.
+    expect(barRatios(36, 88).top).toBeGreaterThan(0.8);
+  });
+
+  it('leaves the one- and three-digit labels untouched', () => {
+    // The width/height terms already win for those, so the radial bound
+    // is inert: `7` (top bar full, bottom a single stem) and `99+` (the
+    // `+` has no ink on the outer rows) keep their glyph shapes.
+    expect(barRatios(120, 7).top).toBe(1);
+    expect(barRatios(120, 100).top).toBeCloseTo(0.65, 1);
+  });
+});

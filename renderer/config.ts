@@ -2059,9 +2059,13 @@ async function persistSettings() {
 }
 
 // Theme picker: segmented control, persists on click (same as the other
-// instant-save controls). initTheme() re-applies on every broadcast, so the
-// change propagates to all open windows (and to this one).
+// instant-save controls). Main pushes the saved theme on `settings:theme`, so
+// the change propagates to all open windows (and to this one).
 let selectedTheme: ThemePreference = 'auto';
+// Monotonic id per click. Saves are independent promises and can settle out
+// of order, so a rejected OLD save must not roll the control back over a
+// NEWER selection that already succeeded.
+let themeSaveSeq = 0;
 const themeOpts = Array.from(
   document.querySelectorAll<HTMLButtonElement>('.theme-opt'),
 );
@@ -2077,6 +2081,7 @@ function markThemeOption(): void {
 for (const btn of themeOpts)
   btn.addEventListener('click', async () => {
     if (!settingsLoaded) return; // stale-control window: load will win
+    const token = ++themeSaveSeq;
     const previous = selectedTheme;
     selectedTheme = (btn.dataset.themeValue ?? 'auto') as ThemePreference;
     markThemeOption();
@@ -2088,6 +2093,9 @@ for (const btn of themeOpts)
     try {
       await window.api.saveSettings({ theme: selectedTheme });
     } catch {
+      // A later click already owns the control (and its own save decides the
+      // outcome); restoring THIS click's `previous` would silently revert it.
+      if (token !== themeSaveSeq) return;
       selectedTheme = previous;
       markThemeOption();
       showToast(

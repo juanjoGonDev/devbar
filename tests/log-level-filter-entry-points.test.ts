@@ -20,6 +20,15 @@ function read(rel: string): string {
 }
 
 /**
+ * Collapse every run of whitespace to one space. These assertions are about
+ * WHAT the source says, not where Prettier's 80-column wrap happens to break
+ * it — adding a property or renaming an identifier must not redden them.
+ */
+function normalize(source: string): string {
+  return source.replace(/\s+/gu, ' ');
+}
+
+/**
  * Extract a top-level function's source by name. The body scan starts after
  * the parameter list's closing paren, so destructured params
  * (`{ filter, level }`) are not mistaken for the body.
@@ -56,13 +65,21 @@ describe('warn/error entry points open logs with the level chip', () => {
   );
 
   it('the tray counter badge passes the level to openLogs', () => {
-    expect(counterBtn).toContain('openLogs({ processId, level: kind })');
+    expect(normalize(counterBtn)).toContain(
+      'openLogs({ processId, level: kind })',
+    );
   });
 
-  it('the tray counter badge no longer ships a warn/error regex filter', () => {
-    expect(counterBtn).not.toContain('warn(ing)?s?');
-    expect(counterBtn).not.toContain('error(s)?');
-    expect(counterBtn).not.toContain('filter:');
+  it('the tray counter badge never pre-fills the text search', () => {
+    // The contract is not one regex SPELLING: ANY filter handed to openLogs
+    // lands in the text box the level chip replaced. So the button must not
+    // mention a filter at all, and its only openLogs call must carry nothing
+    // but the process id and the level.
+    expect(normalize(counterBtn)).not.toMatch(/\bfilter\b/u);
+    const openLogsArgs = Array.from(
+      counterBtn.matchAll(/openLogs\(([^)]*)\)/gu),
+    ).map((match) => normalize(match[1] ?? '').trim());
+    expect(openLogsArgs).toEqual(['{ processId, level: kind }']);
   });
 
   const ensureLogsWindow = functionSource(
@@ -71,19 +88,23 @@ describe('warn/error entry points open logs with the level chip', () => {
   );
 
   it('main forwards the level when re-selecting an open window', () => {
-    expect(ensureLogsWindow).toContain(
+    expect(normalize(ensureLogsWindow)).toContain(
       "existing.webContents.send('logs:select', { processId, filter, level });",
     );
   });
 
   it('main puts the level in the window URL query', () => {
-    expect(ensureLogsWindow).toContain('if (level) query.level = level;');
+    expect(normalize(ensureLogsWindow)).toContain(
+      'if (level) query.level = level;',
+    );
   });
 
   const selectLog = functionSource(read('renderer/logs.ts'), 'selectLog');
 
   it('the logs window pins the level chip when selectLog receives one', () => {
-    expect(selectLog).toContain('level?: SilenceLevel');
-    expect(selectLog).toContain('if (level) setLevelFilter([level]);');
+    expect(normalize(selectLog)).toContain('level?: SilenceLevel');
+    expect(normalize(selectLog)).toContain(
+      'if (level) setLevelFilter([level]);',
+    );
   });
 });

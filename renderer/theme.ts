@@ -6,9 +6,9 @@
  * truth per theme and no media queries of its own.
  *
  * Call initTheme() once per window entry point; it applies the current
- * setting, follows OS changes while in auto mode, and re-applies on every
- * groups:update broadcast (settings:save triggers one, so a theme change in
- * the config window propagates to all open windows).
+ * setting, follows OS changes while in auto mode, and re-applies whenever
+ * main pushes a new preference on `settings:theme` (settings:save sends one,
+ * so a theme change in the config window propagates to all open windows).
  */
 import type { ThemePreference } from '../src/domain-types.js';
 
@@ -41,10 +41,8 @@ export function initTheme(): void {
   media.addEventListener('change', () => {
     if (preference === 'auto') applyTheme('auto');
   });
-  window.api.onUpdate(() => {
-    void window.api
-      .getSettings()
-      .then((s) => applyTheme(s.theme ?? 'auto'))
-      .catch(() => {});
-  });
+  // Apply the PUSHED value — no getSettings() round trip. The old
+  // groups:update subscription re-read the whole config file once per
+  // warn/error log line, in every open window.
+  window.api.onThemeChange((theme) => applyTheme(theme ?? 'auto'));
 }

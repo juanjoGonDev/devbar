@@ -114,10 +114,6 @@ function buildGroups(version: HTMLInputElement, api = window.api): Group[] {
           hint: 'Cualquier cifra ≥ 100 se pinta como 99+',
           run: () => api.dev.simulateTrayCount(1234),
         },
-        {
-          label: 'Sin contador',
-          run: () => api.dev.simulateTrayCount(null),
-        },
       ],
     },
     {

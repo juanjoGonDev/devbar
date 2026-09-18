@@ -49,6 +49,7 @@ interface MockImage {
 
 afterEach(() => {
   created.length = 0;
+  state.dark = false;
   invalidateCache();
 });
 
@@ -82,6 +83,20 @@ describe('loadIcon with a count badge', () => {
     const c = loadIcon('error', false, 8);
     expect(b).toBe(a);
     expect(c).not.toBe(a);
+    // A cache hit must not redraw: two distinct keys, two bitmaps.
+    expect(created).toHaveLength(2);
+    expect(created[0]).toMatchObject({ width: 18, height: 18 });
+  });
+
+  it('re-renders when the OS appearance flips (theme is part of the key)', () => {
+    // Regression: dropping the theme from the cache key left the light
+    // icon on screen after a light→dark switch — the outline colour that
+    // keeps the mark visible on the new menubar background never changed.
+    const light = loadIcon('running') as unknown as MockImage;
+    state.dark = true;
+    const dark = loadIcon('running') as unknown as MockImage;
+    expect(dark).not.toBe(light);
+    expect(dark.bitmap).not.toEqual(light.bitmap);
   });
 
   it('keeps 99 ("99") and 100 ("99+") as distinct cache entries', () => {
