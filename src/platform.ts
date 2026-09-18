@@ -7,10 +7,12 @@ export const isWin = process.platform === 'win32';
 export const isLinux = process.platform === 'linux';
 
 /**
- * The interactive shell a user's services run under. macOS keeps its
- * historical default (zsh); Linux uses whatever the user's `$SHELL` says with
- * a bash fallback; Windows has no login shell — commands run through
- * `cmd.exe`.
+ * The interactive shell a user's services run under. On macOS AND Linux
+ * alike `$SHELL` wins — that is the shell whose rc files the user's own
+ * terminal loads, which is the whole point of running services under it.
+ * The per-OS default applies only when `$SHELL` is unset or empty: zsh on
+ * macOS (the system default since Catalina), bash on Linux. Windows has no
+ * login shell — commands run through `cmd.exe` (`ComSpec`).
  */
 export function userShell(): string {
   if (isWin) return process.env.ComSpec || 'cmd.exe';

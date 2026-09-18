@@ -66,8 +66,23 @@ export function buildCmdline(
 }
 
 /**
- * Quote one ARGUMENT for a Windows command line. There are two parsers
- * between this string and the child process:
+ * Quote one ARGUMENT for a Windows command line. There are THREE parsers
+ * between this string and the child process, and the first one has to be
+ * switched OFF for the other two to see what is written here:
+ *
+ * 0. libuv's `quote_cmd_arg`. Windows has no argv array — the OS takes a
+ *    single command line string — so libuv normally re-quotes every
+ *    element of Node's `args` array, wrapping it and backslash-escaping
+ *    each `"` inside it as `\"`. cmd.exe has NO backslash escape, so those
+ *    backslashes survive to the child, where `CommandLineToArgvW` reads
+ *    `\"` as a literal quote rather than the span toggle emitted below —
+ *    silently splitting `--title "My App"` into three arguments. This
+ *    layer is BYPASSED: every spawn of the shell sets
+ *    `windowsVerbatimArguments` (see serviceSpawnOptions in
+ *    process-manager.ts), which hands libuv the line untouched, and the
+ *    `/c` payload is wrapped in the one quote pair `cmd /s` strips back
+ *    off. With that flag the remaining two parsers are the only ones this
+ *    encoding has to satisfy:
  *
  * 1. `cmd.exe` reads the line first and treats `& | < > ^` OUTSIDE double
  *    quotes as operators (chain / pipe / redirect / escape) — a raw `>`
@@ -90,10 +105,12 @@ export function buildCmdline(
  * - otherwise → emit as-is, but prefix each cmd operator and percent sign
  *   with `^` so cmd passes it through uninterpreted.
  *
- * The two reference parsers (cmd escape/expansion, then CommandLineToArgvW)
- * are simulated in tests and the round-trip `parse(cmd(quote(v))) === v`
- * is asserted for a battery of values, plus a real cmd.exe round-trip on
- * Windows CI.
+ * The two remaining reference parsers (cmd escape/expansion, then
+ * CommandLineToArgvW) are simulated in tests and the round-trip
+ * `parse(cmd(quote(v))) === v` is asserted for a battery of values, plus a
+ * real cmd.exe round-trip on Windows CI that goes through the production
+ * spawn spec — so the `windowsVerbatimArguments` bypass above is part of
+ * what that round-trip proves.
  */
 function isArgSpace(ch: string | undefined): boolean {
   return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\v';

@@ -8,6 +8,14 @@ import {
   quoteWindowsArg,
   hasShellMeta,
 } from '../src/parse-command.js';
+// The real cmd.exe round-trips below go through the PRODUCTION spawn
+// spec, not a hand-written argv: the quoting in parse-command.ts is only
+// correct because that spec sets windowsVerbatimArguments (otherwise
+// libuv rewrites every `"` in the payload as `\"` and the child's
+// CommandLineToArgvW reads them as literal quotes). A local
+// `spawnSync('cmd.exe', ['/d','/s','/c', cmdline])` here would assert a
+// contract production does not use — and would fail for that reason.
+import { buildSpawnArgs, serviceSpawnOptions } from '../src/process-manager.js';
 
 describe('parse-command', () => {
   // ─── tokenize ───────────────────────────────────────────────────────
@@ -252,9 +260,11 @@ describe('parse-command', () => {
           'node -p "JSON.stringify(process.argv.slice(1))"',
           ['%TEMP%', 'in %TEMP% now'],
         );
-        const result = spawnSync('cmd.exe', ['/d', '/s', '/c', cmdline], {
+        const spec = buildSpawnArgs(cmdline);
+        const result = spawnSync(spec.file, spec.args, {
           encoding: 'utf8',
           env: { ...process.env, TEMP: 'expanded-by-cmd' },
+          ...serviceSpawnOptions(),
         });
 
         expect(result.status, result.stderr).toBe(0);
@@ -275,8 +285,10 @@ describe('parse-command', () => {
           'node -p "JSON.stringify(process.argv.slice(1))"',
           ['foo(bar)', 'a)b', 'keep ( ) in a span'],
         );
-        const result = spawnSync('cmd.exe', ['/d', '/s', '/c', cmdline], {
+        const spec = buildSpawnArgs(cmdline);
+        const result = spawnSync(spec.file, spec.args, {
           encoding: 'utf8',
+          ...serviceSpawnOptions(),
         });
 
         expect(result.status, result.stderr).toBe(0);
@@ -287,6 +299,28 @@ describe('parse-command', () => {
           'a)b',
           'keep ( ) in a span',
         ]);
+      },
+    );
+
+    it.runIf(process.platform === 'win32')(
+      'round-trips a spaced argument as ONE argv element through cmd.exe',
+      () => {
+        // The regression this pins: with libuv re-quoting the payload,
+        // the `"` around `My App` reached cmd as `\"`, cmd passed the
+        // backslashes through, and CommandLineToArgvW read them as
+        // literal quotes — so the child saw `--title`, `"My`, `App"`.
+        const cmdline = buildCmdlineWindows(
+          'node -p "JSON.stringify(process.argv.slice(1))"',
+          ['--title', 'My App'],
+        );
+        const spec = buildSpawnArgs(cmdline);
+        const result = spawnSync(spec.file, spec.args, {
+          encoding: 'utf8',
+          ...serviceSpawnOptions(),
+        });
+
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toEqual(['--title', 'My App']);
       },
     );
   });

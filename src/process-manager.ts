@@ -78,7 +78,20 @@ function spawnShellForPlatform(): {
   return { file: userShell(), baseArgs: ['-ic'] };
 }
 
-/** Compose the full argv for running `cmdline` under the platform shell. */
+/**
+ * Compose the full argv for running `cmdline` under the platform shell.
+ *
+ * Windows: the `/c` payload is wrapped in one extra quote pair, exactly as
+ * Node's own `shell: true` path does (`['/d','/s','/c','"'+command+'"']`).
+ * `/s` makes cmd strip precisely that first/last quote pair and take the
+ * rest VERBATIM, which is what lets a payload that itself begins and ends
+ * with a quote (`"C:\Program Files\x.exe" arg`) survive intact. The wrap
+ * only works together with `windowsVerbatimArguments` (see
+ * serviceSpawnOptions): without it libuv would re-escape every inner `"`
+ * as `\"` and cmd, which has no backslash escape, would hand those
+ * backslashes straight to the child's CommandLineToArgvW as literal
+ * quotes.
+ */
 export function buildSpawnArgs(cmdline: string): {
   file: string;
   args: string[];
@@ -88,7 +101,11 @@ export function buildSpawnArgs(cmdline: string): {
   const description = isWin
     ? `${file} /d /s /c "${cmdline}"`
     : `${file} -ic '${cmdline}'`;
-  return { file, args: [...baseArgs, cmdline], description };
+  return {
+    file,
+    args: [...baseArgs, isWin ? `"${cmdline}"` : cmdline],
+    description,
+  };
 }
 
 /**
@@ -106,14 +123,30 @@ export function buildSpawnArgs(cmdline: string): {
  * - from the packaged GUI — windowsHide: there is no console to show,
  *   and without it each spawned cmd.exe can flash a visible terminal
  *   window next to the taskbar.
+ *
+ * `windowsVerbatimArguments` is MANDATORY on win32 and is what makes the
+ * quoting in parse-command.ts correct. Windows has no argv array: libuv
+ * builds one command line string, and without this flag it runs
+ * `quote_cmd_arg` over each argument — wrapping the `/c` payload and
+ * backslash-escaping every `"` inside it as `\"`. `cmd.exe` has no
+ * backslash escape, so those backslashes reach the child untouched and
+ * `CommandLineToArgvW` reads `\"` as a LITERAL quote instead of the span
+ * toggle the escaper emitted: `--title "My App"` would arrive as three
+ * arguments (`--title`, `"My`, `App"`). Setting it hands libuv the line
+ * verbatim, leaving cmd + CommandLineToArgvW as the only two parsers —
+ * which is exactly the pair quoteWindowsArg is written against. Node's own
+ * `shell: true` path sets the same flag for the same reason. Ignored on
+ * POSIX, where the argv array is passed through as-is.
  */
 export function serviceSpawnOptions(): {
   detached: boolean;
   windowsHide: boolean;
+  windowsVerbatimArguments: boolean;
 } {
   return {
     detached: !isWin,
     windowsHide: !process.stdout.isTTY,
+    windowsVerbatimArguments: isWin,
   };
 }
 

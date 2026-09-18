@@ -31,24 +31,53 @@ afterEach(() => {
 
 describe('buildSpawnArgs — POSIX', () => {
   it('runs the command through the user shell with -ic (profiles apply)', async () => {
+    // $SHELL must be STUBBED: without it the assertion would read the
+    // contributor's own login shell, so it would pass for whatever the
+    // host happens to have and prove nothing about userShell().
+    vi.stubEnv('SHELL', '/usr/bin/fish');
     const build = await buildFor('linux');
     const spec = build('pnpm start');
-    expect(spec.file).toMatch(/(bash|zsh|fish|sh)$/);
+    expect(spec.file).toBe('/usr/bin/fish');
     expect(spec.args).toEqual(['-ic', 'pnpm start']);
-    expect(spec.description).toBe(`${spec.file} -ic 'pnpm start'`);
+    expect(spec.description).toBe("/usr/bin/fish -ic 'pnpm start'");
+  });
+
+  it('falls back to the documented /bin/bash when SHELL is unset', async () => {
+    vi.unstubAllEnvs();
+    const previous = process.env.SHELL;
+    delete process.env.SHELL;
+    try {
+      const build = await buildFor('linux');
+      const spec = build('pnpm start');
+      expect(spec.file).toBe('/bin/bash');
+      expect(spec.args).toEqual(['-ic', 'pnpm start']);
+    } finally {
+      if (previous !== undefined) process.env.SHELL = previous;
+    }
   });
 });
 
 describe('buildSpawnArgs — Windows', () => {
-  it('runs the command through ComSpec with /d /s /c', async () => {
+  // The `/c` payload carries ONE extra quote pair, the pair `cmd /s`
+  // strips back off before running the rest verbatim. It is only correct
+  // together with windowsVerbatimArguments (asserted below): the two are
+  // a single contract, copied from Node's own `shell: true` path.
+  it('runs the command through ComSpec with /d /s /c and a quote-wrapped payload', async () => {
     vi.stubEnv('ComSpec', 'C:\\Windows\\system32\\cmd.exe');
     const build = await buildFor('win32');
     const spec = build('pnpm start');
     expect(spec.file).toBe('C:\\Windows\\system32\\cmd.exe');
-    expect(spec.args).toEqual(['/d', '/s', '/c', 'pnpm start']);
+    expect(spec.args).toEqual(['/d', '/s', '/c', '"pnpm start"']);
     expect(spec.description).toBe(
       'C:\\Windows\\system32\\cmd.exe /d /s /c "pnpm start"',
     );
+  });
+
+  it('wraps a payload that already begins and ends with a quote (/s strips exactly one pair)', async () => {
+    vi.stubEnv('ComSpec', 'C:\\Windows\\system32\\cmd.exe');
+    const build = await buildFor('win32');
+    const spec = build('"C:\\Program Files\\node.exe" server.js');
+    expect(spec.args[3]).toBe('""C:\\Program Files\\node.exe" server.js"');
   });
 
   it('falls back to cmd.exe when ComSpec is missing', async () => {
@@ -59,7 +88,7 @@ describe('buildSpawnArgs — Windows', () => {
       const build = await buildFor('win32');
       const spec = build('npm test');
       expect(spec.file).toBe('cmd.exe');
-      expect(spec.args).toEqual(['/d', '/s', '/c', 'npm test']);
+      expect(spec.args).toEqual(['/d', '/s', '/c', '"npm test"']);
     } finally {
       if (previous !== undefined) process.env.ComSpec = previous;
     }
@@ -97,6 +126,9 @@ describe('serviceSpawnOptions — POSIX', () => {
         expect(mod.serviceSpawnOptions()).toStrictEqual({
           detached: true,
           windowsHide: false, // from a terminal; ignored on POSIX anyway
+          // NOT verbatim off-Windows: POSIX passes an argv array, so
+          // there is no command line for libuv to re-quote.
+          windowsVerbatimArguments: false,
         }),
       ),
     );
@@ -113,6 +145,10 @@ describe('serviceSpawnOptions — Windows', () => {
         expect(mod.serviceSpawnOptions()).toStrictEqual({
           detached: false,
           windowsHide: false,
+          // Without this, libuv rewrites every `"` in the /c payload as
+          // `\"`; cmd has no backslash escape, so CommandLineToArgvW
+          // would read them as literal quotes and split spaced args.
+          windowsVerbatimArguments: true,
         }),
       ),
     );
@@ -127,6 +163,7 @@ describe('serviceSpawnOptions — Windows', () => {
         expect(mod.serviceSpawnOptions()).toStrictEqual({
           detached: false,
           windowsHide: true,
+          windowsVerbatimArguments: true,
         }),
       ),
     );
