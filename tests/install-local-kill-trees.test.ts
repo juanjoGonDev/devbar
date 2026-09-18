@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   ereEscape,
@@ -75,6 +80,20 @@ describe('ereEscape', () => {
 });
 
 describe('posixKillServiceTrees', () => {
+  /**
+   * Every call below MUST inject `groupAlive` AND `processIdentity`.
+   * Omitting either falls back to the real defaults, which probe THE HOST
+   * process table with the scripted pid (`kill -0 -- -<pid>`, and
+   * `ps -o lstart= -p <pid>` wherever /proc is absent). The suite then
+   * asserts against whatever that pid happens to be on the machine: a live
+   * one adds the whole post-kill poll budget to the recorded waits, and a
+   * pid whose liveness flips between discovery and revalidation makes the
+   * SIGKILL escalation silently drop. Keep the invariant uniform even on
+   * the tests that never reach a probe today — one added `pgrep -P` line
+   * in a fixture is all it takes to re-couple them to the host.
+   */
+  const STABLE_IDENTITY = () => 'starttime:1234';
+
   function recordingRun(scripted: Record<string, string | null> = {}) {
     const calls: string[][] = [];
     const run: KillTreeRun = (cmd, args) => {
@@ -96,6 +115,7 @@ describe('posixKillServiceTrees', () => {
       run,
       wait: () => {},
       groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(calls).toEqual([
       ['pgrep', '-f', '/install/path'],
@@ -125,6 +145,7 @@ describe('posixKillServiceTrees', () => {
       run,
       wait: () => {},
       groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(calls).toEqual([
       ['pgrep', '-f', '/x'],
@@ -140,6 +161,7 @@ describe('posixKillServiceTrees', () => {
       run,
       wait: () => {},
       groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(calls).toEqual([['pgrep', '-f', '/x']]);
   });
@@ -152,6 +174,7 @@ describe('posixKillServiceTrees', () => {
       run,
       wait: () => {},
       groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(calls).toEqual([['pgrep', '-f', '/x']]);
   });
@@ -165,6 +188,7 @@ describe('posixKillServiceTrees', () => {
       run,
       wait: () => {},
       groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(calls).toEqual([
       ['pgrep', '-f', '/x'],
@@ -178,7 +202,12 @@ describe('posixKillServiceTrees', () => {
 
   it('a pattern matching nothing is a no-op (clean machine is the normal case)', () => {
     const { calls, run } = recordingRun();
-    posixKillServiceTrees(['/x', '/y'], { run });
+    posixKillServiceTrees(['/x', '/y'], {
+      run,
+      wait: () => {},
+      groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
+    });
     expect(calls).toEqual([
       ['pgrep', '-f', '/x'],
       ['pgrep', '-f', '/y'],
@@ -196,6 +225,7 @@ describe('posixKillServiceTrees', () => {
       run,
       wait: () => {},
       groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     // Both patterns are walked first (TERM for each group as it is found),
     // then a single grace wait, then the KILL escalation in discovery order.
@@ -232,6 +262,11 @@ describe('posixKillServiceTrees', () => {
       wait: (ms) => {
         waits.push(ms);
       },
+      // The group is TERM-resistant but dies on the KILL: no post-kill
+      // polling, so the grace wait is the only wait. Both probes are faked
+      // because the real ones would answer for the HOST's pid 110.
+      groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(waits).toEqual([POSIX_SERVICE_GRACE_MS]);
     // The KILLs come strictly after both TERM signals (the wait sits
@@ -349,6 +384,9 @@ describe('posixKillServiceTrees', () => {
       run,
       wait: () => {},
       groupAlive: () => true, // the group is still here after the KILL
+      // ...and it is still OUR group: a stable identity is what keeps the
+      // survivor reportable (a mismatch would filter it out silently).
+      processIdentity: STABLE_IDENTITY,
     });
     expect(survivors).toEqual(['110']);
     expect(events).toEqual([
@@ -382,6 +420,7 @@ describe('posixKillServiceTrees', () => {
         probes += 1;
         return probes === 1; // alive on the first probe, reaped by the second
       },
+      processIdentity: STABLE_IDENTITY,
     });
     expect(survivors).toEqual([]);
     expect(waits).toEqual([POSIX_SERVICE_GRACE_MS, POSIX_POST_KILL_POLL_MS]);
@@ -403,6 +442,7 @@ describe('posixKillServiceTrees', () => {
         waits.push(ms);
       },
       groupAlive: () => true,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(survivors).toEqual(['110']);
     expect(waits).toEqual([
@@ -424,6 +464,7 @@ describe('posixKillServiceTrees', () => {
       run,
       wait: () => {},
       groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(survivors).toEqual([]);
   });
@@ -442,6 +483,10 @@ describe('posixKillServiceTrees', () => {
       wait: () => {
         waited += 1;
       },
+      // Both groups die on the KILL: the grace wait is the only wait. Faked
+      // because the real probes would answer for the HOST's pids 110/210.
+      groupAlive: () => false,
+      processIdentity: STABLE_IDENTITY,
     });
     expect(waited).toBe(1);
     expect(events.filter((e) => e.startsWith('kill -s KILL'))).toEqual([
@@ -451,4 +496,84 @@ describe('posixKillServiceTrees', () => {
       'kill -s KILL 210',
     ]);
   });
+});
+
+/**
+ * The CLI form (`node --experimental-strip-types scripts/lib/kill-trees.ts
+ * <pattern>…`) is what install-local.sh calls on macOS, so its exit code IS
+ * the installer's go/no-go. Exercised in a subprocess because the entrypoint
+ * guard only fires when the module is the one Node was started with.
+ *
+ * Determinism and safety both come from the fake pgrep/kill/ps placed first
+ * on PATH: nothing real is ever discovered, and every pid the run signals is
+ * an answer invented by the fake pgrep. If the PATH override ever failed,
+ * the real pgrep would match nothing and the test would fail — it could not
+ * silently start signaling host processes.
+ */
+describe('kill-trees CLI entry', () => {
+  const CLI = fileURLToPath(
+    new URL('../scripts/lib/kill-trees.ts', import.meta.url),
+  );
+  // A fabricated instance pid and the service-group leader below it.
+  const INSTANCE = '424242';
+  const LEADER = '424243';
+  const STABLE_PS = 'echo "Mon Jan  1 00:00:00 2024"';
+
+  function runCli(fakes: Record<string, string>, pattern: string) {
+    const bin = mkdtempSync(join(tmpdir(), 'devbar-kill-trees-'));
+    try {
+      for (const [name, body] of Object.entries(fakes)) {
+        const file = join(bin, name);
+        writeFileSync(file, `#!/bin/sh\n${body}\n`);
+        chmodSync(file, 0o755);
+      }
+      return spawnSync(
+        process.execPath,
+        ['--experimental-strip-types', CLI, pattern],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` },
+        },
+      );
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+    }
+  }
+
+  it.skipIf(process.platform === 'win32')(
+    'aborts with exit 1 and names the group that survived SIGKILL',
+    () => {
+      const res = runCli(
+        {
+          pgrep: `case "$1" in -f) echo ${INSTANCE};; -P) [ "$2" = ${INSTANCE} ] && echo ${LEADER};; esac; exit 0`,
+          // `kill -0 -- -<leader>` keeps succeeding: the group outlives the
+          // SIGKILL and the whole post-kill poll budget.
+          kill: 'exit 0',
+          ps: STABLE_PS,
+        },
+        '/devbar/fixture/instance',
+      );
+      // A live service still holding its port must stop the install, not be
+      // installed over.
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain('survived SIGKILL');
+      expect(res.stderr).toContain(LEADER);
+    },
+    20_000,
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'exits 0 on a clean machine (a pattern matching nothing is the normal case)',
+    () => {
+      const res = runCli(
+        { pgrep: 'exit 1', kill: 'exit 0', ps: STABLE_PS },
+        '/devbar/fixture/absent',
+      );
+      expect(res.status).toBe(0);
+      // stderr is not empty — Node prints its type-stripping
+      // ExperimentalWarning there — but it must carry no abort.
+      expect(res.stderr).not.toContain('survived SIGKILL');
+    },
+    20_000,
+  );
 });

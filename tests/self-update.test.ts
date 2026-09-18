@@ -93,231 +93,240 @@ describe('buildSwapScript', () => {
   });
 });
 
-describe('appImagePathFromExecutable', () => {
-  // The $APPIMAGE branch requires the payload next to the executable to
-  // be DevBar's own (resources/app.asar|app/package.json carrying the
-  // devbar package name) — these fixtures stand in for the mounted
-  // squashfs. Dir names mimic the type 2 runtime's mount naming
-  // (.mount_<6 chars>).
-  let devbarMount: string;
-  let devbarLowerMount: string;
-  let devbarShortMount: string;
-  let parentMount: string;
-  let bareMount: string;
-  let devbarAsarMount: string;
-  let foreignAsarMount: string;
-  let mixedLayoutMount: string;
-  beforeAll(() => {
-    const make = (
-      template: string,
-      name: string | null,
-      layout: 'app' | 'asar' = 'app',
-    ): string => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), template));
-      if (name !== null) {
-        const payload = layout === 'asar' ? 'app.asar' : 'app';
-        fs.mkdirSync(path.join(root, 'resources', payload), {
-          recursive: true,
-        });
-        fs.writeFileSync(
-          path.join(root, 'resources', payload, 'package.json'),
-          JSON.stringify({ name }),
-        );
-      }
-      return root;
-    };
-    devbarMount = make('.mount_DevBar', 'devbar');
-    devbarLowerMount = make('.mount_devbar', 'devbar');
-    devbarShortMount = make('.mount_devb.A', 'devbar');
-    parentMount = make('.mount_Paren-', 'parent-tool');
-    bareMount = make('.mount_DevBar', null);
-    // Packaged-build layout: the payload is an asar archive, not a plain
-    // directory (a directory named app.asar stands in for the archive).
-    // Templates: '.mount_' + the FIRST SIX CHARS of the image basename
-    // (the runtime's maxnamelen = 6) + mkdtemp's 6 random suffix chars.
-    devbarAsarMount = make('.mount_DevBar', 'devbar', 'asar');
-    foreignAsarMount = make('.mount_Paren+', 'parent-tool', 'asar');
-    mixedLayoutMount = make('.mount_DevBm.', 'parent-tool', 'asar');
-    // …and ALSO carry an unpacked-layout payload with the devbar name:
-    // the asar layout must win (fail closed) instead of the fallback
-    // masking a foreign mount.
-    fs.mkdirSync(path.join(mixedLayoutMount, 'resources', 'app'), {
-      recursive: true,
+// AppImage is a Linux-only packaging format: this helper exists to resolve a
+// running .AppImage (or $APPIMAGE) and its assertions are written in POSIX
+// absolute paths. `path.resolve('/home/u/…')` on a Windows checkout yields
+// `C:\home\u\…`, so every case here would fail for a reason that says
+// nothing about the function — skip the suite there, like the POSIX stop
+// suite does.
+describe.skipIf(process.platform === 'win32')(
+  'appImagePathFromExecutable',
+  () => {
+    // The $APPIMAGE branch requires the payload next to the executable to
+    // be DevBar's own (resources/app.asar|app/package.json carrying the
+    // devbar package name) — these fixtures stand in for the mounted
+    // squashfs. Dir names mimic the type 2 runtime's mount naming
+    // (.mount_<6 chars>).
+    let devbarMount: string;
+    let devbarLowerMount: string;
+    let devbarShortMount: string;
+    let parentMount: string;
+    let bareMount: string;
+    let devbarAsarMount: string;
+    let foreignAsarMount: string;
+    let mixedLayoutMount: string;
+    beforeAll(() => {
+      const make = (
+        template: string,
+        name: string | null,
+        layout: 'app' | 'asar' = 'app',
+      ): string => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), template));
+        if (name !== null) {
+          const payload = layout === 'asar' ? 'app.asar' : 'app';
+          fs.mkdirSync(path.join(root, 'resources', payload), {
+            recursive: true,
+          });
+          fs.writeFileSync(
+            path.join(root, 'resources', payload, 'package.json'),
+            JSON.stringify({ name }),
+          );
+        }
+        return root;
+      };
+      devbarMount = make('.mount_DevBar', 'devbar');
+      devbarLowerMount = make('.mount_devbar', 'devbar');
+      devbarShortMount = make('.mount_devb.A', 'devbar');
+      parentMount = make('.mount_Paren-', 'parent-tool');
+      bareMount = make('.mount_DevBar', null);
+      // Packaged-build layout: the payload is an asar archive, not a plain
+      // directory (a directory named app.asar stands in for the archive).
+      // Templates: '.mount_' + the FIRST SIX CHARS of the image basename
+      // (the runtime's maxnamelen = 6) + mkdtemp's 6 random suffix chars.
+      devbarAsarMount = make('.mount_DevBar', 'devbar', 'asar');
+      foreignAsarMount = make('.mount_Paren+', 'parent-tool', 'asar');
+      mixedLayoutMount = make('.mount_DevBm.', 'parent-tool', 'asar');
+      // …and ALSO carry an unpacked-layout payload with the devbar name:
+      // the asar layout must win (fail closed) instead of the fallback
+      // masking a foreign mount.
+      fs.mkdirSync(path.join(mixedLayoutMount, 'resources', 'app'), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(mixedLayoutMount, 'resources', 'app', 'package.json'),
+        JSON.stringify({ name: 'devbar' }),
+      );
     });
-    fs.writeFileSync(
-      path.join(mixedLayoutMount, 'resources', 'app', 'package.json'),
-      JSON.stringify({ name: 'devbar' }),
-    );
-  });
-  afterAll(() => {
-    for (const root of [
-      devbarMount,
-      devbarLowerMount,
-      devbarShortMount,
-      parentMount,
-      bareMount,
-      devbarAsarMount,
-      foreignAsarMount,
-      mixedLayoutMount,
-    ]) {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
+    afterAll(() => {
+      for (const root of [
+        devbarMount,
+        devbarLowerMount,
+        devbarShortMount,
+        parentMount,
+        bareMount,
+        devbarAsarMount,
+        foreignAsarMount,
+        mixedLayoutMount,
+      ]) {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
 
-  it('accepts a running .AppImage path', () => {
-    expect(appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage')).toBe(
-      '/home/u/Apps/DevBar.AppImage',
-    );
-  });
-
-  it('rejects a .deb install (plain binary) and dev runs', () => {
-    expect(appImagePathFromExecutable('/usr/bin/DevBar')).toBeNull();
-    expect(
-      appImagePathFromExecutable('/repo/node_modules/electron/dist/electron'),
-    ).toBeNull();
-  });
-
-  it('resolves the image from $APPIMAGE when running a mounted type 2 image', () => {
-    // A running type 2 AppImage executes the payload from the tmp mount —
-    // execPath alone would never end in .AppImage and the in-place path
-    // would be dead for every real install.
-    expect(
-      appImagePathFromExecutable(
-        path.join(devbarMount, 'devbar'),
+    it('accepts a running .AppImage path', () => {
+      expect(appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage')).toBe(
         '/home/u/Apps/DevBar.AppImage',
-      ),
-    ).toBe('/home/u/Apps/DevBar.AppImage');
-  });
+      );
+    });
 
-  it('accepts a FOREIGN-free $APPIMAGE for a directly executed image', () => {
-    // Direct execution: the execPath IS the image file; an env pointing at
-    // the same image is consistent (and a blank one falls through).
-    expect(
-      appImagePathFromExecutable(
-        '/home/u/Apps/DevBar.AppImage',
-        '/home/u/Apps/DevBar.AppImage',
-      ),
-    ).toBe('/home/u/Apps/DevBar.AppImage');
-    expect(
-      appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage', '   '),
-    ).toBe('/home/u/Apps/DevBar.AppImage');
-    expect(appImagePathFromExecutable('/usr/bin/devbar', '   ')).toBeNull();
-  });
+    it('rejects a .deb install (plain binary) and dev runs', () => {
+      expect(appImagePathFromExecutable('/usr/bin/DevBar')).toBeNull();
+      expect(
+        appImagePathFromExecutable('/repo/node_modules/electron/dist/electron'),
+      ).toBeNull();
+    });
 
-  it('rejects an inherited $APPIMAGE whose stem does not match the mount', () => {
-    expect(
-      appImagePathFromExecutable(
-        path.join(devbarMount, 'devbar'),
-        '/opt/Tools/Tool.AppImage',
-      ),
-    ).toBeNull();
-  });
+    it('resolves the image from $APPIMAGE when running a mounted type 2 image', () => {
+      // A running type 2 AppImage executes the payload from the tmp mount —
+      // execPath alone would never end in .AppImage and the in-place path
+      // would be dead for every real install.
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/home/u/Apps/DevBar.AppImage',
+        ),
+      ).toBe('/home/u/Apps/DevBar.AppImage');
+    });
 
-  it('rejects the PARENT image when DevBar is its payload (circular stem)', () => {
-    // The hostile case: DevBar runs as a payload file INSIDE another
-    // AppImage. The parent runtime set $APPIMAGE to the parent file and
-    // named the mount after that SAME file — the six-char stem check is
-    // circular and matches. Only the payload identity gate can tell the
-    // difference: the payload next to the executable is the parent's app,
-    // not devbar.
-    expect(
-      appImagePathFromExecutable(
-        path.join(parentMount, 'devbar'),
-        '/opt/Tools/Parent-App-2.0.AppImage',
-      ),
-    ).toBeNull();
-    // …while the same mount with DevBar's own payload is accepted.
-    expect(
-      appImagePathFromExecutable(
-        path.join(devbarMount, 'devbar'),
-        '/opt/Tools/DevBar-9.9.9.AppImage',
-      ),
-    ).toBe('/opt/Tools/DevBar-9.9.9.AppImage');
-  });
+    it('accepts a FOREIGN-free $APPIMAGE for a directly executed image', () => {
+      // Direct execution: the execPath IS the image file; an env pointing at
+      // the same image is consistent (and a blank one falls through).
+      expect(
+        appImagePathFromExecutable(
+          '/home/u/Apps/DevBar.AppImage',
+          '/home/u/Apps/DevBar.AppImage',
+        ),
+      ).toBe('/home/u/Apps/DevBar.AppImage');
+      expect(
+        appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage', '   '),
+      ).toBe('/home/u/Apps/DevBar.AppImage');
+      expect(appImagePathFromExecutable('/usr/bin/devbar', '   ')).toBeNull();
+    });
 
-  it('fails closed when the mount matches but the payload is missing', () => {
-    expect(
-      appImagePathFromExecutable(
-        path.join(bareMount, 'devbar'),
-        '/home/u/Apps/DevBar.AppImage',
-      ),
-    ).toBeNull();
-  });
+    it('rejects an inherited $APPIMAGE whose stem does not match the mount', () => {
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/opt/Tools/Tool.AppImage',
+        ),
+      ).toBeNull();
+    });
 
-  it('matches the mount stem case-insensitively on the extension', () => {
-    expect(
-      appImagePathFromExecutable(
-        path.join(devbarLowerMount, 'devbar'),
-        '/home/u/devbar.appimage',
-      ),
-    ).toBe('/home/u/devbar.appimage');
-  });
+    it('rejects the PARENT image when DevBar is its payload (circular stem)', () => {
+      // The hostile case: DevBar runs as a payload file INSIDE another
+      // AppImage. The parent runtime set $APPIMAGE to the parent file and
+      // named the mount after that SAME file — the six-char stem check is
+      // circular and matches. Only the payload identity gate can tell the
+      // difference: the payload next to the executable is the parent's app,
+      // not devbar.
+      expect(
+        appImagePathFromExecutable(
+          path.join(parentMount, 'devbar'),
+          '/opt/Tools/Parent-App-2.0.AppImage',
+        ),
+      ).toBeNull();
+      // …while the same mount with DevBar's own payload is accepted.
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/opt/Tools/DevBar-9.9.9.AppImage',
+        ),
+      ).toBe('/opt/Tools/DevBar-9.9.9.AppImage');
+    });
 
-  it('accepts the mount of a release-named image (the runtime keeps 6 chars)', () => {
-    // build_mount_point truncates the basename to SIX characters
-    // (maxnamelen = 6) before adding the random suffix — a full-name or
-    // full-stem comparison would reject every real install
-    // (DevBar-0.9.0-linux-x64.AppImage mounts under /tmp/.mount_DevBar…).
-    expect(
-      appImagePathFromExecutable(
-        path.join(devbarMount, 'devbar'),
-        '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
-      ),
-    ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
-  });
+    it('fails closed when the mount matches but the payload is missing', () => {
+      expect(
+        appImagePathFromExecutable(
+          path.join(bareMount, 'devbar'),
+          '/home/u/Apps/DevBar.AppImage',
+        ),
+      ).toBeNull();
+    });
 
-  it('matches the basename, not the stem (the runtime truncates the basename)', () => {
-    // A 4-char stem: the runtime template is `.mount_devb.AXXXXXX`
-    // (extension included), so a sibling image with a 6-char stem must
-    // NOT be accepted for the mount of the other.
-    expect(
-      appImagePathFromExecutable(
-        path.join(devbarShortMount, 'devbar'),
-        '/home/u/devb.AppImage',
-      ),
-    ).toBe('/home/u/devb.AppImage');
-    expect(
-      appImagePathFromExecutable(
-        path.join(devbarMount, 'devbar'),
-        '/home/u/devb.AppImage',
-      ),
-    ).toBeNull();
-  });
+    it('matches the mount stem case-insensitively on the extension', () => {
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarLowerMount, 'devbar'),
+          '/home/u/devbar.appimage',
+        ),
+      ).toBe('/home/u/devbar.appimage');
+    });
 
-  it('resolves the packaged build, whose payload lives in resources/app.asar', () => {
-    // The regression the old code got wrong: packaged AppImages ship the
-    // payload as an asar archive, so resources/app/package.json does not
-    // exist — the gate failed and in-place update was silently disabled
-    // for every real install.
-    expect(
-      appImagePathFromExecutable(
-        path.join(devbarAsarMount, 'devbar'),
-        '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
-      ),
-    ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
-  });
+    it('accepts the mount of a release-named image (the runtime keeps 6 chars)', () => {
+      // build_mount_point truncates the basename to SIX characters
+      // (maxnamelen = 6) before adding the random suffix — a full-name or
+      // full-stem comparison would reject every real install
+      // (DevBar-0.9.0-linux-x64.AppImage mounts under /tmp/.mount_DevBar…).
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
+        ),
+      ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
+    });
 
-  it('rejects a foreign asar payload (DevBar inside another image)', () => {
-    expect(
-      appImagePathFromExecutable(
-        path.join(foreignAsarMount, 'devbar'),
-        '/opt/Tools/Paren+App.AppImage',
-      ),
-    ).toBeNull();
-  });
+    it('matches the basename, not the stem (the runtime truncates the basename)', () => {
+      // A 4-char stem: the runtime template is `.mount_devb.AXXXXXX`
+      // (extension included), so a sibling image with a 6-char stem must
+      // NOT be accepted for the mount of the other.
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarShortMount, 'devbar'),
+          '/home/u/devb.AppImage',
+        ),
+      ).toBe('/home/u/devb.AppImage');
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/home/u/devb.AppImage',
+        ),
+      ).toBeNull();
+    });
 
-  it('fails closed when the asar layout carries a foreign name', () => {
-    // Both layouts present: the asar archive is authoritative, so its
-    // foreign name must NOT be masked by the unpacked fallback carrying
-    // the devbar name.
-    expect(
-      appImagePathFromExecutable(
-        path.join(mixedLayoutMount, 'devbar'),
-        '/home/u/Apps/DevBm.AppImage',
-      ),
-    ).toBeNull();
-  });
-});
+    it('resolves the packaged build, whose payload lives in resources/app.asar', () => {
+      // The regression the old code got wrong: packaged AppImages ship the
+      // payload as an asar archive, so resources/app/package.json does not
+      // exist — the gate failed and in-place update was silently disabled
+      // for every real install.
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarAsarMount, 'devbar'),
+          '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
+        ),
+      ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
+    });
+
+    it('rejects a foreign asar payload (DevBar inside another image)', () => {
+      expect(
+        appImagePathFromExecutable(
+          path.join(foreignAsarMount, 'devbar'),
+          '/opt/Tools/Paren+App.AppImage',
+        ),
+      ).toBeNull();
+    });
+
+    it('fails closed when the asar layout carries a foreign name', () => {
+      // Both layouts present: the asar archive is authoritative, so its
+      // foreign name must NOT be masked by the unpacked fallback carrying
+      // the devbar name.
+      expect(
+        appImagePathFromExecutable(
+          path.join(mixedLayoutMount, 'devbar'),
+          '/home/u/Apps/DevBm.AppImage',
+        ),
+      ).toBeNull();
+    });
+  },
+);
 
 describe('winInstalledAppPath (temp payload without a resolvable container)', () => {
   const tmp = os.tmpdir();
@@ -545,8 +554,16 @@ describe('looksLikeAppImage', () => {
     return buf;
   }
 
+  // Every call created a temp dir that nothing removed — six per run, left
+  // behind forever. Track and drop them like the fixture mounts above do.
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   function withFile(content: Buffer): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-img-'));
+    dirs.push(dir);
     const file = path.join(dir, 'x.AppImage');
     fs.writeFileSync(file, content);
     return file;
@@ -667,7 +684,11 @@ describe('swap scripts: CI relaunch args + success marker', () => {
   });
   it('sh swaps strip the CI-simulation env before relaunch (no re-entrancy)', () => {
     for (const script of [mac, linux]) {
-      expect(script).toContain('unset DEVBAR_SMOKE');
+      // Boundary-matched: plain `toContain('unset DEVBAR_SMOKE')` is also
+      // satisfied by `unset DEVBAR_SMOKE_HOLD …`, so dropping the BARE
+      // variable — the one main.ts re-enters smoke mode on — would keep this
+      // test green while the relaunch loops.
+      expect(script).toMatch(/unset DEVBAR_SMOKE(\s|$)/u);
       expect(script).toContain('DEVBAR_SMOKE_UPDATE');
     }
   });

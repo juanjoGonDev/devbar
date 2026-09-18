@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { makeCommandId } from '../src/compound-id.js';
 import { normalizeGroup } from '../src/groups-model.js';
 import type { Group, GlobalSettings } from '../src/domain-types.js';
@@ -65,6 +68,40 @@ async function waitGroupReady(pm: ProcessManager, pid: string): Promise<void> {
 describe.skipIf(process.platform === 'win32')(
   'stop() on POSIX — signal-based kill detection',
   () => {
+    // start() runs the command through userShell() (src/platform.ts, which
+    // reads $SHELL at call time) in INTERACTIVE mode — i.e. the CONTRIBUTOR's
+    // own shell with their rc files. Whether that shell dies on a group
+    // SIGTERM is then a property of the developer's machine, not of the code
+    // under test: a zsh with a typical ~/.zshrc forks an interactive tree that
+    // IGNORES SIGTERM, so the stop falls through to the 6.5 s give-up and the
+    // run can only end in a timeout.
+    //
+    // Pin both halves of that dependency instead:
+    // - /bin/bash, which exec()s a simple `-c` command in place, so the pid
+    //   the manager tracks IS `sleep` and dies FROM the signal. (Not /bin/sh:
+    //   that is dash on Debian/Ubuntu, which does not exec-optimize and exits
+    //   with plain code 143 — no signal — which this suite is asserting the
+    //   absence of.)
+    // - an empty $HOME, so no ~/.bashrc can install a trap; a trapped bash
+    //   skips the exec and is back to ignoring SIGTERM.
+    let previousShell: string | undefined;
+    let previousHome: string | undefined;
+    let emptyHome: string;
+    beforeAll(() => {
+      previousShell = process.env.SHELL;
+      previousHome = process.env.HOME;
+      emptyHome = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-stop-home-'));
+      process.env.SHELL = '/bin/bash';
+      process.env.HOME = emptyHome;
+    });
+    afterAll(() => {
+      if (previousShell === undefined) delete process.env.SHELL;
+      else process.env.SHELL = previousShell;
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      fs.rmSync(emptyHome, { recursive: true, force: true });
+    });
+
     it('logs a signal-based stop and leaves killRequested empty', async () => {
       const pm = new ProcessManager(store);
       const pid = makeCommandId('g1', 'c1');
@@ -86,6 +123,9 @@ describe.skipIf(process.platform === 'win32')(
       // 6.5 s give-up — must instead keep status 'running' + child, so a later
       // start() cannot launch a duplicate while the original is alive.)
       expect(pm.getState(pid).child).toBeNull();
-    });
+      // stop() budgets a 5 s SIGKILL retry plus a 6.5 s give-up, both above
+      // vitest's 5 s default: without an explicit timeout a failing stop could
+      // only ever surface as a timeout, never as the assertions above.
+    }, 15_000);
   },
 );
