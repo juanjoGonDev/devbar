@@ -366,9 +366,14 @@ describe('scripts/release-artifacts.ts', () => {
       );
       temporaryDirectories.push(callerDirectory);
       const tsc = path.join(repositoryRoot, 'node_modules', '.bin', 'tsc');
+      // These two timeouts are hang guards, not performance budgets. The
+      // compile takes ~6s on an idle machine but comfortably passes 15s when
+      // the rest of the suite is competing for the same cores, so a 15s guard
+      // failed the whole gate on a healthy run. The test's own timeout below
+      // stays above the sum of both.
       await execFileAsync(tsc, ['-p', 'tsconfig.node.json'], {
         cwd: repositoryRoot,
-        timeout: 15_000,
+        timeout: 60_000,
       });
       const verifier = path.join(
         repositoryRoot,
@@ -380,10 +385,14 @@ describe('scripts/release-artifacts.ts', () => {
       const { stdout } = await execFileAsync(
         process.execPath,
         [verifier, fixture.directory, fixture.version],
-        { cwd: callerDirectory, timeout: 15_000 },
+        { cwd: callerDirectory, timeout: 60_000 },
       );
 
       expect(stdout).toContain('Verified 14 release artifacts for v0.2.0');
-    }, 20_000);
+      // This test compiles the whole node project and then runs the emitted
+      // verifier, so its own budget is the two subprocess guards above plus
+      // the fixture. It has to sit above their sum, or the test can only ever
+      // fail as a timeout instead of reporting what actually went wrong.
+    }, 150_000);
   });
 });
