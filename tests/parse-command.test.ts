@@ -309,9 +309,15 @@ describe('parse-command', () => {
         // the `"` around `My App` reached cmd as `\"`, cmd passed the
         // backslashes through, and CommandLineToArgvW read them as
         // literal quotes — so the child saw `--title`, `"My`, `App"`.
+        //
+        // `run` is load-bearing, not filler: node keeps claiming leading
+        // `--flags` as its OWN options until it meets a non-option token,
+        // and `--title` happens to be one of them (it sets process.title),
+        // so without `run` node swallows both and the child sees no argv
+        // at all.
         const cmdline = buildCmdlineWindows(
           'node -p "JSON.stringify(process.argv.slice(1))"',
-          ['--title', 'My App'],
+          ['run', '--title', 'My App'],
         );
         const spec = buildSpawnArgs(cmdline);
         const result = spawnSync(spec.file, spec.args, {
@@ -320,7 +326,7 @@ describe('parse-command', () => {
         });
 
         expect(result.status, result.stderr).toBe(0);
-        expect(JSON.parse(result.stdout)).toEqual(['--title', 'My App']);
+        expect(JSON.parse(result.stdout)).toEqual(['run', '--title', 'My App']);
       },
     );
   });
