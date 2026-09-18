@@ -12,6 +12,15 @@ const engineeringRules = {
   complexity: ['error', { max: 50 }],
   'max-depth': ['error', 6],
   'max-params': ['error', 7],
+  // Counted in CODE lines: this repo comments heavily and explains its
+  // reasoning inline, and a raw line count would penalise exactly the files
+  // that document themselves best. 400 is the repo's own grain rather than a
+  // round number — after the module split, every source and test file sits
+  // under it, and the only exception is the generated table excluded below.
+  'max-lines': [
+    'error',
+    { max: 400, skipBlankLines: true, skipComments: true },
+  ],
 } as const;
 
 const testFiles = ['tests/**/*.test.ts'];
@@ -97,14 +106,24 @@ export default tseslint.config(
     plugins: { vitest },
     rules: {
       ...vitestLayoutRules,
+      // A higher cap than source, because the two sizes mean different
+      // things: a long source file is a responsibility problem, a long test
+      // file is usually just a lot of independent cases. It still has a
+      // ceiling — past this a file stops being navigable whatever it holds —
+      // and nothing is grandfathered in under it.
+      'max-lines': [
+        'error',
+        { max: 800, skipBlankLines: true, skipComments: true },
+      ],
     },
   },
   {
-    files: ['renderer/config.ts'],
+    files: ['src/icon-battery.ts'],
     rules: {
-      // Existing editor orchestration has many validation branches. A UX-flow
-      // refactor is outside this migration; keep the guard visible and scoped.
-      complexity: 'off',
+      // A flat emoji table generated from unicode.org's emoji-test.txt, not
+      // hand-written code. Splitting it would buy nothing a reviewer values,
+      // and regenerating it must stay a single mechanical step.
+      'max-lines': 'off',
     },
   },
 );

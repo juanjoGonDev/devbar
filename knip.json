@@ -13,6 +13,6 @@
     "scripts/**/*.ts",
     "tests/**/*.ts"
   ],
-  "ignoreBinaries": ["tail", "dpkg-deb", "tasklist", "pgrep"],
+  "ignoreBinaries": ["dpkg-deb"],
   "ignoreDependencies": ["@types/debug", "@types/electron-positioner"]
 }
