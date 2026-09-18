@@ -82,10 +82,31 @@ export function attachMainConsole(): void {
     };
   }
 }
+/**
+ * Electron's own level names, mapped to the ones this log writes. The event
+ * carries them as strings; the positional `(event, level, message)` form this
+ * used to read is deprecated and Electron warns about it on every message —
+ * into this very log — so it reads the event object instead.
+ */
+const CONSOLE_LEVELS: Record<string, string> = {
+  debug: 'verbose',
+  info: 'info',
+  warning: 'warn ',
+  error: 'error',
+};
+
 export function attachWindowConsole(win: BrowserWindow, origin: string): void {
   if (!win.webContents) return;
-  const map = ['verbose', 'info', 'warn ', 'error'];
-  win.webContents.on('console-message', (_event, level, message) => {
-    write(map[level] ?? 'log', origin || 'renderer', [message]);
+  win.webContents.on('console-message', (details) => {
+    const { level, message, lineNumber, sourceId } = details;
+    // A renderer error is worth locating: the line and source are the only
+    // way back to it from a packaged build, where there are no devtools.
+    const where =
+      level === 'error' && sourceId
+        ? ` (${sourceId}:${String(lineNumber)})`
+        : '';
+    write(CONSOLE_LEVELS[level] ?? 'log', origin || 'renderer', [
+      `${message}${where}`,
+    ]);
   });
 }

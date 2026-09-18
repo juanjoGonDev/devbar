@@ -1,3 +1,4 @@
+import './report-uncaught.js';
 import { renderPatternList, wireAddPattern } from './silence-ui.js';
 import { byId } from './dom.js';
 import { latestWins } from './latest-wins.js';

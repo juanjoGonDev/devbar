@@ -7,6 +7,7 @@
  * silenced drawer, the scope switcher — each small enough to read in one sitting
  * and testable without the others.
  */
+import './report-uncaught.js';
 import { initTheme } from './theme.js';
 import { installTooltips } from './tooltip.js';
 import { logsParams } from './logs/params.js';

@@ -1,3 +1,4 @@
+import './report-uncaught.js';
 import { byId } from './dom.js';
 import { openChangelog } from './changelog.js';
 import { initPipelineEditor } from './pipeline-editor.js';

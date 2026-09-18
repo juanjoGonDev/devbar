@@ -202,6 +202,25 @@ Todas las novedades relevantes de DevBar. El formato sigue
   repintado de la lista añadía otro manejador, así que un solo arrastre
   disparaba tantas reordenaciones y recargas como veces se hubiera repintado.
 
+- **No se podía cambiar de rama si había ficheros sin seguimiento.** Cualquier
+  archivo que git no sigue —la carpeta de un editor, una nota suelta, la
+  configuración de una herramienta— se contaba como trabajo sin guardar y
+  bloqueaba el cambio, aunque git lo habría hecho sin tocarlos. Ahora solo
+  frenan los cambios de verdad, los de ficheros con seguimiento.
+
+- **Cambiar a una rama que nunca se subió avisaba de un error que no existía.**
+  El cambio se hacía correctamente y después DevBar intentaba traer novedades
+  de un remoto que esa rama no tiene, y presentaba ese fallo como si el cambio
+  no se hubiera hecho. Una rama local no tiene nada que traer.
+
+- **Si el cambio de rama fallaba, el selector se quedaba mostrando la rama
+  equivocada** —la que habías elegido, no en la que seguías estando.
+
+- **Los fallos de git no quedaban registrados en ninguna parte.** El aviso rojo
+  desaparecía a los pocos segundos y no dejaba rastro, así que no había forma
+  de saber después qué había pasado. Ahora el motivo completo se escribe en el
+  log (`pnpm logs`), igual que los errores inesperados de las ventanas.
+
 - **En un repositorio clonado, el selector de rama ofrecía una rama «origin»
   que no existe.** Es el puntero que `git clone` deja apuntando a la rama por
   defecto del remoto, y se colaba en la lista como si fuera una rama más.

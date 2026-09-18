@@ -1,3 +1,4 @@
+import './report-uncaught.js';
 import { formatUptime } from './format-uptime.js';
 import { isComboboxOpen, setComboboxHostHooks } from './combobox.js';
 import type {

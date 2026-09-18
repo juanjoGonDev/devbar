@@ -1,3 +1,4 @@
+import './report-uncaught.js';
 import { byId } from './dom.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';

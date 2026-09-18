@@ -253,37 +253,40 @@ describe('src/logger.ts', () => {
   describe('attachWindowConsole', () => {
     function fakeWindow(): {
       win: BrowserWindow;
-      emit: (level: number, message: string) => void;
+      emit: (level: string, message: string, source?: string) => void;
     } {
-      const handlers: ((
-        event: unknown,
-        level: number,
-        message: string,
-      ) => void)[] = [];
+      // Electron 37+ passes ONE event object; the old positional
+      // (event, level, message) form is deprecated and warns on every
+      // message — into this very log.
+      type ConsoleEvent = {
+        level: string;
+        message: string;
+        lineNumber: number;
+        sourceId: string;
+      };
+      const handlers: ((details: ConsoleEvent) => void)[] = [];
       const win = {
         webContents: {
-          on: (
-            channel: string,
-            handler: (event: unknown, level: number, message: string) => void,
-          ) => {
+          on: (channel: string, handler: (details: ConsoleEvent) => void) => {
             if (channel === 'console-message') handlers.push(handler);
           },
         },
       } as unknown as BrowserWindow;
       return {
         win,
-        emit: (level, message) => {
-          for (const handler of handlers) handler({}, level, message);
+        emit: (level, message, source = '') => {
+          for (const handler of handlers)
+            handler({ level, message, lineNumber: 7, sourceId: source });
         },
       };
     }
 
     it.each([
-      [0, 'verbose'],
-      [1, 'info '],
-      [2, 'warn '],
-      [3, 'error'],
-    ])('maps renderer level %i to its label', async (level, label) => {
+      ['debug', 'verbose'],
+      ['info', 'info '],
+      ['warning', 'warn '],
+      ['error', 'error'],
+    ])('maps renderer level %s to its label', async (level, label) => {
       const file = path.join(tempDir(), 'app.log');
       init({ filePath: file });
       const { win, emit } = fakeWindow();
@@ -295,13 +298,39 @@ describe('src/logger.ts', () => {
       expect(text).toContain(`[${label}] [config] renderer-said-${level}`);
     });
 
+    it('locates an error by source and line, so a packaged crash is findable', () => {
+      const file = path.join(tempDir(), 'app.log');
+      init({ filePath: file });
+      const { win, emit } = fakeWindow();
+      attachWindowConsole(win, 'tray');
+
+      emit('error', 'boom', 'file:///app/tray.js');
+
+      return readLogUntil(file, 'boom').then((text) => {
+        expect(text).toContain('boom (file:///app/tray.js:7)');
+      });
+    });
+
+    it('does not clutter a non-error line with its source', () => {
+      const file = path.join(tempDir(), 'app.log');
+      init({ filePath: file });
+      const { win, emit } = fakeWindow();
+      attachWindowConsole(win, 'tray');
+
+      emit('info', 'just-saying', 'file:///app/tray.js');
+
+      return readLogUntil(file, 'just-saying').then((text) => {
+        expect(text).not.toContain('tray.js');
+      });
+    });
+
     it('falls back to "log" for a level it does not know', async () => {
       const file = path.join(tempDir(), 'app.log');
       init({ filePath: file });
       const { win, emit } = fakeWindow();
       attachWindowConsole(win, 'tray');
 
-      emit(99, 'from-the-future');
+      emit('catastrophe', 'from-the-future');
 
       const text = await readLogUntil(file, 'from-the-future');
       expect(text).toContain('[log  ] [tray] from-the-future');
@@ -313,7 +342,7 @@ describe('src/logger.ts', () => {
       const { win, emit } = fakeWindow();
       attachWindowConsole(win, '');
 
-      emit(1, 'no-origin');
+      emit('info', 'no-origin');
 
       const text = await readLogUntil(file, 'no-origin');
       expect(text).toContain('[renderer] no-origin');
