@@ -101,11 +101,26 @@ export function buildBranchSelector(gs: GroupState): HTMLElement {
     placeholder: cached ? 'Rama…' : 'Cargando…',
     onSelect: async (branch) => {
       if (!branch) return;
+      // The combobox commits the choice to its input before calling this, so
+      // a refused switch would otherwise leave the selector naming a branch
+      // the repo is NOT on. Captured before the cache is dropped below.
+      const previousBranch = branchCache.get(groupId)?.current ?? null;
       combo.setLoading(true);
       const res = await window.api.switchBranch(groupId, branch);
       combo.setLoading(false);
       branchCache.delete(groupId);
       if (!res.ok) {
+        // Put the old branch back at once: the reload below asks git what it
+        // is actually on, but that is two round trips away and may itself
+        // fail, and until then the selector would be lying.
+        combo.setValue(previousBranch);
+        // Also to the console, so the main process forwards it to app.log:
+        // a toast is gone in seconds and left a git failure with no record
+        // anywhere to diagnose it from.
+        console.error(
+          `switchBranch failed for ${group.name} → ${branch}:`,
+          res.error ?? '(no error text)',
+        );
         showToast(
           `${group.name}: ${(res.error || '').split('\n')[0]}`,
           'error',
@@ -189,6 +204,10 @@ function loadBranchesIntoCombo(
         // notify and retry once after a pause (bounded, so a persistently
         // broken git does not toast-loop). Only announce a retry when
         // one is actually scheduled below.
+        console.error(
+          `listBranches failed for ${label ?? 'group'} (retries left: ${retriesLeft}):`,
+          res.error ?? '(no error text)',
+        );
         showToast(
           retriesLeft > 0
             ? `${label ?? 'Ramas'}: no se pudieron listar las ramas — reintento en ${BRANCH_RETRY_DELAY_MS / 1000} s`

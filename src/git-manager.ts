@@ -138,7 +138,18 @@ export async function switchBranch(
 ): Promise<{ ok: boolean; error?: string | undefined }> {
   if (!repo) return { ok: false, error: 'No git repo configured' };
   if (!branch) return { ok: false, error: 'No branch specified' };
-  const dirty = await git(repo, ['status', '--porcelain']);
+  // `--untracked-files=no` on purpose: a checkout carries untracked files
+  // across untouched, so refusing the switch over them blocks the ordinary
+  // state of a working copy — an editor's folder, a scratch note, a tool's
+  // config. Only TRACKED modifications can be lost by switching. Where an
+  // untracked file really is in the way (the target branch has one at the
+  // same path) git refuses the checkout itself, with a message naming the
+  // file, which is more useful than anything guessed from here.
+  const dirty = await git(repo, [
+    'status',
+    '--porcelain',
+    '--untracked-files=no',
+  ]);
   if (!dirty.ok) return { ok: false, error: dirty.error };
   if (dirty.stdout)
     return {
@@ -156,6 +167,17 @@ export async function switchBranch(
     ? await git(repo, ['checkout', branch])
     : await git(repo, ['checkout', '-B', branch, `origin/${branch}`]);
   if (!checkout.ok) return { ok: false, error: checkout.error };
+  // The checkout has already happened, so from here the switch SUCCEEDED and
+  // only the catch-up can fail. A branch that was never pushed has no
+  // `origin/<branch>` to pull from, and `git pull origin <branch>` answers
+  // "couldn't find remote ref" — reporting that as a failed switch told the
+  // user nothing worked while leaving them on the branch they asked for.
+  const remote = await git(repo, [
+    'rev-parse',
+    '--verify',
+    `refs/remotes/origin/${branch}`,
+  ]);
+  if (!remote.ok) return { ok: true };
   const pulled = await git(repo, ['pull', '--ff-only', 'origin', branch], {
     timeout: 60000,
   });

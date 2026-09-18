@@ -153,6 +153,9 @@ describe('switching branches against a real repository', () => {
     // And one that exists locally, for the plain checkout path.
     git(repo, 'branch', 'local-y-remota');
     git(repo, 'push', 'origin', 'local-y-remota');
+    // A branch that was never pushed: there is no origin/<branch> to pull,
+    // which is the ordinary state of work in progress.
+    git(repo, 'branch', 'solo-local');
   });
 
   afterAll(() => {
@@ -185,9 +188,14 @@ describe('switching branches against a real repository', () => {
     it('lists local and remote branches once each, sorted', async () => {
       const res = await listBranches(repo);
       expect(res.ok).toBe(true);
-      // `solo-remota` exists only as origin/solo-remota; `main` exists twice
-      // and must still appear once.
-      expect(res.branches).toEqual(['local-y-remota', 'main', 'solo-remota']);
+      // `solo-remota` exists only as origin/solo-remota, `solo-local` only
+      // as a local ref, and `main` exists twice and must still appear once.
+      expect(res.branches).toEqual([
+        'local-y-remota',
+        'main',
+        'solo-local',
+        'solo-remota',
+      ]);
     });
 
     it('says so when the group has no path configured at all', async () => {
@@ -242,6 +250,17 @@ describe('switching branches against a real repository', () => {
       expect((await currentBranch(repo)).branch).toBe('local-y-remota');
     });
 
+    it('switches to a branch that was never pushed', async () => {
+      // The checkout succeeds and there is nothing to pull, because there is
+      // no origin/solo-local. Reporting the missing remote ref as a failure
+      // told the user the switch had not worked while leaving them on the
+      // branch they asked for.
+      const res = await switchBranch(repo, 'solo-local');
+      expect(res).toEqual({ ok: true });
+      expect((await currentBranch(repo)).branch).toBe('solo-local');
+      await switchBranch(repo, 'main');
+    });
+
     it('fast-forwards a branch the remote has moved past', async () => {
       // The checkout alone would leave the reader on yesterday's commit: the
       // pull is what makes "switch to this branch" mean what it says.
@@ -286,6 +305,32 @@ describe('switching branches against a real repository', () => {
           stdio: 'ignore',
         });
       }
+    });
+
+    it('switches with untracked files present, as git itself would', () => {
+      // An editor folder, a scratch note, a tool's config: untracked files
+      // are the ordinary state of a working copy and a checkout carries them
+      // across untouched. Refusing over them blocked switching on a tree git
+      // considers clean.
+      const stray = path.join(repo, 'NOTES-sin-seguimiento.md');
+      const strayDir = path.join(repo, '.alguna-herramienta');
+      return (async () => {
+        await switchBranch(repo, 'main');
+        fs.writeFileSync(stray, 'apuntes\n');
+        fs.mkdirSync(strayDir, { recursive: true });
+        fs.writeFileSync(path.join(strayDir, 'config.json'), '{}\n');
+        try {
+          const res = await switchBranch(repo, 'local-y-remota');
+          expect(res).toEqual({ ok: true });
+          expect((await currentBranch(repo)).branch).toBe('local-y-remota');
+          // And they are still there afterwards.
+          expect(fs.existsSync(stray)).toBe(true);
+        } finally {
+          fs.rmSync(stray, { force: true });
+          fs.rmSync(strayDir, { recursive: true, force: true });
+          await switchBranch(repo, 'main');
+        }
+      })();
     });
 
     it('reports a branch neither side has, without moving', async () => {
