@@ -3,7 +3,229 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
-## [Unreleased]
+## [0.9.2] - 2026-09-18
+
+### Añadido
+
+- **En Windows y Linux, el icono de la bandeja muestra el número de errores** (o de avisos, si no hay errores) como insignia dibujada sobre el icono —en macOS ya aparecía como texto al lado del icono, y los títulos de bandeja no se renderizan en los otros dos sistemas—, con tope en «99+».
+- **El panel Dev de Configuración puede forzar el contador de la bandeja.** Los botones «Errores: 5 / 14 / 99+» (y «Sin contador») prueban la insignia de la bandeja sin provocar errores reales; en macOS se muestra como texto junto al icono, igual que el real.
+
+- **En Linux, el panel se abre junto al icono de la bandeja (como en
+  macOS)** cuando la sesión informa la posición real del icono (X11):
+  bajo una barra superior cuelga del icono centrado en él, y se adapta
+  para no salirse de la pantalla. En sesiones Wayland el compositor
+  decide la colocación (Electron no puede forzarla), así que se mantiene
+  el comportamiento habitual de menubar.
+- **El lanzador de la instalación local incluye icono.** Si
+  electron-builder no incluyó uno en la copia empaquetada, `install-local`
+  copia el del proyecto dentro de la instalación y la entrada del menú
+  de aplicaciones (Linux) / Menú Inicio (Windows) lo referencia.
+
+- **Tras `install-local`, la app aparece en el menú del sistema.** En Linux la instalación registra su entrada en el menú de aplicaciones (`~/.local/share/applications/devbar.desktop`, con icono) y en Windows crea su acceso directo en el Menú Inicio; antes la copia local funcionaba pero era invisible desde el lanzador, a diferencia de los instaladores oficiales.
+
+- **Windows, Linux y Raspberry Pi.** DevBar ya no es solo de macOS: el mismo
+  runtime funciona en los tres sistemas, cada uno con su empaquetado —
+  **instalador de un clic y portable** en Windows (x64 y arm64), **AppImage y
+  .deb** en Linux (x64, arm64 y armv7 para Raspberry Pi 4/5) y el DMG de
+  siempre en macOS. En la release aparecen los 14 artefactos de las tres
+  plataformas, cada uno con su suma SHA-256.
+- **Actualización automática en los tres SO.** El auto-actualizador de la
+  0.7.0 ahora cubre Windows (instalado: reinstalación silenciosa; portable:
+  sustituye el propio ejecutable en su sitio) y Linux (AppImage in-place con
+  rollback; .deb con reinstalación asistida). En Windows y Linux cada descarga
+  se verifica contra SHA-256 antes de instalarse. En Windows portable y
+  Linux AppImage, si la copia falla a medias la versión anterior se
+  restaura y se relanza.
+- **Arranque con el sistema en los tres SO.** «Iniciar al arrancar el sistema»
+  funciona en Windows (clave Run de usuario) y en Linux (entrada XDG
+  `~/.config/autostart/devbar.desktop`), además del login item de macOS. En
+  Windows y Linux la app distingue un arranque de inicio de uno manual, de
+  modo que el comportamiento programado al arrancar (pre-scripts) es el mismo
+  en las tres plataformas.
+- **CI que construye, verifica y lanza cada build en los tres SO.** Cada
+  cambio compila los tres empaquetados, comprueba el contenido (cabecera PE en
+  Windows, magic y escritorio del AppImage en Linux, checks habituales en
+  macOS) y arranca el binario empaquetado en modo smoke —tray real, sin
+  ventanas ni comandos— antes de dejar la verificación en verde. La validación
+  de release añade dry-runs de Windows y Linux al de macOS.
+
+### Cambiado
+
+- **La interfaz se adapta al SO en marcha.** Los textos de la app (avisos de
+  actualización, instrucciones de instalación, atajos) ya no asumen macOS: en
+  Windows y Linux describen y enlazan a los lugares de tu sistema, no de otro.
+- **Los comandos de desarrollo mantienen su nombre y funcionan en cualquier
+  SO.** `pack`, `dist`, `verify`, `dist:mac`, `release:verify`,
+  `install-local` y `install-local:dev` son los mismos de siempre: un
+  enrutador los interpreta según el SO (el pipeline original en macOS,
+  electron-builder en Windows y Linux) y la compilación de desarrollo corre en
+  Node, de modo que `pnpm start` ya no necesita bash en Windows.
+- **`install-local` mata la instancia anterior antes de reinstalar.** Antes
+  podía dejar corriendo el proceso viejo y quedarse con dos instancias —justo
+  donde una actualización automática a medio resolver se complica más—. Ahora
+  detiene la copia instalada y la de desarrollo, instala y relanza; el ciclo
+  completo se prueba en CI tanto con una instancia corriendo como simulando
+  una actualización automática.
+- **En Windows y Linux, la insignia de errores del icono de la bandeja es
+  más grande y más gruesa** para que se lea de un vistazo (burbuja redonda
+  con el número en blanco sobre el icono). El número también aparece en el
+  tooltip del icono («DevBar — 14 errores»); que el número se dibuje _junto_
+  al icono, como en macOS, no es posible en estos sistemas porque el área de
+  la bandeja es un cuadrado de tamaño fijo impuesto por el sistema
+  operativo.
+
+### Corregido
+
+- **En Windows, `install-local` no detuvo la instancia de desarrollo** (un `pnpm start` de este checkout): el patrón que buscaba electron.exe le doblaba los backslashes y nunca coincidía con la línea de comandos real, así que podía quedar corriendo la copia vieja. Ahora el kill encuentra el proceso y lo detiene.
+
+- **En la bandeja, los grupos que no usan git seguían mostrando el selector de ramas** —sin ruta aparecía un «Rama…» y con una ruta que no es un repositorio el selector se quedaba para siempre en «Cargando…». Ahora el selector solo se muestra en proyectos que son repositorios git de verdad: la app recuerda la decisión de «no es un repositorio» (de modo que no relanza git a cada refresco del panel) y el selector vuelve a aparecer si el grupo apunta luego a un repositorio.
+
+- **En Linux, los logs y el staging de actualizaciones se escribían en una
+  carpeta con el nombre del paquete (`~/.config/devbar/…`) mientras la
+  configuración vivía en `~/.config/DevBar`.** Electron fija la carpeta XDG
+  desde el nombre del paquete al arrancar, antes de que la app pueda
+  renombrarse, así que los datos quedaban repartidos en dos sitios y
+  `pnpm logs` no encontraba el log. Ahora configuración, logs y
+  actualizaciones comparten la carpeta «DevBar» en los tres SO.
+- **Los contadores ⚠ y ✕ del panel de la bandeja abrían una búsqueda con
+  regex** en lugar del filtro por nivel. Ahora abren el pill «sólo ⚠ warnings»
+  / «sólo ⛔ errores» de la ventana de logs —el mismo mecanismo, visible y
+  quitable con su ✕, que usan el panel lateral y los totales de alerta.
+- **Un grupo guardado en Configuración seguía marcado con cambios sin
+  guardar.** El botón Guardar quedaba activo, la barra de «cambios sin guardar»
+  se negaba a irse y al cambiar de grupo o cerrar la ventana volvía a saltar el
+  aviso. La comparación se hacía contra una forma normalizada que el borrador
+  nunca tiene, así que nunca coincidía; ahora se compara contra el estado real
+  del borrador.
+- **Los argumentos estructurados conservan los signos de porcentaje en
+  Windows**, sin que `cmd.exe` expanda por accidente valores como `%TEMP%`.
+  La migración de la configuración heredada en Linux tampoco puede sobrescribir
+  un archivo nuevo creado al mismo tiempo por otra instancia.
+- **Los comandos que DevBar ejecuta ya no se quedan huérfanos cuando la app
+  se cierra.** Antes, al salir (o en la swap de la actualización
+  automática) solo se detenía el primer servicio y el resto seguía vivo
+  ocupando su puerto —el siguiente arranque fallaba con «dirección ya en
+  uso»—. Ahora TODAS las salidas (menú «Salir», `app:quit`, swap de
+  actualización) esperan a que termine de pararse cada servicio (escalando
+  a fuerza si hace falta) antes de morir, y Ctrl+C en el terminal de
+  `pnpm start` o `kill <pid>` limpian igual. En Windows, además, los
+  servicios heredan la consola del terminal (antes no la recibían y un
+  Ctrl+C los dejaba vivos), y `install-local` mata el árbol completo de la
+  instancia en los tres sistemas (antes dejaba los servicios corriendo).
+  Las únicas vías que aún pueden dejar un huérfano son un kill duro
+  (SIGKILL / `taskkill` sin /T), que no permite ejecutar ninguna limpieza,
+  y un servicio que se desprende de su propio grupo de procesos
+  (por ejemplo con `setsid`, doble fork o reasignación de proceso
+  padre): el cierre trabaja por grupos, así que un descendiente que se
+  salga del grupo escapa tanto al kill como al cierre de DevBar.
+- **En Windows y Linux, el panel de la bandeja ya no aparece en la barra de
+  tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
+  Configuración y/o Logs cuando esas ventanas están abiertas; el panel es
+  siempre sin marco y no genera botón.
+- **En 32-bit ARM (p. ej. Raspberry Pi), la actualización ya encuentra su
+  instalador.** Node informa la arquitectura como `arm`, pero los artefactos
+  se llaman `linux-armv7.*`: el chequeo no proponía ninguna actualización
+  en sitio.
+- **La insignia de la bandeja ya no puede mostrar «99+» con exactamente 99
+  errores** (colisión de caché entre las etiquetas «99» y «99+»).
+- **En macOS, la actualización se aborta si no se puede descargar
+  SHA256SUMS.txt**, igual que en Windows y Linux (antes seguía instalando
+  sin verificación).
+- **En la ventana de Configuración, elegir tema ya no puede sobrescribir
+  autostart/notificaciones** si se hace antes de que terminen de cargar los
+  ajustes, y ahora solo guarda el campo del tema.
+- **El historial de releases de GitHub mostraba como máximo 5 releases**
+  aunque se pidiera más.
+
+- **Algunas ventanas se quedaban con datos viejos hasta que algo sin relación
+  las refrescaba.** Al abrirse, cada ventana pide su estado al proceso
+  principal; si mientras tanto llegaba un cambio —arrancar un servicio,
+  renombrar un grupo, borrar otro—, la respuesta tardía pisaba lo recién
+  llegado y la pantalla se quedaba atrás sin ninguna señal. Pasaba en la lista
+  de grupos de la bandeja, en el listado lateral de la ventana de logs, en la
+  lista de grupos de Configuración, en los pasos del pipeline y en la ventana
+  de patrones silenciados. Ahora manda siempre el valor más reciente.
+
+- **Guardar un grupo dos veces seguidas podía dejar el nombre anterior en la
+  lista.** El botón «Guardar» solo se desactiva cuando no queda nada por
+  guardar, nunca mientras guarda, así que dos guardados rápidos se solapaban y
+  se veía el que respondía el último, no el más nuevo.
+
+- **El aviso de actualización disponible podía apagarse solo.** El punto rojo
+  junto al número de versión —en la bandeja y en Configuración— desaparecía si
+  la comprobación automática encontraba la actualización justo mientras la
+  ventana estaba leyendo el estado al abrirse, y no volvía hasta la siguiente
+  comprobación.
+
+- **El interruptor «Ejecutar automáticamente al arrancar el Mac» podía quedar
+  marcado al revés de lo guardado.** Si fallaba el guardado de un clic
+  anterior, la casilla se revertía por encima del clic siguiente, que sí se
+  había guardado.
+
+- **Al actualizar desde una versión antigua se perdía la lista de servicios.**
+  La conversión al formato de grupos guarda antes una copia de seguridad de
+  los servicios originales, y solo la escribe si no había una ya. El almacén
+  creaba esa copia vacía por su cuenta al arrancar, antes de la conversión, de
+  modo que esta creía que el respaldo ya existía y no lo hacía: la única copia
+  de los servicios originales desaparecía.
+
+- **En Windows, una actualización podía descargar el paquete de Linux.** Si la
+  release no traía instalador de Windows, el aviso ofrecía el `.deb` y lo
+  dejaba en Descargas pidiendo instalarlo a mano. Ahora, sin instalador para
+  tu sistema, se abre la página de la release.
+
+- **En el selector de rama, Enter cambiaba a una rama distinta de la
+  resaltada.** La lista sube arriba la rama activa, pero el teclado contaba
+  las posiciones sobre la lista sin reordenar: con cualquier rama checkouteada,
+  bajar una posición y pulsar Enter hacía checkout de otra. Pasaba igual al
+  elegir con el ratón.
+
+- **El selector de rama solo mostraba la rama actual al abrirlo.** Filtraba por
+  el texto de la caja, que el propio selector rellena con la rama activa, así
+  que había que borrarlo a mano para ver las demás.
+
+- **El selector de rama era invisible para un lector de pantalla.** No se
+  anunciaba como lista desplegable ni decía qué opción estaba resaltada al
+  moverse con las flechas.
+
+- **Renombrar un grupo no se veía en una ventana de logs ya abierta.** El
+  nombre y los iconos se quedaban como estaban hasta reabrirla.
+
+- **La ventana de logs aparecía vacía si no había nada configurado**, en vez de
+  decir que no hay grupos.
+
+- **Guardar un grupo deshacía el rayo de arranque automático y devolvía
+  comandos borrados.** Ambas acciones se aplican al momento, pero el formulario
+  seguía trabajando con la lista anterior, así que al guardar la reescribía.
+
+- **Reordenar grupos arrastrando enviaba el cambio varias veces.** Cada
+  repintado de la lista añadía otro manejador, así que un solo arrastre
+  disparaba tantas reordenaciones y recargas como veces se hubiera repintado.
+
+- **No se podía cambiar de rama si había ficheros sin seguimiento.** Cualquier
+  archivo que git no sigue —la carpeta de un editor, una nota suelta, la
+  configuración de una herramienta— se contaba como trabajo sin guardar y
+  bloqueaba el cambio, aunque git lo habría hecho sin tocarlos. Ahora solo
+  frenan los cambios de verdad, los de ficheros con seguimiento.
+
+- **Cambiar a una rama que nunca se subió avisaba de un error que no existía.**
+  El cambio se hacía correctamente y después DevBar intentaba traer novedades
+  de un remoto que esa rama no tiene, y presentaba ese fallo como si el cambio
+  no se hubiera hecho. Una rama local no tiene nada que traer.
+
+- **Si el cambio de rama fallaba, el selector se quedaba mostrando la rama
+  equivocada** —la que habías elegido, no en la que seguías estando.
+
+- **Los fallos de git no quedaban registrados en ninguna parte.** El aviso rojo
+  desaparecía a los pocos segundos y no dejaba rastro, así que no había forma
+  de saber después qué había pasado. Ahora el motivo completo se escribe en el
+  log (`pnpm logs`), igual que los errores inesperados de las ventanas.
+
+- **En un repositorio clonado, el selector de rama ofrecía una rama «origin»
+  que no existe.** Es el puntero que `git clone` deja apuntando a la rama por
+  defecto del remoto, y se colaba en la lista como si fuera una rama más.
+
+- **«Nuevo acción» y «Acción guardado»** ahora concuerdan en femenino.
 
 ## [0.8.0] - 2026-09-10
 

@@ -125,8 +125,12 @@ export interface LegacyService {
  */
 export const DEFAULT_MAX_LOG_LINES = 10_000;
 
+export type ThemePreference = 'auto' | 'light' | 'dark';
+
 export interface GlobalSettings {
   autostart: boolean;
+  /** UI theme: follow the OS (auto) or force light/dark. */
+  theme: ThemePreference;
   silenceWarnings: boolean;
   silenceErrors: boolean;
   maxLogLines: number;
@@ -167,8 +171,16 @@ export interface ProcessState {
 export interface AvailableUpdate {
   version: string;
   url: string;
+  /** macOS drag-install image. */
   dmgUrl: string | null;
+  /** macOS portable zip, or the Windows portable self-extracting exe. */
   zipUrl: string | null;
+  /** Windows NSIS installer. */
+  setupUrl: string | null;
+  /** Linux AppImage. */
+  appImageUrl: string | null;
+  /** Linux .deb package. */
+  debUrl: string | null;
 }
 
 /** A release already downloaded and unpacked, waiting for a restart. */

@@ -17,7 +17,9 @@ const WINDOWS: ReadonlyArray<[script: string, html: string]> = [
   ['config.ts', 'config.html'],
   ['pipeline-editor.ts', 'config.html'],
   ['tray.ts', 'tray.html'],
-  ['logs.ts', 'logs.html'],
+  // The logs window resolves every element it binds in one module, so that is
+  // where its contract with `logs.html` is written down.
+  ['logs/elements.ts', 'logs.html'],
   ['notification.ts', 'notification.html'],
   ['prescript-confirm.ts', 'prescript-confirm.html'],
   ['silenced.ts', 'silenced.html'],
@@ -100,4 +102,26 @@ describe('renderer byId assertions match their window HTML', () => {
       }
     });
   }
+});
+
+describe('theme picker a11y contract (config.html)', () => {
+  const markup = fs.readFileSync(path.join(rendererDir, 'config.html'), 'utf8');
+  const themeButtons = Array.from(
+    markup.matchAll(/<button\b[^>]*class="[^"]*theme-opt[^"]*"[^>]*>/g),
+  ).map((match) => match[0]);
+
+  it('declares the three theme options', () => {
+    expect(themeButtons.length).toBe(3);
+  });
+
+  it('every theme option starts with aria-pressed="false"', () => {
+    // markThemeOption() synchronizes aria-pressed with the loaded theme at
+    // runtime; before JS runs, NONE may claim to be pressed — three
+    // simultaneously "pressed" toggles is what a screen reader would announce.
+    for (const button of themeButtons) {
+      expect(button, `theme button not starting unpressed:\n${button}`).toMatch(
+        /aria-pressed="false"/,
+      );
+    }
+  });
 });

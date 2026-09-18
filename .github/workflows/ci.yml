@@ -3,7 +3,8 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    # No base filter: a pull request stacked on another branch must be
+    # validated too — without this it merges with no CI having run.
     types: [opened, reopened, synchronize, ready_for_review]
 
 permissions: read-all
@@ -59,10 +60,709 @@ jobs:
           fi
 
       - name: Static quality
-        run: pnpm lint:strict && pnpm format:check && pnpm deadcode && pnpm deps:check
+        run: |
+          set -o pipefail
+          # Self-diagnostic: each gate runs with its own log and a
+          # ::error:: annotation with the output tail, so a failure says
+          # WHICH gate and WHY (the bare && chain only said "exit 1").
+          quality() {
+            name="$1"; shift
+            echo "::group::$name"
+            if ! "$@" > "/tmp/quality-${name//:/-}.log" 2>&1; then
+              echo "::endgroup::"
+              echo "::error::static-quality: $name failed. output tail:"
+              tail -40 "/tmp/quality-${name//:/-}.log"
+              exit 1
+            fi
+            echo "::endgroup::"
+          }
+          quality lint:strict pnpm lint:strict
+          quality format:check pnpm format:check
+          quality deadcode pnpm deadcode
+          quality deps:check pnpm deps:check
 
       - name: Tests
         run: pnpm test
 
       - name: Build and package smoke
         run: pnpm run pack
+
+  build:
+    name: Build, verify & launch smoke — ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    if: >-
+      github.repository == 'juanjoGonDev/devbar' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.draft == false)
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            runner: macos-15
+          - os: win
+            runner: windows-latest
+          - os: linux
+            runner: ubuntu-latest
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron downloads (macOS)
+        if: matrix.os == 'macos'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-macos-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Cache Electron downloads (Windows)
+        if: matrix.os == 'win'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-win-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Cache Electron downloads (Linux)
+        if: matrix.os == 'linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-linux-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install reproducibly
+        run: pnpm install --frozen-lockfile
+
+      # Scoped to this one file on purpose: the `ci` job runs the full
+      # suite on ubuntu, and running it again here would surface unrelated
+      # POSIX-shaped failures. These are the win32-gated cmd.exe escaping
+      # tests, which are skipped everywhere else in CI.
+      - name: Tests — Windows command-line escaping
+        if: matrix.os == 'win'
+        run: pnpm test tests/parse-command.test.ts
+
+      - name: Build and verify macOS release
+        if: matrix.os == 'macos'
+        run: pnpm run release:mac
+
+      - name: Build and verify Windows release
+        if: matrix.os == 'win'
+        shell: bash
+        run: |
+          # electron-builder downloads Electron dists + toolsets (NSIS,
+          # fpm, appimagetool) from GitHub releases; a transient 5xx
+          # there would otherwise kill the whole job, so retry the
+          # network-heavy build before failing.
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (win) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "dist (win) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
+
+      - name: Build and verify Linux release
+        if: matrix.os == 'linux'
+        run: |
+          # electron-builder downloads Electron dists + toolsets (NSIS,
+          # fpm, appimagetool) from GitHub releases; a transient 5xx
+          # there would otherwise kill the whole job, so retry the
+          # network-heavy build before failing.
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (linux) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "dist (linux) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
+
+      - name: Launch smoke — macOS (packaged app)
+        if: matrix.os == 'macos'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          WORK=$(mktemp -d)
+          ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
+          "$WORK/DevBar.app/Contents/MacOS/DevBar" --devbar-smoke 2>&1 | tee smoke-macos.log
+          grep -q DEVBAR_SMOKE_OK smoke-macos.log
+          rm -rf "$WORK"
+
+      - name: Launch smoke — Windows (NSIS install + portable)
+        if: matrix.os == 'win'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VERSION
+          # 1) NSIS installer: silent per-user install, then prove the
+          #    installed exe launches — this also confirms the install path
+          #    is %LOCALAPPDATA%\Programs\DevBar, the location the in-app
+          #    updater recognises.
+          Start-Process -Wait -FilePath ".\dist\electron-builder\DevBar-$version-win-x64-setup.exe" -ArgumentList '/S'
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe")) {
+            Write-Error "NSIS install did not produce the expected exe"
+            exit 1
+          }
+          # The oneClick installer launches the app at the end of the install;
+          # stop that instance so the smoke launch owns the single-instance lock.
+          Get-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force
+          & "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe" --devbar-smoke *>&1 |
+            Tee-Object -FilePath smoke-win-installed.log
+          if (-not (Select-String -Path smoke-win-installed.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {
+            Write-Error 'installed-app smoke failed'
+            exit 1
+          }
+          # 2) Portable single exe: launches straight from dist/.
+          # The NSIS portable wrapper runs the real app as a child process
+          # without redirecting its stdio, so its DEVBAR_SMOKE_OK line never
+          # reaches this console. The app writes a marker file on smoke
+          # success (removed at smoke start), and the wrapper only returns
+          # once the child exits — so the marker is settled now.
+          # Clear a marker the EARLIER smoke in this job (the NSIS install)
+          # may have left: the app only removes its own at app.ready, so an
+          # exe that dies before that would pass the Test-Path gate on the
+          # stale file.
+          Remove-Item (Join-Path $env:TEMP 'devbar-smoke-ok') -ErrorAction SilentlyContinue
+          & ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |
+            Out-File -FilePath smoke-win-portable.log -Encoding utf8
+          if (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
+            Write-Error 'portable-app smoke failed (no smoke marker)'
+            exit 1
+          }
+
+      - name: Launch smoke — Linux (AppImage + deb)
+        if: matrix.os == 'linux'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # AppImage: --appimage-extract-and-run — hosted runners have no
+          # /dev/fuse, so mounting the image would fail; extract-and-run
+          # executes the same payload (what the smoke validates). xvfb
+          # provides the display.
+          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --appimage-extract-and-run --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-appimage.log
+          # .deb: apt resolves package dependencies (the runner image lacks
+          # some Electron libraries; plain dpkg -i would fail); then launch
+          # the installed binary.
+          sudo apt-get install -y "./dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
+          xvfb-run -a /usr/bin/devbar --devbar-smoke 2>&1 | tee smoke-linux-deb.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-deb.log
+
+      - name: Reinstall while running — macOS (kill old process)
+        if: matrix.os == 'macos'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          WORK=$(mktemp -d)
+          ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
+          APP="$WORK/DevBar.app/Contents/MacOS/DevBar"
+          # 1) Resident instance: writes the smoke marker, then stays alive.
+          # The earlier smoke step left a marker behind (the app only removes
+          # its own at app.ready), so start from a clean state: polling the
+          # stale file would pass even if this instance never started.
+          rm -f "$TMPDIR/devbar-smoke-ok"
+          "$APP" --devbar-smoke --devbar-smoke-hold >/dev/null 2>&1 &
+          OLDPID=$!
+          for i in $(seq 1 60); do
+            grep -q DEVBAR_SMOKE_OK "$TMPDIR/devbar-smoke-ok" 2>/dev/null && break
+            sleep 1
+          done
+          grep -q DEVBAR_SMOKE_OK "$TMPDIR/devbar-smoke-ok"
+          # 2) Reinstall: install-local must kill OLDPID, replace the bundle
+          #    and relaunch — a leftover process is the classic half-update.
+          pnpm install-local
+          sleep 2
+          if kill -0 "$OLDPID" 2>/dev/null; then
+            echo "old instance ($OLDPID) survived the reinstall"
+            exit 1
+          fi
+          # 3) The relaunched instance runs from /Applications: prove it is
+          #    alive, then stop it so the next step owns the machine.
+          # pgrep exits 1 when nothing matches; under pipefail that would
+          # abort the step before the diagnostic below could run — the
+          # empty result is exactly what the [ -n ] check reports.
+          NEWPID=$(pgrep -f "Applications/DevBar.app/Contents/MacOS/DevBar" | head -1 || true)
+          [ -n "$NEWPID" ] || { echo "no new instance after reinstall"; exit 1; }
+          # Stop the new instance — TERM, then force anything that survives.
+          # A helper that outlives the main process keeps the single-instance
+          # socket and makes the update-sim launch below a silent 2nd instance.
+          pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          sleep 1
+          pkill -9 -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          LEFT=$(pgrep -f "DevBar.app/Contents/MacOS/DevBar" || true)
+          [ -z "$LEFT" ] || { echo "::error::macos-reinstall: DevBar procs survived the stop: $LEFT"; exit 1; }
+          rm -rf "$WORK"
+
+      - name: Automatic update simulation — macOS (stage → swap → relaunch)
+        if: matrix.os == 'macos'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          WORK=$(mktemp -d)
+          ditto -x -k "dist/release/DevBar-${VERSION}-macos-arm64.zip" "$WORK"
+          BUNDLE="$WORK/DevBar.app"
+          APP="$BUNDLE/Contents/MacOS/DevBar"
+          # 1) A real next-version bundle: the dev "real update" builder
+          #    (copy, version bump, asar patch, ad-hoc re-sign, zip). The
+          #    compiled copy runs: the helper imports local TS modules, which
+          #    raw --experimental-strip-types cannot resolve (.js != .ts).
+          V2=$(node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'")
+          ZIP=$(node build/scripts/build-simulated-update.js "$BUNDLE" "$WORK" "$V2" | tail -1)
+          [ -f "$ZIP" ] || { echo "simulated update zip missing"; exit 1; }
+          SHA=$(shasum -a 256 "$ZIP" | awk '{print $1}')
+          # 2) The running app runs the PRODUCTION handoff: sha seal, staging
+          #    (ditto + codesign --verify), swap script, quit.
+          # Any still-running DevBar instance (e.g. a slow-dying one from the
+          # previous step) holds the single-instance lock and would turn this
+          # launch into a silent second instance — sweep it out (TERM, then
+          # force) and fail if anything survives.
+          pkill -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          sleep 1
+          pkill -9 -f "DevBar.app/Contents/MacOS/DevBar" 2>/dev/null || true
+          LEFT=$(pgrep -f "DevBar.app/Contents/MacOS/DevBar" || true)
+          [ -z "$LEFT" ] || { echo "::error::macos-update-sim: DevBar procs survived the pre-launch sweep: $LEFT"; exit 1; }
+          rm -f "$TMPDIR/devbar-smoke-ok"
+          DEVBAR_SMOKE=1 DEVBAR_SMOKE_UPDATE=1 DEVBAR_SMOKE_ARTIFACT="$ZIP" \
+            DEVBAR_SMOKE_SHA="$SHA" DEVBAR_SMOKE_VERSION="$V2" \
+            "$APP" 2>&1 | tee smoke-macos-update.log
+          if ! grep -q "DEVBAR_SMOKE_UPDATE_HANDOFF $V2" smoke-macos-update.log; then
+            echo "::error::macos-update-sim: app never logged HANDOFF. output tail: $(tail -15 smoke-macos-update.log | tr '\n' '|')"
+            echo "::error::macos-update-sim: app log tail: $(tail -15 "$HOME/Library/Logs/DevBar/app.log" 2>/dev/null | tr '\n' '|' || echo none)"
+            echo "::error::macos-update-sim: procs now: $(pgrep -af 'DevBar.app/Contents/MacOS/DevBar' || echo none)"
+            exit 1
+          fi
+          # 3) The swap relaunches the replaced bundle with --devbar-smoke,
+          #    so the new version proves itself through the same marker.
+          for i in $(seq 1 90); do
+            grep -q "DEVBAR_SMOKE_OK darwin $V2" "$TMPDIR/devbar-smoke-ok" 2>/dev/null && break
+            sleep 1
+          done
+          if ! grep -q "DEVBAR_SMOKE_OK darwin $V2" "$TMPDIR/devbar-smoke-ok" 2>/dev/null; then
+            echo "swap never produced a running new version"
+            echo "--- app log (new bundle) ---"
+            tail -30 "$HOME/Library/Logs/DevBar/app.log" 2>/dev/null || true
+            echo "--- swap artifacts ---"
+            ls -la "$HOME/Library/Application Support/DevBar/updates" 2>/dev/null || true
+            exit 1
+          fi
+          rm -rf "$WORK"
+
+      - name: Reinstall while running — Windows (kill old process)
+        if: matrix.os == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe"
+          # Diagnostic: surface any DevBar instance still alive at step start
+          # (a leftover would tangle the single-instance lock with the
+          # resident we are about to spawn).
+          $before = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
+          Write-Host "::warning::win-reinstall: DevBar procs before resident start: $($before ?? 'none')"
+          # A leftover instance holds the single-instance lock and would turn
+          # the resident below into a silent second instance — force it out.
+          Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { Write-Host "::warning::win-reinstall: force-killing leftover $($_.Name)($($_.Id))"; Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+          # 1) Resident instance of the installed app (from the earlier NSIS
+          #    install): writes the smoke marker, then stays alive.
+          $old = Start-Process -PassThru -FilePath $exe -ArgumentList '--devbar-smoke','--devbar-smoke-hold'
+          $deadline = (Get-Date).AddSeconds(90)
+          while (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
+            if ((Get-Date) -gt $deadline) { throw 'resident smoke did not start' }
+            Start-Sleep -Seconds 1
+          }
+          # 2) Reinstall without a second full build (reuses win-unpacked):
+          #    install-local must kill $old, replace the files and relaunch.
+          #    The env vars make the relaunched instance a resident smoke.
+          $env:DEVBAR_SMOKE = '1'
+          $env:DEVBAR_SMOKE_HOLD = '1'
+          pnpm install-local --no-build
+          if ($LASTEXITCODE -ne 0) {
+            $procs = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
+            Write-Error "::error::win-reinstall: pnpm install-local --no-build exited $LASTEXITCODE. DevBar procs: $procs"
+          }
+          Start-Sleep -Seconds 5
+          if (-not $old.HasExited) {
+            $procs = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
+            Write-Error "::error::win-reinstall: old instance $($old.Id) survived. DevBar procs: $procs"
+            throw "old instance ($($old.Id)) survived the reinstall"
+          }
+          # 3) The new instance must be alive; stop it so later steps are clean.
+          $new = Get-Process DevBar -ErrorAction SilentlyContinue
+          if (-not $new) {
+            $procs = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'DevBar|electron' } | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ','
+            Write-Error "::error::win-reinstall: no new instance after reinstall. procs: $procs"
+            throw 'no new instance after reinstall'
+          }
+          $new | Stop-Process -Force
+          Remove-Item Env:\DEVBAR_SMOKE, Env:\DEVBAR_SMOKE_HOLD
+
+      - name: Automatic update simulation — Windows (NSIS upgrade)
+        if: matrix.os == 'win'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VERSION
+          $exe = "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe"
+          $v2 = node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'"
+          # 1) Build the REAL next-version installer (host arch only): bump
+          #    the version, build, restore — the artifact keeps the bump.
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const v=p.version.split('.').map(Number);p.version=v[0]+'.'+(v[1]+1)+'.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          pnpm run build
+          node --experimental-strip-types scripts/package-win-linux.ts win host
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          $setup = "dist\electron-builder\DevBar-$v2-win-x64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "next-version installer missing: $setup" }
+          $sha = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          # 2) The installed app runs the PRODUCTION handoff: sha seal, MZ
+          #    check, staging, then the install bat waits for the pid to die,
+          #    runs the oneClick installer (upgrade in place) and relaunches
+          #    the app with --devbar-smoke — the bat owns the relaunch because
+          #    the installer's "run after finish" does not fire in this hidden
+          #    detached context.
+          # Fresh marker: the reinstall step's resident instance left one
+          # behind for the OLD version.
+          $marker = Join-Path $env:TEMP 'devbar-smoke-ok'
+          Remove-Item $marker -ErrorAction SilentlyContinue
+          $env:DEVBAR_SMOKE = '1'
+          $env:DEVBAR_SMOKE_UPDATE = '1'
+          $env:DEVBAR_SMOKE_ARTIFACT = (Resolve-Path $setup).Path
+          $env:DEVBAR_SMOKE_SHA = $sha
+          $env:DEVBAR_SMOKE_VERSION = $v2
+          $old = Start-Process -PassThru -FilePath $exe -ArgumentList '--devbar-smoke'
+          $deadline = (Get-Date).AddSeconds(180)
+          while (-not $old.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (-not $old.HasExited) { throw 'update handoff app did not exit' }
+          # 3) The new version is back: a new process appears (relaunched by
+          #    the bat, or by the installer in contexts where it does) and/or
+          #    the relaunched smoke instance writes the v2 marker. The
+          #    installed exe version is checked either way — it is the
+          #    deterministic proof.
+          $relaunched = $false
+          $deadline = (Get-Date).AddSeconds(180)
+          while ((Get-Date) -lt $deadline) {
+            if (Get-Process DevBar -ErrorAction SilentlyContinue) { $relaunched = $true; break }
+            if (Test-Path $marker) {
+              $content = Get-Content $marker -Raw -ErrorAction SilentlyContinue
+              if ($content -match "DEVBAR_SMOKE_OK win32 $v2") { $relaunched = $true; break }
+            }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $relaunched) {
+            # Self-diagnose: did the app finish the handoff (install.bat
+            # written, installer staged)? Did the installer install v2 but
+            # just not relaunch? What does the app itself say?
+            Write-Host '--- diagnostics: app log ---'
+            $appLog = Join-Path $env:APPDATA 'DevBar\logs\app.log'
+            if (Test-Path $appLog) { Get-Content $appLog -Tail 40 } else { Write-Host '(no app log)' }
+            Write-Host '--- diagnostics: updates dir (bat + staged installer) ---'
+            Get-ChildItem (Join-Path $env:APPDATA 'DevBar\updates') -Recurse -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host $_.FullName }
+            Write-Host '--- diagnostics: install.bat content ---'
+            $batFile = Join-Path $env:APPDATA 'DevBar\updates\install.bat'
+            if (Test-Path $batFile) { Get-Content $batFile } else { Write-Host '(no bat)' }
+            Write-Host '--- diagnostics: install.log (bat trace) ---'
+            $batLog = Join-Path $env:APPDATA 'DevBar\updates\install.log'
+            if (Test-Path $batLog) { Get-Content $batLog } else { Write-Host '(no log — the bat never executed)' }
+            Write-Host "--- diagnostics: installed exe version: $((Get-Item $exe).VersionInfo.ProductVersion) (expected $v2) ---"
+            Write-Host '--- diagnostics: processes ---'
+            Get-Process | Where-Object { $_.Name -match 'DevBar|setup|Uninstall' } |
+              ForEach-Object { Write-Host "$($_.Name) $($_.Id)" }
+            throw 'the installer did not relaunch DevBar'
+          }
+          Start-Sleep -Seconds 3
+          # ProductVersion is 4-part (0.8.0.0); the npm version is 3-part.
+          $fileVersion = (Get-Item $exe).VersionInfo.ProductVersion
+          $fileVersionShort = (($fileVersion -split '\.')[0..2]) -join '.'
+          if ($fileVersionShort -ne $v2) { throw "installed exe is v$fileVersion, expected v$v2" }
+          # The smoke relaunch self-exits after writing its marker; stop any
+          # instance that outlived it (an installer-side relaunch, for
+          # example) so the job ends clean.
+          Get-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force
+          Remove-Item Env:\DEVBAR_SMOKE, Env:\DEVBAR_SMOKE_UPDATE, Env:\DEVBAR_SMOKE_ARTIFACT, Env:\DEVBAR_SMOKE_SHA, Env:\DEVBAR_SMOKE_VERSION
+
+      - name: Automatic update simulation — Windows (portable file swap)
+        if: matrix.os == 'win'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VERSION
+          $v2 = node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'"
+          $portableV1 = "dist\electron-builder\DevBar-$version-win-x64-portable.exe"
+          # The previous step's v2 build produced the portable alongside the
+          # NSIS installer.
+          $portableV2 = "dist\electron-builder\DevBar-$v2-win-x64-portable.exe"
+          if (-not (Test-Path $portableV1)) { throw "current portable missing: $portableV1" }
+          if (-not (Test-Path $portableV2)) { throw "next-version portable missing: $portableV2" }
+          # 1) The file the user would keep in any folder: the real v1
+          #    portable, as the swap target, in a scratch dir.
+          $work = Join-Path $env:RUNNER_TEMP "devbar-portable-swap"
+          Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $work | Out-Null
+          $target = Join-Path $work "DevBar.exe"
+          Copy-Item $portableV1 $target
+          # The swap bat waits for a DevBar process with a given pid to die —
+          # a real resident instance stands in for the running app (a plain
+          # dummy would not match the bat's name check and the wait phase
+          # could not be exercised).
+          $installed = "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe"
+          $old = Start-Process -PassThru -FilePath $installed -ArgumentList '--devbar-smoke','--devbar-smoke-hold'
+          $deadline = (Get-Date).AddSeconds(90)
+          while (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
+            if ((Get-Date) -gt $deadline) { throw 'resident smoke did not start' }
+            Start-Sleep -Seconds 1
+          }
+          # 2) The production swap bat, byte for byte (same builder the app
+          #    uses), launched exactly the way the app launches it. The paths
+          #    cross the node bridge via env vars: a backslash path inside a
+          #    JS string literal would become an escape sequence, and the bat
+          #    must carry real backslash paths (cmd builtins misbehave on
+          #    forward-slash forms like D:/a/...).
+          $env:DB_WORK = $work
+          $env:DB_TARGET = $target
+          $env:DB_STAGED = $portableV2
+          $env:DB_MARKER = Join-Path $work 'swap-ok'
+          node -e "
+            const { buildSwapBat } = require('./build/src/self-update.js');
+            const fs = require('fs');
+            fs.writeFileSync(process.env.DB_WORK + '/swap.bat', buildSwapBat({
+              pid: $($old.Id),
+              target: process.env.DB_TARGET,
+              staged: process.env.DB_STAGED,
+              markerPath: process.env.DB_MARKER,
+            }));
+          "
+          Remove-Item Env:\DB_WORK, Env:\DB_TARGET, Env:\DB_STAGED, Env:\DB_MARKER
+          if (-not (Test-Path "$work\swap.bat")) {
+            $old | Stop-Process -Force
+            throw 'swap.bat was not generated'
+          }
+          Start-Process -FilePath cmd.exe -ArgumentList '/d','/c',"$work\swap.bat" -WindowStyle Hidden
+          Start-Sleep -Seconds 4
+          # While the old pid is alive: nothing may have been touched.
+          if (Test-Path "$work\swap-ok") { throw 'marker written before the old pid died' }
+          if ((Get-FileHash $target).Hash -ne (Get-FileHash (Resolve-Path $portableV1)).Hash) {
+            throw 'portable file changed before the old pid died'
+          }
+          # 3) After the pid dies: the old file is moved aside and replaced,
+          #    the marker is written, and the bat relaunches the swapped-in
+          #    portable (the wrapper runs the real app as a child).
+          $old | Stop-Process -Force
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline) {
+            if (Test-Path "$work\swap-ok") { break }
+            Start-Sleep -Seconds 1
+          }
+          if (-not (Test-Path "$work\swap-ok")) {
+            Write-Host '--- swap artifacts ---'
+            Get-ChildItem $work | ForEach-Object { Write-Host $_.FullName }
+            Write-Host '--- swap.log (bat trace) ---'
+            if (Test-Path "$work\swap.log") { Get-Content "$work\swap.log" } else { Write-Host '(no log — the bat never executed)' }
+            throw 'portable swap never completed'
+          }
+          if ((Get-FileHash $target).Hash -ne (Get-FileHash (Resolve-Path $portableV2)).Hash) {
+            throw 'swap did not replace the portable file'
+          }
+          $new = $null
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline) {
+            # Match the swapped file itself. Electron's GPU/utility/
+            # renderer children are also named DevBar and outlive the
+            # killed broker by seconds, so a bare name poll would be
+            # satisfied by those leftovers (which run from
+            # %LOCALAPPDATA%\Programs\DevBar) even if the relaunch never
+            # happened.
+            $new = Get-Process DevBar -ErrorAction SilentlyContinue |
+              Where-Object { $_.Path -eq $target }
+            if ($new) { break }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $new) { throw 'the swap bat did not relaunch the portable' }
+          # Clean slate: stop the relaunched app, then the scratch dir.
+          # Reuse the polled handle: the portable wrapper returns as soon
+          # as its child exits, so a fresh Get-Process can match nothing
+          # and throw under $ErrorActionPreference = 'Stop' — failing the
+          # job after every assertion above already passed.
+          $new | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+
+      - name: Reinstall while running — Linux (kill old process)
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A long-lived X server: the resident app must outlive each step.
+          Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp >/dev/null 2>&1 &
+          XVFB_PID=$!
+          trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
+          export DISPLAY=:99
+          # Let the X server come up before anything connects to it.
+          sleep 1
+          # The unpacked binary needs the same system libraries the .deb
+          # carries — the deb smoke step above already apt-resolved them,
+          # so this is redundant insurance (best-effort by design).
+          sudo apt-get install -y -qq libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libgtk-3-0 libgbm1 libasound2t64 libxshmfence1 >/dev/null || true
+          # set -e would kill the step on failure before any annotation, so
+          # wrap the long commands to surface their output in an annotation.
+          pnpm run pack 2>&1 | tee pack-linux-reinstall.log || {
+            echo "::error::linux-reinstall: pnpm run pack failed. output tail:"
+            tail -40 pack-linux-reinstall.log
+            exit 1
+          }
+          export DEVBAR_SMOKE=1
+          export DEVBAR_SMOKE_HOLD=1
+          # A plain unpacked copy cannot carry the root-owned setuid
+          # chrome-sandbox the .deb postinst creates, and runners without
+          # unprivileged user namespaces have no other usable sandbox — so
+          # CI relaunches with --no-sandbox (install-local passes it through
+          # DEVBAR_LAUNCH_ARGS). The kill/replace/relaunch mechanics this
+          # step tests are unaffected by the sandbox choice.
+          export DEVBAR_LAUNCH_ARGS="--no-sandbox"
+          # 1) First install: launches a resident instance (smoke env).
+          pnpm install-local --no-build 2>&1 | tee install-local-1.log || {
+            echo "::error::linux-reinstall: first install-local failed. output tail:"
+            tail -60 install-local-1.log
+            echo "::error::linux-reinstall: procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            exit 1
+          }
+          sleep 4
+          OLDPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
+          if [ -z "$OLDPID" ]; then
+            echo "::error::linux-reinstall: no resident after first install. procs: $(pgrep -af 'local/share/DevBar' || echo none). app log tail: $(tail -8 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null | tr '\n' '|' || echo none)"
+            echo "no resident instance after first install"
+            kill -0 "$XVFB_PID" 2>/dev/null && echo 'Xvfb alive' || echo 'Xvfb DEAD'
+            echo "--- app log ---"
+            tail -40 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null || true
+            echo "--- chrome-sandbox ---"
+            ls -la "$HOME/.local/share/DevBar/chrome-sandbox" 2>/dev/null || true
+            echo "--- library check ---"
+            ldd "$HOME/.local/share/DevBar/devbar" 2>&1 | grep "not found" || echo 'ldd: all libraries resolve'
+            echo "--- direct launch probe (output visible) ---"
+            timeout 8 "$HOME/.local/share/DevBar/devbar" --devbar-smoke --devbar-smoke-hold 2>&1 | head -40 || true
+            echo "--- processes ---"
+            ps aux | grep -i devbar | grep -v grep || true
+            exit 1
+          fi
+          # 2) Reinstall: install-local must kill OLDPID, replace the files
+          #    and relaunch — a leftover process is the classic half-update.
+          pnpm install-local --no-build 2>&1 | tee install-local-2.log || {
+            echo "::error::linux-reinstall: second install-local failed. output tail:"
+            tail -60 install-local-2.log
+            echo "::error::linux-reinstall: procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            exit 1
+          }
+          sleep 4
+          if kill -0 "$OLDPID" 2>/dev/null; then
+            echo "::error::linux-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < /proc/$OLDPID/cmdline 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            echo "old instance ($OLDPID) survived the reinstall"
+            exit 1
+          fi
+          NEWPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
+          if [ -z "$NEWPID" ]; then
+            echo "::error::linux-reinstall: no new instance after reinstall. procs: $(pgrep -af 'local/share/DevBar' || echo none). app log tail: $(tail -5 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null | tr '\n' '|' || echo none)"
+            echo "no new instance after reinstall"; exit 1
+          fi
+          kill "$NEWPID" 2>/dev/null || true
+          kill "$XVFB_PID" 2>/dev/null || true
+
+      - name: Automatic update simulation — Linux (AppImage swap)
+        if: matrix.os == 'linux'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          V2=$(node -p "const v=require('./package.json').version.split('.').map(Number); v[0]+'.'+(v[1]+1)+'.0'")
+          WORK=$(mktemp -d)
+          cp "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" "$WORK/cur.AppImage"
+          # 1) Build the REAL next-version AppImage (host arch only): bump
+          #    the version, build, restore — the artifact keeps the bump.
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const v=p.version.split('.').map(Number);p.version=v[0]+'.'+(v[1]+1)+'.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          pnpm run build
+          node --experimental-strip-types scripts/package-win-linux.ts linux host
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+          cp "dist/electron-builder/DevBar-${V2}-linux-x64.AppImage" "$WORK/new.AppImage"
+          # 2) Swap mechanics with a real target file: a dummy process stands
+          #    in for the running app (hosted runners have no /dev/fuse, so
+          #    the AppImage itself cannot run here — the swap script is the
+          #    platform-specific part, and it is tested byte for byte).
+          install -m 755 "$WORK/cur.AppImage" "$WORK/t.AppImage"
+          sleep 300 & DUMMY=$!
+          node -e "
+            const { buildSwapScript } = require('./build/src/self-update-linux.js');
+            const fs = require('fs');
+            fs.writeFileSync('$WORK/swap.sh', buildSwapScript({
+              pid: $DUMMY,
+              target: '$WORK/t.AppImage',
+              staged: '$WORK/new.AppImage',
+              markerPath: '$WORK/swap-ok',
+            }), { mode: 0o755 });
+          "
+          bash "$WORK/swap.sh" & SWAP=$!
+          sleep 4
+          # While the old pid is alive: nothing may have been touched.
+          [ ! -f "$WORK/swap-ok" ] || { echo "marker written before the old pid died"; exit 1; }
+          cmp -s "$WORK/cur.AppImage" "$WORK/t.AppImage" || { echo "file changed before the old pid died"; exit 1; }
+          # 3) After the pid dies: the swap completes, the new file is in
+          #    place and the marker is written.
+          kill "$DUMMY"
+          for i in $(seq 1 60); do [ -f "$WORK/swap-ok" ] && break; sleep 1; done
+          [ -f "$WORK/swap-ok" ] || { echo "swap never completed"; exit 1; }
+          cmp -s "$WORK/new.AppImage" "$WORK/t.AppImage" || { echo "swap did not replace the file"; exit 1; }
+          kill "$SWAP" 2>/dev/null || true
+          rm -rf "$WORK"
+
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-${{ matrix.os }}-${{ github.sha }}
+          retention-days: 3
+          # Evidence must survive a build/smoke failure (that is exactly
+          # when it is needed) — always() — and a failed early step may
+          # have produced no logs at all — warn, don't fail.
+          if-no-files-found: warn
+          # Logs only. dist/ carried the full artifact set, the
+          # *-unpacked/ trees and the update-simulation v2 build — ~3 GB
+          # per run, on every push, for installers rebuildable from the
+          # commit. Every log this job writes (smoke-*, pack-linux-*,
+          # install-local-*) lands in the workspace root.
+          path: '*.log'

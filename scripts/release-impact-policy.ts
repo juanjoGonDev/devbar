@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
-import { pathToFileURL } from 'node:url';
+import { isEntrypoint } from './lib/script-runtime.ts';
 
 type JsonObject = Record<string, unknown>;
 
@@ -21,9 +21,19 @@ const RELEASE_PREFIXES = ['assets/', 'renderer/', 'src/'];
 const RELEASE_EXACT_PATHS = new Set([
   '.npmrc',
   'scripts/build-macos-release.sh',
-  'scripts/build.sh',
+  'scripts/build.ts',
+  // Shared by build.ts and the release verifiers; a change to it changes
+  // whether those scripts run at all.
+  'scripts/lib/script-runtime.ts',
   'scripts/package-electron.ts',
   'scripts/package-macos-app.sh',
+  'scripts/package-win-linux.ts',
+  'scripts/platform.ts',
+  // The published artifact names / checksum contract and the SHA256SUMS.txt
+  // manifest generator: a change to either is a change to what gets
+  // published, so it must count as release-impacting.
+  'scripts/release-artifacts.ts',
+  'scripts/release-manifest.ts',
   'tsconfig.node.json',
   'tsconfig.renderer.json',
 ]);
@@ -34,9 +44,16 @@ const RELEASE_EXACT_PATHS = new Set([
 // dev dependency added later counts until it is listed here.
 const NON_SHIPPING_DEV_DEPENDENCIES = [
   '@types/',
+  // The whole @vitest scope is test tooling (coverage provider, ESLint
+  // plugin). Listing bare 'vitest' does not cover it: the prefix match is on
+  // the raw name, and '@vitest/coverage-v8' starts with '@', not 'vitest'.
+  '@vitest/',
   'dependency-cruiser',
   'eslint',
   'jiti',
+  // The DOM the renderer tests run in. Node is the default environment; only
+  // the jsdom-tagged test files ask for it, and none of it is packaged.
+  'jsdom',
   'knip',
   'lefthook',
   'prettier',
@@ -151,54 +168,71 @@ export function classifyReleaseImpact(
   };
 }
 
-function git(args: readonly string[]): string {
+/**
+ * `repository` is the checkout the query runs against. The CLI leaves it
+ * undefined so git inherits the process working directory (what the
+ * workflows rely on); tests pass a throwaway repository instead of
+ * changing the process-wide cwd.
+ */
+function git(args: readonly string[], repository?: string): string {
   return execFileSync('git', args, {
+    cwd: repository,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
 
-function packageAt(ref: string): string {
+function packageAt(ref: string, repository?: string): string {
   try {
-    return git(['show', `${ref}:package.json`]);
+    return git(['show', `${ref}:package.json`], repository);
   } catch {
     return '';
   }
 }
 
-function changedPaths(base: string, head: string): string[] {
-  return git(['diff', '--name-only', '-z', '--no-renames', base, head])
+function changedPaths(
+  base: string,
+  head: string,
+  repository?: string,
+): string[] {
+  return git(
+    ['diff', '--name-only', '-z', '--no-renames', base, head],
+    repository,
+  )
     .split('\0')
     .filter((path) => path.length > 0);
 }
 
-export function classifyGitRange(base: string, head: string): Classification {
-  const paths = changedPaths(base, head);
+export function classifyGitRange(
+  base: string,
+  head: string,
+  repository?: string,
+): Classification {
+  const paths = changedPaths(base, head, repository);
   const packageChanged = paths.includes('package.json');
   return classifyReleaseImpact(
     paths,
-    packageChanged ? packageAt(base) : '',
-    packageChanged ? packageAt(head) : '',
+    packageChanged ? packageAt(base, repository) : '',
+    packageChanged ? packageAt(head, repository) : '',
   );
 }
 
 export function pendingReleaseImpact(
   base: string,
   head: string,
+  repository?: string,
 ): PendingImpact {
   const commits: string[] = [];
-  const candidateCommits = git([
-    'rev-list',
-    '--first-parent',
-    '--reverse',
-    `${base}..${head}`,
-  ])
+  const candidateCommits = git(
+    ['rev-list', '--first-parent', '--reverse', `${base}..${head}`],
+    repository,
+  )
     .split(/\r?\n/u)
     .filter((sha) => sha.length > 0);
 
   for (const sha of candidateCommits) {
-    const parent = git(['rev-parse', `${sha}^1`]).trim();
-    if (classifyGitRange(parent, sha).publish) commits.push(sha);
+    const parent = git(['rev-parse', `${sha}^1`], repository).trim();
+    if (classifyGitRange(parent, sha, repository).publish) commits.push(sha);
   }
 
   return {
@@ -214,7 +248,10 @@ function parseNullDelimitedPaths(filePath: string): string[] {
     .filter((path) => path.length > 0);
 }
 
-function main(argv: readonly string[]): Classification | PendingImpact {
+export function main(
+  argv: readonly string[],
+  repository?: string,
+): Classification | PendingImpact {
   const [mode, first, second, third] = argv;
 
   if (mode === 'classify') {
@@ -234,25 +271,25 @@ function main(argv: readonly string[]): Classification | PendingImpact {
     if (first === undefined || second === undefined) {
       throw new Error('Usage: release-impact-policy.ts range <base> <head>');
     }
-    return classifyGitRange(first, second);
+    return classifyGitRange(first, second, repository);
   }
 
   if (mode === 'pending') {
     if (first === undefined || second === undefined) {
       throw new Error('Usage: release-impact-policy.ts pending <base> <head>');
     }
-    return pendingReleaseImpact(first, second);
+    return pendingReleaseImpact(first, second, repository);
   }
 
   throw new Error('Expected mode: classify, range, or pending');
 }
 
-const entrypointPath = process.argv[1];
-const isEntrypoint =
-  entrypointPath !== undefined &&
-  import.meta.url === pathToFileURL(entrypointPath).href;
-
-if (isEntrypoint) {
+// Entrypoint guard via the shared helper: both sides are realpath-resolved
+// there, so a checkout reached through a symlink still runs main(). The
+// raw `import.meta.url === pathToFileURL(process.argv[1]).href` comparison
+// this replaces was FALSE in that case, and the release workflows then read
+// an empty stdout and mis-classified the release impact.
+if (isEntrypoint(import.meta.url)) {
   try {
     process.stdout.write(`${JSON.stringify(main(process.argv.slice(2)))}\n`);
   } catch (error: unknown) {

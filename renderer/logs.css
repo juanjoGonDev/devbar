@@ -29,6 +29,12 @@
 .app-window-spacer input {
   -webkit-app-region: no-drag;
 }
+/* Non-macOS windows keep the native titlebar, which already shows this same
+   title — the inset strip would duplicate it, so it is macOS-only chrome. */
+html[data-os='win32'] .app-window-spacer,
+html[data-os='linux'] .app-window-spacer {
+  display: none;
+}
 .app-window-spacer #title {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -105,34 +105,36 @@ async function runRetry(
   return { code, calls: log.split('\n').filter(Boolean) };
 }
 
-afterEach(async () => {
-  while (temporaryDirectories.length) {
-    const directory = temporaryDirectories.pop();
-    if (directory) await rm(directory, { recursive: true, force: true });
-  }
-});
-
-describe('release verification hdiutil retry', () => {
-  it('calls hdiutil once when it is healthy', async () => {
-    const { code, calls } = await runRetry(await fakeHdiutil(), 0);
-    expect(code).toBe(0);
-    expect(calls).toHaveLength(1);
+describe('scripts/verify-macos-release.sh — hdiutil retry', () => {
+  afterEach(async () => {
+    while (temporaryDirectories.length) {
+      const directory = temporaryDirectories.pop();
+      if (directory) await rm(directory, { recursive: true, force: true });
+    }
   });
 
-  it('retries past a transient failure and still succeeds', async () => {
-    const { code, calls } = await runRetry(await fakeHdiutil(), 2);
-    expect(code).toBe(0);
-    expect(calls).toHaveLength(3);
-  });
+  describe('release verification hdiutil retry', () => {
+    it('calls hdiutil once when it is healthy', async () => {
+      const { code, calls } = await runRetry(await fakeHdiutil(), 0);
+      expect(code).toBe(0);
+      expect(calls).toHaveLength(1);
+    });
 
-  it('gives up on the attempt budget instead of retrying forever', async () => {
-    const { code, calls } = await runRetry(await fakeHdiutil(), 99);
-    expect(code).not.toBe(0);
-    expect(calls).toHaveLength(3);
-  });
+    it('retries past a transient failure and still succeeds', async () => {
+      const { code, calls } = await runRetry(await fakeHdiutil(), 2);
+      expect(code).toBe(0);
+      expect(calls).toHaveLength(3);
+    });
 
-  it('passes the arguments through untouched', async () => {
-    const { calls } = await runRetry(await fakeHdiutil(), 0);
-    expect(calls[0]).toBe('verify /nowhere.dmg');
+    it('gives up on the attempt budget instead of retrying forever', async () => {
+      const { code, calls } = await runRetry(await fakeHdiutil(), 99);
+      expect(code).not.toBe(0);
+      expect(calls).toHaveLength(3);
+    });
+
+    it('passes the arguments through untouched', async () => {
+      const { calls } = await runRetry(await fakeHdiutil(), 0);
+      expect(calls[0]).toBe('verify /nowhere.dmg');
+    });
   });
 });

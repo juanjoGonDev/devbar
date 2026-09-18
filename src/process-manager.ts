@@ -1,106 +1,49 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import readline from 'node:readline';
 import { EventEmitter } from 'node:events';
-import { expandTilde, enhancedEnv } from './path-helper.js';
-import { buildCmdline } from './parse-command.js';
+import { isWin } from './platform.js';
+import { expandTilde } from './path-helper.js';
+import { buildCmdline, buildCmdlineWindows } from './parse-command.js';
 import { parseProcessId } from './compound-id.js';
-import { materializeEnv } from './groups-model.js';
-import type {
-  Action,
-  Command,
-  GlobalSettings,
-  Group,
-  LogEntry,
-  LogLevel,
-  PreScript,
-  ProcessState,
-} from './domain-types.js';
-import type { TrayColor } from './tray-icon.js';
+import {
+  isShellNoise,
+  matchesPattern,
+  safeRegex,
+  stripAnsi,
+} from './process/log-filters.js';
+import {
+  buildSpawnArgs,
+  killGroup,
+  resolveSpawnEnv,
+  serviceSpawnOptions,
+} from './process/spawn.js';
+import {
+  DEFAULT_LOG_BUFFER_LIMIT,
+  defaultState,
+  publicState,
+  type ConfigStoreLike,
+  type InternalState,
+  type ProcessEntry,
+  type ProcessManagerEvents,
+  type ResolvedTarget,
+} from './process/state.js';
+import type { LogEntry, LogLevel } from './domain-types.js';
 
-const DEFAULT_LOG_BUFFER_LIMIT = 2000;
-const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
-const SHELL_NOISE_PATTERNS = [
-  /^\(anon\):setopt:\d+: can't change option: monitor$/,
-  /^\[ERROR\]: gitstatus failed to initialize/,
-  /^Add the following parameter to/,
-  /^GITSTATUS_LOG_LEVEL=DEBUG$/,
-  /^Restart Zsh to retry gitstatus/,
-  /^exec zsh$/,
-  /^zsh: no job control in this shell$/,
-];
-function stripAnsi(value: string): string {
-  return value.replace(ANSI_RE, '');
-}
-function isShellNoise(line: string): boolean {
-  const clean = stripAnsi(line).trim();
-  return (
-    Boolean(clean) &&
-    SHELL_NOISE_PATTERNS.some((pattern) => pattern.test(clean))
-  );
-}
-function safeRegex(source: string | null | undefined): RegExp | null {
-  if (!source) return null;
-  try {
-    return new RegExp(source, 'i');
-  } catch {
-    return null;
-  }
-}
-function matchesPattern(pattern: string, cleaned: string): boolean {
-  if (!pattern) return false;
-  if (!pattern.includes('\\')) return cleaned.includes(pattern);
-  const regex = safeRegex(pattern);
-  return regex ? regex.test(cleaned) : cleaned.includes(pattern);
-}
-
-interface ConfigStoreLike {
-  getGroup(id: string): Group | null;
-  listGroups(): Group[];
-  getGlobalSettings(): GlobalSettings;
-}
-interface InternalState extends ProcessState {
-  child: ChildProcessWithoutNullStreams | null;
-  logLimit: number;
-}
-type ResolvedTarget =
-  | { group: Group; target: Command; kind: 'command' }
-  | { group: Group; target: Action; kind: 'action' }
-  | { group: Group; target: PreScript; kind: 'prescript' };
-export interface ProcessEntry extends ProcessState {
-  group: Group;
-  target: Command | Action;
-  kind: 'command' | 'action';
-}
-interface ProcessManagerEvents {
-  log: [payload: { id: string; entry: LogEntry }];
-  change: [state: InternalState];
-  'action:done': [
-    payload: {
-      processId: string;
-      code: number | null;
-      group: Group;
-      target: Action | PreScript;
-    },
-  ];
-}
-function defaultState(id: string): InternalState {
-  return {
-    id,
-    status: 'stopped',
-    warnCount: 0,
-    errorCount: 0,
-    lastError: null,
-    startedAt: null,
-    lastExitCode: null,
-    lastFinishedAt: null,
-    child: null,
-    logLimit: DEFAULT_LOG_BUFFER_LIMIT,
-  };
-}
+export { buildSpawnArgs, serviceSpawnOptions } from './process/spawn.js';
+export { deriveColor } from './process/tray-color.js';
+export type { ProcessEntry } from './process/state.js';
 
 export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
   private readonly states = new Map<string, InternalState>();
   private readonly logs = new Map<string, LogEntry[]>();
+  // pids we asked to die — tracked on Windows ONLY: there a killed process
+  // exits with a plain code (no signal), so this is how the exit handler
+  // still knows the stop was ours rather than a real crash. On macOS/Linux
+  // a kill always arrives as SIGTERM/SIGKILL, so the set is never needed —
+  // and a stale entry (e.g. the 6.5 s give-up path, where the exit handler
+  // may already have run against a replaced state) could match a REUSED
+  // pid and mislabel an unrelated process's natural exit as "stopped".
+  private readonly killRequested = new Set<number>();
   constructor(private readonly configStore: ConfigStoreLike) {
     super();
   }
@@ -223,7 +166,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     for (const group of this.configStore.listGroups()) {
       for (const command of group.commands) {
         entries.push({
-          ...this.publicState(this.getState(`cmd:${group.id}:${command.id}`)),
+          ...publicState(this.getState(`cmd:${group.id}:${command.id}`)),
           group,
           target: command,
           kind: 'command',
@@ -231,7 +174,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       }
       for (const action of group.actions) {
         entries.push({
-          ...this.publicState(this.getState(`act:${group.id}:${action.id}`)),
+          ...publicState(this.getState(`act:${group.id}:${action.id}`)),
           group,
           target: action,
           kind: 'action',
@@ -239,28 +182,6 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       }
     }
     return entries;
-  }
-  private publicState(state: InternalState): ProcessState {
-    const {
-      id,
-      status,
-      warnCount,
-      errorCount,
-      lastError,
-      startedAt,
-      lastExitCode,
-      lastFinishedAt,
-    } = state;
-    return {
-      id,
-      status,
-      warnCount,
-      errorCount,
-      lastError,
-      startedAt,
-      lastExitCode,
-      lastFinishedAt,
-    };
   }
   private readonly logSeqs = new Map<string, number>();
   private resolveLogLimit(resolved: ResolvedTarget): number {
@@ -287,28 +208,22 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     const cwd =
         expandTilde(('cwd' in target ? target.cwd : null) || group.path) ||
         process.cwd(),
-      cmdline = buildCmdline(target.command, target.args),
-      shell = process.env.SHELL || '/bin/zsh';
-    let spawnEnv: NodeJS.ProcessEnv;
-    if (kind === 'command')
-      spawnEnv = enhancedEnv({
-        ...process.env,
-        ...materializeEnv(group.env),
-        ...materializeEnv(target.env),
-      });
-    else {
-      let env = { ...process.env };
-      if (target.inheritGroupEnv)
-        env = { ...env, ...materializeEnv(group.env) };
-      spawnEnv = enhancedEnv({ ...env, ...materializeEnv(target.env) });
-    }
+      // Windows: cmd.exe-compatible quoting (MSVCRT double quotes + ^
+      // escapes). The POSIX builder's single quotes are meaningless to
+      // cmd, and its raw join for metacharacter args would let `>`/`&`
+      // become redirects and chains in cmd /c.
+      cmdline = isWin
+        ? buildCmdlineWindows(target.command, target.args)
+        : buildCmdline(target.command, target.args),
+      spawnSpec = buildSpawnArgs(cmdline);
+    const spawnEnv = resolveSpawnEnv(resolved);
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(shell, ['-ic', cmdline], {
+      child = spawn(spawnSpec.file, spawnSpec.args, {
         cwd,
         env: spawnEnv,
         shell: false,
-        detached: true,
+        ...serviceSpawnOptions(),
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -334,7 +249,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       ts: Date.now(),
       stream: 'sys',
       level: null,
-      line: `▶ start: ${shell} -ic '${cmdline}'  (cwd=${cwd})`,
+      line: `▶ start: ${spawnSpec.description}  (cwd=${cwd})`,
     });
     this.emit('change', this.getState(processId));
     const handleLine =
@@ -400,12 +315,20 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     child.on('exit', (code, signal) => {
       const state = this.states.get(processId);
       if (!state || state.child !== child) return;
-      const killed = signal === 'SIGTERM' || signal === 'SIGKILL';
+      const killed =
+        signal === 'SIGTERM' ||
+        signal === 'SIGKILL' ||
+        (child.pid != null && this.killRequested.delete(child.pid));
       this.pushLog(processId, {
         ts: Date.now(),
         stream: 'sys',
         level: killed ? null : code !== 0 ? 'error' : null,
-        line: killed ? `■ stopped (${signal})` : `■ exited with code ${code}`,
+        // On Windows the kill arrives via taskkill with a NULL signal (the
+        // killRequested set is win-only, so a signalless killed exit can
+        // only be a taskkill) — label it instead of logging "(null)".
+        line: killed
+          ? `■ stopped (${signal ?? 'taskkill'})`
+          : `■ exited with code ${code}`,
       });
       if (kind === 'action' || kind === 'prescript') {
         this.setState(processId, {
@@ -434,13 +357,30 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     });
     return { ok: true };
   }
-  async stopAll(): Promise<void> {
+  /**
+   * Stops every running service. A service whose stop FAILED (kill error or
+   * the 6.5 s give-up) keeps its running state + handle: it is reported in
+   * `failed`, so callers can refuse to proceed on a half-stopped fleet
+   * (config import) or log what is still alive (shutdown) — the entry also
+   * survives for a later stop() to retry/escalate.
+   */
+  async stopAll(): Promise<{ ok: boolean; failed: string[] }> {
     const running = [...this.states]
       .filter(([, state]) => state.status === 'running' && state.child)
       .map(([id]) => id);
-    await Promise.all(running.map((id) => this.stop(id)));
-    this.states.clear();
-    this.logs.clear();
+    const results = await Promise.all(
+      running.map(async (id) => ({ id, result: await this.stop(id) })),
+    );
+    const failed = results.filter((r) => !r.result.ok).map((r) => r.id);
+    // Confirmed-stopped entries (including earlier stopped ones) release
+    // their state and log buffers; failed running ones are kept on purpose.
+    for (const [id, state] of [...this.states]) {
+      if (state.status !== 'running' || !state.child) {
+        this.states.delete(id);
+        this.logs.delete(id);
+      }
+    }
+    return { ok: failed.length === 0, failed };
   }
   async stop(id: string): Promise<{ ok: boolean; error?: string | undefined }> {
     const state = this.states.get(id);
@@ -449,63 +389,46 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       return { ok: true };
     }
     const child = state.child;
+    // Windows-only: on macOS/Linux the kill arrives as a signal, which the
+    // exit handler sees directly (see killRequested).
+    if (isWin && child.pid != null) this.killRequested.add(child.pid);
     return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        killGroup(child, 'SIGKILL');
-      }, 5000);
-      child.once('exit', () => {
-        clearTimeout(timer);
+      let settled = false;
+      const timers = new Set<NodeJS.Timeout>();
+      const finish = (ok: boolean, error?: string) => {
+        if (settled) return;
+        settled = true;
+        // Drop the pid BEFORE resolving: the 6.5 s give-up path settles
+        // while the child is still alive, so its later exit may run
+        // against a replaced state and never delete it — a stale entry
+        // could then match a reused pid.
+        if (child.pid != null) this.killRequested.delete(child.pid);
+        for (const timer of timers) clearTimeout(timer);
+        if (!ok) {
+          // Failed stop (kill error or the 6.5 s give-up): the child may
+          // still be alive. Keep it tracked as RUNNING with its handle so
+          // a later start() cannot launch a duplicate on the same port —
+          // the exit handler settles it to stopped when it actually dies.
+          if (error) this.setState(id, { lastError: error });
+          resolve({ ok: false, error });
+          return;
+        }
+        this.setState(id, { status: 'stopped', child: null });
         resolve({ ok: true });
-      });
+      };
+      timers.add(setTimeout(() => killGroup(child, 'SIGKILL'), 5000));
+      timers.add(
+        setTimeout(() => {
+          // Both kill attempts (initial + the 5 s SIGKILL / taskkill
+          // repeat) failed to reap the child. Resolve instead of
+          // hanging until the shutdown deadline — the caller can see
+          // the failure and the log line from killGroup says why.
+          finish(false, 'child still alive after forced kill');
+        }, 6500),
+      );
+      child.once('exit', () => finish(true));
       const error = killGroup(child, 'SIGTERM');
-      if (error) {
-        clearTimeout(timer);
-        this.setState(id, {
-          status: 'stopped',
-          child: null,
-          lastError: error.message,
-        });
-        resolve({ ok: false, error: error.message });
-      }
+      if (error) finish(false, error.message);
     });
   }
-}
-function killGroup(
-  child: ChildProcessWithoutNullStreams | null,
-  signal: NodeJS.Signals,
-): Error | null {
-  if (!child?.pid) return null;
-  try {
-    process.kill(-child.pid, signal);
-    return null;
-  } catch {
-    try {
-      child.kill(signal);
-      return null;
-    } catch (error: unknown) {
-      return error instanceof Error ? error : new Error(String(error));
-    }
-  }
-}
-export function deriveColor(
-  state: Pick<
-    ProcessState,
-    'status' | 'lastError' | 'errorCount' | 'warnCount'
-  >,
-  command: Partial<Command> | null | undefined,
-  group: Partial<Group> | null | undefined,
-  globals: Partial<GlobalSettings> | null | undefined,
-): TrayColor {
-  if (state.status !== 'running') return state.lastError ? 'error' : 'stopped';
-  const muteError = Boolean(
-      globals?.silenceErrors || group?.silenceErrors || command?.silenceErrors,
-    ),
-    muteWarn = Boolean(
-      globals?.silenceWarnings ||
-      group?.silenceWarnings ||
-      command?.silenceWarnings,
-    );
-  if (state.errorCount > 0 && !muteError) return 'error';
-  if (state.warnCount > 0 && !muteWarn) return 'warn';
-  return 'running';
 }

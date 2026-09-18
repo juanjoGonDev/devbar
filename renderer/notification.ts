@@ -1,3 +1,4 @@
+import './report-uncaught.js';
 import { byId } from './dom.js';
 import { installTooltips } from './tooltip.js';
 const query = new URLSearchParams(location.search);

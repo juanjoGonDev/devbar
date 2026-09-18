@@ -1,5 +1,5 @@
 import { nativeImage, nativeTheme, type NativeImage } from 'electron';
-import { drawGlyphBGRA } from './glyph-bitmap.js';
+import { countLabel, drawGlyphBGRA } from './glyph-bitmap.js';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
 const STATES: readonly TrayColor[] = ['stopped', 'running', 'warn', 'error'];
 const COLORS: Record<TrayColor, readonly [number, number, number]> = {
@@ -15,23 +15,58 @@ const iconCache: Partial<Record<string, NativeImage>> = {};
 function outlineColor(dark: boolean): readonly [number, number, number] {
   return dark ? [235, 235, 240] : [28, 28, 30];
 }
-export function loadIcon(state: TrayColor, hasUpdate = false): NativeImage {
+/**
+ * The number shown for the tray: errors first, warnings when there are no
+ * errors, nothing when both are zero. Same rule for the macOS title and
+ * the badge drawn into the win/linux icon.
+ */
+export function badgeCount(errs: number, warns: number): number {
+  return errs > 0 ? errs : warns;
+}
+
+/**
+ * Validates a dev-panel count payload: non-negative integer (numbers or
+ * numeric strings), capped; null/empty/invalid → null (release the
+ * override). The dev panel uses it to force the badge without real errors.
+ */
+export function parseTrayCount(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return null;
+  return n > 9999 ? 9999 : n;
+}
+
+export function loadIcon(
+  state: TrayColor,
+  hasUpdate = false,
+  count = 0,
+): NativeImage {
   const dark = nativeTheme.shouldUseDarkColors,
-    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}`,
+    // Key on the RENDERED label, not the raw count: the bubble draws
+    // "99+" for every count above 99, so counts >99 share pixels (no
+    // unbounded cache growth), while 99 and 100 render DIFFERENT labels
+    // and must not collide.
+    key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}:${countLabel(
+      count,
+    )}`,
     cached = iconCache[key];
   if (cached) return cached;
   const rgb = COLORS[state] ?? COLORS.stopped,
     out = outlineColor(dark),
-    badge = hasUpdate ? BADGE_RGB : undefined,
-    image = nativeImage.createFromBitmap(drawGlyphBGRA(18, rgb, out, badge), {
-      width: 18,
-      height: 18,
-    });
+    // The count bubble reuses the update-badge red; with no count, the
+    // pending-update cue is the small dot.
+    badge = count > 0 || hasUpdate ? BADGE_RGB : undefined,
+    image = nativeImage.createFromBitmap(
+      drawGlyphBGRA(18, rgb, out, badge, count),
+      { width: 18, height: 18 },
+    );
   image.addRepresentation({
     scaleFactor: 2,
     width: 36,
     height: 36,
-    buffer: drawGlyphBGRA(36, rgb, out, badge),
+    buffer: drawGlyphBGRA(36, rgb, out, badge, count),
   });
   image.setTemplateImage(false);
   iconCache[key] = image;

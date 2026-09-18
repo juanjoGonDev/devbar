@@ -11,6 +11,7 @@ import type {
   ReleaseSummary,
   SilencedPatterns,
   StagedUpdate,
+  ThemePreference,
 } from './domain-types.js';
 
 export type SilenceLevel = 'warn' | 'error';
@@ -166,6 +167,8 @@ interface BranchListResult {
   ok: boolean;
   branches?: string[] | undefined;
   error?: string | undefined;
+  /** False when the group's path is not a git repository. */
+  isRepo?: boolean | undefined;
 }
 interface BranchResult {
   ok: boolean;
@@ -215,6 +218,7 @@ interface DevSimulationApi {
   }>;
   clearUpdate(): Promise<SimpleResult>;
   simulateTrayColor(color: TrayColor | null): Promise<SimpleResult>;
+  simulateTrayCount(count: number | null): Promise<SimpleResult>;
   simulateBanner(withCta: boolean): Promise<SimpleResult>;
   simulateFallbackBanner(withCta: boolean): Promise<SimpleResult>;
   simulateSuccess(): Promise<SimpleResult>;
@@ -283,7 +287,12 @@ export interface DevBarApi {
   openLogs(
     arg:
       | string
-      | { processId: string; filter?: string; detached?: boolean }
+      | {
+          processId: string;
+          filter?: string;
+          detached?: boolean;
+          level?: SilenceLevel;
+        }
       | { scope: 'all'; level?: SilenceLevel }
       | { scope: 'group'; groupId: string; level?: SilenceLevel },
   ): Promise<SimpleResult>;
@@ -359,6 +368,12 @@ export interface DevBarApi {
   ): Promise<SimpleResult>;
   quit(): Promise<SimpleResult>;
   /**
+   * The OS this instance is running on (Node's `process.platform`:
+   * 'darwin' | 'win32' | 'linux' | …). Static value, not an IPC call —
+   * renderers use it to adapt user-facing text to the platform.
+   */
+  platform: string;
+  /**
    * Whether this build shipped the dev simulation panel — true for any dev run
    * and for a `DEVBAR_DEV_PANEL=1` package, false for a normal build. Gates
    * loading the panel.
@@ -369,7 +384,12 @@ export interface DevBarApi {
   getAppVersion(): Promise<string>;
   getChangelog(): Promise<ChangelogPayload>;
   openExternal(url: string): Promise<SimpleResult>;
-  /** macOS notification settings, aimed at this app's own row. */
+  /**
+   * Open the OS notification settings: macOS deep-links to this app's own
+   * row, Windows to the notifications page, Linux to the detected desktop's
+   * pane (gnome-control-center / kcmshell6). Fails on Linux when no known
+   * desktop tool is available so the renderer can show manual hints.
+   */
   openNotificationSettings(): Promise<SimpleResult>;
   confirmDirty(
     context: string,
@@ -378,6 +398,12 @@ export interface DevBarApi {
   onConfigCloseRequested(callback: () => void): () => void;
   buildSilencePattern(line: string | null | undefined): string;
   onUpdate(callback: (payload: GroupState[]) => void): () => void;
+  /**
+   * Theme pushes, on their own channel. Deriving the theme from the
+   * `groups:update` fan-out instead would re-read (and re-validate) the whole
+   * config file on every warn/error log line, in every open window.
+   */
+  onThemeChange(callback: (payload: ThemePreference) => void): () => void;
   onLog(
     callback: (payload: { id: string; entry: LogEntry }) => void,
   ): () => void;

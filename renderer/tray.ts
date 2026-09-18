@@ -1,22 +1,19 @@
+import './report-uncaught.js';
 import { formatUptime } from './format-uptime.js';
-import {
-  createCombobox,
-  isComboboxOpen,
-  lastComboboxInteractionAt,
-  setComboboxHostHooks,
-  type ComboboxControl,
-  type ComboboxOption,
-} from './combobox.js';
+import { isComboboxOpen, setComboboxHostHooks } from './combobox.js';
 import type {
-  ActionRuntimeState,
-  CommandRuntimeState,
   GroupState,
   PipelineState,
   UpdateStatus,
 } from '../src/ipc-contract.js';
-import type { Command, Action } from '../src/domain-types.js';
 import { byId } from './dom.js';
+import { clearBranchCache } from './tray/branches.js';
+import { renderGroupRow } from './tray/group-row.js';
+import { setTrayHost, showToast } from './tray/host.js';
+import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
+import { initTheme } from './theme.js';
+initTheme();
 const groupsEl = byId('groups', HTMLElement);
 const toastEl = byId('toast', HTMLElement);
 
@@ -53,27 +50,6 @@ if (document.readyState !== 'loading') {
 let lastGroupStates: GroupState[] = [];
 // State update that arrived while a branch dropdown was open; replayed on close.
 let _pendingStates: GroupState[] | null = null;
-// Branch cache: groupId → { branches: string[], current: string|null }
-interface BranchCacheEntry {
-  branches: string[];
-  current: string | null;
-}
-const branchCache = new Map<string, BranchCacheEntry>();
-// Expanded/collapsed state: groupId → boolean
-const expandedState = new Map<string, boolean>();
-
-// ─────────────────────── Toast ───────────────────────────────────────
-
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
-function showToast(msg: string, kind = 'ok'): void {
-  toastEl.textContent = msg;
-  toastEl.className = `toast ${kind}`;
-  toastEl.style.display = 'block';
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toastEl.style.display = 'none';
-  }, 4000);
-}
 
 // ─────────────────────── Alerts summary ─────────────────────────────
 
@@ -327,446 +303,10 @@ setComboboxHostHooks({
   scheduleTrayResize,
   measureContentHeight,
 });
-
-// ─────────────────────── Group row ───────────────────────────────────
-
-function renderGroupRow(gs: GroupState): HTMLElement {
-  const group = gs.group || {};
-  const groupId = gs.groupId;
-  const isExpanded = !!expandedState.get(groupId);
-
-  const wrapper = document.createElement('div');
-  wrapper.className = 'group-wrapper';
-  wrapper.dataset.groupId = groupId;
-
-  // ── Collapsed row ───────────────────────────────────────────────────
-  const row = document.createElement('div');
-  row.className = `group-row ${gs.color || 'stopped'}`;
-  row.dataset.groupId = groupId;
-
-  // Color dot
-  const dot = document.createElement('span');
-  dot.className = `dot ${gs.color || 'stopped'}`;
-  row.appendChild(dot);
-
-  // Group icon stays a plain label — it identifies the group, it is not a
-  // control. Opening the logs gets its own terminal button further along.
-  const icon = document.createElement('span');
-  icon.className = 'group-icon';
-  icon.textContent = group.icon || '📦';
-  row.appendChild(icon);
-
-  // Group name
-  const name = document.createElement('span');
-  name.className = 'group-name';
-  name.textContent = group.name || '(sin nombre)';
-  row.appendChild(name);
-
-  // Group-wide uptime: longest-running command in the group. Hidden when
-  // nothing is running. Sits right after the name so the eye doesn't have
-  // to hunt for it.
-  const runningStarts = gs.commands
-    .filter((command) => command.status === 'running')
-    .map((command) => command.startedAt)
-    .filter((startedAt): startedAt is number => startedAt !== null);
-  if (runningStarts.length > 0) {
-    const earliest = Math.min(...runningStarts);
-    const uptime = document.createElement('span');
-    uptime.className = 'uptime group-uptime';
-    uptime.dataset.startedAt = String(earliest);
-    uptime.textContent = formatUptime(Date.now() - earliest);
-    row.appendChild(uptime);
-  }
-
-  // Error indicator
-  if (gs.lastError) {
-    const errBadge = document.createElement('span');
-    errBadge.className = 'group-error-badge';
-    errBadge.title = gs.lastError;
-    errBadge.textContent = '✕';
-    row.appendChild(errBadge);
-  }
-
-  // Spacer pushes the branch combobox to the right edge of the row.
-  const spacer = document.createElement('span');
-  spacer.className = 'group-row-spacer';
-  row.appendChild(spacer);
-
-  // Same 📜 as the per-command log buttons — one mark means "logs" at every
-  // scope. The row itself toggles open, so this swallows its own click.
-  const groupLogsBtn = document.createElement('button');
-  groupLogsBtn.type = 'button';
-  groupLogsBtn.className = 'ghost group-logs-btn';
-  groupLogsBtn.textContent = '📜';
-  groupLogsBtn.title = `Ver todos los logs de ${group.name || 'este grupo'}`;
-  groupLogsBtn.addEventListener('click', (event) => {
-    event.stopPropagation();
-    void window.api.openLogs({ scope: 'group', groupId });
-  });
-  row.appendChild(groupLogsBtn);
-
-  // Branch selector — always at the end of the row.
-  const branchSel = buildBranchSelector(gs);
-  row.appendChild(branchSel);
-
-  // Expand chevron (only if group has actions or commands)
-  const caret = document.createElement('button');
-  caret.className = 'caret-btn ghost';
-  caret.title = isExpanded ? 'Colapsar' : 'Expandir';
-  caret.textContent = isExpanded ? '▾' : '▸';
-  caret.addEventListener('click', (e) => {
-    e.stopPropagation();
-    expandedState.set(groupId, !expandedState.get(groupId));
-    render(lastGroupStates);
-  });
-  row.appendChild(caret);
-
-  // Row click → toggle expand/collapse, but ignore clicks on interactive children
-  // (anything that already has its own click semantics, plus the uptime label
-  // which the user may want to select-as-text without expanding the group).
-  const INTERACTIVE_SELECTOR =
-    '.combobox, .combobox-input, .combobox-list, .combobox-item, ' +
-    '.caret-btn, .branch-select, .uptime, ' +
-    'button, input, select, textarea, a';
-  row.addEventListener('click', (e) => {
-    if (
-      e.target instanceof HTMLElement &&
-      e.target.closest(INTERACTIVE_SELECTOR)
-    )
-      return;
-    // When a combobox dropdown closes via selection, the browser synthesizes
-    // a click on whatever is now under the cursor (the row, because the
-    // dropdown — appended to document.body — just got display:none'd between
-    // mousedown and mouseup). Ignore that synthetic click so we don't
-    // re-render the tray mid-selection and orphan the combo's onSelect.
-    if (
-      lastComboboxInteractionAt() > 0 &&
-      Date.now() - lastComboboxInteractionAt() < 250
-    )
-      return;
-    expandedState.set(groupId, !expandedState.get(groupId));
-    render(lastGroupStates);
-  });
-
-  wrapper.appendChild(row);
-
-  // ── Expanded section ─────────────────────────────────────────────────
-  if (isExpanded) {
-    const expanded = document.createElement('div');
-    expanded.className = 'group-expanded';
-
-    // Command list (for multi mode: each with individual start/stop)
-    // For single mode already shown via picker, show here as additional detail
-    if ((gs.commands || []).length > 0) {
-      for (const cs of gs.commands) {
-        const cmd = (group.commands || []).find((c) => c.id === cs.commandId);
-        if (!cmd) continue;
-        const subRow = buildCommandSubRow(gs, cs, cmd);
-        expanded.appendChild(subRow);
-      }
-    }
-
-    // Actions section
-    if ((gs.actions || []).length > 0) {
-      const actionsDivider = document.createElement('div');
-      actionsDivider.className = 'actions-divider';
-      actionsDivider.textContent = '── Acciones ──';
-      expanded.appendChild(actionsDivider);
-
-      const actionsRow = document.createElement('div');
-      actionsRow.className = 'actions-row';
-      for (const as of gs.actions) {
-        const act = (group.actions || []).find((a) => a.id === as.actionId);
-        if (!act) continue;
-        const chip = buildActionChip(gs, as, act);
-        actionsRow.appendChild(chip);
-      }
-      expanded.appendChild(actionsRow);
-    }
-
-    wrapper.appendChild(expanded);
-  }
-
-  return wrapper;
-}
-
-// ─────────────────────── Branch selector (combobox) ──────────────────
-
-function buildBranchSelector(gs: GroupState): HTMLElement {
-  const groupId = gs.groupId;
-  const group = gs.group || {};
-
-  // Groups without a path don't have branches
-  if (!group.path) {
-    const placeholder = document.createElement('span');
-    placeholder.className = 'branch-select';
-    placeholder.style.cssText =
-      'font-size:11px; color:var(--muted); flex-shrink:0; padding:2px 4px;';
-    placeholder.textContent = 'Rama…';
-    return placeholder;
-  }
-
-  const cached = branchCache.get(groupId);
-  const initOptions = cached ? branchDataToOptions(cached) : [];
-  const initValue = cached ? cached.current || null : null;
-
-  const combo = createCombobox({
-    value: initValue,
-    options: initOptions,
-    placeholder: cached ? 'Rama…' : 'Cargando…',
-    onSelect: async (branch) => {
-      if (!branch) return;
-      combo.setLoading(true);
-      const res = await window.api.switchBranch(groupId, branch);
-      combo.setLoading(false);
-      branchCache.delete(groupId);
-      if (!res.ok) {
-        showToast(
-          `${group.name}: ${(res.error || '').split('\n')[0]}`,
-          'error',
-        );
-        // Reload branches to restore correct state
-        loadBranchesIntoCombo(groupId, combo);
-      } else {
-        showToast(`${group.name} → ${branch}`, 'ok');
-        // Update cache and combo without full re-render
-        loadBranchesIntoCombo(groupId, combo);
-      }
-    },
-  });
-
-  // If no cache, load branches asynchronously
-  if (!cached) {
-    combo.setLoading(true);
-    loadBranchesIntoCombo(groupId, combo);
-  }
-
-  return combo;
-}
-
-function branchDataToOptions(data: BranchCacheEntry): ComboboxOption[] {
-  return (data.branches || []).map((b) => ({
-    value: b,
-    label: b,
-    current: data.current === b,
-  }));
-}
-
-function loadBranchesIntoCombo(groupId: string, combo: ComboboxControl): void {
-  window.api.listBranches(groupId).then((res) => {
-    combo.setLoading(false);
-    if (!res.ok) return;
-    window.api.currentBranch(groupId).then((cur) => {
-      const data: BranchCacheEntry = {
-        branches: res.branches ?? [],
-        current: cur.ok ? (cur.branch ?? null) : null,
-      };
-      branchCache.set(groupId, data);
-      combo.setOptions(branchDataToOptions(data));
-      combo.setValue(data.current || null);
-    });
-  });
-}
-
-// ─────────────────────── Counter button helper ───────────────────────
-
-/**
- * Build a clickable counter badge that opens filtered logs.
- * @param {'warn'|'error'} kind
- * @param {number} count
- * @param {string} processId
- * @param {string} filterRegex  — passed as filter to openLogs
- */
-function buildCounterBtn(
-  kind: 'warn' | 'error',
-  count: number,
-  processId: string,
-  filterRegex: string,
-): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = `counter-btn ${kind}`;
-  btn.textContent = kind === 'warn' ? `⚠ ${count}` : `✕ ${count}`;
-  btn.title = `Ver logs filtrados por ${kind === 'warn' ? 'warnings' : 'errors'}`;
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    window.api.openLogs({ processId, filter: filterRegex });
-  });
-  return btn;
-}
-
-// ─────────────────────── Command sub-row (expanded) ──────────────────
-
-function buildCommandSubRow(
-  gs: GroupState,
-  cs: CommandRuntimeState,
-  cmd: Command,
-): HTMLElement {
-  const subRow = document.createElement('div');
-  subRow.className = 'cmd-sub-row';
-
-  const dot = document.createElement('span');
-  dot.className = `dot ${cs.color || 'stopped'}`;
-  subRow.appendChild(dot);
-
-  if (cmd.icon) {
-    const cmdIconEl = document.createElement('span');
-    cmdIconEl.className = 'cmd-sub-icon';
-    cmdIconEl.textContent = cmd.icon;
-    subRow.appendChild(cmdIconEl);
-  }
-
-  const cmdName = document.createElement('span');
-  cmdName.className = 'cmd-sub-name';
-  cmdName.textContent = cmd.name;
-  subRow.appendChild(cmdName);
-
-  if (cs.warnCount > 0 || cs.errorCount > 0) {
-    const counters = document.createElement('span');
-    counters.className = 'cmd-counters';
-    if (!cs.muteWarn && cs.warnCount > 0) {
-      const w = buildCounterBtn(
-        'warn',
-        cs.warnCount,
-        cs.processId,
-        '\\bwarn(ing)?s?\\b',
-      );
-      counters.appendChild(w);
-    }
-    if (!cs.muteErr && cs.errorCount > 0) {
-      const e = buildCounterBtn(
-        'error',
-        cs.errorCount,
-        cs.processId,
-        '\\berror(s)?\\b',
-      );
-      counters.appendChild(e);
-    }
-    subRow.appendChild(counters);
-  }
-
-  // Uptime label — only when running
-  if (cs.status === 'running' && cs.startedAt) {
-    const uptimeEl = document.createElement('span');
-    uptimeEl.className = 'uptime';
-    uptimeEl.dataset.startedAt = String(cs.startedAt);
-    uptimeEl.textContent = formatUptime(Date.now() - cs.startedAt);
-    subRow.appendChild(uptimeEl);
-  }
-
-  const spacer = document.createElement('span');
-  spacer.style.flex = '1';
-  subRow.appendChild(spacer);
-
-  // Logs button
-  const logsBtn = document.createElement('button');
-  logsBtn.className = 'ghost cmd-sub-btn';
-  logsBtn.title = 'Ver logs';
-  logsBtn.textContent = '📜';
-  logsBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    window.api.openLogs(cs.processId);
-  });
-  subRow.appendChild(logsBtn);
-
-  // Auto-start toggle button (⚡)
-  // Filled accent when autoStart is on; muted outline when off.
-  const autoStartBtn = document.createElement('button');
-  autoStartBtn.className = `ghost cmd-sub-btn autostart-btn${cmd.autoStart ? ' autostart-on' : ''}`;
-  autoStartBtn.title = 'Auto-arrancar al iniciar DevBar';
-  autoStartBtn.textContent = '⚡';
-  autoStartBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    autoStartBtn.disabled = true;
-    await window.api.setCommandAutoStart(gs.groupId, cmd.id, !cmd.autoStart);
-    autoStartBtn.disabled = false;
-    // The broadcast from main will trigger a full re-render.
-  });
-  subRow.appendChild(autoStartBtn);
-
-  // Start/stop button
-  const isRunning = cs.status === 'running';
-  const toggle = document.createElement('button');
-  toggle.className = `ghost cmd-sub-btn ${isRunning ? 'stop-btn' : 'start-btn'}`;
-  toggle.textContent = isRunning ? '■' : '▶';
-  toggle.title = isRunning ? 'Detener' : 'Iniciar';
-  toggle.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    toggle.disabled = true;
-    if (isRunning) {
-      await window.api.stopProcess(cs.processId);
-    } else {
-      await window.api.startProcess(cs.processId);
-    }
-    toggle.disabled = false;
-  });
-  subRow.appendChild(toggle);
-
-  return subRow;
-}
-
-// ─────────────────────── Action chip ─────────────────────────────────
-
-function buildActionChip(
-  gs: GroupState,
-  actionState: ActionRuntimeState,
-  act: Action,
-): HTMLElement {
-  const wrap = document.createElement('div');
-  wrap.className = 'action-chip-wrap';
-
-  const chip = document.createElement('button');
-  const isRunning = actionState.status === 'running';
-  const isDone = actionState.status === 'done';
-
-  chip.className = `action-chip ${isRunning ? 'running' : ''} ${isDone ? 'done' : ''}`;
-  chip.title = `${act.name}${actionState.lastExitCode !== null ? ` (exit ${actionState.lastExitCode})` : ''}`;
-
-  // Icon + name
-  const iconPart = act.icon ? `${act.icon} ` : '';
-  if (isRunning) {
-    chip.textContent = `${iconPart}${act.name} …`;
-  } else if (isDone) {
-    const exitOk = actionState.lastExitCode === 0;
-    chip.textContent = `${iconPart}${act.name} ${exitOk ? '✓' : '✕'}`;
-    // Clear done status after a few seconds
-    if (
-      actionState.lastFinishedAt &&
-      Date.now() - actionState.lastFinishedAt > 4000
-    ) {
-      chip.className = 'action-chip';
-      chip.textContent = `${iconPart}${act.name}`;
-    }
-  } else {
-    chip.textContent = `${iconPart}${act.name}`;
-  }
-
-  chip.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (isRunning) return;
-    chip.disabled = true;
-    await window.api.runAction(gs.groupId, act.id);
-    chip.disabled = false;
-  });
-  wrap.appendChild(chip);
-
-  // Once an action has run, its output stays in the log buffer — expose it so
-  // it can be reviewed after the fact (manual or scheduled runs alike).
-  const hasLog = isRunning || actionState.lastFinishedAt != null;
-  if (hasLog && actionState.processId) {
-    const logsBtn = document.createElement('button');
-    logsBtn.className = 'ghost action-logs-btn';
-    logsBtn.title = 'Ver log de la acción';
-    logsBtn.textContent = '📜';
-    logsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.api.openLogs(actionState.processId);
-    });
-    wrap.appendChild(logsBtn);
-  }
-
-  return wrap;
-}
+setTrayHost({
+  toastElement: toastEl,
+  rerender: () => render(lastGroupStates),
+});
 
 // ─────────────────────── Event wiring ────────────────────────────────
 
@@ -780,7 +320,23 @@ byId('quit-app', HTMLButtonElement).addEventListener('click', () => {
   window.api.quit();
 });
 
+let lastPathSignature = '';
+const pushedGroupStates = latestWins();
 window.api.onUpdate((groupStates) => {
+  // This pushed snapshot is now the truth: the initial read below may still
+  // be in flight, and it carries an older one.
+  pushedGroupStates.invalidate();
+  // A group's path moving (added, retargeted, cleared) invalidates every
+  // branch verdict — including "this project has no git" — so the selector
+  // reappears as soon as the project becomes a repository.
+  const signature = groupStates
+    .map((gs) => `${gs.groupId}:${gs.group?.path ?? ''}`)
+    .sort()
+    .join('|');
+  if (signature !== lastPathSignature) {
+    lastPathSignature = signature;
+    clearBranchCache(groupStates.map((gs) => gs.groupId));
+  }
   render(groupStates);
 });
 
@@ -789,8 +345,10 @@ window.api.onPipelineUpdate((state) => {
 });
 
 window.api.onBranchesChanged(() => {
-  branchCache.clear();
-  if (lastGroupStates.length) render(lastGroupStates);
+  if (lastGroupStates.length) {
+    clearBranchCache(lastGroupStates.map((gs) => gs.groupId));
+    render(lastGroupStates);
+  }
 });
 
 window.api.onToast(({ kind, message }) => {
@@ -798,8 +356,11 @@ window.api.onToast(({ kind, message }) => {
 });
 
 // Initial load
+const initialGroupStates = pushedGroupStates.claim();
 window.api.getGroupStates().then((groupStates) => {
-  render(groupStates);
+  // A pushed update can land while this read is still pending; applying the
+  // older snapshot on top would leave the list stale until the next push.
+  if (initialGroupStates()) render(groupStates);
 });
 window.api.getPipelineState().then((state) => {
   // A pushed update can land while this read is still pending; applying the
@@ -838,11 +399,21 @@ function markVersionUpdate(status: UpdateStatus): void {
 }
 
 if (window.api.getUpdateStatus) {
+  const pushedUpdateStatus = latestWins();
+  const initialUpdateStatus = pushedUpdateStatus.claim();
   window.api
     .getUpdateStatus()
-    .then(markVersionUpdate)
+    .then((status) => {
+      // Same race as the group states: a pushed status that landed first
+      // would be undone here, dropping the dot from the version chip until
+      // the next check hours later.
+      if (initialUpdateStatus()) markVersionUpdate(status);
+    })
     .catch(() => {});
-  window.api.onUpdateStatus(markVersionUpdate);
+  window.api.onUpdateStatus((status) => {
+    pushedUpdateStatus.invalidate();
+    markVersionUpdate(status);
+  });
 }
 
 installTooltips();

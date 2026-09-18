@@ -8,6 +8,8 @@ interface GitResult {
 }
 interface GitOptions {
   timeout?: number;
+  /** Extra env merged over enhancedEnv() (e.g. a forced diagnostic locale). */
+  env?: NodeJS.ProcessEnv;
 }
 function git(
   repo: string,
@@ -21,7 +23,7 @@ function git(
       {
         timeout: options.timeout ?? 30000,
         maxBuffer: 4 * 1024 * 1024,
-        env: enhancedEnv(),
+        env: { ...enhancedEnv(), ...options.env },
       },
       (error, stdout, stderr) => {
         resolve(
@@ -38,30 +40,90 @@ function git(
     ),
   );
 }
-export async function listBranches(
-  repo: string,
-): Promise<{ ok: boolean; branches?: string[]; error?: string | undefined }> {
-  if (!repo) return { ok: false, error: 'No git repo configured' };
+/**
+ * The name to offer for a ref: `refs/heads/x` and `refs/remotes/origin/x` are
+ * the same branch seen from two sides, so both read as `x`; any other remote
+ * keeps its prefix, the way git itself prints it.
+ */
+function branchName(refname: string): string {
+  for (const prefix of ['refs/heads/', 'refs/remotes/origin/', 'refs/remotes/'])
+    if (refname.startsWith(prefix)) return refname.slice(prefix.length);
+  return refname;
+}
+
+export async function listBranches(repo: string): Promise<{
+  ok: boolean;
+  branches?: string[];
+  error?: string | undefined;
+  /**
+   * False when the path is not a git repository (or has no path): the UI
+   * hides the branch selector instead of showing a stuck "Cargando…".
+   */
+  isRepo?: boolean;
+}> {
+  if (!repo)
+    return { ok: false, isRepo: false, error: 'No git repo configured' };
+  // Probe first: `rev-parse --is-inside-work-tree` succeeds only inside a
+  // work tree. Outside one it exits 128 with git's diagnostic — so the
+  // probe's FAILURE is the ordinary non-repository result and must be
+  // classified as such, or the UI never sees isRepo: false for a
+  // configured non-repo directory. The diagnostic text is localized, so
+  // the probe forces the C locale to make it parseable.
+  const probe = await git(repo, ['rev-parse', '--is-inside-work-tree'], {
+    timeout: 5000,
+    env: { LC_ALL: 'C', LANG: 'C' },
+  });
+  if (!probe.ok) {
+    // The missing-path diagnostics (stable in the forced C locale across
+    // git versions) are the ONLY failures we can classify as "not a
+    // repository": "not a git repository" for a plain directory, and
+    // "cannot change to …: No such file or directory" when the configured
+    // path itself no longer exists (deleted/renamed folder). The
+    // "cannot change to" prefix alone is NOT enough — it also prefixes
+    // operational failures like "Permission denied", which say nothing
+    // about whether the folder is a repository.
+    const stderr = probe.stderr || '';
+    if (
+      stderr.includes('fatal: not a git repository') ||
+      (stderr.includes('fatal: cannot change to') &&
+        stderr.includes('No such file or directory'))
+    ) {
+      return { ok: false, isRepo: false, error: 'not a git repository' };
+    }
+    // git timed out, is missing, or failed for another operational
+    // reason: we learned nothing, so do NOT assert "not a repository" —
+    // that verdict would make the UI hide the selector (negative cache)
+    // even though the project may be a perfectly good repo.
+    return { ok: false, error: probe.error ?? 'git probe failed' };
+  }
+  if (probe.stdout !== 'true') {
+    return { ok: false, isRepo: false, error: 'not a git repository' };
+  }
   const result = await git(repo, [
+    // Full refnames, not `%(refname:short)`. The short form of
+    // `refs/remotes/origin/HEAD` — the pointer every `git clone` writes — is
+    // just `origin`, indistinguishable from a branch of that name, so the
+    // guard below could never see it and the selector offered the remote
+    // itself as somewhere to switch to.
     'for-each-ref',
-    '--format=%(refname:short)',
+    '--format=%(refname)',
     'refs/heads',
     'refs/remotes',
   ]);
-  if (!result.ok) return { ok: false, error: result.error };
+  if (!result.ok) return { ok: false, isRepo: true, error: result.error };
   const seen = new Set<string>();
   const branches: string[] = [];
   for (const raw of result.stdout.split('\n')) {
     const line = raw.trim();
     if (!line || line.endsWith('/HEAD')) continue;
-    const name = line.startsWith('origin/') ? line.slice(7) : line;
+    const name = branchName(line);
     if (!seen.has(name)) {
       seen.add(name);
       branches.push(name);
     }
   }
   branches.sort();
-  return { ok: true, branches };
+  return { ok: true, branches, isRepo: true };
 }
 export async function currentBranch(
   repo: string,
@@ -76,7 +138,18 @@ export async function switchBranch(
 ): Promise<{ ok: boolean; error?: string | undefined }> {
   if (!repo) return { ok: false, error: 'No git repo configured' };
   if (!branch) return { ok: false, error: 'No branch specified' };
-  const dirty = await git(repo, ['status', '--porcelain']);
+  // `--untracked-files=no` on purpose: a checkout carries untracked files
+  // across untouched, so refusing the switch over them blocks the ordinary
+  // state of a working copy — an editor's folder, a scratch note, a tool's
+  // config. Only TRACKED modifications can be lost by switching. Where an
+  // untracked file really is in the way (the target branch has one at the
+  // same path) git refuses the checkout itself, with a message naming the
+  // file, which is more useful than anything guessed from here.
+  const dirty = await git(repo, [
+    'status',
+    '--porcelain',
+    '--untracked-files=no',
+  ]);
   if (!dirty.ok) return { ok: false, error: dirty.error };
   if (dirty.stdout)
     return {
@@ -94,6 +167,17 @@ export async function switchBranch(
     ? await git(repo, ['checkout', branch])
     : await git(repo, ['checkout', '-B', branch, `origin/${branch}`]);
   if (!checkout.ok) return { ok: false, error: checkout.error };
+  // The checkout has already happened, so from here the switch SUCCEEDED and
+  // only the catch-up can fail. A branch that was never pushed has no
+  // `origin/<branch>` to pull from, and `git pull origin <branch>` answers
+  // "couldn't find remote ref" — reporting that as a failed switch told the
+  // user nothing worked while leaving them on the branch they asked for.
+  const remote = await git(repo, [
+    'rev-parse',
+    '--verify',
+    `refs/remotes/origin/${branch}`,
+  ]);
+  if (!remote.ok) return { ok: true };
   const pulled = await git(repo, ['pull', '--ff-only', 'origin', branch], {
     timeout: 60000,
   });
