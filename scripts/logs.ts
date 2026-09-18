@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { absoluteEnvDir } from './lib/script-runtime.ts';
 
 /**
  * `pnpm run logs` — print the log file location and tail it live.
@@ -20,13 +21,15 @@ function logPath(): string {
     return path.join(os.homedir(), 'Library', 'Logs', 'DevBar', 'app.log');
   if (process.platform === 'win32')
     return path.join(
-      process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
+      absoluteEnvDir('APPDATA', path.join(os.homedir(), 'AppData', 'Roaming')),
       'DevBar',
       'logs',
       'app.log',
     );
-  const config =
-    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  const config = absoluteEnvDir(
+    'XDG_CONFIG_HOME',
+    path.join(os.homedir(), '.config'),
+  );
   return path.join(config, 'DevBar', 'logs', 'app.log');
 }
 

@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { absoluteEnvDir } from './lib/script-runtime.ts';
 
 // ── process-kill helpers ──────────────────────────────────────────────
 // Same logic as scripts/lib/kill-trees.ts (which stays a standalone CLI
@@ -234,8 +235,10 @@ interface InstallLayout {
 
 function layout(): InstallLayout {
   if (platform === 'win32') {
-    const localAppData =
-      process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
+    const localAppData = absoluteEnvDir(
+      'LOCALAPPDATA',
+      path.join(os.homedir(), 'AppData', 'Local'),
+    );
     return {
       unpackedDir: path.join(ROOT, 'dist', 'electron-builder', 'win-unpacked'),
       installDir: path.join(localAppData, 'Programs', 'DevBar'),

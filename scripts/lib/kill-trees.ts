@@ -24,7 +24,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { isEntrypoint } from './script-runtime.ts';
 
 /** Spawn a process, ignoring its exit status. Returns stdout or null. */
 export type KillTreeRun = (cmd: string, args: string[]) => string | null;
@@ -286,14 +286,7 @@ export function posixKillServiceTrees(
 // Used by install-local.sh (bash) so all three OSes share one
 // implementation of the tree walk instead of three.
 
-function isDirectRun(): boolean {
-  return (
-    process.argv[1] !== undefined &&
-    fileURLToPath(import.meta.url) === process.argv[1]
-  );
-}
-
-if (isDirectRun()) {
+if (isEntrypoint(import.meta.url)) {
   const patterns = process.argv.slice(2);
   if (process.platform === 'win32') {
     console.error(

@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import esbuild from 'esbuild';
+import { isEntrypoint } from './lib/script-runtime.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TSC = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
@@ -58,10 +59,7 @@ export async function buildApp(): Promise<void> {
 }
 
 // Direct execution: node --experimental-strip-types scripts/build.ts
-if (
-  process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (isEntrypoint(import.meta.url)) {
   buildApp().catch((error) => {
     console.error(error);
     process.exit(1);

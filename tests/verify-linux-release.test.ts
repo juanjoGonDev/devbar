@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   checkAppImage,
+  ELF_MACHINE,
   looksLikeAppImage,
 } from '../scripts/verify-linux-release.js';
 
@@ -25,10 +26,12 @@ afterEach(async () => {
   }
 });
 
-/** 16-byte ELF ident with the AppImage marker embedded at offset 8
- *  (the ELF ident padding, where the spec puts it). */
-function elfIdent(typeByte: number): Buffer {
-  const ident = Buffer.alloc(16);
+/** 20-byte ELF header prefix: the 16-byte ident with the AppImage marker
+ *  embedded at offset 8 (the ident padding, where the spec puts it),
+ *  plus e_type/e_machine — e_machine (u16 LE at 0x12) is what pins the
+ *  image to an architecture. */
+function elfIdent(typeByte: number, machine = ELF_MACHINE.x64): Buffer {
+  const ident = Buffer.alloc(20);
   ident[0] = 0x7f;
   ident[1] = 0x45; // 'E'
   ident[2] = 0x4c; // 'L'
@@ -36,6 +39,8 @@ function elfIdent(typeByte: number): Buffer {
   ident[8] = 0x41; // 'A'
   ident[9] = 0x49; // 'I'
   ident[10] = typeByte;
+  ident.writeUInt16LE(0x02, 0x10); // e_type = ET_EXEC
+  ident.writeUInt16LE(machine, 0x12);
   return ident;
 }
 
@@ -68,7 +73,7 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
         Buffer.alloc(32, 0),
       ]),
     );
-    expect(looksLikeAppImage(file)).toBe(true);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(true);
   });
 
   it('accepts the AppImageKit-12 mksquashfs layout used by electron-builder', async () => {
@@ -88,7 +93,7 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
       'appimagekit.AppImage',
       Buffer.concat([elfIdent(0x02), Buffer.alloc(64), sb]),
     );
-    expect(looksLikeAppImage(file)).toBe(true);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(true);
   });
 
   it('rejects a truncated type-2 image (ELF + marker, no filesystem)', async () => {
@@ -96,12 +101,12 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
       'truncated.AppImage',
       Buffer.concat([elfIdent(0x02), Buffer.alloc(64, 0xab)]),
     );
-    expect(looksLikeAppImage(file)).toBe(false);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(false);
   });
 
-  it('rejects a 16-byte marker-only blob', async () => {
+  it('rejects a header-only blob (no appended filesystem)', async () => {
     const file = await writeFixture('blob.AppImage', elfIdent(0x02));
-    expect(looksLikeAppImage(file)).toBe(false);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(false);
   });
 
   it('does not trust a bare "hsqs" magic inside the runtime ELF', async () => {
@@ -119,7 +124,7 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
       'spurious.AppImage',
       Buffer.concat([elfIdent(0x02), spuriousBlock, Buffer.alloc(64, 0xab)]),
     );
-    expect(looksLikeAppImage(file)).toBe(false);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(false);
   });
 
   it('accepts the image when a valid superblock follows spurious magic', async () => {
@@ -131,7 +136,7 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
       'mixed.AppImage',
       Buffer.concat([elfIdent(0x02), spurious, Buffer.alloc(32), superblock()]),
     );
-    expect(looksLikeAppImage(file)).toBe(true);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(true);
   });
 
   it('finds a superblock that straddles the 1 MiB scan boundary', async () => {
@@ -141,7 +146,7 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
     elfIdent(0x02).copy(buffer, 0);
     superblock().copy(buffer, sbOffset);
     const file = await writeFixture('boundary.AppImage', buffer);
-    expect(looksLikeAppImage(file)).toBe(true);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(true);
   });
 
   it('accepts a type-1 image with a PVD signature at sector 16', async () => {
@@ -149,14 +154,14 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
     elfIdent(0x01).copy(buffer, 0); // (type 1 is not an ELF; the header
     buffer.write('CD001', 32769, 'latin1'); // bytes are not checked)
     const file = await writeFixture('iso.AppImage', buffer);
-    expect(looksLikeAppImage(file)).toBe(true);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(true);
   });
 
   it('rejects a type-1 image without the PVD signature', async () => {
     const buffer = Buffer.alloc(32769 + 5);
     elfIdent(0x01).copy(buffer, 0);
     const file = await writeFixture('iso-broken.AppImage', buffer);
-    expect(looksLikeAppImage(file)).toBe(false);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(false);
   });
 
   it('rejects an unknown marker type byte', async () => {
@@ -164,7 +169,7 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
       'unknown.AppImage',
       Buffer.concat([elfIdent(0x03), superblock()]),
     );
-    expect(looksLikeAppImage(file)).toBe(false);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(false);
   });
 
   it('rejects a type-2 file that is not an ELF at offset 0', async () => {
@@ -178,7 +183,7 @@ describe('looksLikeAppImage (scripts/verify-linux-release.ts)', () => {
       'noelf.AppImage',
       Buffer.concat([header, superblock()]),
     );
-    expect(looksLikeAppImage(file)).toBe(false);
+    expect(looksLikeAppImage(file, ELF_MACHINE.x64)).toBe(false);
   });
 });
 
@@ -188,7 +193,7 @@ describe('checkAppImage diagnostics (scripts/verify-linux-release.ts)', () => {
       'good.AppImage',
       Buffer.concat([elfIdent(0x02), Buffer.alloc(32), superblock()]),
     );
-    const result = checkAppImage(file);
+    const result = checkAppImage(file, ELF_MACHINE.x64);
     expect(result.ok).toBe(true);
     expect(result.detail).toBe(null);
   });
@@ -209,16 +214,16 @@ describe('checkAppImage diagnostics (scripts/verify-linux-release.ts)', () => {
       'truncated.AppImage',
       Buffer.concat([elfIdent(0x02), bad]),
     );
-    const result = checkAppImage(file);
+    const result = checkAppImage(file, ELF_MACHINE.x64);
     expect(result.ok).toBe(false);
     expect(result.detail).toMatch(/size=\d+B/);
     expect(result.detail).toMatch(/block=0 log=17/);
     expect(result.detail).toMatch(/block 0 != 2\^17/);
   });
 
-  it('explains a marker-only blob', async () => {
+  it('explains a header-only blob', async () => {
     const file = await writeFixture('blob.AppImage', elfIdent(0x02));
-    const result = checkAppImage(file);
+    const result = checkAppImage(file, ELF_MACHINE.x64);
     expect(result.ok).toBe(false);
     expect(result.detail).toMatch(/no valid SquashFS superblock/);
   });
@@ -232,15 +237,61 @@ describe('checkAppImage diagnostics (scripts/verify-linux-release.ts)', () => {
       'noelf.AppImage',
       Buffer.concat([header, superblock()]),
     );
-    const result = checkAppImage(file);
+    const result = checkAppImage(file, ELF_MACHINE.x64);
     expect(result.ok).toBe(false);
     expect(result.detail).toMatch(/ELF magic/);
   });
 
   it('explains an unknown type byte', async () => {
     const file = await writeFixture('unknown.AppImage', elfIdent(0x03));
-    const result = checkAppImage(file);
+    const result = checkAppImage(file, ELF_MACHINE.x64);
     expect(result.ok).toBe(false);
     expect(result.detail).toMatch(/unknown AppImage type byte/);
+  });
+});
+
+describe('AppImage architecture gate (ELF e_machine)', () => {
+  const validImage = (machine: number): Buffer =>
+    Buffer.concat([elfIdent(0x02, machine), Buffer.alloc(32), superblock()]);
+
+  it('accepts each architecture against its own e_machine', async () => {
+    for (const [architecture, machine] of Object.entries(ELF_MACHINE)) {
+      const file = await writeFixture(
+        `DevBar-1.0.0-linux-${architecture}.AppImage`,
+        validImage(machine),
+      );
+      expect(looksLikeAppImage(file, machine), architecture).toBe(true);
+    }
+  });
+
+  it('rejects an x64 binary shipped under the arm64 artifact name', async () => {
+    // The regression: format alone accepts it — only e_machine tells the
+    // two apart, and only the x64 artifact is ever smoke-launched in CI.
+    const file = await writeFixture(
+      'DevBar-1.0.0-linux-arm64.AppImage',
+      validImage(ELF_MACHINE.x64),
+    );
+    const result = checkAppImage(file, ELF_MACHINE.arm64);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('ELF e_machine 0x3e');
+    expect(result.detail).toContain('expected 0xb7');
+  });
+
+  it('rejects an armv7 binary shipped under the arm64 artifact name', async () => {
+    const file = await writeFixture(
+      'DevBar-1.0.0-linux-arm64.AppImage',
+      validImage(ELF_MACHINE.armv7),
+    );
+    expect(looksLikeAppImage(file, ELF_MACHINE.arm64)).toBe(false);
+  });
+
+  it('rejects a file truncated before e_machine', async () => {
+    const file = await writeFixture(
+      'short.AppImage',
+      elfIdent(0x02).subarray(0, 18),
+    );
+    const result = checkAppImage(file, ELF_MACHINE.x64);
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('e_machine');
   });
 });

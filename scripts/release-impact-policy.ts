@@ -21,8 +21,10 @@ const RELEASE_PREFIXES = ['assets/', 'renderer/', 'src/'];
 const RELEASE_EXACT_PATHS = new Set([
   '.npmrc',
   'scripts/build-macos-release.sh',
-  'scripts/build.sh',
   'scripts/build.ts',
+  // Shared by build.ts and the release verifiers; a change to it changes
+  // whether those scripts run at all.
+  'scripts/lib/script-runtime.ts',
   'scripts/package-electron.ts',
   'scripts/package-macos-app.sh',
   'scripts/package-win-linux.ts',

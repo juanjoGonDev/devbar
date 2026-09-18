@@ -97,6 +97,18 @@ describe('renderDesktopEntry', () => {
     expect(content).toContain(`Exec="/home/u/odd\\\\\\\\path/devbar"`);
   });
 
+  it('escapes newline, tab and carriage return so Exec stays one line', () => {
+    // A key file is line-based: emitted raw, a newline would end the Exec=
+    // line and the rest of the path would be read as a second key — an
+    // extra Exec= that the desktop environment would launch instead.
+    const content = renderDesktopEntry('/home/u/a\nExec=/evil\tb\rc/devbar');
+    expect(content).toContain(`Exec="/home/u/a\\nExec=/evil\\tb\\rc/devbar"`);
+    const execLines = content
+      .split('\n')
+      .filter((line) => line.startsWith('Exec='));
+    expect(execLines).toHaveLength(1);
+  });
+
   it('doubles literal % (field codes are expanded after unquoting)', () => {
     // Unquoted % would be read as a field-code start (%u, %f, …).
     const content = renderDesktopEntry('/home/u/a%ub/devbar');
@@ -168,20 +180,20 @@ describe('desktopLauncherPath', () => {
 });
 
 describe('startMenuLnkPath', () => {
+  // The Windows branch only ever runs on win32, where path.isAbsolute IS
+  // path.win32.isAbsolute. This suite also runs on POSIX CI, where a
+  // `C:\…` literal is NOT absolute and would be rejected by the guard —
+  // so the fixture uses a value that is absolute under both.
+  const appData = path.join(path.sep, 'Users', 'u', 'AppData', 'Roaming');
+
   it('lives under %APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs', () => {
-    withEnvVar('APPDATA', 'C:\\Users\\u\\AppData\\Roaming', () => {
+    withEnvVar('APPDATA', appData, () => {
       expect(startMenuProgramsDir()).toBe(
-        path.join(
-          'C:\\Users\\u\\AppData\\Roaming',
-          'Microsoft',
-          'Windows',
-          'Start Menu',
-          'Programs',
-        ),
+        path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
       );
       expect(startMenuLnkPath()).toBe(
         path.join(
-          'C:\\Users\\u\\AppData\\Roaming',
+          appData,
           'Microsoft',
           'Windows',
           'Start Menu',
@@ -191,6 +203,32 @@ describe('startMenuLnkPath', () => {
       );
     });
   });
+
+  it.each([
+    ['empty', ''],
+    ['relative', path.join('relative', 'roaming')],
+  ])(
+    'ignores an %s APPDATA and falls back to ~/AppData/Roaming',
+    (_label, value) => {
+      // `??` alone would let the empty string through and
+      // path.join('', 'Microsoft', …) yields a RELATIVE path resolved
+      // against the process CWD — the shortcut would land in the
+      // checkout while the install still reports success.
+      withEnvVar('APPDATA', value, () => {
+        expect(startMenuProgramsDir()).toBe(
+          path.join(
+            os.homedir(),
+            'AppData',
+            'Roaming',
+            'Microsoft',
+            'Windows',
+            'Start Menu',
+            'Programs',
+          ),
+        );
+      });
+    },
+  );
 });
 
 describe('lnkCommand', () => {

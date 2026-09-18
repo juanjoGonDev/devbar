@@ -2,6 +2,7 @@ import { existsSync, openSync, readSync, closeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import packageJson from '../package.json' with { type: 'json' };
+import { isEntrypoint } from './lib/script-runtime.ts';
 import { verifyReleaseArtifactSet } from './release-artifacts.js';
 
 /**
@@ -32,8 +33,11 @@ const version = process.argv[3] || packageJson.version;
  * The bare MZ prefix alone would also accept a non-empty file that
  * happens to start with those bytes (e.g. a truncated or corrupted
  * arm64 artifact that never gets smoke-launched).
+ *
+ * No COFF `Machine` gate: both win targets are NSIS stubs, PE32 0x14c for
+ * every target arch — the payload architecture is in the compressed data.
  */
-function looksLikeWindowsExe(filePath: string): boolean {
+export function looksLikeWindowsExe(filePath: string): boolean {
   const fd = openSync(filePath, 'r');
   try {
     const dosHeader = Buffer.alloc(64);
@@ -76,7 +80,16 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+// Entrypoint guard so the checks stay importable from tests (same
+// pattern as verify-linux-release.ts / package-electron.ts).
+if (isEntrypoint(import.meta.url)) {
+  void main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    // On CI, mirror the failure into the job annotations: the Checks UI
+    // shows it without opening logs, and it is readable via the
+    // check-runs annotations API.
+    if (process.env.GITHUB_ACTIONS) console.error(`::error::${message}`);
+    process.exitCode = 1;
+  });
+}

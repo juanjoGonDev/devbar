@@ -14,7 +14,8 @@
  * IMPORTANT: this script is executed directly by Node's
  * --experimental-strip-types, which does NOT rewrite `.js` import
  * specifiers to `.ts` files — so, like the other strip-types scripts, it
- * must stay self-contained (node: builtins only, no relative imports).
+ * may only import node: builtins and local modules written with their
+ * `.ts` extension (see scripts/lib/script-runtime.ts).
  *
  * Usage: node --experimental-strip-types scripts/register-launcher.ts
  */
@@ -22,7 +23,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { absoluteEnvDir, isEntrypoint } from './lib/script-runtime.ts';
 
 const platform = process.platform;
 /** Repo root: this script lives in <repo>/scripts/. */
@@ -51,11 +53,10 @@ export const DESKTOP_FILE_NAME = 'devbar.desktop';
  * reports success), so only a non-empty absolute value is honored.
  */
 export function desktopApplicationsDir(): string {
-  const xdg = (process.env.XDG_DATA_HOME ?? '').trim();
-  const base =
-    xdg !== '' && path.isAbsolute(xdg)
-      ? xdg
-      : path.join(os.homedir(), '.local', 'share');
+  const base = absoluteEnvDir(
+    'XDG_DATA_HOME',
+    path.join(os.homedir(), '.local', 'share'),
+  );
   return path.join(base, 'applications');
 }
 
@@ -92,16 +93,23 @@ export function renderDesktopEntry(
   //    string unescape (\\ -> \) runs BEFORE the quoting unescape.
   const quote = (value: string): string => {
     let out = value.replace(/%/g, '%%');
-    if (!/[\t\n "'\\><~|&;$*?#()`]/.test(value)) return out;
+    if (!/[\t\n\r "'\\><~|&;$*?#()`]/.test(value)) return out;
     // Inside quotes, only \ " ` $ are escaped — and a literal \ needs FOUR
     // backslashes in the file: the parser applies the generic string
     // unescape (\\ -> \) BEFORE the quoting unescape, so two levels are
-    // consumed. One character-mapping pass (chained regex-replace forms are
-    // assumed by static checkers to target a single unescape stage and get
-    // flagged as incomplete or double-escaped):
-    out = out.replace(/[\\\"`$]/g, (ch) =>
-      ch === '\\' ? '\\\\\\\\' : `\\${ch}`,
-    );
+    // consumed. A newline, tab or carriage return has no literal form in a
+    // line-based key file — emitted raw, a newline would end the Exec= line
+    // and the remainder would be read as a second key — so they take their
+    // generic string escapes. One character-mapping pass (chained
+    // regex-replace forms are assumed by static checkers to target a single
+    // unescape stage and get flagged as incomplete or double-escaped):
+    out = out.replace(/[\\\"`$\n\t\r]/g, (ch) => {
+      if (ch === '\\') return '\\\\\\\\';
+      if (ch === '\n') return '\\n';
+      if (ch === '\t') return '\\t';
+      if (ch === '\r') return '\\r';
+      return `\\${ch}`;
+    });
     return `"${out}"`;
   };
   const iconString = (value: string): string =>
@@ -123,8 +131,10 @@ export function renderDesktopEntry(
  * Menu shortcuts live.
  */
 export function startMenuProgramsDir(): string {
-  const appData =
-    process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
+  const appData = absoluteEnvDir(
+    'APPDATA',
+    path.join(os.homedir(), 'AppData', 'Roaming'),
+  );
   return path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs');
 }
 
@@ -227,8 +237,10 @@ export function ensureInstallIcon(
 /** Where install-local puts the app on this platform. */
 function installDir(): string {
   if (platform === 'win32') {
-    const localAppData =
-      process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
+    const localAppData = absoluteEnvDir(
+      'LOCALAPPDATA',
+      path.join(os.homedir(), 'AppData', 'Local'),
+    );
     return path.join(localAppData, 'Programs', 'DevBar');
   }
   return path.join(os.homedir(), '.local', 'share', 'DevBar');
@@ -316,8 +328,4 @@ function main(): void {
 
 // Direct execution only (platform.ts spawns us); importing us for the pure
 // functions (tests) must not run the installer-side effects.
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  pathToFileURL(path.resolve(process.argv[1])).href ===
-    pathToFileURL(fileURLToPath(import.meta.url)).href;
-if (invokedDirectly) main();
+if (isEntrypoint(import.meta.url)) main();

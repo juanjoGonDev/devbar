@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, fstatSync, openSync, readSync, closeSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import packageJson from '../package.json' with { type: 'json' };
+import { isEntrypoint } from './lib/script-runtime.ts';
 import { verifyReleaseArtifactSet } from './release-artifacts.js';
 
 /**
@@ -26,6 +27,37 @@ const ROOT = findRepoRoot();
 const outputDirectory =
   process.argv[2] || path.join(ROOT, 'dist', 'electron-builder');
 const version = process.argv[3] || packageJson.version;
+
+const LINUX_ARCHITECTURES = ['x64', 'arm64', 'armv7'] as const;
+type LinuxArchitecture = (typeof LINUX_ARCHITECTURES)[number];
+
+/** ELF `e_machine` (EM_*) value each release architecture must declare. */
+export const ELF_MACHINE: Record<LinuxArchitecture, number> = {
+  x64: 0x3e, // EM_X86_64
+  arm64: 0xb7, // EM_AARCH64
+  armv7: 0x28, // EM_ARM
+};
+
+/** Debian control `Architecture:` value for each release architecture. */
+const DEB_ARCHITECTURE: Record<LinuxArchitecture, string> = {
+  x64: 'amd64',
+  arm64: 'arm64',
+  armv7: 'armhf',
+};
+
+/**
+ * The architecture an artifact name PROMISES. The file contents are then
+ * checked against it: format alone would accept an x64 binary shipped
+ * under the arm64 name, and only the x64 artifacts are ever launched in
+ * CI, so nothing downstream would catch the swap.
+ */
+function artifactArchitecture(name: string): LinuxArchitecture {
+  const parsed = /-linux-(x64|arm64|armv7)\./.exec(name)?.[1];
+  const architecture = LINUX_ARCHITECTURES.find((value) => value === parsed);
+  if (architecture === undefined)
+    throw new Error(`cannot determine architecture from ${name}`);
+  return architecture;
+}
 
 /**
  * SquashFS superblock acceptance. The superblock MUST declare its data
@@ -168,7 +200,10 @@ function findSquashfsSuperblock(filePath: string): {
  * CI failure on a real-looking image is diagnosable from the step
  * output instead of a bare "not a valid AppImage".
  */
-export function checkAppImage(filePath: string): {
+export function checkAppImage(
+  filePath: string,
+  expectedMachine: number,
+): {
   ok: boolean;
   detail: string | null;
 } {
@@ -196,6 +231,19 @@ export function checkAppImage(filePath: string): {
         return { ok: false, detail: 'file too small for the ELF header' };
       if (elf.toString('latin1') !== '\x7fELF')
         return { ok: false, detail: 'no \\x7fELF magic at offset 0' };
+      // e_machine (u16 LE at 0x12) is the only field that distinguishes
+      // an x64 runtime from an arm64/armv7 one, so without it a binary
+      // built for the wrong CPU passes under the architecture its
+      // artifact name claims.
+      const machine = Buffer.alloc(2);
+      if (readSync(fd, machine, 0, 2, 0x12) < 2)
+        return { ok: false, detail: 'file too small for the ELF e_machine' };
+      const declaredMachine = machine.readUInt16LE(0);
+      if (declaredMachine !== expectedMachine)
+        return {
+          ok: false,
+          detail: `ELF e_machine 0x${declaredMachine.toString(16)} at offset 0x12, expected 0x${expectedMachine.toString(16)}`,
+        };
       // The runtime is there — now the payload (see above).
       const squashfs = findSquashfsSuperblock(filePath);
       return squashfs.found
@@ -225,8 +273,11 @@ export function checkAppImage(filePath: string): {
 }
 
 /** Boolean convenience wrapper around checkAppImage (unit tests). */
-export function looksLikeAppImage(filePath: string): boolean {
-  return checkAppImage(filePath).ok;
+export function looksLikeAppImage(
+  filePath: string,
+  expectedMachine: number,
+): boolean {
+  return checkAppImage(filePath, expectedMachine).ok;
 }
 
 function dpkgDebAvailable(): boolean {
@@ -251,15 +302,19 @@ async function main(): Promise<void> {
   );
 
   // 2. Contents: AppImage structure on every AppImage (marker +
-  //    container +, for type 2, the appended filesystem).
+  //    container +, for type 2, the appended filesystem) AND the
+  //    architecture its name promises.
   for (const name of result.artifactNames) {
     if (!name.endsWith('.AppImage')) continue;
+    const architecture = artifactArchitecture(name);
     const filePath = path.join(outputDirectory, name);
-    const check = checkAppImage(filePath);
+    const check = checkAppImage(filePath, ELF_MACHINE[architecture]);
     if (!check.ok)
-      throw new Error(`${name} is not a valid AppImage: ${check.detail}`);
+      throw new Error(
+        `${name} is not a valid ${architecture} AppImage: ${check.detail}`,
+      );
     console.log(
-      `ok: ${name} (AppImage structure: marker + container + filesystem)`,
+      `ok: ${name} (AppImage structure: marker + container + filesystem, ELF ${architecture})`,
     );
   }
 
@@ -269,7 +324,18 @@ async function main(): Promise<void> {
   const debNames = result.artifactNames.filter((name) => name.endsWith('.deb'));
   if (dpkgDebAvailable()) {
     for (const name of debNames) {
+      const architecture = artifactArchitecture(name);
       const filePath = path.join(outputDirectory, name);
+      const declaredArchitecture = execFileSync(
+        'dpkg-deb',
+        ['-f', filePath, 'Architecture'],
+        { encoding: 'utf8' },
+      ).trim();
+      const expectedArchitecture = DEB_ARCHITECTURE[architecture];
+      if (declaredArchitecture !== expectedArchitecture)
+        throw new Error(
+          `${name} declares Architecture: ${declaredArchitecture || '<missing>'}, expected ${expectedArchitecture}`,
+        );
       const contents = execFileSync('dpkg-deb', ['-c', filePath], {
         encoding: 'utf8',
       });
@@ -289,22 +355,24 @@ async function main(): Promise<void> {
           `${name} is missing its 256px icon.\n    Icon entries found in the deb:\n    ${iconLines || '(none)'}`,
         );
       }
-      console.log(`ok: ${name} (dpkg -c: desktop entry + icon present)`);
+      console.log(
+        `ok: ${name} (dpkg -c: desktop entry + icon present, Architecture: ${declaredArchitecture})`,
+      );
     }
-  } else {
+  } else if (debNames.length > 0) {
+    // dpkg-deb is the ONLY structural check on the .deb: skipping it
+    // turns a broken package into a green release job, so on CI the
+    // missing (or unusable) tool is an error, not a log line.
+    const reason = `dpkg-deb is unavailable on this host, so the .deb content check cannot run: ${debNames.join(', ')}`;
+    if (process.env.CI) throw new Error(reason);
     for (const name of debNames)
-      console.log(`skip: ${name} (dpkg-deb no disponible en este host)`);
+      console.log(`skip: ${name} (dpkg-deb unavailable on this host)`);
   }
 }
 
 // Entrypoint guard so the checks stay importable from tests (same
 // pattern as package-electron.ts).
-const entrypointPath = process.argv[1];
-const isEntrypoint =
-  entrypointPath !== undefined &&
-  import.meta.url === pathToFileURL(entrypointPath).href;
-
-if (isEntrypoint) {
+if (isEntrypoint(import.meta.url)) {
   void main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
