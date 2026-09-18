@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  installTerminationCleanup,
   logPath,
   tailLogs,
   type TailChild,
@@ -41,6 +42,10 @@ interface SpawnCall {
 
 interface Harness {
   child: TailChild;
+  /** One entry per `child.kill()` the script asked for. */
+  kills: number[];
+  /** Runs what the script wired to SIGINT/SIGTERM/exit. */
+  terminate: () => void;
   spawns: SpawnCall[];
   info: string[];
   warn: string[];
@@ -62,6 +67,7 @@ function tail(options: {
   const exitCodes: number[] = [];
   const errorListeners: ((error: Error) => void)[] = [];
   const closeListeners: ((code: number | null) => void)[] = [];
+  const kills: number[] = [];
   const child = {
     on: (event: string, listener: unknown): unknown => {
       if (event === 'error')
@@ -70,7 +76,12 @@ function tail(options: {
         closeListeners.push(listener as (code: number | null) => void);
       return undefined;
     },
+    kill: (): unknown => {
+      kills.push(Date.now());
+      return true;
+    },
   } as unknown as TailChild;
+  const cleanups: (() => void)[] = [];
 
   const deps: TailDeps = {
     platform: options.platform ?? 'linux',
@@ -84,11 +95,17 @@ function tail(options: {
     info: (message) => info.push(message),
     warn: (message) => warn.push(message),
     setExitCode: (code) => exitCodes.push(code),
+    onExit: (cleanup) => cleanups.push(cleanup),
   };
 
   const result = tailLogs(deps);
   return {
     child,
+    kills,
+    /** Runs what the script wired to SIGINT/SIGTERM/exit. */
+    terminate: () => {
+      for (const cleanup of cleanups) cleanup();
+    },
     spawns,
     info,
     warn,
@@ -171,6 +188,54 @@ describe('scripts/logs.ts', () => {
           path.join(home, '.config', 'DevBar', 'logs', 'app.log'),
         );
       });
+    });
+  });
+
+  describe('installTerminationCleanup', () => {
+    function host(): {
+      host: {
+        on: (e: string, l: () => void) => unknown;
+        exit: (c: number) => void;
+      };
+      fire: (event: string) => void;
+      exits: number[];
+    } {
+      const listeners = new Map<string, () => void>();
+      const exits: number[] = [];
+      return {
+        host: {
+          on: (event, listener) => listeners.set(event, listener),
+          exit: (code) => exits.push(code),
+        },
+        fire: (event) => {
+          const listener = listeners.get(event);
+          if (!listener) throw new Error(`no listener for ${event}`);
+          listener();
+        },
+        exits,
+      };
+    }
+
+    it.each(['SIGINT', 'SIGTERM', 'SIGHUP'])(
+      'cleans up and exits on %s',
+      (signal) => {
+        const h = host();
+        let cleaned = 0;
+        installTerminationCleanup(h.host, () => (cleaned += 1));
+        h.fire(signal);
+        expect(cleaned).toBe(1);
+        expect(h.exits).toEqual([0]);
+      },
+    );
+
+    it('cleans up on a normal exit, which raises no signal', () => {
+      const h = host();
+      let cleaned = 0;
+      installTerminationCleanup(h.host, () => (cleaned += 1));
+      h.fire('exit');
+      expect(cleaned).toBe(1);
+      // Nothing to exit from: the process is already leaving.
+      expect(h.exits).toEqual([]);
     });
   });
 
@@ -276,6 +341,23 @@ describe('scripts/logs.ts', () => {
       const harness = tail({});
       harness.emitClose(0);
       expect(harness.exitCodes).toEqual([]);
+    });
+
+    it('kills the tail when this process is told to stop', () => {
+      // Ctrl+C signals the whole process group and reaches `tail` anyway, but
+      // a plain kill of this process does not — and `tail -F` then keeps
+      // reading the file with nobody left to read it, one orphan per run.
+      const run = tail({});
+      expect(run.kills).toHaveLength(0);
+      run.terminate();
+      expect(run.kills).toHaveLength(1);
+    });
+
+    it('does not wire a cleanup when there was nothing to tail', () => {
+      const run = tail({ exists: false });
+      run.terminate();
+      expect(run.kills).toEqual([]);
+      expect(run.result).toBeNull();
     });
 
     it('stays successful when Ctrl+C kills the child (null code)', () => {

@@ -42,6 +42,7 @@ export function logPath(platform: NodeJS.Platform, homedir: string): string {
 export interface TailChild {
   on(event: 'error', listener: (error: Error) => void): unknown;
   on(event: 'close', listener: (code: number | null) => void): unknown;
+  kill(): unknown;
 }
 
 export interface TailSpawnOptions {
@@ -64,6 +65,13 @@ export interface TailDeps {
   info: (message: string) => void;
   warn: (message: string) => void;
   setExitCode: (code: number) => void;
+  /**
+   * Wires a cleanup to run when this process is told to stop. `Ctrl+C` in a
+   * terminal signals the whole process group and reaches the child anyway,
+   * but a plain `kill` of this process does not — and `tail -F` then keeps
+   * reading the file with nobody left to read it, one orphan per run.
+   */
+  onExit?: (cleanup: () => void) => void;
 }
 
 /**
@@ -106,6 +114,14 @@ export function tailLogs(deps: TailDeps): TailChild | null {
         )
       : deps.spawn('tail', ['-F', logFile], { stdio: 'inherit' });
 
+  deps.onExit?.(() => {
+    try {
+      child.kill();
+    } catch {
+      // Already gone: nothing to clean up.
+    }
+  });
+
   child.on('error', (error) => {
     warn(`No se pudo arrancar el tail de logs: ${error.message}`);
     setExitCode(1);
@@ -116,6 +132,31 @@ export function tailLogs(deps: TailDeps): TailChild | null {
     if (code !== null && code !== 0) setExitCode(code);
   });
   return child;
+}
+
+/** The bit of `process` the termination wiring needs. */
+export interface TerminationHost {
+  on: (event: string, listener: () => void) => unknown;
+  exit: (code: number) => never | void;
+}
+
+/**
+ * Runs `cleanup` when this process is asked to stop, whichever way it is
+ * asked. `exit` alone is not enough: a signal ends the process without it,
+ * and the signals alone are not enough either, because a normal end never
+ * raises one.
+ */
+export function installTerminationCleanup(
+  host: TerminationHost,
+  cleanup: () => void,
+): void {
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    host.on(signal, () => {
+      cleanup();
+      host.exit(0);
+    });
+  }
+  host.on('exit', cleanup);
 }
 
 // Direct execution: node --experimental-strip-types scripts/logs.ts
@@ -136,5 +177,6 @@ if (isEntrypoint(import.meta.url)) {
     setExitCode: (code) => {
       process.exitCode = code;
     },
+    onExit: (cleanup) => installTerminationCleanup(process, cleanup),
   });
 }
