@@ -170,7 +170,12 @@ describe('scripts/package-win-linux.ts', () => {
         asar: true,
         publish: null,
         directories: { output: 'dist/electron-builder' },
-        files: ['build/**/*', 'assets/**/*', 'package.json'],
+        files: [
+          'build/**/*',
+          'assets/**/*',
+          'package.json',
+          '!build/assets/fonts/**',
+        ],
       });
     });
 
@@ -267,6 +272,10 @@ describe('scripts/package-win-linux.ts', () => {
             synopsis: 'Menu bar launcher for local development services',
             description:
               'Start and stop dev services, switch git branches per group, run actions and watch logs from the system tray.',
+            // The bundled emoji webfont ships ONLY here: the per-platform
+            // file set is additive to baseConfig's (which excludes it), so
+            // the linux artifacts carry it and win ones do not.
+            files: ['build/assets/fonts/**/*'],
             target: [
               { target: 'AppImage', arch: ['x64'] },
               { target: 'deb', arch: ['x64'] },

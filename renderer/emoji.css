@@ -1,0 +1,19 @@
+/*
+ * Noto Color Emoji (SIL OFL 1.1), bundled via @fontsource/noto-color-emoji
+ * and copied to build/assets/fonts by the build — LINUX packages only,
+ * since macOS (Apple Color Emoji) and Windows (Segoe UI Emoji) already
+ * carry their own emoji fonts, and many Linux desktops already ship a
+ * system Noto.
+ *
+ * It sits LAST in every font stack on purpose: glyph resolution walks the
+ * stack per character, so this face is only reached — and only fetched —
+ * where no native font covered the emoji. That is exactly the Raspberry
+ * Pi case: no color-emoji font installed, every emoji a tofu box.
+ */
+@font-face {
+  font-family: 'Noto Color Emoji';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(../assets/fonts/NotoColorEmoji.woff2) format('woff2');
+}

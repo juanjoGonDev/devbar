@@ -6,7 +6,8 @@ body {
   margin: 0;
   padding: 0;
   font-family:
-    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro',
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   font-size: 13px;
   color: #1d1d1f;
   background: transparent;
@@ -875,7 +876,9 @@ body.config {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
 }
 .service-row-card .actions {
   display: flex;
@@ -920,7 +923,9 @@ body.config {
   width: 110px;
 }
 .config td.cell-mono {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
@@ -1254,7 +1259,9 @@ dialog h2 {
   text-decoration: underline;
 }
 .cl-notes code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 12px;
   background: var(--bg-row-hover);
   padding: 1px 5px;
@@ -1288,7 +1295,9 @@ dialog h2 {
   color: inherit;
 }
 .field textarea {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   min-height: 64px;
   resize: vertical;
 }
@@ -2069,7 +2078,9 @@ fieldset.schedule-group legend {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
 }
 
 .sub-actions {
@@ -2274,7 +2285,9 @@ fieldset.schedule-group legend {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 12px;
 }
 .combobox-item .combobox-check {
@@ -2396,7 +2409,9 @@ button.icon-action-btn:hover {
   flex: 1 1 0;
   min-width: 0;
   max-width: 38%;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 12px;
   padding: 4px 8px;
   height: 26px;
@@ -2414,7 +2429,9 @@ button.icon-action-btn:hover {
 .env-value {
   flex: 1 1 0;
   min-width: 0;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 12px;
   padding: 4px 8px;
   height: 26px;
@@ -2573,7 +2590,9 @@ dialog form {
   text-decoration: underline dotted;
 }
 .pattern-edit {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 11px;
   padding: 2px 6px;
   flex: 1;
@@ -2996,7 +3015,9 @@ body.prescript-confirm {
 .prescript-confirm #pc-cmd {
   display: block;
   max-width: 100%;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 11px;
   color: var(--muted);
   white-space: pre-wrap;

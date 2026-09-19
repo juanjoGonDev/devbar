@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp, defaultBuildDeps } from '../scripts/build.js';
 
 /**
@@ -40,6 +40,23 @@ function makeRoot(): string {
   mkdirSync(join(root, 'assets', 'icons'), { recursive: true });
   writeFileSync(join(root, 'assets', 'icon.png'), 'top-level');
   writeFileSync(join(root, 'assets', 'icons', 'tray.png'), 'nested');
+
+  // The pinned emoji webfont the build bundles for Linux.
+  mkdirSync(
+    join(root, 'node_modules', '@fontsource', 'noto-color-emoji', 'files'),
+    { recursive: true },
+  );
+  writeFileSync(
+    join(
+      root,
+      'node_modules',
+      '@fontsource',
+      'noto-color-emoji',
+      'files',
+      'noto-color-emoji-emoji-400-normal.woff2',
+    ),
+    'woff2-payload',
+  );
   return root;
 }
 
@@ -130,6 +147,45 @@ describe('scripts/build.ts', () => {
       expect(existsSync(join(run.root, 'build', 'renderer', 'notes.md'))).toBe(
         false,
       );
+    });
+
+    it('copies the bundled emoji webfont into build/assets/fonts', async () => {
+      const run = await build(makeRoot());
+      expect(
+        readFileSync(
+          join(run.root, 'build', 'assets', 'fonts', 'NotoColorEmoji.woff2'),
+          'utf8',
+        ),
+      ).toBe('woff2-payload');
+    });
+
+    it('only warns when the emoji font is missing from node_modules', async () => {
+      // A stale node_modules must still build a working app on systems with
+      // their own emoji font — the warning is the visible trace.
+      const root = makeRoot();
+      rmSync(join(root, 'node_modules', '@fontsource'), {
+        recursive: true,
+        force: true,
+      });
+      const warnings: string[] = [];
+      const spy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation((message: unknown) => {
+          warnings.push(String(message));
+        });
+      try {
+        await build(root);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(
+        warnings.some((message) => message.includes('Noto Color Emoji')),
+      ).toBe(true);
+      expect(
+        existsSync(
+          join(root, 'build', 'assets', 'fonts', 'NotoColorEmoji.woff2'),
+        ),
+      ).toBe(false);
     });
 
     it('copies assets recursively, subdirectories included', async () => {

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { BrowserWindow, Notification } from 'electron';
+import type {
+  BrowserWindow,
+  BrowserWindowConstructorOptions,
+  Notification,
+} from 'electron';
 import {
   createNotifications,
   type NotificationDeps,
@@ -55,6 +59,7 @@ function harness(overrides: Partial<NotificationDeps> = {}) {
     notifySuccessEnabled: () => true,
     openConfig: (goto) => opened.push(goto),
     applyUpdate: () => applied.push('update'),
+    platform: 'darwin',
     setTimer: (fn, ms) => {
       const timer = { fn, ms, cleared: false };
       timers.push(timer);
