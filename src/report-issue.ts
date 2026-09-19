@@ -10,7 +10,7 @@
  * and puts the clipboard text where it belongs.
  */
 
-export const ISSUES_URL = 'https://github.com/juanjoGonDev/devbar/issues/new';
+const ISSUES_URL = 'https://github.com/juanjoGonDev/devbar/issues/new';
 
 /** GitHub's new-issue form degrades past a few KB of query string; keep a
  *  generous margin. */
@@ -24,7 +24,7 @@ export const URL_TAIL_CHARS = 3000;
 export const CLIPBOARD_TAIL_LINES = 400;
 export const CLIPBOARD_TAIL_CHARS = 12_000;
 
-export interface IssueContext {
+interface IssueContext {
   version: string;
   platform: string;
   arch: string;
@@ -91,7 +91,7 @@ export function buildIssueBody(
   return sections.join('\n');
 }
 
-export interface PreparedIssue {
+interface PreparedIssue {
   /** Where to send the browser. */
   url: string;
   /** False when the body did not fit the URL and the user must paste it. */

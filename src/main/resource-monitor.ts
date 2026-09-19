@@ -11,7 +11,7 @@
  * read the emitted lines. The monitor itself never touches Electron.
  */
 
-export interface ResourceSample {
+interface ResourceSample {
   /** Percent of one core used since the PREVIOUS sample; null on the
    *  first sample (no window to average over). */
   cpuPercent: number | null;
@@ -56,7 +56,7 @@ export function formatSampleLine(
   );
 }
 
-export interface ResourceMonitor {
+interface ResourceMonitor {
   /** Take a sample now, attributed to `reason` (e.g. 'window-open'). */
   sample: (reason: string) => ResourceSample;
   /** Begin the periodic samples; also takes an immediate baseline. */
