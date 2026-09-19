@@ -15,6 +15,12 @@ const SHELL_NOISE_PATTERNS = [
   /^Restart Zsh to retry gitstatus/,
   /^exec zsh$/,
   /^zsh: no job control in this shell$/,
+  // bash started WITHOUT a controlling terminal (`-ic` from the packaged
+  // app: stdin is a pipe) prints this pair on every single command, on
+  // Debian/Raspberry Pi OS at least. The command itself still runs and its
+  // real output/error lines follow — these two lines are pure init chatter.
+  /^bash: cannot set terminal process group \(-?\d+\): /,
+  /^bash: no job control in this shell$/,
 ];
 
 export function stripAnsi(value: string): string {
