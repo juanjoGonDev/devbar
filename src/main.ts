@@ -16,7 +16,7 @@ import * as configStore from './config-store.js';
 import * as configIo from './config-io.js';
 import * as gitManager from './git-manager.js';
 import * as logger from './logger.js';
-import { attachResourceSampling } from './main/resource-monitor.js';
+import { attachProductionSampling } from './main/resource-monitor.js';
 import * as selfUpdate from './self-update.js';
 import * as trayIcon from './tray-icon.js';
 import * as updateCheck from './update-check.js';
@@ -101,16 +101,8 @@ try {
   console.error('logger init failed:', e); // never block startup
 }
 
-// One line per sample in app.log (cpu%, RSS/heap, Chromium processes) on
-// every window opening plus a periodic baseline: "se disparan los
-// ventiladores al abrir el menú" must come with numbers attached.
-attachResourceSampling(host, {
-  memory: () => process.memoryUsage(),
-  cpu: () => process.cpuUsage(),
-  now: () => Date.now(),
-  processes: () => app.getAppMetrics(),
-  log: (line) => console.info(line),
-});
+// Resource samples in app.log — fans-spin-up reports need numbers.
+attachProductionSampling(host, () => app.getAppMetrics());
 
 // ─────────────────────── Composition root ────────────────────────────
 

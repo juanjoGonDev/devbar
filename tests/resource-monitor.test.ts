@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  attachProductionSampling,
   attachResourceSampling,
   createResourceMonitor,
   formatSampleLine,
@@ -37,6 +38,11 @@ function harness(
   let reads = 0;
   const deps: ResourceMonitorDeps = {
     memory: () => ({ rss: 200 * 1048576, heapUsed: 60 * 1048576 }),
+    system: () => ({
+      total: 8 * 1073741824,
+      free: 1.5 * 1073741824,
+      load1: 2.75,
+    }),
     cpu: () => {
       const first = reads++ === 0;
       return { user: first ? u0 : u1, system: first ? s0 : s1 };
@@ -82,9 +88,13 @@ describe('src/main/resource-monitor.ts', () => {
           rssMB: '180.2MB',
           heapMB: '64.0MB',
           processes: 5,
+          freeMB: '1536.0MB',
+          totalMB: '8192.0MB',
+          load1: '2.75',
         }),
       ).toBe(
-        '[resources] cpu=12.3% rss=180.2MB heap=64.0MB procs=5 (window-open)',
+        '[resources] cpu=12.3% rss=180.2MB heap=64.0MB procs=5 ' +
+          'sys-mem=1536.0MB/8192.0MB load1=2.75 (window-open)',
       );
     });
 
@@ -95,6 +105,9 @@ describe('src/main/resource-monitor.ts', () => {
           rssMB: '1.0MB',
           heapMB: '0.5MB',
           processes: 1,
+          freeMB: '1536.0MB',
+          totalMB: '8192.0MB',
+          load1: '0.10',
         }),
       ).toContain('cpu=n/a');
     });
@@ -116,6 +129,23 @@ describe('src/main/resource-monitor.ts', () => {
       expect(s.rssMB).toBe('200.0MB');
       expect(s.heapMB).toBe('60.0MB');
       expect(s.processes).toBe(2);
+    });
+
+    it('records machine-wide memory and load alongside the app gauges', () => {
+      // "¿Es culpa nuestra o del OS?" — a Pi under memory pressure answers
+      // with sys-mem and load1, not with app RSS.
+      const h = harness({
+        system: () => ({
+          total: 4 * 1073741824,
+          free: 0.2 * 1073741824,
+          load1: 3.9,
+        }),
+      });
+      const s = h.monitor.sample('interval');
+      expect(s.freeMB).toBe('204.8MB');
+      expect(s.totalMB).toBe('4096.0MB');
+      expect(s.load1).toBe('3.90');
+      expect(h.lines[0]).toContain('sys-mem=204.8MB/4096.0MB load1=3.90');
     });
 
     it('writes one line per sample into the log sink', () => {
@@ -208,6 +238,32 @@ describe('src/main/resource-monitor.ts', () => {
       };
       attachResourceSampling(host, h.deps);
       expect(host.createWindow(null as never)).toBe('win');
+    });
+  });
+
+  describe('attachProductionSampling', () => {
+    it('runs on the real gauges and samples window openings', () => {
+      const lines: string[] = [];
+      const spy = vi
+        .spyOn(console, 'info')
+        .mockImplementation((line: unknown) => {
+          lines.push(String(line));
+        });
+      const host: { createWindow: (o: never) => unknown } = {
+        createWindow: () => 'win',
+      };
+      const monitor = attachProductionSampling(host, () => [
+        { type: 'renderer' },
+      ]);
+      try {
+        host.createWindow(null as never);
+      } finally {
+        spy.mockRestore();
+        monitor.stop();
+      }
+      // Real memory/cpu/os all answered; the window-open sample logged.
+      expect(lines.some((line) => line.includes('(window-open)'))).toBe(true);
+      expect(lines.some((line) => line.includes('sys-mem='))).toBe(true);
     });
   });
 });

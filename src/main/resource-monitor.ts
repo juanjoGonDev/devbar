@@ -18,6 +18,12 @@ interface ResourceSample {
   rssMB: string;
   heapMB: string;
   processes: number;
+  /** Machine-wide memory and load: a Pi under memory pressure behaves
+   *  badly because of the OS, not the app — the sample has to show
+   *  which of the two it is. */
+  freeMB: string;
+  totalMB: string;
+  load1: string;
 }
 
 export interface ResourceMonitorDeps {
@@ -25,6 +31,9 @@ export interface ResourceMonitorDeps {
   memory: () => { rss: number; heapUsed: number };
   /** Node's process.cpuUsage(): cumulative user/system CPU, microseconds. */
   cpu: () => { user: number; system: number };
+  /** Node's os.totalmem()/os.freemem()/os.loadavg() — the machine as a
+   *  whole, not just this process. */
+  system: () => { total: number; free: number; load1: number };
   /** Monotonic-ish wall clock, milliseconds. */
   now: () => number;
   /** Electron's app.getAppMetrics(), one entry per Chromium child. */
@@ -40,6 +49,39 @@ export interface ResourceMonitorDeps {
 
 export const RESOURCE_INTERVAL_MS = 60_000;
 
+import os from 'node:os';
+
+/** Production system gauges: the real machine's total/free memory and
+ *  1-minute load average (the numbers a memory-pressure story needs). */
+export function nodeSystemGauges(): {
+  total: number;
+  free: number;
+  load1: number;
+} {
+  const load = os.loadavg();
+  return { total: os.totalmem(), free: os.freemem(), load1: load[0] ?? 0 };
+}
+
+/**
+ * Production wiring: the real gauges, one sample per window opening and
+ * the periodic baseline. Only the Chromium process metrics stay injected
+ * (they come from Electron's `app`), so this module still works without
+ * Electron under test.
+ */
+export function attachProductionSampling(
+  host: { createWindow: (options: never) => unknown },
+  processMetrics: () => readonly { type: string }[],
+): ResourceMonitor {
+  return attachResourceSampling(host, {
+    memory: () => process.memoryUsage(),
+    cpu: () => process.cpuUsage(),
+    system: nodeSystemGauges,
+    now: () => Date.now(),
+    processes: processMetrics,
+    log: (line) => console.info(line),
+  });
+}
+
 function mb(bytes: number): string {
   return `${(bytes / 1048576).toFixed(1)}MB`;
 }
@@ -52,7 +94,9 @@ export function formatSampleLine(
     sample.cpuPercent === null ? 'n/a' : `${sample.cpuPercent.toFixed(1)}%`;
   return (
     `[resources] cpu=${cpu} rss=${sample.rssMB} ` +
-    `heap=${sample.heapMB} procs=${sample.processes} (${reason})`
+    `heap=${sample.heapMB} procs=${sample.processes} ` +
+    `sys-mem=${sample.freeMB}/${sample.totalMB} load1=${sample.load1} ` +
+    `(${reason})`
   );
 }
 
@@ -118,11 +162,15 @@ export function createResourceMonitor(
     }
     last = { user: cpu.user, system: cpu.system, at };
     const procs = deps.processes?.() ?? [];
+    const sys = deps.system();
     const result: ResourceSample = {
       cpuPercent,
       rssMB: mb(mem.rss),
       heapMB: mb(mem.heapUsed),
       processes: Math.max(1, procs.length),
+      freeMB: mb(sys.free),
+      totalMB: mb(sys.total),
+      load1: sys.load1.toFixed(2),
     };
     deps.log(formatSampleLine(reason, result));
     return result;
