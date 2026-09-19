@@ -199,6 +199,7 @@ describe('src/main/tray.ts', () => {
       constructor(image: NativeImage) {
         this.images.push(image);
         FakeElectronTray.instances.push(this);
+        ops.push('create');
       }
       setImage(image: NativeImage): void {
         this.images.push(image);
@@ -228,6 +229,7 @@ describe('src/main/tray.ts', () => {
 
     interface RebuildHarness {
       controller: ReturnType<typeof createTrayController>;
+      ops: string[];
       initialTray: {
         setImage: ReturnType<typeof vi.fn>;
         setTitle: ReturnType<typeof vi.fn>;
@@ -250,10 +252,27 @@ describe('src/main/tray.ts', () => {
       instances: () => FakeElectronTray[];
     }
 
+    const ops: string[] = [];
+
+    function makeIcon(alpha: number[]): unknown {
+      const buf = Buffer.alloc(alpha.length * 4);
+      alpha.forEach((a, i) => {
+        buf[i * 4] = 40;
+        buf[i * 4 + 1] = 120;
+        buf[i * 4 + 2] = 200;
+        buf[i * 4 + 3] = a;
+      });
+      return {
+        getSize: () => ({ width: alpha.length, height: 1 }),
+        toBitmap: () => buf,
+      };
+    }
+
     function rebuildHarness(
       overrides: Partial<Parameters<typeof createTrayController>[0]> = {},
     ): RebuildHarness {
       FakeElectronTray.reset();
+      ops.length = 0;
       let clock = 0;
       const clickedCalls: number[] = [];
       const deferred: { fn: () => void; at: number }[] = [];
@@ -279,7 +298,9 @@ describe('src/main/tray.ts', () => {
         setImage: vi.fn(),
         setTitle: vi.fn(),
         setToolTip: vi.fn(),
-        destroy: vi.fn(),
+        destroy: vi.fn(() => {
+          ops.push('destroy');
+        }),
       };
       const bar = {
         tray: initialTray,
@@ -291,6 +312,7 @@ describe('src/main/tray.ts', () => {
       controller.attach(bar);
       return {
         controller,
+        ops,
         initialTray,
         bar,
         clickedCalls,
@@ -332,6 +354,36 @@ describe('src/main/tray.ts', () => {
       expect(h.clickedCalls).toHaveLength(2);
       fresh?.emit('right-click');
       expect(fresh?.menus).toEqual([{ menu: true }]);
+    });
+
+    it('grow transitions push in place: no rebuild, no flicker', () => {
+      let step = 0;
+      const icons = [makeIcon([255, 0]), makeIcon([255, 255])];
+      const h = rebuildHarness({
+        loadIcon: () => icons[step++] as NativeImage,
+      });
+      h.controller.updateTitle([]); // first paint: plain setImage
+      h.controller.updateTitle([]); // covers every pixel the old had
+      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS);
+      h.flush();
+      expect(h.initialTray.setImage).toHaveBeenCalledTimes(2);
+      expect(h.instances()).toHaveLength(0);
+    });
+
+    it('shrinking alpha rebuilds: fresh item registered before the old dies', () => {
+      let step = 0;
+      const icons = [makeIcon([255, 255]), makeIcon([255, 0])];
+      const h = rebuildHarness({
+        loadIcon: () => icons[step++] as NativeImage,
+      });
+      h.controller.updateTitle([]);
+      h.controller.updateTitle([]); // a pixel turns transparent: bleed risk
+      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS);
+      h.flush();
+      expect(h.initialTray.setImage).toHaveBeenCalledTimes(1);
+      expect(h.ops).toEqual(['create', 'destroy']);
+      expect(h.bar._tray).toBe(h.instances()[0]);
+      expect(h.instances()[0]?.images[0]).toBeDefined();
     });
 
     it('never rebuilds for an image that did not change', () => {
@@ -379,8 +431,9 @@ describe('src/main/tray.ts', () => {
       }
       h.bar._tray = undefined;
       // …by swapping the pieces through a second controller configured badly.
+      let attempt = 0;
       const failing = createTrayController({
-        loadIcon: () => ({ x: 1 }) as unknown as NativeImage,
+        loadIcon: () => ({ x: attempt++ }) as unknown as NativeImage,
         isMac: false,
         hasUpdate: () => false,
         platform: 'linux',
@@ -410,7 +463,8 @@ describe('src/main/tray.ts', () => {
         'tray rebuild failed:',
         expect.any(Error),
       );
-      expect(tray.setImage).toHaveBeenCalled(); // first paint still landed
+      // first paint + the fallback push when the rebuild throws
+      expect(tray.setImage).toHaveBeenCalledTimes(2);
       FakeElectronTray.instances = original.instances;
       error.mockRestore();
     });

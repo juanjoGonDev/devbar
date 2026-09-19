@@ -19,12 +19,16 @@ import type { GroupState, TrayColor } from '../ipc-contract.js';
  * what is PAINTED, but the real values are still remembered, so releasing an
  * override repaints the true state instead of freezing the forced one.
  *
- * On Linux a visual change REBUILDS the whole tray item instead of pushing a
- * pixmap: compositor-less X11 and some applets (Raspberry Pi OS among them)
- * draw each new pixmap OVER the previous buffer instead of replacing it, so
- * the transparent pixels of the new icon showed every old state behind it.
- * A fresh item starts with a fresh surface — the only fix that does not
- * depend on the applet's painting semantics.
+ * On Linux, pushes that could leave the old icon visible REBUILD the whole
+ * tray item instead: compositor-less X11 and some applets (Raspberry Pi OS
+ * among them) draw each new pixmap OVER the previous buffer instead of
+ * replacing it, so the transparent pixels of the new icon showed every old
+ * state behind it. A fresh item starts with a fresh surface — the only fix
+ * that does not depend on the applet's painting semantics. Two refinements
+ * keep that invisible in practice: only alpha-shrinking transitions rebuild
+ * (everything else is a flicker-free in-place push), and the fresh item is
+ * registered BEFORE the stale one is destroyed, so the applet never spends
+ * a frame without an icon.
  */
 
 interface TrayLike {
@@ -84,6 +88,32 @@ export interface TrayControllerDeps {
     Tray: new (image: NativeImage) => RebuildableTray;
     buildContextMenu: () => unknown;
   };
+}
+
+/**
+ * Whether a plain pixmap push would leave the previous icon visible behind.
+ * Compositor-less applets paint each new pixmap OVER the old buffer, so any
+ * pixel that was opaque and turns transparent lets the old content bleed
+ * through — only those transitions need a fresh item surface. Grow-or-stay
+ * transitions are safe to push in place. Unreadable or resized images play
+ * safe and reset the surface.
+ */
+function needsSurfaceReset(prev: NativeImage, next: NativeImage): boolean {
+  try {
+    const a = prev.getSize();
+    const b = next.getSize();
+    if (a.width !== b.width || a.height !== b.height) return true;
+    const old = prev.toBitmap();
+    const fresh = next.toBitmap();
+    const bytes = a.width * a.height * 4;
+    if (old.length < bytes || fresh.length < bytes) return true;
+    for (let i = 3; i < bytes; i += 4) {
+      if ((old[i] ?? 0) > 0 && (fresh[i] ?? 255) < 255) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /** Minimum spacing between actual Linux tray repaints; shorter than any
@@ -159,20 +189,31 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
       pushNow(image);
       return;
     }
+    // The old item is destroyed LAST, after the fresh one is already wired
+    // in: destroying first left the applet with no icon for the whole
+    // re-registration round trip, which read as a vanish-and-reappear
+    // flicker. Registering first means the panel swaps items within a
+    // frame — never a blank moment.
+    let fresh: RebuildableTray;
     try {
-      const old = currentTray;
-      if (old && typeof (old as RebuildableTray).destroy === 'function')
-        (old as RebuildableTray).destroy();
-      const fresh = new pieces.Tray(image);
-      // menubar bound click/double-click → its own `clicked` at creation;
-      // rebind the same handlers, plus the context menu this app adds.
-      // menubar's own fields, reached deliberately: it bound its internal
-      // `_tray` and its click handlers at creation, and a rebuilt item must
-      // take over both or menubar would click/position against a dead tray.
-      const inner = bar as {
-        clicked?: () => void;
-        _tray?: TrayLike;
-      };
+      fresh = new pieces.Tray(image);
+    } catch (err) {
+      console.error('tray rebuild failed:', err);
+      // The old item is untouched and still on screen: a plain push at
+      // least shows the new state.
+      pushNow(image);
+      return;
+    }
+    // menubar bound click/double-click → its own `clicked` at creation;
+    // rebind the same handlers, plus the context menu this app adds.
+    // menubar's own fields, reached deliberately: it bound its internal
+    // `_tray` and its click handlers at creation, and a rebuilt item must
+    // take over both or menubar would click/position against a dead tray.
+    const inner = bar as {
+      clicked?: () => void;
+      _tray?: TrayLike;
+    };
+    try {
       const clicked = inner.clicked?.bind(bar);
       if (clicked) {
         fresh.on('click', clicked);
@@ -182,20 +223,36 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
         fresh.popUpContextMenu(pieces.buildContextMenu()),
       );
       fresh.setToolTip(lastTooltip);
-      inner._tray = fresh;
-      currentTray = fresh;
-      lastPushedImage = image;
-      lastPushAt = now();
     } catch (err) {
-      console.error('tray rebuild failed:', err);
+      // The item exists and shows the right icon; degraded wiring beats
+      // dropping it.
+      console.error('tray rebuild wiring failed:', err);
+    }
+    const stale = currentTray;
+    inner._tray = fresh;
+    currentTray = fresh;
+    lastPushedImage = image;
+    lastPushAt = now();
+    try {
+      if (stale && typeof (stale as RebuildableTray).destroy === 'function')
+        (stale as RebuildableTray).destroy();
+    } catch (err) {
+      console.error('tray item destroy failed:', err);
     }
   }
 
   function applyToPanel(image: NativeImage): void {
-    // The rebuild needs a slot the controller has already painted at least
-    // once: the very first paint goes through setImage, so menubar's own
-    // creation-time item is reused instead of being torn down for nothing.
-    if (linux && deps.rebuildPieces && lastPushedImage !== null) {
+    // A surface reset (fresh item) is only needed when the previous icon
+    // could bleed through the new one — a transparent pixel sitting where
+    // the old image was opaque. Every other change is a plain in-place
+    // setImage: no flicker, no applet churn. The very first paint always
+    // goes through setImage too, reusing menubar's own creation-time item.
+    if (
+      linux &&
+      deps.rebuildPieces &&
+      lastPushedImage !== null &&
+      needsSurfaceReset(lastPushedImage, image)
+    ) {
       rebuildNow(image);
       return;
     }
