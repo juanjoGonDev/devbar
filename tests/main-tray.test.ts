@@ -16,6 +16,7 @@ import type { NativeImage } from 'electron';
 import {
   createTrayController,
   patchLinuxTrayPositioning,
+  TRAY_PUSH_MIN_INTERVAL_MS,
 } from '../src/main/tray.js';
 import type { GroupState, TrayColor } from '../src/ipc-contract.js';
 import { makeGroup } from './helpers/main-fakes.js';
@@ -183,6 +184,130 @@ describe('src/main/tray.ts', () => {
       h.controller.setSimulatedCount(1);
       h.controller.updateTitle([groupState('warn', [{ warnCount: 5 }])]);
       expect(h.tooltips.at(-1)).toBe('DevBar — 1 error');
+    });
+  });
+
+  describe('linux tray push coalescing', () => {
+    interface Pushes {
+      images: unknown[];
+      at: number[];
+    }
+
+    /** Distinct images per call: identical instances must dedupe. */
+    function linuxHarness(): {
+      controller: ReturnType<typeof createTrayController>;
+      pushes: Pushes;
+      elapse: (ms: number) => void;
+      flush: () => void;
+    } {
+      let clock = 0;
+      const pushes: Pushes = { images: [], at: [] };
+      const deferred: { fn: () => void; at: number }[] = [];
+      const unique = Symbol();
+      let nth = 0;
+      const controller = createTrayController({
+        loadIcon: () =>
+          ({
+            tag: Symbol(`${String(unique)}-${nth++}`),
+          }) as unknown as NativeImage,
+        isMac: false,
+        hasUpdate: () => false,
+        platform: 'linux',
+        now: () => clock,
+        schedule: (fn, ms) => {
+          deferred.push({ fn, at: clock + ms });
+        },
+      });
+      controller.attach({
+        tray: {
+          setImage: (image) => {
+            pushes.images.push(image);
+            pushes.at.push(clock);
+          },
+          setTitle: () => undefined,
+          setToolTip: () => undefined,
+        },
+      });
+      return {
+        controller,
+        pushes,
+        elapse: (ms) => {
+          clock += ms;
+        },
+        flush: () => {
+          // Runs the deferred flushes that have come due, newest first.
+          for (const d of deferred.splice(0)) if (d.at <= clock) d.fn();
+        },
+      };
+    }
+
+    it('collapses a burst of state changes into ONE push with the last state', () => {
+      const h = linuxHarness();
+      // A start/stop churn: several updates within the window.
+      for (let i = 0; i < 5; i++) h.controller.updateTitle([]);
+      expect(h.pushes.images).toHaveLength(1);
+      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS);
+      h.flush();
+      expect(h.pushes.images).toHaveLength(2);
+    });
+
+    it('pushes immediately again once the window has elapsed', () => {
+      const h = linuxHarness();
+      h.controller.updateTitle([]);
+      expect(h.pushes.images).toHaveLength(1);
+      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS + 1);
+      h.controller.updateTitle([]);
+      expect(h.pushes.images).toHaveLength(2);
+      expect(h.pushes.at[1]).toBe(TRAY_PUSH_MIN_INTERVAL_MS + 1);
+    });
+
+    it('skips pushes whose image is identical (the cached key did not change)', () => {
+      const clock = 0;
+      const pushes: unknown[][] = [];
+      const image = { same: true } as unknown as NativeImage;
+      const controller = createTrayController({
+        loadIcon: () => image,
+        isMac: false,
+        hasUpdate: () => false,
+        platform: 'linux',
+        now: () => clock,
+        schedule: () => undefined,
+      });
+      controller.attach({
+        tray: {
+          setImage: (i) => pushes.push(i),
+          setTitle: () => undefined,
+          setToolTip: () => undefined,
+        },
+      });
+      controller.updateTitle([]);
+      controller.updateTitle([]);
+      controller.updateTitle([]);
+      expect(pushes).toHaveLength(1);
+    });
+
+    it('leaves macOS and Windows unthrottled', () => {
+      const clock = 0;
+      const pushes: unknown[][] = [];
+      let nth = 0;
+      const controller = createTrayController({
+        loadIcon: () => ({ n: nth++ }) as unknown as NativeImage,
+        isMac: false,
+        hasUpdate: () => false,
+        platform: 'darwin',
+        now: () => clock,
+        schedule: () => undefined,
+      });
+      controller.attach({
+        tray: {
+          setImage: (i) => pushes.push(i),
+          setTitle: () => undefined,
+          setToolTip: () => undefined,
+        },
+      });
+      controller.updateTitle([]);
+      controller.updateTitle([]);
+      expect(pushes).toHaveLength(2);
     });
   });
 

@@ -39,7 +39,20 @@ export interface TrayControllerDeps {
   isMac: boolean;
   /** Whether a newer release is known, which adds the small red badge. */
   hasUpdate: () => boolean;
+  /** The host platform. Linux tray applets repaint on every pixmap push
+   *  INSTEAD of replacing — a burst of updates stacks the states visually
+   *  — so pushes there are deduplicated and coalesced. */
+  platform?: string;
+  /** Millisecond clock for the coalescing window. */
+  now?: () => number;
+  /** Schedules the deferred flush of a coalesced push. */
+  schedule?: (fn: () => void, ms: number) => void;
 }
+
+/** Minimum spacing between actual Linux tray pixmap pushes; shorter than
+ *  any human-perceivable delay, long enough to collapse a burst of
+ *  state updates (start/stop churn, error-count ticks) into one push. */
+export const TRAY_PUSH_MIN_INTERVAL_MS = 250;
 
 export interface TrayController {
   attach: (menuBar: MenubarLike) => void;
@@ -52,6 +65,9 @@ export interface TrayController {
 }
 
 export function createTrayController(deps: TrayControllerDeps): TrayController {
+  const linux = (deps.platform ?? process.platform) === 'linux';
+  const now = deps.now ?? (() => Date.now());
+  const schedule = deps.schedule ?? ((fn, ms) => setTimeout(fn, ms) as unknown);
   let menuBar: MenubarLike | null = null;
   let lastTrayColor: TrayColor = 'stopped'; // so a theme flip can re-render
   // Errors/warnings badge drawn into the tray icon on win/linux. Remembered so
@@ -61,6 +77,55 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
   // real run.
   let devTrayColor: TrayColor | null = null;
   let devTrayCount: number | null = null;
+  // Linux push coalescing: the last image actually pushed, the clock at
+  // that push, the image waiting for the window to elapse, and whether a
+  // flush is already scheduled.
+  let lastPushedImage: NativeImage | null = null;
+  let lastPushAt = -Infinity;
+  let pendingImage: NativeImage | null = null;
+  let flushScheduled = false;
+
+  function pushNow(image: NativeImage): void {
+    const tray = menuBar?.tray;
+    if (!tray) return;
+    try {
+      tray.setImage(image);
+      lastPushedImage = image;
+      lastPushAt = now();
+    } catch (err) {
+      console.error('setImage failed:', err);
+    }
+  }
+
+  function pushCoalesced(image: NativeImage): void {
+    // loadIcon() caches by rendered key, so the SAME NativeImage instance
+    // means the SAME pixels: pushing it again is pure panel churn (and on
+    // Linux applets, exactly the paint-over-instead-of-replace bug).
+    if (image === lastPushedImage) return;
+    if (!linux) {
+      pushNow(image);
+      return;
+    }
+    const elapsed = now() - lastPushAt;
+    if (flushScheduled) {
+      pendingImage = image;
+      return;
+    }
+    if (elapsed >= TRAY_PUSH_MIN_INTERVAL_MS) {
+      pushNow(image);
+      return;
+    }
+    // Inside the window: hold the image and flush once, later — the LAST
+    // state of the burst is the only one the panel needs to see.
+    pendingImage = image;
+    flushScheduled = true;
+    schedule(() => {
+      flushScheduled = false;
+      const queued = pendingImage;
+      pendingImage = null;
+      if (queued && queued !== lastPushedImage) pushNow(queued);
+    }, TRAY_PUSH_MIN_INTERVAL_MS - elapsed);
+  }
 
   /**
    * Repaint the menubar mark for the current state. The mark carries a small
@@ -73,7 +138,7 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
     try {
       // macOS carries the count as tray title text; win/linux don't render
       // titles, so the count is drawn into the icon itself.
-      tray.setImage(
+      pushCoalesced(
         deps.loadIcon(
           devTrayColor ?? lastTrayColor,
           deps.hasUpdate(),
