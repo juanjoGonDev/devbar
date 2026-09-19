@@ -43,6 +43,9 @@ export interface NotificationDeps {
   notifySuccessEnabled: () => boolean;
   openConfig: (goto: string) => void;
   applyUpdate: () => void;
+  /** The host OS: Linux compositors may be absent, which decides the
+   *  window's transparency (see showCustomBanner). */
+  platform: NodeJS.Platform;
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
   clearTimer?: (timer: NodeJS.Timeout) => void;
 }
@@ -89,6 +92,13 @@ export function createNotifications(deps: NotificationDeps): Notifications {
     closeNotificationWindow(); // replace any visible banner
     const secs = BANNER_AUTOCLOSE_SECS;
     const bounds = bannerBounds(deps.workArea());
+    // Linux sessions often run WITHOUT a compositor (Raspberry Pi OS among
+    // them), and a transparent window over no compositor is a solid black
+    // rectangle — the banner rendered as a black box there. So Linux gets an
+    // OPAQUE window (square corners, no float margin — the banner fills it,
+    // mirrored by renderer/notification.html's html.linux rules); macOS and
+    // Windows always composite and keep the floating rounded banner.
+    const opaque = deps.platform === 'linux';
     const win = deps.createWindow({
       ...bounds,
       frame: false,
@@ -101,9 +111,9 @@ export function createNotifications(deps: NotificationDeps): Notifications {
       minimizable: false,
       maximizable: false,
       show: false,
-      transparent: true,
+      transparent: !opaque,
       hasShadow: true,
-      backgroundColor: '#00000000',
+      backgroundColor: opaque ? '#1e1e1e' : '#00000000',
       webPreferences: {
         preload: deps.preloadPath,
         contextIsolation: true,

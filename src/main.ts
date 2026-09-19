@@ -194,6 +194,7 @@ const notifications = createNotifications({
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
   applyUpdate: () => void updater.applyUpdate(),
+  platform: process.platform,
 });
 
 const updater = createUpdater({
