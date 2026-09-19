@@ -263,7 +263,7 @@ describe('src/main/tray.ts', () => {
 
     it('skips pushes whose image is identical (the cached key did not change)', () => {
       const clock = 0;
-      const pushes: unknown[][] = [];
+      const pushes: unknown[] = [];
       const image = { same: true } as unknown as NativeImage;
       const controller = createTrayController({
         loadIcon: () => image,
@@ -288,7 +288,7 @@ describe('src/main/tray.ts', () => {
 
     it('leaves macOS and Windows unthrottled', () => {
       const clock = 0;
-      const pushes: unknown[][] = [];
+      const pushes: unknown[] = [];
       let nth = 0;
       const controller = createTrayController({
         loadIcon: () => ({ n: nth++ }) as unknown as NativeImage,

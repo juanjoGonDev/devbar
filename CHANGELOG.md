@@ -3,6 +3,32 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.9.5] - 2026-09-19
+
+### Corregido
+
+- **En Raspberry Pi, los estados del icono de la bandeja seguían
+  solapándose.** Cada evento de estado volvía a empujar el icono al panel
+  —aunque la imagen fuese idéntica a la anterior, porque la caché
+  devolvía los mismos píxeles— y el applet pintaba encima del pixmap
+  anterior en lugar de reemplazarlo. Ahora se salta todo empuje cuya
+  imagen no ha cambiado y, en Linux, las ráfagas de cambios dentro de
+  250 ms se colapsan en un único empuje con el estado final; macOS y
+  Windows siguen empujando al instante.
+
+- **El interruptor «Ejecutar automáticamente al arrancar» del pipeline
+  decía «el Mac».** Ahora dice «el sistema», como el resto de la
+  interfaz; el ajuste funciona igual en los tres sistemas. También se
+  generaliza su explicación, que mencionaba «Login Item» (término solo
+  de macOS).
+
+### Añadido
+
+- **Las muestras de recursos incluyen la memoria y la carga del sistema
+  completo.** Cada línea registra la RAM libre/total de la máquina y la
+  carga media de 1 minuto (`sys-mem=204.8MB/4096.0MB load1=3.90`), para
+  distinguir un problema de DevBar de una Raspberry sin memoria libre.
+
 ## [0.9.4] - 2026-09-19
 
 ### Corregido
