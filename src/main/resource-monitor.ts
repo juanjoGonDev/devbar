@@ -53,7 +53,7 @@ import os from 'node:os';
 
 /** Production system gauges: the real machine's total/free memory and
  *  1-minute load average (the numbers a memory-pressure story needs). */
-export function nodeSystemGauges(): {
+function nodeSystemGauges(): {
   total: number;
   free: number;
   load1: number;
