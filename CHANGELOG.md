@@ -3,6 +3,23 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.9.6] - 2026-09-19
+
+### Corregido
+
+- **En Raspberry Pi, el icono anterior seguía viéndose detrás del nuevo.**
+  El applet de la bandeja compone cada pixmap sobre el buffer anterior en
+  lugar de reemplazarlo: los píxeles transparentes del icono nuevo dejaban
+  ver todos los estados viejos (p. ej. al pulsar «quitar» tras forzar un
+  conteo en el panel de desarrollo). En Linux, los cambios que pueden
+  dejar ver el icono anterior destruyen ahora el elemento de la bandeja y
+  crean uno nuevo con superficie limpia — sin fondo opaco y sin tocar el
+  icono en otras plataformas. Dos refinamientos para que el canje no se
+  note: el elemento nuevo se registra antes de destruir el viejo (nunca
+  hay un momento sin icono) y, cuando el icono nuevo cubre todo lo que
+  había (badge que crece, cambio de color, tema), basta un empuje en
+  sitio sin reconstruir nada.
+
 ## [0.9.5] - 2026-09-19
 
 ### Corregido
