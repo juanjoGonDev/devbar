@@ -3,6 +3,45 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.9.3] - 2026-09-19
+
+### Corregido
+
+- **En Linux, `install-local` fallaba en Raspberry Pi (y en cualquier host
+  que no sea x64).** El build de empaquetado terminaba bien pero la
+  instalación buscaba el ejecutable en `linux-unpacked`, cuando
+  electron-builder escribe `linux-arm64-unpacked` en un host arm64 (y solo
+  deja el nombre sin sufijo en x64). Ahora el directorio se deduce de la
+  arquitectura del host con el mismo criterio que el empaquetador, así que
+  `pnpm install-local` vuelve a funcionar en la Pi.
+
+- **En Raspberry Pi OS no se veía ningún emoji** (iconos de grupos, rejilla
+  del selector, glifos de la propia interfaz): el sistema no trae ninguna
+  fuente de emoji a color y todo se pintaba como cuadros vacíos. La app
+  ahora lleva incorporada Noto Color Emoji (SIL OFL) y la sirve como
+  última opción de cada pila de fuentes, así que solo se usa donde no hay
+  ninguna fuente nativa que cubra el glifo. El archivo viaja únicamente en
+  los artefactos de Linux (macOS y Windows tienen fuentes propias).
+
+- **En Linux, la notificación emergente se veía como una caja negra.** Las
+  sesiones sin compositor (Raspberry Pi OS entre ellas) no pueden pintar
+  ventanas transparentes: el banner ahora es opaco y ocupa la ventana
+  completa en Linux; macOS y Windows conservan el banner flotante con
+  esquinas redondeadas.
+
+- **En Linux, los estados del icono de la bandeja se solapaban.** Varios
+  paneles componen los dos pixmaps multi-escala que se les enviaban en
+  lugar de elegir uno, y cada cambio de estado estampaba el icono nuevo
+  sobre el anterior. Ahora Linux recibe un único pixmap de 32 px que el
+  panel reduce; macOS y Windows mantienen el par 18 px + 2x.
+
+- **Los logs de servicio ya no muestran los avisos de job control de
+  bash.** Cada comando lanzado con el shell interactivo (`-ic`, el que
+  carga tus rc y tu PATH) imprimía «bash: cannot set terminal process
+  group (-1)…» y «bash: no job control in this shell» antes de la salida
+  real; eran ruido del propio shell (el comando se ejecutaba bien) y ahora
+  se filtran, igual que ya se hacía con su equivalente de zsh.
+
 ## [0.9.2] - 2026-09-18
 
 ### Añadido
