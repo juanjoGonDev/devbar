@@ -94,6 +94,13 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
     );
   }
 
+  const reportIssue = document.getElementById('report-issue');
+  if (reportIssue instanceof HTMLButtonElement) {
+    reportIssue.addEventListener('click', () => {
+      void reportIssueClick(reportIssue);
+    });
+  }
+
   // Collapsible groups list (focus the editor by hiding the list).
   function setGroupsListCollapsed(on: boolean): void {
     els.groupsTwoPane.classList.toggle('list-collapsed', on);
@@ -134,4 +141,21 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
   }
 
   return { showSection };
+}
+
+async function reportIssueClick(btn: HTMLButtonElement): Promise<void> {
+  const original = btn.textContent;
+  btn.disabled = true;
+  try {
+    const res = await window.api.reportIssue();
+    btn.textContent = res.ok
+      ? '✓ Copiado — pégalo en GitHub'
+      : 'No se pudo preparar';
+  } catch {
+    btn.textContent = 'No se pudo preparar';
+  }
+  setTimeout(() => {
+    btn.textContent = original;
+    btn.disabled = false;
+  }, 2500);
 }

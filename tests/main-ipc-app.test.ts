@@ -96,6 +96,13 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
     appQuit: () => calls.push('quit'),
     openNotificationSettings: () => Promise.resolve({ ok: true }),
     openExternal: (url) => calls.push(`external:${url}`),
+    reportIssue: () => {
+      calls.push('reportIssue');
+      return {
+        url: 'https://github.test/issues/new?title=x',
+        bodyIncluded: true,
+      };
+    },
     setTimer: (fn) => timers.push(fn),
     newImportToken: () => 'tok',
     ...overrides,
@@ -147,8 +154,21 @@ describe('src/main/ipc/app-ipc.ts', () => {
         'app:quit',
         'app:version',
         'app:openNotificationSettings',
+        'app:reportIssue',
         'app:openExternal',
       ]);
+    });
+  });
+
+  describe('app:reportIssue', () => {
+    it('copies the report, opens the URL and reports whether the body rode along', async () => {
+      const h = harness();
+      const res = await h.ipc.invoke('app:reportIssue');
+      expect(res).toEqual({ ok: true, bodyIncluded: true });
+      expect(h.calls).toContain('reportIssue');
+      expect(h.calls).toContain(
+        'external:https://github.test/issues/new?title=x',
+      );
     });
   });
 

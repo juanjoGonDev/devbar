@@ -26,6 +26,10 @@ function harness(overrides: Partial<RegisterAllDeps> = {}) {
     },
     appVersion: () => '1.2.0',
     appQuit: () => calls.push('quit'),
+    reportIssue: () => ({
+      url: 'https://github.test/issues/new',
+      bodyIncluded: true,
+    }),
     platform: 'darwin',
     desktop: '',
     devPanelAvailable: false,

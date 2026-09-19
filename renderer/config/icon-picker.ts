@@ -209,7 +209,8 @@ export function createIconPicker(
     const appendChunk = (from: number): void => {
       if (epoch !== renderEpoch || !grid.isConnected) return;
       const end = Math.min(from + chunkSize, items.length);
-      for (let i = from; i < end; i++) grid.appendChild(makeIconCell(items[i]));
+      for (const item of items.slice(from, end))
+        grid.appendChild(makeIconCell(item));
       if (end < items.length) schedule(() => appendChunk(end));
     };
     appendChunk(0);
