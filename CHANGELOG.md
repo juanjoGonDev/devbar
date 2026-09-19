@@ -3,6 +3,49 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.9.4] - 2026-09-19
+
+### Corregido
+
+- **La fuente de emojis ya no «roba» símbolos de texto en Linux.** Noto
+  Color Emoji también trae glifos como `▶` —el que abre cada línea de
+  arranque de servicio— y, al estar al final de todas las pilas de
+  fuentes, acababa repintando los logs monocromo con emojis grandes a
+  color y volviéndolos ilegibles. Ahora la fuente declara un
+  `unicode-range` con los bloques de emoji reales: flechas, símbolos de
+  caja y todo lo que era texto vuelve a resolverse en la fuente de texto,
+  igual que antes de incluirla.
+
+- **El icono de apagar de la ventana de la bandeja volvía a no verse en
+  Raspberry Pi OS.** `⏻` no es un emoji: ninguna fuente del sistema lo
+  trae y Noto Color Emoji tampoco lo cubre, así que quedaba como un
+  cuadro vacío mientras el resto sí se veía. Se cambia por `⏹` (cubierto
+  en todos los sistemas, mismo estilo al pasar el ratón).
+
+### Añadido
+
+- **Botón «Reportar fallo en GitHub» en Acerca de.** Prepara un informe
+  con la versión, el sistema (plataforma, arquitectura, OS, Electron y
+  Node) y el final de `app.log`, lo copia completo al portapapeles y abre
+  el formulario de issues de GitHub con el título y el cuerpo ya
+  rellenos; si el cuerpo no cabe en la URL, basta con pegar (el informe
+  íntegro sigue en el portapapeles).
+
+- **Muestreo de CPU y RAM en el log de la app.** Cada apertura de ventana
+  y una línea periódica registran CPU, RSS/heap y número de procesos de
+  Chromium (`[resources] cpu=12.3% rss=180.2MB … (window-open)`), para
+  que un «se disparan los ventiladores al abrir el menú» llegue con
+  números y no a base de anecdotes.
+
+### Cambiado
+
+- **El selector de emojis se pinta por bloques.** Hasta ahora abría
+  construyendo de golpe todos los botones de la categoría activa (hasta
+  ~1900 nodos con su escucha cada uno): en una Raspberry Pi eso disparaba
+  la CPU —y los ventiladores— al abrirlo. Ahora pinta los primeros 96 al
+  instante y el resto va llegando en segundo plano; escribir en el
+  buscador o cerrar el selector cancela el trabajo pendiente.
+
 ## [0.9.3] - 2026-09-19
 
 ### Corregido
