@@ -17,6 +17,7 @@ import {
   createTrayController,
   patchLinuxTrayPositioning,
   TRAY_PUSH_MIN_INTERVAL_MS,
+  type RebuildableTray,
 } from '../src/main/tray.js';
 import type { GroupState, TrayColor } from '../src/ipc-contract.js';
 import { makeGroup } from './helpers/main-fakes.js';
@@ -187,29 +188,78 @@ describe('src/main/tray.ts', () => {
     });
   });
 
-  describe('linux tray push coalescing', () => {
-    interface Pushes {
-      images: unknown[];
-      at: number[];
+  describe('linux tray item rebuild', () => {
+    class FakeElectronTray {
+      static instances: FakeElectronTray[] = [];
+      images: NativeImage[] = [];
+      tooltips: string[] = [];
+      menus: unknown[] = [];
+      destroyed = false;
+      listeners = new Map<string, (() => void)[]>();
+      constructor(image: NativeImage) {
+        this.images.push(image);
+        FakeElectronTray.instances.push(this);
+      }
+      setImage(image: NativeImage): void {
+        this.images.push(image);
+      }
+      setTitle(): void {}
+      setToolTip(tooltip: string): void {
+        this.tooltips.push(tooltip);
+      }
+      destroy(): void {
+        this.destroyed = true;
+      }
+      on(event: string, listener: () => void): void {
+        const list = this.listeners.get(event) ?? [];
+        list.push(listener);
+        this.listeners.set(event, list);
+      }
+      popUpContextMenu(menu: unknown): void {
+        this.menus.push(menu);
+      }
+      emit(event: string): void {
+        for (const listener of this.listeners.get(event) ?? []) listener();
+      }
+      static reset(): void {
+        FakeElectronTray.instances = [];
+      }
     }
 
-    /** Distinct images per call: identical instances must dedupe. */
-    function linuxHarness(): {
+    interface RebuildHarness {
       controller: ReturnType<typeof createTrayController>;
-      pushes: Pushes;
+      initialTray: {
+        setImage: ReturnType<typeof vi.fn>;
+        setTitle: ReturnType<typeof vi.fn>;
+        setToolTip: ReturnType<typeof vi.fn>;
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      bar: {
+        tray: {
+          setImage: unknown;
+          setTitle: unknown;
+          setToolTip: unknown;
+          destroy: unknown;
+        };
+        clicked: () => void;
+        _tray?: unknown;
+      };
+      clickedCalls: number[];
       elapse: (ms: number) => void;
       flush: () => void;
-    } {
+      instances: () => FakeElectronTray[];
+    }
+
+    function rebuildHarness(
+      overrides: Partial<Parameters<typeof createTrayController>[0]> = {},
+    ): RebuildHarness {
+      FakeElectronTray.reset();
       let clock = 0;
-      const pushes: Pushes = { images: [], at: [] };
+      const clickedCalls: number[] = [];
       const deferred: { fn: () => void; at: number }[] = [];
-      const unique = Symbol();
       let nth = 0;
       const controller = createTrayController({
-        loadIcon: () =>
-          ({
-            tag: Symbol(`${String(unique)}-${nth++}`),
-          }) as unknown as NativeImage,
+        loadIcon: () => ({ n: nth++ }) as unknown as NativeImage,
         isMac: false,
         hasUpdate: () => false,
         platform: 'linux',
@@ -217,97 +267,198 @@ describe('src/main/tray.ts', () => {
         schedule: (fn, ms) => {
           deferred.push({ fn, at: clock + ms });
         },
-      });
-      controller.attach({
-        tray: {
-          setImage: (image) => {
-            pushes.images.push(image);
-            pushes.at.push(clock);
-          },
-          setTitle: () => undefined,
-          setToolTip: () => undefined,
+        rebuildPieces: {
+          Tray: FakeElectronTray as unknown as new (
+            image: NativeImage,
+          ) => RebuildableTray,
+          buildContextMenu: () => ({ menu: true }),
         },
+        ...overrides,
       });
+      const initialTray = {
+        setImage: vi.fn(),
+        setTitle: vi.fn(),
+        setToolTip: vi.fn(),
+        destroy: vi.fn(),
+      };
+      const bar = {
+        tray: initialTray,
+        clicked: () => {
+          clickedCalls.push(1);
+        },
+        _tray: undefined as unknown,
+      };
+      controller.attach(bar);
       return {
         controller,
-        pushes,
+        initialTray,
+        bar,
+        clickedCalls,
         elapse: (ms) => {
           clock += ms;
         },
         flush: () => {
-          // Runs the deferred flushes that have come due, newest first.
           for (const d of deferred.splice(0)) if (d.at <= clock) d.fn();
         },
+        instances: () => FakeElectronTray.instances,
       };
     }
 
-    it('collapses a burst of state changes into ONE push with the last state', () => {
-      const h = linuxHarness();
-      // A start/stop churn: several updates within the window.
-      for (let i = 0; i < 5; i++) h.controller.updateTitle([]);
-      expect(h.pushes.images).toHaveLength(1);
+    it("first paint is a plain setImage on menubar's own tray, no rebuild", () => {
+      const h = rebuildHarness();
+      h.controller.updateTitle([]);
+      expect(h.initialTray.setImage).toHaveBeenCalledTimes(1);
+      expect(h.instances()).toHaveLength(0);
+    });
+
+    it('a later visual change rebuilds the item: old destroyed, fresh one wired', () => {
+      const h = rebuildHarness();
+      h.controller.updateTitle([]);
+      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS);
+      h.controller.updateTitle([]);
+      h.flush();
+      expect(h.initialTray.setImage).toHaveBeenCalledTimes(1);
+      const [fresh] = h.instances();
+      expect(
+        h.initialTray.destroy,
+        "menubar's tray destroyed",
+      ).toHaveBeenCalledTimes(1);
+      expect(h.bar._tray).toBe(fresh);
+      expect(fresh?.images[0]).toBeDefined();
+      expect(fresh?.tooltips).toHaveLength(1);
+      // menubar's click handlers and the app context menu ride along.
+      fresh?.emit('click');
+      fresh?.emit('double-click');
+      expect(h.clickedCalls).toHaveLength(2);
+      fresh?.emit('right-click');
+      expect(fresh?.menus).toEqual([{ menu: true }]);
+    });
+
+    it('never rebuilds for an image that did not change', () => {
+      let image = { v: 1 } as unknown as NativeImage;
+      const h = rebuildHarness({
+        loadIcon: () => image,
+      });
+      h.controller.updateTitle([]);
+      h.controller.updateTitle([]);
+      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS);
+      h.controller.updateTitle([]);
+      expect(h.initialTray.setImage).toHaveBeenCalledTimes(1);
+      expect(h.instances()).toHaveLength(0);
+      image = { v: 2 } as unknown as NativeImage;
+      h.controller.updateTitle([]);
+      expect(h.instances()).toHaveLength(1);
+    });
+
+    it('collapses a burst into a single rebuild carrying the last state', () => {
+      const h = rebuildHarness();
+      h.controller.updateTitle([]);
+      h.elapse(10);
+      for (let i = 0; i < 4; i++) h.controller.updateTitle([]);
+      expect(h.instances()).toHaveLength(0); // inside the window: nothing yet
       h.elapse(TRAY_PUSH_MIN_INTERVAL_MS);
       h.flush();
-      expect(h.pushes.images).toHaveLength(2);
+      expect(h.instances()).toHaveLength(1);
+      expect(h.initialTray.destroy).toHaveBeenCalledTimes(1);
     });
 
-    it('pushes immediately again once the window has elapsed', () => {
-      const h = linuxHarness();
+    it('survives a rebuild that throws and keeps the old tray', () => {
+      const error = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      const h = rebuildHarness();
       h.controller.updateTitle([]);
-      expect(h.pushes.images).toHaveLength(1);
-      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS + 1);
-      h.controller.updateTitle([]);
-      expect(h.pushes.images).toHaveLength(2);
-      expect(h.pushes.at[1]).toBe(TRAY_PUSH_MIN_INTERVAL_MS + 1);
-    });
-
-    it('skips pushes whose image is identical (the cached key did not change)', () => {
-      const clock = 0;
-      const pushes: unknown[] = [];
-      const image = { same: true } as unknown as NativeImage;
-      const controller = createTrayController({
-        loadIcon: () => image,
+      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS);
+      // The constructor fails once…
+      const original = FakeElectronTray;
+      FakeElectronTray.instances = [];
+      class Broken {
+        constructor() {
+          throw new Error('no dbus');
+        }
+      }
+      h.bar._tray = undefined;
+      // …by swapping the pieces through a second controller configured badly.
+      const failing = createTrayController({
+        loadIcon: () => ({ x: 1 }) as unknown as NativeImage,
         isMac: false,
         hasUpdate: () => false,
         platform: 'linux',
-        now: () => clock,
-        schedule: () => undefined,
-      });
-      controller.attach({
-        tray: {
-          setImage: (i) => pushes.push(i),
-          setTitle: () => undefined,
-          setToolTip: () => undefined,
+        now: () => 10_000,
+        schedule: (fn) => fn(),
+        rebuildPieces: {
+          Tray: Broken as unknown as new (
+            image: NativeImage,
+          ) => RebuildableTray,
+          buildContextMenu: () => ({}),
         },
       });
-      controller.updateTitle([]);
-      controller.updateTitle([]);
-      controller.updateTitle([]);
-      expect(pushes).toHaveLength(1);
+      const tray = {
+        setImage: vi.fn(),
+        setTitle: vi.fn(),
+        setToolTip: vi.fn(),
+      };
+      failing.attach({
+        tray,
+        clicked: () => undefined,
+      } as unknown as Parameters<
+        ReturnType<typeof createTrayController>['attach']
+      >[0]);
+      failing.updateTitle([]);
+      failing.updateTitle([]);
+      expect(error).toHaveBeenCalledWith(
+        'tray rebuild failed:',
+        expect.any(Error),
+      );
+      expect(tray.setImage).toHaveBeenCalled(); // first paint still landed
+      FakeElectronTray.instances = original.instances;
+      error.mockRestore();
     });
 
-    it('leaves macOS and Windows unthrottled', () => {
-      const clock = 0;
-      const pushes: unknown[] = [];
+    it('macOS and Windows never rebuild, they just setImage', () => {
       let nth = 0;
+      const tray = {
+        setImage: vi.fn(),
+        setTitle: vi.fn(),
+        setToolTip: vi.fn(),
+      };
       const controller = createTrayController({
         loadIcon: () => ({ n: nth++ }) as unknown as NativeImage,
         isMac: false,
         hasUpdate: () => false,
         platform: 'darwin',
-        now: () => clock,
-        schedule: () => undefined,
-      });
-      controller.attach({
-        tray: {
-          setImage: (i) => pushes.push(i),
-          setTitle: () => undefined,
-          setToolTip: () => undefined,
+        rebuildPieces: {
+          Tray: FakeElectronTray as unknown as new (
+            image: NativeImage,
+          ) => RebuildableTray,
+          buildContextMenu: () => ({}),
         },
       });
+      controller.attach({ tray });
       controller.updateTitle([]);
       controller.updateTitle([]);
-      expect(pushes).toHaveLength(2);
+      expect(tray.setImage).toHaveBeenCalledTimes(2);
+      expect(FakeElectronTray.instances).toHaveLength(0);
+    });
+
+    it('releasing a simulated count repaints immediately', () => {
+      const images: { count: number }[] = [];
+      const controller = createTrayController({
+        loadIcon: (_state, _update, count) => {
+          images.push({ count });
+          return { c: count, k: images.length } as unknown as NativeImage;
+        },
+        isMac: false,
+        hasUpdate: () => false,
+      });
+      controller.attach({
+        tray: { setImage: vi.fn(), setTitle: vi.fn(), setToolTip: vi.fn() },
+      });
+      controller.setSimulatedCount(5);
+      const forced = images.at(-1)?.count;
+      controller.setSimulatedCount(null);
+      expect(images.at(-1)?.count).toBe(0);
+      expect(forced).toBe(5);
     });
   });
 

@@ -22,7 +22,7 @@ import * as trayIcon from './tray-icon.js';
 import * as updateCheck from './update-check.js';
 import { ProcessManager } from './process-manager.js';
 import { SessionResumeTracker, consumeSnapshot } from './session-resume.js';
-import { isMac, platformLabel } from './platform.js';
+import { isLinux, isMac, platformLabel } from './platform.js';
 import { loadShellPath, expandTilde } from './path-helper.js';
 import { RepoWatcher } from './repo-watcher.js';
 import { createPreScriptRunner } from './pre-script-runner.js';
@@ -48,7 +48,7 @@ import { createShutdownController } from './main/shutdown.js';
 import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
 import { createStartup } from './main/startup.js';
 import { createStateSnapshots } from './main/state-snapshot.js';
-import { createTrayController } from './main/tray.js';
+import { createTrayController, linuxRebuildPieces } from './main/tray.js';
 import { buildTrayMenuTemplate } from './main/tray-view.js';
 import { createUpdater } from './main/updater.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
@@ -146,10 +146,22 @@ const toast = (kind: string, message: string): void =>
 const repaintWindows = (): void =>
   refreshWindowBackgrounds(registry, host.background());
 
+const trayContextMenu = (): ReturnType<typeof Menu.buildFromTemplate> =>
+  Menu.buildFromTemplate(
+    buildTrayMenuTemplate({
+      availableUpdate: updater.available(),
+      stagedUpdate: updater.staged(),
+      logWindows: [...registry.logs.entries()],
+      onApplyUpdate: () => void updater.applyUpdate(),
+      onOpenConfig: () => appWindows.ensureConfigWindow(),
+    }),
+  );
+
 const tray = createTrayController({
   loadIcon: trayIcon.loadIcon,
   isMac,
   hasUpdate: () => updater.available() !== null,
+  ...(isLinux ? linuxRebuildPieces(Tray, trayContextMenu) : {}),
 });
 
 const confirms = createConfirmQueue({
@@ -447,16 +459,7 @@ app.whenReady().then(() => {
     defaultIcon: trayIcon.defaultIcon,
     attachTray: tray.attach,
     attachConsole: logger.attachWindowConsole,
-    buildContextMenu: () =>
-      Menu.buildFromTemplate(
-        buildTrayMenuTemplate({
-          availableUpdate: updater.available(),
-          stagedUpdate: updater.staged(),
-          logWindows: [...registry.logs.entries()],
-          onApplyUpdate: () => void updater.applyUpdate(),
-          onOpenConfig: () => appWindows.ensureConfigWindow(),
-        }),
-      ),
+    buildContextMenu: trayContextMenu,
     broadcast,
     refreshTrayIcon: tray.refreshIcon,
     invalidateTrayIconCache: trayIcon.invalidateCache,
