@@ -263,7 +263,13 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
     // loadIcon() caches by rendered key, so the SAME NativeImage instance
     // means the SAME pixels: pushing it again is pure panel churn — and on
     // the Pi, another layer of paint-over.
-    if (image === lastPushedImage) return;
+    if (image === lastPushedImage) {
+      // A→B→A inside the coalescing window: B is stale the moment the
+      // final A re-arrives equal to what is on screen — applying it later
+      // would resurface an intermediate state.
+      pendingImage = null;
+      return;
+    }
     if (!linux) {
       applyToPanel(image);
       return;

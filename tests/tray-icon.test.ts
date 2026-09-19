@@ -96,8 +96,13 @@ describe('src/tray-icon.ts', () => {
       expect(c).not.toBe(a);
       // A cache hit must not redraw: two distinct keys, two bitmaps.
       expect(created).toHaveLength(2);
-      // This runner is linux, so the base pixmap is the Linux one.
-      expect(created[0]).toMatchObject({ width: 32, height: 32 });
+      // The base pixmap follows the runner's platform: 32px on Linux,
+      // 18px on macOS/Windows. No hardcoded assumption about the runner.
+      const expectedSize = process.platform === 'linux' ? 32 : 18;
+      expect(created[0]).toMatchObject({
+        width: expectedSize,
+        height: expectedSize,
+      });
     });
 
     it('re-renders when the OS appearance flips (theme is part of the key)', () => {

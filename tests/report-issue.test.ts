@@ -6,6 +6,8 @@ import {
   issueTitle,
   keepTail,
   MAX_URL_CHARS,
+  MAX_URL_CHARS_WINDOWS,
+  maxUrlCharsFor,
   prepareIssueReport,
   URL_TAIL_CHARS,
   URL_TAIL_LINES,
@@ -19,6 +21,37 @@ const ctx = {
   node: '22.22.3',
   osRelease: '6.12.34+rpt-rpi-2712',
 };
+
+describe('URL budget per platform', () => {
+  it('caps Windows under its 2081-char openExternal limit', () => {
+    expect(MAX_URL_CHARS_WINDOWS).toBeLessThanOrEqual(2000);
+    expect(maxUrlCharsFor('win32')).toBe(MAX_URL_CHARS_WINDOWS);
+  });
+
+  it('keeps the generous form limit on the other desktops', () => {
+    expect(maxUrlCharsFor('linux')).toBe(MAX_URL_CHARS);
+    expect(maxUrlCharsFor('darwin')).toBe(MAX_URL_CHARS);
+  });
+
+  it('falls back to the clipboard on Windows past the small budget', () => {
+    const log = 'x'.repeat(1800);
+    const win = prepareIssueReport({ ...ctx, platform: 'win32' }, log);
+    expect(win.bodyIncluded).toBe(false);
+    expect(win.url).not.toContain('body=');
+    // Nothing is lost: the clipboard still carries the full report.
+    expect(win.clipboardText).toContain(log);
+    // The same report fits the URL budget on Linux.
+    const linux = prepareIssueReport({ ...ctx, platform: 'linux' }, log);
+    expect(linux.bodyIncluded).toBe(true);
+    expect(linux.url).toContain('body=');
+  });
+
+  it('still pre-fills the form on Windows when the URL fits', () => {
+    const win = prepareIssueReport({ ...ctx, platform: 'win32' }, 'ok');
+    expect(win.bodyIncluded).toBe(true);
+    expect(win.url.length).toBeLessThanOrEqual(MAX_URL_CHARS_WINDOWS);
+  });
+});
 
 describe('src/report-issue.ts', () => {
   describe('keepTail', () => {

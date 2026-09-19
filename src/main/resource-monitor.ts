@@ -180,8 +180,22 @@ export function createResourceMonitor(
     sample,
     start: () => {
       if (timer) return;
-      sample('monitor-start');
-      timer = setTimer(() => sample('interval'), intervalMs);
+      try {
+        sample('monitor-start');
+      } catch (err) {
+        // A failed baseline must not leave the monitor dead: the periodic
+        // timer is installed either way.
+        deps.log(`[resources] baseline sample failed: ${String(err)}`);
+      }
+      timer = setTimer(() => {
+        try {
+          sample('interval');
+        } catch (err) {
+          // Contained: sampling must never reach the main process as an
+          // uncaught exception. The next interval tries again.
+          deps.log(`[resources] sample failed: ${String(err)}`);
+        }
+      }, intervalMs);
     },
     stop: () => {
       if (timer === null) return;

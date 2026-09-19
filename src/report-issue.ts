@@ -16,6 +16,17 @@ const ISSUES_URL = 'https://github.com/juanjoGonDev/devbar/issues/new';
  *  generous margin. */
 export const MAX_URL_CHARS = 6500;
 
+/** Windows' shell.openExternal refuses URLs over 2081 characters outright:
+ *  a pre-filled form between both limits would fail to OPEN instead of
+ *  falling back to the clipboard. Stay under with margin. */
+export const MAX_URL_CHARS_WINDOWS = 2000;
+
+/** The URL budget for a platform. Windows is capped near its own hard
+ *  limit; the other desktops tolerate the generous form limit. */
+export function maxUrlCharsFor(platform: string): number {
+  return platform === 'win32' ? MAX_URL_CHARS_WINDOWS : MAX_URL_CHARS;
+}
+
 /** How much of app.log rides IN the URL. */
 export const URL_TAIL_LINES = 60;
 export const URL_TAIL_CHARS = 3000;
@@ -115,7 +126,7 @@ export function prepareIssueReport(
   const withBody = `${ISSUES_URL}?title=${encodeURIComponent(
     issueTitle(ctx),
   )}&body=${encodeURIComponent(body)}`;
-  const bodyIncluded = withBody.length <= MAX_URL_CHARS;
+  const bodyIncluded = withBody.length <= maxUrlCharsFor(ctx.platform);
   return {
     url: bodyIncluded
       ? withBody

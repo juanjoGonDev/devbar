@@ -4,7 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import type { BrowserWindow } from 'electron';
 
-import { attachMainConsole, attachWindowConsole, init } from '../src/logger.js';
+import {
+  attachMainConsole,
+  attachWindowConsole,
+  init,
+  readTail,
+} from '../src/logger.js';
 
 const LEVELS = ['log', 'info', 'warn', 'error'] as const;
 type Level = (typeof LEVELS)[number];
@@ -45,6 +50,25 @@ function muteConsole(): void {
     console[level] = () => undefined;
   }
 }
+
+describe('readTail', () => {
+  it('returns the whole file when it fits the window', () => {
+    const file = path.join(tempDir(), 'app.log');
+    fs.writeFileSync(file, 'line one\nline two\n');
+    expect(readTail(file, 1024)).toBe('line one\nline two\n');
+  });
+
+  it('reads one bounded window and drops the torn first line', () => {
+    const file = path.join(tempDir(), 'app.log');
+    fs.writeFileSync(file, `${'A'.repeat(300)}\nultima linea\n`);
+    // The window starts inside the A-run: the partial entry must not show.
+    expect(readTail(file, 64)).toBe('ultima linea\n');
+  });
+
+  it('answers empty for a missing file', () => {
+    expect(readTail(path.join(tempDir(), 'nope.log'), 1024)).toBe('');
+  });
+});
 
 describe('src/logger.ts', () => {
   beforeEach(() => {

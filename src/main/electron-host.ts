@@ -26,6 +26,7 @@ import { isLinux, isMac, isWin } from '../platform.js';
 import { appHome } from '../app-paths.js';
 import { resolvedThemeIsDark, themeWindowBackground } from './theme.js';
 import { prepareIssueReport } from '../report-issue.js';
+import { readTail, REPORT_TAIL_BYTES } from '../logger.js';
 import {
   applyAutostart as applyAutostartTo,
   wasOpenedAtLogin as resolveWasOpenedAtLogin,
@@ -245,12 +246,10 @@ export function createElectronHost(options: ElectronHostOptions) {
      * src/report-issue.ts; this only reads the log and touches the OS.
      */
     reportIssue: (): { url: string; bodyIncluded: boolean } => {
-      let tail = '';
-      try {
-        tail = fs.readFileSync(logFilePath(), 'utf8');
-      } catch {
-        // No log yet (fresh install, clean app): report without one.
-      }
+      // Bounded read from the end: the report only ever uses the last
+      // few thousand chars, and one oversized entry must not make the
+      // click slurp the whole file.
+      const tail = readTail(logFilePath(), REPORT_TAIL_BYTES);
       const report = prepareIssueReport(
         {
           version: app.getVersion(),

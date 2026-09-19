@@ -469,6 +469,24 @@ describe('src/main/tray.ts', () => {
       error.mockRestore();
     });
 
+    it('a burst ending on the displayed image drops the pending one', () => {
+      const a = makeIcon([255]) as NativeImage;
+      const b = makeIcon([255, 255]) as NativeImage;
+      const icons = [a, b, a]; // the burst returns to the instance on screen
+      let step = 0;
+      const h = rebuildHarness({
+        loadIcon: () => icons[step++],
+      });
+      h.controller.updateTitle([]); // A painted
+      h.elapse(10);
+      h.controller.updateTitle([]); // B goes pending inside the window
+      h.controller.updateTitle([]); // A re-arrives: B is stale, drop it
+      h.elapse(TRAY_PUSH_MIN_INTERVAL_MS);
+      h.flush();
+      expect(h.initialTray.setImage).toHaveBeenCalledTimes(1);
+      expect(h.instances()).toHaveLength(0);
+    });
+
     it('macOS and Windows never rebuild, they just setImage', () => {
       let nth = 0;
       const tray = {

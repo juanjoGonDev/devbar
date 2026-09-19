@@ -152,6 +152,16 @@ describe('renderer/config/sidebar-nav.ts', () => {
       expect(btn.textContent).toContain('Copiado');
     });
 
+    it('announces the pre-filled form when the body rode in the URL', async () => {
+      win = await openConfigWindow();
+      const btn = document.getElementById('report-issue') as HTMLButtonElement;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await win.settle('reportIssue', { ok: true, bodyIncluded: true });
+      expect(btn.textContent).toContain('Formulario preparado');
+      // Asking for a paste here would duplicate the report.
+      expect(btn.textContent).not.toContain('pégalo');
+    });
+
     it('jumps to About when the tray asks for it', async () => {
       win = await openConfigWindow();
       await win.push('onConfigGoto', 'about');

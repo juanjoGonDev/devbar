@@ -267,3 +267,37 @@ describe('src/main/resource-monitor.ts', () => {
     });
   });
 });
+
+describe('resource monitor failure containment', () => {
+  it('a failed baseline still installs the periodic timer', () => {
+    let calls = 0;
+    const h = harness({
+      memory: () => {
+        calls++;
+        if (calls === 1) throw new Error('boom');
+        return { rss: 1048576, heapUsed: 1 };
+      },
+    });
+    expect(() => h.monitor.start()).not.toThrow();
+    expect(
+      h.lines.some((l) => l.includes('[resources] baseline sample failed:')),
+    ).toBe(true);
+    h.fireInterval();
+    expect(h.lines.some((l) => l.includes('(interval)'))).toBe(true);
+  });
+
+  it('a failed interval sample never escapes the timer callback', () => {
+    const h = harness({
+      memory: () => {
+        throw new Error('boom');
+      },
+    });
+    h.monitor.start();
+    expect(() => h.fireInterval()).not.toThrow();
+    expect(h.lines.some((l) => l.includes('[resources] sample failed:'))).toBe(
+      true,
+    );
+    // The timer survived the failure: the monitor keeps sampling.
+    expect(h.stopped()).toBe(false);
+  });
+});
