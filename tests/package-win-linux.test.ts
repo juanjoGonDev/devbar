@@ -14,6 +14,7 @@ import {
   PACKAGE_USAGE,
   parsePackageArgs,
   runBuild,
+  unpackedDirName,
   windowsArchs,
   windowsBuildOptions,
   type ElectronBuilderLike,
@@ -120,6 +121,27 @@ describe('scripts/package-win-linux.ts', () => {
       expect(contractArchName('armv7l')).toBe('armv7');
       expect(contractArchName('arm64')).toBe('arm64');
       expect(contractArchName('x64')).toBe('x64');
+    });
+  });
+
+  describe('unpackedDirName', () => {
+    it('leaves the x64 output dir unsuffixed, as electron-builder spells it', () => {
+      expect(unpackedDirName('linux', 'x64')).toBe('linux-unpacked');
+      expect(unpackedDirName('win', 'x64')).toBe('win-unpacked');
+    });
+
+    it('suffixes the non-x64 output dirs exactly as electron-builder writes them', () => {
+      // The dir target on a Raspberry Pi lands here; an install script
+      // that reads back the x64 spelling fails after a successful build.
+      expect(unpackedDirName('linux', 'arm64')).toBe('linux-arm64-unpacked');
+      expect(unpackedDirName('linux', 'arm')).toBe('linux-armv7l-unpacked');
+      expect(unpackedDirName('win', 'arm64')).toBe('win-arm64-unpacked');
+    });
+
+    it('derives the arch from process.arch when none is given', () => {
+      expect(unpackedDirName('linux')).toBe(
+        unpackedDirName('linux', process.arch),
+      );
     });
   });
 
