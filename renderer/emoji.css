@@ -9,6 +9,14 @@
  * stack per character, so this face is only reached — and only fetched —
  * where no native font covered the emoji. That is exactly the Raspberry
  * Pi case: no color-emoji font installed, every emoji a tofu box.
+ *
+ * unicode-range keeps the face away from TEXT symbols. Noto Color Emoji's
+ * cmap also covers glyphs like ▶ (U+25B6) and, through the stack walk,
+ * would steal them from the monospace log font and repaint logs with big
+ * color glyphs; arrows, box-drawing and the geometric shapes the chrome
+ * itself uses (▶ ■ ▨ ◧) must keep resolving in the text font. The listed
+ * ranges are the true emoji blocks (plus ⌚⏰-style faces in 23xx); the
+ * picker's rare 25xx emoji fall back to monochrome there — right trade.
  */
 @font-face {
   font-family: 'Noto Color Emoji';
@@ -16,4 +24,8 @@
   font-weight: 400;
   font-display: swap;
   src: url(../assets/fonts/NotoColorEmoji.woff2) format('woff2');
+  unicode-range:
+    U+200d, U+fe0f, U+203c, U+2049, U+2122, U+2139, U+2194-2199, U+21a9-21aa,
+    U+231a-231b, U+2328, U+23cf, U+23e9-23f3, U+23f8-23fa, U+24c2, U+2600-27bf,
+    U+2934-2935, U+2b00-2bff, U+3030, U+303d, U+3297, U+3299, U+1f000-1faff;
 }

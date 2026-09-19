@@ -124,7 +124,7 @@ body.tray {
   padding: 4px 6px;
 }
 .tray-header button.ghost.danger.icon-only {
-  color: inherit; /* ⏻ glyph reads better neutral; hover tints it red */
+  color: inherit; /* ⏹ glyph reads better neutral; hover tints it red */
 }
 .tray-header button.ghost.danger.icon-only:hover {
   color: var(--error);
