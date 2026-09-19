@@ -27,9 +27,9 @@
  * Usage: node --experimental-strip-types scripts/install-local.ts
  *        [--dev] [--no-build]
  *
- * --no-build reuses an existing dist/electron-builder/<os>-unpacked output
- * (CI builds it right before, so the kill+install+relaunch cycle can run
- * without a second full build).
+ * --no-build reuses an existing dist/electron-builder/<os>[-arch]-unpacked
+ * output (CI builds it right before, so the kill+install+relaunch cycle can
+ * run without a second full build).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -48,6 +48,7 @@ import {
   type KillTreeRun,
   type ServiceGroup,
 } from './lib/kill-trees.ts';
+import { unpackedDirName } from './package-win-linux.ts';
 import { absoluteEnvDir, isEntrypoint } from './lib/script-runtime.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -163,6 +164,13 @@ export interface InstallLayout {
  * Where the packed output is and where it goes, per OS. Null on an
  * unsupported platform — darwin has its own bash pipeline.
  *
+ * `arch` is the CPU the pack step built for (the host's, since both
+ * scripts derive it from process.arch). electron-builder only suffixes
+ * the unpacked directory on non-x64 hosts, so the name must be derived
+ * symmetrically: hardcoding `linux-unpacked` pointed at a directory that
+ * does not exist on a Raspberry Pi (`linux-arm64-unpacked`) and failed
+ * every install there.
+ *
  * LOCALAPPDATA goes through absoluteEnvDir: an empty or relative value
  * would resolve against the process CWD, and the install would then wipe
  * and recreate a directory inside the checkout while reporting success.
@@ -171,6 +179,7 @@ export function layout(
   platform: NodeJS.Platform,
   root: string,
   home: string,
+  arch: string = process.arch,
 ): InstallLayout | null {
   if (platform === 'win32') {
     const localAppData = absoluteEnvDir(
@@ -178,7 +187,12 @@ export function layout(
       path.join(home, 'AppData', 'Local'),
     );
     return {
-      unpackedDir: path.join(root, 'dist', 'electron-builder', 'win-unpacked'),
+      unpackedDir: path.join(
+        root,
+        'dist',
+        'electron-builder',
+        unpackedDirName('win', arch),
+      ),
       installDir: path.join(localAppData, 'Programs', 'DevBar'),
       executable: 'DevBar.exe',
     };
@@ -189,7 +203,7 @@ export function layout(
         root,
         'dist',
         'electron-builder',
-        'linux-unpacked',
+        unpackedDirName('linux', arch),
       ),
       installDir: path.join(home, '.local', 'share', 'DevBar'),
       executable: 'devbar',

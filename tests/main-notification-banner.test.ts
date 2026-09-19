@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { BrowserWindow, Notification } from 'electron';
+import type {
+  BrowserWindow,
+  BrowserWindowConstructorOptions,
+  Notification,
+} from 'electron';
 import {
   createNotifications,
   type NotificationDeps,
@@ -18,14 +22,16 @@ interface FakeNotification {
 
 function harness(overrides: Partial<NotificationDeps> = {}) {
   const windows: FakeWindow[] = [];
+  const windowOptions: BrowserWindowConstructorOptions[] = [];
   const notifications: FakeNotification[] = [];
   const timers: { fn: () => void; ms: number; cleared: boolean }[] = [];
   const opened: string[] = [];
   const applied: string[] = [];
   const deps: NotificationDeps = {
-    createWindow: () => {
+    createWindow: (options) => {
       const win = fakeWindow('banner');
       windows.push(win);
+      windowOptions.push(options);
       return win as unknown as BrowserWindow;
     },
     createNotification: () => {
@@ -53,6 +59,7 @@ function harness(overrides: Partial<NotificationDeps> = {}) {
     notifySuccessEnabled: () => true,
     openConfig: (goto) => opened.push(goto),
     applyUpdate: () => applied.push('update'),
+    platform: 'darwin',
     setTimer: (fn, ms) => {
       const timer = { fn, ms, cleared: false };
       timers.push(timer);
@@ -66,6 +73,7 @@ function harness(overrides: Partial<NotificationDeps> = {}) {
   return {
     notifications: createNotifications(deps),
     windows,
+    windowOptions,
     natives: notifications,
     timers,
     opened,
@@ -131,6 +139,26 @@ describe('src/main/notification-banner.ts', () => {
   });
 
   describe('showCustomBanner', () => {
+    it('opens an OPAQUE window on Linux, where a compositor is not guaranteed', () => {
+      // Without a compositor (Raspberry Pi OS) a transparent window paints
+      // solid black — the banner showed up as a black box.
+      const h = harness({ platform: 'linux' });
+      h.notifications.showCustomBanner('DevBar', 'hola');
+      expect(h.windowOptions[0]).toMatchObject({
+        transparent: false,
+        backgroundColor: '#1e1e1e',
+      });
+    });
+
+    it('keeps the floating transparent banner where compositors are the norm', () => {
+      const h = harness({ platform: 'darwin' });
+      h.notifications.showCustomBanner('DevBar', 'hola');
+      expect(h.windowOptions[0]).toMatchObject({
+        transparent: true,
+        backgroundColor: '#00000000',
+      });
+    });
+
     it('places the banner top-right and loads the renderer without focus', () => {
       const h = harness();
       h.notifications.showCustomBanner('DevBar', 'hola');

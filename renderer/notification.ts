@@ -1,6 +1,10 @@
 import './report-uncaught.js';
 import { byId } from './dom.js';
 import { installTooltips } from './tooltip.js';
+// Linux banners live in an OPAQUE window (no compositor guarantee), and the
+// html.linux rules in notification.html flatten the banner to fill it.
+if (window.api.platform === 'linux')
+  document.documentElement.classList.add('linux');
 const query = new URLSearchParams(location.search);
 byId('title', HTMLElement).textContent = query.get('title') || 'DevBar';
 byId('body', HTMLElement).textContent = query.get('body') || '';

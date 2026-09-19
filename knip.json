@@ -14,5 +14,9 @@
     "tests/**/*.ts"
   ],
   "ignoreBinaries": ["dpkg-deb"],
-  "ignoreDependencies": ["@types/debug", "@types/electron-positioner"]
+  "ignoreDependencies": [
+    "@fontsource/noto-color-emoji",
+    "@types/debug",
+    "@types/electron-positioner"
+  ]
 }

@@ -90,6 +90,9 @@ export interface AppIpcDeps {
   appQuit: () => void;
   openNotificationSettings: () => Promise<{ ok: boolean; error?: string }>;
   openExternal: (url: string) => void;
+  /** Builds the GitHub issue report, copies it to the clipboard and
+   *  answers the URL to open (host-provided; see src/report-issue.ts). */
+  reportIssue: () => { url: string; bodyIncluded: boolean };
   setTimer?: (fn: () => void, ms: number) => unknown;
   newImportToken?: () => string;
 }
@@ -286,6 +289,18 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
   ipc.handle('app:openNotificationSettings', () =>
     deps.openNotificationSettings(),
   );
+  // One-click bug report: the host assembles the report (and copies it to
+  // the clipboard); here we only route the browser and surface failures.
+  ipc.handle('app:reportIssue', () => {
+    try {
+      const report = deps.reportIssue();
+      deps.openExternal(report.url);
+      return { ok: true, bodyIncluded: report.bodyIncluded };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  });
+
   // Open an external https URL in the default browser. https-only guard so a
   // renderer bug can't fire arbitrary schemes (file:, javascript:, …).
   ipc.handle('app:openExternal', (_e: IpcMainInvokeEvent, url: unknown) => {

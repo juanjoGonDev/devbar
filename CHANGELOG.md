@@ -3,6 +3,131 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.9.6] - 2026-09-19
+
+### Corregido
+
+- **En Raspberry Pi, el icono anterior seguía viéndose detrás del nuevo.**
+  El applet de la bandeja compone cada pixmap sobre el buffer anterior en
+  lugar de reemplazarlo: los píxeles transparentes del icono nuevo dejaban
+  ver todos los estados viejos (p. ej. al pulsar «quitar» tras forzar un
+  conteo en el panel de desarrollo). En Linux, los cambios que pueden
+  dejar ver el icono anterior destruyen ahora el elemento de la bandeja y
+  crean uno nuevo con superficie limpia — sin fondo opaco y sin tocar el
+  icono en otras plataformas. Dos refinamientos para que el canje no se
+  note: el elemento nuevo se registra antes de destruir el viejo (nunca
+  hay un momento sin icono) y, cuando el icono nuevo cubre todo lo que
+  había (badge que crece, cambio de color, tema), basta un empuje en
+  sitio sin reconstruir nada.
+
+## [0.9.5] - 2026-09-19
+
+### Corregido
+
+- **En Raspberry Pi, los estados del icono de la bandeja seguían
+  solapándose.** Cada evento de estado volvía a empujar el icono al panel
+  —aunque la imagen fuese idéntica a la anterior, porque la caché
+  devolvía los mismos píxeles— y el applet pintaba encima del pixmap
+  anterior en lugar de reemplazarlo. Ahora se salta todo empuje cuya
+  imagen no ha cambiado y, en Linux, las ráfagas de cambios dentro de
+  250 ms se colapsan en un único empuje con el estado final; macOS y
+  Windows siguen empujando al instante.
+
+- **El interruptor «Ejecutar automáticamente al arrancar» del pipeline
+  decía «el Mac».** Ahora dice «el sistema», como el resto de la
+  interfaz; el ajuste funciona igual en los tres sistemas. También se
+  generaliza su explicación, que mencionaba «Login Item» (término solo
+  de macOS).
+
+### Añadido
+
+- **Las muestras de recursos incluyen la memoria y la carga del sistema
+  completo.** Cada línea registra la RAM libre/total de la máquina y la
+  carga media de 1 minuto (`sys-mem=204.8MB/4096.0MB load1=3.90`), para
+  distinguir un problema de DevBar de una Raspberry sin memoria libre.
+
+## [0.9.4] - 2026-09-19
+
+### Corregido
+
+- **La fuente de emojis ya no «roba» símbolos de texto en Linux.** Noto
+  Color Emoji también trae glifos como `▶` —el que abre cada línea de
+  arranque de servicio— y, al estar al final de todas las pilas de
+  fuentes, acababa repintando los logs monocromo con emojis grandes a
+  color y volviéndolos ilegibles. Ahora la fuente declara un
+  `unicode-range` con los bloques de emoji reales: flechas, símbolos de
+  caja y todo lo que era texto vuelve a resolverse en la fuente de texto,
+  igual que antes de incluirla.
+
+- **El icono de apagar de la ventana de la bandeja volvía a no verse en
+  Raspberry Pi OS.** `⏻` no es un emoji: ninguna fuente del sistema lo
+  trae y Noto Color Emoji tampoco lo cubre, así que quedaba como un
+  cuadro vacío mientras el resto sí se veía. Se cambia por `⏹` (cubierto
+  en todos los sistemas, mismo estilo al pasar el ratón).
+
+### Añadido
+
+- **Botón «Reportar fallo en GitHub» en Acerca de.** Prepara un informe
+  con la versión, el sistema (plataforma, arquitectura, OS, Electron y
+  Node) y el final de `app.log`, lo copia completo al portapapeles y abre
+  el formulario de issues de GitHub con el título y el cuerpo ya
+  rellenos; si el cuerpo no cabe en la URL, basta con pegar (el informe
+  íntegro sigue en el portapapeles).
+
+- **Muestreo de CPU y RAM en el log de la app.** Cada apertura de ventana
+  y una línea periódica registran CPU, RSS/heap y número de procesos de
+  Chromium (`[resources] cpu=12.3% rss=180.2MB … (window-open)`), para
+  que un «se disparan los ventiladores al abrir el menú» llegue con
+  números y no a base de anecdotes.
+
+### Cambiado
+
+- **El selector de emojis se pinta por bloques.** Hasta ahora abría
+  construyendo de golpe todos los botones de la categoría activa (hasta
+  ~1900 nodos con su escucha cada uno): en una Raspberry Pi eso disparaba
+  la CPU —y los ventiladores— al abrirlo. Ahora pinta los primeros 96 al
+  instante y el resto va llegando en segundo plano; escribir en el
+  buscador o cerrar el selector cancela el trabajo pendiente.
+
+## [0.9.3] - 2026-09-19
+
+### Corregido
+
+- **En Linux, `install-local` fallaba en Raspberry Pi (y en cualquier host
+  que no sea x64).** El build de empaquetado terminaba bien pero la
+  instalación buscaba el ejecutable en `linux-unpacked`, cuando
+  electron-builder escribe `linux-arm64-unpacked` en un host arm64 (y solo
+  deja el nombre sin sufijo en x64). Ahora el directorio se deduce de la
+  arquitectura del host con el mismo criterio que el empaquetador, así que
+  `pnpm install-local` vuelve a funcionar en la Pi.
+
+- **En Raspberry Pi OS no se veía ningún emoji** (iconos de grupos, rejilla
+  del selector, glifos de la propia interfaz): el sistema no trae ninguna
+  fuente de emoji a color y todo se pintaba como cuadros vacíos. La app
+  ahora lleva incorporada Noto Color Emoji (SIL OFL) y la sirve como
+  última opción de cada pila de fuentes, así que solo se usa donde no hay
+  ninguna fuente nativa que cubra el glifo. El archivo viaja únicamente en
+  los artefactos de Linux (macOS y Windows tienen fuentes propias).
+
+- **En Linux, la notificación emergente se veía como una caja negra.** Las
+  sesiones sin compositor (Raspberry Pi OS entre ellas) no pueden pintar
+  ventanas transparentes: el banner ahora es opaco y ocupa la ventana
+  completa en Linux; macOS y Windows conservan el banner flotante con
+  esquinas redondeadas.
+
+- **En Linux, los estados del icono de la bandeja se solapaban.** Varios
+  paneles componen los dos pixmaps multi-escala que se les enviaban en
+  lugar de elegir uno, y cada cambio de estado estampaba el icono nuevo
+  sobre el anterior. Ahora Linux recibe un único pixmap de 32 px que el
+  panel reduce; macOS y Windows mantienen el par 18 px + 2x.
+
+- **Los logs de servicio ya no muestran los avisos de job control de
+  bash.** Cada comando lanzado con el shell interactivo (`-ic`, el que
+  carga tus rc y tu PATH) imprimía «bash: cannot set terminal process
+  group (-1)…» y «bash: no job control in this shell» antes de la salida
+  real; eran ruido del propio shell (el comando se ejecutaba bien) y ahora
+  se filtran, igual que ya se hacía con su equivalente de zsh.
+
 ## [0.9.2] - 2026-09-18
 
 ### Añadido

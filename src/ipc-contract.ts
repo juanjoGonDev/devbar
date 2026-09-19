@@ -384,6 +384,14 @@ export interface DevBarApi {
   getAppVersion(): Promise<string>;
   getChangelog(): Promise<ChangelogPayload>;
   openExternal(url: string): Promise<SimpleResult>;
+  /** Copies the bug report to the clipboard and opens GitHub's new-issue
+   *  form; bodyIncluded says whether the body rides in the URL or the
+   *  user has to paste it. */
+  reportIssue(): Promise<{
+    ok: boolean;
+    bodyIncluded?: boolean;
+    error?: string;
+  }>;
   /**
    * Open the OS notification settings: macOS deep-links to this app's own
    * row, Windows to the notifications page, Linux to the detected desktop's

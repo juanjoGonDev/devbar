@@ -88,6 +88,38 @@ export async function buildApp(
   fs.cpSync(path.join(root, 'assets'), path.join(root, 'build', 'assets'), {
     recursive: true,
   });
+
+  // The emoji webfont, pinned via @fontsource/noto-color-emoji. Systems
+  // without any color-emoji font (Raspberry Pi OS among them) render every
+  // emoji as tofu; renderer/emoji.css serves this file as a last-resort
+  // family, and the LINUX packages alone ship it (package-win-linux.ts
+  // excludes the directory from the other platforms' file sets). Missing is
+  // a warning, not an error: a stale node_modules must still be able to
+  // build a working app on a system that has its own emoji font.
+  const emojiFontSource = path.join(
+    root,
+    'node_modules',
+    '@fontsource',
+    'noto-color-emoji',
+    'files',
+    'noto-color-emoji-emoji-400-normal.woff2',
+  );
+  const emojiFontDestination = path.join(
+    root,
+    'build',
+    'assets',
+    'fonts',
+    'NotoColorEmoji.woff2',
+  );
+  fs.mkdirSync(path.dirname(emojiFontDestination), { recursive: true });
+  if (fs.existsSync(emojiFontSource)) {
+    fs.copyFileSync(emojiFontSource, emojiFontDestination);
+  } else {
+    console.warn(
+      '! Noto Color Emoji missing from node_modules (pnpm install?) — ' +
+        'emoji will fall back to whatever the system provides.',
+    );
+  }
 }
 
 // Direct execution: node --experimental-strip-types scripts/build.ts

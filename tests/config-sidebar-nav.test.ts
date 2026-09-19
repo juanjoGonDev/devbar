@@ -141,6 +141,17 @@ describe('renderer/config/sidebar-nav.ts', () => {
       expect(win.callCount('openExternal')).toBe(1);
     });
 
+    it('reports a failure through the one-click issue flow', async () => {
+      win = await openConfigWindow();
+      const btn = document.getElementById('report-issue') as HTMLButtonElement;
+      expect(btn?.textContent).toContain('Reportar fallo');
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await win.settle('reportIssue', { ok: true, bodyIncluded: false });
+      expect(win.callCount('reportIssue')).toBe(1);
+      // Feedback in place: the clipboard holds the report, GitHub is open.
+      expect(btn.textContent).toContain('Copiado');
+    });
+
     it('jumps to About when the tray asks for it', async () => {
       win = await openConfigWindow();
       await win.push('onConfigGoto', 'about');

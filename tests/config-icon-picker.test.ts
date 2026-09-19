@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createIconPicker } from '../renderer/config/icon-picker.js';
+import {
+  createIconPicker,
+  ICON_CHUNK,
+  type IconPickerOptions,
+} from '../renderer/config/icon-picker.js';
 import type { IconBatteryItem } from '../src/ipc-contract.js';
 
 const RECENTS_KEY = 'devbar.recentIcons';
@@ -73,6 +77,38 @@ function cells(h: Harness): HTMLButtonElement[] {
 
 function tabs(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>('#icon-tabs .icon-tab')];
+}
+
+/** A scheduler the tests advance by hand: no timers, deterministic. */
+function manualScheduler(): {
+  schedule: (task: () => void) => void;
+  runAll: () => Promise<void>;
+  pending: () => number;
+} {
+  const queue: (() => void)[] = [];
+  return {
+    schedule: (task) => queue.push(task),
+    pending: () => queue.length,
+    runAll: async () => {
+      // Chunks schedule more chunks: drain until the queue stays empty.
+      while (queue.length) {
+        const task = queue.shift();
+        task?.();
+      }
+      await flush();
+    },
+  };
+}
+
+function batteryOf(
+  count: number,
+  group = 'Smileys & Emotion',
+): IconBatteryItem[] {
+  return Array.from({ length: count }, (_, i) => ({
+    emoji: String.fromCodePoint(0x1f600 + i),
+    label: `face ${i}`,
+    group,
+  }));
 }
 
 describe('renderer/config/icon-picker.ts', () => {
@@ -278,5 +314,77 @@ describe('renderer/config/icon-picker.ts', () => {
     // Already closed: the handler must stay quiet.
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(h.picker.hasAttribute('hidden')).toBe(true);
+  });
+
+  describe('incremental rendering', () => {
+    function elementsWith(
+      options?: IconPickerOptions & {
+        scheduleTasks?: ReturnType<typeof manualScheduler>;
+      },
+    ): Harness & { tasks: ReturnType<typeof manualScheduler> } {
+      const h = elements();
+      const tasks = manualScheduler();
+      stubBattery(batteryOf(10));
+      createIconPicker(h, {
+        schedule: tasks.schedule,
+        ...options,
+      });
+      return { ...h, tasks };
+    }
+
+    it('renders the first chunk synchronously, the rest as the scheduler yields', async () => {
+      const h = elementsWith({ chunkSize: 3 });
+      await flush();
+      const grid = h.grid.querySelector('.icon-grid') as HTMLElement;
+      expect(grid.children.length).toBe(3);
+      await h.tasks.runAll();
+      expect(grid.children.length).toBe(10);
+    });
+
+    it('defaults the chunk to ' + ICON_CHUNK + ' cells', async () => {
+      // A real-sized battery: the first paint must not build ~1900 buttons.
+      const h = elements();
+      const tasks = manualScheduler();
+      stubBattery(batteryOf(250));
+      createIconPicker(h, { schedule: tasks.schedule });
+      await flush();
+      const grid = h.grid.querySelector('.icon-grid') as HTMLElement;
+      expect(grid.children.length).toBe(ICON_CHUNK);
+      await tasks.runAll();
+      expect(grid.children.length).toBe(250);
+    });
+
+    it('cancels queued chunks of a superseded render', async () => {
+      const h = elementsWith({ chunkSize: 3 });
+      await flush();
+      // Mid-render the user types a filter that matches fewer icons: the
+      // pending chunks of the OLD render must not append into the new one.
+      h.search.value = 'face 9';
+      h.search.dispatchEvent(new Event('input'));
+      const grid = h.grid.querySelector('.icon-grid') as HTMLElement;
+      expect(grid.children.length).toBe(1);
+      await h.tasks.runAll();
+      expect(grid.children.length).toBe(1);
+      const emojis = [...grid.children].map((c) => c.textContent);
+      expect(new Set(emojis).size).toBe(1);
+    });
+
+    it('stops rendering once the picker is closed', async () => {
+      const h = elements();
+      const tasks = manualScheduler();
+      stubBattery(batteryOf(10));
+      const picker = createIconPicker(h, {
+        schedule: tasks.schedule,
+        chunkSize: 3,
+      });
+      await flush();
+      const grid = h.grid.querySelector('.icon-grid') as HTMLElement;
+      expect(grid.children.length).toBe(3);
+      picker.close();
+      await tasks.runAll();
+      // A hidden picker must not keep burning CPU appending cells nobody
+      // can see.
+      expect(grid.children.length).toBe(3);
+    });
   });
 });
