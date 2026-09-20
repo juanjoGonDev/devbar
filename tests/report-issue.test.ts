@@ -112,6 +112,28 @@ describe('secret redaction at the export boundary', () => {
     expect(report.clipboardText).toContain('arranque normal');
   });
 
+  it('consumes an authorization scheme together with its credential', () => {
+    const log = [
+      'Authorization: Basic dXNlcjpwYXNz',
+      '--auth Basic Ym9iOnNlY3JldDEyMzQ=',
+      'token: Bearer eyhbGciOiJIUzI1NiJ9.xx.yy',
+      'petición normal',
+    ].join('\n');
+    const report = prepareIssueReport(ctx, log);
+    for (const credential of [
+      'dXNlcjpwYXNz',
+      'Ym9iOnNlY3JldDEyMzQ=',
+      'eyhbGciOiJIUzI1NiJ9',
+    ]) {
+      expect(report.clipboardText).not.toContain(credential);
+      expect(report.url).not.toContain(encodeURIComponent(credential));
+    }
+    expect(report.clipboardText).toContain('Authorization: [redacted]');
+    expect(report.clipboardText).toContain('--auth [redacted]');
+    expect(report.clipboardText).toContain('token: [redacted]');
+    expect(report.clipboardText).toContain('petición normal');
+  });
+
   it('leaves ordinary log lines untouched', () => {
     const log = '12:00 start pnpm -v\nexit 0\nreintentando servicio web';
     const report = prepareIssueReport(ctx, log);

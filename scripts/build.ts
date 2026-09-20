@@ -93,9 +93,9 @@ export async function buildApp(
   // without any color-emoji font (Raspberry Pi OS among them) render every
   // emoji as tofu; renderer/emoji.css serves this file as a last-resort
   // family, and the LINUX packages alone ship it (package-win-linux.ts
-  // excludes the directory from the other platforms' file sets). Missing is
-  // a warning, not an error: a stale node_modules must still be able to
-  // build a working app on a system that has its own emoji font.
+  // excludes the directory from the other platforms' file sets). A missing
+  // pinned font is a broken install, so the build fails before producing
+  // an incomplete Linux artifact — run pnpm install to fix it.
   const emojiFontSource = path.join(
     root,
     'node_modules',
