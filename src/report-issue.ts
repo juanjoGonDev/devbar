@@ -147,11 +147,17 @@ const REDACTIONS: [RegExp, string][] = [
   [/[Bb]earer\s+[A-Za-z0-9._~+/=-]{16,}/g, 'Bearer [redacted]'],
   // URLs with userinfo: https://user:password@host — the credentials go.
   [/((?:https?|ftp):\/\/)[^\s/@:]+:[^\s@]+@/g, '$1[redacted]@'],
-  // key=value / key: value secrets (token=, password:, --secret x, …).
-  // The 'auth' prefix also covers Authorization headers.
+  // key=value / key: value secrets, with optional quotes on key and/or
+  // value: password=hunter2, token="x", "password":"x" (JSON). The 'auth'
+  // prefix also covers Authorization headers.
   [
-    /\b((?:api[_-]?key|apikey|auth|passwd|password|secret|token)[a-z0-9._-]{0,12}\s*[=:]+\s*)[^\s'"]+/gi,
+    /((?:^|[\s{[;,])["']?(?:api[_-]?key|apikey|auth[a-z0-9._-]{0,12}|passwd|password|secret|token[a-z0-9._-]{0,12})["']?\s*[=:]+\s*)(?:"[^"]*"|'[^']*'|[^\s'"]+)/gi,
     '$1[redacted]',
+  ],
+  // CLI style: --api-key VALUE — flag and value as separate words.
+  [
+    /(^|\s)(--(?:api[_-]?key|apikey|auth[a-z0-9._-]{0,12}|passwd|password|secret|token[a-z0-9._-]{0,12})\s+)(?:"[^"]*"|'[^']*'|[^\s'"]+)/gi,
+    '$1$2[redacted]',
   ],
   // Any long hex run: hashes, digests, raw key material.
   [/\b[a-f0-9]{32,}\b/gi, '[redacted]'],

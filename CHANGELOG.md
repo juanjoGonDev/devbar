@@ -12,8 +12,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
   lugar de reemplazarlo: los píxeles transparentes del icono nuevo dejaban
   ver todos los estados viejos (p. ej. al pulsar «quitar» tras forzar un
   conteo en el panel de desarrollo). En Linux, los cambios que pueden
-  dejar ver el icono anterior destruyen ahora el elemento de la bandeja y
-  crean uno nuevo con superficie limpia — sin fondo opaco y sin tocar el
+  dejar ver el icono anterior crean ahora un elemento nuevo con superficie
+  limpia y después destruyen el anterior — sin fondo opaco y sin tocar el
   icono en otras plataformas. Dos refinamientos para que el canje no se
   note: el elemento nuevo se registra antes de destruir el viejo (nunca
   hay un momento sin icono) y, cuando el icono nuevo cubre todo lo que

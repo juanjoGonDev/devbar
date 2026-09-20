@@ -82,6 +82,36 @@ describe('secret redaction at the export boundary', () => {
     expect(report.clipboardText).toContain('arranco');
   });
 
+  it('redacts CLI flags with a space value and quoted or JSON values', () => {
+    const log = [
+      '--api-key sk_live_ABCDEF123456',
+      'token="sk_live_XYZ987654321"',
+      '"password":"secret-value-001"',
+      "--secret 'otro-valor-999'",
+      '{"api_key":"json-key-424242"}',
+      'arranque normal',
+    ].join('\n');
+    const report = prepareIssueReport(ctx, log);
+    for (const secret of [
+      'sk_live_ABCDEF123456',
+      'sk_live_XYZ987654321',
+      'secret-value-001',
+      'otro-valor-999',
+      'json-key-424242',
+    ]) {
+      expect(report.clipboardText).not.toContain(secret);
+      expect(report.url).not.toContain(encodeURIComponent(secret));
+    }
+    // The keys stay legible: only the values become placeholders.
+    expect(report.clipboardText).toContain('--api-key [redacted]');
+    expect(report.clipboardText).toContain('token=[redacted]');
+    expect(report.clipboardText).toContain('"password":[redacted]');
+    expect(report.clipboardText).toContain('--secret [redacted]');
+    expect(report.clipboardText).toContain('"api_key":[redacted]');
+    // The innocent line survives.
+    expect(report.clipboardText).toContain('arranque normal');
+  });
+
   it('leaves ordinary log lines untouched', () => {
     const log = '12:00 start pnpm -v\nexit 0\nreintentando servicio web';
     const report = prepareIssueReport(ctx, log);
