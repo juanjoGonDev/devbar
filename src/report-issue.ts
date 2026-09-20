@@ -157,7 +157,7 @@ const REDACTIONS: [RegExp, string][] = [
   [/\b[a-f0-9]{32,}\b/gi, '[redacted]'],
 ];
 
-export function redactSecrets(text: string): string {
+function redactSecrets(text: string): string {
   let out = text;
   for (const [pattern, replacement] of REDACTIONS)
     out = out.replace(pattern, replacement);
