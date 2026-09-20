@@ -96,6 +96,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
     appQuit: () => calls.push('quit'),
     openNotificationSettings: () => Promise.resolve({ ok: true }),
     openExternal: (url) => calls.push(`external:${url}`),
+    openExternalAsync: (url) => Promise.resolve(calls.push(`external:${url}`)),
     reportIssue: () => {
       calls.push('reportIssue');
       return {
@@ -169,6 +170,16 @@ describe('src/main/ipc/app-ipc.ts', () => {
       expect(h.calls).toContain(
         'external:https://github.test/issues/new?title=x',
       );
+    });
+
+    it('reports failure when the browser refuses to open', async () => {
+      const h = harness({
+        openExternalAsync: () => Promise.reject(new Error('no browser')),
+      });
+      const res = await h.ipc.invoke('app:reportIssue');
+      // The launch is awaited: a rejected open can no longer masquerade
+      // as success.
+      expect(res).toEqual({ ok: false, error: 'no browser' });
     });
   });
 

@@ -96,6 +96,7 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
     appQuit: host.appQuit,
     reportIssue: host.reportIssue,
     openExternal: host.openExternal,
+    openExternalAsync: host.openExternalAsync,
     openNotificationSettings: () =>
       openNotificationSettings({
         platform: host.platform,

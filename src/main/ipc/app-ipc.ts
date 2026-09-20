@@ -90,6 +90,10 @@ export interface AppIpcDeps {
   appQuit: () => void;
   openNotificationSettings: () => Promise<{ ok: boolean; error?: string }>;
   openExternal: (url: string) => void;
+  /** Same launch, observable: reportIssue awaits it so a browser that
+   *  fails to open surfaces as { ok: false } instead of an unhandled
+   *  rejection after a claimed success. */
+  openExternalAsync: (url: string) => Promise<unknown>;
   /** Builds the GitHub issue report, copies it to the clipboard and
    *  answers the URL to open (host-provided; see src/report-issue.ts). */
   reportIssue: () => { url: string; bodyIncluded: boolean };
@@ -291,10 +295,13 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
   );
   // One-click bug report: the host assembles the report (and copies it to
   // the clipboard); here we only route the browser and surface failures.
-  ipc.handle('app:reportIssue', () => {
+  ipc.handle('app:reportIssue', async () => {
     try {
       const report = deps.reportIssue();
-      deps.openExternal(report.url);
+      // Awaited on purpose: the synchronous void-launch could not reject
+      // inside this try, so a browser that never opened still answered
+      // { ok: true }.
+      await deps.openExternalAsync(report.url);
       return { ok: true, bodyIncluded: report.bodyIncluded };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };

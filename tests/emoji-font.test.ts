@@ -31,16 +31,29 @@ describe('renderer/emoji.css', () => {
     expect(emojiCss).toContain('U+fe0f');
   });
 
+  /** The declared range, and only it: comments in the file may mention
+   *  excluded codepoints (they do, when explaining the trade), so the
+   *  exclusions below must scan the property value, not the whole file.
+   *  The file writes hex lowercase after an uppercase 'U+' — the patterns
+   *  used to be lowercase and could never match anything. */
+  function declaredRange(): string {
+    const match = emojiCss.match(/unicode-range:\s*([^;]+);/s);
+    expect(match, 'unicode-range declared').not.toBeNull();
+    return (match?.[1] ?? '').replace(/\s+/g, '');
+  }
+
   it('keeps text symbols out of the emoji face', () => {
+    const range = declaredRange();
     // ▶ (start lines in every service log), ⇄, ■ and friends must keep
-    // resolving in the text font. The range is codepoint-level, so the
-    // whole geometric-shapes and arrow neighborhoods stay out.
-    expect(emojiCss).not.toMatch(/u\+2[56][0-9a-f]{2}/);
+    // resolving in the text font: the whole geometric-shapes block
+    // (25xx) stays out. 26xx is NOT excluded — it holds real emoji
+    // (☀ ⚡ …) — so the check pins the block, not the neighborhood.
+    expect(range).not.toMatch(/U\+25[0-9a-f]{2}/);
     // ⏻ (U+23FB) is not an emoji and not even in the font — it must never
     // be listed as covered.
-    expect(emojiCss).not.toContain('U+23fb');
+    expect(range).not.toContain('U+23fb');
     // Digits and latin-1 punctuation stay in the text font too.
-    expect(emojiCss).not.toMatch(/u\+00[0-9a-f]{2}/);
+    expect(range).not.toMatch(/U\+00[0-9a-f]{2}/);
   });
 
   it('is loaded after every window stylesheets', () => {
@@ -55,17 +68,20 @@ describe('renderer/emoji.css', () => {
       'tray.html',
     ]) {
       const source = readFileSync(path.join(rendererDir, html), 'utf8');
-      const faceAt = source.indexOf('emoji.css');
-      const lastSheet =
-        source.lastIndexOf('<link rel="stylesheet" href="emoji.css"') === -1
-          ? Math.max(
-              ...[...source.matchAll(/<link rel="stylesheet"/g)].map(
-                (m) => m.index ?? -1,
-              ),
-            )
-          : faceAt;
-      expect(faceAt, html).toBeGreaterThanOrEqual(0);
-      expect(faceAt, html).toBeGreaterThanOrEqual(lastSheet);
+      // The face link must come after EVERY stylesheet: its tag offset
+      // must equal the max offset across all stylesheet links (its own
+      // included, so the equality can only hold when nothing follows it).
+      // The old fallback compared the face's offset with itself whenever
+      // emoji.css was present — which was always.
+      const faceLink = source.lastIndexOf(
+        '<link rel="stylesheet" href="emoji.css',
+      );
+      const sheetOffsets = [...source.matchAll(/<link rel="stylesheet"/g)].map(
+        (m) => m.index ?? -1,
+      );
+      expect(faceLink, html).toBeGreaterThanOrEqual(0);
+      expect(sheetOffsets, html).toContain(faceLink);
+      expect(faceLink, html).toBe(Math.max(...sheetOffsets));
     }
   });
 });

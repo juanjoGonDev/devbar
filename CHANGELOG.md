@@ -78,7 +78,7 @@ Todas las novedades relevantes de DevBar. El formato sigue
   y una línea periódica registran CPU, RSS/heap y número de procesos de
   Chromium (`[resources] cpu=12.3% rss=180.2MB … (window-open)`), para
   que un «se disparan los ventiladores al abrir el menú» llegue con
-  números y no a base de anecdotes.
+  números y no a base de anécdotas.
 
 ### Cambiado
 
