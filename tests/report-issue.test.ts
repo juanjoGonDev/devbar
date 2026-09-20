@@ -54,6 +54,48 @@ describe('hostile log content', () => {
   });
 });
 
+describe('secret redaction at the export boundary', () => {
+  const secrets = [
+    'ghp_0123456789abcdefghijklmnopqrst',
+    'github_pat_11ABCDEFG0123456789_0123456789abcdefghijklmnopqrstuvwx',
+    'AKIAIOSFODNN7EXAMPLE',
+    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1',
+    'authorization: Bearer abcdef0123456789abcdef',
+    'https://mari:supersecret@internal.example.com/repo',
+    'password=hunter2 --token 1234567890abcdef --api-key=zzzz1234567890',
+    'digest e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+  ];
+
+  it('strips known secret shapes from BOTH export sinks', () => {
+    const log = `arranco\n${secrets.join('\n')}\nsigo`;
+    const report = prepareIssueReport(ctx, log);
+    for (const secret of secrets) {
+      expect(report.clipboardText, secret).not.toContain(secret);
+      expect(report.url, secret).not.toContain(
+        encodeURIComponent(secret.slice(0, 20)),
+      );
+    }
+    // The placeholders show something happened, and the report structure
+    // (plus the innocent lines) survives.
+    expect(report.clipboardText).toContain('[token de GitHub]');
+    expect(report.clipboardText).toContain('[redacted]');
+    expect(report.clipboardText).toContain('arranco');
+  });
+
+  it('leaves ordinary log lines untouched', () => {
+    const log = '12:00 start pnpm -v\nexit 0\nreintentando servicio web';
+    const report = prepareIssueReport(ctx, log);
+    expect(report.clipboardText).toContain(log);
+  });
+
+  it('redacts before the char budget, so no cut can split a placeholder', () => {
+    const log = `${'x'.repeat(2950)}\ntoken ${'a'.repeat(40)}`;
+    const report = prepareIssueReport(ctx, log);
+    // The raw 40-char token must not survive even partially.
+    expect(report.clipboardText).not.toContain('a'.repeat(40));
+  });
+});
+
 describe('URL budget per platform', () => {
   it('caps Windows under its 2081-char openExternal limit', () => {
     expect(MAX_URL_CHARS_WINDOWS).toBeLessThanOrEqual(2000);

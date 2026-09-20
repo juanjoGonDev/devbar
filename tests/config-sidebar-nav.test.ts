@@ -162,6 +162,22 @@ describe('renderer/config/sidebar-nav.ts', () => {
       expect(btn.textContent).not.toContain('pégalo');
     });
 
+    it('tells the user the report was copied when the browser fails', async () => {
+      win = await openConfigWindow();
+      const btn = document.getElementById('report-issue') as HTMLButtonElement;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await win.settle('reportIssue', {
+        ok: false,
+        copied: true,
+        error: 'no browser',
+      });
+      // The clipboard already carries the report: manual pasting remains,
+      // so a bare failure would be a lie.
+      expect(btn.textContent).toContain('el navegador no se abrió');
+      expect(btn.textContent).toContain('pégalo');
+      expect(btn.textContent).not.toBe('No se pudo preparar');
+    });
+
     it('jumps to About when the tray asks for it', async () => {
       win = await openConfigWindow();
       await win.push('onConfigGoto', 'about');

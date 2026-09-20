@@ -149,12 +149,15 @@ async function reportIssueClick(btn: HTMLButtonElement): Promise<void> {
   try {
     const res = await window.api.reportIssue();
     // bodyIncluded: GitHub's form already carries the report — asking for
-    // a paste would duplicate it.
+    // a paste would duplicate it. copied (with ok false): the browser did
+    // not open, but the report IS on the clipboard — manual pasting works.
     btn.textContent = res.ok
       ? res.bodyIncluded
         ? '✓ Formulario preparado en GitHub'
         : '✓ Copiado — pégalo en GitHub'
-      : 'No se pudo preparar';
+      : res.copied
+        ? '✓ Copiado — el navegador no se abrió; pégalo en GitHub'
+        : 'No se pudo preparar';
   } catch {
     btn.textContent = 'No se pudo preparar';
   }

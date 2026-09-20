@@ -390,6 +390,9 @@ export interface DevBarApi {
   reportIssue(): Promise<{
     ok: boolean;
     bodyIncluded?: boolean;
+    /** True when the failure happened AFTER the copy: the report is on
+     *  the clipboard and manual pasting remains an option. */
+    copied?: boolean;
     error?: string;
   }>;
   /**

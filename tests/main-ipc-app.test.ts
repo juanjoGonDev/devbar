@@ -178,8 +178,9 @@ describe('src/main/ipc/app-ipc.ts', () => {
       });
       const res = await h.ipc.invoke('app:reportIssue');
       // The launch is awaited: a rejected open can no longer masquerade
-      // as success.
-      expect(res).toEqual({ ok: false, error: 'no browser' });
+      // as success — and the report IS on the clipboard already, which
+      // the renderer must be able to tell the user.
+      expect(res).toEqual({ ok: false, copied: true, error: 'no browser' });
     });
   });
 

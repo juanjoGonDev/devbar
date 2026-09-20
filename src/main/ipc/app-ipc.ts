@@ -296,15 +296,23 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
   // One-click bug report: the host assembles the report (and copies it to
   // the clipboard); here we only route the browser and surface failures.
   ipc.handle('app:reportIssue', async () => {
+    let report: { url: string; bodyIncluded: boolean };
     try {
-      const report = deps.reportIssue();
+      report = deps.reportIssue();
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+    try {
       // Awaited on purpose: the synchronous void-launch could not reject
-      // inside this try, so a browser that never opened still answered
+      // inside a try, so a browser that never opened still answered
       // { ok: true }.
       await deps.openExternalAsync(report.url);
       return { ok: true, bodyIncluded: report.bodyIncluded };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      // The report IS on the clipboard already (reportIssue copies before
+      // launching): say so, or the renderer would claim total failure and
+      // the user would never think of pasting what they have.
+      return { ok: false, copied: true, error: errorMessage(err) };
     }
   });
 
