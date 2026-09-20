@@ -153,6 +153,27 @@ describe('secret redaction at the export boundary', () => {
     expect(report.clipboardText).toContain('https://example.com/home/public');
   });
 
+  it('redacts query-string and CLI-assignment secrets', () => {
+    const log = [
+      'https://example.test/path?token=query-secret',
+      'https://example.test/path?a=1&api_key=second-secret',
+      '--api-key=cli-secret',
+      'enlace inocuo https://example.test/plain',
+    ].join('\n');
+    const report = prepareIssueReport(ctx, log);
+    for (const secret of ['query-secret', 'second-secret', 'cli-secret']) {
+      expect(report.clipboardText, secret).not.toContain(secret);
+      expect(report.url, secret).not.toContain(encodeURIComponent(secret));
+    }
+    // The delimiters stay legible: only the values become placeholders.
+    expect(report.clipboardText).toContain('?token=[redacted]');
+    expect(report.clipboardText).toContain('&api_key=[redacted]');
+    expect(report.clipboardText).toContain('--api-key=[redacted]');
+    expect(report.clipboardText).toContain(
+      'enlace inocuo https://example.test/plain',
+    );
+  });
+
   it('leaves ordinary log lines untouched', () => {
     const log = '12:00 start pnpm -v\nexit 0\nreintentando servicio web';
     const report = prepareIssueReport(ctx, log);

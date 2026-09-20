@@ -120,12 +120,17 @@ export function attachResourceSampling(
   const monitor = createResourceMonitor(deps);
   const createWindow = host.createWindow.bind(host);
   host.createWindow = (options: never) => {
+    const window = createWindow(options);
     try {
+      // AFTER creation on purpose: the sample's CPU window then covers the
+      // creation cost itself, which is exactly what the 'window-open'
+      // label promises. Sampling first would measure the idle time before
+      // the window and attribute the expensive part to the next 'interval'.
       monitor.sample('window-open');
     } catch {
       // Sampling must never break the window it is observing.
     }
-    return createWindow(options);
+    return window;
   };
   try {
     monitor.start();

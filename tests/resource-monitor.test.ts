@@ -211,18 +211,29 @@ describe('src/main/resource-monitor.ts', () => {
   });
 
   describe('attachResourceSampling', () => {
-    it('samples on window creation, wraps the factory and starts the monitor', () => {
+    it('samples after the window exists, wraps the factory and starts the monitor', () => {
       const h = harness();
-      const host: { createWindow: (o: never) => unknown; created: unknown } = {
-        createWindow: () => 'win',
-        created: null,
+      const events: string[] = [];
+      const host: { createWindow: (o: never) => unknown } = {
+        createWindow: () => {
+          // The creation is the expensive part: the gauge the sample will
+          // read only moves once the factory has run.
+          events.push('create');
+          cpuBurned = true;
+          return 'win';
+        },
       };
+      let cpuBurned = false;
+      const realCpu = h.deps.cpu;
+      h.deps.cpu = () => (cpuBurned ? { user: 0, system: 1 } : realCpu());
       const monitor = attachResourceSampling(host, h.deps);
       // Baseline from start()…
       expect(h.lines[0]).toContain('(monitor-start)');
-      // …plus one sample per window creation, then the real factory runs.
+      // …and the window-open sample lands AFTER the factory: it measures
+      // the creation, not the idle time before it.
       const created = host.createWindow(null as never);
       expect(created).toBe('win');
+      expect(events).toEqual(['create']);
       expect(h.lines[h.lines.length - 1]).toContain('(window-open)');
       expect(monitor.sample('probe')).toBeDefined();
     });

@@ -160,7 +160,7 @@ jobs:
           path: |
             ~/.cache/electron
             ~/.cache/electron-builder
-          key: electron-linux-${{ hashFiles('pnpm-lock.yaml') }}
+          key: electron-linux-${{ matrix.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install reproducibly
         run: pnpm install --frozen-lockfile
