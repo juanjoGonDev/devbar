@@ -87,13 +87,18 @@ export function readTail(filePath: string, maxBytes: number): string {
     fd = fs.openSync(filePath, 'r');
     const { size } = fs.fstatSync(fd);
     const start = Math.max(0, size - maxBytes);
-    const length = size - start;
+    // Peek the byte BEFORE the window: if it is a newline the window opens
+    // on a complete line and must be kept — the blind drop-to-first-newline
+    // below would discard it, and an exact-fit window would read as empty.
+    const readStart = start > 0 ? start - 1 : start;
+    const length = size - readStart;
     if (length === 0) return '';
     const buffer = Buffer.alloc(length);
-    const read = fs.readSync(fd, buffer, 0, length, start);
+    const read = fs.readSync(fd, buffer, 0, length, readStart);
     const text = buffer.subarray(0, read).toString('utf8');
     if (start === 0) return text;
-    // The window begins mid-file, so mid-line: drop the torn first entry
+    if (buffer[0] === 0x0a) return text.slice(1);
+    // The window begins mid-file, mid-line: drop the torn first entry
     // rather than show half a line in the report.
     const nl = text.indexOf('\n');
     return nl === -1 ? '' : text.slice(nl + 1);

@@ -58,6 +58,15 @@ describe('readTail', () => {
     expect(readTail(file, 1024)).toBe('line one\nline two\n');
   });
 
+  it('keeps the first line when the window opens on a line boundary', () => {
+    const file = path.join(tempDir(), 'app.log');
+    fs.writeFileSync(file, `${'A'.repeat(300)}\nultima linea\n`);
+    // A window of exactly the last line starts right after the newline:
+    // the line is COMPLETE and must survive, not be dropped (let alone
+    // read back as an empty tail).
+    expect(readTail(file, 'ultima linea\n'.length)).toBe('ultima linea\n');
+  });
+
   it('reads one bounded window and drops the torn first line', () => {
     const file = path.join(tempDir(), 'app.log');
     fs.writeFileSync(file, `${'A'.repeat(300)}\nultima linea\n`);
