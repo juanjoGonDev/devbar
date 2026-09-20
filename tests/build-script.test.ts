@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp, defaultBuildDeps } from '../scripts/build.js';
 
 /**
@@ -159,28 +159,19 @@ describe('scripts/build.ts', () => {
       ).toBe('woff2-payload');
     });
 
-    it('only warns when the emoji font is missing from node_modules', async () => {
-      // A stale node_modules must still build a working app on systems with
-      // their own emoji font — the warning is the visible trace.
+    it('refuses to build when the emoji font is missing from node_modules', async () => {
+      // Linux artifacts bundle this face; shipping without it silently
+      // regresses the Pi to tofu emoji. A node_modules able to run the
+      // build but missing this pinned package is a broken install — the
+      // error must say how to fix it, not degrade the artifact.
       const root = makeRoot();
       rmSync(join(root, 'node_modules', '@fontsource'), {
         recursive: true,
         force: true,
       });
-      const warnings: string[] = [];
-      const spy = vi
-        .spyOn(console, 'warn')
-        .mockImplementation((message: unknown) => {
-          warnings.push(String(message));
-        });
-      try {
-        await build(root);
-      } finally {
-        spy.mockRestore();
-      }
-      expect(
-        warnings.some((message) => message.includes('Noto Color Emoji')),
-      ).toBe(true);
+      await expect(build(root)).rejects.toThrow(
+        /Noto Color Emoji missing.*pnpm install/s,
+      );
       expect(
         existsSync(
           join(root, 'build', 'assets', 'fonts', 'NotoColorEmoji.woff2'),

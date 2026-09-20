@@ -115,9 +115,14 @@ export async function buildApp(
   if (fs.existsSync(emojiFontSource)) {
     fs.copyFileSync(emojiFontSource, emojiFontDestination);
   } else {
-    console.warn(
-      '! Noto Color Emoji missing from node_modules (pnpm install?) — ' +
-        'emoji will fall back to whatever the system provides.',
+    // Linux artifacts bundle this face (package-win-linux ships
+    // build/assets/fonts only there); missing it would silently regress
+    // the Raspberry Pi to tofu emoji. A node_modules complete enough to
+    // run this build but missing exactly this pinned package is a broken
+    // install — fail loudly instead of shipping the bug.
+    throw new Error(
+      'Noto Color Emoji missing from node_modules — run `pnpm install` ' +
+        'before building. Linux packages bundle it as the emoji fallback.',
     );
   }
 }

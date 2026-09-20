@@ -699,7 +699,7 @@ jobs:
           }
           sleep 4
           if kill -0 "$OLDPID" 2>/dev/null; then
-            echo "::error::linux-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < /proc/$OLDPID/cmdline 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            echo "::error::linux-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < "/proc/$OLDPID/cmdline" 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
             echo "old instance ($OLDPID) survived the reinstall"
             exit 1
           fi
@@ -846,7 +846,7 @@ jobs:
           }
           sleep 4
           if kill -0 "$OLDPID" 2>/dev/null; then
-            echo "::error::arm64-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < /proc/$OLDPID/cmdline 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            echo "::error::arm64-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < "/proc/$OLDPID/cmdline" 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
             echo "old instance ($OLDPID) survived the reinstall"
             exit 1
           fi
