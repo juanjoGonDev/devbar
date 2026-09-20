@@ -67,7 +67,7 @@ export function buildAutoRunToggle(deps: AutoRunToggleDeps): HTMLElement {
   hint.className = 'muted';
   hint.style.cssText = 'display:block; margin:2px 0 0 42px; font-size:10px;';
   hint.textContent =
-    'Solo dispara cuando DevBar se abre con el arranque del sistema; no en relanzados manuales.';
+    'Solo dispara cuando DevBar se abre con el arranque del sistema; no en relanzamientos manuales.';
   section.append(label, hint);
   return section;
 }

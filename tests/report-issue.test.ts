@@ -134,6 +134,25 @@ describe('secret redaction at the export boundary', () => {
     expect(report.clipboardText).toContain('petición normal');
   });
 
+  it('turns absolute home paths into ~ in both export sinks', () => {
+    const log = [
+      '[logger] Log session started → /home/juanjo/.config/DevBar/logs/app.log (cap 5242880 bytes)',
+      'config en C:\\Users\\juanjo\\AppData\\DevBar\\config.json',
+      'ver https://example.com/home/public para más datos',
+    ].join('\n');
+    const report = prepareIssueReport(ctx, log);
+    expect(report.clipboardText).toContain('~/.config/DevBar/logs/app.log');
+    expect(report.clipboardText).toContain('~\\AppData');
+    // The username need not reach a public issue (the URL check targets
+    // the home path: the repo owner in ISSUES_URL shares the name).
+    expect(report.clipboardText).not.toContain('/home/juanjo');
+    expect(report.clipboardText).not.toContain('C:\\Users\\juanjo');
+    expect(report.url).not.toContain(encodeURIComponent('/home/juanjo'));
+    expect(report.url).not.toContain(encodeURIComponent('C:\\Users\\juanjo'));
+    // A URL PATH is not a filesystem path: untouched.
+    expect(report.clipboardText).toContain('https://example.com/home/public');
+  });
+
   it('leaves ordinary log lines untouched', () => {
     const log = '12:00 start pnpm -v\nexit 0\nreintentando servicio web';
     const report = prepareIssueReport(ctx, log);

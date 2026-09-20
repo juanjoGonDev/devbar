@@ -163,6 +163,11 @@ const REDACTIONS: [RegExp, string][] = [
   ],
   // Any long hex run: hashes, digests, raw key material.
   [/\b[a-f0-9]{32,}\b/gi, '[redacted]'],
+  // Absolute home paths (the logger opens with one): the username and the
+  // filesystem layout need not travel with the report. The whitespace
+  // boundary keeps URL PATHS like example.com/home/public intact.
+  [/(^|\s)(\/(?:home|Users)\/[^\s/]+)/g, '$1~'],
+  [/(^|\s)([A-Za-z]:\\Users\\[^\s\\]+)/g, '$1~'],
 ];
 
 function redactSecrets(text: string): string {
