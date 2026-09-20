@@ -119,7 +119,14 @@ export function createIconPicker(
   options: IconPickerOptions = {},
 ): IconPicker {
   const schedule = options.schedule ?? defaultSchedule;
-  const chunkSize = options.chunkSize ?? ICON_CHUNK;
+  // A chunk of 0 never advances the stream and a negative one moves it
+  // backwards — either way `end < items.length` stays true and appendChunk
+  // keeps scheduling work forever. Only a positive integer streams.
+  const requestedChunk = options.chunkSize ?? ICON_CHUNK;
+  const chunkSize =
+    Number.isInteger(requestedChunk) && requestedChunk > 0
+      ? requestedChunk
+      : ICON_CHUNK;
   let allIcons: readonly IconBatteryItem[] = [];
   let iconPickerCallback: ((emoji: string) => void) | null = null;
   let activeIconGroup: IconGroup = 'Smileys & Emotion';

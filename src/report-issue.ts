@@ -63,7 +63,15 @@ export function keepTail(
   while (lines.length > 0 && lines[lines.length - 1]?.trim() === '')
     lines.pop();
   let tail = lines.slice(-maxLines).join('\n');
-  if (tail.length > maxChars) tail = tail.slice(-maxChars);
+  if (tail.length > maxChars) {
+    tail = tail.slice(-maxChars);
+    // A char-budget cut that lands between the two halves of a surrogate
+    // pair (an emoji at the boundary) leaves a lone low surrogate — and
+    // encodeURIComponent refuses to encode one, killing the whole report.
+    // Drop the orphaned half.
+    const head = tail.codePointAt(0) ?? 0;
+    if (head >= 0xdc00 && head <= 0xdfff) tail = tail.slice(1);
+  }
   return tail;
 }
 
@@ -90,13 +98,21 @@ export function buildIssueBody(
     environmentSection(ctx),
   ];
   if (logTail && logTail.trim()) {
+    // The log can itself carry ``` runs (it may quote markdown): a fixed
+    // ``` fence would let the content close the block early and GitHub
+    // would render the rest as Markdown. The fence must be strictly
+    // longer than any backtick run in the content.
+    const longestRun = logTail
+      .match(/`+/g)
+      ?.reduce((max, run) => Math.max(max, run.length), 0);
+    const fence = '`'.repeat(Math.max(3, (longestRun ?? 0) + 1));
     sections.push(
       '',
       '### Log de la app (últimas líneas)',
       '',
-      '```text',
+      `${fence}text`,
       logTail,
-      '```',
+      fence,
     );
   }
   return sections.join('\n');

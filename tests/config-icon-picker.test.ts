@@ -369,6 +369,22 @@ describe('renderer/config/icon-picker.ts', () => {
       expect(new Set(emojis).size).toBe(1);
     });
 
+    it('falls back to the default chunk for a size that cannot stream', async () => {
+      // 0 never advances the stream and a negative one moves it backwards:
+      // either would keep appendChunk scheduling work forever.
+      for (const bad of [0, -3]) {
+        const h = elements();
+        const tasks = manualScheduler();
+        stubBattery(batteryOf(200));
+        createIconPicker(h, { schedule: tasks.schedule, chunkSize: bad });
+        await flush();
+        const grid = h.grid.querySelector('.icon-grid') as HTMLElement;
+        expect(grid.children.length, `chunkSize ${bad}`).toBe(ICON_CHUNK);
+        await tasks.runAll();
+        expect(grid.children.length, `chunkSize ${bad}`).toBe(200);
+      }
+    });
+
     it('stops rendering once the picker is closed', async () => {
       const h = elements();
       const tasks = manualScheduler();

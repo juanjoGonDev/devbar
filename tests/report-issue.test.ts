@@ -22,6 +22,38 @@ const ctx = {
   osRelease: '6.12.34+rpt-rpi-2712',
 };
 
+describe('hostile log content', () => {
+  it('never cuts a surrogate pair at the char boundary', () => {
+    // The cut lands exactly between the two halves of 😀: the old code
+    // kept a lone low surrogate and encodeURIComponent threw URIError,
+    // killing the whole report flow.
+    const log = `${'a'.repeat(2999)}😀${'b'.repeat(2999)}`;
+    let report: ReturnType<typeof prepareIssueReport>;
+    expect(() => {
+      report = prepareIssueReport(ctx, log);
+    }).not.toThrow();
+    expect(() => encodeURIComponent(report!.url)).not.toThrow();
+    // The clipboard tail (12000 chars, no cut) keeps the emoji intact.
+    expect(report!.clipboardText).toContain('😀');
+  });
+
+  it('keeps a log full of markdown fences inside the code block', () => {
+    const log = 'antes\n```\ntexto ``` anidado\n```\ndespués';
+    const body = buildIssueBody(ctx, log);
+    // Longest backtick run in the log is 3: the fence must be 4.
+    expect(body).toContain('````text');
+    expect(body.trim().endsWith('````')).toBe(true);
+    // The log survives verbatim, fences and all.
+    expect(body).toContain(log);
+  });
+
+  it('keeps the plain ``` fence for logs without backticks', () => {
+    const body = buildIssueBody(ctx, 'linea uno\nlinea dos');
+    expect(body).toContain('```text\nlinea uno');
+    expect(body.trim().endsWith('```')).toBe(true);
+  });
+});
+
 describe('URL budget per platform', () => {
   it('caps Windows under its 2081-char openExternal limit', () => {
     expect(MAX_URL_CHARS_WINDOWS).toBeLessThanOrEqual(2000);
