@@ -537,18 +537,19 @@ describe('src/main/tray.ts', () => {
   });
 
   describe('shouldRebuildTrayItems', () => {
-    it('rebuilds on non-GNOME Linux panels', () => {
+    it('rebuilds on bare panels that need it', () => {
       expect(shouldRebuildTrayItems('linux', '')).toBe(true);
       expect(shouldRebuildTrayItems('linux', 'labwc:wlroots')).toBe(true);
       expect(shouldRebuildTrayItems('linux', 'LXDE')).toBe(true);
-      expect(shouldRebuildTrayItems('linux', 'KDE')).toBe(true);
     });
 
-    it('never rebuilds on GNOME-family panels: they leak recreated items', () => {
+    it('never rebuilds on desktop shells: they leak recreated items', () => {
       expect(shouldRebuildTrayItems('linux', 'ubuntu:GNOME')).toBe(false);
       expect(shouldRebuildTrayItems('linux', 'GNOME')).toBe(false);
       expect(shouldRebuildTrayItems('linux', 'pop:GNOME')).toBe(false);
       expect(shouldRebuildTrayItems('linux', 'Pantheon')).toBe(false);
+      expect(shouldRebuildTrayItems('linux', 'KDE')).toBe(false);
+      expect(shouldRebuildTrayItems('linux', 'plasma')).toBe(false);
     });
 
     it('other platforms never rebuild', () => {

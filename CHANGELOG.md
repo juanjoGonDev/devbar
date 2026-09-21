@@ -20,12 +20,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   había (badge que crece, cambio de color, tema), basta un empuje en
   sitio sin reconstruir nada.
 
-- **En Ubuntu y otros escritorios GNOME, cada cambio de estado dejaba un
-  icono fantasma nuevo en la bandeja.** El canje de icono que arregla la
-  Raspberry Pi hace que el appindicator de GNOME pierda el registro del
-  elemento viejo al recrearlo. Ahí (detectado por entorno de escritorio)
-  el icono vuelve a empujarse en sitio, que es lo que esos paneles hacen
-  bien; el canje queda para los paneles que lo necesitan.
+- **En Ubuntu, Fedora y otros escritorios GNOME o KDE Plasma, cada cambio
+  de estado dejaba un icono fantasma nuevo en la bandeja.** El canje de
+  icono que arregla la Raspberry Pi hace que el host de bandeja de estos
+  escritorios pierda el registro del elemento viejo al recrearlo. Ahí
+  (detectado por entorno de escritorio) el icono vuelve a empujarse en
+  sitio, que es lo que esos paneles hacen bien; el canje queda para los
+  paneles que lo necesitan.
 
 ### Añadido
 

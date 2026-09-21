@@ -119,16 +119,17 @@ function needsSurfaceReset(prev: NativeImage, next: NativeImage): boolean {
 /**
  * Whether tray-item rebuilds are wired at all. The rebuild exists for
  * panels that composite pixmaps without clearing (the Raspberry Pi's);
- * GNOME-family appindicator hosts instead LEAK a tray item per recreate
- * (each rebuild left one more ghost icon on Ubuntu), and those panels
- * replace the pixmap correctly — so there the icon is pushed in place.
+ * full desktop shells instead LEAK a tray item per recreate — GNOME's
+ * appindicator host (each rebuild left one more ghost icon on Ubuntu)
+ * and KDE Plasma's SNI applet behave the same — and those panels
+ * replace the pixmap correctly, so there the icon is pushed in place.
  */
 export function shouldRebuildTrayItems(
   platform: string,
   desktop: string,
 ): boolean {
   if (platform !== 'linux') return false;
-  return !/gnome|unity|pantheon/i.test(desktop);
+  return !/gnome|unity|pantheon|kde|plasma/i.test(desktop);
 }
 
 /** Minimum spacing between actual Linux tray repaints; shorter than any
