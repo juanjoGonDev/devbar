@@ -267,6 +267,38 @@ describe('secret redaction at the export boundary', () => {
 });
 
 describe('URL budget per platform', () => {
+  it('raises the budget for known-modern browsers off Windows', () => {
+    expect(maxUrlCharsFor('linux', 'firefox.desktop')).toBe(16_000);
+    expect(maxUrlCharsFor('linux', 'google-chrome.desktop')).toBe(16_000);
+    expect(maxUrlCharsFor('darwin', 'com.apple.Safari')).toBe(16_000);
+    // Unknown or not-yet-detected browsers keep the conservative budget.
+    expect(maxUrlCharsFor('linux', '')).toBe(MAX_URL_CHARS);
+    expect(maxUrlCharsFor('linux', null)).toBe(MAX_URL_CHARS);
+    expect(maxUrlCharsFor('linux', 'lynx')).toBe(MAX_URL_CHARS);
+    // Windows keeps the OS ceiling whatever the browser is.
+    expect(maxUrlCharsFor('win32', 'firefox.exe')).toBe(
+      MAX_URL_CHARS_WINDOWS,
+    );
+  });
+
+  it('a heavily encoded report prefills on Firefox and not by default', () => {
+    // ñ and space both expand under encodeURIComponent (×6 and ×3): the
+    // encoded body sails past the form budget while staying well under
+    // what Firefox takes.
+    const log = 'ñ '.repeat(800);
+    const firefox = prepareIssueReport(
+      { ...ctx, platform: 'linux' },
+      log,
+      'firefox.desktop',
+    );
+    const unknown = prepareIssueReport({ ...ctx, platform: 'linux' }, log);
+    expect(unknown.bodyIncluded).toBe(false);
+    expect(firefox.bodyIncluded).toBe(true);
+    expect(firefox.url.length).toBeLessThanOrEqual(16_000);
+    // Same report either way: only where it rides changes.
+    expect(firefox.clipboardText).toBe(unknown.clipboardText);
+  });
+
   it('caps Windows under its 2081-char openExternal limit', () => {
     expect(MAX_URL_CHARS_WINDOWS).toBeLessThanOrEqual(2000);
     expect(maxUrlCharsFor('win32')).toBe(MAX_URL_CHARS_WINDOWS);

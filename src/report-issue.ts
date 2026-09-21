@@ -23,8 +23,37 @@ export const MAX_URL_CHARS_WINDOWS = 2000;
 
 /** The URL budget for a platform. Windows is capped near its own hard
  *  limit; the other desktops tolerate the generous form limit. */
-export function maxUrlCharsFor(platform: string): number {
-  return platform === 'win32' ? MAX_URL_CHARS_WINDOWS : MAX_URL_CHARS;
+/**
+ * Practical per-browser URL budgets for a new-issue prefill. All measured
+ * against the ENCODED URL (spaces → %20 triple them; accents and arrows
+ * multiply by 6-9), which is what the browser actually receives.
+ *
+ * Windows keeps its 2000-char ceiling whatever the browser: the limit is
+ * the OS launch path, not the browser. Known-modern browsers on the other
+ * desktops comfortably take 16k; unknown ones keep the conservative form
+ * budget.
+ */
+export function browserUrlBudget(
+  browser: string | null | undefined,
+): number | null {
+  const id = (browser ?? '').toLowerCase();
+  if (!id) return null;
+  if (/firefox|waterfox|librewolf|zen/.test(id)) return 16_000;
+  if (
+    /chrom|brave|edge|opera|vivaldi|epiphany|gnome-web|safari|arc|floorp/.test(
+      id,
+    )
+  )
+    return 16_000;
+  return null;
+}
+
+export function maxUrlCharsFor(
+  platform: string,
+  browser?: string | null,
+): number {
+  if (platform === 'win32') return MAX_URL_CHARS_WINDOWS;
+  return browserUrlBudget(browser) ?? MAX_URL_CHARS;
 }
 
 /** How much of app.log rides IN the URL. */
@@ -204,6 +233,7 @@ function redactSecrets(text: string): string {
 export function prepareIssueReport(
   ctx: IssueContext,
   log?: string | null,
+  browser?: string | null,
 ): PreparedIssue {
   // Both export sinks derive from the SAME redacted log: what lands in
   // the GitHub URL is exactly what the clipboard carries.
@@ -219,7 +249,7 @@ export function prepareIssueReport(
   const withBody = `${ISSUES_URL}?title=${encodeURIComponent(
     issueTitle(ctx),
   )}&body=${encodeURIComponent(body)}`;
-  const bodyIncluded = withBody.length <= maxUrlCharsFor(ctx.platform);
+  const bodyIncluded = withBody.length <= maxUrlCharsFor(ctx.platform, browser);
   return {
     url: bodyIncluded
       ? withBody
