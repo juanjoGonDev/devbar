@@ -276,9 +276,7 @@ describe('URL budget per platform', () => {
     expect(maxUrlCharsFor('linux', null)).toBe(MAX_URL_CHARS);
     expect(maxUrlCharsFor('linux', 'lynx')).toBe(MAX_URL_CHARS);
     // Windows keeps the OS ceiling whatever the browser is.
-    expect(maxUrlCharsFor('win32', 'firefox.exe')).toBe(
-      MAX_URL_CHARS_WINDOWS,
-    );
+    expect(maxUrlCharsFor('win32', 'firefox.exe')).toBe(MAX_URL_CHARS_WINDOWS);
   });
 
   it('a heavily encoded report prefills on Firefox and not by default', () => {
