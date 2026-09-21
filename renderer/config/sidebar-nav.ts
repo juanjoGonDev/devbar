@@ -1,4 +1,5 @@
 import { openChangelog } from '../changelog.js';
+import { openReportModal } from '../report-modal.js';
 
 export interface SidebarNavElements {
   nav: HTMLElement;
@@ -96,9 +97,9 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
 
   const reportIssue = document.getElementById('report-issue');
   if (reportIssue instanceof HTMLButtonElement) {
-    reportIssue.addEventListener('click', () => {
-      void reportIssueClick(reportIssue);
-    });
+    // The dialog does the talking now: it explains what will be copied,
+    // offers a copy-only path and keeps its feedback in place.
+    reportIssue.addEventListener('click', () => openReportModal());
   }
 
   // Collapsible groups list (focus the editor by hiding the list).
@@ -141,28 +142,4 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
   }
 
   return { showSection };
-}
-
-async function reportIssueClick(btn: HTMLButtonElement): Promise<void> {
-  const original = btn.textContent;
-  btn.disabled = true;
-  try {
-    const res = await window.api.reportIssue();
-    // bodyIncluded: GitHub's form already carries the report — asking for
-    // a paste would duplicate it. copied (with ok false): the browser did
-    // not open, but the report IS on the clipboard — manual pasting works.
-    btn.textContent = res.ok
-      ? res.bodyIncluded
-        ? '✓ Formulario preparado en GitHub'
-        : '✓ Copiado — pégalo en GitHub'
-      : res.copied
-        ? '✓ Copiado — el navegador no se abrió; pégalo en GitHub'
-        : 'No se pudo preparar';
-  } catch {
-    btn.textContent = 'No se pudo preparar';
-  }
-  setTimeout(() => {
-    btn.textContent = original;
-    btn.disabled = false;
-  }, 2500);
 }

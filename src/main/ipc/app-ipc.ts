@@ -97,6 +97,7 @@ export interface AppIpcDeps {
   /** Builds the GitHub issue report, copies it to the clipboard and
    *  answers the URL to open (host-provided; see src/report-issue.ts). */
   reportIssue: () => { url: string; bodyIncluded: boolean };
+  copyReport: () => { ok: boolean; error?: string };
   setTimer?: (fn: () => void, ms: number) => unknown;
   newImportToken?: () => string;
 }
@@ -315,6 +316,8 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
       return { ok: false, copied: true, error: errorMessage(err) };
     }
   });
+  // Copy-only report: the same clipboard content, nothing opens.
+  ipc.handle('app:copyReport', () => deps.copyReport());
 
   // Open an external https URL in the default browser. https-only guard so a
   // renderer bug can't fire arbitrary schemes (file:, javascript:, …).

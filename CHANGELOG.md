@@ -20,6 +20,31 @@ Todas las novedades relevantes de DevBar. El formato sigue
   había (badge que crece, cambio de color, tema), basta un empuje en
   sitio sin reconstruir nada.
 
+- **En Ubuntu y otros escritorios GNOME, cada cambio de estado dejaba un
+  icono fantasma nuevo en la bandeja.** El canje de icono que arregla la
+  Raspberry Pi hace que el appindicator de GNOME pierda el registro del
+  elemento viejo al recrearlo. Ahí (detectado por entorno de escritorio)
+  el icono vuelve a empujarse en sitio, que es lo que esos paneles hacen
+  bien; el canje queda para los paneles que lo necesitan.
+
+### Añadido
+
+- **Diálogo de reporte de fallo.** El botón de «Acerca de» abre ahora un
+  diálogo que explica qué se va a copiar y da dos caminos: «Reportar bug
+  en GitHub» (copia el informe y abre el formulario) o «📋 Copiar
+  reporte» (solo lo copia, para pegarlo donde quieras). El diálogo no se
+  cierra al actuar: el resultado queda en él, por si hay que volver a
+  copiar o deshacer el paso.
+
+- **El formulario de GitHub vuelve a pre-rellenarse en más casos.** El
+  cuerpo solo cabía bajo un límite conservador de URL y con el log
+  crecido la codificación de espacios y símbolos lo desbordaba (quedaba
+  solo el título). Cuando se puede detectar el navegador por defecto
+  (Firefox, Chrome/Chromium, Edge y otros modernos), el límite sube a lo
+  que ese navegador tolera; sin detección se mantiene el prudente y en
+  Windows el del sistema. Si no cabe, el informe íntegro sigue en el
+  portapapeles.
+
 ## [0.9.5] - 2026-09-19
 
 ### Corregido

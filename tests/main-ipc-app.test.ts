@@ -104,6 +104,10 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
         bodyIncluded: true,
       };
     },
+    copyReport: () => {
+      calls.push('copyReport');
+      return { ok: true };
+    },
     setTimer: (fn) => timers.push(fn),
     newImportToken: () => 'tok',
     ...overrides,
@@ -156,6 +160,7 @@ describe('src/main/ipc/app-ipc.ts', () => {
         'app:version',
         'app:openNotificationSettings',
         'app:reportIssue',
+        'app:copyReport',
         'app:openExternal',
       ]);
     });
@@ -168,6 +173,16 @@ describe('src/main/ipc/app-ipc.ts', () => {
       expect(res).toEqual({ ok: true, bodyIncluded: true });
       expect(h.calls).toContain('reportIssue');
       expect(h.calls).toContain(
+        'external:https://github.test/issues/new?title=x',
+      );
+    });
+
+    it('copies the report without opening anything', async () => {
+      const h = harness();
+      const res = await h.ipc.invoke('app:copyReport');
+      expect(res).toEqual({ ok: true });
+      expect(h.calls).toContain('copyReport');
+      expect(h.calls).not.toContain(
         'external:https://github.test/issues/new?title=x',
       );
     });

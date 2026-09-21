@@ -395,6 +395,9 @@ export interface DevBarApi {
     copied?: boolean;
     error?: string;
   }>;
+  /** Same report to the clipboard, but nothing opens: for the user who
+   *  prefers pasting it wherever they like. */
+  copyReport(): Promise<{ ok: boolean; error?: string }>;
   /**
    * Open the OS notification settings: macOS deep-links to this app's own
    * row, Windows to the notifications page, Linux to the detected desktop's

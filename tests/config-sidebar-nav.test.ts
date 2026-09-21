@@ -141,31 +141,82 @@ describe('renderer/config/sidebar-nav.ts', () => {
       expect(win.callCount('openExternal')).toBe(1);
     });
 
-    it('reports a failure through the one-click issue flow', async () => {
+    it('reports through the dialog: template copied, GitHub opened', async () => {
       win = await openConfigWindow();
       const btn = document.getElementById('report-issue') as HTMLButtonElement;
       expect(btn?.textContent).toContain('Reportar fallo');
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      // The dialog explains the copy BEFORE anything happens.
+      const dlg = document.querySelector(
+        'dialog.modal-report',
+      ) as HTMLDialogElement;
+      expect(dlg.open).toBe(true);
+      expect(dlg.textContent).toContain('portapapeles');
+      expect(win.callCount('reportIssue')).toBe(0);
+      dlg.querySelector<HTMLButtonElement>('[data-github]')?.click();
       await win.settle('reportIssue', { ok: true, bodyIncluded: false });
       expect(win.callCount('reportIssue')).toBe(1);
-      // Feedback in place: the clipboard holds the report, GitHub is open.
-      expect(btn.textContent).toContain('Copiado');
+      // Feedback lands in the dialog, which stays open for another go.
+      expect(dlg.querySelector('[data-status]')?.textContent).toContain(
+        'Copiado',
+      );
+      expect(dlg.open).toBe(true);
+    });
+
+    it('offers a copy-only path that never opens the browser', async () => {
+      win = await openConfigWindow();
+      const btn = document.getElementById('report-issue') as HTMLButtonElement;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const dlg = document.querySelector(
+        'dialog.modal-report',
+      ) as HTMLDialogElement;
+      dlg.querySelector<HTMLButtonElement>('[data-copy]')?.click();
+      await win.settle('copyReport', { ok: true });
+      expect(win.callCount('copyReport')).toBe(1);
+      expect(win.callCount('reportIssue')).toBe(0);
+      expect(dlg.querySelector('[data-status]')?.textContent).toContain(
+        'copiado al portapapeles',
+      );
+    });
+
+    it('keeps the dialog open after an action until the user goes back', async () => {
+      win = await openConfigWindow();
+      const btn = document.getElementById('report-issue') as HTMLButtonElement;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const dlg = document.querySelector(
+        'dialog.modal-report',
+      ) as HTMLDialogElement;
+      dlg.querySelector<HTMLButtonElement>('[data-copy]')?.click();
+      await win.settle('copyReport', { ok: true });
+      expect(dlg.open).toBe(true); // still there for a second copy…
+      dlg.querySelector<HTMLButtonElement>('[data-back]')?.click();
+      expect(dlg.open).toBe(false); // …until Volver.
     });
 
     it('announces the pre-filled form when the body rode in the URL', async () => {
       win = await openConfigWindow();
       const btn = document.getElementById('report-issue') as HTMLButtonElement;
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const dlg = document.querySelector(
+        'dialog.modal-report',
+      ) as HTMLDialogElement;
+      dlg.querySelector<HTMLButtonElement>('[data-github]')?.click();
       await win.settle('reportIssue', { ok: true, bodyIncluded: true });
-      expect(btn.textContent).toContain('Formulario preparado');
-      // Asking for a paste here would duplicate the report.
-      expect(btn.textContent).not.toContain('pégalo');
+      // bodyIncluded: GitHub's form already carries the report — asking
+      // for a paste would duplicate it.
+      const status = dlg.querySelector('[data-status]')?.textContent ?? '';
+      expect(status).toContain('Formulario preparado');
+      expect(status).not.toContain('pégalo');
     });
 
     it('tells the user the report was copied when the browser fails', async () => {
       win = await openConfigWindow();
       const btn = document.getElementById('report-issue') as HTMLButtonElement;
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const dlg = document.querySelector(
+        'dialog.modal-report',
+      ) as HTMLDialogElement;
+      dlg.querySelector<HTMLButtonElement>('[data-github]')?.click();
       await win.settle('reportIssue', {
         ok: false,
         copied: true,
@@ -173,9 +224,10 @@ describe('renderer/config/sidebar-nav.ts', () => {
       });
       // The clipboard already carries the report: manual pasting remains,
       // so a bare failure would be a lie.
-      expect(btn.textContent).toContain('el navegador no se abrió');
-      expect(btn.textContent).toContain('pégalo');
-      expect(btn.textContent).not.toBe('No se pudo preparar');
+      const status = dlg.querySelector('[data-status]')?.textContent ?? '';
+      expect(status).toContain('el navegador no se abrió');
+      expect(status).toContain('pégalo');
+      expect(status).not.toBe('No se pudo preparar');
     });
 
     it('jumps to About when the tray asks for it', async () => {

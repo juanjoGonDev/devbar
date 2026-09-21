@@ -29,6 +29,7 @@ interface IpcHost {
   appVersion: () => string;
   appQuit: () => void;
   reportIssue: AppIpcDeps['reportIssue'];
+  copyReport: AppIpcDeps['copyReport'];
   platform: NodeJS.Platform;
   /** XDG_CURRENT_DESKTOP, which names the Linux settings tool to launch. */
   desktop: string;
@@ -95,6 +96,7 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
     appVersion: host.appVersion,
     appQuit: host.appQuit,
     reportIssue: host.reportIssue,
+    copyReport: host.copyReport,
     openExternal: host.openExternal,
     openExternalAsync: host.openExternalAsync,
     openNotificationSettings: () =>

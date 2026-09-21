@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import {
   app,
   BrowserWindow,
@@ -81,6 +81,52 @@ export function createElectronHost(options: ElectronHostOptions) {
   };
 
   let confirmLogo: string | null = null;
+
+  /**
+   * Which browser would open the report, best effort: budgets differ per
+   * browser and the prefill only fits if the encoded URL stays under the
+   * RIGHT one. Detected once at startup on Linux (xdg), cached; until it
+   * answers — or anywhere else — the conservative form budget applies.
+   */
+  let defaultBrowser: string | null = null;
+  if (isLinux) {
+    const detect = (command: string, args: string[]): void => {
+      execFile(command, args, { timeout: 3000 }, (error, stdout) => {
+        if (error) {
+          if (command === 'xdg-settings')
+            detect('xdg-mime', ['query', 'default', 'x-scheme-handler/https']);
+          return;
+        }
+        const answer = stdout.trim();
+        if (answer) defaultBrowser = answer.split('/').pop() ?? answer;
+      });
+    };
+    detect('xdg-settings', ['get', 'default-web-browser']);
+  }
+
+  /** Assembles the report body the two report actions share. */
+  const buildReport = (): {
+    clipboardText: string;
+    url: string;
+    bodyIncluded: boolean;
+  } => {
+    // Bounded read from the end: the report only ever uses the last
+    // few thousand chars, and one oversized entry must not make the
+    // click slurp the whole file.
+    const tail = readTail(logFilePath(), REPORT_TAIL_BYTES);
+    return prepareIssueReport(
+      {
+        version: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch,
+        electron: process.versions.electron ?? '',
+        node: process.versions.node ?? '',
+        osRelease: os.release(),
+      },
+      tail,
+      defaultBrowser,
+    );
+  };
 
   return {
     rendererFile,
@@ -246,23 +292,22 @@ export function createElectronHost(options: ElectronHostOptions) {
      * src/report-issue.ts; this only reads the log and touches the OS.
      */
     reportIssue: (): { url: string; bodyIncluded: boolean } => {
-      // Bounded read from the end: the report only ever uses the last
-      // few thousand chars, and one oversized entry must not make the
-      // click slurp the whole file.
-      const tail = readTail(logFilePath(), REPORT_TAIL_BYTES);
-      const report = prepareIssueReport(
-        {
-          version: app.getVersion(),
-          platform: process.platform,
-          arch: process.arch,
-          electron: process.versions.electron ?? '',
-          node: process.versions.node ?? '',
-          osRelease: os.release(),
-        },
-        tail,
-      );
+      const report = buildReport();
       clipboard.writeText(report.clipboardText);
       return { url: report.url, bodyIncluded: report.bodyIncluded };
+    },
+    /** Copy-only variant: same report, no browser launch — the user pastes
+     *  it wherever they prefer. */
+    copyReport: (): { ok: boolean; error?: string } => {
+      try {
+        clipboard.writeText(buildReport().clipboardText);
+        return { ok: true };
+      } catch (error: unknown) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
     },
     appQuit: (): void => app.quit(),
     appExit: (code: number): void => app.exit(code),

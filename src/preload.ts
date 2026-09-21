@@ -154,6 +154,7 @@ const api: DevBarApi = {
   getChangelog: () => ipcRenderer.invoke('updates:changelog'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   reportIssue: () => ipcRenderer.invoke('app:reportIssue'),
+  copyReport: () => ipcRenderer.invoke('app:copyReport'),
   openNotificationSettings: () =>
     ipcRenderer.invoke('app:openNotificationSettings'),
   confirmDirty: (context) =>
