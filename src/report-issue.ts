@@ -33,9 +33,7 @@ export const MAX_URL_CHARS_WINDOWS = 2000;
  * desktops comfortably take 16k; unknown ones keep the conservative form
  * budget.
  */
-export function browserUrlBudget(
-  browser: string | null | undefined,
-): number | null {
+function browserUrlBudget(browser: string | null | undefined): number | null {
   const id = (browser ?? '').toLowerCase();
   if (!id) return null;
   if (/firefox|waterfox|librewolf|zen/.test(id)) return 16_000;
