@@ -12,10 +12,12 @@ vi.mock('electron', () => ({
   nativeTheme: { shouldUseDarkColors: false },
 }));
 
-import type { NativeImage } from 'electron';
+import type { NativeImage, Tray as ElectronTray } from 'electron';
 import {
   createTrayController,
+  linuxRebuildPieces,
   patchLinuxTrayPositioning,
+  shouldRebuildTrayItems,
   TRAY_PUSH_MIN_INTERVAL_MS,
   type RebuildableTray,
 } from '../src/main/tray.js';
@@ -531,6 +533,39 @@ describe('src/main/tray.ts', () => {
       controller.setSimulatedCount(null);
       expect(images.at(-1)?.count).toBe(0);
       expect(forced).toBe(5);
+    });
+  });
+
+  describe('shouldRebuildTrayItems', () => {
+    it('rebuilds on non-GNOME Linux panels', () => {
+      expect(shouldRebuildTrayItems('linux', '')).toBe(true);
+      expect(shouldRebuildTrayItems('linux', 'labwc:wlroots')).toBe(true);
+      expect(shouldRebuildTrayItems('linux', 'LXDE')).toBe(true);
+      expect(shouldRebuildTrayItems('linux', 'KDE')).toBe(true);
+    });
+
+    it('never rebuilds on GNOME-family panels: they leak recreated items', () => {
+      expect(shouldRebuildTrayItems('linux', 'ubuntu:GNOME')).toBe(false);
+      expect(shouldRebuildTrayItems('linux', 'GNOME')).toBe(false);
+      expect(shouldRebuildTrayItems('linux', 'pop:GNOME')).toBe(false);
+      expect(shouldRebuildTrayItems('linux', 'Pantheon')).toBe(false);
+    });
+
+    it('other platforms never rebuild', () => {
+      expect(shouldRebuildTrayItems('darwin', 'GNOME')).toBe(false);
+      expect(shouldRebuildTrayItems('win32', '')).toBe(false);
+    });
+  });
+
+  describe('linuxRebuildPieces gate', () => {
+    it('contributes pieces on a compositor-less panel and nothing on GNOME', () => {
+      const fakeTray = class {} as unknown as typeof ElectronTray;
+      expect(
+        Object.keys(linuxRebuildPieces(fakeTray, () => ({}), 'labwc:wlroots')),
+      ).toEqual(['platform', 'rebuildPieces']);
+      expect(linuxRebuildPieces(fakeTray, () => ({}), 'ubuntu:GNOME')).toEqual(
+        {},
+      );
     });
   });
 

@@ -116,6 +116,21 @@ function needsSurfaceReset(prev: NativeImage, next: NativeImage): boolean {
   }
 }
 
+/**
+ * Whether tray-item rebuilds are wired at all. The rebuild exists for
+ * panels that composite pixmaps without clearing (the Raspberry Pi's);
+ * GNOME-family appindicator hosts instead LEAK a tray item per recreate
+ * (each rebuild left one more ghost icon on Ubuntu), and those panels
+ * replace the pixmap correctly — so there the icon is pushed in place.
+ */
+export function shouldRebuildTrayItems(
+  platform: string,
+  desktop: string,
+): boolean {
+  if (platform !== 'linux') return false;
+  return !/gnome|unity|pantheon/i.test(desktop);
+}
+
 /** Minimum spacing between actual Linux tray repaints; shorter than any
  *  human-perceivable delay, long enough to collapse a burst of state
  *  updates (start/stop churn, error-count ticks) into one item rebuild. */
@@ -424,7 +439,11 @@ export function patchLinuxTrayPositioning(input: {
 export function linuxRebuildPieces(
   Tray: typeof ElectronTray,
   buildContextMenu: () => unknown,
-): Pick<TrayControllerDeps, 'platform' | 'rebuildPieces'> {
+  desktop: string,
+): Partial<Pick<TrayControllerDeps, 'platform' | 'rebuildPieces'>> {
+  // GNOME-family panels leak a tray item per recreate (Ubuntu): there the
+  // pieces contribute nothing and pushes stay in place.
+  if (!shouldRebuildTrayItems(process.platform, desktop)) return {};
   return {
     platform: process.platform,
     rebuildPieces: {

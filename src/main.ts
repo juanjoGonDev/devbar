@@ -22,7 +22,7 @@ import * as trayIcon from './tray-icon.js';
 import * as updateCheck from './update-check.js';
 import { ProcessManager } from './process-manager.js';
 import { SessionResumeTracker, consumeSnapshot } from './session-resume.js';
-import { isLinux, isMac, platformLabel } from './platform.js';
+import { isMac, platformLabel } from './platform.js';
 import { loadShellPath, expandTilde } from './path-helper.js';
 import { RepoWatcher } from './repo-watcher.js';
 import { createPreScriptRunner } from './pre-script-runner.js';
@@ -49,7 +49,7 @@ import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
 import { createStartup } from './main/startup.js';
 import { createStateSnapshots } from './main/state-snapshot.js';
 import { createTrayController, linuxRebuildPieces } from './main/tray.js';
-import { buildTrayMenuTemplate } from './main/tray-view.js';
+import { buildTrayContextMenu } from './main/tray-view.js';
 import { createUpdater } from './main/updater.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
 import type { Group } from './domain-types.js';
@@ -147,21 +147,23 @@ const repaintWindows = (): void =>
   refreshWindowBackgrounds(registry, host.background());
 
 const trayContextMenu = (): ReturnType<typeof Menu.buildFromTemplate> =>
-  Menu.buildFromTemplate(
-    buildTrayMenuTemplate({
-      availableUpdate: updater.available(),
-      stagedUpdate: updater.staged(),
-      logWindows: [...registry.logs.entries()],
-      onApplyUpdate: () => void updater.applyUpdate(),
-      onOpenConfig: () => appWindows.ensureConfigWindow(),
-    }),
-  );
+  buildTrayContextMenu({
+    availableUpdate: () => updater.available(),
+    stagedUpdate: () => updater.staged(),
+    logWindows: () => [...registry.logs.entries()],
+    onApplyUpdate: () => void updater.applyUpdate(),
+    onOpenConfig: () => appWindows.ensureConfigWindow(),
+  });
 
 const tray = createTrayController({
   loadIcon: trayIcon.loadIcon,
   isMac,
   hasUpdate: () => updater.available() !== null,
-  ...(isLinux ? linuxRebuildPieces(Tray, trayContextMenu) : {}),
+  ...linuxRebuildPieces(
+    Tray,
+    trayContextMenu,
+    process.env.XDG_CURRENT_DESKTOP ?? '',
+  ),
 });
 
 const confirms = createConfirmQueue({
