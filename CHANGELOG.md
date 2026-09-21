@@ -72,7 +72,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
   Node) y el final de `app.log`, lo copia completo al portapapeles y abre
   el formulario de issues de GitHub con el título y el cuerpo ya
   rellenos; si el cuerpo no cabe en la URL, basta con pegar (el informe
-  íntegro sigue en el portapapeles).
+  íntegro sigue en el portapapeles). Antes de salir, el log se limpia de
+  credenciales: tokens, claves, cadenas de conexión con contraseña, claves
+  privadas y tu ruta de usuario. El `app.log` de tu equipo se queda
+  completo; lo que se recorta es solo lo que sale hacia fuera.
 
 - **Muestreo de CPU y RAM en el log de la app.** Cada apertura de ventana
   y una línea periódica registran CPU, RSS/heap y número de procesos de

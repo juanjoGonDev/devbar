@@ -143,7 +143,16 @@ export function attachResourceSampling(
 export function createResourceMonitor(
   deps: ResourceMonitorDeps,
 ): ResourceMonitor {
-  const setTimer = deps.setTimer ?? ((fn, ms) => setInterval(fn, ms));
+  const setTimer =
+    deps.setTimer ??
+    ((fn, ms) => {
+      const timer = setInterval(fn, ms);
+      // Sampling is observation, never a reason to stay alive: unreferenced,
+      // the interval cannot hold the event loop open past shutdown, nor fire
+      // once more on the way out and write to a log stream already closed.
+      timer.unref?.();
+      return timer;
+    });
   const clearTimer =
     deps.clearTimer ?? ((t) => clearInterval(t as NodeJS.Timeout));
   const intervalMs = deps.intervalMs ?? RESOURCE_INTERVAL_MS;

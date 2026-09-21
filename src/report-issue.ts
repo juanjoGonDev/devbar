@@ -145,8 +145,21 @@ const REDACTIONS: [RegExp, string][] = [
   [/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, '[JWT]'],
   // Authorization: Bearer …
   [/[Bb]earer\s+[A-Za-z0-9._~+/=-]{16,}/g, 'Bearer [redacted]'],
-  // URLs with userinfo: https://user:password@host — the credentials go.
-  [/((?:https?|ftp):\/\/)[^\s/@:]+:[^\s@]+@/g, '$1[redacted]@'],
+  // PEM private keys: the body is the key itself, so the whole block goes.
+  [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    '[clave privada]',
+  ],
+  // Vendor tokens that carry their own prefix and need no key name beside
+  // them: Slack, npm, Google, Stripe.
+  [/xox[baprs]-[A-Za-z0-9-]{10,}/g, '[token de Slack]'],
+  [/\bnpm_[A-Za-z0-9]{20,}/g, '[token de npm]'],
+  [/\bAIza[A-Za-z0-9_-]{30,}/g, '[clave de Google]'],
+  [/\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}/g, '[clave de Stripe]'],
+  // URLs with userinfo: ANY scheme, not just the web ones — a service log's
+  // most likely secret is a connection string (postgres://, mysql://,
+  // redis://, mongodb+srv://, amqp://) carrying its own password.
+  [/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s@]+@/gi, '$1[redacted]@'],
   // key=value / key: value secrets, with optional quotes on key and/or
   // value: password=hunter2, token="x", "password":"x" (JSON), URL query
   // parameters (?token=x, &api_key=x — the ';' delimiter also covers
@@ -155,13 +168,22 @@ const REDACTIONS: [RegExp, string][] = [
   // (Basic/Bearer) is consumed WITH its credential — stopping at the
   // space would redact the scheme and leave the credential behind.
   [
-    /((?:^|[\s{[;,?&])["']?(?:--)?(?:api[_-]?key|apikey|auth[a-z0-9._-]{0,12}|passwd|password|secret|token[a-z0-9._-]{0,12})["']?\s*[=:]+\s*)(?:(?:Bearer|Basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s'"]+)/gi,
+    /((?:^|[\s{[;,?&])["']?(?:--)?[a-z0-9._-]{0,24}(?:api[_-]?key|apikey|auth|passwd|password|secret|token)[a-z0-9._-]{0,12}["']?\s*[=:]+\s*)(?:(?:Bearer|Basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s'"]+)/gi,
     '$1[redacted]',
   ],
   // CLI style: --api-key VALUE — flag and value as separate words.
   [
-    /(^|\s)(--(?:api[_-]?key|apikey|auth[a-z0-9._-]{0,12}|passwd|password|secret|token[a-z0-9._-]{0,12})\s+)(?:(?:Bearer|Basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s'"]+)/gi,
+    /(^|\s)(--[a-z0-9._-]{0,24}(?:api[_-]?key|apikey|auth|passwd|password|secret|token)[a-z0-9._-]{0,12}\s+)(?:(?:Bearer|Basic)\s+)?(?:"[^"]*"|'[^']*'|[^\s'"]+)/gi,
     '$1$2[redacted]',
+  ],
+  // Bare `key value`, the shape of a credentials file or CLI output
+  // (`aws_secret_access_key wJalr…`). The value must LOOK like key
+  // material — at least 20 characters of key alphabet — because a plain
+  // "key word" rule would turn "token expired" into "token [redacted]"
+  // and strip the log of the words that explain the failure.
+  [
+    /((?:^|\s)[a-z0-9._-]{0,24}(?:api[_-]?key|apikey|passwd|password|secret|token)[a-z0-9._-]{0,12}\s+)([A-Za-z0-9+/=_-]{20,})/gi,
+    '$1[redacted]',
   ],
   // Any long hex run: hashes, digests, raw key material.
   [/\b[a-f0-9]{32,}\b/gi, '[redacted]'],

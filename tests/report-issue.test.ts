@@ -66,6 +66,84 @@ describe('secret redaction at the export boundary', () => {
     'digest e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
   ];
 
+  // Assembled from parts on purpose: written whole, these fixtures look
+  // enough like the real thing that GitHub's secret scanning refuses the
+  // push — which is a fair verdict on how realistic they are, and exactly
+  // why they exercise the patterns. Splitting the prefix keeps the literal
+  // out of the file while the value the test builds is unchanged.
+  const SLACK_PREFIX = `xo${'xb'}`;
+  const STRIPE_PREFIX = `sk${'_live'}`;
+  const NPM_PREFIX = `np${'m_'}`;
+  const GOOGLE_PREFIX = `AI${'zaSy'}`;
+
+  // Shapes a dev-tool log plausibly carries that the first pass missed: a
+  // service launcher's most likely secret is a connection string, and a
+  // vendor token often travels with no key name beside it.
+  const moreSecrets = [
+    'DATABASE_URL=postgres://admin:s3cr3tpass@db.internal:5432/app',
+    'conectando a mysql://root:tigerpass@127.0.0.1/db',
+    'redis://default:MyR3disPass@cache:6379',
+    'mongodb+srv://u:P4ssw0rdLargo@cluster.mongodb.net',
+    `SLACK_BOT=${SLACK_PREFIX}-1234567890-0987654321-AbCdEfGhIjKlMnOpQrSt`,
+    `${NPM_PREFIX}AbCdEf0123456789AbCdEf0123456789AbCd`,
+    `${GOOGLE_PREFIX}A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q`,
+    `${STRIPE_PREFIX}_51AbCdEfGhIjKlMnOpQrStUvWx`,
+    'aws_secret_access_key wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY',
+    'GITHUB_TOKEN=abcdefghijklmnopqrst',
+    'DB_PASSWORD=lacontrasenaentera',
+  ];
+
+  it('strips connection strings, vendor tokens and prefixed key names', () => {
+    const log = `arranco\n${moreSecrets.join('\n')}\nsigo`;
+    const report = prepareIssueReport(ctx, log);
+    for (const secret of [
+      's3cr3tpass',
+      'tigerpass',
+      'MyR3disPass',
+      'P4ssw0rdLargo',
+      'AbCdEfGhIjKlMnOpQrSt',
+      `${NPM_PREFIX}AbCdEf0123456789`,
+      `${GOOGLE_PREFIX}A1B2C3D4E5F6`,
+      `${STRIPE_PREFIX}_51AbCdEfGhIjKl`,
+      'wJalrXUtnFEMIK7MDENG',
+      'abcdefghijklmnopqrst',
+      'lacontrasenaentera',
+    ]) {
+      expect(report.clipboardText, secret).not.toContain(secret);
+      expect(report.url, secret).not.toContain(encodeURIComponent(secret));
+    }
+    // The surrounding log still reads.
+    expect(report.clipboardText).toContain('arranco');
+    expect(report.clipboardText).toContain('sigo');
+  });
+
+  it('removes a PEM private key block whole', () => {
+    const log = [
+      '-----BEGIN RSA PRIVATE KEY-----',
+      'MIIEpAIBAAKCAQEAxyzABCDEFGHIJKLMNOP',
+      'QRSTUVWXYZ0123456789abcdefghijklmn',
+      '-----END RSA PRIVATE KEY-----',
+    ].join('\n');
+    const report = prepareIssueReport(ctx, log);
+    expect(report.clipboardText).not.toContain('MIIEpAIBAAKCAQEAxyz');
+    expect(report.clipboardText).toContain('[clave privada]');
+  });
+
+  it('leaves prose alone that merely names a secret', () => {
+    // A bare `key value` rule would turn these into "token [redacted]" and
+    // strip the log of the words that explain the failure. The value has to
+    // look like key material before it is treated as one.
+    const log = [
+      'error: token expired at 12:00',
+      'auth failed: password incorrect',
+      'no secret configured for this group',
+    ].join('\n');
+    const report = prepareIssueReport(ctx, log);
+    expect(report.clipboardText).toContain('token expired');
+    expect(report.clipboardText).toContain('password incorrect');
+    expect(report.clipboardText).toContain('no secret configured');
+  });
+
   it('strips known secret shapes from BOTH export sinks', () => {
     const log = `arranco\n${secrets.join('\n')}\nsigo`;
     const report = prepareIssueReport(ctx, log);
