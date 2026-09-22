@@ -9,8 +9,6 @@ import {
   MAX_URL_CHARS_WINDOWS,
   maxUrlCharsFor,
   prepareIssueReport,
-  URL_TAIL_CHARS,
-  URL_TAIL_LINES,
 } from '../src/report-issue.js';
 
 const ctx = {
@@ -22,11 +20,23 @@ const ctx = {
   osRelease: '6.12.34+rpt-rpi-2712',
 };
 
+/** The body GitHub would receive, decoded back out of the URL. */
+function urlBody(report: { url: string }): string {
+  const match = report.url.match(/[?&]body=([^&]*)/);
+  return match ? decodeURIComponent(match[1] ?? '') : '';
+}
+
+/** Just the log excerpt inside the fenced block of a body. */
+function loggedExcerpt(body: string): string {
+  return body.match(/`{3,}text\n([\s\S]*)\n`{3,}$/)?.[1] ?? '';
+}
+
 describe('hostile log content', () => {
   it('never cuts a surrogate pair at the char boundary', () => {
-    // The cut lands exactly between the two halves of 😀: the old code
-    // kept a lone low surrogate and encodeURIComponent threw URIError,
-    // killing the whole report flow.
+    // One enormous line with an emoji in the middle: the budget search
+    // probes cuts all over it, and a cut between the two halves of 😀
+    // used to leave a lone low surrogate — which encodeURIComponent
+    // refuses, killing the whole report flow.
     const log = `${'a'.repeat(2999)}😀${'b'.repeat(2999)}`;
     let report: ReturnType<typeof prepareIssueReport>;
     expect(() => {
@@ -267,63 +277,102 @@ describe('secret redaction at the export boundary', () => {
 });
 
 describe('URL budget per platform', () => {
-  it('raises the budget for known-modern browsers off Windows', () => {
-    expect(maxUrlCharsFor('linux', 'firefox.desktop')).toBe(16_000);
-    expect(maxUrlCharsFor('linux', 'google-chrome.desktop')).toBe(16_000);
-    expect(maxUrlCharsFor('darwin', 'com.apple.Safari')).toBe(16_000);
-    // Unknown or not-yet-detected browsers keep the conservative budget.
-    expect(maxUrlCharsFor('linux', '')).toBe(MAX_URL_CHARS);
-    expect(maxUrlCharsFor('linux', null)).toBe(MAX_URL_CHARS);
-    expect(maxUrlCharsFor('linux', 'lynx')).toBe(MAX_URL_CHARS);
-    // Windows keeps the OS ceiling whatever the browser is.
-    expect(maxUrlCharsFor('win32', 'firefox.exe')).toBe(MAX_URL_CHARS_WINDOWS);
-  });
-
-  it('a heavily encoded report prefills on Firefox and not by default', () => {
-    // ñ and space both expand under encodeURIComponent (×6 and ×3): the
-    // encoded body sails past the form budget while staying well under
-    // what Firefox takes.
-    const log = 'ñ '.repeat(800);
-    const firefox = prepareIssueReport(
-      { ...ctx, platform: 'linux' },
-      log,
-      'firefox.desktop',
-    );
-    const unknown = prepareIssueReport({ ...ctx, platform: 'linux' }, log);
-    expect(unknown.bodyIncluded).toBe(false);
-    expect(firefox.bodyIncluded).toBe(true);
-    expect(firefox.url.length).toBeLessThanOrEqual(16_000);
-    // Same report either way: only where it rides changes.
-    expect(firefox.clipboardText).toBe(unknown.clipboardText);
-  });
-
   it('caps Windows under its 2081-char openExternal limit', () => {
     expect(MAX_URL_CHARS_WINDOWS).toBeLessThanOrEqual(2000);
     expect(maxUrlCharsFor('win32')).toBe(MAX_URL_CHARS_WINDOWS);
   });
 
-  it('keeps the generous form limit on the other desktops', () => {
+  it("keeps GitHub's own ceiling on the other desktops", () => {
+    // Measured against the real endpoint: 302 at ~6 070 chars, 500 from
+    // ~7 070, 414 from ~8 270. The limit belongs to the server, so the
+    // budget cannot depend on the platform or the browser beyond the
+    // Windows launch cap.
     expect(maxUrlCharsFor('linux')).toBe(MAX_URL_CHARS);
     expect(maxUrlCharsFor('darwin')).toBe(MAX_URL_CHARS);
+    expect(MAX_URL_CHARS).toBeLessThan(7000);
   });
 
-  it('falls back to the clipboard on Windows past the small budget', () => {
-    const log = 'x'.repeat(1800);
+  it('trims the excerpt to the Windows budget instead of dropping it', () => {
+    // Small enough that Linux carries it whole, past what Windows' own
+    // 2000-char launch limit leaves for an excerpt.
+    const log = Array.from({ length: 200 }, (_, i) => `linea ${i}`).join('\n');
     const win = prepareIssueReport({ ...ctx, platform: 'win32' }, log);
-    expect(win.bodyIncluded).toBe(false);
-    expect(win.url).not.toContain('body=');
-    // Nothing is lost: the clipboard still carries the full report.
-    expect(win.clipboardText).toContain(log);
-    // The same report fits the URL budget on Linux.
+    expect(win.bodyIncluded).toBe(true);
+    expect(win.url).toContain('body=');
+    expect(win.url.length).toBeLessThanOrEqual(MAX_URL_CHARS_WINDOWS);
+    // Less log rides on Windows than on Linux, and the clipboard carries
+    // the whole thing either way.
     const linux = prepareIssueReport({ ...ctx, platform: 'linux' }, log);
-    expect(linux.bodyIncluded).toBe(true);
-    expect(linux.url).toContain('body=');
+    expect(loggedExcerpt(urlBody(win)).length).toBeLessThan(
+      loggedExcerpt(urlBody(linux)).length,
+    );
+    expect(win.clipboardText).toContain(log);
   });
 
   it('still pre-fills the form on Windows when the URL fits', () => {
     const win = prepareIssueReport({ ...ctx, platform: 'win32' }, 'ok');
     expect(win.bodyIncluded).toBe(true);
     expect(win.url.length).toBeLessThanOrEqual(MAX_URL_CHARS_WINDOWS);
+  });
+});
+
+describe('fitting the log excerpt to the URL budget', () => {
+  // A log whose ENCODED size blows past the budget while its raw size
+  // stays modest: ñ multiplies by six and the space by three, which is
+  // exactly what made the fixed character slice overflow.
+  const heavy = [
+    'PRIMERA linea del log',
+    ...Array.from({ length: 120 }, (_, i) => `L${i}: ${'ñ '.repeat(30)}`),
+    'ULTIMA linea del log',
+  ].join('\n');
+
+  it('carries a shorter excerpt instead of dropping the whole body', () => {
+    const report = prepareIssueReport(ctx, heavy);
+    expect(report.bodyIncluded).toBe(true);
+    expect(report.url).toContain('body=');
+    expect(report.url.length).toBeLessThanOrEqual(MAX_URL_CHARS);
+    const excerpt = loggedExcerpt(urlBody(report));
+    expect(excerpt.length).toBeGreaterThan(0);
+    expect(excerpt.length).toBeLessThan(heavy.length);
+    // Nothing is lost: the clipboard still opens on the first line.
+    expect(report.clipboardText).toContain('PRIMERA linea del log');
+  });
+
+  it('keeps the END of the log, where the failure is', () => {
+    const excerpt = loggedExcerpt(urlBody(prepareIssueReport(ctx, heavy)));
+    expect(heavy.endsWith(excerpt)).toBe(true);
+    expect(excerpt).toContain('ULTIMA linea del log');
+    expect(excerpt).not.toContain('PRIMERA linea del log');
+  });
+
+  it('opens the excerpt on a whole line', () => {
+    const excerpt = loggedExcerpt(urlBody(prepareIssueReport(ctx, heavy)));
+    // What precedes the excerpt in the log is the newline that closed the
+    // previous line: no half timestamp at the top of the form.
+    expect(heavy[heavy.length - excerpt.length - 1]).toBe('\n');
+  });
+
+  it('fits a log far larger than the clipboard budget', () => {
+    const log = Array.from(
+      { length: 5000 },
+      (_, i) => `linea ${i} con texto de relleno`,
+    ).join('\n');
+    const report = prepareIssueReport(ctx, log);
+    expect(report.bodyIncluded).toBe(true);
+    expect(report.url.length).toBeLessThanOrEqual(MAX_URL_CHARS);
+    expect(loggedExcerpt(urlBody(report))).toContain('linea 4999');
+  });
+
+  it('falls back to the title alone when not even the environment fits', () => {
+    // A boundary probe: an absurd kernel string makes the log-less body
+    // alone overflow Windows' whole URL budget.
+    const swollen = { ...ctx, platform: 'win32', osRelease: 'ñ'.repeat(400) };
+    const report = prepareIssueReport(swollen, 'algo ha fallado');
+    expect(report.bodyIncluded).toBe(false);
+    expect(report.url).not.toContain('body=');
+    expect(report.url.length).toBeLessThanOrEqual(MAX_URL_CHARS_WINDOWS);
+    // The report is not lost: the clipboard carries it whole.
+    expect(report.clipboardText).toContain('algo ha fallado');
   });
 });
 
@@ -342,6 +391,14 @@ describe('src/report-issue.ts', () => {
     it('answers empty for a missing log', () => {
       expect(keepTail(null, 10, 10)).toBe('');
       expect(keepTail('', 10, 10)).toBe('');
+    });
+
+    it('never leaves half a surrogate pair at the cut', () => {
+      // encodeURIComponent throws URIError on a lone low surrogate, which
+      // would kill the whole report: the orphaned half goes instead.
+      const tail = keepTail(`abc😀${'x'.repeat(10)}`, 100, 11);
+      expect(() => encodeURIComponent(tail)).not.toThrow();
+      expect(tail).toBe('x'.repeat(10));
     });
   });
 
@@ -383,34 +440,35 @@ describe('src/report-issue.ts', () => {
       expect(report.clipboardText).toContain('Entorno');
     });
 
-    it('falls back to title-only when the body would not fit the URL', () => {
+    it('caps the clipboard tail at its own budget', () => {
       // Content that percent-encodes heavily (non-ASCII, like the Spanish
       // text real logs carry) blows the URL budget well before the plain
-      // character cap would suggest.
+      // character count would suggest — the clipboard is bounded by its
+      // own budget instead, and carries the report whole.
       const huge: string[] = [];
-      for (let i = 0; i < URL_TAIL_LINES + 10; i++)
-        huge.push(`L${i}: ` + 'ñ'.repeat(200));
+      for (let i = 0; i < 70; i++) huge.push(`L${i}: ` + 'ñ'.repeat(200));
       const report = prepareIssueReport(ctx, huge.join('\n'));
-      expect(report.url).not.toContain('body=');
-      expect(report.bodyIncluded).toBe(false);
-      // The URL stays within budget regardless.
-      expect(report.url.length).toBeLessThan(MAX_URL_CHARS);
-      // And the clipboard still carries the big tail, capped to its budget.
+      expect(report.url.length).toBeLessThanOrEqual(MAX_URL_CHARS);
       const tail = report.clipboardText.split('```text')[1] ?? '';
       expect(tail.length).toBeLessThanOrEqual(CLIPBOARD_TAIL_CHARS + 20);
     });
 
-    it('keeps the url and clipboard tails to their declared budgets', () => {
+    it("bounds the clipboard by its budget and the URL by GitHub's", () => {
       const lines: string[] = [];
       for (let i = 0; i < CLIPBOARD_TAIL_LINES + 50; i++)
         lines.push(`line-${i}`);
       const report = prepareIssueReport(ctx, lines.join('\n'));
-      const urlTail = decodeURIComponent(
-        (report.url.match(/body=([^&]+)/) ?? ['', ''])[1] ?? '',
+      const last = `line-${CLIPBOARD_TAIL_LINES + 49}`;
+      const clipboardTail = report.clipboardText.split('```text')[1] ?? '';
+      expect(clipboardTail).toContain(last);
+      expect(clipboardTail.length).toBeLessThanOrEqual(
+        CLIPBOARD_TAIL_CHARS + 20,
       );
-      expect(urlTail).toContain(`line-${CLIPBOARD_TAIL_LINES + 49}`);
-      // URL body bounded by URL_TAIL_*, never by the clipboard budget.
-      expect(urlTail.length).toBeLessThanOrEqual(URL_TAIL_CHARS + 40);
+      // The URL carries the END of that same tail, as much as it can.
+      const excerpt = loggedExcerpt(urlBody(report));
+      expect(excerpt).toContain(last);
+      expect(clipboardTail).toContain(excerpt);
+      expect(report.url.length).toBeLessThanOrEqual(MAX_URL_CHARS);
     });
   });
 });

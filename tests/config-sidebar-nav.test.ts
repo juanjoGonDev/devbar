@@ -158,7 +158,7 @@ describe('renderer/config/sidebar-nav.ts', () => {
       expect(win.callCount('reportIssue')).toBe(1);
       // Feedback lands in the dialog, which stays open for another go.
       expect(dlg.querySelector('[data-status]')?.textContent).toContain(
-        'Copiado',
+        'Copiado al portapapeles',
       );
       expect(dlg.open).toBe(true);
     });
@@ -202,10 +202,13 @@ describe('renderer/config/sidebar-nav.ts', () => {
       ) as HTMLDialogElement;
       dlg.querySelector<HTMLButtonElement>('[data-github]')?.click();
       await win.settle('reportIssue', { ok: true, bodyIncluded: true });
-      // bodyIncluded: GitHub's form already carries the report — asking
-      // for a paste would duplicate it.
+      // bodyIncluded: GitHub's form already carries the report, so no
+      // paste is asked for — but the clipboard is named either way. The
+      // excerpt in the URL is trimmed to the budget and GitHub can still
+      // refuse the request: a user who was never told has no way back.
       const status = dlg.querySelector('[data-status]')?.textContent ?? '';
       expect(status).toContain('Formulario preparado');
+      expect(status).toContain('portapapeles');
       expect(status).not.toContain('pégalo');
     });
 

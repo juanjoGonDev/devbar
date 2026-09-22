@@ -56,14 +56,17 @@ Todas las novedades relevantes de DevBar. El formato sigue
   cierra al actuar: el resultado queda en él, por si hay que volver a
   copiar o deshacer el paso.
 
-- **El formulario de GitHub vuelve a pre-rellenarse en más casos.** El
-  cuerpo solo cabía bajo un límite conservador de URL y con el log
-  crecido la codificación de espacios y símbolos lo desbordaba (quedaba
-  solo el título). Cuando se puede detectar el navegador por defecto
-  (Firefox, Chrome/Chromium, Edge y otros modernos), el límite sube a lo
-  que ese navegador tolera; sin detección se mantiene el prudente y en
-  Windows el del sistema. Si no cabe, el informe íntegro sigue en el
-  portapapeles.
+- **El formulario de GitHub se pre-rellena con todo lo que quepa.** Antes
+  el cuerpo viajaba entero o no viajaba: con el log crecido, la
+  codificación de espacios y acentos desbordaba la URL y a GitHub solo
+  llegaba el título. Ahora el informe se recorta a la medida del límite
+  —se conserva el final del log, que es donde está el fallo, y el corte
+  cae en un salto de línea—, así que el formulario llega relleno aunque
+  sea con menos registro. El límite lo pone el servidor de GitHub
+  (responde 500 pasados unos 7 000 caracteres y 414 pasados unos 8 200),
+  no el navegador: por eso no depende de cuál tengas. El informe íntegro
+  sigue yendo siempre al portapapeles, y ahora el diálogo lo dice en
+  todos los casos, no solo cuando el formulario se queda corto.
 
 ## [0.9.5] - 2026-09-19
 

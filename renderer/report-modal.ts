@@ -48,7 +48,13 @@ function setStatus(dlg: HTMLDialogElement, message: string): void {
   if (status) status.textContent = message;
 }
 
-/** GitHub-path feedback: identical wording to the one-click button era. */
+/**
+ * GitHub-path feedback. The report is ALWAYS on the clipboard, so every
+ * outcome says so: the pre-filled form can still arrive short (the URL
+ * budget trims the log excerpt) or not arrive at all (GitHub answers an
+ * error page, the browser never opens), and a user who was never told
+ * about the clipboard has no way back from any of that.
+ */
 function githubOutcomeMessage(res: {
   ok: boolean;
   bodyIncluded?: boolean;
@@ -56,10 +62,10 @@ function githubOutcomeMessage(res: {
 }): string {
   return res.ok
     ? res.bodyIncluded
-      ? '✓ Formulario preparado en GitHub'
-      : '✓ Copiado — pégalo en GitHub'
+      ? '✓ Formulario preparado en GitHub — el informe completo sigue en el portapapeles'
+      : '✓ Copiado al portapapeles — pégalo en GitHub'
     : res.copied
-      ? '✓ Copiado — el navegador no se abrió; pégalo en GitHub'
+      ? '✓ Copiado al portapapeles — el navegador no se abrió; pégalo en GitHub'
       : 'No se pudo preparar';
 }
 

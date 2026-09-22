@@ -2,9 +2,11 @@
  * The "Reportar fallo en GitHub" flow, as pure functions: the report is a
  * GitHub-shaped markdown body built from the app version, the platform and
  * the tail of app.log. It is written to the CLIPBOARD first (always, and
- * complete), then GitHub is opened with the title and — when the URL stays
- * under GitHub's limits — the body pre-filled too; otherwise the user just
- * pastes (Ctrl+V) into the box GitHub left them in.
+ * complete), then GitHub is opened with the title and as much of the body
+ * as its URL limit takes — the log excerpt is TRIMMED to fit, never
+ * dropped for being too long. Only when not even the log-less body fits
+ * does the form open bare and the user paste (Ctrl+V) into the box GitHub
+ * left them in.
  *
  * Nothing here touches Electron or the filesystem: the caller reads the log
  * and puts the clipboard text where it belongs.
@@ -12,8 +14,21 @@
 
 const ISSUES_URL = 'https://github.com/juanjoGonDev/devbar/issues/new';
 
-/** GitHub's new-issue form degrades past a few KB of query string; keep a
- *  generous margin. */
+/**
+ * The ceiling is GITHUB'S, not the browser's: the new-issue endpoint sits
+ * behind a classic ~8 KB request-line limit and answers an error page long
+ * before any desktop browser would complain. Measured with curl against
+ * https://github.com/juanjoGonDev/devbar/issues/new:
+ *
+ *     ~6 070 chars   → 302 (the form opens)
+ *     ~7 070-7 570   → 500
+ *     ~8 270 and up  → 414 URI Too Large
+ *
+ * 6500 is therefore the honest budget, with margin inside the range that
+ * still works. Raising it per browser cannot help: what refuses the
+ * request is the server, so a bigger URL only buys the user an error page
+ * where the form should have been.
+ */
 export const MAX_URL_CHARS = 6500;
 
 /** Windows' shell.openExternal refuses URLs over 2081 characters outright:
@@ -21,44 +36,14 @@ export const MAX_URL_CHARS = 6500;
  *  falling back to the clipboard. Stay under with margin. */
 export const MAX_URL_CHARS_WINDOWS = 2000;
 
-/** The URL budget for a platform. Windows is capped near its own hard
- *  limit; the other desktops tolerate the generous form limit. */
-/**
- * Practical per-browser URL budgets for a new-issue prefill. All measured
- * against the ENCODED URL (spaces → %20 triple them; accents and arrows
- * multiply by 6-9), which is what the browser actually receives.
- *
- * Windows keeps its 2000-char ceiling whatever the browser: the limit is
- * the OS launch path, not the browser. Known-modern browsers on the other
- * desktops comfortably take 16k; unknown ones keep the conservative form
- * budget.
- */
-function browserUrlBudget(browser: string | null | undefined): number | null {
-  const id = (browser ?? '').toLowerCase();
-  if (!id) return null;
-  if (/firefox|waterfox|librewolf|zen/.test(id)) return 16_000;
-  if (
-    /chrom|brave|edge|opera|vivaldi|epiphany|gnome-web|safari|arc|floorp/.test(
-      id,
-    )
-  )
-    return 16_000;
-  return null;
+/** The URL budget for a platform: Windows is capped near its own launch
+ *  limit, everywhere else GitHub's ceiling is what binds. */
+export function maxUrlCharsFor(platform: string): number {
+  return platform === 'win32' ? MAX_URL_CHARS_WINDOWS : MAX_URL_CHARS;
 }
 
-export function maxUrlCharsFor(
-  platform: string,
-  browser?: string | null,
-): number {
-  if (platform === 'win32') return MAX_URL_CHARS_WINDOWS;
-  return browserUrlBudget(browser) ?? MAX_URL_CHARS;
-}
-
-/** How much of app.log rides IN the URL. */
-export const URL_TAIL_LINES = 60;
-export const URL_TAIL_CHARS = 3000;
-/** How much of app.log rides on the clipboard (always, even when the URL
- *  cannot carry the body). */
+/** How much of app.log rides on the clipboard (always, and complete). The
+ *  URL carries the longest END of this same tail that its budget allows. */
 export const CLIPBOARD_TAIL_LINES = 400;
 export const CLIPBOARD_TAIL_CHARS = 12_000;
 
@@ -145,10 +130,77 @@ export function buildIssueBody(
   return sections.join('\n');
 }
 
+/** No line cap: `keepTail` is being asked for a character budget only. */
+const NO_LINE_LIMIT = Number.MAX_SAFE_INTEGER;
+
+/** The form with the title alone: what is left when no body fits. */
+function issueUrl(ctx: IssueContext): string {
+  return `${ISSUES_URL}?title=${encodeURIComponent(issueTitle(ctx))}`;
+}
+
+function issueUrlWithBody(ctx: IssueContext, logTail: string): string {
+  return `${issueUrl(ctx)}&body=${encodeURIComponent(
+    buildIssueBody(ctx, logTail),
+  )}`;
+}
+
+/** How much of a fitted excerpt may be spent to start it on a whole line. */
+const LINE_BOUNDARY_COST = 0.1;
+
+/**
+ * Keep the excerpt from opening mid-line: a log that starts on half a
+ * timestamp reads like a corrupted paste. Only when the first newline is
+ * NEAR the cut — dropping a long first line would cost more log than the
+ * tidiness is worth — and never when the cut already landed on a boundary.
+ */
+function openOnLineBoundary(full: string, kept: string): string {
+  if (kept.length >= full.length) return kept;
+  if (full[full.length - kept.length - 1] === '\n') return kept;
+  const newline = kept.indexOf('\n');
+  if (newline === -1) return kept;
+  const whole = kept.slice(newline + 1);
+  return whole.length >= kept.length * (1 - LINE_BOUNDARY_COST) ? whole : kept;
+}
+
+/**
+ * The longest END of `tail` whose ENCODED url stays inside `budget`.
+ * Encoding is what overflows, never the raw size: a space triples (%20)
+ * and an accent multiplies by six to nine, so 3000 plain characters can
+ * encode past 6000 — which is why a fixed character slice either wasted
+ * most of the budget or blew it, and the whole body was dropped. A halving
+ * search over the kept length instead: bounded by construction (the
+ * interval strictly shrinks, so ~log2(tail.length) probes), and every cut
+ * goes through `keepTail`, which is what keeps one from orphaning half a
+ * surrogate pair. Answers '' when not even a fragment fits — the body then
+ * rides with the environment alone.
+ *
+ * The caller must have checked that the log-less body fits.
+ */
+function fitTailToBudget(
+  ctx: IssueContext,
+  tail: string,
+  budget: number,
+): string {
+  if (issueUrlWithBody(ctx, tail).length <= budget) return tail;
+  let fits = 0;
+  let over = tail.length;
+  while (over - fits > 1) {
+    const middle = Math.floor((fits + over) / 2);
+    const candidate = keepTail(tail, NO_LINE_LIMIT, middle);
+    if (issueUrlWithBody(ctx, candidate).length <= budget) fits = middle;
+    else over = middle;
+  }
+  return fits === 0
+    ? ''
+    : openOnLineBoundary(tail, keepTail(tail, NO_LINE_LIMIT, fits));
+}
+
 interface PreparedIssue {
   /** Where to send the browser. */
   url: string;
-  /** False when the body did not fit the URL and the user must paste it. */
+  /** False only when not even the log-less body fit the URL: the form
+   *  opens with the title alone and the user pastes the rest. True may
+   *  still carry a SHORTENED excerpt — the clipboard has it whole. */
   bodyIncluded: boolean;
   /** What was copied to the clipboard (full report, longer log tail). */
   clipboardText: string;
@@ -231,10 +283,10 @@ function redactSecrets(text: string): string {
 export function prepareIssueReport(
   ctx: IssueContext,
   log?: string | null,
-  browser?: string | null,
 ): PreparedIssue {
-  // Both export sinks derive from the SAME redacted log: what lands in
-  // the GitHub URL is exactly what the clipboard carries.
+  // Both export sinks derive from the SAME redacted log — redaction runs
+  // BEFORE any truncation, so no cut can split a secret open — and what
+  // rides in the URL is an END of exactly what the clipboard carries.
   const safeLog = log ? redactSecrets(log) : log;
   const clipboardTail = keepTail(
     safeLog,
@@ -242,17 +294,13 @@ export function prepareIssueReport(
     CLIPBOARD_TAIL_CHARS,
   );
   const clipboardText = buildIssueBody(ctx, clipboardTail);
-  const urlTail = keepTail(safeLog, URL_TAIL_LINES, URL_TAIL_CHARS);
-  const body = buildIssueBody(ctx, urlTail);
-  const withBody = `${ISSUES_URL}?title=${encodeURIComponent(
-    issueTitle(ctx),
-  )}&body=${encodeURIComponent(body)}`;
-  const bodyIncluded = withBody.length <= maxUrlCharsFor(ctx.platform, browser);
+  const budget = maxUrlCharsFor(ctx.platform);
+  // Nothing to shorten towards: even the environment overflows the URL.
+  if (issueUrlWithBody(ctx, '').length > budget)
+    return { url: issueUrl(ctx), bodyIncluded: false, clipboardText };
   return {
-    url: bodyIncluded
-      ? withBody
-      : `${ISSUES_URL}?title=${encodeURIComponent(issueTitle(ctx))}`,
-    bodyIncluded,
+    url: issueUrlWithBody(ctx, fitTailToBudget(ctx, clipboardTail, budget)),
+    bodyIncluded: true,
     clipboardText,
   };
 }

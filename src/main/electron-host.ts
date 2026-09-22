@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   app,
   BrowserWindow,
@@ -82,28 +82,6 @@ export function createElectronHost(options: ElectronHostOptions) {
 
   let confirmLogo: string | null = null;
 
-  /**
-   * Which browser would open the report, best effort: budgets differ per
-   * browser and the prefill only fits if the encoded URL stays under the
-   * RIGHT one. Detected once at startup on Linux (xdg), cached; until it
-   * answers — or anywhere else — the conservative form budget applies.
-   */
-  let defaultBrowser: string | null = null;
-  if (isLinux) {
-    const detect = (command: string, args: string[]): void => {
-      execFile(command, args, { timeout: 3000 }, (error, stdout) => {
-        if (error) {
-          if (command === 'xdg-settings')
-            detect('xdg-mime', ['query', 'default', 'x-scheme-handler/https']);
-          return;
-        }
-        const answer = stdout.trim();
-        if (answer) defaultBrowser = answer.split('/').pop() ?? answer;
-      });
-    };
-    detect('xdg-settings', ['get', 'default-web-browser']);
-  }
-
   /** Assembles the report body the two report actions share. */
   const buildReport = (): {
     clipboardText: string;
@@ -124,7 +102,6 @@ export function createElectronHost(options: ElectronHostOptions) {
         osRelease: os.release(),
       },
       tail,
-      defaultBrowser,
     );
   };
 
