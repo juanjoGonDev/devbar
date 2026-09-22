@@ -1,11 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  REMOTE_REFRESH_MIN_INTERVAL_MS,
   currentBranch,
   listBranches,
+  refreshRemotes,
+  resetRemoteRefreshForTests,
   switchBranch,
 } from '../src/git-manager.js';
 
@@ -365,5 +368,160 @@ describe('switching branches against a real repository', () => {
         fs.rmSync(lonely, { recursive: true, force: true });
       }
     });
+  });
+});
+
+/**
+ * `refreshRemotes` is what keeps that selector honest. `refs/remotes` holds
+ * only what the last fetch brought, so a branch pushed five minutes ago is
+ * invisible until something fetches. It runs BEHIND the dropdown, which is why
+ * it has to be cheap (throttled, and shared between overlapping calls) and
+ * completely silent when the network is not there.
+ */
+describe('refreshRemotes', () => {
+  let base: string;
+  let repo: string;
+  let origin: string;
+  /** Fake wall clock, so the throttle window can be crossed in no time. */
+  let clockMs = 0;
+
+  function plainGit(cwd: string, ...args: string[]): void {
+    execFileSync('git', ['-C', cwd, ...args], { stdio: 'ignore' });
+  }
+
+  /**
+   * Branches are created straight inside the bare `origin` — that is exactly
+   * what "somebody else pushed while you were working" looks like from here,
+   * without a second clone to keep in step.
+   */
+  function branchOnRemote(name: string): void {
+    plainGit(origin, 'branch', name, 'main');
+  }
+
+  beforeAll(() => {
+    base = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-refresh-'));
+    origin = path.join(base, 'origin.git');
+    repo = path.join(base, 'work');
+    const seed = path.join(base, 'seed');
+    execFileSync('git', ['init', '--bare', '-b', 'main', origin], {
+      stdio: 'ignore',
+    });
+    fs.mkdirSync(seed);
+    plainGit(seed, 'init', '-b', 'main');
+    fs.writeFileSync(path.join(seed, 'file.txt'), 'primero\n');
+    plainGit(seed, 'add', '.');
+    plainGit(
+      seed,
+      '-c',
+      'user.email=devbar@example.com',
+      '-c',
+      'user.name=DevBar Tests',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-m',
+      'primero',
+    );
+    plainGit(seed, 'remote', 'add', 'origin', origin);
+    plainGit(seed, 'push', 'origin', 'main');
+    execFileSync('git', ['clone', origin, repo], { stdio: 'ignore' });
+  });
+
+  beforeEach(() => {
+    clockMs = 0;
+    resetRemoteRefreshForTests(() => clockMs);
+  });
+
+  afterAll(() => {
+    // Hand the real clock back: this module's state outlives the suite.
+    resetRemoteRefreshForTests();
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('brings a branch that appeared on the remote, and says so', async () => {
+    branchOnRemote('nacida-fuera');
+    await expect(refreshRemotes(repo)).resolves.toEqual({ changed: true });
+    expect((await listBranches(repo)).branches).toContain('nacida-fuera');
+  });
+
+  it('says nothing changed when the remote has not moved', async () => {
+    await refreshRemotes(repo);
+    resetRemoteRefreshForTests(() => clockMs);
+    await expect(refreshRemotes(repo)).resolves.toEqual({ changed: false });
+  });
+
+  it('counts a branch the remote deleted as a change, and drops it', async () => {
+    branchOnRemote('efimera');
+    await refreshRemotes(repo);
+    expect((await listBranches(repo)).branches).toContain('efimera');
+    resetRemoteRefreshForTests(() => clockMs);
+    plainGit(origin, 'branch', '-D', 'efimera');
+    await expect(refreshRemotes(repo)).resolves.toEqual({ changed: true });
+    expect((await listBranches(repo)).branches).not.toContain('efimera');
+  });
+
+  it('skips a refresh inside the throttle window and runs one after it', async () => {
+    await refreshRemotes(repo);
+    branchOnRemote('tarde-o-temprano');
+
+    clockMs += REMOTE_REFRESH_MIN_INTERVAL_MS - 1;
+    await expect(refreshRemotes(repo)).resolves.toEqual({ changed: false });
+    // Not merely "reported nothing": no fetch happened at all.
+    expect((await listBranches(repo)).branches).not.toContain(
+      'tarde-o-temprano',
+    );
+
+    clockMs += 1;
+    await expect(refreshRemotes(repo)).resolves.toEqual({ changed: true });
+    expect((await listBranches(repo)).branches).toContain('tarde-o-temprano');
+  });
+
+  it('shares one refresh between calls that overlap', async () => {
+    branchOnRemote('a-la-vez');
+    const first = refreshRemotes(repo);
+    const second = refreshRemotes(repo);
+    // Identity rather than a fetch counter: the contract IS that the second
+    // caller is handed the refresh already running instead of starting one.
+    expect(second).toBe(first);
+    await expect(first).resolves.toEqual({ changed: true });
+    await expect(second).resolves.toEqual({ changed: true });
+  });
+
+  it('stays silent in a repository that has no origin', async () => {
+    // Offline, no remote, a credential prompt refused: all the same to the
+    // selector, which has already answered from local refs. Reporting an
+    // error here would turn a working dropdown into a broken-looking one.
+    const lonely = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-lonely-r-'));
+    try {
+      execFileSync('git', ['init', '-b', 'main', lonely], { stdio: 'ignore' });
+      await expect(refreshRemotes(lonely)).resolves.toEqual({ changed: false });
+    } finally {
+      fs.rmSync(lonely, { recursive: true, force: true });
+    }
+  });
+
+  it('stays silent on a path that is not a repository at all', async () => {
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-plain-r-'));
+    try {
+      await expect(refreshRemotes(plain)).resolves.toEqual({ changed: false });
+    } finally {
+      fs.rmSync(plain, { recursive: true, force: true });
+    }
+  });
+
+  it('touches nothing when the group has no path configured', async () => {
+    // `git -C ''` is a documented no-op for git, so without the guard the
+    // fetch would run against whatever directory this process happens to be
+    // sitting in — here, a real repository with a branch waiting on its
+    // remote, which must still be waiting when this returns.
+    const previousCwd = process.cwd();
+    process.chdir(repo);
+    try {
+      branchOnRemote('nunca-pedida');
+      await expect(refreshRemotes('')).resolves.toEqual({ changed: false });
+      expect((await listBranches(repo)).branches).not.toContain('nunca-pedida');
+    } finally {
+      process.chdir(previousCwd);
+    }
   });
 });

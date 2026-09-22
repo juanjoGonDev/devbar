@@ -48,6 +48,7 @@ export interface RegisterAllDeps {
     AppIpcDeps['processManager'];
   configIo: AppIpcDeps['configIo'];
   gitManager: RuntimeIpcDeps['gitManager'];
+  branchesChanged: RuntimeIpcDeps['branchesChanged'];
   preScriptRunner: RuntimeIpcDeps['preScriptRunner'];
   snapshots: ConfigIpcDeps['snapshots'] &
     RuntimeIpcDeps['snapshots'] &

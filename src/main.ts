@@ -143,6 +143,13 @@ function broadcast(): void {
 }
 const toast = (kind: string, message: string): void =>
   sendToRenderers(registry, 'groups:toast', { kind, message });
+/**
+ * One way in for "this repo's branch list is stale", shared by the repo
+ * watcher and the background remote refresh, so both reach the renderers
+ * through the same channel.
+ */
+const branchesChanged = (repoPath: string): void =>
+  sendToRenderers(registry, 'branches:changed', { path: repoPath });
 const repaintWindows = (): void =>
   refreshWindowBackgrounds(registry, host.background());
 
@@ -339,6 +346,7 @@ function registerIpc(): void {
     processManager,
     configIo,
     gitManager,
+    branchesChanged,
     preScriptRunner,
     snapshots,
     confirms,
@@ -415,8 +423,7 @@ app.whenReady().then(() => {
     broadcast,
     toast,
     broadcastLog: logWindows.broadcastLog,
-    branchesChanged: (repoPath) =>
-      sendToRenderers(registry, 'branches:changed', { path: repoPath }),
+    branchesChanged,
     claimScheduledAction: schedules.claimScheduledAction,
     showCompletionNotification: notifications.showCompletionNotification,
     // Keep the snapshot's running set current (debounced, and a no-op when the

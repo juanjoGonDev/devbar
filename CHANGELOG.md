@@ -36,6 +36,17 @@ Todas las novedades relevantes de DevBar. El formato sigue
   el empuje en sitio cuesta como mucho un icono con restos que se repinta
   solo al siguiente cambio; fallar hacia el canje no se arreglaba solo.
 
+- **Las ramas creadas en la remota no salían en el selector hasta cambiar
+  de rama o hacer `git fetch` a mano.** El desplegable se llena con las
+  referencias que hay en el disco, y `refs/remotes` solo guarda lo que
+  trajo el último fetch: una rama publicada hace cinco minutos era
+  invisible. Ahora, al abrir el selector, DevBar pone al día las
+  referencias remotas por detrás —el desplegable se sigue llenando al
+  instante desde lo local, nunca espera a la red— y solo recarga la lista
+  cuando el fetch ha traído algo nuevo. Como mucho una consulta por
+  repositorio cada minuto; y si no hay red, no hay `origin` o git falla,
+  no se dice nada: la lista que ya estás viendo sigue sirviendo.
+
 ### Añadido
 
 - **Diálogo de reporte de fallo.** El botón de «Acerca de» abre ahora un
