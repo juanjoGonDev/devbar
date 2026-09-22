@@ -1,6 +1,6 @@
 {
   "name": "devbar",
-  "version": "0.9.6",
+  "version": "0.10.0",
   "description": "Menu bar service launcher for macOS, Windows and Linux",
   "main": "build/src/main.js",
   "packageManager": "pnpm@10.32.1",
