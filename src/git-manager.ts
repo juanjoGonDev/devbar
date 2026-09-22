@@ -229,6 +229,24 @@ export function refreshRemotes(repo: string): Promise<{ changed: boolean }> {
   return run;
 }
 
+/** How many of git's own status entries the refusal quotes back. */
+const DIRTY_PATHS_SHOWN = 3;
+
+/**
+ * Names what git actually reported, because "commit or stash first" on a tree
+ * the user knows is clean is an accusation they cannot check. The entries are
+ * git's own porcelain lines (`M  src/app.ts`), so a false positive — a CRLF
+ * normalisation the checkout never settled, a submodule whose own tree moved —
+ * arrives already identifying itself instead of looking like a bug in here.
+ */
+function dirtyWorkingTreeError(porcelain: string): string {
+  const entries = porcelain.split('\n').filter((line) => line.trim() !== '');
+  const shown = entries.slice(0, DIRTY_PATHS_SHOWN).join(', ');
+  const rest = entries.length - DIRTY_PATHS_SHOWN;
+  const more = rest > 0 ? ` (+${String(rest)})` : '';
+  return `Working tree has uncommitted changes — commit or stash first: ${shown}${more}`;
+}
+
 export async function currentBranch(
   repo: string,
 ): Promise<{ ok: boolean; branch?: string; error?: string | undefined }> {
@@ -256,10 +274,7 @@ export async function switchBranch(
   ]);
   if (!dirty.ok) return { ok: false, error: dirty.error };
   if (dirty.stdout)
-    return {
-      ok: false,
-      error: 'Working tree has uncommitted changes — commit or stash first',
-    };
+    return { ok: false, error: dirtyWorkingTreeError(dirty.stdout) };
   const fetched = await git(repo, ['fetch', 'origin'], { timeout: 60000 });
   if (!fetched.ok) return { ok: false, error: fetched.error };
   const local = await git(repo, [

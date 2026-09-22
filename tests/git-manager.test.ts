@@ -297,10 +297,11 @@ describe('switching branches against a real repository', () => {
       fs.writeFileSync(path.join(repo, 'file.txt'), 'a medias\n');
       try {
         const res = await switchBranch(repo, 'local-y-remota');
-        expect(res).toEqual({
-          ok: false,
-          error: 'Working tree has uncommitted changes — commit or stash first',
-        });
+        expect(res.ok).toBe(false);
+        // The refusal quotes git's own entry: a tree the user believes is
+        // clean has to say WHAT git saw, or the message is unfalsifiable.
+        expect(res.error).toContain('commit or stash first');
+        expect(res.error).toContain('M file.txt');
         // and it really did not move
         expect((await currentBranch(repo)).branch).toBe('main');
       } finally {
