@@ -1,10 +1,14 @@
 <p align="center">
-  <img src="assets/icon-readme.png" width="160" alt="DevBar app icon" />
+  <img src="assets/icon.png" width="160" alt="DevBar app icon" />
 </p>
 
-<h1 align="center">DevBar</h1>
-
-<p align="center">
+<h1 align="center">DevBar<br>
+ <img alt="GitHub Release" src="https://img.shields.io/github/v/release/juanjoGonDev/devBar">
+  <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/juanjoGonDev/devBar"/>
+  <img alt="Github Last Commit" src="https://img.shields.io/github/last-commit/juanjoGonDev/devBar"/>
+  <a href="https://www.npmjs.com/devBar" target="_blank"><img alt="GitHub package.json version" src="https://img.shields.io/github/package-json/v/juanjoGonDev/devBar?logo=github&logoColor=fff&label=GitHub+package"></a>
+</h1>
+<p>
   A menu-bar / tray launcher for your local development services, on macOS,
   Windows and Linux (Raspberry Pi included).<br/>
   Start &amp; stop commands, switch git branches per group, run actions, watch logs &mdash; all from the tray.
