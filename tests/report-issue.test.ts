@@ -139,6 +139,27 @@ describe('secret redaction at the export boundary', () => {
     expect(report.clipboardText).toContain('[clave privada]');
   });
 
+  it('redacts a private key whose BEGIN line the tail window ate', () => {
+    // The report reads the last 64 KiB of app.log and drops the torn
+    // first line — which, when the window opens mid-key, is the BEGIN
+    // marker the rule above needs. The orphaned END proves the key body
+    // is above it, so everything up to it goes. Assembled from fragments
+    // like the token fixtures: a whole PEM marker is what push protection
+    // scans for, and a fixture that realistic has no business in a file.
+    const pemEnd = `-----${'END'} RSA PRIVATE KEY-----`;
+    const decapitated = `${'AbCdEf0123456789+/'.repeat(3)}==`;
+    const log = ['descolgado', decapitated, pemEnd, 'sigo trabajando'].join(
+      '\n',
+    );
+    const report = prepareIssueReport(ctx, log);
+    // Mixed case with + / = : no other rule here sees this as a secret.
+    expect(report.clipboardText).not.toContain('AbCdEf0123456789');
+    expect(report.url).not.toContain(encodeURIComponent('AbCdEf0123456789'));
+    expect(report.clipboardText).toContain('[clave privada]');
+    // Only what sits ABOVE the orphaned END goes.
+    expect(report.clipboardText).toContain('sigo trabajando');
+  });
+
   it('leaves prose alone that merely names a secret', () => {
     // A bare `key value` rule would turn these into "token [redacted]" and
     // strip the log of the words that explain the failure. The value has to

@@ -229,6 +229,12 @@ const REDACTIONS: [RegExp, string][] = [
     /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
     '[clave privada]',
   ],
+  // A DECAPITATED key: the report reads the last 64 KiB of app.log and
+  // drops the torn first line, which is exactly the BEGIN the rule above
+  // needs — leaving the base64 body, which escapes every other rule here
+  // (mixed case, with + / =). Applied after the paired rule, so any END
+  // still standing proves its key is above it: everything up to it goes.
+  [/^[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/, '[clave privada]'],
   // Vendor tokens that carry their own prefix and need no key name beside
   // them: Slack, npm, Google, Stripe.
   [/xox[baprs]-[A-Za-z0-9-]{10,}/g, '[token de Slack]'],

@@ -47,6 +47,14 @@ Todas las novedades relevantes de DevBar. El formato sigue
   repositorio cada minuto; y si no hay red, no hay `origin` o git falla,
   no se dice nada: la lista que ya estás viendo sigue sirviendo.
 
+- **Una clave privada podía colarse en el reporte de fallo.** El informe
+  lee el final de `app.log` y descarta la primera línea, que viene
+  cortada por la mitad: si la ventana se abría dentro de un bloque
+  `PRIVATE KEY`, lo que desaparecía era justo la cabecera que la limpieza
+  de credenciales necesita para reconocerlo, y el cuerpo de la clave
+  sobrevivía al portapapeles y a la URL. Ahora un cierre de clave privada
+  sin su cabecera borra todo lo que tiene por encima.
+
 ### Añadido
 
 - **Diálogo de reporte de fallo.** El botón de «Acerca de» abre ahora un
