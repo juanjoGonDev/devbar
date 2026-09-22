@@ -5,7 +5,10 @@
     "moduleResolution": "NodeNext",
     "types": ["node"],
     "rootDir": ".",
-    "outDir": "build"
+    "outDir": "build",
+    "paths": {
+      "electron-builder": ["./scripts/electron-builder.d.ts"]
+    }
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts"]
 }

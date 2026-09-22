@@ -35,6 +35,10 @@ describe('packaged app contents', () => {
     }
   });
 
+  it('drops the bundled emoji webfont (Linux-only, see package-win-linux)', () => {
+    expect(isIgnored('/build/assets/fonts/NotoColorEmoji.woff2')).toBe(true);
+  });
+
   it('still drops the TypeScript sources and dev tooling', () => {
     for (const dropped of [
       '/src/main.ts',

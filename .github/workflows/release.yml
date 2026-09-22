@@ -4,12 +4,13 @@ on:
   push:
     branches:
       - main
+  # No dispatch inputs: any workflow input is a CodeQL taint source, and a
+  # tainted ref reaching a checkout/cache step in this default-branch
+  # workflow is a cache-poisoning alert. The dispatch path recovers the
+  # version currently in package.json on main (detect resolves and verifies
+  # the introducing commit against the live tag and release state), so it
+  # needs no operator-supplied data.
   workflow_dispatch:
-    inputs:
-      version:
-        description: Exact package.json version to recover, for example 0.2.0
-        required: true
-        type: string
 
 permissions: read-all
 
@@ -53,7 +54,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
-          REQUESTED_VERSION: ${{ inputs.version || '' }}
         run: |
           set -euo pipefail
 
@@ -69,12 +69,10 @@ jobs:
             exit 1
           fi
 
+          # Recovery (workflow_dispatch) re-resolves the version currently in
+          # package.json against the full first-parent history; a push
+          # resolves only the version that push introduced.
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            requested_version="${REQUESTED_VERSION#v}"
-            if [[ "$requested_version" != "$current_version" ]]; then
-              echo "::error title=Version mismatch::Requested $requested_version but package.json contains $current_version."
-              exit 1
-            fi
             release_range="$GITHUB_SHA"
           else
             zero_sha=0000000000000000000000000000000000000000
@@ -117,12 +115,26 @@ jobs:
             exit 1
           fi
 
+          if [[ "$release_sha" != "$GITHUB_SHA" ]]; then
+            echo "::warning title=Release commit is not HEAD::The version-introducing commit $release_sha differs from the push HEAD $GITHUB_SHA; the build uses HEAD."
+          fi
+
           release_tag="v${current_version}"
           expected_assets=(
             "DevBar-${current_version}-macos-arm64.dmg"
             "DevBar-${current_version}-macos-arm64.zip"
             "DevBar-${current_version}-macos-x64.dmg"
             "DevBar-${current_version}-macos-x64.zip"
+            "DevBar-${current_version}-win-x64-setup.exe"
+            "DevBar-${current_version}-win-x64-portable.exe"
+            "DevBar-${current_version}-win-arm64-setup.exe"
+            "DevBar-${current_version}-win-arm64-portable.exe"
+            "DevBar-${current_version}-linux-x64.AppImage"
+            "DevBar-${current_version}-linux-x64.deb"
+            "DevBar-${current_version}-linux-arm64.AppImage"
+            "DevBar-${current_version}-linux-arm64.deb"
+            "DevBar-${current_version}-linux-armv7.AppImage"
+            "DevBar-${current_version}-linux-armv7.deb"
             "SHA256SUMS.txt"
           )
 
@@ -190,21 +202,23 @@ jobs:
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
           echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
 
-  release:
-    name: Build and publish macOS installers
+  build-macos:
+    name: Build & verify macOS installers
     needs: detect
     if: needs.detect.outputs.publish == 'true'
     runs-on: macos-15
-    timeout-minutes: 35
-    environment: admin
+    timeout-minutes: 40
     permissions:
-      contents: write
+      contents: read
     steps:
-      - name: Checkout exact release commit
+      # Plain default-branch checkout (the event sha — an immutable ref).
+      # CodeQL treats any checkout whose ref comes from another job's
+      # outputs as untrusted code in this cache-writable workflow; in the
+      # normal flow the version-introducing commit IS the push HEAD, and
+      # detect warns when they differ.
+      - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.detect.outputs.release_sha }}
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up pnpm
@@ -219,7 +233,9 @@ jobs:
       - name: Cache Electron downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/Library/Caches/electron
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
           key: macos-installer-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install
@@ -227,6 +243,295 @@ jobs:
 
       - name: Build and verify Intel and Apple Silicon installers
         run: pnpm run release:mac
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-macos-${{ needs.detect.outputs.version }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            dist/release/DevBar-${{ needs.detect.outputs.version }}-macos-arm64.dmg
+            dist/release/DevBar-${{ needs.detect.outputs.version }}-macos-arm64.zip
+            dist/release/DevBar-${{ needs.detect.outputs.version }}-macos-x64.dmg
+            dist/release/DevBar-${{ needs.detect.outputs.version }}-macos-x64.zip
+
+  build-windows:
+    name: Build & verify Windows installers
+    needs: detect
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      # Plain default-branch checkout (the event sha — an immutable ref).
+      # CodeQL treats any checkout whose ref comes from another job's
+      # outputs as untrusted code in this cache-writable workflow; in the
+      # normal flow the version-introducing commit IS the push HEAD, and
+      # detect warns when they differ.
+      - name: Checkout release HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cache Electron downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: windows-installer-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify NSIS + portable (x64, arm64)
+        shell: bash
+        run: |
+          # electron-builder downloads Electron dists + toolsets (NSIS)
+          # from GitHub releases; a transient 5xx must not fail the
+          # release — retry before giving up (same wrapper as ci.yml).
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (win) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "dist (win) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
+
+      - name: Launch smoke — NSIS install + portable
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VERSION
+          Start-Process -Wait -FilePath ".\dist\electron-builder\DevBar-$version-win-x64-setup.exe" -ArgumentList '/S'
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe")) {
+            Write-Error "NSIS install did not produce the expected exe"
+            exit 1
+          }
+          # The oneClick installer launches the app at the end of the install;
+          # stop that instance so the smoke launch owns the single-instance lock.
+          Get-Process DevBar -ErrorAction SilentlyContinue | Stop-Process -Force
+          & "$env:LOCALAPPDATA\Programs\DevBar\DevBar.exe" --devbar-smoke *>&1 |
+            Tee-Object -FilePath smoke-win-installed.log
+          if (-not (Select-String -Path smoke-win-installed.log -Pattern 'DEVBAR_SMOKE_OK' -Quiet)) {
+            Write-Error 'installed-app smoke failed'
+            exit 1
+          }
+          # The NSIS portable wrapper runs the real app as a child process
+          # without redirecting its stdio, so its DEVBAR_SMOKE_OK line never
+          # reaches this console. The app writes a marker file on smoke
+          # success (removed at smoke start), and the wrapper only returns
+          # once the child exits — so the marker is settled now.
+          # Clear a marker the EARLIER smoke in this job (the NSIS install)
+          # may have left: the app only removes its own at app.ready, so an
+          # exe that dies before that would pass the Test-Path gate on the
+          # stale file.
+          Remove-Item (Join-Path $env:TEMP 'devbar-smoke-ok') -ErrorAction SilentlyContinue
+          & ".\dist\electron-builder\DevBar-$version-win-x64-portable.exe" --devbar-smoke *>&1 |
+            Out-File -FilePath smoke-win-portable.log -Encoding utf8
+          if (-not (Test-Path (Join-Path $env:TEMP 'devbar-smoke-ok'))) {
+            Write-Error 'portable-app smoke failed (no smoke marker)'
+            exit 1
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows-${{ needs.detect.outputs.version }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-win-x64-setup.exe
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-win-x64-portable.exe
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-win-arm64-setup.exe
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-win-arm64-portable.exe
+
+  build-linux:
+    name: Build & verify Linux packages (incl. Raspberry Pi)
+    needs: detect
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      # Plain default-branch checkout (the event sha — an immutable ref).
+      # CodeQL treats any checkout whose ref comes from another job's
+      # outputs as untrusted code in this cache-writable workflow; in the
+      # normal flow the version-introducing commit IS the push HEAD, and
+      # detect warns when they differ.
+      - name: Checkout release HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cache Electron downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: linux-installer-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and verify AppImage + deb (x64, arm64, armv7)
+        run: |
+          # electron-builder downloads Electron dists + toolsets (NSIS,
+          # fpm, appimagetool) from GitHub releases; a transient 5xx must
+          # not fail the release — retry before giving up (same wrapper
+          # as ci.yml).
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run dist; then ok=1; break; fi
+            echo "::warning::dist (linux) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "dist (linux) failed after 3 attempts"; exit 1; fi
+          pnpm run verify
+
+      - name: Launch smoke — AppImage + deb (x64, host arch)
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Hosted runners have no /dev/fuse: extract-and-run executes the
+          # same payload a mounted AppImage would (same fix as ci.yml and
+          # release-validation.yml).
+          xvfb-run -a "dist/electron-builder/DevBar-${VERSION}-linux-x64.AppImage" --appimage-extract-and-run --devbar-smoke 2>&1 | tee smoke-linux-appimage.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-appimage.log
+          # .deb: apt resolves the Electron runtime libraries the runner
+          # image lacks (plain dpkg -i fails on unmet dependencies).
+          sudo apt-get install -y "./dist/electron-builder/DevBar-${VERSION}-linux-x64.deb"
+          xvfb-run -a /usr/bin/devbar --devbar-smoke 2>&1 | tee smoke-linux-deb.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-deb.log
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-linux-${{ needs.detect.outputs.version }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-x64.AppImage
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-x64.deb
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-arm64.AppImage
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-arm64.deb
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-armv7.AppImage
+            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-armv7.deb
+
+  assemble:
+    name: Assemble and verify the full release set
+    needs: ['detect', 'build-macos', 'build-windows', 'build-linux']
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      # Plain default-branch checkout (the event sha — an immutable ref).
+      # CodeQL treats any checkout whose ref comes from another job's
+      # outputs as untrusted code in this cache-writable workflow; in the
+      # normal flow the version-introducing commit IS the push HEAD, and
+      # detect warns when they differ.
+      - name: Checkout release HEAD
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Install and build (for the release tooling)
+        run: pnpm install --frozen-lockfile && pnpm run build
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-macos-${{ needs.detect.outputs.version }}
+          path: dist/release
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-windows-${{ needs.detect.outputs.version }}
+          path: dist/release
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-linux-${{ needs.detect.outputs.version }}
+          path: dist/release
+
+      - name: Write full SHA256SUMS manifest and verify the complete set
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          set -euo pipefail
+          node build/scripts/release-manifest.js dist/release "$VERSION"
+          node build/scripts/verify-release-artifacts.js dist/release "$VERSION"
+
+      - name: Upload final release set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-final-${{ needs.detect.outputs.version }}
+          retention-days: 1
+          if-no-files-found: error
+          path: dist/release
+
+  publish:
+    name: Publish release
+    # Deliberately no checkout: a privileged job must never check out a ref
+    # derived from another job's outputs (CodeQL privileged-checkout rule).
+    # Everything this job needs arrives as a verified build artifact, and
+    # tag/release operations use the GitHub API instead of local git.
+    needs: ['detect', 'assemble']
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: admin
+    permissions:
+      contents: write
+    # No checkout in this job, so `gh` has no local .git to infer the repo
+    # from. GH_REPO gives every invocation — including `gh release view` in
+    # the Verify published release step, which omits --repo — the context.
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download verified release set
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-final-${{ needs.detect.outputs.version }}
+          path: dist/release
 
       - name: Create immutable release tag
         if: needs.detect.outputs.tag_exists != 'true'
@@ -237,8 +542,11 @@ jobs:
         run: |
           set -euo pipefail
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
-            existing_sha=$(git rev-list -n 1 "$RELEASE_TAG")
+            # commits/tags/{tag} resolves the ref (dereferencing annotated
+            # tags) and returns the commit — .sha matches detect's
+            # 'git rev-list -n 1' comparison for both lightweight and
+            # annotated tags.
+            existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/tags/${RELEASE_TAG}" --jq '.sha')
             [[ "$existing_sha" == "$RELEASE_SHA" ]]
             exit 0
           fi
@@ -257,7 +565,6 @@ jobs:
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
               --target "$RELEASE_SHA" \
               --title "DevBar $RELEASE_TAG" \
               --generate-notes \
@@ -265,7 +572,25 @@ jobs:
               "dist/release/DevBar-$VERSION-macos-arm64.zip" \
               "dist/release/DevBar-$VERSION-macos-x64.dmg" \
               "dist/release/DevBar-$VERSION-macos-x64.zip" \
+              "dist/release/DevBar-$VERSION-win-x64-setup.exe" \
+              "dist/release/DevBar-$VERSION-win-x64-portable.exe" \
+              "dist/release/DevBar-$VERSION-win-arm64-setup.exe" \
+              "dist/release/DevBar-$VERSION-win-arm64-portable.exe" \
+              "dist/release/DevBar-$VERSION-linux-x64.AppImage" \
+              "dist/release/DevBar-$VERSION-linux-x64.deb" \
+              "dist/release/DevBar-$VERSION-linux-arm64.AppImage" \
+              "dist/release/DevBar-$VERSION-linux-arm64.deb" \
+              "dist/release/DevBar-$VERSION-linux-armv7.AppImage" \
+              "dist/release/DevBar-$VERSION-linux-armv7.deb" \
               "dist/release/SHA256SUMS.txt"
+          fi
+          # The tag targets the version-introducing commit, but the
+          # artifacts are always built from the event HEAD. When the two
+          # differ, say which commit the binaries actually came from.
+          if [ "$RELEASE_SHA" != "$GITHUB_SHA" ]; then
+            body=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body)
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --notes "$(printf '%s\n\n---\nBuilt from commit: %s (release tag targets %s, the version-introducing commit).' "$body" "$GITHUB_SHA" "$RELEASE_SHA")"
           fi
 
       - name: Verify published release
@@ -286,10 +611,18 @@ jobs:
             "DevBar-${VERSION}-macos-arm64.zip"
             "DevBar-${VERSION}-macos-x64.dmg"
             "DevBar-${VERSION}-macos-x64.zip"
+            "DevBar-${VERSION}-win-x64-setup.exe"
+            "DevBar-${VERSION}-win-x64-portable.exe"
+            "DevBar-${VERSION}-win-arm64-setup.exe"
+            "DevBar-${VERSION}-win-arm64-portable.exe"
+            "DevBar-${VERSION}-linux-x64.AppImage"
+            "DevBar-${VERSION}-linux-x64.deb"
+            "DevBar-${VERSION}-linux-arm64.AppImage"
+            "DevBar-${VERSION}-linux-arm64.deb"
+            "DevBar-${VERSION}-linux-armv7.AppImage"
+            "DevBar-${VERSION}-linux-armv7.deb"
             "SHA256SUMS.txt"
           )
-          # `while IFS= read -r` loop, not `mapfile`: this job runs on macOS, whose
-          # default bash 3.2 has no mapfile/readarray builtin (exit 127).
           actual_assets=()
           while IFS= read -r asset; do actual_assets+=("$asset"); done \
             < <(jq -r '.assets[].name' <<<"$release_json" | sort)
@@ -298,8 +631,10 @@ jobs:
             < <(printf '%s\n' "${expected_assets[@]}" | sort)
           [[ "${actual_assets[*]}" == "${sorted_expected_assets[*]}" ]]
 
-          git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
-          tag_sha=$(git rev-list -n 1 "$RELEASE_TAG")
+          # commits/tags/{tag} resolves the ref (dereferencing annotated
+          # tags): compare the tag's COMMIT, matching detect's
+          # 'git rev-list -n 1'.
+          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/tags/${RELEASE_TAG}" --jq '.sha')
           [[ "$tag_sha" == "$RELEASE_SHA" ]]
 
           release_url=$(jq -r .url <<<"$release_json")

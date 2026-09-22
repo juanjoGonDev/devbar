@@ -1,12 +1,46 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
+import yaml from 'js-yaml';
 import { describe, expect, it } from 'vitest';
+
+import { classifyReleaseImpact } from '../scripts/release-impact-policy.ts';
 
 const autoReleaseWorkflow = readFileSync(
   '.github/workflows/auto-release.workflow.yml',
   'utf8',
 );
 const releaseWorkflow = readFileSync('.github/workflows/release.yml', 'utf8');
+
+// Structural view of release.yml: the checkout/target invariants are
+// asserted against the parsed workflow, not against global substrings
+// (a comment or a differently-formatted line could satisfy the latter
+// while violating the former).
+interface WorkflowStep {
+  name?: string;
+  uses?: string;
+  with?: Record<string, unknown>;
+  run?: string;
+}
+interface WorkflowJob {
+  steps?: WorkflowStep[];
+}
+const releaseWorkflowDoc = yaml.load(releaseWorkflow) as {
+  jobs: Record<string, WorkflowJob>;
+};
+const jobSteps = (job: WorkflowJob): WorkflowStep[] => job.steps ?? [];
+const allSteps = (): WorkflowStep[] =>
+  Object.values(releaseWorkflowDoc.jobs).flatMap(jobSteps);
+const cacheWritableJobs = (): [string, WorkflowJob][] =>
+  Object.entries(releaseWorkflowDoc.jobs).filter(([, job]) =>
+    jobSteps(job).some(
+      (step) =>
+        typeof step.uses === 'string' &&
+        step.uses.startsWith('actions/cache@') &&
+        step.with != null &&
+        step.with.path != null,
+    ),
+  );
 const labelWorkflow = readFileSync(
   '.github/workflows/release-impact-label.workflow.yml',
   'utf8',
@@ -103,14 +137,103 @@ describe('release impact workflow integration', () => {
     );
   });
 
-  it('preserves exact release commit publication and explicit recovery', () => {
-    expect(releaseWorkflow).toContain('workflow_dispatch:');
-    expect(releaseWorkflow).toContain(
-      'ref: ${{ needs.detect.outputs.release_sha }}',
+  it('keeps every cache-writable build job free of output-derived checkout refs', () => {
+    // No checkout may use a ref derived from another job's outputs: in a
+    // cache-writable workflow CodeQL treats those as untrusted code
+    // (cache-poisoning alerts). Build jobs use the plain immutable
+    // event-sha checkout; detect still resolves the version-introducing
+    // commit, which the release tag targets.
+    const writable = cacheWritableJobs();
+    expect(writable.length).toBeGreaterThanOrEqual(3);
+    for (const [jobName, job] of writable) {
+      const checkouts = jobSteps(job).filter(
+        (step) =>
+          typeof step.uses === 'string' &&
+          step.uses.startsWith('actions/checkout@'),
+      );
+      expect(checkouts, `job ${jobName} must check out`).toHaveLength(1);
+      const withBlock = checkouts[0].with;
+      // A `ref` at all would be a formatting variant of the same
+      // invariant — the build checkouts are plain event checkouts.
+      expect(
+        withBlock == null ? undefined : withBlock.ref,
+        `job ${jobName} must not set a checkout ref`,
+      ).toBeUndefined();
+    }
+    // A ref derived from job outputs must not appear in ANY checkout
+    // step of the workflow (any formatting — parsed, not grepped).
+    for (const step of allSteps()) {
+      if (
+        typeof step.uses !== 'string' ||
+        !step.uses.startsWith('actions/checkout@')
+      )
+        continue;
+      const ref = step.with?.ref;
+      if (typeof ref === 'string')
+        expect(
+          ref,
+          'checkout refs must not derive from job outputs',
+        ).not.toMatch(/needs\./u);
+    }
+  });
+
+  it('tags the release at the resolved commit via the explicit --target', () => {
+    const stepNames = allSteps().map((step) => step.name);
+    expect(stepNames).toContain('Checkout trusted default branch');
+    expect(stepNames).toContain('Checkout release HEAD');
+    expect(stepNames).toContain('Create immutable release tag');
+    expect(stepNames).toContain('Verify published release');
+    const releaseStep = allSteps().find(
+      (step) => step.name === 'Create or validate GitHub release',
     );
-    expect(releaseWorkflow).toContain('pnpm run release:mac');
-    expect(releaseWorkflow).toContain('Create immutable release tag');
-    expect(releaseWorkflow).toContain('Create or validate GitHub release');
-    expect(releaseWorkflow).toContain('Verify published release');
+    expect(
+      releaseStep?.run ?? '',
+      'the release must target the resolved commit, not the event SHA',
+    ).toContain('--target "$RELEASE_SHA"');
+    // Manual dispatch and the macOS release build remain part of the flow.
+    const workflow = yaml.load(releaseWorkflow) as {
+      on?: Record<string, unknown>;
+    };
+    expect(workflow.on?.workflow_dispatch !== undefined).toBe(true);
+    expect(
+      allSteps().some(
+        (step) =>
+          typeof step.run === 'string' &&
+          step.run.includes('pnpm run release:mac'),
+      ),
+    ).toBe(true);
+  });
+
+  // The policy decides whether a change needs a release; release-validation.yml
+  // decides whether that change gets a packaging dry run. If a script the
+  // policy calls release-impacting is missing from the workflow filter, it
+  // ships without ever being dry-run. Both lists have silently drifted before,
+  // so assert the containment instead of trusting two hand-maintained copies.
+  it('dry-runs every release-impacting script in release-validation.yml', () => {
+    const validationDoc = yaml.load(
+      readFileSync('.github/workflows/release-validation.yml', 'utf8'),
+    ) as { on?: { pull_request?: { paths?: string[] } } };
+    const filtered = new Set(validationDoc.on?.pull_request?.paths ?? []);
+    expect(filtered.size).toBeGreaterThan(0);
+
+    // --others so a newly added, not-yet-committed script is covered too:
+    // that is exactly when the two lists drift apart.
+    const trackedScripts = spawnSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard', 'scripts/'],
+      { encoding: 'utf8' },
+    )
+      .stdout.split('\n')
+      .filter((path) => path.length > 0);
+    expect(trackedScripts.length).toBeGreaterThan(0);
+
+    const uncovered = trackedScripts.filter(
+      (path) =>
+        classifyReleaseImpact([path]).publish === true && !filtered.has(path),
+    );
+    expect(
+      uncovered,
+      'release-impacting scripts missing from the release-validation.yml path filter',
+    ).toEqual([]);
   });
 });

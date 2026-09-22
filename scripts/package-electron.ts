@@ -1,6 +1,7 @@
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { packager } from '@electron/packager';
+import { isEntrypoint } from './lib/script-runtime.ts';
 
 const SUPPORTED_ARCHITECTURES = new Set(['arm64', 'x64'] as const);
 type Architecture = 'arm64' | 'x64';
@@ -15,8 +16,15 @@ const ALWAYS_IGNORED =
   /^\/(?:dist|tests|\.agents|\.github|src|renderer|scripts|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.ts|vitest\.config\.ts|knip\.json|\.dependency-cruiser\.json)(?:$|\/)/;
 /** The development-only simulation panel and its IPC handlers. */
 const DEV_PANEL = /^\/build\/(?:src|renderer)\/dev(?:$|\/)/;
+/** The bundled emoji webfont: Linux-only (renderer/emoji.css), and macOS
+ *  already carries Apple Color Emoji. */
+const EMOJI_FONT = /^\/build\/assets\/fonts(?:$|\/)/;
 
-export const PACKAGE_IGNORE: readonly RegExp[] = [ALWAYS_IGNORED, DEV_PANEL];
+export const PACKAGE_IGNORE: readonly RegExp[] = [
+  ALWAYS_IGNORED,
+  DEV_PANEL,
+  EMOJI_FONT,
+];
 
 /**
  * Same list, minus the dev panel — for `DEVBAR_DEV_PANEL=1`, which packages an
@@ -25,14 +33,29 @@ export const PACKAGE_IGNORE: readonly RegExp[] = [ALWAYS_IGNORED, DEV_PANEL];
  * to open a particular pane) in a REAL installed bundle, where notifications
  * and the updater actually work. A normal build never includes it.
  */
-export const PACKAGE_IGNORE_WITH_DEV: readonly RegExp[] = [ALWAYS_IGNORED];
+export const PACKAGE_IGNORE_WITH_DEV: readonly RegExp[] = [
+  ALWAYS_IGNORED,
+  EMOJI_FONT,
+];
 
 export function packageIgnoreFor(includeDevPanel: boolean): readonly RegExp[] {
   return includeDevPanel ? PACKAGE_IGNORE_WITH_DEV : PACKAGE_IGNORE;
 }
 
-async function main(): Promise<void> {
-  const [architectureValue, outputDirectory] = process.argv.slice(2);
+/**
+ * Just enough of `@electron/packager`'s signature to be injectable: tests
+ * must exercise the option shape without building a real .app (a packager
+ * run downloads Electron and signs a bundle). The CLI keeps the real one.
+ */
+export type PackagerRun = (
+  options: Parameters<typeof packager>[0],
+) => Promise<unknown>;
+
+export async function main(
+  argv: readonly string[] = process.argv.slice(2),
+  runPackager: PackagerRun = packager,
+): Promise<void> {
+  const [architectureValue, outputDirectory] = argv;
   if (!SUPPORTED_ARCHITECTURES.has(architectureValue as Architecture)) {
     throw new Error(
       `Unsupported macOS architecture: ${architectureValue || '<missing>'}`,
@@ -45,7 +68,7 @@ async function main(): Promise<void> {
     '..',
     '..',
   );
-  await packager({
+  await runPackager({
     dir: rootDirectory,
     name: 'DevBar',
     platform: 'darwin',
@@ -99,12 +122,12 @@ async function main(): Promise<void> {
   });
 }
 
-const entrypointPath = process.argv[1];
-const isEntrypoint =
-  entrypointPath !== undefined &&
-  import.meta.url === pathToFileURL(entrypointPath).href;
-
-if (isEntrypoint) {
+// Entrypoint guard via the shared helper: both sides are realpath-resolved
+// there, so a checkout reached through a symlink still packages instead of
+// exiting 0 having done nothing. The raw
+// `import.meta.url === pathToFileURL(process.argv[1]).href` comparison this
+// replaces was FALSE in that case.
+if (isEntrypoint(import.meta.url)) {
   void main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

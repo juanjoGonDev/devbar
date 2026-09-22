@@ -23,6 +23,9 @@ interface HostHooks {
 let openCount = 0;
 let selectingAt = 0;
 let hostHooks: HostHooks = {};
+/** Distinguishes the ids of two comboboxes on the same page — `aria-controls`
+ * and `aria-activedescendant` are id references, so they have to be unique. */
+let comboboxCount = 0;
 export function setComboboxHostHooks(hooks: HostHooks): void {
   hostHooks = hooks;
 }
@@ -62,6 +65,17 @@ export function createCombobox({
   let isLoading = false;
   let isOpen = false;
   let highlightIndex = -1;
+  /**
+   * What the user has typed since the dropdown opened — NOT `input.value`.
+   *
+   * The input carries the checked-out branch, which the widget writes there
+   * itself. Filtering on it meant opening the picker on a group sitting on
+   * `main` listed only `main`: every other branch was hidden behind a query
+   * nobody had typed, and the control could not do the one thing it exists
+   * for until the text was deleted by hand.
+   */
+  let query = '';
+  const instanceId = `combobox-${(comboboxCount += 1)}`;
   const root = document.createElement('div') as ComboboxControl;
   root.className = 'combobox';
   root.style.cssText = 'position:relative; min-width:0;';
@@ -73,9 +87,20 @@ export function createCombobox({
   input.spellcheck = false;
   input.style.cssText =
     'display:block;width:100%;font-size:11px;padding:2px 4px;border:1px solid var(--border-strong);border-radius:4px;background:var(--bg-card-strong);color:inherit;cursor:pointer';
+  // Without these the widget is a plain text box to a screen reader: the
+  // dropdown it controls, whether that dropdown is open, and which row the
+  // arrow keys are on are all invisible. They carry no styling and no
+  // behaviour of their own — `aria-activedescendant` only ever points at the
+  // row that already has `.is-highlighted`.
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-autocomplete', 'list');
+  input.setAttribute('aria-expanded', 'false');
+  input.setAttribute('aria-controls', `${instanceId}-list`);
   root.appendChild(input);
   const list = document.createElement('div');
+  list.id = `${instanceId}-list`;
   list.className = 'combobox-list';
+  list.setAttribute('role', 'listbox');
   list.style.position = 'fixed';
   list.style.display = 'none';
   document.body.appendChild(list);
@@ -83,12 +108,34 @@ export function createCombobox({
   const labelFor = (selected: string | null): string =>
     currentOptions.find((option) => option.value === selected)?.label ?? '';
   const filteredOptions = (): ComboboxOption[] => {
-    const q = input.value.trim().toLowerCase();
+    const q = query.trim().toLowerCase();
     return q
       ? currentOptions.filter((option) =>
           option.label.toLowerCase().includes(q),
         )
       : currentOptions;
+  };
+  /**
+   * The options in the order they are DRAWN — checked-out branch first.
+   *
+   * The list and the keyboard handler must agree on this order. They did not:
+   * the list hoisted the checked-out branch to the top while Enter indexed
+   * into the unhoisted list, so with a branch checked out the highlight and
+   * the selection pointed at different rows and arrow-down-then-Enter checked
+   * out a branch the user had never highlighted.
+   */
+  const visibleOptions = (): ComboboxOption[] => {
+    const raw = filteredOptions();
+    const currentIndex = raw.findIndex(
+      (option) => option.current || option.value === currentValue,
+    );
+    return currentIndex > 0
+      ? [
+          raw[currentIndex]!,
+          ...raw.slice(0, currentIndex),
+          ...raw.slice(currentIndex + 1),
+        ]
+      : raw;
   };
   function positionList(): void {
     const rect = input.getBoundingClientRect();
@@ -120,34 +167,35 @@ export function createCombobox({
       hostHeightFor(hostHooks.measureContentHeight?.() ?? 0, rect.bottom),
     );
   }
+  function setActiveDescendant(id: string | null): void {
+    if (id) input.setAttribute('aria-activedescendant', id);
+    else input.removeAttribute('aria-activedescendant');
+  }
   function renderList(): void {
     list.innerHTML = '';
-    const raw = filteredOptions();
-    if (isLoading && raw.length === 0) {
+    const ordered = visibleOptions();
+    if (isLoading && ordered.length === 0) {
       const item = document.createElement('div');
       item.className = 'combobox-item combobox-loading';
+      item.setAttribute('role', 'option');
+      item.setAttribute('aria-disabled', 'true');
       item.textContent = 'Cargando…';
       list.appendChild(item);
+      setActiveDescendant(null);
       return;
     }
-    const currentIndex = raw.findIndex(
-      (option) => option.current || option.value === currentValue,
-    );
-    const ordered =
-      currentIndex > 0
-        ? [
-            raw[currentIndex]!,
-            ...raw.slice(0, currentIndex),
-            ...raw.slice(currentIndex + 1),
-          ]
-        : raw;
+    let activeId: string | null = null;
     ordered.forEach((option, index) => {
       const item = document.createElement('div');
       const highlighted = index === highlightIndex;
       const current = Boolean(option.current || option.value === currentValue);
       item.className = `combobox-item${highlighted ? ' is-highlighted' : ''}${current ? ' is-current' : ''}`;
+      item.id = `${instanceId}-option-${index}`;
+      item.setAttribute('role', 'option');
+      item.setAttribute('aria-selected', String(current));
       item.dataset.value = option.value;
       item.title = option.label;
+      if (highlighted) activeId = item.id;
       if (current) {
         const check = document.createElement('span');
         check.className = 'combobox-check';
@@ -165,6 +213,7 @@ export function createCombobox({
           ?.classList.remove('is-highlighted');
         item.classList.add('is-highlighted');
         highlightIndex = index;
+        setActiveDescendant(item.id);
       });
       item.addEventListener('mousedown', (event) => {
         event.preventDefault();
@@ -174,15 +223,21 @@ export function createCombobox({
       if (current && index === 0 && ordered.length > 1) {
         const sep = document.createElement('div');
         sep.className = 'combobox-separator';
+        // Decorative: a bare <div> inside a listbox is neither an option nor
+        // a group, so hide it rather than leave it for a reader to trip over.
+        sep.setAttribute('aria-hidden', 'true');
         list.appendChild(sep);
       }
     });
+    setActiveDescendant(activeId);
   }
   function openList(): void {
     if (isOpen) return;
     isOpen = true;
     openCount += 1;
     highlightIndex = -1;
+    query = '';
+    input.setAttribute('aria-expanded', 'true');
     positionList();
     renderList();
     list.style.display = 'block';
@@ -194,7 +249,10 @@ export function createCombobox({
     isOpen = false;
     openCount = Math.max(0, openCount - 1);
     selectingAt = Date.now();
+    query = '';
     list.style.display = 'none';
+    input.setAttribute('aria-expanded', 'false');
+    setActiveDescendant(null);
     if (revert) input.value = labelFor(currentValue);
     if (!deferFlush) flushPendingRender();
     hostHooks.scheduleTrayResize?.();
@@ -213,11 +271,12 @@ export function createCombobox({
   input.addEventListener('input', () => {
     highlightIndex = -1;
     if (!isOpen) openList();
+    query = input.value;
     renderList();
     requestAnimationFrame(requestHostHeight);
   });
   input.addEventListener('keydown', (event) => {
-    const opts = filteredOptions();
+    const opts = visibleOptions();
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       if (!isOpen) {
@@ -268,6 +327,10 @@ export function createCombobox({
   root.setOptions = (next) => {
     currentOptions = next;
     input.value = labelFor(currentValue);
+    // The line above just replaced whatever was in the box, so whatever the
+    // user had typed is gone: the filter must go with it, or the list and the
+    // input would disagree about what is being searched for.
+    query = '';
     if (isOpen) {
       highlightIndex = -1;
       renderList();
@@ -284,6 +347,7 @@ export function createCombobox({
   root.setValue = (next) => {
     currentValue = next;
     input.value = labelFor(next);
+    query = '';
   };
   input.value = labelFor(currentValue);
   return root;

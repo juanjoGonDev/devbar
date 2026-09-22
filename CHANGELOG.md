@@ -3,7 +3,417 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
-## [Unreleased]
+## [0.9.7] - 2026-09-22
+
+### Corregido
+
+- **En los escritorios completos (Ubuntu, Fedora, Mint, XFCE…), cada
+  cambio de estado dejaba un icono fantasma nuevo en la bandeja.** El
+  canje de icono que arregla la Raspberry Pi hace que el host de bandeja
+  de esos escritorios pierda el registro del elemento viejo al recrearlo,
+  y los fantasmas se acumulan hasta que reinicias la sesión. Ahora el
+  canje se reserva a los paneles que de verdad lo necesitan —los de
+  Raspberry Pi OS: labwc, wlroots, wayfire, LXDE y LXQt—; en cualquier
+  otro escritorio el icono se empuja en sitio, que es lo que esos paneles
+  hacen bien. La lista dice qué se reconstruye en vez de qué se excluye,
+  y va en ese sentido a propósito: antes bastaba con que el escritorio no
+  se identificase —algo normal al arrancar desde `sudo -i` o desde un
+  servicio de usuario— para caer en el canje, y Cinnamon, MATE, XFCE,
+  Deepin, COSMIC o Budgie nunca llegaron a estar excluidos. Fallar hacia
+  el empuje en sitio cuesta como mucho un icono con restos que se repinta
+  solo al siguiente cambio; fallar hacia el canje no se arreglaba solo.
+
+- **Las ramas creadas en la remota no salían en el selector hasta cambiar
+  de rama o hacer `git fetch` a mano.** El desplegable se llena con las
+  referencias que hay en el disco, y `refs/remotes` solo guarda lo que
+  trajo el último fetch: una rama publicada hace cinco minutos era
+  invisible. Ahora, al abrir el selector, DevBar pone al día las
+  referencias remotas por detrás —el desplegable se sigue llenando al
+  instante desde lo local, nunca espera a la red— y solo recarga la lista
+  cuando el fetch ha traído algo nuevo. Como mucho una consulta por
+  repositorio cada minuto; y si no hay red, no hay `origin` o git falla,
+  no se dice nada: la lista que ya estás viendo sigue sirviendo.
+
+- **Una clave privada podía colarse en el reporte de fallo.** El informe
+  lee el final de `app.log` y descarta la primera línea, que viene
+  cortada por la mitad: si la ventana se abría dentro de un bloque
+  `PRIVATE KEY`, lo que desaparecía era justo la cabecera que la limpieza
+  de credenciales necesita para reconocerlo, y el cuerpo de la clave
+  sobrevivía al portapapeles y a la URL. Ahora un cierre de clave privada
+  sin su cabecera borra todo lo que tiene por encima.
+
+### Añadido
+
+- **Diálogo de reporte de fallo.** El botón de «Acerca de» abre ahora un
+  diálogo que explica qué se va a copiar y da dos caminos: «Reportar bug
+  en GitHub» (copia el informe y abre el formulario) o «📋 Copiar
+  reporte» (solo lo copia, para pegarlo donde quieras). El diálogo no se
+  cierra al actuar: el resultado queda en él, por si hay que volver a
+  copiar o deshacer el paso.
+
+- **El formulario de GitHub se pre-rellena con todo lo que quepa.** Antes
+  el cuerpo viajaba entero o no viajaba: con el log crecido, la
+  codificación de espacios y acentos desbordaba la URL y a GitHub solo
+  llegaba el título. Ahora el informe se recorta a la medida del límite
+  —se conserva el final del log, que es donde está el fallo, y el corte
+  cae en un salto de línea—, así que el formulario llega relleno aunque
+  sea con menos registro. El límite lo pone el servidor de GitHub
+  (responde 500 pasados unos 7 000 caracteres y 414 pasados unos 8 200),
+  no el navegador: por eso no depende de cuál tengas. El informe íntegro
+  sigue yendo siempre al portapapeles, y ahora el diálogo lo dice en
+  todos los casos, no solo cuando el formulario se queda corto.
+
+## [0.9.6] - 2026-09-19
+
+### Corregido
+
+- **En Raspberry Pi, el icono anterior seguía viéndose detrás del nuevo.**
+  El applet de la bandeja compone cada pixmap sobre el buffer anterior en
+  lugar de reemplazarlo: los píxeles transparentes del icono nuevo dejaban
+  ver todos los estados viejos (p. ej. al pulsar «quitar» tras forzar un
+  conteo en el panel de desarrollo). En Linux, los cambios que pueden
+  dejar ver el icono anterior crean ahora un elemento nuevo con superficie
+  limpia y después destruyen el anterior — sin fondo opaco y sin tocar el
+  icono en otras plataformas. Dos refinamientos para que el canje no se
+  note: el elemento nuevo se registra antes de destruir el viejo (nunca
+  hay un momento sin icono) y, cuando el icono nuevo cubre todo lo que
+  había (badge que crece, cambio de color, tema), basta un empuje en
+  sitio sin reconstruir nada.
+
+## [0.9.5] - 2026-09-19
+
+### Corregido
+
+- **En Raspberry Pi, los estados del icono de la bandeja seguían
+  solapándose.** Cada evento de estado volvía a empujar el icono al panel
+  —aunque la imagen fuese idéntica a la anterior, porque la caché
+  devolvía los mismos píxeles— y el applet pintaba encima del pixmap
+  anterior en lugar de reemplazarlo. Ahora se salta todo empuje cuya
+  imagen no ha cambiado y, en Linux, las ráfagas de cambios dentro de
+  250 ms se colapsan en un único empuje con el estado final; macOS y
+  Windows siguen empujando al instante.
+
+- **El interruptor «Ejecutar automáticamente al arrancar» del pipeline
+  decía «el Mac».** Ahora dice «el sistema», como el resto de la
+  interfaz; el ajuste funciona igual en los tres sistemas. También se
+  generaliza su explicación, que mencionaba «Login Item» (término solo
+  de macOS).
+
+### Añadido
+
+- **Las muestras de recursos incluyen la memoria y la carga del sistema
+  completo.** Cada línea registra la RAM libre/total de la máquina y la
+  carga media de 1 minuto (`sys-mem=204.8MB/4096.0MB load1=3.90`), para
+  distinguir un problema de DevBar de una Raspberry sin memoria libre.
+
+## [0.9.4] - 2026-09-19
+
+### Corregido
+
+- **La fuente de emojis ya no «roba» símbolos de texto en Linux.** Noto
+  Color Emoji también trae glifos como `▶` —el que abre cada línea de
+  arranque de servicio— y, al estar al final de todas las pilas de
+  fuentes, acababa repintando los logs monocromo con emojis grandes a
+  color y volviéndolos ilegibles. Ahora la fuente declara un
+  `unicode-range` con los bloques de emoji reales: flechas, símbolos de
+  caja y todo lo que era texto vuelve a resolverse en la fuente de texto,
+  igual que antes de incluirla.
+
+- **El icono de apagar de la ventana de la bandeja volvía a no verse en
+  Raspberry Pi OS.** `⏻` no es un emoji: ninguna fuente del sistema lo
+  trae y Noto Color Emoji tampoco lo cubre, así que quedaba como un
+  cuadro vacío mientras el resto sí se veía. Se cambia por `⏹` (cubierto
+  en todos los sistemas, mismo estilo al pasar el ratón).
+
+### Añadido
+
+- **Botón «Reportar fallo en GitHub» en Acerca de.** Prepara un informe
+  con la versión, el sistema (plataforma, arquitectura, OS, Electron y
+  Node) y el final de `app.log`, lo copia completo al portapapeles y abre
+  el formulario de issues de GitHub con el título y el cuerpo ya
+  rellenos; si el cuerpo no cabe en la URL, basta con pegar (el informe
+  íntegro sigue en el portapapeles). Antes de salir, el log se limpia de
+  credenciales: tokens, claves, cadenas de conexión con contraseña, claves
+  privadas y tu ruta de usuario. El `app.log` de tu equipo se queda
+  completo; lo que se recorta es solo lo que sale hacia fuera.
+
+- **Muestreo de CPU y RAM en el log de la app.** Cada apertura de ventana
+  y una línea periódica registran CPU, RSS/heap y número de procesos de
+  Chromium (`[resources] cpu=12.3% rss=180.2MB … (window-open)`), para
+  que un «se disparan los ventiladores al abrir el menú» llegue con
+  números y no a base de anécdotas.
+
+### Cambiado
+
+- **El selector de emojis se pinta por bloques.** Hasta ahora abría
+  construyendo de golpe todos los botones de la categoría activa (hasta
+  ~1900 nodos con su escucha cada uno): en una Raspberry Pi eso disparaba
+  la CPU —y los ventiladores— al abrirlo. Ahora pinta los primeros 96 al
+  instante y el resto va llegando en segundo plano; escribir en el
+  buscador o cerrar el selector cancela el trabajo pendiente.
+
+## [0.9.3] - 2026-09-19
+
+### Corregido
+
+- **En Linux, `install-local` fallaba en Raspberry Pi (y en cualquier host
+  que no sea x64).** El build de empaquetado terminaba bien pero la
+  instalación buscaba el ejecutable en `linux-unpacked`, cuando
+  electron-builder escribe `linux-arm64-unpacked` en un host arm64 (y solo
+  deja el nombre sin sufijo en x64). Ahora el directorio se deduce de la
+  arquitectura del host con el mismo criterio que el empaquetador, así que
+  `pnpm install-local` vuelve a funcionar en la Pi.
+
+- **En Raspberry Pi OS no se veía ningún emoji** (iconos de grupos, rejilla
+  del selector, glifos de la propia interfaz): el sistema no trae ninguna
+  fuente de emoji a color y todo se pintaba como cuadros vacíos. La app
+  ahora lleva incorporada Noto Color Emoji (SIL OFL) y la sirve como
+  última opción de cada pila de fuentes, así que solo se usa donde no hay
+  ninguna fuente nativa que cubra el glifo. El archivo viaja únicamente en
+  los artefactos de Linux (macOS y Windows tienen fuentes propias).
+
+- **En Linux, la notificación emergente se veía como una caja negra.** Las
+  sesiones sin compositor (Raspberry Pi OS entre ellas) no pueden pintar
+  ventanas transparentes: el banner ahora es opaco y ocupa la ventana
+  completa en Linux; macOS y Windows conservan el banner flotante con
+  esquinas redondeadas.
+
+- **En Linux, los estados del icono de la bandeja se solapaban.** Varios
+  paneles componen los dos pixmaps multi-escala que se les enviaban en
+  lugar de elegir uno, y cada cambio de estado estampaba el icono nuevo
+  sobre el anterior. Ahora Linux recibe un único pixmap de 32 px que el
+  panel reduce; macOS y Windows mantienen el par 18 px + 2x.
+
+- **Los logs de servicio ya no muestran los avisos de job control de
+  bash.** Cada comando lanzado con el shell interactivo (`-ic`, el que
+  carga tus rc y tu PATH) imprimía «bash: cannot set terminal process
+  group (-1)…» y «bash: no job control in this shell» antes de la salida
+  real; eran ruido del propio shell (el comando se ejecutaba bien) y ahora
+  se filtran, igual que ya se hacía con su equivalente de zsh.
+
+## [0.9.2] - 2026-09-18
+
+### Añadido
+
+- **En Windows y Linux, el icono de la bandeja muestra el número de errores** (o de avisos, si no hay errores) como insignia dibujada sobre el icono —en macOS ya aparecía como texto al lado del icono, y los títulos de bandeja no se renderizan en los otros dos sistemas—, con tope en «99+».
+- **El panel Dev de Configuración puede forzar el contador de la bandeja.** Los botones «Errores: 5 / 14 / 99+» (y «Sin contador») prueban la insignia de la bandeja sin provocar errores reales; en macOS se muestra como texto junto al icono, igual que el real.
+
+- **En Linux, el panel se abre junto al icono de la bandeja (como en
+  macOS)** cuando la sesión informa la posición real del icono (X11):
+  bajo una barra superior cuelga del icono centrado en él, y se adapta
+  para no salirse de la pantalla. En sesiones Wayland el compositor
+  decide la colocación (Electron no puede forzarla), así que se mantiene
+  el comportamiento habitual de menubar.
+- **El lanzador de la instalación local incluye icono.** Si
+  electron-builder no incluyó uno en la copia empaquetada, `install-local`
+  copia el del proyecto dentro de la instalación y la entrada del menú
+  de aplicaciones (Linux) / Menú Inicio (Windows) lo referencia.
+
+- **Tras `install-local`, la app aparece en el menú del sistema.** En Linux la instalación registra su entrada en el menú de aplicaciones (`~/.local/share/applications/devbar.desktop`, con icono) y en Windows crea su acceso directo en el Menú Inicio; antes la copia local funcionaba pero era invisible desde el lanzador, a diferencia de los instaladores oficiales.
+
+- **Windows, Linux y Raspberry Pi.** DevBar ya no es solo de macOS: el mismo
+  runtime funciona en los tres sistemas, cada uno con su empaquetado —
+  **instalador de un clic y portable** en Windows (x64 y arm64), **AppImage y
+  .deb** en Linux (x64, arm64 y armv7 para Raspberry Pi 4/5) y el DMG de
+  siempre en macOS. En la release aparecen los 14 artefactos de las tres
+  plataformas, cada uno con su suma SHA-256.
+- **Actualización automática en los tres SO.** El auto-actualizador de la
+  0.7.0 ahora cubre Windows (instalado: reinstalación silenciosa; portable:
+  sustituye el propio ejecutable en su sitio) y Linux (AppImage in-place con
+  rollback; .deb con reinstalación asistida). En Windows y Linux cada descarga
+  se verifica contra SHA-256 antes de instalarse. En Windows portable y
+  Linux AppImage, si la copia falla a medias la versión anterior se
+  restaura y se relanza.
+- **Arranque con el sistema en los tres SO.** «Iniciar al arrancar el sistema»
+  funciona en Windows (clave Run de usuario) y en Linux (entrada XDG
+  `~/.config/autostart/devbar.desktop`), además del login item de macOS. En
+  Windows y Linux la app distingue un arranque de inicio de uno manual, de
+  modo que el comportamiento programado al arrancar (pre-scripts) es el mismo
+  en las tres plataformas.
+- **CI que construye, verifica y lanza cada build en los tres SO.** Cada
+  cambio compila los tres empaquetados, comprueba el contenido (cabecera PE en
+  Windows, magic y escritorio del AppImage en Linux, checks habituales en
+  macOS) y arranca el binario empaquetado en modo smoke —tray real, sin
+  ventanas ni comandos— antes de dejar la verificación en verde. La validación
+  de release añade dry-runs de Windows y Linux al de macOS.
+
+### Cambiado
+
+- **La interfaz se adapta al SO en marcha.** Los textos de la app (avisos de
+  actualización, instrucciones de instalación, atajos) ya no asumen macOS: en
+  Windows y Linux describen y enlazan a los lugares de tu sistema, no de otro.
+- **Los comandos de desarrollo mantienen su nombre y funcionan en cualquier
+  SO.** `pack`, `dist`, `verify`, `dist:mac`, `release:verify`,
+  `install-local` y `install-local:dev` son los mismos de siempre: un
+  enrutador los interpreta según el SO (el pipeline original en macOS,
+  electron-builder en Windows y Linux) y la compilación de desarrollo corre en
+  Node, de modo que `pnpm start` ya no necesita bash en Windows.
+- **`install-local` mata la instancia anterior antes de reinstalar.** Antes
+  podía dejar corriendo el proceso viejo y quedarse con dos instancias —justo
+  donde una actualización automática a medio resolver se complica más—. Ahora
+  detiene la copia instalada y la de desarrollo, instala y relanza; el ciclo
+  completo se prueba en CI tanto con una instancia corriendo como simulando
+  una actualización automática.
+- **En Windows y Linux, la insignia de errores del icono de la bandeja es
+  más grande y más gruesa** para que se lea de un vistazo (burbuja redonda
+  con el número en blanco sobre el icono). El número también aparece en el
+  tooltip del icono («DevBar — 14 errores»); que el número se dibuje _junto_
+  al icono, como en macOS, no es posible en estos sistemas porque el área de
+  la bandeja es un cuadrado de tamaño fijo impuesto por el sistema
+  operativo.
+
+### Corregido
+
+- **En Windows, `install-local` no detuvo la instancia de desarrollo** (un `pnpm start` de este checkout): el patrón que buscaba electron.exe le doblaba los backslashes y nunca coincidía con la línea de comandos real, así que podía quedar corriendo la copia vieja. Ahora el kill encuentra el proceso y lo detiene.
+
+- **En la bandeja, los grupos que no usan git seguían mostrando el selector de ramas** —sin ruta aparecía un «Rama…» y con una ruta que no es un repositorio el selector se quedaba para siempre en «Cargando…». Ahora el selector solo se muestra en proyectos que son repositorios git de verdad: la app recuerda la decisión de «no es un repositorio» (de modo que no relanza git a cada refresco del panel) y el selector vuelve a aparecer si el grupo apunta luego a un repositorio.
+
+- **En Linux, los logs y el staging de actualizaciones se escribían en una
+  carpeta con el nombre del paquete (`~/.config/devbar/…`) mientras la
+  configuración vivía en `~/.config/DevBar`.** Electron fija la carpeta XDG
+  desde el nombre del paquete al arrancar, antes de que la app pueda
+  renombrarse, así que los datos quedaban repartidos en dos sitios y
+  `pnpm logs` no encontraba el log. Ahora configuración, logs y
+  actualizaciones comparten la carpeta «DevBar» en los tres SO.
+- **Los contadores ⚠ y ✕ del panel de la bandeja abrían una búsqueda con
+  regex** en lugar del filtro por nivel. Ahora abren el pill «sólo ⚠ warnings»
+  / «sólo ⛔ errores» de la ventana de logs —el mismo mecanismo, visible y
+  quitable con su ✕, que usan el panel lateral y los totales de alerta.
+- **Un grupo guardado en Configuración seguía marcado con cambios sin
+  guardar.** El botón Guardar quedaba activo, la barra de «cambios sin guardar»
+  se negaba a irse y al cambiar de grupo o cerrar la ventana volvía a saltar el
+  aviso. La comparación se hacía contra una forma normalizada que el borrador
+  nunca tiene, así que nunca coincidía; ahora se compara contra el estado real
+  del borrador.
+- **Los argumentos estructurados conservan los signos de porcentaje en
+  Windows**, sin que `cmd.exe` expanda por accidente valores como `%TEMP%`.
+  La migración de la configuración heredada en Linux tampoco puede sobrescribir
+  un archivo nuevo creado al mismo tiempo por otra instancia.
+- **Los comandos que DevBar ejecuta ya no se quedan huérfanos cuando la app
+  se cierra.** Antes, al salir (o en la swap de la actualización
+  automática) solo se detenía el primer servicio y el resto seguía vivo
+  ocupando su puerto —el siguiente arranque fallaba con «dirección ya en
+  uso»—. Ahora TODAS las salidas (menú «Salir», `app:quit`, swap de
+  actualización) esperan a que termine de pararse cada servicio (escalando
+  a fuerza si hace falta) antes de morir, y Ctrl+C en el terminal de
+  `pnpm start` o `kill <pid>` limpian igual. En Windows, además, los
+  servicios heredan la consola del terminal (antes no la recibían y un
+  Ctrl+C los dejaba vivos), y `install-local` mata el árbol completo de la
+  instancia en los tres sistemas (antes dejaba los servicios corriendo).
+  Las únicas vías que aún pueden dejar un huérfano son un kill duro
+  (SIGKILL / `taskkill` sin /T), que no permite ejecutar ninguna limpieza,
+  y un servicio que se desprende de su propio grupo de procesos
+  (por ejemplo con `setsid`, doble fork o reasignación de proceso
+  padre): el cierre trabaja por grupos, así que un descendiente que se
+  salga del grupo escapa tanto al kill como al cierre de DevBar.
+- **En Windows y Linux, el panel de la bandeja ya no aparece en la barra de
+  tareas.** Al abrirlo desde el icono, la barra de tareas solo muestra
+  Configuración y/o Logs cuando esas ventanas están abiertas; el panel es
+  siempre sin marco y no genera botón.
+- **En 32-bit ARM (p. ej. Raspberry Pi), la actualización ya encuentra su
+  instalador.** Node informa la arquitectura como `arm`, pero los artefactos
+  se llaman `linux-armv7.*`: el chequeo no proponía ninguna actualización
+  en sitio.
+- **La insignia de la bandeja ya no puede mostrar «99+» con exactamente 99
+  errores** (colisión de caché entre las etiquetas «99» y «99+»).
+- **En macOS, la actualización se aborta si no se puede descargar
+  SHA256SUMS.txt**, igual que en Windows y Linux (antes seguía instalando
+  sin verificación).
+- **En la ventana de Configuración, elegir tema ya no puede sobrescribir
+  autostart/notificaciones** si se hace antes de que terminen de cargar los
+  ajustes, y ahora solo guarda el campo del tema.
+- **El historial de releases de GitHub mostraba como máximo 5 releases**
+  aunque se pidiera más.
+
+- **Algunas ventanas se quedaban con datos viejos hasta que algo sin relación
+  las refrescaba.** Al abrirse, cada ventana pide su estado al proceso
+  principal; si mientras tanto llegaba un cambio —arrancar un servicio,
+  renombrar un grupo, borrar otro—, la respuesta tardía pisaba lo recién
+  llegado y la pantalla se quedaba atrás sin ninguna señal. Pasaba en la lista
+  de grupos de la bandeja, en el listado lateral de la ventana de logs, en la
+  lista de grupos de Configuración, en los pasos del pipeline y en la ventana
+  de patrones silenciados. Ahora manda siempre el valor más reciente.
+
+- **Guardar un grupo dos veces seguidas podía dejar el nombre anterior en la
+  lista.** El botón «Guardar» solo se desactiva cuando no queda nada por
+  guardar, nunca mientras guarda, así que dos guardados rápidos se solapaban y
+  se veía el que respondía el último, no el más nuevo.
+
+- **El aviso de actualización disponible podía apagarse solo.** El punto rojo
+  junto al número de versión —en la bandeja y en Configuración— desaparecía si
+  la comprobación automática encontraba la actualización justo mientras la
+  ventana estaba leyendo el estado al abrirse, y no volvía hasta la siguiente
+  comprobación.
+
+- **El interruptor «Ejecutar automáticamente al arrancar el Mac» podía quedar
+  marcado al revés de lo guardado.** Si fallaba el guardado de un clic
+  anterior, la casilla se revertía por encima del clic siguiente, que sí se
+  había guardado.
+
+- **Al actualizar desde una versión antigua se perdía la lista de servicios.**
+  La conversión al formato de grupos guarda antes una copia de seguridad de
+  los servicios originales, y solo la escribe si no había una ya. El almacén
+  creaba esa copia vacía por su cuenta al arrancar, antes de la conversión, de
+  modo que esta creía que el respaldo ya existía y no lo hacía: la única copia
+  de los servicios originales desaparecía.
+
+- **En Windows, una actualización podía descargar el paquete de Linux.** Si la
+  release no traía instalador de Windows, el aviso ofrecía el `.deb` y lo
+  dejaba en Descargas pidiendo instalarlo a mano. Ahora, sin instalador para
+  tu sistema, se abre la página de la release.
+
+- **En el selector de rama, Enter cambiaba a una rama distinta de la
+  resaltada.** La lista sube arriba la rama activa, pero el teclado contaba
+  las posiciones sobre la lista sin reordenar: con cualquier rama checkouteada,
+  bajar una posición y pulsar Enter hacía checkout de otra. Pasaba igual al
+  elegir con el ratón.
+
+- **El selector de rama solo mostraba la rama actual al abrirlo.** Filtraba por
+  el texto de la caja, que el propio selector rellena con la rama activa, así
+  que había que borrarlo a mano para ver las demás.
+
+- **El selector de rama era invisible para un lector de pantalla.** No se
+  anunciaba como lista desplegable ni decía qué opción estaba resaltada al
+  moverse con las flechas.
+
+- **Renombrar un grupo no se veía en una ventana de logs ya abierta.** El
+  nombre y los iconos se quedaban como estaban hasta reabrirla.
+
+- **La ventana de logs aparecía vacía si no había nada configurado**, en vez de
+  decir que no hay grupos.
+
+- **Guardar un grupo deshacía el rayo de arranque automático y devolvía
+  comandos borrados.** Ambas acciones se aplican al momento, pero el formulario
+  seguía trabajando con la lista anterior, así que al guardar la reescribía.
+
+- **Reordenar grupos arrastrando enviaba el cambio varias veces.** Cada
+  repintado de la lista añadía otro manejador, así que un solo arrastre
+  disparaba tantas reordenaciones y recargas como veces se hubiera repintado.
+
+- **No se podía cambiar de rama si había ficheros sin seguimiento.** Cualquier
+  archivo que git no sigue —la carpeta de un editor, una nota suelta, la
+  configuración de una herramienta— se contaba como trabajo sin guardar y
+  bloqueaba el cambio, aunque git lo habría hecho sin tocarlos. Ahora solo
+  frenan los cambios de verdad, los de ficheros con seguimiento.
+
+- **Cambiar a una rama que nunca se subió avisaba de un error que no existía.**
+  El cambio se hacía correctamente y después DevBar intentaba traer novedades
+  de un remoto que esa rama no tiene, y presentaba ese fallo como si el cambio
+  no se hubiera hecho. Una rama local no tiene nada que traer.
+
+- **Si el cambio de rama fallaba, el selector se quedaba mostrando la rama
+  equivocada** —la que habías elegido, no en la que seguías estando.
+
+- **Los fallos de git no quedaban registrados en ninguna parte.** El aviso rojo
+  desaparecía a los pocos segundos y no dejaba rastro, así que no había forma
+  de saber después qué había pasado. Ahora el motivo completo se escribe en el
+  log (`pnpm logs`), igual que los errores inesperados de las ventanas.
+
+- **En un repositorio clonado, el selector de rama ofrecía una rama «origin»
+  que no existe.** Es el puntero que `git clone` deja apuntando a la rama por
+  defecto del remoto, y se colaba en la lista como si fuera una rama más.
+
+- **«Nuevo acción» y «Acción guardado»** ahora concuerdan en femenino.
 
 ## [0.8.0] - 2026-09-10
 

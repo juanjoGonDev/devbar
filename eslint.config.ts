@@ -1,3 +1,4 @@
+import vitest from '@vitest/eslint-plugin';
 import tseslint from 'typescript-eslint';
 
 const typedFiles = [
@@ -11,12 +12,52 @@ const engineeringRules = {
   complexity: ['error', { max: 50 }],
   'max-depth': ['error', 6],
   'max-params': ['error', 7],
+  // Counted in CODE lines: this repo comments heavily and explains its
+  // reasoning inline, and a raw line count would penalise exactly the files
+  // that document themselves best. 400 is the repo's own grain rather than a
+  // round number — after the module split, every source and test file sits
+  // under it, and the only exception is the generated table excluded below.
+  'max-lines': [
+    'error',
+    { max: 400, skipBlankLines: true, skipComments: true },
+  ],
+} as const;
+
+const testFiles = ['tests/**/*.test.ts'];
+
+const vitestLayoutRules = {
+  'vitest/consistent-test-it': ['error', { fn: 'it' }],
+  'vitest/expect-expect': [
+    'error',
+    {
+      assertFunctionNames: [
+        'expect',
+        'expectValid',
+        'expectInvalid',
+        'expectFailed',
+        'expectSucceeded',
+        'expectPresent',
+        'expectOccurrence',
+      ],
+    },
+  ],
+  'vitest/no-focused-tests': 'error',
+  'vitest/no-identical-title': 'error',
+  'vitest/no-standalone-expect': 'error',
+  'vitest/require-top-level-describe': 'error',
+  'vitest/valid-describe-callback': 'error',
+  'vitest/valid-expect': ['error', { maxArgs: 2 }],
+  'vitest/valid-expect-in-promise': 'error',
+  'vitest/valid-title': ['error', { ignoreTypeOfDescribeName: true }],
 } as const;
 
 export default tseslint.config(
   {
     ignores: [
       'build/**',
+      // `pnpm test:coverage` writes an HTML report here whose vendored
+      // scripts are not ours to lint.
+      'coverage/**',
       'dist/**',
       'node_modules/**',
       'eslint.config.ts',
@@ -61,11 +102,28 @@ export default tseslint.config(
     },
   },
   {
-    files: ['renderer/config.ts'],
+    files: testFiles,
+    plugins: { vitest },
     rules: {
-      // Existing editor orchestration has many validation branches. A UX-flow
-      // refactor is outside this migration; keep the guard visible and scoped.
-      complexity: 'off',
+      ...vitestLayoutRules,
+      // A higher cap than source, because the two sizes mean different
+      // things: a long source file is a responsibility problem, a long test
+      // file is usually just a lot of independent cases. It still has a
+      // ceiling — past this a file stops being navigable whatever it holds —
+      // and nothing is grandfathered in under it.
+      'max-lines': [
+        'error',
+        { max: 800, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
+  {
+    files: ['src/icon-battery.ts'],
+    rules: {
+      // A flat emoji table generated from unicode.org's emoji-test.txt, not
+      // hand-written code. Splitting it would buy nothing a reviewer values,
+      // and regenerating it must stay a single mechanical step.
+      'max-lines': 'off',
     },
   },
 );

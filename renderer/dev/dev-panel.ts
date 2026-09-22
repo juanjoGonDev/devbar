@@ -84,7 +84,7 @@ function buildGroups(version: HTMLInputElement, api = window.api): Group[] {
     },
     {
       title: 'Icono de la barra',
-      note: 'Fuerza el color del icono sin tener que arrancar procesos ni provocar errores reales.',
+      note: 'Fuerza el color del icono y el contador de errores/avisos de la bandeja sin tener que arrancar procesos ni provocar errores reales. El contador se dibuja sobre el icono en Windows y Linux (como texto al lado, en macOS). «Soltar» devuelve el control al estado real de los procesos.',
       actions: [
         ...TRAY_COLORS.map(({ label, color }) => ({
           label,
@@ -92,7 +92,27 @@ function buildGroups(version: HTMLInputElement, api = window.api): Group[] {
         })),
         {
           label: 'Soltar',
-          run: () => api.dev.simulateTrayColor(null),
+          // Release BOTH overrides — a forced count left in place would
+          // keep masking the real tray count after the color was released.
+          run: async () => {
+            await Promise.all([
+              api.dev.simulateTrayColor(null),
+              api.dev.simulateTrayCount(null),
+            ]);
+          },
+        },
+        {
+          label: 'Errores: 5',
+          run: () => api.dev.simulateTrayCount(5),
+        },
+        {
+          label: 'Errores: 14',
+          run: () => api.dev.simulateTrayCount(14),
+        },
+        {
+          label: 'Errores: 99+',
+          hint: 'Cualquier cifra ≥ 100 se pinta como 99+',
+          run: () => api.dev.simulateTrayCount(1234),
         },
       ],
     },

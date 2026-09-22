@@ -6,7 +6,8 @@ body {
   margin: 0;
   padding: 0;
   font-family:
-    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro',
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   font-size: 13px;
   color: #1d1d1f;
   background: transparent;
@@ -22,6 +23,11 @@ body {
   --border-strong: rgba(0, 0, 0, 0.14);
   --muted: #8a8a8e;
   --accent: #007aff;
+  /* Accent as a FILL behind white text: 5.567:1. --accent itself is only
+     4.017:1 on white — under the WCAG AA 4.5:1 minimum for normal text,
+     and these chips are 11px/500, which is not large text. One value for
+     both themes, because --accent is one value for both too. */
+  --accent-strong: #0066cc;
   --bg-card: rgba(255, 255, 255, 0.72);
   --bg-card-strong: rgba(255, 255, 255, 0.92);
   --bg-row-hover: rgba(0, 0, 0, 0.04);
@@ -34,23 +40,21 @@ body {
     0 1px 2px rgba(0, 122, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --stopped: #98989d;
-    --border: rgba(255, 255, 255, 0.1);
-    --border-strong: rgba(255, 255, 255, 0.18);
-    --muted: #98989d;
-    --bg-card: rgba(40, 40, 42, 0.7);
-    --bg-card-strong: rgba(50, 50, 52, 0.9);
-    --bg-row-hover: rgba(255, 255, 255, 0.05);
-    --btn-bg: linear-gradient(180deg, #4b4b4e, #3a3a3d);
-    --btn-shadow:
-      0 1px 1.5px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-  html,
-  body {
-    color: #f5f5f7;
-  }
+:root[data-theme='dark'] {
+  --stopped: #98989d;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --muted: #98989d;
+  --bg-card: rgba(40, 40, 42, 0.7);
+  --bg-card-strong: rgba(50, 50, 52, 0.9);
+  --bg-row-hover: rgba(255, 255, 255, 0.05);
+  --btn-bg: linear-gradient(180deg, #4b4b4e, #3a3a3d);
+  --btn-shadow:
+    0 1px 1.5px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+html[data-theme='dark'],
+html[data-theme='dark'] body {
+  color: #f5f5f7;
 }
 
 button {
@@ -65,10 +69,8 @@ body.tray {
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   min-width: 0;
 }
-@media (prefers-color-scheme: dark) {
-  body.tray {
-    background: rgba(28, 28, 30, 0.78);
-  }
+[data-theme='dark'] body.tray {
+  background: rgba(28, 28, 30, 0.78);
 }
 
 .tray-header.sticky {
@@ -122,7 +124,7 @@ body.tray {
   padding: 4px 6px;
 }
 .tray-header button.ghost.danger.icon-only {
-  color: inherit; /* ⏻ glyph reads better neutral; hover tints it red */
+  color: inherit; /* ⏹ glyph reads better neutral; hover tints it red */
 }
 .tray-header button.ghost.danger.icon-only:hover {
   color: var(--error);
@@ -409,6 +411,12 @@ select:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Non-macOS windows keep the native titlebar, which already shows this same
+   title — the inset strip would duplicate it, so it is macOS-only chrome. */
+html[data-os='win32'] .app-window-spacer,
+html[data-os='linux'] .app-window-spacer {
+  display: none;
+}
 
 /* ---------- Config window ---------- */
 body.config {
@@ -516,7 +524,7 @@ body.config {
   filter: none;
 }
 .nav-item.active {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
 }
@@ -727,10 +735,8 @@ body.config {
   letter-spacing: 0.3px;
   color: var(--muted);
 }
-@media (prefers-color-scheme: dark) {
-  .config th {
-    background: rgba(255, 255, 255, 0.04);
-  }
+[data-theme='dark'] .config th {
+  background: rgba(255, 255, 255, 0.04);
 }
 .config tbody tr:hover {
   background: var(--bg-row-hover);
@@ -870,7 +876,9 @@ body.config {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
 }
 .service-row-card .actions {
   display: flex;
@@ -915,7 +923,9 @@ body.config {
   width: 110px;
 }
 .config td.cell-mono {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
@@ -1200,7 +1210,7 @@ dialog h2 {
   font-size: 10px;
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
 }
 .cl-tag.pre {
@@ -1249,7 +1259,9 @@ dialog h2 {
   text-decoration: underline;
 }
 .cl-notes code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 12px;
   background: var(--bg-row-hover);
   padding: 1px 5px;
@@ -1283,7 +1295,9 @@ dialog h2 {
   color: inherit;
 }
 .field textarea {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   min-height: 64px;
   resize: vertical;
 }
@@ -1557,10 +1571,8 @@ dialog h2 {
 .cmd-sub-row:hover {
   background: rgba(0, 0, 0, 0.05);
 }
-@media (prefers-color-scheme: dark) {
-  .cmd-sub-row:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
+[data-theme='dark'] .cmd-sub-row:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .cmd-sub-name {
@@ -1777,7 +1789,7 @@ dialog h2 {
   background: rgba(0, 122, 255, 0.08);
 }
 .small-btn.autostart-toggle.is-on {
-  background: var(--accent);
+  background: var(--accent-strong);
   border-color: transparent;
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
@@ -1785,6 +1797,20 @@ dialog h2 {
 .small-btn.autostart-toggle.is-on:hover {
   background: #0067db;
   color: #fff;
+}
+
+/* Theme picker (General): segmented control forcing light/dark or following
+   the OS. */
+.theme-picker {
+  display: flex;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+.small-btn.theme-opt.is-on {
+  background: var(--accent-strong);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
 }
 
 /* Schedule 🕐 badge in the commands list — informational; opens the editor. */
@@ -1860,7 +1886,7 @@ fieldset.schedule-group legend {
   background: var(--bg-row-hover);
 }
 .day-chip.is-on {
-  background: var(--accent);
+  background: var(--accent-strong);
   border-color: transparent;
   color: #fff;
   box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
@@ -2052,7 +2078,9 @@ fieldset.schedule-group legend {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
 }
 
 .sub-actions {
@@ -2232,13 +2260,11 @@ fieldset.schedule-group legend {
   z-index: 2000;
   font-size: 12px;
 }
-@media (prefers-color-scheme: dark) {
-  .combobox-list {
-    background: rgba(50, 50, 52, 0.98);
-    box-shadow:
-      0 12px 32px rgba(0, 0, 0, 0.55),
-      0 2px 6px rgba(0, 0, 0, 0.4);
-  }
+[data-theme='dark'] .combobox-list {
+  background: rgba(50, 50, 52, 0.98);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 .combobox-item {
@@ -2259,7 +2285,9 @@ fieldset.schedule-group legend {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 12px;
 }
 .combobox-item .combobox-check {
@@ -2276,7 +2304,7 @@ fieldset.schedule-group legend {
 }
 
 .combobox-item.is-highlighted {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
 }
 .combobox-item.is-highlighted .combobox-check {
@@ -2381,7 +2409,9 @@ button.icon-action-btn:hover {
   flex: 1 1 0;
   min-width: 0;
   max-width: 38%;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 12px;
   padding: 4px 8px;
   height: 26px;
@@ -2399,7 +2429,9 @@ button.icon-action-btn:hover {
 .env-value {
   flex: 1 1 0;
   min-width: 0;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 12px;
   padding: 4px 8px;
   height: 26px;
@@ -2473,7 +2505,7 @@ dialog form {
 }
 .app-version:hover {
   filter: none;
-  background: var(--accent);
+  background: var(--accent-strong);
   border-color: transparent;
   color: #fff;
 }
@@ -2518,13 +2550,11 @@ dialog form {
 .counter-btn.error {
   color: #b32420;
 }
-@media (prefers-color-scheme: dark) {
-  .counter-btn.warn {
-    color: #ffd60a;
-  }
-  .counter-btn.error {
-    color: #ff6961;
-  }
+[data-theme='dark'] .counter-btn.warn {
+  color: #ffd60a;
+}
+[data-theme='dark'] .counter-btn.error {
+  color: #ff6961;
 }
 
 /* ── Config save bar (right pane sticky bar, anchored at the bottom) ──── */
@@ -2560,7 +2590,9 @@ dialog form {
   text-decoration: underline dotted;
 }
 .pattern-edit {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 11px;
   padding: 2px 6px;
   flex: 1;
@@ -2624,10 +2656,8 @@ dialog form {
   font-variant-numeric: tabular-nums;
   opacity: 0.85;
 }
-@media (prefers-color-scheme: dark) {
-  .prestep-badge {
-    background: rgba(255, 255, 255, 0.1);
-  }
+[data-theme='dark'] .prestep-badge {
+  background: rgba(255, 255, 255, 0.1);
 }
 .prestep-badge.ok {
   background: var(--running);
@@ -2720,7 +2750,7 @@ dialog form {
   cursor: pointer;
 }
 .prestep-mode-toggle .mode-btn[aria-pressed='true'] {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
 }
 
@@ -2985,7 +3015,9 @@ body.prescript-confirm {
 .prescript-confirm #pc-cmd {
   display: block;
   max-width: 100%;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 11px;
   color: var(--muted);
   white-space: pre-wrap;
