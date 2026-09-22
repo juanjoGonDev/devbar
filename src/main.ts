@@ -162,6 +162,7 @@ const tray = createTrayController({
   ...linuxRebuildPieces(
     Tray,
     trayContextMenu,
+    process.platform,
     process.env.XDG_CURRENT_DESKTOP ?? '',
   ),
 });

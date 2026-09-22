@@ -19,16 +19,17 @@ import type { GroupState, TrayColor } from '../ipc-contract.js';
  * what is PAINTED, but the real values are still remembered, so releasing an
  * override repaints the true state instead of freezing the forced one.
  *
- * On Linux, pushes that could leave the old icon visible REBUILD the whole
- * tray item instead: compositor-less X11 and some applets (Raspberry Pi OS
- * among them) draw each new pixmap OVER the previous buffer instead of
- * replacing it, so the transparent pixels of the new icon showed every old
- * state behind it. A fresh item starts with a fresh surface — the only fix
- * that does not depend on the applet's painting semantics. Two refinements
- * keep that invisible in practice: only alpha-shrinking transitions rebuild
- * (everything else is a flicker-free in-place push), and the fresh item is
- * registered BEFORE the stale one is destroyed, so the applet never spends
- * a frame without an icon.
+ * On the bare Linux panels that need it (see
+ * {@linkcode shouldRebuildTrayItems}), pushes that could leave the old icon
+ * visible REBUILD the whole tray item instead: compositor-less X11 and some
+ * applets (Raspberry Pi OS among them) draw each new pixmap OVER the previous
+ * buffer instead of replacing it, so the transparent pixels of the new icon
+ * showed every old state behind it. A fresh item starts with a fresh surface
+ * — the only fix that does not depend on the applet's painting semantics.
+ * Two refinements keep that invisible in practice: only alpha-shrinking
+ * transitions rebuild (everything else is a flicker-free in-place push),
+ * and the fresh item is registered BEFORE the stale one is destroyed, so
+ * the applet never spends a frame without an icon.
  */
 
 interface TrayLike {
@@ -117,19 +118,54 @@ function needsSurfaceReset(prev: NativeImage, next: NativeImage): boolean {
 }
 
 /**
- * Whether tray-item rebuilds are wired at all. The rebuild exists for
- * panels that composite pixmaps without clearing (the Raspberry Pi's);
- * full desktop shells instead LEAK a tray item per recreate — GNOME's
- * appindicator host (each rebuild left one more ghost icon on Ubuntu)
- * and KDE Plasma's SNI applet behave the same — and those panels
- * replace the pixmap correctly, so there the icon is pushed in place.
+ * The desktop tokens of the panels that actually need a fresh tray item:
+ * the Raspberry Pi family, which is where the smeared icon was reported.
+ * Lowercase, because XDG_CURRENT_DESKTOP is not normalised (`labwc`,
+ * `LXDE`, `LXQt`).
+ *
+ * Deliberately not here: sway, i3 and Hyprland. Those users run waybar,
+ * which replaces the pixmap correctly — listing them would reintroduce the
+ * leak below for no reported benefit.
+ */
+const REBUILD_PANEL_DESKTOPS = new Set([
+  'labwc',
+  'wlroots',
+  'wayfire',
+  'lxde',
+  'lxqt',
+]);
+
+/**
+ * Whether tray-item rebuilds are wired at all — an ALLOWLIST of the bare
+ * panels that need one, so every desktop this does not recognise pushes the
+ * icon in place instead.
+ *
+ * The two possible mistakes do not cost the same, and that asymmetry is the
+ * whole reason for the direction. Pushing in place on a panel that needed a
+ * rebuild costs one smeared icon, repainted by the next state change.
+ * Rebuilding on a panel that did not costs a ghost tray item per recreate,
+ * accumulating without bound until the session is restarted — GNOME's
+ * appindicator host and KDE Plasma's SNI applet both leak that way. So the
+ * unknown case has to fall to "push in place", which is exactly what a
+ * denylist cannot do: an empty or unset XDG_CURRENT_DESKTOP matches no
+ * denied name, and unset is ordinary (a `sudo -i` shell, a systemd user
+ * unit without `import-environment`, a terminal older than the variable,
+ * GitHub's ubuntu-latest runners). A denylist also has to enumerate every
+ * full shell that exists — Cinnamon, MATE, XFCE, Deepin, COSMIC, Budgie —
+ * and it was already wrong twice before this.
+ *
+ * Whole tokens, not substrings: the variable is colon-separated
+ * (`ubuntu:GNOME`, `labwc:wlroots`), so a regex over the raw string would
+ * fire on any desktop whose name merely contains one of these.
  */
 export function shouldRebuildTrayItems(
   platform: string,
   desktop: string,
 ): boolean {
   if (platform !== 'linux') return false;
-  return !/gnome|unity|pantheon|kde|plasma/i.test(desktop);
+  return desktop
+    .split(':')
+    .some((token) => REBUILD_PANEL_DESKTOPS.has(token.toLowerCase()));
 }
 
 /** Minimum spacing between actual Linux tray repaints; shorter than any
@@ -440,13 +476,18 @@ export function patchLinuxTrayPositioning(input: {
 export function linuxRebuildPieces(
   Tray: typeof ElectronTray,
   buildContextMenu: () => unknown,
+  // NodeJS.Platform, not string: this sits next to `desktop`, and two bare
+  // string slots let a swapped call typecheck while silently disabling the
+  // rebuild everywhere. A desktop name is not a platform, so it fails here.
+  platform: NodeJS.Platform,
   desktop: string,
 ): Partial<Pick<TrayControllerDeps, 'platform' | 'rebuildPieces'>> {
-  // GNOME-family panels leak a tray item per recreate (Ubuntu): there the
-  // pieces contribute nothing and pushes stay in place.
-  if (!shouldRebuildTrayItems(process.platform, desktop)) return {};
+  // Anything but a recognised bare panel — a full desktop shell, or a
+  // desktop that did not announce itself at all — leaks a tray item per
+  // recreate: there the pieces contribute nothing and pushes stay in place.
+  if (!shouldRebuildTrayItems(platform, desktop)) return {};
   return {
-    platform: process.platform,
+    platform,
     rebuildPieces: {
       Tray: Tray as unknown as TrayConstructor,
       buildContextMenu,

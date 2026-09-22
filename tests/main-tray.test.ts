@@ -12,12 +12,10 @@ vi.mock('electron', () => ({
   nativeTheme: { shouldUseDarkColors: false },
 }));
 
-import type { NativeImage, Tray as ElectronTray } from 'electron';
+import type { NativeImage } from 'electron';
 import {
   createTrayController,
-  linuxRebuildPieces,
   patchLinuxTrayPositioning,
-  shouldRebuildTrayItems,
   TRAY_PUSH_MIN_INTERVAL_MS,
   type RebuildableTray,
 } from '../src/main/tray.js';
@@ -34,6 +32,7 @@ function harness(hasUpdate = false) {
   const painted: Painted[] = [];
   const titles: string[] = [];
   const tooltips: string[] = [];
+  const deferred: (() => void)[] = [];
   let failNext = false;
   const controller = createTrayController({
     loadIcon: (state, update, count) => {
@@ -43,6 +42,16 @@ function harness(hasUpdate = false) {
     },
     isMac: true,
     hasUpdate: () => hasUpdate,
+    // Both explicit, because both defaults read the HOST. process.platform
+    // decides whether pushes coalesce, so the same test would cover the
+    // immediate branch on a macOS laptop and the coalescing one on a Linux
+    // runner; and the default schedule is setTimeout, which on that runner
+    // leaves a real 250 ms timer running past the end of the test. Anything
+    // that lands in `deferred` is a push that did NOT reach the panel.
+    platform: 'darwin',
+    schedule: (fn) => {
+      deferred.push(fn);
+    },
   });
   const menuBar = {
     tray: {
@@ -57,6 +66,7 @@ function harness(hasUpdate = false) {
     painted,
     titles,
     tooltips,
+    deferred,
     fail: () => {
       failNext = true;
     },
@@ -127,6 +137,11 @@ describe('src/main/tray.ts', () => {
         },
         isMac: false,
         hasUpdate: () => false,
+        // Windows is the honest platform for "renders no tray title", and
+        // naming it keeps the branch the same on every runner. No schedule
+        // is needed here: one state change is one push, and the first push
+        // is always immediate, so nothing can reach the timer.
+        platform: 'win32',
       });
       const titles: string[] = [];
       controller.attach({
@@ -139,6 +154,18 @@ describe('src/main/tray.ts', () => {
       controller.updateTitle([groupState('warn', [{ warnCount: 3 }])]);
       expect(painted.at(-1)?.count).toBe(3);
       expect(titles).toEqual([]);
+    });
+
+    it('paints every change straight away where pushes do not coalesce', () => {
+      const h = harness();
+      h.controller.attach(h.menuBar);
+      h.controller.updateTitle([groupState('running')]);
+      h.controller.setSimulatedColor('error');
+      h.controller.setSimulatedColor(null);
+      // Off Linux there is no coalescing window: three changes, three
+      // paints, and nothing handed to a timer that would outlive the test.
+      expect(h.painted).toHaveLength(3);
+      expect(h.deferred, 'pushes left waiting on a timer').toEqual([]);
     });
 
     it('carries the pending-update badge', () => {
@@ -517,6 +544,7 @@ describe('src/main/tray.ts', () => {
 
     it('releasing a simulated count repaints immediately', () => {
       const images: { count: number }[] = [];
+      const deferred: (() => void)[] = [];
       const controller = createTrayController({
         loadIcon: (_state, _update, count) => {
           images.push({ count });
@@ -524,6 +552,14 @@ describe('src/main/tray.ts', () => {
         },
         isMac: false,
         hasUpdate: () => false,
+        // "Immediately" only means anything on a platform that does not
+        // coalesce, so the platform is named instead of inherited from the
+        // host. The release is the second push, which is exactly what a
+        // coalescing platform would hand to a timer instead of painting.
+        platform: 'win32',
+        schedule: (fn) => {
+          deferred.push(fn);
+        },
       });
       controller.attach({
         tray: { setImage: vi.fn(), setTitle: vi.fn(), setToolTip: vi.fn() },
@@ -533,42 +569,12 @@ describe('src/main/tray.ts', () => {
       controller.setSimulatedCount(null);
       expect(images.at(-1)?.count).toBe(0);
       expect(forced).toBe(5);
+      expect(deferred, 'pushes left waiting on a timer').toEqual([]);
     });
   });
 
-  describe('shouldRebuildTrayItems', () => {
-    it('rebuilds on bare panels that need it', () => {
-      expect(shouldRebuildTrayItems('linux', '')).toBe(true);
-      expect(shouldRebuildTrayItems('linux', 'labwc:wlroots')).toBe(true);
-      expect(shouldRebuildTrayItems('linux', 'LXDE')).toBe(true);
-    });
-
-    it('never rebuilds on desktop shells: they leak recreated items', () => {
-      expect(shouldRebuildTrayItems('linux', 'ubuntu:GNOME')).toBe(false);
-      expect(shouldRebuildTrayItems('linux', 'GNOME')).toBe(false);
-      expect(shouldRebuildTrayItems('linux', 'pop:GNOME')).toBe(false);
-      expect(shouldRebuildTrayItems('linux', 'Pantheon')).toBe(false);
-      expect(shouldRebuildTrayItems('linux', 'KDE')).toBe(false);
-      expect(shouldRebuildTrayItems('linux', 'plasma')).toBe(false);
-    });
-
-    it('other platforms never rebuild', () => {
-      expect(shouldRebuildTrayItems('darwin', 'GNOME')).toBe(false);
-      expect(shouldRebuildTrayItems('win32', '')).toBe(false);
-    });
-  });
-
-  describe('linuxRebuildPieces gate', () => {
-    it('contributes pieces on a compositor-less panel and nothing on GNOME', () => {
-      const fakeTray = class {} as unknown as typeof ElectronTray;
-      expect(
-        Object.keys(linuxRebuildPieces(fakeTray, () => ({}), 'labwc:wlroots')),
-      ).toEqual(['platform', 'rebuildPieces']);
-      expect(linuxRebuildPieces(fakeTray, () => ({}), 'ubuntu:GNOME')).toEqual(
-        {},
-      );
-    });
-  });
+  // The desktop gate that decides whether any of the above runs at all
+  // lives in tests/main-tray-rebuild-gate.test.ts.
 
   describe('patchLinuxTrayPositioning', () => {
     const display = {
