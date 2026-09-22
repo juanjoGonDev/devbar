@@ -82,7 +82,11 @@ jobs:
           quality deps:check pnpm deps:check
 
       - name: Tests
-        run: pnpm test
+        # --coverage, not a bare run: vitest.config.ts sets the per-file 70%
+        # statements/lines floor, and thresholds are only evaluated when
+        # coverage is collected. `pnpm test` here would let a file fall
+        # below the floor with CI still green.
+        run: pnpm test:coverage
 
       - name: Build and package smoke
         run: pnpm run pack
