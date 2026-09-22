@@ -40,6 +40,23 @@ function makeRoot(): string {
   mkdirSync(join(root, 'assets', 'icons'), { recursive: true });
   writeFileSync(join(root, 'assets', 'icon.png'), 'top-level');
   writeFileSync(join(root, 'assets', 'icons', 'tray.png'), 'nested');
+
+  // The pinned emoji webfont the build bundles for Linux.
+  mkdirSync(
+    join(root, 'node_modules', '@fontsource', 'noto-color-emoji', 'files'),
+    { recursive: true },
+  );
+  writeFileSync(
+    join(
+      root,
+      'node_modules',
+      '@fontsource',
+      'noto-color-emoji',
+      'files',
+      'noto-color-emoji-emoji-400-normal.woff2',
+    ),
+    'woff2-payload',
+  );
   return root;
 }
 
@@ -130,6 +147,36 @@ describe('scripts/build.ts', () => {
       expect(existsSync(join(run.root, 'build', 'renderer', 'notes.md'))).toBe(
         false,
       );
+    });
+
+    it('copies the bundled emoji webfont into build/assets/fonts', async () => {
+      const run = await build(makeRoot());
+      expect(
+        readFileSync(
+          join(run.root, 'build', 'assets', 'fonts', 'NotoColorEmoji.woff2'),
+          'utf8',
+        ),
+      ).toBe('woff2-payload');
+    });
+
+    it('refuses to build when the emoji font is missing from node_modules', async () => {
+      // Linux artifacts bundle this face; shipping without it silently
+      // regresses the Pi to tofu emoji. A node_modules able to run the
+      // build but missing this pinned package is a broken install — the
+      // error must say how to fix it, not degrade the artifact.
+      const root = makeRoot();
+      rmSync(join(root, 'node_modules', '@fontsource'), {
+        recursive: true,
+        force: true,
+      });
+      await expect(build(root)).rejects.toThrow(
+        /Noto Color Emoji missing.*pnpm install/s,
+      );
+      expect(
+        existsSync(
+          join(root, 'build', 'assets', 'fonts', 'NotoColorEmoji.woff2'),
+        ),
+      ).toBe(false);
     });
 
     it('copies assets recursively, subdirectories included', async () => {

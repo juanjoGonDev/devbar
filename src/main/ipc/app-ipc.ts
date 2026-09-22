@@ -90,6 +90,14 @@ export interface AppIpcDeps {
   appQuit: () => void;
   openNotificationSettings: () => Promise<{ ok: boolean; error?: string }>;
   openExternal: (url: string) => void;
+  /** Same launch, observable: reportIssue awaits it so a browser that
+   *  fails to open surfaces as { ok: false } instead of an unhandled
+   *  rejection after a claimed success. */
+  openExternalAsync: (url: string) => Promise<unknown>;
+  /** Builds the GitHub issue report, copies it to the clipboard and
+   *  answers the URL to open (host-provided; see src/report-issue.ts). */
+  reportIssue: () => { url: string; bodyIncluded: boolean };
+  copyReport: () => { ok: boolean; error?: string };
   setTimer?: (fn: () => void, ms: number) => unknown;
   newImportToken?: () => string;
 }
@@ -286,6 +294,31 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
   ipc.handle('app:openNotificationSettings', () =>
     deps.openNotificationSettings(),
   );
+  // One-click bug report: the host assembles the report (and copies it to
+  // the clipboard); here we only route the browser and surface failures.
+  ipc.handle('app:reportIssue', async () => {
+    let report: { url: string; bodyIncluded: boolean };
+    try {
+      report = deps.reportIssue();
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+    try {
+      // Awaited on purpose: the synchronous void-launch could not reject
+      // inside a try, so a browser that never opened still answered
+      // { ok: true }.
+      await deps.openExternalAsync(report.url);
+      return { ok: true, bodyIncluded: report.bodyIncluded };
+    } catch (err) {
+      // The report IS on the clipboard already (reportIssue copies before
+      // launching): say so, or the renderer would claim total failure and
+      // the user would never think of pasting what they have.
+      return { ok: false, copied: true, error: errorMessage(err) };
+    }
+  });
+  // Copy-only report: the same clipboard content, nothing opens.
+  ipc.handle('app:copyReport', () => deps.copyReport());
+
   // Open an external https URL in the default browser. https-only guard so a
   // renderer bug can't fire arbitrary schemes (file:, javascript:, …).
   ipc.handle('app:openExternal', (_e: IpcMainInvokeEvent, url: unknown) => {

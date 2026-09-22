@@ -48,6 +48,12 @@ export interface RuntimeIpcDeps {
       repoPath: string,
       branch: string,
     ) => Promise<{ ok: boolean; error?: string | undefined }>;
+    /**
+     * Catch `refs/remotes` up with the forge in the background. Reports
+     * `changed: true` only when something really moved, and never fails:
+     * every network problem reads as "nothing changed".
+     */
+    refreshRemotes: (repoPath: string) => Promise<{ changed: boolean }>;
   };
   confirms: {
     confirmIfNeeded: (
@@ -60,6 +66,33 @@ export interface RuntimeIpcDeps {
   snapshots: { snapshotPipelineState(): PipelineState };
   groupErrors: Map<string, string | null>;
   broadcast: () => void;
+  /** Tell the renderers that a repository's branch list is out of date. */
+  branchesChanged: (repoPath: string) => void;
+}
+
+/**
+ * Kick the remote catch-up and forget about it. Nothing awaits this: the
+ * branch list has already been answered from local refs, and a fetch is a
+ * network round trip that may sit there for its whole timeout.
+ *
+ * The announcement is conditional on purpose. `branches:changed` makes the
+ * renderer drop the cached branch list of EVERY group and reload the ones on
+ * screen, so emitting on every dropdown open would turn one selector's
+ * housekeeping into a full reload of all of them — the very cost this feature
+ * exists to avoid.
+ */
+function announceRemoteChanges(deps: RuntimeIpcDeps, repoPath: string): void {
+  void deps.gitManager.refreshRemotes(repoPath).then(
+    ({ changed }) => {
+      if (changed) deps.branchesChanged(repoPath);
+    },
+    () => {
+      // refreshRemotes owns its failures and reports them as "nothing
+      // changed". If it ever breaks that promise, drop it here rather than
+      // let an unhandled rejection end the main process over a branch list
+      // nobody is waiting for.
+    },
+  );
 }
 
 export function registerRuntimeIpc(
@@ -167,7 +200,13 @@ export function registerRuntimeIpc(
     async (_e: IpcMainInvokeEvent, rawGroupId: unknown) => {
       const group = configStore.getGroup(ipcString(rawGroupId, 'groupId'));
       if (!group) return { ok: false, error: 'Group not found' };
-      return deps.gitManager.listBranches(group.path);
+      // Answer from local refs first, at local speed. `refs/remotes` only
+      // holds what the last fetch brought, so a branch pushed five minutes ago
+      // is invisible until something fetches — that catch-up happens behind
+      // this answer, never in front of it.
+      const branches = await deps.gitManager.listBranches(group.path);
+      announceRemoteChanges(deps, group.path);
+      return branches;
     },
   );
 

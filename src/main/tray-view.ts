@@ -1,4 +1,4 @@
-import type { MenuItemConstructorOptions } from 'electron';
+import { Menu, type MenuItemConstructorOptions } from 'electron';
 import type { GroupState } from '../ipc-contract.js';
 
 /**
@@ -69,6 +69,29 @@ export interface TrayMenuInput {
   logWindows: readonly (readonly [string, TrayMenuWindow])[];
   onApplyUpdate: () => void;
   onOpenConfig: () => void;
+}
+
+/**
+ * The tray's right-click menu, assembled fresh per open so update state
+ * and the open log windows are current. Lives here (next to the template
+ * builder) to keep main.ts under its line budget.
+ */
+export function buildTrayContextMenu(
+  deps: {
+    [
+      K in keyof Omit<TrayMenuInput, 'onApplyUpdate' | 'onOpenConfig'>
+    ]: () => TrayMenuInput[K];
+  } & Pick<TrayMenuInput, 'onApplyUpdate' | 'onOpenConfig'>,
+): ReturnType<typeof Menu.buildFromTemplate> {
+  return Menu.buildFromTemplate(
+    buildTrayMenuTemplate({
+      availableUpdate: deps.availableUpdate(),
+      stagedUpdate: deps.stagedUpdate(),
+      logWindows: deps.logWindows(),
+      onApplyUpdate: deps.onApplyUpdate,
+      onOpenConfig: deps.onOpenConfig,
+    }),
+  );
 }
 
 export function buildTrayMenuTemplate({

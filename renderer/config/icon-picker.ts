@@ -55,6 +55,36 @@ const ICON_GROUP_TAB: Record<IconGroup, string> = {
 };
 
 const RECENT_ICONS_KEY = 'devbar.recentIcons';
+
+/**
+ * How many cells render synchronously per step. The picker can list ~1900
+ * glyphs; building that many buttons (each with a click listener) in one
+ * go spiked the CPU on low-end hosts — the fans literally spun up opening
+ * the picker on a Raspberry Pi. The rest streams in as the scheduler
+ * yields.
+ */
+export const ICON_CHUNK = 96;
+
+export interface IconPickerOptions {
+  /** Yields one chunk of work. Defaults to requestIdleCallback with a
+   *  setTimeout fallback; tests inject a manual queue. */
+  schedule?: (task: () => void) => void;
+  /** Cells per chunk. Tests use a tiny one to observe the growth. */
+  chunkSize?: number;
+}
+
+function defaultSchedule(task: () => void): void {
+  const idle = (
+    window as {
+      requestIdleCallback?: (
+        cb: () => void,
+        opts?: { timeout: number },
+      ) => void;
+    }
+  ).requestIdleCallback;
+  if (idle) idle(task, { timeout: 200 });
+  else setTimeout(task, 0);
+}
 const RECENT_ICONS_MAX = 20;
 
 function getRecentIcons(): string[] {
@@ -84,10 +114,25 @@ function pushRecentIcon(emoji: string): void {
   }
 }
 
-export function createIconPicker(els: IconPickerElements): IconPicker {
+export function createIconPicker(
+  els: IconPickerElements,
+  options: IconPickerOptions = {},
+): IconPicker {
+  const schedule = options.schedule ?? defaultSchedule;
+  // A chunk of 0 never advances the stream and a negative one moves it
+  // backwards — either way `end < items.length` stays true and appendChunk
+  // keeps scheduling work forever. Only a positive integer streams.
+  const requestedChunk = options.chunkSize ?? ICON_CHUNK;
+  const chunkSize =
+    Number.isInteger(requestedChunk) && requestedChunk > 0
+      ? requestedChunk
+      : ICON_CHUNK;
   let allIcons: readonly IconBatteryItem[] = [];
   let iconPickerCallback: ((emoji: string) => void) | null = null;
   let activeIconGroup: IconGroup = 'Smileys & Emotion';
+  // Bumped on every re-render and on close: a queued chunk from a superseded
+  // render must not append into a grid it no longer belongs to.
+  let renderEpoch = 0;
 
   function makeIconCell(item: IconBatteryItem): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -162,8 +207,20 @@ export function createIconPicker(els: IconPickerElements): IconPicker {
 
     const grid = document.createElement('div');
     grid.className = 'icon-grid';
-    for (const item of items) grid.appendChild(makeIconCell(item));
     els.grid.appendChild(grid);
+    // First chunk lands synchronously (the grid must not look empty), the
+    // rest streams in through the scheduler. Any queued chunk checks the
+    // epoch: a newer render (or a close) supersedes it.
+    renderEpoch++;
+    const epoch = renderEpoch;
+    const appendChunk = (from: number): void => {
+      if (epoch !== renderEpoch || !grid.isConnected) return;
+      const end = Math.min(from + chunkSize, items.length);
+      for (const item of items.slice(from, end))
+        grid.appendChild(makeIconCell(item));
+      if (end < items.length) schedule(() => appendChunk(end));
+    };
+    appendChunk(0);
   }
 
   function openIconPicker(
@@ -200,6 +257,9 @@ export function createIconPicker(els: IconPickerElements): IconPicker {
   }
 
   function closeIconPicker(): void {
+    // Invalidate queued chunks: a hidden picker must not keep burning CPU
+    // appending cells nobody can see.
+    renderEpoch++;
     els.picker.setAttribute('hidden', '');
     iconPickerCallback = null;
   }

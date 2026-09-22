@@ -21,13 +21,16 @@ describe('renderer/notification.ts', () => {
     banner = null;
   });
 
-  async function openBanner(search: string): Promise<RendererWindow> {
+  async function openBanner(
+    search: string,
+    platform: string = 'macos',
+  ): Promise<RendererWindow> {
     installJsdomGaps();
     window.history.replaceState({}, '', search);
     const win = await loadRendererWindow({
       html: 'notification.html',
       load: () => import('../renderer/notification.js'),
-      values: { platform: 'macos' },
+      values: { platform },
     });
     banner = win;
     return win;
@@ -44,6 +47,20 @@ describe('renderer/notification.ts', () => {
       await openBanner('?title=Listo&body=todo%20bien');
       expect(byId('title').textContent).toBe('Listo');
       expect(byId('body').textContent).toBe('todo bien');
+    });
+
+    it('marks the document as linux so the banner fills its opaque window', async () => {
+      // The html.linux CSS rules flatten margin/radius/shadow for the
+      // compositor-less, always-opaque Linux banner window.
+      document.documentElement.classList.remove('linux');
+      await openBanner('?body=x', 'linux');
+      expect(document.documentElement.classList.contains('linux')).toBe(true);
+      document.documentElement.classList.remove('linux');
+    });
+
+    it('leaves the document unmarked off Linux', async () => {
+      await openBanner('?body=x', 'darwin');
+      expect(document.documentElement.classList.contains('linux')).toBe(false);
     });
 
     it('falls back to the app name when no title was given', async () => {

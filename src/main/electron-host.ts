@@ -1,9 +1,11 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   nativeImage,
   nativeTheme,
@@ -23,6 +25,8 @@ import { installedAppPath } from '../self-update.js';
 import { isLinux, isMac, isWin } from '../platform.js';
 import { appHome } from '../app-paths.js';
 import { resolvedThemeIsDark, themeWindowBackground } from './theme.js';
+import { prepareIssueReport } from '../report-issue.js';
+import { readTail, REPORT_TAIL_BYTES } from '../logger.js';
 import {
   applyAutostart as applyAutostartTo,
   wasOpenedAtLogin as resolveWasOpenedAtLogin,
@@ -43,6 +47,17 @@ export interface ElectronHostOptions {
   themePreference: () => ThemePreference;
   /** Config window, else the tray popover, else whatever has focus. */
   dialogOwner: () => BrowserWindow | null;
+}
+
+/** Packaged Windows/Linux keep logs beside config under the pinned
+ *  "DevBar" folder; everywhere else Electron's own logs dir wins. */
+function logFilePath(): string {
+  return path.join(
+    app.isPackaged && !isMac
+      ? path.join(appHome(), 'logs')
+      : app.getPath('logs'),
+    'app.log',
+  );
 }
 
 export function createElectronHost(options: ElectronHostOptions) {
@@ -67,6 +82,29 @@ export function createElectronHost(options: ElectronHostOptions) {
 
   let confirmLogo: string | null = null;
 
+  /** Assembles the report body the two report actions share. */
+  const buildReport = (): {
+    clipboardText: string;
+    url: string;
+    bodyIncluded: boolean;
+  } => {
+    // Bounded read from the end: the report only ever uses the last
+    // few thousand chars, and one oversized entry must not make the
+    // click slurp the whole file.
+    const tail = readTail(logFilePath(), REPORT_TAIL_BYTES);
+    return prepareIssueReport(
+      {
+        version: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch,
+        electron: process.versions.electron ?? '',
+        node: process.versions.node ?? '',
+        osRelease: os.release(),
+      },
+      tail,
+    );
+  };
+
   return {
     rendererFile,
     assetFile,
@@ -80,13 +118,7 @@ export function createElectronHost(options: ElectronHostOptions) {
      * Packaged Windows/Linux builds keep logs beside config and updates under
      * the pinned "DevBar" folder; everywhere else Electron's own logs dir wins.
      */
-    logFilePath: (): string =>
-      path.join(
-        app.isPackaged && !isMac
-          ? path.join(appHome(), 'logs')
-          : app.getPath('logs'),
-        'app.log',
-      ),
+    logFilePath: logFilePath,
     updatesDir: (): string => path.join(appHome(), 'updates'),
     downloadsDir: (): string => app.getPath('downloads'),
 
@@ -230,6 +262,30 @@ export function createElectronHost(options: ElectronHostOptions) {
     desktop: process.env.XDG_CURRENT_DESKTOP ?? '',
     sessionType: process.env.XDG_SESSION_TYPE ?? 'desconocida',
     appVersion: (): string => app.getVersion(),
+    /**
+     * One-click bug report: markdown (version, platform, app.log tail) to
+     * the clipboard ALWAYS, then GitHub's new-issue form — with the body
+     * pre-filled when it fits the URL, title-only otherwise. Pure logic in
+     * src/report-issue.ts; this only reads the log and touches the OS.
+     */
+    reportIssue: (): { url: string; bodyIncluded: boolean } => {
+      const report = buildReport();
+      clipboard.writeText(report.clipboardText);
+      return { url: report.url, bodyIncluded: report.bodyIncluded };
+    },
+    /** Copy-only variant: same report, no browser launch — the user pastes
+     *  it wherever they prefer. */
+    copyReport: (): { ok: boolean; error?: string } => {
+      try {
+        clipboard.writeText(buildReport().clipboardText);
+        return { ok: true };
+      } catch (error: unknown) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
     appQuit: (): void => app.quit(),
     appExit: (code: number): void => app.exit(code),
     /** Fire-and-forget; the https-only guard lives in the IPC handler. */

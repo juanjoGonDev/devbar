@@ -28,6 +28,8 @@ interface IpcHost {
   openExternalAsync: (url: string) => Promise<unknown>;
   appVersion: () => string;
   appQuit: () => void;
+  reportIssue: AppIpcDeps['reportIssue'];
+  copyReport: AppIpcDeps['copyReport'];
   platform: NodeJS.Platform;
   /** XDG_CURRENT_DESKTOP, which names the Linux settings tool to launch. */
   desktop: string;
@@ -46,6 +48,7 @@ export interface RegisterAllDeps {
     AppIpcDeps['processManager'];
   configIo: AppIpcDeps['configIo'];
   gitManager: RuntimeIpcDeps['gitManager'];
+  branchesChanged: RuntimeIpcDeps['branchesChanged'];
   preScriptRunner: RuntimeIpcDeps['preScriptRunner'];
   snapshots: ConfigIpcDeps['snapshots'] &
     RuntimeIpcDeps['snapshots'] &
@@ -93,7 +96,10 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
     devPanelAvailable: host.devPanelAvailable,
     appVersion: host.appVersion,
     appQuit: host.appQuit,
+    reportIssue: host.reportIssue,
+    copyReport: host.copyReport,
     openExternal: host.openExternal,
+    openExternalAsync: host.openExternalAsync,
     openNotificationSettings: () =>
       openNotificationSettings({
         platform: host.platform,

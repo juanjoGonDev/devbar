@@ -480,6 +480,19 @@ describe('renderer/pipeline-editor.ts', () => {
   });
 
   describe('auto-run toggle', () => {
+    it('names no OS in its copy', async () => {
+      // It used to say «al arrancar el Mac» — the toggle is cross-platform,
+      // and naming one OS there is wrong on the other two. Pinned generic.
+      const { win } = await openEditor();
+      void win;
+      const label = document.querySelector(
+        '#prescripts-pipeline-root .toggle span',
+      );
+      expect(label?.textContent).toBe(
+        'Ejecutar automáticamente al arrancar el sistema',
+      );
+    });
+
     it('rolls the control back when its own save fails', async () => {
       const { win, editor } = await openEditor();
       void editor.refresh();

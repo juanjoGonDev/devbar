@@ -71,8 +71,18 @@ describe('src/tray-icon.ts', () => {
 
   describe('loadIcon with a count badge', () => {
     it('draws the count into the bitmap (differs from the no-count icon)', () => {
-      const plain = loadIcon('error') as unknown as MockImage;
-      const counted = loadIcon('error', false, 14) as unknown as MockImage;
+      const plain = loadIcon(
+        'error',
+        false,
+        0,
+        'darwin',
+      ) as unknown as MockImage;
+      const counted = loadIcon(
+        'error',
+        false,
+        14,
+        'darwin',
+      ) as unknown as MockImage;
       expect(counted.bitmap).not.toEqual(plain.bitmap);
       // The 2x representation carries the same badge.
       expect(counted.reps[0]?.buffer).not.toEqual(plain.reps[0]?.buffer);
@@ -86,7 +96,13 @@ describe('src/tray-icon.ts', () => {
       expect(c).not.toBe(a);
       // A cache hit must not redraw: two distinct keys, two bitmaps.
       expect(created).toHaveLength(2);
-      expect(created[0]).toMatchObject({ width: 18, height: 18 });
+      // The base pixmap follows the runner's platform: 32px on Linux,
+      // 18px on macOS/Windows. No hardcoded assumption about the runner.
+      const expectedSize = process.platform === 'linux' ? 32 : 18;
+      expect(created[0]).toMatchObject({
+        width: expectedSize,
+        height: expectedSize,
+      });
     });
 
     it('re-renders when the OS appearance flips (theme is part of the key)', () => {
@@ -121,6 +137,44 @@ describe('src/tray-icon.ts', () => {
       ) as unknown as MockImage;
       expect(update.bitmap).not.toEqual(none.bitmap);
       expect(updatePlusCount.bitmap).not.toEqual(update.bitmap);
+    });
+  });
+
+  describe('loadIcon per platform', () => {
+    it('ships ONE 32px pixmap on Linux (panels stamp multi-scale pixmaps on top of each other)', () => {
+      const icon = loadIcon(
+        'running',
+        false,
+        0,
+        'linux',
+      ) as unknown as MockImage;
+      expect(icon.bitmap.length).toBe(32 * 32 * 4);
+      expect(icon.reps).toHaveLength(0);
+    });
+
+    it('keeps the 18px + 2x pair on macOS and Windows', () => {
+      for (const platform of ['darwin', 'win32']) {
+        const icon = loadIcon(
+          'running',
+          false,
+          0,
+          platform,
+        ) as unknown as MockImage;
+        expect(icon.bitmap.length, platform).toBe(18 * 18 * 4);
+        expect(icon.reps, platform).toHaveLength(1);
+        expect(icon.reps[0], platform).toMatchObject({
+          scaleFactor: 2,
+          width: 36,
+          height: 36,
+        });
+      }
+    });
+
+    it('caches per platform', () => {
+      const linux = loadIcon('stopped', false, 0, 'linux');
+      const mac = loadIcon('stopped', false, 0, 'darwin');
+      expect(mac).not.toBe(linux);
+      expect(loadIcon('stopped', false, 0, 'linux')).toBe(linux);
     });
   });
 

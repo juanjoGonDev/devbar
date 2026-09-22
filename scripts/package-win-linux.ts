@@ -78,6 +78,23 @@ export function hostArch(architecture: string = process.arch): string {
 }
 
 /**
+ * The unpacked output directory electron-builder writes for one arch.
+ * x64 is the builder's default arch and gets NO suffix (`linux-unpacked`,
+ * `win-unpacked`); every other arch is appended (`linux-arm64-unpacked` on
+ * a Raspberry Pi 4/5, `win-arm64-unpacked` on Windows on ARM,
+ * `linux-armv7l-unpacked` on 32-bit Pi OS). Anyone that reads a `dir`
+ * target back must derive the name the same way — hardcoding the x64
+ * spelling is how `pnpm install-local` failed on the Pi.
+ */
+export function unpackedDirName(
+  target: PackageTarget,
+  architecture: string = process.arch,
+): string {
+  const arch = hostArch(architecture);
+  return `${target}${arch === 'x64' ? '' : `-${arch}`}-unpacked`;
+}
+
+/**
  * electron-builder's armv7 key is "armv7l"; the artifact contract says
  * "armv7". hostArch() already returns the builder key.
  */
@@ -118,7 +135,17 @@ export function baseConfig(): BuildConfiguration {
     // No autoUpdater feed: DevBar does its own release checks + swaps.
     publish: null,
     directories: { output: 'dist/electron-builder' },
-    files: ['build/**/*', 'assets/**/*', 'package.json'],
+    // build/assets/fonts carries the bundled emoji webfont, which only the
+    // LINUX packages include (linux.files below re-adds it — per-platform
+    // file sets MERGE with this one, pinned by test); macOS has Apple Color
+    // Emoji and Windows has Segoe UI Emoji, so the 5.5 MB stay out of their
+    // artifacts.
+    files: [
+      'build/**/*',
+      'assets/**/*',
+      'package.json',
+      '!build/assets/fonts/**',
+    ],
   };
 }
 
@@ -183,6 +210,11 @@ export function linuxBuildOptions({
     config: {
       ...baseConfig(),
       linux: {
+        // The bundled emoji webfont: merged with the top-level file set
+        // (verified against electron-builder 26: per-platform `files` are
+        // ADDITIVE), so Linux artifacts ship build/assets/fonts while the
+        // other platforms keep theirs lean. renderer/emoji.css consumes it.
+        files: ['build/assets/fonts/**/*'],
         // Directory of pre-sized PNGs (16–256). A single PNG source is
         // embedded as-is, which would leave the .deb without the 256px
         // hicolor icon the desktop expects; a directory yields the full

@@ -82,7 +82,11 @@ jobs:
           quality deps:check pnpm deps:check
 
       - name: Tests
-        run: pnpm test
+        # --coverage, not a bare run: vitest.config.ts sets the per-file 70%
+        # statements/lines floor, and thresholds are only evaluated when
+        # coverage is collected. `pnpm test` here would let a file fall
+        # below the floor with CI still green.
+        run: pnpm test:coverage
 
       - name: Build and package smoke
         run: pnpm run pack
@@ -107,6 +111,14 @@ jobs:
             runner: windows-latest
           - os: linux
             runner: ubuntu-latest
+          # Raspberry Pi stand-in: same aarch64 Linux target the arm64
+          # release artifacts ship for, on a free hosted runner (public
+          # repo). This is the shape of host where `pnpm install-local`
+          # broke — on a non-x64 host the unpacked dir is arch-suffixed —
+          # so the Pi-shaped flow (pack the dir target, launch, reinstall
+          # while running) is exercised end to end here.
+          - os: linux-arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout candidate commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -146,13 +158,13 @@ jobs:
           key: electron-win-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Cache Electron downloads (Linux)
-        if: matrix.os == 'linux'
+        if: matrix.os == 'linux' || matrix.os == 'linux-arm64'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/electron
             ~/.cache/electron-builder
-          key: electron-linux-${{ hashFiles('pnpm-lock.yaml') }}
+          key: electron-linux-${{ matrix.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install reproducibly
         run: pnpm install --frozen-lockfile
@@ -691,7 +703,7 @@ jobs:
           }
           sleep 4
           if kill -0 "$OLDPID" 2>/dev/null; then
-            echo "::error::linux-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < /proc/$OLDPID/cmdline 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            echo "::error::linux-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < "/proc/$OLDPID/cmdline" 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
             echo "old instance ($OLDPID) survived the reinstall"
             exit 1
           fi
@@ -749,6 +761,105 @@ jobs:
           cmp -s "$WORK/new.AppImage" "$WORK/t.AppImage" || { echo "swap did not replace the file"; exit 1; }
           kill "$SWAP" 2>/dev/null || true
           rm -rf "$WORK"
+
+      # ── Raspberry Pi shape (arm64) ────────────────────────────────────
+      # The arm64 release artifacts are already cross-built and
+      # ELF-verified from the x64 linux job; what that job cannot see is
+      # the HOST-arch flow — the dir target and install-local on a
+      # non-x64 machine, where electron-builder writes an arch-suffixed
+      # unpacked directory. That is exactly what broke on the Pi.
+
+      - name: Launch smoke — Linux arm64 (unpacked dir, Raspberry Pi shape)
+        if: matrix.os == 'linux-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Same system libraries the .deb carries; unlike the x64 job,
+          # no earlier step here has apt-resolved them yet.
+          sudo apt-get install -y -qq xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libgtk-3-0 libgbm1 libasound2t64 libxshmfence1 >/dev/null
+          # electron-builder downloads the Electron runtime from GitHub
+          # releases; retry the network-heavy step before failing.
+          ok=0
+          for attempt in 1 2 3; do
+            if pnpm run pack; then ok=1; break; fi
+            echo "::warning::pack (linux-arm64) failed on attempt ${attempt} (transient download?) — retrying in 30s"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          if [ "$ok" != 1 ]; then echo "pack (linux-arm64) failed after 3 attempts"; exit 1; fi
+          # The dir target on arm64 lands in linux-arm64-unpacked (the
+          # unsuffixed name is an x64-only spelling). Pin both halves of
+          # that sentence: the arch dir exists, the x64 dir does not.
+          test -x dist/electron-builder/linux-arm64-unpacked/devbar || {
+            echo "::error::no packed executable at dist/electron-builder/linux-arm64-unpacked/devbar"
+            exit 1
+          }
+          test ! -e dist/electron-builder/linux-unpacked || {
+            echo "::error::unexpected x64 unpacked dir on an arm64 host"
+            exit 1
+          }
+          # An unpacked copy cannot carry the root-owned setuid
+          # chrome-sandbox, so the smoke launches with --no-sandbox (same
+          # reason the reinstall below relaunches through
+          # DEVBAR_LAUNCH_ARGS). xvfb provides the display.
+          xvfb-run -a dist/electron-builder/linux-arm64-unpacked/devbar --devbar-smoke --no-sandbox 2>&1 | tee smoke-linux-arm64-unpacked.log
+          grep -q DEVBAR_SMOKE_OK smoke-linux-arm64-unpacked.log
+
+      - name: Reinstall while running — Linux arm64 (kill old process)
+        if: matrix.os == 'linux-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A long-lived X server: the resident app must outlive each step.
+          Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp >/dev/null 2>&1 &
+          XVFB_PID=$!
+          trap 'kill "$XVFB_PID" 2>/dev/null || true' EXIT
+          export DISPLAY=:99
+          sleep 1
+          export DEVBAR_SMOKE=1
+          export DEVBAR_SMOKE_HOLD=1
+          export DEVBAR_LAUNCH_ARGS="--no-sandbox"
+          # 1) First install: launches a resident instance (smoke env).
+          #    --no-build reuses the dir target the previous step packed,
+          #    so this reads back linux-arm64-unpacked — the path that
+          #    used to be hardcoded as linux-unpacked.
+          pnpm install-local --no-build 2>&1 | tee install-local-arm64-1.log || {
+            echo "::error::arm64-reinstall: first install-local failed. output tail:"
+            tail -60 install-local-arm64-1.log
+            echo "::error::arm64-reinstall: procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            exit 1
+          }
+          sleep 4
+          OLDPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
+          if [ -z "$OLDPID" ]; then
+            echo "::error::arm64-reinstall: no resident after first install. procs: $(pgrep -af 'local/share/DevBar' || echo none). app log tail: $(tail -8 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null | tr '\n' '|' || echo none)"
+            echo "no resident instance after first install"
+            kill -0 "$XVFB_PID" 2>/dev/null && echo 'Xvfb alive' || echo 'Xvfb DEAD'
+            echo "--- app log ---"
+            tail -40 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null || true
+            echo "--- library check ---"
+            ldd "$HOME/.local/share/DevBar/devbar" 2>&1 | grep "not found" || echo 'ldd: all libraries resolve'
+            exit 1
+          fi
+          # 2) Reinstall: install-local must kill OLDPID, replace the files
+          #    and relaunch — a leftover process is the classic half-update.
+          pnpm install-local --no-build 2>&1 | tee install-local-arm64-2.log || {
+            echo "::error::arm64-reinstall: second install-local failed. output tail:"
+            tail -60 install-local-arm64-2.log
+            echo "::error::arm64-reinstall: procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            exit 1
+          }
+          sleep 4
+          if kill -0 "$OLDPID" 2>/dev/null; then
+            echo "::error::arm64-reinstall: old $OLDPID survived. cmdline: $(tr '\0' ' ' < "/proc/$OLDPID/cmdline" 2>/dev/null || echo '?'). procs: $(pgrep -af 'local/share/DevBar' || echo none)"
+            echo "old instance ($OLDPID) survived the reinstall"
+            exit 1
+          fi
+          NEWPID=$(pgrep -f "$HOME/.local/share/DevBar/devbar" | head -1 || true)
+          if [ -z "$NEWPID" ]; then
+            echo "::error::arm64-reinstall: no new instance after reinstall. procs: $(pgrep -af 'local/share/DevBar' || echo none). app log tail: $(tail -5 "$HOME/.config/DevBar/logs/app.log" 2>/dev/null | tr '\n' '|' || echo none)"
+            echo "no new instance after reinstall"; exit 1
+          fi
+          kill "$NEWPID" 2>/dev/null || true
 
       - name: Upload build evidence
         if: always()

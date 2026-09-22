@@ -413,6 +413,8 @@ const FORWARDS: readonly Forward[] = [
     'app:openExternal',
     ['https://example.invalid'],
   ],
+  ['reportIssue', (api) => api.reportIssue(), 'app:reportIssue', []],
+  ['copyReport', (api) => api.copyReport(), 'app:copyReport', []],
   [
     'openNotificationSettings',
     (api) => api.openNotificationSettings(),

@@ -96,6 +96,18 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
     appQuit: () => calls.push('quit'),
     openNotificationSettings: () => Promise.resolve({ ok: true }),
     openExternal: (url) => calls.push(`external:${url}`),
+    openExternalAsync: (url) => Promise.resolve(calls.push(`external:${url}`)),
+    reportIssue: () => {
+      calls.push('reportIssue');
+      return {
+        url: 'https://github.test/issues/new?title=x',
+        bodyIncluded: true,
+      };
+    },
+    copyReport: () => {
+      calls.push('copyReport');
+      return { ok: true };
+    },
     setTimer: (fn) => timers.push(fn),
     newImportToken: () => 'tok',
     ...overrides,
@@ -147,8 +159,43 @@ describe('src/main/ipc/app-ipc.ts', () => {
         'app:quit',
         'app:version',
         'app:openNotificationSettings',
+        'app:reportIssue',
+        'app:copyReport',
         'app:openExternal',
       ]);
+    });
+  });
+
+  describe('app:reportIssue', () => {
+    it('copies the report, opens the URL and reports whether the body rode along', async () => {
+      const h = harness();
+      const res = await h.ipc.invoke('app:reportIssue');
+      expect(res).toEqual({ ok: true, bodyIncluded: true });
+      expect(h.calls).toContain('reportIssue');
+      expect(h.calls).toContain(
+        'external:https://github.test/issues/new?title=x',
+      );
+    });
+
+    it('copies the report without opening anything', async () => {
+      const h = harness();
+      const res = await h.ipc.invoke('app:copyReport');
+      expect(res).toEqual({ ok: true });
+      expect(h.calls).toContain('copyReport');
+      expect(h.calls).not.toContain(
+        'external:https://github.test/issues/new?title=x',
+      );
+    });
+
+    it('reports failure when the browser refuses to open', async () => {
+      const h = harness({
+        openExternalAsync: () => Promise.reject(new Error('no browser')),
+      });
+      const res = await h.ipc.invoke('app:reportIssue');
+      // The launch is awaited: a rejected open can no longer masquerade
+      // as success — and the report IS on the clipboard already, which
+      // the renderer must be able to tell the user.
+      expect(res).toEqual({ ok: false, copied: true, error: 'no browser' });
     });
   });
 

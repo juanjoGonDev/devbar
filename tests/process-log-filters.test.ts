@@ -29,6 +29,18 @@ describe('src/process/log-filters.ts', () => {
       expect(isShellNoise('zsh: no job control in this shell')).toBe(true);
     });
 
+    it('recognizes the two bash job-control warnings the -ic shell prints', () => {
+      // bash without a controlling terminal (the packaged app spawns with a
+      // pipe on stdin) emits this pair before every command — Debian and
+      // Raspberry Pi OS at least. The command itself still runs.
+      expect(
+        isShellNoise(
+          'bash: cannot set terminal process group (-1): Inappropriate ioctl for device',
+        ),
+      ).toBe(true);
+      expect(isShellNoise('bash: no job control in this shell')).toBe(true);
+    });
+
     it('recognizes a gitstatus failure banner', () => {
       expect(isShellNoise('[ERROR]: gitstatus failed to initialize')).toBe(
         true,

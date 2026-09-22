@@ -14,6 +14,7 @@ import {
   PACKAGE_USAGE,
   parsePackageArgs,
   runBuild,
+  unpackedDirName,
   windowsArchs,
   windowsBuildOptions,
   type ElectronBuilderLike,
@@ -123,6 +124,27 @@ describe('scripts/package-win-linux.ts', () => {
     });
   });
 
+  describe('unpackedDirName', () => {
+    it('leaves the x64 output dir unsuffixed, as electron-builder spells it', () => {
+      expect(unpackedDirName('linux', 'x64')).toBe('linux-unpacked');
+      expect(unpackedDirName('win', 'x64')).toBe('win-unpacked');
+    });
+
+    it('suffixes the non-x64 output dirs exactly as electron-builder writes them', () => {
+      // The dir target on a Raspberry Pi lands here; an install script
+      // that reads back the x64 spelling fails after a successful build.
+      expect(unpackedDirName('linux', 'arm64')).toBe('linux-arm64-unpacked');
+      expect(unpackedDirName('linux', 'arm')).toBe('linux-armv7l-unpacked');
+      expect(unpackedDirName('win', 'arm64')).toBe('win-arm64-unpacked');
+    });
+
+    it('derives the arch from process.arch when none is given', () => {
+      expect(unpackedDirName('linux')).toBe(
+        unpackedDirName('linux', process.arch),
+      );
+    });
+  });
+
   describe('windowsArchs / linuxArchs', () => {
     it('builds every arch of the release contract in full mode', () => {
       expect(windowsArchs('full')).toEqual(['x64', 'arm64']);
@@ -148,7 +170,12 @@ describe('scripts/package-win-linux.ts', () => {
         asar: true,
         publish: null,
         directories: { output: 'dist/electron-builder' },
-        files: ['build/**/*', 'assets/**/*', 'package.json'],
+        files: [
+          'build/**/*',
+          'assets/**/*',
+          'package.json',
+          '!build/assets/fonts/**',
+        ],
       });
     });
 
@@ -245,6 +272,10 @@ describe('scripts/package-win-linux.ts', () => {
             synopsis: 'Menu bar launcher for local development services',
             description:
               'Start and stop dev services, switch git branches per group, run actions and watch logs from the system tray.',
+            // The bundled emoji webfont ships ONLY here: the per-platform
+            // file set is additive to baseConfig's (which excludes it), so
+            // the linux artifacts carry it and win ones do not.
+            files: ['build/assets/fonts/**/*'],
             target: [
               { target: 'AppImage', arch: ['x64'] },
               { target: 'deb', arch: ['x64'] },

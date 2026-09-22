@@ -125,6 +125,128 @@ export async function listBranches(repo: string): Promise<{
   branches.sort();
   return { ok: true, branches, isRepo: true };
 }
+/**
+ * How long a repository's remote refs are trusted after a refresh finished.
+ * The selector asks for branches every time a dropdown opens, and a fetch is a
+ * network round trip against the forge: without a floor, three opens in a row
+ * would hit origin three times for an answer that cannot have moved in
+ * between — and on a slow or paid connection that is felt.
+ */
+export const REMOTE_REFRESH_MIN_INTERVAL_MS = 60_000;
+
+/**
+ * The clock the throttle reads, replaceable so a test can jump the window
+ * instead of standing still for a real minute.
+ */
+let refreshClock: () => number = () => Date.now();
+/** When each repo's last refresh FINISHED, keyed by the path as it was given. */
+const lastRefreshEndedAt = new Map<string, number>();
+/**
+ * Refreshes still running. A burst of dropdown opens must share ONE fetch:
+ * concurrent `git fetch` runs on the same repository contend for the same
+ * refs and index locks, and the second one buys nothing the first is not
+ * already bringing.
+ */
+const refreshInFlight = new Map<string, Promise<{ changed: boolean }>>();
+
+/** Test seam: forgets the throttle and in-flight bookkeeping, and the clock. */
+export function resetRemoteRefreshForTests(fakeClock?: () => number): void {
+  lastRefreshEndedAt.clear();
+  refreshInFlight.clear();
+  refreshClock = fakeClock ?? (() => Date.now());
+}
+
+/**
+ * The remote-tracking refs as one comparable string, or null when git could
+ * not answer at all (not a repository, binary missing, timed out) — which is
+ * not the same as "there are no remote refs", an empty but valid answer.
+ */
+async function remoteRefsSnapshot(repo: string): Promise<string | null> {
+  const res = await git(repo, [
+    // Object names as well as names: a branch the remote FORCE-PUSHED keeps
+    // its refname and only moves its tip, and the selector's consumer wants
+    // to know about that too.
+    'for-each-ref',
+    '--format=%(refname) %(objectname)',
+    'refs/remotes',
+  ]);
+  return res.ok ? res.stdout : null;
+}
+
+async function fetchAndCompare(repo: string): Promise<{ changed: boolean }> {
+  const before = await remoteRefsSnapshot(repo);
+  if (before === null) return { changed: false };
+  // `--prune` so a branch DELETED on the remote also counts as a change and
+  // stops being offered; without it the selector would keep listing branches
+  // that no longer exist anywhere.
+  const fetched = await git(repo, ['fetch', '--prune', 'origin'], {
+    timeout: 60000,
+  });
+  if (!fetched.ok) return { changed: false };
+  const after = await remoteRefsSnapshot(repo);
+  return { changed: after !== null && after !== before };
+}
+
+/**
+ * Bring `refs/remotes` up to date behind the selector's back, and say whether
+ * anything actually moved.
+ *
+ * Silent on every failure — offline, no `origin`, a credential prompt the user
+ * refused, git missing, the fetch timing out — because the branch list the
+ * user asked for was already answered from local refs and is perfectly usable.
+ * Surfacing a network problem here would turn "your branches are a minute old"
+ * into a branch error on a selector that is working fine.
+ *
+ * Deliberately not `async`: the in-flight registration below has to happen in
+ * the same synchronous turn as the call, or two opens in the same tick would
+ * both miss it and both fetch.
+ */
+export function refreshRemotes(repo: string): Promise<{ changed: boolean }> {
+  // No path configured: there is nothing to fetch, and `git -C ''` is a no-op
+  // for git, which would run the fetch against whatever directory this
+  // process happens to be sitting in.
+  if (!repo) return Promise.resolve({ changed: false });
+  const pending = refreshInFlight.get(repo);
+  if (pending) return pending;
+  const endedAt = lastRefreshEndedAt.get(repo);
+  if (
+    endedAt !== undefined &&
+    refreshClock() - endedAt < REMOTE_REFRESH_MIN_INTERVAL_MS
+  )
+    return Promise.resolve({ changed: false });
+  const run = fetchAndCompare(repo)
+    // The caller fires and forgets, and an unhandled rejection takes the whole
+    // main process down: the "never throws" promise is kept here rather than
+    // assumed of everything fetchAndCompare touches.
+    .catch(() => ({ changed: false }))
+    .finally(() => {
+      // Stamped on failure too. An offline machine fails FAST, and without a
+      // stamp every dropdown open would retry the doomed fetch.
+      lastRefreshEndedAt.set(repo, refreshClock());
+      refreshInFlight.delete(repo);
+    });
+  refreshInFlight.set(repo, run);
+  return run;
+}
+
+/** How many of git's own status entries the refusal quotes back. */
+const DIRTY_PATHS_SHOWN = 3;
+
+/**
+ * Names what git actually reported, because "commit or stash first" on a tree
+ * the user knows is clean is an accusation they cannot check. The entries are
+ * git's own porcelain lines (`M  src/app.ts`), so a false positive — a CRLF
+ * normalisation the checkout never settled, a submodule whose own tree moved —
+ * arrives already identifying itself instead of looking like a bug in here.
+ */
+function dirtyWorkingTreeError(porcelain: string): string {
+  const entries = porcelain.split('\n').filter((line) => line.trim() !== '');
+  const shown = entries.slice(0, DIRTY_PATHS_SHOWN).join(', ');
+  const rest = entries.length - DIRTY_PATHS_SHOWN;
+  const more = rest > 0 ? ` (+${String(rest)})` : '';
+  return `Working tree has uncommitted changes — commit or stash first: ${shown}${more}`;
+}
+
 export async function currentBranch(
   repo: string,
 ): Promise<{ ok: boolean; branch?: string; error?: string | undefined }> {
@@ -152,10 +274,7 @@ export async function switchBranch(
   ]);
   if (!dirty.ok) return { ok: false, error: dirty.error };
   if (dirty.stdout)
-    return {
-      ok: false,
-      error: 'Working tree has uncommitted changes — commit or stash first',
-    };
+    return { ok: false, error: dirtyWorkingTreeError(dirty.stdout) };
   const fetched = await git(repo, ['fetch', 'origin'], { timeout: 60000 });
   if (!fetched.ok) return { ok: false, error: fetched.error };
   const local = await git(repo, [

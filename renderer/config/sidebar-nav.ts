@@ -1,4 +1,5 @@
 import { openChangelog } from '../changelog.js';
+import { openReportModal } from '../report-modal.js';
 
 export interface SidebarNavElements {
   nav: HTMLElement;
@@ -92,6 +93,13 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
     aboutGithub.addEventListener('click', () =>
       window.api.openExternal('https://github.com/juanjoGonDev/devbar'),
     );
+  }
+
+  const reportIssue = document.getElementById('report-issue');
+  if (reportIssue instanceof HTMLButtonElement) {
+    // The dialog does the talking now: it explains what will be copied,
+    // offers a copy-only path and keeps its feedback in place.
+    reportIssue.addEventListener('click', () => openReportModal());
   }
 
   // Collapsible groups list (focus the editor by hiding the list).

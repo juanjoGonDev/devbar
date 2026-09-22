@@ -107,16 +107,43 @@ describe('scripts/install-local.ts', () => {
 
   describe('layout', () => {
     it('installs Linux under ~/.local/share/DevBar and packs from linux-unpacked', () => {
-      expect(layout('linux', '/repo', '/home/u')).toEqual({
+      expect(layout('linux', '/repo', '/home/u', 'x64')).toEqual({
         unpackedDir: '/repo/dist/electron-builder/linux-unpacked',
         installDir: '/home/u/.local/share/DevBar',
         executable: 'devbar',
       });
     });
 
+    it('reads the ARCH-SUFFIXED unpacked dir on a 64-bit Raspberry Pi', () => {
+      // electron-builder writes linux-arm64-unpacked on arm64 hosts; the
+      // x64 spelling does not exist there, and pointing at it made every
+      // `pnpm install-local` fail after a successful build.
+      expect(layout('linux', '/repo', '/home/u', 'arm64')).toEqual({
+        unpackedDir: '/repo/dist/electron-builder/linux-arm64-unpacked',
+        installDir: '/home/u/.local/share/DevBar',
+        executable: 'devbar',
+      });
+    });
+
+    it('reads the armv7l unpacked dir on 32-bit Pi OS', () => {
+      expect(layout('linux', '/repo', '/home/u', 'arm')?.unpackedDir).toBe(
+        '/repo/dist/electron-builder/linux-armv7l-unpacked',
+      );
+    });
+
+    it('suffixes the Windows unpacked dir on Windows on ARM too', () => {
+      process.env.LOCALAPPDATA = '/abs/local';
+      expect(layout('win32', '/repo', '/home/u', 'arm64')?.unpackedDir).toBe(
+        '/repo/dist/electron-builder/win-arm64-unpacked',
+      );
+      expect(layout('win32', '/repo', '/home/u', 'x64')?.unpackedDir).toBe(
+        '/repo/dist/electron-builder/win-unpacked',
+      );
+    });
+
     it('installs Windows into %LOCALAPPDATA%\\Programs\\DevBar (the path the NSIS installer uses)', () => {
       process.env.LOCALAPPDATA = '/abs/local';
-      expect(layout('win32', '/repo', '/home/u')?.installDir).toBe(
+      expect(layout('win32', '/repo', '/home/u', 'x64')?.installDir).toBe(
         '/abs/local/Programs/DevBar',
       );
     });

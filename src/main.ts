@@ -16,6 +16,7 @@ import * as configStore from './config-store.js';
 import * as configIo from './config-io.js';
 import * as gitManager from './git-manager.js';
 import * as logger from './logger.js';
+import { attachProductionSampling } from './main/resource-monitor.js';
 import * as selfUpdate from './self-update.js';
 import * as trayIcon from './tray-icon.js';
 import * as updateCheck from './update-check.js';
@@ -47,8 +48,8 @@ import { createShutdownController } from './main/shutdown.js';
 import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
 import { createStartup } from './main/startup.js';
 import { createStateSnapshots } from './main/state-snapshot.js';
-import { createTrayController } from './main/tray.js';
-import { buildTrayMenuTemplate } from './main/tray-view.js';
+import { createTrayController, linuxRebuildPieces } from './main/tray.js';
+import { buildTrayContextMenu } from './main/tray-view.js';
 import { createUpdater } from './main/updater.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
 import type { Group } from './domain-types.js';
@@ -100,6 +101,9 @@ try {
   console.error('logger init failed:', e); // never block startup
 }
 
+// Resource samples in app.log — fans-spin-up reports need numbers.
+attachProductionSampling(host, () => app.getAppMetrics());
+
 // ─────────────────────── Composition root ────────────────────────────
 
 const preScriptRunner = createPreScriptRunner({
@@ -139,13 +143,35 @@ function broadcast(): void {
 }
 const toast = (kind: string, message: string): void =>
   sendToRenderers(registry, 'groups:toast', { kind, message });
+/**
+ * One way in for "this repo's branch list is stale", shared by the repo
+ * watcher and the background remote refresh, so both reach the renderers
+ * through the same channel.
+ */
+const branchesChanged = (repoPath: string): void =>
+  sendToRenderers(registry, 'branches:changed', { path: repoPath });
 const repaintWindows = (): void =>
   refreshWindowBackgrounds(registry, host.background());
+
+const trayContextMenu = (): ReturnType<typeof Menu.buildFromTemplate> =>
+  buildTrayContextMenu({
+    availableUpdate: () => updater.available(),
+    stagedUpdate: () => updater.staged(),
+    logWindows: () => [...registry.logs.entries()],
+    onApplyUpdate: () => void updater.applyUpdate(),
+    onOpenConfig: () => appWindows.ensureConfigWindow(),
+  });
 
 const tray = createTrayController({
   loadIcon: trayIcon.loadIcon,
   isMac,
   hasUpdate: () => updater.available() !== null,
+  ...linuxRebuildPieces(
+    Tray,
+    trayContextMenu,
+    process.platform,
+    process.env.XDG_CURRENT_DESKTOP ?? '',
+  ),
 });
 
 const confirms = createConfirmQueue({
@@ -194,6 +220,7 @@ const notifications = createNotifications({
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
   applyUpdate: () => void updater.applyUpdate(),
+  platform: process.platform,
 });
 
 const updater = createUpdater({
@@ -319,6 +346,7 @@ function registerIpc(): void {
     processManager,
     configIo,
     gitManager,
+    branchesChanged,
     preScriptRunner,
     snapshots,
     confirms,
@@ -395,8 +423,7 @@ app.whenReady().then(() => {
     broadcast,
     toast,
     broadcastLog: logWindows.broadcastLog,
-    branchesChanged: (repoPath) =>
-      sendToRenderers(registry, 'branches:changed', { path: repoPath }),
+    branchesChanged,
     claimScheduledAction: schedules.claimScheduledAction,
     showCompletionNotification: notifications.showCompletionNotification,
     // Keep the snapshot's running set current (debounced, and a no-op when the
@@ -442,16 +469,7 @@ app.whenReady().then(() => {
     defaultIcon: trayIcon.defaultIcon,
     attachTray: tray.attach,
     attachConsole: logger.attachWindowConsole,
-    buildContextMenu: () =>
-      Menu.buildFromTemplate(
-        buildTrayMenuTemplate({
-          availableUpdate: updater.available(),
-          stagedUpdate: updater.staged(),
-          logWindows: [...registry.logs.entries()],
-          onApplyUpdate: () => void updater.applyUpdate(),
-          onOpenConfig: () => appWindows.ensureConfigWindow(),
-        }),
-      ),
+    buildContextMenu: trayContextMenu,
     broadcast,
     refreshTrayIcon: tray.refreshIcon,
     invalidateTrayIconCache: trayIcon.invalidateCache,

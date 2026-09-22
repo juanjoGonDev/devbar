@@ -16,8 +16,15 @@ const ALWAYS_IGNORED =
   /^\/(?:dist|tests|\.agents|\.github|src|renderer|scripts|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.ts|vitest\.config\.ts|knip\.json|\.dependency-cruiser\.json)(?:$|\/)/;
 /** The development-only simulation panel and its IPC handlers. */
 const DEV_PANEL = /^\/build\/(?:src|renderer)\/dev(?:$|\/)/;
+/** The bundled emoji webfont: Linux-only (renderer/emoji.css), and macOS
+ *  already carries Apple Color Emoji. */
+const EMOJI_FONT = /^\/build\/assets\/fonts(?:$|\/)/;
 
-export const PACKAGE_IGNORE: readonly RegExp[] = [ALWAYS_IGNORED, DEV_PANEL];
+export const PACKAGE_IGNORE: readonly RegExp[] = [
+  ALWAYS_IGNORED,
+  DEV_PANEL,
+  EMOJI_FONT,
+];
 
 /**
  * Same list, minus the dev panel — for `DEVBAR_DEV_PANEL=1`, which packages an
@@ -26,7 +33,10 @@ export const PACKAGE_IGNORE: readonly RegExp[] = [ALWAYS_IGNORED, DEV_PANEL];
  * to open a particular pane) in a REAL installed bundle, where notifications
  * and the updater actually work. A normal build never includes it.
  */
-export const PACKAGE_IGNORE_WITH_DEV: readonly RegExp[] = [ALWAYS_IGNORED];
+export const PACKAGE_IGNORE_WITH_DEV: readonly RegExp[] = [
+  ALWAYS_IGNORED,
+  EMOJI_FONT,
+];
 
 export function packageIgnoreFor(includeDevPanel: boolean): readonly RegExp[] {
   return includeDevPanel ? PACKAGE_IGNORE_WITH_DEV : PACKAGE_IGNORE;

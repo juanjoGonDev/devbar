@@ -38,10 +38,25 @@ export function parseTrayCount(value: unknown): number | null {
   return n > 9999 ? 9999 : n;
 }
 
+/**
+ * Base pixmap size per platform. Linux panels receive ONE pixmap and scale
+ * it to the slot themselves; they mis-handle the multi-scale pair below
+ * (several compositors draw both pixmaps on top of each other — the icon
+ * looked like two states stamped over one another), so Linux gets a single
+ * larger bitmap that downscales cleanly. macOS and Windows take the classic
+ * 18px + 2x pair.
+ */
+const TRAY_SIZE: Record<string, number> = {
+  darwin: 18,
+  win32: 18,
+  linux: 32,
+};
+
 export function loadIcon(
   state: TrayColor,
   hasUpdate = false,
   count = 0,
+  platform: string = process.platform,
 ): NativeImage {
   const dark = nativeTheme.shouldUseDarkColors,
     // Key on the RENDERED label, not the raw count: the bubble draws
@@ -50,24 +65,30 @@ export function loadIcon(
     // and must not collide.
     key = `${state}:${dark ? 'd' : 'l'}:${hasUpdate ? 'u' : '-'}:${countLabel(
       count,
-    )}`,
+    )}:${platform}`,
     cached = iconCache[key];
   if (cached) return cached;
-  const rgb = COLORS[state] ?? COLORS.stopped,
+  const size = TRAY_SIZE[platform] ?? 18,
+    rgb = COLORS[state] ?? COLORS.stopped,
     out = outlineColor(dark),
     // The count bubble reuses the update-badge red; with no count, the
     // pending-update cue is the small dot.
     badge = count > 0 || hasUpdate ? BADGE_RGB : undefined,
     image = nativeImage.createFromBitmap(
-      drawGlyphBGRA(18, rgb, out, badge, count),
-      { width: 18, height: 18 },
+      drawGlyphBGRA(size, rgb, out, badge, count),
+      {
+        width: size,
+        height: size,
+      },
     );
-  image.addRepresentation({
-    scaleFactor: 2,
-    width: 36,
-    height: 36,
-    buffer: drawGlyphBGRA(36, rgb, out, badge, count),
-  });
+  if (platform !== 'linux') {
+    image.addRepresentation({
+      scaleFactor: 2,
+      width: 36,
+      height: 36,
+      buffer: drawGlyphBGRA(36, rgb, out, badge, count),
+    });
+  }
   image.setTemplateImage(false);
   iconCache[key] = image;
   return image;

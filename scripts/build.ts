@@ -88,6 +88,43 @@ export async function buildApp(
   fs.cpSync(path.join(root, 'assets'), path.join(root, 'build', 'assets'), {
     recursive: true,
   });
+
+  // The emoji webfont, pinned via @fontsource/noto-color-emoji. Systems
+  // without any color-emoji font (Raspberry Pi OS among them) render every
+  // emoji as tofu; renderer/emoji.css serves this file as a last-resort
+  // family, and the LINUX packages alone ship it (package-win-linux.ts
+  // excludes the directory from the other platforms' file sets). A missing
+  // pinned font is a broken install, so the build fails before producing
+  // an incomplete Linux artifact — run pnpm install to fix it.
+  const emojiFontSource = path.join(
+    root,
+    'node_modules',
+    '@fontsource',
+    'noto-color-emoji',
+    'files',
+    'noto-color-emoji-emoji-400-normal.woff2',
+  );
+  const emojiFontDestination = path.join(
+    root,
+    'build',
+    'assets',
+    'fonts',
+    'NotoColorEmoji.woff2',
+  );
+  fs.mkdirSync(path.dirname(emojiFontDestination), { recursive: true });
+  if (fs.existsSync(emojiFontSource)) {
+    fs.copyFileSync(emojiFontSource, emojiFontDestination);
+  } else {
+    // Linux artifacts bundle this face (package-win-linux ships
+    // build/assets/fonts only there); missing it would silently regress
+    // the Raspberry Pi to tofu emoji. A node_modules complete enough to
+    // run this build but missing exactly this pinned package is a broken
+    // install — fail loudly instead of shipping the bug.
+    throw new Error(
+      'Noto Color Emoji missing from node_modules — run `pnpm install` ' +
+        'before building. Linux packages bundle it as the emoji fallback.',
+    );
+  }
 }
 
 // Direct execution: node --experimental-strip-types scripts/build.ts

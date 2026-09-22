@@ -25,6 +25,13 @@ function harness(
     resolveConfirm: vi.fn(),
   };
   let switchResult: { ok: boolean; error?: string } = { ok: true };
+  // The background remote refresh, under the test's control: what it reports,
+  // and whether it answers at all (a refresh left hanging is how "the handler
+  // does not wait for it" is proved).
+  let refreshOutcome = { changed: false };
+  let holdRefresh = false;
+  let releaseRefresh: ((outcome: { changed: boolean }) => void) | null = null;
+  const branchesChanged = vi.fn<(repoPath: string) => void>();
   const ipc = recordingIpc();
   registerRuntimeIpc(ipc, {
     configStore: { getGroup: (id) => groups.find((g) => g.id === id) ?? null },
@@ -56,11 +63,19 @@ function harness(
         calls.push(`switch:${branch}`);
         return Promise.resolve(switchResult);
       },
+      refreshRemotes: (p) => {
+        calls.push(`refresh:${p}`);
+        if (!holdRefresh) return Promise.resolve(refreshOutcome);
+        return new Promise<{ changed: boolean }>((resolve) => {
+          releaseRefresh = resolve;
+        });
+      },
     },
     confirms,
     snapshots: { snapshotPipelineState: () => ({}) as never },
     groupErrors,
     broadcast: () => calls.push('broadcast'),
+    branchesChanged,
     ...overrides,
   });
   return {
@@ -69,6 +84,14 @@ function harness(
     states,
     groupErrors,
     confirms,
+    branchesChanged,
+    refreshReports: (changed: boolean) => {
+      refreshOutcome = { changed };
+    },
+    holdRefresh: () => {
+      holdRefresh = true;
+    },
+    releaseRefresh: (changed: boolean) => releaseRefresh?.({ changed }),
     failSwitch: (error: string) => {
       switchResult = { ok: false, error };
     },
@@ -76,6 +99,11 @@ function harness(
       switchResult = { ok: false };
     },
   };
+}
+
+/** Let the fire-and-forget refresh chain run before asserting on it. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe('src/main/ipc/runtime-ipc.ts', () => {
@@ -227,6 +255,49 @@ describe('src/main/ipc/runtime-ipc.ts', () => {
         ok: true,
         branch: '/repo',
       });
+    });
+
+    it('answers the branch list without waiting for the remote catch-up', async () => {
+      // The refresh is left hanging on purpose: if the handler awaited it,
+      // this invoke would never settle and the test would time out instead of
+      // returning the list the dropdown needs right now.
+      const h = harness([makeGroup({ path: '/repo' })]);
+      h.holdRefresh();
+      await expect(h.ipc.invoke('git:listBranches', 'g1')).resolves.toEqual({
+        ok: true,
+        branches: ['/repo'],
+      });
+      expect(h.calls).toContain('refresh:/repo');
+      expect(h.branchesChanged).not.toHaveBeenCalled();
+      h.releaseRefresh(false);
+    });
+
+    it('tells the renderers once the catch-up really moved a ref', async () => {
+      const h = harness([makeGroup({ path: '/repo' })]);
+      h.refreshReports(true);
+      await h.ipc.invoke('git:listBranches', 'g1');
+      await settle();
+      expect(h.branchesChanged).toHaveBeenCalledWith('/repo');
+    });
+
+    it('stays quiet when the catch-up brought nothing new', async () => {
+      // `branches:changed` drops the cached branch list of EVERY group, so an
+      // unconditional emit would reload every selector in the tray each time
+      // one dropdown opened.
+      const h = harness([makeGroup({ path: '/repo' })]);
+      h.refreshReports(false);
+      await h.ipc.invoke('git:listBranches', 'g1');
+      await settle();
+      expect(h.branchesChanged).not.toHaveBeenCalled();
+    });
+
+    it('never fetches for a group that is not there', async () => {
+      const h = harness();
+      h.refreshReports(true);
+      await h.ipc.invoke('git:listBranches', 'ghost');
+      await settle();
+      expect(h.calls).toEqual([]);
+      expect(h.branchesChanged).not.toHaveBeenCalled();
     });
 
     it('reports a group that is not there', async () => {
