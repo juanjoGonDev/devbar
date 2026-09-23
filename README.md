@@ -125,6 +125,15 @@ Vitest covers the pure modules (`groups-model`, `compound-id`,
 You can also export it to JSON or import another machine's config from
 **Configuración → Copia de seguridad**.
 
+## License
+
+Copyright (C) 2026 Juanjo González
+
+DevBar is free software: you can redistribute it and/or modify it under the
+terms of the [GNU Affero General Public License v3.0](LICENSE). It comes with
+no warranty. If you distribute a modified version, or run one as a network
+service, you must publish its source under the same license.
+
 ## Star History
 
 <a href="https://www.star-history.com/?type=date&repos=juanjoGonDev%2Fdevbar">
