@@ -10,12 +10,15 @@ import {
 /**
  * config-store-prescripts.test.js
  *
- * config-store requires electron-store (Electron context) and cannot be
- * imported in a pure Vitest environment. We therefore test the CRUD logic
- * that lives in the normalizer layer (normalizePreStep / normalizePreScript)
- * and exercise the REAL reorder algorithm via `reorderByIds` — both mirror
- * exactly what config-store's savePreStep / reorderPreSteps / savePreScript
- * etc. do.
+ * The normalizer layer behind config-store's pipeline CRUD: the shapes
+ * `normalizePreStep` / `normalizePreScript` produce, and the REAL reorder
+ * algorithm via `reorderByIds` — what config-store's savePreStep /
+ * reorderPreSteps / savePreScript build on.
+ *
+ * config-store itself is no longer out of reach: it is exercised against a
+ * real electron-store over a temp directory in `config-store.test.ts`,
+ * `config-store-groups.test.ts` and `config-store-pipeline.test.ts`. This
+ * file stays as the unit-level companion to those.
  *
  * The normalizer tests ensure the data shapes produced by each CRUD
  * function are correct; the reorder tests below call the same
@@ -30,7 +33,7 @@ import {
  * `groupId` on save/delete/reorder), `preScripts` stays per-group but flat
  * (no `stepId`), and step placement is a distinct concern handled by
  * `assignScriptToStep` / `unassignScriptFromStep` (real imports from
- * `groups-model.ts` — genuinely testable, unlike the rest of this file).
+ * `groups-model.ts`).
  */
 
 // ─── normalizePreStep (savePreStep contract) ──────────────────────────────────

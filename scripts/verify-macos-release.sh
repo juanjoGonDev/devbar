@@ -105,7 +105,9 @@ main() {
     fail 'macOS release artifacts must be verified on macOS.'
   fi
 
-  node "$ROOT_DIR/build/scripts/verify-release-artifacts.js" "$OUTPUT_DIR" "$VERSION"
+  # `macos`: this directory holds only the macOS half of the release; the
+  # full-set manifest is written by the release publish job.
+  node "$ROOT_DIR/build/scripts/verify-release-artifacts.js" "$OUTPUT_DIR" "$VERSION" "macos"
 
   verify_architecture arm64
   verify_architecture x64

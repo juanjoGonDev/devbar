@@ -54,6 +54,7 @@ const GROUP: Group = normalizeGroup({
 
 const GLOBAL_SETTINGS: GlobalSettings = {
   autostart: false,
+  theme: 'auto',
   silenceWarnings: false,
   silenceErrors: false,
   maxLogLines: 2000,

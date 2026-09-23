@@ -12,10 +12,26 @@
         margin: 0;
         background: transparent;
         overflow: hidden;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple Color Emoji',
+          'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
         cursor: default;
         -webkit-user-select: none;
         user-select: none;
+      }
+      /* Linux has no compositor guarantee (Raspberry Pi OS): the window is
+       * opaque there (see main/notification-banner.ts), so the banner fills
+       * it edge to edge — no float margin, no rounded corners, no shadow
+       * that nothing would render. */
+      html.linux,
+      html.linux body {
+        background: #1e1e1e;
+      }
+      html.linux #banner {
+        margin: 0;
+        border-radius: 0;
+        background: #1e1e1e;
+        box-shadow: none;
       }
       #banner {
         position: relative;
@@ -99,6 +115,7 @@
         background: #2f8bff;
       }
     </style>
+    <link rel="stylesheet" href="emoji.css" />
   </head>
   <body>
     <div id="banner">

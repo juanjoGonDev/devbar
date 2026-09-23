@@ -13,10 +13,10 @@
     "scripts/**/*.ts",
     "tests/**/*.ts"
   ],
-  "ignoreBinaries": ["tail"],
+  "ignoreBinaries": ["dpkg-deb"],
   "ignoreDependencies": [
+    "@fontsource/noto-color-emoji",
     "@types/debug",
-    "@types/electron-positioner",
-    "esbuild"
+    "@types/electron-positioner"
   ]
 }

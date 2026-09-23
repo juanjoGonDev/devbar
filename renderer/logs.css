@@ -17,7 +17,9 @@
    * Centring inside the bare 36px box would land at 18px and read as 2px high.
    */
   padding: 4px 12px 0 82px;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', sans-serif;
   color: #d0d0d4;
   font-size: 12px;
   font-weight: 600;
@@ -28,6 +30,12 @@
 .app-window-spacer button,
 .app-window-spacer input {
   -webkit-app-region: no-drag;
+}
+/* Non-macOS windows keep the native titlebar, which already shows this same
+   title — the inset strip would duplicate it, so it is macOS-only chrome. */
+html[data-os='win32'] .app-window-spacer,
+html[data-os='linux'] .app-window-spacer {
+  display: none;
 }
 .app-window-spacer #title {
   overflow: hidden;
@@ -43,7 +51,8 @@ body {
   background: #1c1c1e;
   color: #e5e5e7;
   font-family:
-    'SF Mono', ui-monospace, Menlo, Consolas, 'JetBrains Mono', monospace;
+    'SF Mono', ui-monospace, Menlo, Consolas, 'JetBrains Mono',
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', monospace;
   font-size: 12px;
   font-feature-settings: 'calt' 0;
   -webkit-font-smoothing: antialiased;
@@ -75,7 +84,9 @@ body {
   flex-direction: column;
   background: rgba(28, 28, 30, 0.96);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', sans-serif;
   min-height: 0;
 }
 body.detached #sidebar,
@@ -427,7 +438,9 @@ header {
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', sans-serif;
   font-size: 12px;
   -webkit-app-region: drag;
   flex-wrap: wrap;
@@ -697,7 +710,9 @@ footer {
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   color: #98989d;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', sans-serif;
   font-size: 11px;
   flex-shrink: 0;
 }
@@ -714,7 +729,9 @@ footer {
   min-height: 0;
   background: rgba(30, 30, 32, 0.98);
   border-left: 1px solid rgba(255, 255, 255, 0.1);
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', sans-serif;
   color: #e5e5e7;
 }
 .drawer[hidden] {
@@ -827,7 +844,9 @@ footer {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: 'SF Mono', ui-monospace, monospace;
+  font-family:
+    'SF Mono', ui-monospace, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 10.5px;
   color: #d0d0d4;
 }
@@ -910,7 +929,9 @@ footer {
   background: transparent;
   padding: 3px 5px;
   color: #7a7a80;
-  font-family: 'SF Mono', ui-monospace, monospace;
+  font-family:
+    'SF Mono', ui-monospace, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
   font-size: 10.5px;
   line-height: 1.45;
   cursor: pointer;
@@ -1096,7 +1117,9 @@ header .check.spaced {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.06);
   color: #9a9aa0;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', sans-serif;
   font-size: 10px;
   line-height: 1;
   cursor: pointer;

@@ -123,79 +123,84 @@ async function sweep(
   return { stdout, withdrawn: args.filter((arg) => arg !== '-u').sort() };
 }
 
-afterEach(async () => {
-  while (temporaryDirectories.length) {
-    const directory = temporaryDirectories.pop();
-    if (directory) await rm(directory, { recursive: true, force: true });
-  }
-});
-
-describe('withdraw_bundles_under', () => {
-  it('sweeps every copy a build left behind, at any depth it uses', async () => {
-    // What `fail()` leaves when hdiutil gives up: the packaged app and the
-    // copy staged for the image, both already registered, both about to be
-    // deleted by the next run without anyone withdrawing them.
-    const built = await fixture();
-    const work = await mkdtemp(path.join(tmpdir(), 'devbar-work-'));
-    temporaryDirectories.push(work);
-    const bundles = [
-      path.join(work, 'package-arm64', 'DevBar-darwin-arm64', 'DevBar.app'),
-      path.join(work, 'dmg-arm64', 'DevBar.app'),
-    ];
-    for (const bundle of bundles)
-      await mkdir(path.join(bundle, 'Contents'), { recursive: true });
-
-    const { withdrawn } = await sweep(built, work);
-    expect(withdrawn).toEqual([...bundles].sort());
+describe('scripts/build-macos-release.sh — Launch Services cleanup', () => {
+  afterEach(async () => {
+    while (temporaryDirectories.length) {
+      const directory = temporaryDirectories.pop();
+      if (directory) await rm(directory, { recursive: true, force: true });
+    }
   });
 
-  it('is a no-op when the build never got that far', async () => {
-    const built = await fixture();
-    const { stdout, withdrawn } = await sweep(built, '/nowhere/at/all');
-    expect(withdrawn).toEqual([]);
-    expect(stdout).toContain('survived');
-  });
-});
+  describe('withdraw_bundles_under', () => {
+    it('sweeps every copy a build left behind, at any depth it uses', async () => {
+      // What `fail()` leaves when hdiutil gives up: the packaged app and the
+      // copy staged for the image, both already registered, both about to be
+      // deleted by the next run without anyone withdrawing them.
+      const built = await fixture();
+      const work = await mkdtemp(path.join(tmpdir(), 'devbar-work-'));
+      temporaryDirectories.push(work);
+      const bundles = [
+        path.join(work, 'package-arm64', 'DevBar-darwin-arm64', 'DevBar.app'),
+        path.join(work, 'dmg-arm64', 'DevBar.app'),
+      ];
+      for (const bundle of bundles)
+        await mkdir(path.join(bundle, 'Contents'), { recursive: true });
 
-describe('unregister_bundle', () => {
-  it('withdraws the bundle from Launch Services', async () => {
-    const built = await fixture();
-    const { args } = await withdraw(built, '/Volumes/DevBar 1.2.3/DevBar.app');
-    expect(args).toEqual(['-u', '/Volumes/DevBar 1.2.3/DevBar.app']);
-  });
-
-  it('passes the path as one argument, spaces and all', async () => {
-    // Volume names carry the version and the architecture: "DevBar 1.2.3
-    // (arm64)". Unquoted, that would withdraw three paths that do not exist
-    // and leave the real registration standing.
-    const built = await fixture();
-    const bundle = '/Volumes/DevBar 1.2.3 (arm64)/DevBar.app';
-    const { args } = await withdraw(built, bundle);
-    // Two arguments, not five: unquoted, the path would arrive as "DevBar",
-    // "1.2.3" and "(arm64)/DevBar.app", withdrawing three registrations that
-    // do not exist and leaving the real one standing.
-    expect(args).toEqual(['-u', bundle]);
-  });
-
-  it('does not fail the release when lsregister fails', async () => {
-    // A build that produced good artifacts must not be reported as broken
-    // because a housekeeping call did not like something.
-    const built = await fixture();
-    const { stdout, args } = await withdraw(built, '/tmp/DevBar.app', {
-      LS_TEST_EXIT: '1',
+      const { withdrawn } = await sweep(built, work);
+      expect(withdrawn).toEqual([...bundles].sort());
     });
-    expect(args).toEqual(['-u', '/tmp/DevBar.app']);
-    expect(stdout).toContain('survived');
+
+    it('is a no-op when the build never got that far', async () => {
+      const built = await fixture();
+      const { stdout, withdrawn } = await sweep(built, '/nowhere/at/all');
+      expect(withdrawn).toEqual([]);
+      expect(stdout).toContain('survived');
+    });
   });
 
-  it('is a no-op where lsregister does not exist', async () => {
-    // The script is guarded to macOS, but sourcing it elsewhere — as these
-    // tests do — must not blow up on a missing system binary.
-    const built = await fixture();
-    const { stdout, args } = await withdraw(built, '/tmp/DevBar.app', {
-      LSREGISTER: path.join(path.dirname(built.stub), 'absent'),
+  describe('unregister_bundle', () => {
+    it('withdraws the bundle from Launch Services', async () => {
+      const built = await fixture();
+      const { args } = await withdraw(
+        built,
+        '/Volumes/DevBar 1.2.3/DevBar.app',
+      );
+      expect(args).toEqual(['-u', '/Volumes/DevBar 1.2.3/DevBar.app']);
     });
-    expect(args).toEqual([]);
-    expect(stdout).toContain('survived');
+
+    it('passes the path as one argument, spaces and all', async () => {
+      // Volume names carry the version and the architecture: "DevBar 1.2.3
+      // (arm64)". Unquoted, that would withdraw three paths that do not exist
+      // and leave the real registration standing.
+      const built = await fixture();
+      const bundle = '/Volumes/DevBar 1.2.3 (arm64)/DevBar.app';
+      const { args } = await withdraw(built, bundle);
+      // Two arguments, not five: unquoted, the path would arrive as "DevBar",
+      // "1.2.3" and "(arm64)/DevBar.app", withdrawing three registrations that
+      // do not exist and leaving the real one standing.
+      expect(args).toEqual(['-u', bundle]);
+    });
+
+    it('does not fail the release when lsregister fails', async () => {
+      // A build that produced good artifacts must not be reported as broken
+      // because a housekeeping call did not like something.
+      const built = await fixture();
+      const { stdout, args } = await withdraw(built, '/tmp/DevBar.app', {
+        LS_TEST_EXIT: '1',
+      });
+      expect(args).toEqual(['-u', '/tmp/DevBar.app']);
+      expect(stdout).toContain('survived');
+    });
+
+    it('is a no-op where lsregister does not exist', async () => {
+      // The script is guarded to macOS, but sourcing it elsewhere — as these
+      // tests do — must not blow up on a missing system binary.
+      const built = await fixture();
+      const { stdout, args } = await withdraw(built, '/tmp/DevBar.app', {
+        LSREGISTER: path.join(path.dirname(built.stub), 'absent'),
+      });
+      expect(args).toEqual([]);
+      expect(stdout).toContain('survived');
+    });
   });
 });

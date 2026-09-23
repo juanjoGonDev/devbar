@@ -1,11 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  appImagePathFromExecutable,
   bundlePathFromExecutable,
-  buildSwapScript,
+  buildInstallerBat,
+  buildLinuxSwapScript,
+  buildMacSwapScript as buildSwapScript,
+  buildSwapBat,
   canInstallInPlace,
+  isInstalledExe,
+  isPortableContainer,
+  isUnderTempDir,
+  looksLikeAppImage,
+  winInstalledAppPath,
+  windowsUpdateMode,
 } from '../src/self-update.js';
 
 describe('bundlePathFromExecutable', () => {
@@ -80,5 +90,769 @@ describe('buildSwapScript', () => {
     });
     expect(tricky).toContain(`target='/Apps/Dev Bar'\\''s.app'`);
     expect(tricky).toContain(`staged='/tmp/a b/DevBar.app'`);
+  });
+});
+
+// AppImage is a Linux-only packaging format: this helper exists to resolve a
+// running .AppImage (or $APPIMAGE) and its assertions are written in POSIX
+// absolute paths. `path.resolve('/home/u/…')` on a Windows checkout yields
+// `C:\home\u\…`, so every case here would fail for a reason that says
+// nothing about the function — skip the suite there, like the POSIX stop
+// suite does.
+describe.skipIf(process.platform === 'win32')(
+  'appImagePathFromExecutable',
+  () => {
+    // The $APPIMAGE branch requires the payload next to the executable to
+    // be DevBar's own (resources/app.asar|app/package.json carrying the
+    // devbar package name) — these fixtures stand in for the mounted
+    // squashfs. Dir names mimic the type 2 runtime's mount naming
+    // (.mount_<6 chars>).
+    let devbarMount: string;
+    let devbarLowerMount: string;
+    let devbarShortMount: string;
+    let parentMount: string;
+    let bareMount: string;
+    let devbarAsarMount: string;
+    let foreignAsarMount: string;
+    let mixedLayoutMount: string;
+    beforeAll(() => {
+      const make = (
+        template: string,
+        name: string | null,
+        layout: 'app' | 'asar' = 'app',
+      ): string => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), template));
+        if (name !== null) {
+          const payload = layout === 'asar' ? 'app.asar' : 'app';
+          fs.mkdirSync(path.join(root, 'resources', payload), {
+            recursive: true,
+          });
+          fs.writeFileSync(
+            path.join(root, 'resources', payload, 'package.json'),
+            JSON.stringify({ name }),
+          );
+        }
+        return root;
+      };
+      devbarMount = make('.mount_DevBar', 'devbar');
+      devbarLowerMount = make('.mount_devbar', 'devbar');
+      devbarShortMount = make('.mount_devb.A', 'devbar');
+      parentMount = make('.mount_Paren-', 'parent-tool');
+      bareMount = make('.mount_DevBar', null);
+      // Packaged-build layout: the payload is an asar archive, not a plain
+      // directory (a directory named app.asar stands in for the archive).
+      // Templates: '.mount_' + the FIRST SIX CHARS of the image basename
+      // (the runtime's maxnamelen = 6) + mkdtemp's 6 random suffix chars.
+      devbarAsarMount = make('.mount_DevBar', 'devbar', 'asar');
+      foreignAsarMount = make('.mount_Paren+', 'parent-tool', 'asar');
+      mixedLayoutMount = make('.mount_DevBm.', 'parent-tool', 'asar');
+      // …and ALSO carry an unpacked-layout payload with the devbar name:
+      // the asar layout must win (fail closed) instead of the fallback
+      // masking a foreign mount.
+      fs.mkdirSync(path.join(mixedLayoutMount, 'resources', 'app'), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(mixedLayoutMount, 'resources', 'app', 'package.json'),
+        JSON.stringify({ name: 'devbar' }),
+      );
+    });
+    afterAll(() => {
+      for (const root of [
+        devbarMount,
+        devbarLowerMount,
+        devbarShortMount,
+        parentMount,
+        bareMount,
+        devbarAsarMount,
+        foreignAsarMount,
+        mixedLayoutMount,
+      ]) {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('accepts a running .AppImage path', () => {
+      expect(appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage')).toBe(
+        '/home/u/Apps/DevBar.AppImage',
+      );
+    });
+
+    it('rejects a .deb install (plain binary) and dev runs', () => {
+      expect(appImagePathFromExecutable('/usr/bin/DevBar')).toBeNull();
+      expect(
+        appImagePathFromExecutable('/repo/node_modules/electron/dist/electron'),
+      ).toBeNull();
+    });
+
+    it('resolves the image from $APPIMAGE when running a mounted type 2 image', () => {
+      // A running type 2 AppImage executes the payload from the tmp mount —
+      // execPath alone would never end in .AppImage and the in-place path
+      // would be dead for every real install.
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/home/u/Apps/DevBar.AppImage',
+        ),
+      ).toBe('/home/u/Apps/DevBar.AppImage');
+    });
+
+    it('accepts a FOREIGN-free $APPIMAGE for a directly executed image', () => {
+      // Direct execution: the execPath IS the image file; an env pointing at
+      // the same image is consistent (and a blank one falls through).
+      expect(
+        appImagePathFromExecutable(
+          '/home/u/Apps/DevBar.AppImage',
+          '/home/u/Apps/DevBar.AppImage',
+        ),
+      ).toBe('/home/u/Apps/DevBar.AppImage');
+      expect(
+        appImagePathFromExecutable('/home/u/Apps/DevBar.AppImage', '   '),
+      ).toBe('/home/u/Apps/DevBar.AppImage');
+      expect(appImagePathFromExecutable('/usr/bin/devbar', '   ')).toBeNull();
+    });
+
+    it('rejects an inherited $APPIMAGE whose stem does not match the mount', () => {
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/opt/Tools/Tool.AppImage',
+        ),
+      ).toBeNull();
+    });
+
+    it('rejects the PARENT image when DevBar is its payload (circular stem)', () => {
+      // The hostile case: DevBar runs as a payload file INSIDE another
+      // AppImage. The parent runtime set $APPIMAGE to the parent file and
+      // named the mount after that SAME file — the six-char stem check is
+      // circular and matches. Only the payload identity gate can tell the
+      // difference: the payload next to the executable is the parent's app,
+      // not devbar.
+      expect(
+        appImagePathFromExecutable(
+          path.join(parentMount, 'devbar'),
+          '/opt/Tools/Parent-App-2.0.AppImage',
+        ),
+      ).toBeNull();
+      // …while the same mount with DevBar's own payload is accepted.
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/opt/Tools/DevBar-9.9.9.AppImage',
+        ),
+      ).toBe('/opt/Tools/DevBar-9.9.9.AppImage');
+    });
+
+    it('fails closed when the mount matches but the payload is missing', () => {
+      expect(
+        appImagePathFromExecutable(
+          path.join(bareMount, 'devbar'),
+          '/home/u/Apps/DevBar.AppImage',
+        ),
+      ).toBeNull();
+    });
+
+    it('matches the mount stem case-insensitively on the extension', () => {
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarLowerMount, 'devbar'),
+          '/home/u/devbar.appimage',
+        ),
+      ).toBe('/home/u/devbar.appimage');
+    });
+
+    it('accepts the mount of a release-named image (the runtime keeps 6 chars)', () => {
+      // build_mount_point truncates the basename to SIX characters
+      // (maxnamelen = 6) before adding the random suffix — a full-name or
+      // full-stem comparison would reject every real install
+      // (DevBar-0.9.0-linux-x64.AppImage mounts under /tmp/.mount_DevBar…).
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
+        ),
+      ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
+    });
+
+    it('matches the basename, not the stem (the runtime truncates the basename)', () => {
+      // A 4-char stem: the runtime template is `.mount_devb.AXXXXXX`
+      // (extension included), so a sibling image with a 6-char stem must
+      // NOT be accepted for the mount of the other.
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarShortMount, 'devbar'),
+          '/home/u/devb.AppImage',
+        ),
+      ).toBe('/home/u/devb.AppImage');
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarMount, 'devbar'),
+          '/home/u/devb.AppImage',
+        ),
+      ).toBeNull();
+    });
+
+    it('resolves the packaged build, whose payload lives in resources/app.asar', () => {
+      // The regression the old code got wrong: packaged AppImages ship the
+      // payload as an asar archive, so resources/app/package.json does not
+      // exist — the gate failed and in-place update was silently disabled
+      // for every real install.
+      expect(
+        appImagePathFromExecutable(
+          path.join(devbarAsarMount, 'devbar'),
+          '/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage',
+        ),
+      ).toBe('/home/u/Apps/DevBar-0.9.0-linux-x64.AppImage');
+    });
+
+    it('rejects a foreign asar payload (DevBar inside another image)', () => {
+      expect(
+        appImagePathFromExecutable(
+          path.join(foreignAsarMount, 'devbar'),
+          '/opt/Tools/Paren+App.AppImage',
+        ),
+      ).toBeNull();
+    });
+
+    it('fails closed when the asar layout carries a foreign name', () => {
+      // Both layouts present: the asar archive is authoritative, so its
+      // foreign name must NOT be masked by the unpacked fallback carrying
+      // the devbar name.
+      expect(
+        appImagePathFromExecutable(
+          path.join(mixedLayoutMount, 'devbar'),
+          '/home/u/Apps/DevBm.AppImage',
+        ),
+      ).toBeNull();
+    });
+  },
+);
+
+describe('winInstalledAppPath (temp payload without a resolvable container)', () => {
+  const tmp = os.tmpdir();
+  const tempPayload = path.join(tmp, 'devbar-portable-payload', 'devbar.exe');
+  const container = 'C:\\Users\\dev\\Downloads\\DevBar-Portable.exe';
+
+  it('returns the portable container when it is known', () => {
+    expect(winInstalledAppPath(tempPayload, container)).toBe(container);
+  });
+
+  it('returns null when the container lookup failed for a temp payload', () => {
+    // Targeting the ephemeral extraction copy would "update" a file that
+    // dies with the temp dir while the user's real portable file keeps the
+    // old version — no target beats a wrong target.
+    expect(winInstalledAppPath(tempPayload, null)).toBeNull();
+  });
+
+  it('keeps the execPath fallback for non-temp installs', () => {
+    const nsis = 'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe';
+    expect(winInstalledAppPath(nsis, null)).toBe(nsis);
+    expect(winInstalledAppPath('D:\\Tools\\DevBar\\DevBar.exe', null)).toBe(
+      'D:\\Tools\\DevBar\\DevBar.exe',
+    );
+  });
+
+  it('isUnderTempDir: temp paths only, with the separator boundary intact', () => {
+    expect(isUnderTempDir(tempPayload)).toBe(true);
+    // Sibling dir that merely shares the prefix must NOT match.
+    const sep = tmp.includes('\\') ? '\\' : '/';
+    expect(isUnderTempDir(`${tmp}${sep}x`)).toBe(true);
+    expect(isUnderTempDir(`${tmp.replace(/[/\\]$/u, '')}other/x`)).toBe(false);
+    expect(isUnderTempDir('C:\\Tools\\devbar.exe')).toBe(false);
+  });
+});
+
+describe('buildLinuxSwapScript', () => {
+  const script = buildLinuxSwapScript({
+    pid: 777,
+    target: '/home/u/Apps/DevBar.AppImage',
+    staged: '/tmp/updates/0.8.0/DevBar-0.8.0-linux-x64.AppImage',
+  });
+
+  it('waits for the old process before touching the file', () => {
+    const wait = script.indexOf('kill -0 777');
+    const copy = script.indexOf('cp "$staged" "$target"');
+    expect(wait).toBeGreaterThan(-1);
+    expect(copy).toBeGreaterThan(wait);
+  });
+
+  it('gives up instead of swapping when the old process never exits', () => {
+    expect(script).toContain('if kill -0 777 2>/dev/null; then exit 1; fi');
+  });
+
+  it('rolls the old file back when the copy fails', () => {
+    expect(script).toContain('mv "$backup" "$target"');
+  });
+
+  it('relaunches detached without the --login flag (no pre-script rerun)', () => {
+    expect(script).toContain('setsid "$target" >/dev/null 2>&1 < /dev/null &');
+    expect(script).not.toMatch(/setsid .*--login/);
+  });
+});
+
+describe('buildSwapBat', () => {
+  const bat = buildSwapBat({
+    pid: 4242,
+    target: 'C:\\Users\\dev\\DevBar.exe',
+    staged:
+      'C:\\Users\\dev\\AppData\\Roaming\\devbar\\updates\\0.8.0\\DevBar-0.8.0-win-x64-portable.exe',
+  });
+
+  it('waits for the old process (bounded) before moving the file', () => {
+    expect(bat).toContain('tasklist /fi "PID eq 4242"');
+    expect(bat).toContain('if %tries% geq 150 (');
+    expect(bat.indexOf(':wait')).toBeLessThan(bat.indexOf(':swap'));
+  });
+
+  it('checks the pid without a pipe (tasklist|find hangs in the hidden detached context)', () => {
+    expect(bat).toContain(
+      'tasklist /fi "PID eq 4242" /fo csv > "%~dp0devbar-pid.tmp" 2>nul',
+    );
+    expect(bat).toContain(
+      'findstr /i "DevBar" "%~dp0devbar-pid.tmp" >nul 2>&1',
+    );
+    expect(bat).not.toContain('| find');
+  });
+
+  it('moves the old exe aside and copies the new one into place', () => {
+    expect(bat).toContain('move /y "%target%" "%backup%"');
+    expect(bat).toContain('copy /y "%staged%" "%target%"');
+  });
+
+  it('rolls back and relaunches the old exe on failure', () => {
+    expect(bat).toContain(':fail');
+    expect(bat).toContain('move /y "%backup%" "%target%"');
+    expect(bat.match(/start "" "%target%"/g)).toHaveLength(2);
+  });
+
+  it('stores space-containing paths unquoted so "%var%" expansion stays one quoted argument', () => {
+    // `set "name=value"` keeps everything to the final quote as the
+    // value. Wrapping the value in its own quotes (batQuote) would
+    // embed literal quotes in %target%, and every later `"%target%"`
+    // would expand to a broken double-quoted path — the exact failure
+    // for a directory with a space.
+    const spaced = buildSwapBat({
+      pid: 1,
+      target: 'C:\\Program Files (x86)\\DevBar\\DevBar.exe',
+      staged: 'C:\\Program Files (x86)\\DevBar\\staged\\DevBar.exe',
+    });
+    expect(spaced).toContain(
+      'set "target=C:\\Program Files (x86)\\DevBar\\DevBar.exe"',
+    );
+    expect(spaced).toContain(
+      'set "staged=C:\\Program Files (x86)\\DevBar\\staged\\DevBar.exe"',
+    );
+    expect(spaced).not.toContain('set "target="');
+    expect(spaced).toContain('move /y "%target%" "%backup%"');
+  });
+});
+
+describe('isPortableContainer (the swap must target the stub, not the temp payload)', () => {
+  const payload = 'C:\\Users\\u\\AppData\\Local\\Temp\\devbar-x\\DevBar.exe';
+  it('accepts a devbar-named parent exe outside Program Files', () => {
+    expect(
+      isPortableContainer(
+        payload,
+        'D:\\Apps\\DevBar-0.7.1-win-x64-portable.exe',
+      ),
+    ).toBe(true);
+    // A user-renamed file keeps the app name.
+    expect(isPortableContainer(payload, 'D:\\Apps\\devbar.exe')).toBe(true);
+  });
+  it('rejects a parent that is not a devbar exe (explorer, renamed stub)', () => {
+    expect(isPortableContainer(payload, 'C:\\Windows\\explorer.exe')).toBe(
+      false,
+    );
+    expect(isPortableContainer(payload, 'D:\\Apps\\launcher.exe')).toBe(false);
+  });
+  it('rejects itself and a missing parent', () => {
+    expect(isPortableContainer(payload, payload)).toBe(false);
+    expect(isPortableContainer(payload, null)).toBe(false);
+  });
+  it('rejects Program Files (assisted-only, elevation-requiring location)', () => {
+    expect(
+      isPortableContainer(payload, 'C:\\Program Files\\DevBar\\DevBar.exe'),
+    ).toBe(false);
+    expect(
+      isPortableContainer(
+        payload,
+        'C:\\Program Files (x86)\\DevBar\\DevBar.exe',
+      ),
+    ).toBe(false);
+  });
+  it('rejects Program Files at ANY depth, not only the expected one', () => {
+    // The regression: a fixed "two levels up" basename check compared
+    // `tools` — not `program files` — so an INSTALLED exe one level deeper
+    // was accepted and routed through the portable swap.
+    expect(
+      isPortableContainer(
+        payload,
+        'C:\\Program Files\\Tools\\DevBar\\DevBarPortable.exe',
+      ),
+    ).toBe(false);
+    // A direct child compared the drive root (an empty basename) and slipped
+    // through the same way.
+    expect(
+      isPortableContainer(payload, 'C:\\Program Files\\DevBarPortable.exe'),
+    ).toBe(false);
+    expect(
+      isPortableContainer(payload, 'C:\\Program Files (x86)\\a\\b\\devbar.exe'),
+    ).toBe(false);
+    // Windows treats `/` and case as equivalent here, so the gate must too.
+    expect(
+      isPortableContainer(payload, 'C:/PROGRAM FILES/Tools/DevBar/devbar.exe'),
+    ).toBe(false);
+  });
+  it('still accepts paths outside both roots (what the portable flow needs)', () => {
+    // Containment compares WHOLE segments: `Program FilesX` is an ordinary
+    // folder, not an elevation-requiring root.
+    expect(
+      isPortableContainer(payload, 'C:\\Program FilesX\\DevBar\\devbar.exe'),
+    ).toBe(true);
+    expect(
+      isPortableContainer(payload, 'D:\\Tools\\Apps\\DevBar\\devbar.exe'),
+    ).toBe(true);
+  });
+});
+
+describe('windows update mode + helpers', () => {
+  const localAppData = 'C:\\Users\\dev\\AppData\\Local';
+
+  it('detects the NSIS per-user install location (exact match)', () => {
+    expect(
+      isInstalledExe(
+        'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+        localAppData,
+      ),
+    ).toBe(true);
+    expect(
+      windowsUpdateMode(
+        'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('nsis');
+  });
+
+  it('is case-insensitive but not suffix-matching', () => {
+    expect(
+      isInstalledExe(
+        'c:\\users\\dev\\appdata\\local\\programs\\devbar\\devbar.exe',
+        'c:\\Users\\dev\\AppData\\Local',
+      ),
+    ).toBe(true);
+    // A folder that merely ENDS in "programs" on another drive / with a
+    // "programs" suffix is a portable install, not a per-user NSIS one.
+    expect(
+      isInstalledExe('D:\\Programs\\DevBar\\DevBar.exe', localAppData),
+    ).toBe(false);
+    expect(
+      isInstalledExe('C:\\NotPrograms\\DevBar\\DevBar.exe', localAppData),
+    ).toBe(false);
+    expect(
+      windowsUpdateMode('D:\\Programs\\DevBar\\DevBar.exe', localAppData),
+    ).toBe('portable');
+    // No LOCALAPPDATA (unknown install root) is never an NSIS install.
+    expect(
+      isInstalledExe(
+        'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+        '',
+      ),
+    ).toBe(false);
+  });
+
+  it('treats Program Files as assisted-only (needs elevation)', () => {
+    expect(
+      windowsUpdateMode('C:\\Program Files\\DevBar\\DevBar.exe', localAppData),
+    ).toBe('assisted');
+  });
+
+  it('treats Program Files at ANY depth as assisted-only', () => {
+    // The regression: a fixed "two levels up" basename compare looked at
+    // `Tools` here, called it 'portable', and canInstallInPlace then offered
+    // an in-place swap of a location that needs elevation.
+    expect(
+      windowsUpdateMode(
+        'C:\\Program Files\\Tools\\DevBar\\DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('assisted');
+    // A direct child compared the drive root (an empty basename) and slipped
+    // through the same way.
+    expect(
+      windowsUpdateMode('C:\\Program Files\\DevBar.exe', localAppData),
+    ).toBe('assisted');
+    expect(
+      windowsUpdateMode(
+        'D:\\Program Files (x86)\\a\\b\\DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('assisted');
+    // Windows treats `/` and case as equivalent here, so the check must too.
+    expect(
+      windowsUpdateMode(
+        'C:/PROGRAM FILES/Tools/DevBar/DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('assisted');
+  });
+
+  it('does not mistake a near-miss folder for a Program Files root', () => {
+    // WHOLE segments only: `Program FilesX` is an ordinary folder, and a
+    // `Program Files` that is not the FIRST segment is not the install root.
+    expect(
+      windowsUpdateMode('C:\\Program FilesX\\DevBar\\DevBar.exe', localAppData),
+    ).toBe('portable');
+    expect(
+      windowsUpdateMode(
+        'D:\\Tools\\Program Files\\DevBar\\DevBar.exe',
+        localAppData,
+      ),
+    ).toBe('portable');
+  });
+
+  it('treats any other folder as a portable install', () => {
+    expect(isInstalledExe('D:\\Tools\\DevBar\\DevBar.exe', localAppData)).toBe(
+      false,
+    );
+    expect(
+      windowsUpdateMode('D:\\Tools\\DevBar\\DevBar.exe', localAppData),
+    ).toBe('portable');
+  });
+});
+
+describe('looksLikeAppImage', () => {
+  /** Real AppImage shape: ELF header + "AI" + type byte at offset 8. */
+  function realImage(typeByte: number): Buffer {
+    const buf = Buffer.alloc(64);
+    buf.write('\x7fELF', 0, 'latin1');
+    buf[8] = 0x41; // "A"
+    buf[9] = 0x49; // "I"
+    buf[10] = typeByte;
+    return buf;
+  }
+
+  // Every call created a temp dir that nothing removed — six per run, left
+  // behind forever. Track and drop them like the fixture mounts above do.
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function withFile(content: Buffer): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-img-'));
+    dirs.push(dir);
+    const file = path.join(dir, 'x.AppImage');
+    fs.writeFileSync(file, content);
+    return file;
+  }
+
+  it('rejects a file that is ELF-prefixed but shorter than the magic window', () => {
+    // 9 bytes: the 4-byte ELF read at offset 0 succeeds, so execution
+    // reaches the 3-byte magic read at offset 8, which only gets 1 byte
+    // and must return false via the short-read guard.
+    const buf = Buffer.concat([
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46]),
+      Buffer.from('short', 'latin1'),
+    ]);
+    expect(buf.length).toBe(9);
+    expect(looksLikeAppImage(withFile(buf))).toBe(false);
+  });
+
+  it('accepts the AppImageSpec magic (ELF + AI + type byte)', () => {
+    expect(looksLikeAppImage(withFile(realImage(0x02)))).toBe(true);
+    expect(looksLikeAppImage(withFile(realImage(0x01)))).toBe(true);
+  });
+
+  it('rejects the legacy "AppImage" string at offset 8 — real images do not carry it', () => {
+    // ELF-prefixed so the check gets PAST the header guard and actually
+    // exercises the magic comparison: 'A' matches, 'p' does not.
+    const buf = Buffer.alloc(64);
+    buf.write('\x7fELF', 0, 'latin1');
+    buf.write('AppImage', 8, 'latin1');
+    expect(looksLikeAppImage(withFile(buf))).toBe(false);
+  });
+
+  it('rejects an ELF file without the AppImage marker', () => {
+    const buf = Buffer.alloc(64);
+    buf.write('\x7fELF', 0, 'latin1');
+    expect(looksLikeAppImage(withFile(buf))).toBe(false);
+  });
+});
+
+describe('bat percent escaping (cmd.exe expands %x% on every batch line)', () => {
+  it('doubles a literal % in the stored target/staged values', () => {
+    const bat = buildSwapBat({
+      pid: 1,
+      target: 'C:\\Users\\99%dev\\DevBar\\DevBar.exe',
+      staged: 'C:\\Users\\99%dev\\updates\\DevBar.exe',
+    });
+    // The SET lines must store the literal % (doubled so cmd's own
+    // expansion of the line turns %% back into one %).
+    expect(bat).toContain(
+      'set "target=C:\\Users\\99%%dev\\DevBar\\DevBar.exe"',
+    );
+    expect(bat).toContain(
+      'set "staged=C:\\Users\\99%%dev\\updates\\DevBar.exe"',
+    );
+    // And the un-escaped form must not leak into the file.
+    expect(bat).not.toContain('99%dev\\DevBar.exe');
+  });
+
+  it('doubles % in relaunch args, the installer path and the marker path', () => {
+    const swap = buildSwapBat({
+      pid: 1,
+      target: 'C:\\a\\DevBar.exe',
+      staged: 'C:\\a\\new.exe',
+      relaunchArgs: ['--smoke-100%done'],
+      markerPath: 'C:\\tmp\\100%ok.flag',
+    });
+    expect(swap).toContain('"--smoke-100%%done"');
+    expect(swap).toContain('echo ok> "C:\\tmp\\100%%ok.flag" 2>nul');
+
+    const install = buildInstallerBat({
+      pid: 1,
+      installer: 'C:\\Users\\99%dev\\DevBar-Setup.exe',
+      target: 'C:\\Users\\99%dev\\DevBar\\DevBar.exe',
+    });
+    expect(install).toContain('"C:\\Users\\99%%dev\\DevBar-Setup.exe" /S');
+    expect(install).toContain(
+      'set "target=C:\\Users\\99%%dev\\DevBar\\DevBar.exe"',
+    );
+  });
+
+  it('leaves ordinary paths (no %) byte-identical', () => {
+    const bat = buildSwapBat({
+      pid: 1,
+      target: 'C:\\Users\\dev\\DevBar.exe',
+      staged: 'C:\\Users\\dev\\new.exe',
+    });
+    expect(bat).toContain('set "target=C:\\Users\\dev\\DevBar.exe"');
+    expect(bat).not.toContain('%%');
+  });
+});
+
+describe('swap scripts: CI relaunch args + success marker', () => {
+  const mac = buildSwapScript({
+    pid: 7,
+    target: '/Applications/DevBar.app',
+    staged: '/tmp/u/v2/DevBar.app',
+    relaunchArgs: ['--devbar-smoke'],
+    markerPath: '/tmp/u/swap-ok',
+  });
+  it('macOS relaunch passes the args through `open --args` (env would not survive LaunchServices)', () => {
+    expect(mac).toContain('open "$target" --args \'--devbar-smoke\'');
+  });
+  it('macOS writes the success marker after a clean swap', () => {
+    expect(mac).toContain("printf 'ok' > '/tmp/u/swap-ok'");
+  });
+
+  const linux = buildLinuxSwapScript({
+    pid: 7,
+    target: '/home/x/DevBar.AppImage',
+    staged: '/tmp/u/v2/DevBar.AppImage',
+    relaunchArgs: ['--devbar-smoke'],
+    markerPath: '/tmp/u/swap-ok',
+  });
+  it('Linux relaunch appends the args to the detached exec', () => {
+    expect(linux).toContain('setsid "$target" \'--devbar-smoke\' >/dev/null');
+  });
+  it('Linux writes the success marker after a clean swap', () => {
+    expect(linux).toContain("printf 'ok' > '/tmp/u/swap-ok'");
+  });
+  it('sh swaps strip the CI-simulation env before relaunch (no re-entrancy)', () => {
+    for (const script of [mac, linux]) {
+      // Boundary-matched: plain `toContain('unset DEVBAR_SMOKE')` is also
+      // satisfied by `unset DEVBAR_SMOKE_HOLD …`, so dropping the BARE
+      // variable — the one main.ts re-enters smoke mode on — would keep this
+      // test green while the relaunch loops.
+      expect(script).toMatch(/unset DEVBAR_SMOKE(\s|$)/u);
+      expect(script).toContain('DEVBAR_SMOKE_UPDATE');
+    }
+  });
+
+  const bat = buildSwapBat({
+    pid: 7,
+    target: 'C:\\folder with space\\DevBar.exe',
+    staged: 'C:\\staged\\DevBar.exe',
+    relaunchArgs: ['--devbar-smoke'],
+    markerPath: 'C:\\staged\\swap-ok',
+  });
+  it('Windows portable bat relaunch passes the args and writes the marker', () => {
+    expect(bat).toContain('start "" "%target%" "--devbar-smoke"');
+    expect(bat).toContain('echo ok> "C:\\staged\\swap-ok" 2>nul');
+  });
+});
+
+describe('buildInstallerBat', () => {
+  const bat = buildInstallerBat({
+    pid: 4321,
+    installer: 'C:\\u\\setup.exe',
+    target: 'C:\\Users\\dev\\AppData\\Local\\Programs\\DevBar\\DevBar.exe',
+  });
+  it('waits for the old pid before launching the installer', () => {
+    const wait = bat.indexOf('tasklist /fi "PID eq 4321"');
+    const run = bat.indexOf('"C:\\u\\setup.exe" /S');
+    expect(wait).toBeGreaterThan(-1);
+    expect(run).toBeGreaterThan(-1);
+    expect(wait).toBeLessThan(run);
+  });
+  it('gives up instead of installing over a stuck process', () => {
+    expect(bat).toContain('if %tries% geq 150 (');
+    expect(bat).toContain('giving up: old pid still present');
+  });
+  it('traces its progress to install.log (silent NSIS failures are the failure mode)', () => {
+    expect(bat).toContain('set "log=%~dp0install.log"');
+    expect(bat).toContain('installer done, relaunching app');
+  });
+  it('checks the pid without a pipe and retries the installer once on failure', () => {
+    expect(bat).toContain(
+      'findstr /i "DevBar" "%~dp0devbar-pid.tmp" >nul 2>&1',
+    );
+    expect(bat).not.toContain('| find');
+    expect(bat.match(/"C:\\u\\setup\.exe" \/S/g)).toHaveLength(2);
+  });
+  it('relaunches the app itself after a successful install (the installer does not, in this context)', () => {
+    const install = bat.lastIndexOf('"C:\\u\\setup.exe" /S');
+    const relaunch = bat.indexOf('start "" "%target%"');
+    expect(relaunch).toBeGreaterThan(-1);
+    expect(relaunch).toBeGreaterThan(install);
+  });
+  it('does not relaunch when the installer failed', () => {
+    const failedLine = bat.indexOf('installer FAILED with code %errorlevel%');
+    const giveUp = bat.indexOf('exit /b 1', failedLine);
+    expect(failedLine).toBeGreaterThan(-1);
+    expect(giveUp).toBeGreaterThan(failedLine);
+    expect(bat.indexOf('start "" "%target%"')).toBeGreaterThan(giveUp);
+  });
+  it('passes the relaunch args through the start line', () => {
+    const withArgs = buildInstallerBat({
+      pid: 1,
+      installer: 'C:\\u\\setup.exe',
+      target: 'C:\\p\\DevBar.exe',
+      relaunchArgs: ['--devbar-smoke'],
+    });
+    expect(withArgs).toContain('start "" "%target%" "--devbar-smoke"');
+  });
+  it('writes the success marker only on the installer+relaunch success path', () => {
+    // No markerPath → no marker line at all.
+    expect(bat).not.toContain('echo ok>');
+    const withMarker = buildInstallerBat({
+      pid: 1,
+      installer: 'C:\\u\\setup.exe',
+      target: 'C:\\p\\DevBar.exe',
+      markerPath: 'C:\\work\\install-ok',
+    });
+    const marker = withMarker.indexOf('echo ok> "C:\\work\\install-ok"');
+    const relaunch = withMarker.indexOf('start "" "%target%"');
+    const failExit = withMarker.indexOf(
+      'exit /b 1',
+      withMarker.indexOf('installer FAILED'),
+    );
+    expect(marker).toBeGreaterThan(-1);
+    // After the relaunch…
+    expect(marker).toBeGreaterThan(relaunch);
+    // …and only AFTER the installer-failure exit (a failed install must
+    // not mark success).
+    expect(marker).toBeGreaterThan(failExit);
   });
 });

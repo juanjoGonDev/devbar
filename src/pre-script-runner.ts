@@ -1,51 +1,17 @@
-import type {
-  Action,
-  Group,
-  LogEntry,
-  PreScript,
-  PreStep,
-  PreStepScriptRef,
-} from './domain-types.js';
-import { makeAggregatorId, makePreScriptId } from './compound-id.js';
+import type { Group, PreScript, PreStepScriptRef } from './domain-types.js';
+import { makeAggregatorId } from './compound-id.js';
 import { formatUptime } from './format-uptime.js';
 import { formatStepCount, formatStepMode } from './pipeline-labels.js';
+import {
+  runOne,
+  type ConfigStoreLike,
+  type OneResult,
+  type PreScriptProcessManager,
+  type RunHandle,
+  type RunnerStatus,
+} from './pre-script/run-one.js';
 
-interface ConfigStoreLike {
-  getGroup(groupId: string): Group | null;
-  getPreSteps(): PreStep[];
-}
-
-export interface PreScriptProcessManager {
-  pushLog(id: string, entry: LogEntry): void;
-  on(
-    event: 'log',
-    listener: (payload: { id: string; entry: LogEntry }) => void,
-  ): unknown;
-  on(
-    event: 'action:done',
-    listener: (payload: {
-      processId: string;
-      code: number | null;
-      group: Group;
-      target: Action | PreScript;
-    }) => void,
-  ): unknown;
-  removeListener(
-    event: 'log',
-    listener: (payload: { id: string; entry: LogEntry }) => void,
-  ): unknown;
-  removeListener(
-    event: 'action:done',
-    listener: (payload: {
-      processId: string;
-      code: number | null;
-      group: Group;
-      target: Action | PreScript;
-    }) => void,
-  ): unknown;
-  start(processId: string): { ok: boolean; error?: string | undefined };
-  stop(processId: string): Promise<{ ok: boolean; error?: string | undefined }>;
-}
+export type { PreScriptProcessManager } from './pre-script/run-one.js';
 
 /** Fired synchronously, at most once per step, in ascending step order. */
 export interface StepCompleteEvent {
@@ -72,17 +38,6 @@ interface RunnerDeps {
   ) => Promise<boolean>;
   cancelConfirm?: () => void;
 }
-type RunnerStatus = 'running' | 'done' | 'error' | 'idle';
-interface RunHandle {
-  runId: number;
-  aggregatorId: string;
-  cancelled: boolean;
-  childPids: Set<string>;
-  currentStep: number;
-  totalSteps: number;
-  status: RunnerStatus;
-  _timedOutScripts: Set<string>;
-}
 interface RecentResult {
   status: 'done' | 'error';
   error: string | null;
@@ -98,13 +53,6 @@ export type RunResult =
       runId?: number;
       aggregatorId?: string;
     };
-interface OneResult {
-  ok: boolean;
-  code: number | null;
-  error?: string | undefined;
-  cancelled?: boolean;
-  skipped?: boolean;
-}
 interface PipelineRunState {
   status: RunnerStatus;
   currentStep: number;
@@ -163,6 +111,18 @@ export function createPreScriptRunner({
    * message no longer repeats `Script "Grupo · Script"` in its text.
    */
   const pushScriptLog = pushSysLog;
+  /** `runOne` with this runner's collaborators already bound. */
+  const runScript = (
+    ref: PreStepScriptRef,
+    handle: RunHandle,
+  ): Promise<OneResult> =>
+    runOne(ref, handle, {
+      processManager,
+      configStore,
+      pushAggregatorLog,
+      pushScriptLog,
+      confirmScript,
+    });
   function setRecentResult(
     status: 'done' | 'error',
     error: string | null,
@@ -177,113 +137,6 @@ export function createPreScriptRunner({
         broadcastUpdate();
       }
     }, delayMs);
-  }
-
-  /**
-   * Resolves `ref` against its OWN group for every run-time concern (script
-   * definition, cwd, env) — never the step's or the pipeline's — since a
-   * step can now mix refs from different groups. An unresolvable ref (a
-   * dangling reference the write-time prune could not catch, e.g. hand-
-   * edited JSON) is skipped with a warning rather than failing the step: a
-   * leftover ref must not deadlock boot auto-start (D6).
-   */
-  async function runOne(
-    ref: PreStepScriptRef,
-    handle: RunHandle,
-  ): Promise<OneResult> {
-    const group = configStore.getGroup(ref.groupId);
-    const script = group?.preScripts.find(
-      (candidate) => candidate.id === ref.scriptId,
-    );
-    if (!group || !script) {
-      pushAggregatorLog(
-        handle.aggregatorId,
-        `── Referencia rota (grupo o script inexistente), omitida ──`,
-        'warn',
-      );
-      return { ok: true, code: null, skipped: true };
-    }
-    const pid = makePreScriptId(ref.groupId, script.id);
-    const groupPath = group.path.trim();
-    if (!groupPath) {
-      // An ordinary per-script failure, not a whole-pipeline abort: siblings
-      // already spawned in the same parallel step still complete.
-      pushScriptLog(pid, `── Sin ruta configurada en su grupo ──`, 'error');
-      return { ok: false, code: -1, error: 'no_group_path' };
-    }
-    if (script.confirm) {
-      const confirmed = confirmScript
-        ? await confirmScript(script, group, ref.groupId)
-        : false;
-      if (!confirmed) {
-        pushScriptLog(pid, `── Cancelado por el usuario ──`);
-        return {
-          ok: false,
-          code: -1,
-          error: 'confirm_declined',
-          cancelled: true,
-        };
-      }
-    }
-    handle.childPids.add(pid);
-    return new Promise<OneResult>((resolve) => {
-      let timeoutToken: NodeJS.Timeout | null = null;
-      const scriptStartedAt = Date.now();
-      const handler = ({
-        processId,
-        code,
-      }: {
-        processId: string;
-        code: number | null;
-      }): void => {
-        if (processId !== pid) return;
-        if (timeoutToken) {
-          clearTimeout(timeoutToken);
-          timeoutToken = null;
-        }
-        processManager.removeListener('action:done', handler);
-        handle.childPids.delete(pid);
-        const elapsed = formatUptime(Date.now() - scriptStartedAt),
-          ok = code === 0;
-        if (!handle._timedOutScripts.has(pid))
-          pushScriptLog(
-            pid,
-            ok
-              ? `── Finalizado correctamente (${elapsed}) ──`
-              : `── Ha fallado (salida ${code}, ${elapsed}) ──`,
-            ok ? null : 'error',
-          );
-        resolve({ ok, code });
-      };
-      processManager.on('action:done', handler);
-      if (script.timeoutMs) {
-        timeoutToken = setTimeout(() => {
-          pushScriptLog(
-            pid,
-            `── Ha excedido el tiempo límite (${formatUptime(Date.now() - scriptStartedAt)}) ──`,
-            'error',
-          );
-          handle._timedOutScripts.add(pid);
-          void processManager.stop(pid);
-        }, script.timeoutMs);
-      }
-      pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
-      const result = processManager.start(pid);
-      if (!result.ok) {
-        if (timeoutToken) {
-          clearTimeout(timeoutToken);
-          timeoutToken = null;
-        }
-        processManager.removeListener('action:done', handler);
-        handle.childPids.delete(pid);
-        pushScriptLog(
-          pid,
-          `── No ha podido arrancar: ${result.error ?? 'error desconocido'} ──`,
-          'error',
-        );
-        resolve({ ok: false, code: -1, error: result.error });
-      }
-    });
   }
 
   /**
@@ -353,7 +206,7 @@ export function createPreScriptRunner({
             stepOk = false;
             break;
           }
-          const result = await runOne(ref, handle);
+          const result = await runScript(ref, handle);
           if (result.cancelled) {
             pipelineCancelled = true;
             stepOk = false;
@@ -366,7 +219,7 @@ export function createPreScriptRunner({
         }
       } else {
         const results = await Promise.all(
-          step.scripts.map((ref) => runOne(ref, handle)),
+          step.scripts.map((ref) => runScript(ref, handle)),
         );
         if (
           results.some((result) => result.cancelled) &&
