@@ -1861,6 +1861,37 @@ fieldset.schedule-group legend {
   flex-wrap: wrap;
   margin: -4px 0 16px;
 }
+.update-progress {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: 6px;
+  margin: -8px 0 16px;
+  accent-color: var(--accent);
+}
+.update-progress[hidden],
+.update-help[hidden],
+.update-help [hidden] {
+  display: none;
+}
+.update-help {
+  margin: -8px 0 16px;
+}
+.update-help p {
+  margin: 0 0 6px;
+}
+.update-command {
+  display: block;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-family:
+    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', monospace;
+}
 
 .day-chips {
   display: flex;
@@ -2528,6 +2559,16 @@ dialog form {
   border-radius: 50%;
   background: #ff3b30;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.update-progress-label {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.update-progress-label[hidden] {
+  display: none;
 }
 
 /* ── Counter buttons (tray command sub-row) ───────────────────────────── */

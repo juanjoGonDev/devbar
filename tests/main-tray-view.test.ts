@@ -6,7 +6,7 @@ import {
   trayTooltip,
   type TrayMenuWindow,
 } from '../src/main/tray-view.js';
-import type { GroupState } from '../src/ipc-contract.js';
+import type { GroupState, UpdatePhase } from '../src/ipc-contract.js';
 import { makeGroup } from './helpers/main-fakes.js';
 
 function groupState(
@@ -102,6 +102,7 @@ describe('src/main/tray-view.ts', () => {
     const base = {
       availableUpdate: null,
       stagedUpdate: null,
+      updatePhase: { state: 'idle' } as UpdatePhase,
       logWindows: [],
       onApplyUpdate: () => undefined,
       onOpenConfig: () => undefined,
@@ -135,6 +136,119 @@ describe('src/main/tray-view.ts', () => {
         ...base,
         availableUpdate: { version: '1.3.0' },
         stagedUpdate: { version: '1.2.0' },
+      });
+      expect(first?.label).toBe('⬆︎ Actualizar a v1.3.0…');
+    });
+
+    it('shows the download percentage while the update downloads', () => {
+      const [first] = buildTrayMenuTemplate({
+        ...base,
+        availableUpdate: { version: '1.2.0' },
+        updatePhase: {
+          state: 'downloading',
+          version: '1.2.0',
+          received: 42,
+          total: 100,
+        },
+      });
+      expect(first?.label).toBe('⬆︎ Descargando v1.2.0 — 42 %');
+      expect(first?.enabled).toBe(false);
+    });
+
+    it('shows a plain "downloading" when the size is unknown', () => {
+      const [first] = buildTrayMenuTemplate({
+        ...base,
+        availableUpdate: { version: '1.2.0' },
+        updatePhase: {
+          state: 'downloading',
+          version: '1.2.0',
+          received: 42,
+          total: null,
+        },
+      });
+      expect(first?.label).toBe('⬆︎ Descargando v1.2.0…');
+    });
+
+    it.each<[UpdatePhase, string, boolean]>([
+      [
+        { state: 'verifying', version: '1.2.0' },
+        '⬆︎ Verificando v1.2.0…',
+        false,
+      ],
+      [
+        { state: 'installing', version: '1.2.0' },
+        '⬆︎ Instalando v1.2.0…',
+        false,
+      ],
+      [
+        { state: 'restarting', version: '1.2.0' },
+        '⬆︎ Reiniciando para instalar v1.2.0…',
+        false,
+      ],
+      [
+        { state: 'download-failed', version: '1.2.0', reason: 'x' },
+        '⬆︎ Reintentar la actualización a v1.2.0…',
+        true,
+      ],
+      [
+        {
+          state: 'install-failed',
+          version: '1.2.0',
+          reason: 'x',
+          path: '/tmp/a.deb',
+          command: null,
+        },
+        '⬆︎ Reintentar la actualización a v1.2.0…',
+        true,
+      ],
+      [
+        {
+          state: 'ready-to-install',
+          version: '1.2.0',
+          path: '/tmp/a.deb',
+          install: 'package',
+          command: 'sudo apt install /tmp/a.deb',
+        },
+        '⬆︎ Instalar v1.2.0 ahora',
+        true,
+      ],
+    ])('labels the %j phase', (updatePhase, label, enabled) => {
+      const [first] = buildTrayMenuTemplate({
+        ...base,
+        availableUpdate: { version: '1.2.0' },
+        updatePhase,
+      });
+      expect(first?.label).toBe(label);
+      expect(first?.enabled ?? true).toBe(enabled);
+    });
+
+    it('sends a manual install to the Updates pane instead of downloading again', () => {
+      const onApplyUpdate = vi.fn();
+      const onOpenConfig = vi.fn();
+      const [first] = buildTrayMenuTemplate({
+        ...base,
+        availableUpdate: { version: '1.2.0' },
+        updatePhase: {
+          state: 'ready-to-install',
+          version: '1.2.0',
+          path: '/tmp/a.AppImage',
+          install: 'manual',
+          command: null,
+        },
+        onApplyUpdate,
+        onOpenConfig,
+      });
+      expect(first?.label).toBe('⬆︎ v1.2.0 descargada — ver instrucciones…');
+      (first?.click as (() => void) | undefined)?.();
+      expect(onOpenConfig).toHaveBeenCalledTimes(1);
+      expect(onApplyUpdate).not.toHaveBeenCalled();
+    });
+
+    it('ignores a phase about a different version', () => {
+      const [first] = buildTrayMenuTemplate({
+        ...base,
+        availableUpdate: { version: '1.3.0' },
+        updatePhase: { state: 'installing', version: '1.2.0' },
       });
       expect(first?.label).toBe('⬆︎ Actualizar a v1.3.0…');
     });

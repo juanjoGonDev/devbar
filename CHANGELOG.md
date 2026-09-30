@@ -3,6 +3,40 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.9.8] - 2026-09-30
+
+### Corregido
+
+- **En Linux y Raspberry Pi, «Actualizar» no hacía nada visible.** La
+  descarga no enseñaba progreso, un fallo de descarga o de verificación
+  solo llegaba al popover de la bandeja (que en muchos paneles ni se
+  abre), y el `.deb` acababa en Descargas sin que nadie lo instalase.
+  Ahora el apartado de actualizaciones de Configuración muestra en todo
+  momento en qué punto está: comprobando, descargando —con porcentaje,
+  megas y barra de progreso—, verificando, lista para instalar,
+  instalando o el fallo concreto con su motivo y un botón «Reintentar».
+  La bandeja enseña el porcentaje junto a la versión y en su menú.
+- **Las instalaciones desde el `.deb` se actualizan solas.** Tras
+  descargar y verificar el paquete, «Instalar ahora» lo instala con el
+  gestor de paquetes (se pide la contraseña en el diálogo del sistema) y
+  DevBar se reinicia en la versión nueva. Si no se puede —no hay
+  `pkexec`, cancelas la contraseña o `apt` falla— el paquete se queda
+  descargado y tienes el comando exacto (`sudo apt install …`) con
+  botones para copiarlo, abrir la carpeta o reintentar.
+- **A quien usa la AppImage ya no se le ofrece el `.deb`.** Si la carpeta
+  de la AppImage no admite escritura, la nueva se descarga en Descargas,
+  ya ejecutable, con instrucciones y un botón para abrir la carpeta. Si
+  la actualización en sitio falla, el motivo se ve y se puede reintentar
+  sin reiniciar DevBar.
+- **«Al día» cuando en realidad no se había podido comprobar.** Un límite
+  de peticiones de GitHub, un corte de red o un tiempo de espera ahora se
+  muestran como «No se pudo comprobar: …» en vez de anunciar que no hay
+  versiones nuevas.
+- **El aviso de actualización ya no dice «Se abrirá la página de la
+  release»** cuando lo que hace es descargar el paquete, y los diálogos
+  ya no se abren colgados de una ventana oculta, donde algunos gestores
+  de ventanas los dejaban invisibles.
+
 ## [0.9.7] - 2026-09-22
 
 ### Corregido

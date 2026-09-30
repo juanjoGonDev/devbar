@@ -158,7 +158,8 @@ const trayContextMenu = (): ReturnType<typeof Menu.buildFromTemplate> =>
     availableUpdate: () => updater.available(),
     stagedUpdate: () => updater.staged(),
     logWindows: () => [...registry.logs.entries()],
-    onApplyUpdate: () => void updater.applyUpdate(),
+    updatePhase: () => updater.status().phase,
+    onApplyUpdate: () => void updater.applyUpdateAndReport(),
     onOpenConfig: () => appWindows.ensureConfigWindow(),
   });
 
@@ -219,7 +220,7 @@ const notifications = createNotifications({
   workArea: host.workArea,
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
-  applyUpdate: () => void updater.applyUpdate(),
+  applyUpdate: () => void updater.applyUpdateAndReport(),
   platform: process.platform,
 });
 
@@ -229,8 +230,7 @@ const updater = createUpdater({
   ...host,
   downloadFile,
   repo: UPDATE_REPO,
-  sendUpdateStatus: (payload) =>
-    sendToRenderers(registry, 'updates:status', payload),
+  send: (channel, payload) => sendToRenderers(registry, channel, payload),
   refreshTrayIcon: tray.refreshIcon,
   showBannerNotification: notifications.showBannerNotification,
   toast,

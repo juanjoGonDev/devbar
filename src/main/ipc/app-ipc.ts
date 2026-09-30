@@ -75,6 +75,8 @@ export interface AppIpcDeps {
     status: () => UpdateStatus;
     runUpdateCheck: (options?: { manual?: boolean }) => Promise<unknown>;
     applyUpdate: () => Promise<ApplyUpdateResult>;
+    copyInstallCommand: () => { ok: boolean; error?: string };
+    showDownloadedFile: () => { ok: boolean; error?: string };
   };
   /** stopAll wiped every log buffer, so a stale run id must not linger. */
   snapshots: { forgetPipelineRunId(): void };
@@ -118,6 +120,10 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
     deps.updater.runUpdateCheck({ manual: true }),
   );
   ipc.handle('updates:apply', () => deps.updater.applyUpdate());
+  // No arguments on purpose: the command and the file come from main's own
+  // update state, never from the renderer.
+  ipc.handle('updates:copyCommand', () => deps.updater.copyInstallCommand());
+  ipc.handle('updates:showDownload', () => deps.updater.showDownloadedFile());
   // Last 5 releases for the changelog modal, plus the repo's releases page.
   ipc.handle('updates:changelog', async () => ({
     releases: await deps.fetchReleases(5),

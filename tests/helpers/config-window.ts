@@ -228,5 +228,6 @@ export function updateStatus(version: string | null): UpdateStatus {
     staged: null,
     lastCheckAt: null,
     currentVersion: '0.0.0',
+    phase: { state: 'idle' },
   };
 }

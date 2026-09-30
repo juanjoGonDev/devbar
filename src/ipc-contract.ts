@@ -13,6 +13,9 @@ import type {
   StagedUpdate,
   ThemePreference,
 } from './domain-types.js';
+import type { UpdatePhase } from './update-phase-types.js';
+
+export type { UpdatePhase } from './update-phase-types.js';
 
 export type SilenceLevel = 'warn' | 'error';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
@@ -130,6 +133,7 @@ export interface UpdateStatus {
   staged: StagedUpdate | null;
   lastCheckAt: string | null;
   currentVersion: string;
+  phase: UpdatePhase;
 }
 export interface ImportPreview {
   groupsCount: number;
@@ -313,6 +317,12 @@ export interface DevBarApi {
   checkForUpdates(): Promise<UpdateStatus>;
   applyUpdate(): Promise<Record<string, unknown>>;
   onUpdateStatus(callback: (payload: UpdateStatus) => void): () => void;
+  /** Live phase pushes, download progress included. */
+  onUpdatePhase(callback: (phase: UpdatePhase) => void): () => void;
+  /** Copies the manual-install command of the current phase. */
+  copyUpdateCommand(): Promise<SimpleResult>;
+  /** Reveals the downloaded update file in the file manager. */
+  showUpdateDownload(): Promise<SimpleResult>;
   getIconBattery(): Promise<readonly IconBatteryItem[]>;
   exportConfig(): Promise<ExportResult>;
   importConfig(): Promise<ImportResult>;
