@@ -68,6 +68,14 @@ Release notes generated… -->`) ni el título vacío «What's Changed» que
   nombre del grupo el que se recorta con «…» si falta sitio. El contador
   de tiempo reserva su ancho para no empujar nada cada segundo.
 
+## [0.9.8] - 2026-09-30
+
+### Seguridad
+
+- **Electron actualizado a 43.7.5.** Corrige varias vulnerabilidades de
+  severidad alta de Electron 43.2.0, además de dependencias internas de
+  empaquetado (`undici`, `fast-uri`) con avisos de seguridad.
+
 ## [0.9.7] - 2026-09-22
 
 ### Corregido
