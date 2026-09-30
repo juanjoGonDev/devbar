@@ -3,6 +3,14 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.9.8] - 2026-09-30
+
+### Seguridad
+
+- **Electron actualizado a 43.7.5.** Corrige varias vulnerabilidades de
+  severidad alta de Electron 43.2.0, además de dependencias internas de
+  empaquetado (`undici`, `fast-uri`) con avisos de seguridad.
+
 ## [0.9.7] - 2026-09-22
 
 ### Corregido
