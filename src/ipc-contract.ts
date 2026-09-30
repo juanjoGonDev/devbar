@@ -1,7 +1,7 @@
 import type {
   Action,
-  AvailableUpdate,
   Command,
+  CustomIcon,
   GlobalSettings,
   Group,
   LogEntry,
@@ -10,23 +10,17 @@ import type {
   ProcessStatus,
   ReleaseSummary,
   SilencedPatterns,
-  StagedUpdate,
   ThemePreference,
 } from './domain-types.js';
-import type { UpdatePhase } from './update-phase-types.js';
+import type { SimpleResult } from './ipc-contract/simple-result.js';
+import type { UpdatesApi } from './ipc-contract/updates-api.js';
 
 export type { UpdatePhase } from './update-phase-types.js';
+export type { UpdateStatus } from './ipc-contract/updates-api.js';
 
 export type SilenceLevel = 'warn' | 'error';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
-type SimpleResult =
-  | { ok: true }
-  | {
-      ok: false;
-      error?: string | undefined;
-      canceled?: boolean;
-      cancelled?: boolean;
-    };
+
 export interface CommandRuntimeState {
   commandId: string;
   processId: string;
@@ -106,6 +100,7 @@ export interface LogListItem {
   type: 'command' | 'action' | 'prescript' | 'pipeline';
   name: string;
   icon: string | null;
+  iconColor: string | null;
   lineCount: number;
   status: ProcessStatus;
   warnCount: number;
@@ -119,22 +114,22 @@ export interface LogListGroup {
   groupId: string;
   groupName: string;
   groupIcon: string;
+  groupIconColor: string | null;
   items: LogListItem[];
 }
+/** One pickable icon: a Lucide name (what Group/Command/Action.icon store)
+ *  and the search tags it is found by. */
 export interface IconBatteryItem {
-  emoji: string;
-  label: string;
-  group: string;
-  keywords?: readonly string[];
+  name: string;
+  tags: readonly string[];
+  /** Spanish search terms, added by main from src/icon-search-es.ts. */
+  es?: readonly string[];
+  /** The name, translated word by word — the picker's tooltip. */
+  esName?: string;
 }
-export interface UpdateStatus {
-  available: AvailableUpdate | null;
-  /** Downloaded and unpacked — applying it is just a restart. */
-  staged: StagedUpdate | null;
-  lastCheckAt: string | null;
-  currentVersion: string;
-  phase: UpdatePhase;
-}
+export type CustomIconUploadResult =
+  | { ok: true; icon: CustomIcon }
+  | { ok: false; canceled?: boolean; error?: string };
 export interface ImportPreview {
   groupsCount: number;
   commandsCount: number;
@@ -230,7 +225,7 @@ interface DevSimulationApi {
   simulateToast(kind: 'ok' | 'error'): Promise<SimpleResult>;
 }
 
-export interface DevBarApi {
+export interface DevBarApi extends UpdatesApi {
   listGroups(): Promise<Group[]>;
   getGroupStates(): Promise<GroupState[]>;
   saveGroup(
@@ -313,17 +308,13 @@ export interface DevBarApi {
   testNotification(): Promise<SimpleResult>;
   dismissNotification(): Promise<SimpleResult>;
   notificationAction(action: NotificationAction): Promise<SimpleResult>;
-  getUpdateStatus(): Promise<UpdateStatus>;
-  checkForUpdates(): Promise<UpdateStatus>;
-  applyUpdate(): Promise<Record<string, unknown>>;
-  onUpdateStatus(callback: (payload: UpdateStatus) => void): () => void;
-  /** Live phase pushes, download progress included. */
-  onUpdatePhase(callback: (phase: UpdatePhase) => void): () => void;
-  /** Copies the manual-install command of the current phase. */
-  copyUpdateCommand(): Promise<SimpleResult>;
-  /** Reveals the downloaded update file in the file manager. */
-  showUpdateDownload(): Promise<SimpleResult>;
   getIconBattery(): Promise<readonly IconBatteryItem[]>;
+  listCustomIcons(): Promise<CustomIcon[]>;
+  /** Opens the file dialog in main; resolves once the image is stored. */
+  uploadCustomIcon(): Promise<CustomIconUploadResult>;
+  /** Asks for confirmation in main before deleting. */
+  deleteCustomIcon(id: string): Promise<{ ok: boolean; canceled?: boolean }>;
+  onCustomIconsChanged(callback: (icons: CustomIcon[]) => void): () => void;
   exportConfig(): Promise<ExportResult>;
   importConfig(): Promise<ImportResult>;
   confirmImport(args: {

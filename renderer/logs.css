@@ -656,7 +656,10 @@ main {
   font-style: italic;
 }
 .line.silenced::before {
-  content: '🔕';
+  /* Lucide bell-off (renderer/icons.css face); tests/icon-font.test.ts pins
+     the codepoint against the generated table. */
+  font-family: 'lucide';
+  content: '\e05a';
   font-size: 10px;
   user-select: none;
   margin-right: 2px;
@@ -715,6 +718,34 @@ footer {
     'Noto Color Emoji', sans-serif;
   font-size: 11px;
   flex-shrink: 0;
+}
+
+.footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.clear-selection-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #98989d;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.clear-selection-btn[hidden] {
+  display: none;
+}
+.clear-selection-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e5e5e7;
 }
 
 /* ================================================================

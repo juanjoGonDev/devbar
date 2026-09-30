@@ -10,7 +10,10 @@ import { wireUpdateChip } from './tray/update-chip.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
+import { hydrateIcons, icon } from './icon.js';
+import { watchCustomIcons } from './custom-icons.js';
 initTheme();
+hydrateIcons(document);
 const groupsEl = byId('groups', HTMLElement);
 const toastEl = byId('toast', HTMLElement);
 
@@ -73,23 +76,26 @@ function renderAlertsSummary(groupStates: GroupState[]): void {
   // view already pinned to that level.
   if (warns > 0)
     summary.appendChild(
-      alertButton('warn', `⚠ ${warns}`, `Ver los ${warns} warning(s) de todo`),
+      alertButton('warn', warns, `Ver los ${warns} warning(s) de todo`),
     );
   if (errs > 0)
     summary.appendChild(
-      alertButton('error', `✕ ${errs}`, `Ver los ${errs} error(es) de todo`),
+      alertButton('error', errs, `Ver los ${errs} error(es) de todo`),
     );
 }
 
 function alertButton(
   level: 'warn' | 'error',
-  label: string,
+  count: number,
   title: string,
 ): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = level === 'warn' ? 'warn-count' : 'error-count';
-  btn.textContent = label;
+  btn.append(
+    icon(level === 'warn' ? 'triangle-alert' : 'circle-x'),
+    ` ${count}`,
+  );
   btn.title = title;
   btn.addEventListener('click', () => {
     void window.api.openLogs({ scope: 'all', level });
@@ -99,7 +105,7 @@ function alertButton(
 
 // ─────────────────────── Global pipeline trigger ──────────────────────
 //
-// One global `▶▶` trigger/badge/cancel-chip/logs-button, replacing the
+// One global run-pipeline trigger/badge/cancel-chip/logs-button, replacing the
 // per-group ones (there is one pipeline now, not one per group). Rendered
 // once in the sticky header, not per group row.
 
@@ -118,8 +124,9 @@ function renderPipelineTrigger(state: PipelineState | null): void {
   triggerBtn.className = 'ghost prescripts-trigger';
   triggerBtn.title =
     state.status === 'running' ? 'Pipeline corriendo…' : 'Ejecutar pipeline';
+  triggerBtn.setAttribute('aria-label', triggerBtn.title);
   triggerBtn.dataset.prestepStatus = state.status;
-  triggerBtn.textContent = '▶▶';
+  triggerBtn.append(icon('fast-forward'));
   triggerBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (state.status === 'running') {
@@ -166,7 +173,8 @@ function renderPipelineTrigger(state: PipelineState | null): void {
     const cancelChip = document.createElement('button');
     cancelChip.className = 'ghost prestep-cancel';
     cancelChip.title = 'Cancelar pipeline';
-    cancelChip.textContent = '×';
+    cancelChip.setAttribute('aria-label', cancelChip.title);
+    cancelChip.append(icon('x'));
     cancelChip.addEventListener('click', (e) => {
       e.stopPropagation();
       window.api.cancelPreScripts();
@@ -175,13 +183,14 @@ function renderPipelineTrigger(state: PipelineState | null): void {
   } else if (state.status === 'done') {
     const badge = document.createElement('span');
     badge.className = 'prestep-badge ok';
-    badge.textContent = '✓';
+    badge.title = 'Pipeline completado';
+    badge.append(icon('check'));
     host.appendChild(badge);
   } else if (state.status === 'error') {
     const badge = document.createElement('span');
     badge.className = 'prestep-badge err';
     badge.title = state.lastError || 'Error en el pipeline';
-    badge.textContent = '✕';
+    badge.append(icon('x'));
     host.appendChild(badge);
   }
 
@@ -191,7 +200,8 @@ function renderPipelineTrigger(state: PipelineState | null): void {
     const logsBtn = document.createElement('button');
     logsBtn.className = 'ghost prestep-logs-btn';
     logsBtn.title = 'Ver logs del pipeline';
-    logsBtn.textContent = '📋';
+    logsBtn.setAttribute('aria-label', logsBtn.title);
+    logsBtn.append(icon('scroll-text'));
     logsBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       window.api.openLogs(`pre-pipeline:${state.lastRunId}`);
@@ -386,3 +396,4 @@ if (window.api.getAppVersion) {
 wireUpdateChip();
 
 installTooltips();
+watchCustomIcons();

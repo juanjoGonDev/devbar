@@ -7,6 +7,8 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { makePreScriptId } from '../compound-id.js';
+import { DEFAULT_GROUP_ICON } from './icon-migration.js';
+import { normalizeIconColor } from '../icon-color.js';
 import {
   DEFAULT_ERROR_REGEX,
   DEFAULT_WARN_REGEX,
@@ -143,6 +145,7 @@ export function normalizeCommand(value: unknown): Command {
     id: stringValue(raw.id) || uuidv4(),
     name: stringValue(raw.name).trim() || 'Unnamed',
     icon: typeof raw.icon === 'string' && raw.icon ? raw.icon : null,
+    iconColor: normalizeIconColor(raw.iconColor),
     command: stringValue(raw.command).trim(),
     args: stringArray(raw.args),
     env: normalizeEnvEntries(raw.env),
@@ -174,6 +177,7 @@ export function normalizeAction(value: unknown): Action {
     id: stringValue(raw.id) || uuidv4(),
     name: stringValue(raw.name).trim() || 'Unnamed',
     icon: typeof raw.icon === 'string' && raw.icon ? raw.icon : null,
+    iconColor: normalizeIconColor(raw.iconColor),
     command: stringValue(raw.command).trim(),
     args: stringArray(raw.args),
     env: normalizeEnvEntries(raw.env),
@@ -248,7 +252,8 @@ export function normalizeGroup(value: unknown): Group {
   return {
     id: stringValue(raw.id) || uuidv4(),
     name: stringValue(raw.name).trim() || 'Servicios',
-    icon: stringValue(raw.icon) || '📦',
+    icon: stringValue(raw.icon) || DEFAULT_GROUP_ICON,
+    iconColor: normalizeIconColor(raw.iconColor),
     path: stringValue(raw.path).trim(),
     mode: raw.mode === 'single' ? 'single' : 'multi',
     order: typeof raw.order === 'number' ? raw.order : 0,

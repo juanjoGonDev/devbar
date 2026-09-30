@@ -99,17 +99,19 @@ body.tray {
 .tray-header .spacer {
   flex: 1;
 }
+/* Header buttons are icon chrome: neutral text colour, like the power
+   button. The accent is reserved for meaning (primary, links, selection). */
 .tray-header button.ghost {
   font-size: 12px;
   padding: 3px 9px;
   background: transparent;
   border: none;
-  color: var(--accent);
+  color: inherit;
   border-radius: 5px;
   font-weight: 400;
 }
 .tray-header button.ghost:hover {
-  background: rgba(0, 122, 255, 0.1);
+  background: var(--bg-row-hover);
 }
 .tray-header button.ghost.danger {
   color: var(--error);
@@ -122,9 +124,11 @@ body.tray {
   font-size: 14px;
   line-height: 1;
   padding: 4px 6px;
+  display: inline-flex;
+  align-items: center;
 }
 .tray-header button.ghost.danger.icon-only {
-  color: inherit; /* ⏹ glyph reads better neutral; hover tints it red */
+  color: inherit; /* the power icon reads better neutral; hover tints it red */
 }
 .tray-header button.ghost.danger.icon-only:hover {
   color: var(--error);
@@ -166,12 +170,11 @@ body.tray {
   background: rgba(0, 0, 0, 0.08);
 }
 
-/* Group-level log button: same 📜 as the per-command ones, kept quiet until
-   the row is under the cursor so it does not compete with the group name. */
+/* Group-level log button: same icon as the per-command ones, kept quiet
+   until the row is under the cursor so it does not compete with the group
+   name. Its box comes from the shared row-button rule below. */
 .group-row .group-logs-btn {
-  flex-shrink: 0;
   font-size: 12px;
-  padding: 2px 5px;
   opacity: 0.55;
 }
 .group-row:hover .group-logs-btn,
@@ -491,7 +494,7 @@ body.config {
 }
 .pane-collapse:hover {
   background: var(--bg-row-hover);
-  color: var(--accent);
+  color: inherit;
   filter: none;
 }
 .config-nav.collapsed .nav-top {
@@ -648,7 +651,9 @@ body.config {
   display: none;
 }
 .logs-group > summary::before {
-  content: '›';
+  /* Lucide chevron-right (renderer/icons.css face). */
+  font-family: 'lucide';
+  content: '\e06f';
   color: var(--muted);
   margin-right: 8px;
   display: inline-block;
@@ -1076,7 +1081,7 @@ dialog h2 {
 }
 
 /* ── Shared modal system (renderer/modal.js) ─────────────────────────
-   One look for every in-window modal: honest × close, sticky header,
+   One look for every in-window modal: honest close (x) icon, sticky header,
    scrolling body, optional sticky footer actions. No fake traffic lights
    (an HTML <dialog> can't host the native ones). Used by the changelog
    (renderer/changelog.js) and the command editor (#sub-dialog).          */
@@ -1186,9 +1191,11 @@ dialog h2 {
   display: none;
 }
 .cl-rel-summary::before {
-  content: '›';
+  /* Lucide chevron-right (renderer/icons.css face). */
+  font-family: 'lucide';
+  content: '\e06f';
   color: var(--muted);
-  font-size: 15px;
+  font-size: 13px;
   line-height: 1;
   transition: transform 0.15s ease;
 }
@@ -1375,6 +1382,7 @@ dialog h2 {
 .group-icon {
   font-size: 14px;
   flex-shrink: 0;
+  display: inline-flex;
 }
 
 .group-name {
@@ -1403,16 +1411,17 @@ dialog h2 {
   font-size: 10px;
   color: var(--error);
   flex-shrink: 0;
+  display: inline-flex;
 }
 
-/* Branch selector in group row.
- * Allowed to shrink when the row is crowded (e.g. while a pre-scripts
- * pipeline is running and adds badge + cancel + logs buttons on the
- * right). min-width keeps the input readable; ellipsis preserves the
- * branch name visually. */
+/* Branch selector in group row: a FIXED slot. It used to shrink when the
+ * row got crowded (an uptime or error badge appearing), which slid every
+ * control to its left — the logs button above all. The group name absorbs
+ * the squeeze instead (it truncates). The same basis as .combobox, so the
+ * invisible stand-in on non-git rows reserves exactly the same width. */
 .branch-select {
-  flex: 0 1 110px;
-  min-width: 56px;
+  flex: 0 0 110px;
+  min-width: 0;
   font-size: 11px;
   padding: 2px 4px;
   border-radius: 4px;
@@ -1538,13 +1547,11 @@ dialog h2 {
 
 /* Caret button */
 .caret-btn {
-  padding: 2px 6px;
-  font-size: 11px;
+  font-size: 12px;
   border: none;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  flex-shrink: 0;
 }
 .caret-btn:hover {
   color: inherit;
@@ -1599,14 +1606,12 @@ dialog h2 {
 }
 
 .cmd-sub-btn {
-  padding: 2px 5px;
-  font-size: 11px;
+  font-size: 12px;
   border: none;
   background: transparent;
   cursor: pointer;
   border-radius: 4px;
   color: var(--muted);
-  flex-shrink: 0;
 }
 .cmd-sub-btn:hover {
   color: inherit;
@@ -1618,7 +1623,7 @@ dialog h2 {
 .cmd-sub-btn.start-btn {
   color: var(--running);
 }
-/* Auto-start ⚡ toggle: muted when off, accent when on */
+/* Auto-start toggle: muted when off, accent when on */
 .cmd-sub-btn.autostart-btn {
   color: var(--muted);
   opacity: 0.5;
@@ -1635,6 +1640,18 @@ dialog h2 {
   padding: 4px 6px 2px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The rules either side of the label (formerly box-drawing characters,
+   whose width depended on the platform's font). */
+.actions-divider::before,
+.actions-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-strong);
 }
 
 .actions-row {
@@ -1650,6 +1667,7 @@ dialog h2 {
   gap: 2px;
 }
 .action-chip {
+  gap: 4px;
   padding: 2px 8px;
   font-size: 11px;
   border-radius: 12px;
@@ -1668,12 +1686,9 @@ dialog h2 {
   filter: none;
 }
 .action-logs-btn {
-  padding: 2px 5px;
-  font-size: 11px;
-  height: 24px;
+  font-size: 12px;
   border: none;
   background: transparent;
-  box-shadow: none;
   color: var(--muted);
   border-radius: 8px;
   cursor: pointer;
@@ -2156,7 +2171,7 @@ fieldset.schedule-group legend {
   outline-offset: -1px;
 }
 
-/* Category tab bar (macOS-style). */
+/* Tab bar: recent picks / every icon. */
 .icon-tabs {
   display: flex;
   gap: 1px;
@@ -2167,7 +2182,7 @@ fieldset.schedule-group legend {
 .icon-tab {
   flex: 1 1 0;
   min-width: 0;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
   padding: 4px 0;
   border: none;
@@ -2185,7 +2200,7 @@ fieldset.schedule-group legend {
   background: rgba(0, 122, 255, 0.14);
 }
 
-/* Scroll container holding the active category's grid. */
+/* Scroll container holding the active tab's grid. */
 .icon-grid-scroll {
   max-height: 260px;
   overflow-x: hidden;
@@ -2199,7 +2214,9 @@ fieldset.schedule-group legend {
 }
 
 .icon-cell {
-  font-size: 18px;
+  font-size: 17px;
+  color: inherit;
+  box-shadow: none;
   width: 100%;
   min-width: 0;
   height: 30px;
@@ -2216,6 +2233,181 @@ fieldset.schedule-group legend {
 }
 .icon-cell:hover {
   background: var(--bg-row-hover);
+}
+
+/* "Mis iconos": uploaded images, each with a delete button on hover. */
+.icon-custom-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.icon-custom-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon-custom-empty {
+  padding: 6px 2px;
+}
+.icon-cell-wrap {
+  position: relative;
+}
+.icon-cell-delete {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  font-size: 9px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  background: var(--error);
+}
+.icon-cell-wrap:hover .icon-cell-delete,
+.icon-cell-delete:focus-visible {
+  display: inline-flex;
+}
+
+/* Icon colour: a split button — the icon button and a narrow colour segment
+   under one border — whose segment opens a small palette. */
+.icon-split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-card-strong);
+}
+/* The split owns the border; its icon button keeps its box, 2px smaller. */
+.icon-split > .icon-btn {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 7px 0 0 7px;
+}
+.icon-split > .sf-icon-btn {
+  width: 34px;
+  height: 34px;
+}
+.icon-split.is-image > .icon-btn {
+  border-radius: 7px;
+}
+/* Every piece below is a <button>, so each one undoes the base button chrome
+   (gradient background-image, padding, shadow) it would otherwise inherit. */
+.icon-color-trigger {
+  width: 22px;
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0 7px 7px 0;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1;
+}
+.icon-color-trigger:hover,
+.icon-color-trigger[aria-expanded='true'] {
+  background-color: var(--bg-row-hover);
+}
+.icon-color-trigger[hidden] {
+  display: none;
+}
+.icon-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+.icon-color-dot.is-empty {
+  background: var(--border-strong);
+}
+.icon-color-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: -1px;
+  z-index: 150;
+  display: grid;
+  grid-template-columns: repeat(6, 18px);
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-card-strong);
+  backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.icon-color-popover:focus {
+  outline: none;
+}
+.icon-color-popover[hidden] {
+  display: none;
+}
+.icon-color-popover .icon-color-swatch,
+.icon-color-popover .icon-color-reset,
+.icon-color-popover .icon-color-custom-btn {
+  width: 18px;
+  height: 18px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 50%;
+  background-image: none;
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: normal;
+  line-height: 1;
+  cursor: pointer;
+}
+.icon-color-popover .icon-color-reset,
+.icon-color-popover .icon-color-custom-btn {
+  background-color: transparent;
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+.icon-color-popover button:hover {
+  filter: none;
+  transform: scale(1.12);
+}
+.icon-color-popover button:focus-visible,
+.icon-color-popover button[aria-pressed='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Visually hidden, not display:none: .click() must still open the OS panel. */
+.icon-color-custom {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Sub-dialog icon field */
@@ -2237,6 +2429,7 @@ fieldset.schedule-group legend {
   font-size: 12px;
   flex-shrink: 0;
   line-height: 1;
+  display: inline-flex;
 }
 
 /* ── Backup / Restore actions ── */
@@ -2247,12 +2440,15 @@ fieldset.schedule-group legend {
 }
 
 /* ── Uptime label ────────────────────────────────────────────────── */
+/* min-width holds the widest common value ("59m 59s") so the label does not
+   grow and shrink as it ticks — each change of width used to nudge the row. */
 .uptime {
   font-size: 11px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   white-space: nowrap;
+  min-width: 7ch;
 }
 
 /* ── Single-mode uptime label (next to cmd-select) ─────────────── */
@@ -2266,8 +2462,8 @@ fieldset.schedule-group legend {
 
 /* ── Combobox ────────────────────────────────────────────────────── */
 .combobox {
-  flex: 0 1 110px;
-  min-width: 56px;
+  flex: 0 0 110px;
+  min-width: 0;
   position: relative;
 }
 .combobox-input {
@@ -2325,9 +2521,9 @@ fieldset.schedule-group legend {
   flex-shrink: 0;
   width: 14px;
   color: var(--running);
-  font-weight: 700;
-  text-align: center;
-  font-size: 11px;
+  display: inline-flex;
+  justify-content: center;
+  font-size: 12px;
 }
 /* Reserve the check column on non-current items so labels line up. */
 .combobox-item:not(.is-current) .combobox-label {
@@ -2562,6 +2758,9 @@ dialog form {
 }
 
 .update-progress-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
@@ -2642,12 +2841,10 @@ dialog form {
 
 /* ── Pre-scripts: tray row trigger + badge ───────────────────────────── */
 
-/* ▶▶ trigger button */
+/* Run-pipeline trigger button */
 .prescripts-trigger {
-  font-size: 10px;
-  padding: 1px 5px;
+  font-size: 12px;
   border-radius: 4px;
-  flex-shrink: 0;
   opacity: 0.7;
 }
 .prescripts-trigger:hover {
@@ -2668,7 +2865,7 @@ dialog form {
   }
 }
 
-/* Status badge (paso N/M, ✓, ✕).
+/* Status badge (paso N/M, check, x).
  * Responsive: shrinks before the branch selector but never below ~36px
  * (enough to show a short uptime like "9s"). Full info lives in the
  * `title` attribute so the user can hover for context. */
@@ -2711,10 +2908,8 @@ dialog form {
 
 /* Cancel chip */
 .prestep-cancel {
-  font-size: 11px;
-  padding: 0 4px;
+  font-size: 12px;
   border-radius: 4px;
-  flex-shrink: 0;
   opacity: 0.6;
 }
 .prestep-cancel:hover {
@@ -2723,10 +2918,36 @@ dialog form {
 
 /* Logs opener button (small, icon-only) */
 .prestep-logs-btn {
-  font-size: 10px;
-  padding: 0 3px;
-  flex-shrink: 0;
+  font-size: 12px;
   opacity: 0.5;
+}
+
+/*
+ * Every icon button of a tray row (and of the header's pipeline controls)
+ * shares ONE fixed square box. A button used
+ * to be glyph advance + padding, so ■ vs ▶ (different advances, and on
+ * Windows different fonts) changed its width — and every control to its
+ * left moved when a script started. Same box in every state, no inherited
+ * bezel (the base `button` rule's shadow and weight).
+ */
+.group-row .group-logs-btn,
+.caret-btn,
+.cmd-sub-btn,
+.action-logs-btn,
+.tray-header button.ghost.prescripts-trigger,
+.tray-header button.ghost.prestep-cancel,
+.tray-header button.ghost.prestep-logs-btn {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: none;
+  font-weight: 400;
 }
 .prestep-logs-btn:hover {
   opacity: 1;

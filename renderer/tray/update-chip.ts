@@ -1,3 +1,4 @@
+import { icon, type IconName } from '../icon.js';
 import { latestWins } from '../latest-wins.js';
 import type { UpdatePhase, UpdateStatus } from '../../src/ipc-contract.js';
 
@@ -18,26 +19,43 @@ function markVersionUpdate(status: UpdateStatus): void {
     : 'Ver changelog';
 }
 
-function phaseLabel(
-  phase: UpdatePhase,
-): { text: string; title: string } | null {
+interface PhaseLabel {
+  icon: IconName;
+  text: string;
+  title: string;
+}
+
+function phaseLabel(phase: UpdatePhase): PhaseLabel | null {
   switch (phase.state) {
     case 'downloading':
       return {
+        icon: 'arrow-down',
         text: phase.total
           ? `Descargando ${Math.floor((phase.received / phase.total) * 100)} %`
           : 'Descargando…',
         title: `Descargando v${phase.version}`,
       };
     case 'verifying':
-      return { text: 'Verificando…', title: `Verificando v${phase.version}` };
+      return {
+        icon: 'clock',
+        text: 'Verificando…',
+        title: `Verificando v${phase.version}`,
+      };
     case 'installing':
-      return { text: 'Instalando…', title: `Instalando v${phase.version}` };
+      return {
+        icon: 'package',
+        text: 'Instalando…',
+        title: `Instalando v${phase.version}`,
+      };
     case 'check-failed':
     case 'download-failed':
     case 'verify-failed':
     case 'install-failed':
-      return { text: 'Actualización fallida', title: phase.reason };
+      return {
+        icon: 'triangle-alert',
+        text: 'Actualización fallida',
+        title: phase.reason,
+      };
     default:
       return null;
   }
@@ -48,7 +66,8 @@ function showPhase(phase: UpdatePhase): void {
   if (!el) return;
   const label = phaseLabel(phase);
   el.hidden = label === null;
-  el.textContent = label?.text ?? '';
+  el.replaceChildren();
+  if (label) el.append(icon(label.icon), ` ${label.text}`);
   el.title = label?.title ?? '';
 }
 

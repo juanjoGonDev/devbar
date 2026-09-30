@@ -1,6 +1,6 @@
 {
   "name": "devbar",
-  "version": "0.9.8",
+  "version": "0.10.0",
   "description": "Menu bar service launcher for macOS, Windows and Linux",
   "main": "build/src/main.js",
   "packageManager": "pnpm@10.32.1",
@@ -33,6 +33,7 @@
     "quality": "pnpm typecheck && pnpm lint:strict && pnpm deadcode && pnpm deps:check && pnpm test",
     "postinstall": "node --experimental-strip-types scripts/install-hooks.ts",
     "build": "node --experimental-strip-types scripts/build.ts",
+    "generate:icons": "node --experimental-strip-types scripts/generate-icons.ts",
     "typecheck": "pnpm typecheck:node && pnpm typecheck:preload && pnpm typecheck:renderer && pnpm typecheck:tests",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
     "typecheck:preload": "tsc -p tsconfig.preload.json --noEmit",
@@ -50,7 +51,7 @@
     "@vitest/coverage-v8": "5.0.1",
     "@vitest/eslint-plugin": "1.6.27",
     "dependency-cruiser": "18.4.0",
-    "electron": "43.2.0",
+    "electron": "43.7.5",
     "electron-builder": "26.16.1",
     "esbuild": "0.28.2",
     "eslint": "10.11.0",
@@ -59,6 +60,7 @@
     "jsdom": "27.0.0",
     "knip": "6.37.0",
     "lefthook": "2.1.14",
+    "lucide-static": "1.48.0",
     "prettier": "3.9.8",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1",
@@ -72,11 +74,12 @@
   "pnpm": {
     "overrides": {
       "@xmldom/xmldom": "0.9.12",
-      "fast-uri": "3.1.7",
+      "fast-uri": "3.1.8",
       "js-yaml": "4.3.2",
       "nanoid": "3.3.18",
       "brace-expansion@>=4.0.0 <5.0.9": ">=5.0.9",
-      "@types/electron-positioner>electron": "43.2.0"
+      "undici@>=7.24.1 <7.29.1": "7.29.1",
+      "@types/electron-positioner>electron": "43.7.5"
     },
     "onlyBuiltDependencies": [
       "lefthook"

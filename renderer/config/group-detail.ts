@@ -1,3 +1,6 @@
+import { icon, userIcon } from '../icon.js';
+import { customIconIdOf } from '../../src/custom-icons.js';
+import { createIconColorControl } from './icon-color-control.js';
 import { buildEnvEditor, type EnvSectionElement } from './env-editor.js';
 import type { Group } from '../../src/domain-types.js';
 import type { GroupStore } from './group-store.js';
@@ -12,7 +15,7 @@ export interface GroupDetailDeps {
   subLists: SubLists;
   openIconPicker(
     anchorEl: HTMLElement,
-    onSelect: (emoji: string) => void,
+    onSelect: (value: string) => void,
   ): void;
   loadGroups(): Promise<void>;
   renderGroupsList(): void;
@@ -119,24 +122,41 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     const header = document.createElement('div');
     header.className = 'detail-header';
 
-    // Icon picker button
+    // Icon picker button, joined with its colour segment.
+    let iconValue = group.icon;
+    let iconColor = group.iconColor;
     const iconBtn = document.createElement('button');
+    iconBtn.type = 'button';
     iconBtn.className = 'icon-btn';
     iconBtn.title = 'Cambiar icono';
-    iconBtn.textContent = group.icon || '📦';
+    iconBtn.setAttribute('aria-label', iconBtn.title);
     iconBtn.dataset.groupId = group.id;
+    const colorControl = createIconColorControl(iconBtn, (value) => {
+      iconColor = value;
+      paintIcon();
+      store.mutateDraft((d) => {
+        d.iconColor = value;
+      });
+    });
+    function paintIcon(): void {
+      iconBtn.replaceChildren(userIcon(iconValue, 'package', iconColor));
+      colorControl.setImage(customIconIdOf(iconValue) !== null);
+    }
+    colorControl.set(iconColor);
+    paintIcon();
     iconBtn.addEventListener('click', (e) => {
       deps.openIconPicker(
         e.currentTarget as HTMLButtonElement,
-        (emoji: string) => {
-          iconBtn.textContent = emoji;
+        (value: string) => {
+          iconValue = value;
+          paintIcon();
           store.mutateDraft((d) => {
-            d.icon = emoji;
+            d.icon = value;
           });
         },
       );
     });
-    header.appendChild(iconBtn);
+    header.append(colorControl.el);
 
     // Name input
     const nameInput = document.createElement('input');
@@ -179,7 +199,8 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     grpPathPickBtn.id = 'grp-path-pick';
     grpPathPickBtn.className = 'icon-action-btn';
     grpPathPickBtn.title = 'Seleccionar carpeta…';
-    grpPathPickBtn.textContent = '📁';
+    grpPathPickBtn.setAttribute('aria-label', grpPathPickBtn.title);
+    grpPathPickBtn.append(icon('folder-open'));
     pathPickerContainer.appendChild(grpPathPickBtn);
     grpPathPickBtn.addEventListener('click', async () => {
       const res = await window.api.pickFolder(pathInput.value || undefined);

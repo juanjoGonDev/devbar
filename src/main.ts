@@ -27,6 +27,7 @@ import { loadShellPath, expandTilde } from './path-helper.js';
 import { RepoWatcher } from './repo-watcher.js';
 import { createPreScriptRunner } from './pre-script-runner.js';
 import { ICON_BATTERY } from './icon-battery.js';
+import { withSpanishSearch } from './icon-search.js';
 import { createAppWindows } from './main/app-windows.js';
 import { createConfirmQueue } from './main/confirm-queue.js';
 import { registerDevPanel } from './main/dev-panel.js';
@@ -134,11 +135,8 @@ const snapshots = createStateSnapshots({
 function broadcast(): void {
   const payload = snapshots.snapshotGroupStates();
   sendToRenderers(registry, 'groups:update', payload);
-  sendToRenderers(
-    registry,
-    'pipeline:update',
-    snapshots.snapshotPipelineState(),
-  );
+  const pipeline = snapshots.snapshotPipelineState();
+  sendToRenderers(registry, 'pipeline:update', pipeline);
   tray.updateTitle(payload);
 }
 const toast = (kind: string, message: string): void =>
@@ -366,7 +364,9 @@ function registerIpc(): void {
     fetchReleases: (limit) =>
       updateCheck.fetchReleases({ ...UPDATE_REPO, limit }),
     releasesUrl: `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}/releases`,
-    iconBattery: ICON_BATTERY,
+    iconBattery: withSpanishSearch(ICON_BATTERY),
+    customIconsChanged: (icons) =>
+      sendToRenderers(registry, 'customIcons:changed', icons),
   });
   registerDevPanel(
     host.devPanelAvailable,

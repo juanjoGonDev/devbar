@@ -100,6 +100,8 @@ export function buildTrayContextMenu(
 /**
  * The update entry for a phase about `version`, or null to fall back to the
  * plain "update / restart" wording. A running step is shown but disabled.
+ * Labels are plain text: a native menu cannot use the bundled icon font, and
+ * a symbol glyph renders differently (or as tofu) per OS.
  */
 function phaseMenuItem(
   phase: UpdatePhase,
@@ -116,31 +118,31 @@ function phaseMenuItem(
     case 'downloading':
       return busy(
         phase.total
-          ? `⬆︎ Descargando v${version} — ${Math.floor((phase.received / phase.total) * 100)} %`
-          : `⬆︎ Descargando v${version}…`,
+          ? `Descargando v${version} — ${Math.floor((phase.received / phase.total) * 100)} %`
+          : `Descargando v${version}…`,
       );
     case 'verifying':
-      return busy(`⬆︎ Verificando v${version}…`);
+      return busy(`Verificando v${version}…`);
     case 'installing':
-      return busy(`⬆︎ Instalando v${version}…`);
+      return busy(`Instalando v${version}…`);
     case 'restarting':
-      return busy(`⬆︎ Reiniciando para instalar v${version}…`);
+      return busy(`Reiniciando para instalar v${version}…`);
     case 'download-failed':
     case 'verify-failed':
     case 'install-failed':
       return {
-        label: `⬆︎ Reintentar la actualización a v${version}…`,
+        label: `Reintentar la actualización a v${version}…`,
         click: () => onApplyUpdate(),
       };
     case 'ready-to-install':
       if (phase.install === 'package')
         return {
-          label: `⬆︎ Instalar v${version} ahora`,
+          label: `Instalar v${version} ahora`,
           click: () => onApplyUpdate(),
         };
       if (phase.install === 'manual')
         return {
-          label: `⬆︎ v${version} descargada — ver instrucciones…`,
+          label: `v${version} descargada — ver instrucciones…`,
           click: () => onOpenConfig(),
         };
       return null;
@@ -169,8 +171,8 @@ export function buildTrayMenuTemplate({
         onOpenConfig,
       ) ?? {
         label: ready
-          ? `⬆︎ Reiniciar e instalar v${availableUpdate.version}`
-          : `⬆︎ Actualizar a v${availableUpdate.version}…`,
+          ? `Reiniciar e instalar v${availableUpdate.version}`
+          : `Actualizar a v${availableUpdate.version}…`,
         click: () => onApplyUpdate(),
       },
     );

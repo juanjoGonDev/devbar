@@ -44,4 +44,28 @@ describe('renderMarkdown', () => {
     expect(renderMarkdown('')).toBe('');
     expect(renderMarkdown(null)).toBe('');
   });
+
+  it('drops a heading with no content before the next heading', () => {
+    const html = renderMarkdown(
+      "## What's Changed\n### Changes\n* one\n\n## Kept\ntext\n## Trailing",
+    );
+    expect(html).not.toContain('What');
+    expect(html).toContain('<h4>Changes</h4>');
+    expect(html).toContain('<h3>Kept</h3>');
+    expect(html).not.toContain('Trailing');
+  });
+
+  it('drops comments that only form once an inner one is removed', () => {
+    const html = renderMarkdown('<!<!-- a -->-- b -->text');
+    expect(html).toBe('<p>text</p>');
+  });
+
+  it('drops HTML comments, including ones spanning lines', () => {
+    const md =
+      '<!-- Release notes generated using configuration in .github/release.yml at v0.9.7 -->\n## Changes\n<!-- a\nb -->\n- one';
+    const html = renderMarkdown(md);
+    expect(html).not.toContain('Release notes generated');
+    expect(html).not.toContain('&lt;!--');
+    expect(html).toContain('one');
+  });
 });

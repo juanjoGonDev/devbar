@@ -6,6 +6,7 @@
  * write here is guarded against rewriting the same string.
  */
 import { canRun, isRunning, runtimeOf } from '../log-status.js';
+import { icon } from '../icon.js';
 import { dropPendingQueue } from './status.js';
 import { renderLevelChips, resetBuffer } from './pane.js';
 import {
@@ -48,8 +49,9 @@ export function renderHeaderRunState(): void {
   runBtn.style.display = runnable ? '' : 'none';
   if (runnable) {
     const running = isRunning(item);
-    runBtn.textContent = running ? '■' : '▶';
+    runBtn.replaceChildren(icon(running ? 'square' : 'play'));
     runBtn.title = running ? 'Parar' : 'Arrancar';
+    runBtn.setAttribute('aria-label', runBtn.title);
     runBtn.classList.toggle('on', running);
   }
   const runtime = runtimeOf(item);

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -48,7 +49,7 @@ function editButtonIn(selector: string): HTMLButtonElement {
   const row = document.querySelector<HTMLElement>(selector);
   const found = [
     ...(row?.querySelectorAll<HTMLButtonElement>('button') ?? []),
-  ].find((b) => b.textContent === '✎');
+  ].find((b) => b.title === 'Editar');
   if (!found) throw new Error(`no edit button in ${selector}`);
   return found;
 }
@@ -87,7 +88,7 @@ describe('renderer/config/sub-dialog.ts', () => {
       expect(el('sf-inherit-group-env-row').style.display).toBe('none');
       expect(el('sf-timeout-row').style.display).toBe('none');
       expect(el<HTMLElement>('sf-schedule-group').style.display).toBe('');
-      expect(input('sf-icon-btn').textContent).toBe('⚙️');
+      expect(iconText(input('sf-icon-btn'))).toBe('[terminal]');
       expect(input('sf-warn').value).toContain('warn');
       expect(input('sf-error').value).toContain('error');
     });
@@ -152,7 +153,7 @@ describe('renderer/config/sub-dialog.ts', () => {
     it('starts a new action with the wand icon', async () => {
       await open({});
       click(addButton('+ Añadir acción'));
-      expect(input('sf-icon-btn').textContent).toBe('🪄');
+      expect(iconText(input('sf-icon-btn'))).toBe('[wand-sparkles]');
       expect(input('sf-inherit-group-env').checked).toBe(false);
     });
   });
@@ -316,16 +317,68 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('picks an icon through the shared picker', async () => {
       const w = await open({});
-      await w.settle('getIconBattery', [
-        { emoji: '🚀', label: 'rocket', group: 'Objects', keywords: [] },
-      ]);
+      await w.settle('getIconBattery', [{ name: 'rocket', tags: ['launch'] }]);
       click(addButton('+ Añadir comando'));
       click(el('sf-icon-btn'));
       expect(document.getElementById('icon-picker')?.parentElement).toBe(
         dialog(),
       );
       click(document.querySelector('#icon-picker .icon-cell'));
-      expect(el('sf-icon-btn').textContent).toBe('🚀');
+      expect(iconText(el('sf-icon-btn'))).toBe('[rocket]');
+      input('sf-name').value = 'api';
+      input('sf-command').value = 'pnpm dev';
+      const saves = recordApiCalls('saveCommand');
+      submit();
+      expect(payload(saves).icon).toBe('rocket');
+    });
+
+    it('saves the colour picked beside the icon', async () => {
+      await open({});
+      click(addButton('+ Añadir comando'));
+      click(dialog().querySelector('.icon-color-trigger'));
+      click(dialog().querySelector('.icon-color-swatch[title="Azul"]'));
+      expect(
+        el('sf-icon-btn').querySelector<HTMLElement>('.icon')?.style.color,
+      ).toBe('rgb(59, 130, 246)');
+      input('sf-name').value = 'api';
+      input('sf-command').value = 'pnpm dev';
+      const saves = recordApiCalls('saveCommand');
+      submit();
+      expect(payload(saves).iconColor).toBe('#3b82f6');
+    });
+
+    it('keeps the icon line compact: the split button and the hint only', async () => {
+      await open({});
+      click(addButton('+ Añadir comando'));
+      const row = dialog().querySelector('.sf-icon-row');
+      expect([...(row?.children ?? [])].map((c) => c.className)).toEqual([
+        'icon-split',
+        'muted',
+      ]);
+      expect(
+        [...(row?.querySelector('.icon-split')?.children ?? [])].map(
+          (c) => c.id || c.className,
+        ),
+      ).toEqual([
+        'sf-icon-btn',
+        'icon-color-trigger',
+        'icon-color-popover',
+        'icon-color-custom',
+      ]);
+    });
+
+    it('starts a new item without a colour, whatever the last one had', async () => {
+      await open({});
+      click(addButton('+ Añadir comando'));
+      click(dialog().querySelector('.icon-color-trigger'));
+      click(dialog().querySelector('.icon-color-swatch[title="Azul"]'));
+      click(el('sub-cancel'));
+      click(addButton('+ Añadir comando'));
+      expect(
+        dialog()
+          .querySelector('.icon-color-reset')
+          ?.getAttribute('aria-pressed'),
+      ).toBe('true');
     });
 
     it('writes the chosen folder into the cwd field', async () => {

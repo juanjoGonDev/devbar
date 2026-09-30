@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { entry, mountLogsDom } from './helpers/logs-dom.js';
@@ -274,6 +275,57 @@ describe('renderer/logs/selection-ui.ts', () => {
     });
   });
 
+  describe('the clear-selection control', () => {
+    it('stays hidden while nothing is selected', () => {
+      pane.resetBuffer(lines(3));
+      expect(elements.clearSelectionBtn.hidden).toBe(true);
+    });
+
+    it('appears next to the count once a line is picked', () => {
+      pane.resetBuffer(lines(3));
+      clickRow(1);
+      expect(elements.clearSelectionBtn.hidden).toBe(false);
+      expect(elements.clearSelectionBtn.getAttribute('aria-label')).toBe(
+        'Quitar selección',
+      );
+      expect(iconText(elements.clearSelectionBtn)).toContain('[x]');
+    });
+
+    it('drops every picked line when clicked, and hides itself again', () => {
+      pane.resetBuffer(lines(4));
+      clickRow(0);
+      clickRow(2, { shiftKey: true });
+      elements.clearSelectionBtn.click();
+      expect(selectedEntries()).toEqual([]);
+      expect(markedRows()).toEqual([]);
+      expect(elements.statusEl.textContent).toBe('');
+      expect(elements.clearSelectionBtn.hidden).toBe(true);
+    });
+
+    it('falls back to the paused badge rather than to nothing', () => {
+      pane.resetBuffer(lines(3));
+      elements.pausedEl.checked = true;
+      clickRow(1);
+      elements.clearSelectionBtn.click();
+      expect(elements.statusEl.textContent).toBe('Pausado');
+    });
+
+    it('hides itself when Esc clears the selection too', () => {
+      pane.resetBuffer(lines(3));
+      clickRow(1);
+      key('Escape');
+      expect(elements.clearSelectionBtn.hidden).toBe(true);
+    });
+
+    it('leaves Esc alone while typing in the search box', () => {
+      pane.resetBuffer(lines(3));
+      clickRow(1);
+      elements.filterEl.focus();
+      key('Escape');
+      expect(selectedEntries()).toEqual([1]);
+    });
+  });
+
   describe('the copy button', () => {
     it('copies the picked lines, timestamped and stripped of ANSI', async () => {
       pane.resetBuffer([
@@ -306,7 +358,7 @@ describe('renderer/logs/selection-ui.ts', () => {
       clickRow(1, { metaKey: true });
       elements.copyBtn.click();
       await vi.advanceTimersByTimeAsync(0);
-      expect(elements.statusEl.textContent).toBe('Copiado ✓ (2)');
+      expect(iconText(elements.statusEl)).toBe('Copiado [check] (2)');
       await vi.advanceTimersByTimeAsync(1500);
       expect(elements.statusEl.textContent).toBe('2 seleccionada(s)');
     });

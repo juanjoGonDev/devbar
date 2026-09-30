@@ -8,7 +8,11 @@ import {
   type IpcRegistrar,
 } from '../ipc-validators.js';
 import type { ImportPayload } from '../../config-io.js';
-import type { GlobalSettings, ReleaseSummary } from '../../domain-types.js';
+import type {
+  CustomIcon,
+  GlobalSettings,
+  ReleaseSummary,
+} from '../../domain-types.js';
 import type { ImportPreview, UpdateStatus } from '../../ipc-contract.js';
 import type { ApplyUpdateResult } from '../assisted-update.js';
 
@@ -31,6 +35,7 @@ export interface AppIpcDeps {
       groups: unknown[];
       preSteps?: unknown[];
       globalSettings: Partial<GlobalSettings>;
+      customIcons?: readonly CustomIcon[];
     }) => void;
     writeImportBackup: () => string;
     getGlobalSettings: () => GlobalSettings;

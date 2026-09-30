@@ -19,6 +19,10 @@ export const autoscrollEl = byId<HTMLInputElement>(
 export const pausedEl = byId<HTMLInputElement>('paused', HTMLInputElement);
 export const clearBtn = byId<HTMLButtonElement>('clear', HTMLButtonElement);
 export const copyBtn = byId<HTMLButtonElement>('copy', HTMLButtonElement);
+export const clearSelectionBtn = byId<HTMLButtonElement>(
+  'clear-selection',
+  HTMLButtonElement,
+);
 export const countsEl = byId<HTMLElement>('counts', HTMLElement);
 export const statusEl = byId<HTMLElement>('status', HTMLElement);
 export const mainEl = requireElement<HTMLElement>('main', HTMLElement);
