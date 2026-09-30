@@ -11,7 +11,7 @@ overrides:
   nanoid: 3.3.18
   brace-expansion@>=4.0.0 <5.0.9: '>=5.0.9'
   undici@>=7.24.1 <7.29.1: 7.29.1
-  '@types/electron-positioner>electron': 44.4.5
+  '@types/electron-positioner>electron': 43.7.5
 
 importers:
 
@@ -22,7 +22,7 @@ importers:
         version: 11.0.2
       menubar:
         specifier: 9.5.3
-        version: 9.5.3(electron@44.4.5)
+        version: 9.5.3(electron@43.7.5)
       uuid:
         specifier: 14.0.2
         version: 14.0.2
@@ -58,8 +58,8 @@ importers:
         specifier: 18.4.0
         version: 18.4.0
       electron:
-        specifier: 44.4.5
-        version: 44.4.5
+        specifier: 43.7.5
+        version: 43.7.5
       electron-builder:
         specifier: 26.16.1
         version: 26.16.1(electron-builder-squirrel-windows@26.16.1)
@@ -1413,8 +1413,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@44.4.5:
-    resolution: {integrity: sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==}
+  electron@43.7.5:
+    resolution: {integrity: sha512-AR+OLH/8QAwx6Lz6mhaDQhesbjC/Xh2WOiFSI/CDFU6FKX/qJdBg65bEUn+MLvbvIi/LlaRQeLljnUcKb1KS0A==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -3526,7 +3526,7 @@ snapshots:
 
   '@types/electron-positioner@4.1.4':
     dependencies:
-      electron: 44.4.5
+      electron: 43.7.5
     transitivePeerDependencies:
       - supports-color
 
@@ -4203,7 +4203,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.4.5:
+  electron@43.7.5:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0
@@ -4889,9 +4889,9 @@ snapshots:
 
   mdn-data@2.27.1: {}
 
-  menubar@9.5.3(electron@44.4.5):
+  menubar@9.5.3(electron@43.7.5):
     dependencies:
-      electron: 44.4.5
+      electron: 43.7.5
       electron-positioner: 4.1.0
 
   mime-db@1.52.0: {}

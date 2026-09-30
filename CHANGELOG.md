@@ -7,7 +7,7 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Seguridad
 
-- **Electron actualizado a 44.4.5.** Corrige varias vulnerabilidades de
+- **Electron actualizado a 43.7.5.** Corrige varias vulnerabilidades de
   severidad alta de Electron 43.2.0, además de dependencias internas de
   empaquetado (`undici`, `fast-uri`) con avisos de seguridad.
 
