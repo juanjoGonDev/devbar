@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComboboxControl, ComboboxOption } from '../renderer/combobox.js';
+import { iconText } from './helpers/icon-text.js';
 
 /**
  * `renderer/combobox.ts` is the branch picker in the tray row: a text input
@@ -94,7 +95,7 @@ describe('renderer/combobox.ts', () => {
   }
 
   function labels(): string[] {
-    return items().map((item) => item.textContent?.replace('✓', '') ?? '');
+    return items().map((item) => iconText(item).replace('[check]', ''));
   }
 
   /**
@@ -106,7 +107,7 @@ describe('renderer/combobox.ts', () => {
   function highlighted(): string | null {
     const els = list().getElementsByClassName('is-highlighted');
     const el = els[0];
-    return el ? (el.textContent?.replace('✓', '') ?? '') : null;
+    return el ? iconText(el).replace('[check]', '') : null;
   }
 
   function highlightCount(): number {
@@ -255,8 +256,8 @@ describe('renderer/combobox.ts', () => {
     it('marks it with a check and separates it from the rest', () => {
       const { input } = build({ value: 'main' });
       input.dispatchEvent(new FocusEvent('focus'));
-      expect(items()[0]?.querySelector('.combobox-check')?.textContent).toBe(
-        '✓',
+      expect(iconText(items()[0]?.querySelector('.combobox-check'))).toBe(
+        '[check]',
       );
       expect(list().querySelector('.combobox-separator')).not.toBeNull();
     });

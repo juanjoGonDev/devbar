@@ -1,3 +1,4 @@
+import { icon } from '../icon.js';
 import type { TrayColor } from '../../src/ipc-contract.js';
 
 /**
@@ -199,14 +200,14 @@ function buildNavButton(): HTMLElement {
   button.className = 'nav-item';
   button.dataset.target = 'dev';
   button.setAttribute('aria-label', 'Dev');
-  const icon = document.createElement('span');
-  icon.className = 'nav-ico';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '🧪';
+  const ico = document.createElement('span');
+  ico.className = 'nav-ico';
+  ico.setAttribute('aria-hidden', 'true');
+  ico.append(icon('flask-conical'));
   const label = document.createElement('span');
   label.className = 'nav-label';
   label.textContent = 'Dev';
-  button.append(icon, label);
+  button.append(ico, label);
   return button;
 }
 

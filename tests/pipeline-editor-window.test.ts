@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { iconText } from './helpers/icon-text.js';
 
 import {
   loadRendererWindow,
@@ -109,11 +110,11 @@ function pickerItem(name: string): HTMLButtonElement {
   return item;
 }
 
-/** The trailing `×` of an element (script row or step header). */
+/** The trailing close (x) button of an element (script row or step header). */
 function removeButton(scope: Element): HTMLButtonElement {
   const button = Array.from(
     scope.querySelectorAll<HTMLButtonElement>('button.danger'),
-  ).find((candidate) => candidate.textContent === '×');
+  ).find((candidate) => iconText(candidate) === '[x]');
   if (!button) throw new Error('no remove button in that scope');
   return button;
 }
@@ -259,9 +260,9 @@ describe('renderer/pipeline-editor.ts', () => {
       await openWith([filledStep('uno', [ref('back', 'seed')])]);
       const badges = Array.from(
         document.querySelectorAll('.prescript-row .muted.small'),
-        (el) => el.textContent,
+        (el) => iconText(el),
       );
-      expect(badges).toContain('⏱ 90s');
+      expect(badges).toContain('[timer] 90s');
     });
 
     it('renders a dangling ref instead of throwing on it', async () => {
@@ -312,8 +313,8 @@ describe('renderer/pipeline-editor.ts', () => {
       expect(blocks[0]?.classList.contains('is-parallel')).toBe(true);
       expect(blocks[1]?.classList.contains('is-parallel')).toBe(false);
       expect(
-        blocks[0]?.querySelector('.pipeline-summary-step-head')?.textContent,
-      ).toBe('1 · ∥');
+        iconText(blocks[0]?.querySelector('.pipeline-summary-step-head')),
+      ).toBe('1 · [split]');
     });
 
     it('marks an empty step as empty rather than drawing no lane', async () => {
@@ -341,8 +342,8 @@ describe('renderer/pipeline-editor.ts', () => {
         ),
       ]);
       expect(
-        document.querySelector('.pipeline-summary-step-head')?.textContent,
-      ).toBe('1 · →');
+        iconText(document.querySelector('.pipeline-summary-step-head')),
+      ).toBe('1 · [arrow-right]');
     });
   });
 

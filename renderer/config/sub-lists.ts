@@ -1,3 +1,4 @@
+import { icon, iconButton, userIcon } from '../icon.js';
 import { attachDragHandlers } from '../dnd-helper.js';
 import type {
   Action,
@@ -108,7 +109,7 @@ export function createSubLists(deps: SubListsDeps): SubLists {
     dragHandle.className = 'drag-handle';
     dragHandle.draggable = true;
     dragHandle.title = 'Arrastra para reordenar';
-    dragHandle.textContent = '⋮';
+    dragHandle.append(icon('grip-vertical'));
     li.appendChild(dragHandle);
 
     const nameEl = document.createElement('strong');
@@ -123,19 +124,13 @@ export function createSubLists(deps: SubListsDeps): SubLists {
     spacer.style.flex = '1';
     li.appendChild(spacer);
 
-    const editBtn = document.createElement('button');
-    editBtn.textContent = '✎';
-    editBtn.title = 'Editar';
-    editBtn.className = 'small-btn';
+    const editBtn = iconButton('pencil', 'Editar', 'small-btn');
     editBtn.addEventListener('click', () =>
       deps.openSubDialog(script, 'prescript', group.id),
     );
     li.appendChild(editBtn);
 
-    const delBtn = document.createElement('button');
-    delBtn.textContent = '🗑';
-    delBtn.title = 'Borrar';
-    delBtn.className = 'small-btn danger';
+    const delBtn = iconButton('trash-2', 'Borrar', 'small-btn danger');
     delBtn.addEventListener('click', async () => {
       if (!confirm(`¿Borrar "${script.name}"?`)) return;
       await window.api.deletePreScript(group.id, script.id);
@@ -218,13 +213,19 @@ export function createSubLists(deps: SubListsDeps): SubLists {
     handle.className = 'drag-handle';
     handle.draggable = true;
     handle.title = 'Arrastra para reordenar';
-    handle.textContent = '⋮⋮';
+    handle.append(icon('grip-vertical'));
     row.appendChild(handle);
 
     if (item.icon) {
       const iconEl = document.createElement('span');
       iconEl.className = 'sub-icon';
-      iconEl.textContent = item.icon;
+      iconEl.append(
+        userIcon(
+          item.icon,
+          kind === 'command' ? 'terminal' : 'wand-sparkles',
+          item.iconColor,
+        ),
+      );
       row.appendChild(iconEl);
     }
 
@@ -248,10 +249,12 @@ export function createSubLists(deps: SubListsDeps): SubLists {
       const autoBtn = document.createElement('button');
       const isOn = item.autoStart;
       autoBtn.className = `small-btn autostart-toggle${isOn ? ' is-on' : ''}`;
-      autoBtn.textContent = '⚡';
+      autoBtn.append(icon('zap'));
       autoBtn.title = isOn
         ? 'Auto-arranca con DevBar — click para desactivar'
         : 'Auto-arrancar al iniciar DevBar';
+      autoBtn.setAttribute('aria-label', 'Auto-arrancar al iniciar DevBar');
+      autoBtn.setAttribute('aria-pressed', String(isOn));
       autoBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         autoBtn.disabled = true;
@@ -285,8 +288,9 @@ export function createSubLists(deps: SubListsDeps): SubLists {
     ) {
       const schedBtn = document.createElement('button');
       schedBtn.className = 'small-btn schedule-badge is-on';
-      schedBtn.textContent = '🕐';
+      schedBtn.append(icon('clock'));
       schedBtn.title = `Programado: ${summarizeSchedule(item.schedule)} — click para editar`;
+      schedBtn.setAttribute('aria-label', schedBtn.title);
       schedBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         deps.openSubDialog(item, kind, groupId);
@@ -294,19 +298,13 @@ export function createSubLists(deps: SubListsDeps): SubLists {
       actions.appendChild(schedBtn);
     }
 
-    const editBtn = document.createElement('button');
-    editBtn.textContent = '✎';
-    editBtn.title = 'Editar';
-    editBtn.className = 'small-btn';
+    const editBtn = iconButton('pencil', 'Editar', 'small-btn');
     editBtn.addEventListener('click', () =>
       deps.openSubDialog(item, kind, groupId),
     );
     actions.appendChild(editBtn);
 
-    const delBtn = document.createElement('button');
-    delBtn.textContent = '🗑';
-    delBtn.title = 'Borrar';
-    delBtn.className = 'small-btn danger';
+    const delBtn = iconButton('trash-2', 'Borrar', 'small-btn danger');
     delBtn.addEventListener('click', async () => {
       if (!confirm(`¿Borrar "${item.name}"?`)) return;
       const res =

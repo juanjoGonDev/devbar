@@ -89,42 +89,50 @@ export async function buildApp(
     recursive: true,
   });
 
+  // The icon font, pinned via lucide-static: every control in the UI paints
+  // its glyph from it (renderer/icons.css), so EVERY platform ships it —
+  // nothing needs to be installed on the host.
+  copyPinnedFont(
+    path.join(root, 'node_modules', 'lucide-static', 'font', 'lucide.woff2'),
+    path.join(root, 'build', 'assets', 'fonts', 'lucide.woff2'),
+    'Lucide icon font missing from node_modules — run `pnpm install` ' +
+      'before building. Every package paints its icons with it.',
+  );
+
   // The emoji webfont, pinned via @fontsource/noto-color-emoji. Systems
   // without any color-emoji font (Raspberry Pi OS among them) render every
-  // emoji as tofu; renderer/emoji.css serves this file as a last-resort
-  // family, and the LINUX packages alone ship it (package-win-linux.ts
-  // excludes the directory from the other platforms' file sets). A missing
-  // pinned font is a broken install, so the build fails before producing
-  // an incomplete Linux artifact — run pnpm install to fix it.
-  const emojiFontSource = path.join(
-    root,
-    'node_modules',
-    '@fontsource',
-    'noto-color-emoji',
-    'files',
-    'noto-color-emoji-emoji-400-normal.woff2',
+  // emoji — in service log output, group names — as tofu; renderer/emoji.css
+  // serves this file as a last-resort family, and the LINUX packages alone
+  // ship it (package-win-linux.ts excludes the file from the other
+  // platforms' file sets).
+  copyPinnedFont(
+    path.join(
+      root,
+      'node_modules',
+      '@fontsource',
+      'noto-color-emoji',
+      'files',
+      'noto-color-emoji-emoji-400-normal.woff2',
+    ),
+    path.join(root, 'build', 'assets', 'fonts', 'NotoColorEmoji.woff2'),
+    'Noto Color Emoji missing from node_modules — run `pnpm install` ' +
+      'before building. Linux packages bundle it as the emoji fallback.',
   );
-  const emojiFontDestination = path.join(
-    root,
-    'build',
-    'assets',
-    'fonts',
-    'NotoColorEmoji.woff2',
-  );
-  fs.mkdirSync(path.dirname(emojiFontDestination), { recursive: true });
-  if (fs.existsSync(emojiFontSource)) {
-    fs.copyFileSync(emojiFontSource, emojiFontDestination);
-  } else {
-    // Linux artifacts bundle this face (package-win-linux ships
-    // build/assets/fonts only there); missing it would silently regress
-    // the Raspberry Pi to tofu emoji. A node_modules complete enough to
-    // run this build but missing exactly this pinned package is a broken
-    // install — fail loudly instead of shipping the bug.
-    throw new Error(
-      'Noto Color Emoji missing from node_modules — run `pnpm install` ' +
-        'before building. Linux packages bundle it as the emoji fallback.',
-    );
-  }
+}
+
+/**
+ * A pinned font missing from a node_modules complete enough to run this
+ * build is a broken install: fail loudly instead of shipping an artifact
+ * that silently regresses to empty icons or tofu.
+ */
+function copyPinnedFont(
+  source: string,
+  destination: string,
+  missing: string,
+): void {
+  if (!fs.existsSync(source)) throw new Error(missing);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.copyFileSync(source, destination);
 }
 
 // Direct execution: node --experimental-strip-types scripts/build.ts

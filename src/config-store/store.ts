@@ -3,11 +3,13 @@ import { app } from 'electron';
 import Store from 'electron-store';
 import { DEFAULT_MAX_LOG_LINES } from '../domain-types.js';
 import type {
+  CustomIcon,
   GlobalSettings,
   Group,
   LegacyService,
   PreStep,
 } from '../domain-types.js';
+import { normalizeCustomIcons } from '../custom-icons.js';
 import {
   normalizeGroup,
   normalizePreStep,
@@ -50,8 +52,14 @@ type StoreState = {
   preSteps: PreStep[];
   globalSettings: GlobalSettings;
   scheduleState: Record<string, string>;
+  /** Uploaded images usable as icons (see src/custom-icons.ts). */
+  customIcons: CustomIcon[];
   /** Absent until a v1/v2 store is actually converted — see the schema. */
   _services_pre_v3_backup?: unknown[];
+  /** Original emoji of every icon the Lucide migration replaced, keyed
+   *  `group:<id>` / `command:<groupId>/<id>` / `action:<groupId>/<id>`.
+   *  Absent until a conversion actually happens. */
+  _icons_pre_lucide_backup?: Record<string, string>;
 };
 
 function clampMaxLogLines(value: unknown): number {
@@ -68,6 +76,7 @@ const schema = {
   preSteps: { type: 'array', default: [] },
   globalSettings: { type: 'object', default: DEFAULT_GLOBAL_SETTINGS },
   scheduleState: { type: 'object', default: {} },
+  customIcons: { type: 'array', default: [] },
   // Deliberately NO default: conf fills schema defaults into `store.store`
   // before anything reads it, and `migrateServicesToGroups` treats ANY array
   // here as "a backup already exists" (so a real one is never overwritten).
@@ -75,6 +84,8 @@ const schema = {
   // original `services` had already been backed up, and the only copy of them
   // was dropped. Absent is the honest state until a conversion writes one.
   _services_pre_v3_backup: { type: 'array' },
+  // Same reasoning: no default, so absent means "nothing was converted".
+  _icons_pre_lucide_backup: { type: 'object' },
 } as const;
 
 /**
@@ -142,6 +153,9 @@ function runMigration(): void {
   if (plan.servicesBackup !== null) {
     store.set('_services_pre_v3_backup', plan.servicesBackup);
   }
+  if (plan.iconsBackup !== null) {
+    store.set('_icons_pre_lucide_backup', plan.iconsBackup);
+  }
 }
 runMigration();
 
@@ -167,6 +181,15 @@ export function persistState(
   store.set('groups', groups);
   store.set('services', regenerateLegacyServices(groups));
   store.set('preSteps', prunedSteps);
+}
+
+/** Read through normalizeCustomIcons: a hand-edited entry that is not an
+ *  inline PNG never reaches a renderer. */
+export function readCustomIcons(): CustomIcon[] {
+  return normalizeCustomIcons(store.get('customIcons', []));
+}
+export function writeCustomIcons(icons: readonly CustomIcon[]): void {
+  store.set('customIcons', normalizeCustomIcons(icons));
 }
 
 export function getGlobalSettings(): GlobalSettings {

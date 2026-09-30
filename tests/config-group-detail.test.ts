@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { group, openConfigWindow } from './helpers/config-window.js';
@@ -144,15 +145,55 @@ describe('renderer/config/group-detail.ts', () => {
   });
 
   describe('icon picker', () => {
-    it('adopts the emoji the user picks', async () => {
+    it('adopts the icon the user picks', async () => {
       const w = await openWithGroup();
-      await w.settle('getIconBattery', [
-        { emoji: '🚀', label: 'rocket', group: 'Objects', keywords: [] },
-      ]);
+      await w.settle('getIconBattery', [{ name: 'rocket', tags: ['launch'] }]);
       click(detail().querySelector('.icon-btn'));
       click(document.querySelector('#icon-picker .icon-cell'));
-      expect(detail().querySelector('.icon-btn')?.textContent).toBe('🚀');
+      expect(iconText(detail().querySelector('.icon-btn'))).toBe('[rocket]');
       expect(saveDisabled()).toBe(false);
+    });
+
+    it('colours the icon from a swatch and marks the group dirty', async () => {
+      await openWithGroup();
+      click(detail().querySelector('.icon-color-trigger'));
+      click(detail().querySelector('.icon-color-swatch[title="Verde"]'));
+      expect(
+        detail().querySelector<HTMLElement>('.icon-btn .icon')?.style.color,
+      ).toBe('rgb(34, 197, 94)');
+      expect(saveDisabled()).toBe(false);
+    });
+
+    it('shows the stored colour and clears it with "Sin color"', async () => {
+      await openWithGroup({ iconColor: '#ef4444' });
+      const red = detail().querySelector('.icon-color-swatch[title="Rojo"]');
+      expect(red?.getAttribute('aria-pressed')).toBe('true');
+      expect(
+        detail().querySelector<HTMLElement>('.icon-color-dot')?.style
+          .backgroundColor,
+      ).toBe('rgb(239, 68, 68)');
+      click(detail().querySelector('.icon-color-trigger'));
+      click(detail().querySelector('.icon-color-reset'));
+      expect(
+        detail().querySelector<HTMLElement>('.icon-btn .icon')?.style.color,
+      ).toBe('');
+      expect(saveDisabled()).toBe(false);
+    });
+
+    it('joins the icon button and the colour segment in the header', async () => {
+      await openWithGroup();
+      const split = detail().querySelector('.detail-header > .icon-split');
+      expect(split?.querySelector(':scope > .icon-btn')).not.toBe(null);
+      expect(split?.querySelector(':scope > .icon-color-trigger')).not.toBe(
+        null,
+      );
+    });
+
+    it('hides the colour segment while the icon is an uploaded image', async () => {
+      await openWithGroup({ icon: 'img:abc123' });
+      expect(
+        detail().querySelector<HTMLElement>('.icon-color-trigger')?.hidden,
+      ).toBe(true);
     });
   });
 

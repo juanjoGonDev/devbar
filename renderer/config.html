@@ -4,9 +4,10 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self' 'unsafe-inline'"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="icons.css" />
     <link rel="stylesheet" href="emoji.css" />
     <title>DevBar — Configuración</title>
   </head>
@@ -36,7 +37,7 @@
             title="Contraer / expandir"
             aria-label="Contraer menú"
           >
-            ◧
+            <span class="icon" data-icon="panel-left-close"></span>
           </button>
         </div>
         <button
@@ -45,7 +46,8 @@
           data-target="general"
           aria-label="General"
         >
-          <span class="nav-ico" aria-hidden="true">⚙️</span
+          <span class="nav-ico"
+            ><span class="icon" data-icon="settings"></span></span
           ><span class="nav-label">General</span>
         </button>
         <button
@@ -54,7 +56,8 @@
           data-target="notifications"
           aria-label="Notificaciones"
         >
-          <span class="nav-ico" aria-hidden="true">🔔</span
+          <span class="nav-ico"
+            ><span class="icon" data-icon="bell"></span></span
           ><span class="nav-label">Notificaciones</span>
         </button>
         <button
@@ -63,7 +66,8 @@
           data-target="groups"
           aria-label="Grupos"
         >
-          <span class="nav-ico" aria-hidden="true">📦</span
+          <span class="nav-ico"
+            ><span class="icon" data-icon="package"></span></span
           ><span class="nav-label">Grupos</span>
         </button>
         <button
@@ -72,7 +76,7 @@
           data-target="prescripts"
           aria-label="Pipeline"
         >
-          <span class="nav-ico" aria-hidden="true">🧬</span
+          <span class="nav-ico"><span class="icon" data-icon="dna"></span></span
           ><span class="nav-label">Pipeline</span>
         </button>
         <button
@@ -81,7 +85,8 @@
           data-target="backup"
           aria-label="Copias de seguridad"
         >
-          <span class="nav-ico" aria-hidden="true">💾</span
+          <span class="nav-ico"
+            ><span class="icon" data-icon="save"></span></span
           ><span class="nav-label">Copias de seguridad</span>
         </button>
         <button
@@ -90,7 +95,8 @@
           data-target="about"
           aria-label="Acerca de"
         >
-          <span class="nav-ico" aria-hidden="true">ℹ️</span
+          <span class="nav-ico"
+            ><span class="icon" data-icon="info"></span></span
           ><span class="nav-label">Acerca de</span>
         </button>
       </nav>
@@ -245,7 +251,7 @@
                   title="Ocultar / mostrar la lista"
                   aria-label="Ocultar la lista de grupos"
                 >
-                  ◧
+                  <span class="icon" data-icon="panel-left-close"></span>
                 </button>
               </div>
               <div id="groups-list" class="groups-list-nav"></div>
@@ -267,8 +273,13 @@
               <button type="button" id="report-issue" class="small-btn">
                 Reportar fallo en GitHub
               </button>
-              <button type="button" id="about-github" class="small-btn">
-                Ver en GitHub ↗
+              <button
+                type="button"
+                id="about-github"
+                class="small-btn with-icon"
+              >
+                Ver en GitHub
+                <span class="icon" data-icon="external-link"></span>
               </button>
             </div>
             <div class="updates-row" style="margin-top: 16px">
@@ -293,7 +304,9 @@
       <input
         id="icon-search"
         type="search"
-        placeholder="Buscar emoji…"
+        placeholder="Buscar en español o inglés…"
+        title="Busca por nombre o etiqueta, en español o en inglés"
+        aria-label="Buscar icono en español o inglés"
         class="icon-search"
       />
       <div id="icon-tabs" class="icon-tabs"></div>
@@ -311,7 +324,7 @@
           data-close
           aria-label="Cerrar"
         >
-          ×
+          <span class="icon" data-icon="x"></span>
         </button>
       </header>
       <form id="sub-form" method="dialog">
@@ -323,8 +336,10 @@
                 type="button"
                 id="sf-icon-btn"
                 class="icon-btn sf-icon-btn"
+                title="Cambiar icono"
+                aria-label="Cambiar icono"
               >
-                ⚙️
+                <span class="icon" data-icon="terminal"></span>
               </button>
               <small class="muted">(opcional)</small>
             </div>
@@ -452,8 +467,9 @@
                     id="sf-cwd-pick"
                     class="icon-action-btn"
                     title="Seleccionar carpeta…"
+                    aria-label="Seleccionar carpeta…"
                   >
-                    📁
+                    <span class="icon" data-icon="folder-open"></span>
                   </button>
                 </div>
               </div>
