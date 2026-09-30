@@ -7,8 +7,12 @@ import type { BrowserWindow } from 'electron';
 import {
   attachMainConsole,
   attachWindowConsole,
+  currentSession,
+  flushProblems,
   init,
+  previousLogPath,
   readTail,
+  recentProblems,
 } from '../src/logger.js';
 
 const LEVELS = ['log', 'info', 'warn', 'error'] as const;
@@ -129,14 +133,46 @@ describe('src/logger.ts', () => {
       expect(text).toContain(`(cap ${5 * 1024 * 1024} bytes)`);
     });
 
-    it('truncates whatever the previous session left behind', async () => {
-      const file = path.join(tempDir(), 'app.log');
+    it('keeps the previous session as app.previous.log and starts fresh', async () => {
+      const dir = tempDir();
+      const file = path.join(dir, 'app.log');
+      const previous = path.join(dir, 'app.previous.log');
+      fs.writeFileSync(previous, 'OLDEST RUN\n');
       fs.writeFileSync(file, 'STALE FROM AN EARLIER RUN\n');
 
       init({ filePath: file });
 
       const text = await readLogUntil(file, 'Log session started');
       expect(text).not.toContain('STALE FROM AN EARLIER RUN');
+      // The run before this one survives (a crash or an update relaunch is
+      // exactly when it matters); the one before THAT is overwritten.
+      expect(fs.readFileSync(previous, 'utf8')).toBe(
+        'STALE FROM AN EARLIER RUN\n',
+      );
+      expect(previousLogPath(file)).toBe(previous);
+    });
+
+    it('falls back to truncating when the rotation cannot rename', async () => {
+      const file = path.join(tempDir(), 'app.log');
+      fs.writeFileSync(file, 'STALE\n');
+      vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+        throw new Error('EBUSY');
+      });
+
+      init({ filePath: file });
+
+      const text = await readLogUntil(file, 'Log session started');
+      expect(text).not.toContain('STALE');
+    });
+
+    it('leaves no previous log behind on a first launch', async () => {
+      const dir = tempDir();
+      const file = path.join(dir, 'app.log');
+
+      init({ filePath: file });
+
+      await readLogUntil(file, 'Log session started');
+      expect(fs.existsSync(path.join(dir, 'app.previous.log'))).toBe(false);
     });
 
     it('stays silent instead of throwing when the log file cannot be opened', async () => {
@@ -385,6 +421,90 @@ describe('src/logger.ts', () => {
       const win = {} as unknown as BrowserWindow;
 
       expect(() => attachWindowConsole(win, 'config')).not.toThrow();
+    });
+  });
+  describe('recent problems', () => {
+    it('keeps warnings and errors apart from the log, tagged by source', () => {
+      const file = path.join(tempDir(), 'app.log');
+      init({ filePath: file });
+      attachMainConsole();
+
+      console.log('not a problem');
+      console.info('neither');
+      console.warn('slow download');
+      console.error(new Error('install failed'));
+
+      const problems = recentProblems().filter(
+        (p) => p.session === currentSession(),
+      );
+      expect(problems.map((p) => [p.level, p.source])).toEqual([
+        ['warn', 'main'],
+        ['error', 'main'],
+      ]);
+      expect(problems[1]?.message).toContain('Error: install failed');
+    });
+
+    it('tags a renderer problem with its window', () => {
+      const file = path.join(tempDir(), 'app.log');
+      init({ filePath: file });
+      const handlers: ((d: object) => void)[] = [];
+      const win = {
+        webContents: {
+          on: (_c: string, h: (d: object) => void) => handlers.push(h),
+        },
+      } as unknown as BrowserWindow;
+      attachWindowConsole(win, 'config');
+
+      for (const h of handlers)
+        h({
+          level: 'warning',
+          message: 'careful',
+          lineNumber: 1,
+          sourceId: '',
+        });
+
+      expect(recentProblems().at(-1)).toMatchObject({
+        level: 'warn',
+        source: 'renderer:config',
+        message: 'careful',
+      });
+    });
+
+    it('still records problems once the byte cap drops log lines', () => {
+      const file = path.join(tempDir(), 'app.log');
+      init({ filePath: file, maxBytes: 10 });
+      attachMainConsole();
+
+      console.error('past the cap');
+
+      expect(recentProblems().at(-1)?.message).toBe('past the cap');
+    });
+
+    it('persists them next to app.log and reloads them on the next launch', () => {
+      const dir = tempDir();
+      const file = path.join(dir, 'app.log');
+      init({ filePath: file });
+      attachMainConsole();
+      console.error('before the crash');
+      flushProblems();
+
+      const saved = JSON.parse(
+        fs.readFileSync(path.join(dir, 'errors.json'), 'utf8'),
+      ) as { entries: { message: string }[] };
+      expect(saved.entries.map((e) => e.message)).toEqual(['before the crash']);
+
+      // The relaunch: a new session that still knows what the last one hit.
+      init({ filePath: file });
+      expect(recentProblems().map((p) => p.message)).toEqual([
+        'before the crash',
+      ]);
+    });
+
+    it('answers nothing before the logger is initialised', async () => {
+      vi.resetModules();
+      const fresh = await import('../src/logger.js');
+      expect(fresh.recentProblems()).toEqual([]);
+      expect(() => fresh.flushProblems()).not.toThrow();
     });
   });
 });

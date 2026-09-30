@@ -1,6 +1,5 @@
 import type {
   Action,
-  AvailableUpdate,
   Command,
   CustomIcon,
   GlobalSettings,
@@ -11,23 +10,15 @@ import type {
   ProcessStatus,
   ReleaseSummary,
   SilencedPatterns,
-  StagedUpdate,
   ThemePreference,
 } from './domain-types.js';
-import type { UpdatePhase } from './update-phase-types.js';
+import type { SimpleResult } from './ipc-contract/simple-result.js';
+import type { UpdatesApi } from './ipc-contract/updates-api.js';
 
 export type { UpdatePhase } from './update-phase-types.js';
-
+export type { UpdateStatus } from './ipc-contract/updates-api.js';
 export type SilenceLevel = 'warn' | 'error';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
-type SimpleResult =
-  | { ok: true }
-  | {
-      ok: false;
-      error?: string | undefined;
-      canceled?: boolean;
-      cancelled?: boolean;
-    };
 export interface CommandRuntimeState {
   commandId: string;
   processId: string;
@@ -137,14 +128,6 @@ export interface IconBatteryItem {
 export type CustomIconUploadResult =
   | { ok: true; icon: CustomIcon }
   | { ok: false; canceled?: boolean; error?: string };
-export interface UpdateStatus {
-  available: AvailableUpdate | null;
-  /** Downloaded and unpacked — applying it is just a restart. */
-  staged: StagedUpdate | null;
-  lastCheckAt: string | null;
-  currentVersion: string;
-  phase: UpdatePhase;
-}
 export interface ImportPreview {
   groupsCount: number;
   commandsCount: number;
@@ -239,7 +222,7 @@ interface DevSimulationApi {
   simulateToast(kind: 'ok' | 'error'): Promise<SimpleResult>;
 }
 
-export interface DevBarApi {
+export interface DevBarApi extends UpdatesApi {
   listGroups(): Promise<Group[]>;
   getGroupStates(): Promise<GroupState[]>;
   saveGroup(
@@ -322,16 +305,6 @@ export interface DevBarApi {
   testNotification(): Promise<SimpleResult>;
   dismissNotification(): Promise<SimpleResult>;
   notificationAction(action: string): Promise<SimpleResult>;
-  getUpdateStatus(): Promise<UpdateStatus>;
-  checkForUpdates(): Promise<UpdateStatus>;
-  applyUpdate(): Promise<Record<string, unknown>>;
-  onUpdateStatus(callback: (payload: UpdateStatus) => void): () => void;
-  /** Live phase pushes, download progress included. */
-  onUpdatePhase(callback: (phase: UpdatePhase) => void): () => void;
-  /** Copies the manual-install command of the current phase. */
-  copyUpdateCommand(): Promise<SimpleResult>;
-  /** Reveals the downloaded update file in the file manager. */
-  showUpdateDownload(): Promise<SimpleResult>;
   getIconBattery(): Promise<readonly IconBatteryItem[]>;
   listCustomIcons(): Promise<CustomIcon[]>;
   /** Opens the file dialog in main; resolves once the image is stored. */
@@ -423,6 +396,15 @@ export interface DevBarApi {
   /** Same report to the clipboard, but nothing opens: for the user who
    *  prefers pasting it wherever they like. */
   copyReport(): Promise<{ ok: boolean; error?: string }>;
+  /** The report text as it would be copied, plus how many recent errors
+   *  and warnings it lists — for the dialog, before any action. */
+  reportPreview(): Promise<{
+    ok: boolean;
+    text?: string;
+    errors?: number;
+    warnings?: number;
+    error?: string;
+  }>;
   /**
    * Open the OS notification settings: macOS deep-links to this app's own
    * row, Windows to the notifications page, Linux to the detected desktop's
