@@ -55,6 +55,11 @@ describe('renderMarkdown', () => {
     expect(html).not.toContain('Trailing');
   });
 
+  it('drops comments that only form once an inner one is removed', () => {
+    const html = renderMarkdown('<!<!-- a -->-- b -->text');
+    expect(html).toBe('<p>text</p>');
+  });
+
   it('drops HTML comments, including ones spanning lines', () => {
     const md =
       '<!-- Release notes generated using configuration in .github/release.yml at v0.9.7 -->\n## Changes\n<!-- a\nb -->\n- one';
