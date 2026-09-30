@@ -293,7 +293,32 @@ const FORWARDS: readonly Forward[] = [
   ['getUpdateStatus', (api) => api.getUpdateStatus(), 'updates:status', []],
   ['checkForUpdates', (api) => api.checkForUpdates(), 'updates:check', []],
   ['applyUpdate', (api) => api.applyUpdate(), 'updates:apply', []],
+  [
+    'copyUpdateCommand',
+    (api) => api.copyUpdateCommand(),
+    'updates:copyCommand',
+    [],
+  ],
+  [
+    'showUpdateDownload',
+    (api) => api.showUpdateDownload(),
+    'updates:showDownload',
+    [],
+  ],
   ['getIconBattery', (api) => api.getIconBattery(), 'icons:get', []],
+  ['listCustomIcons', (api) => api.listCustomIcons(), 'customIcons:list', []],
+  [
+    'uploadCustomIcon',
+    (api) => api.uploadCustomIcon(),
+    'customIcons:upload',
+    [],
+  ],
+  [
+    'deleteCustomIcon',
+    (api) => api.deleteCustomIcon('abc123'),
+    'customIcons:delete',
+    [{ id: 'abc123' }],
+  ],
   ['exportConfig', (api) => api.exportConfig(), 'config:export', []],
   ['importConfig', (api) => api.importConfig(), 'config:import', []],
   [
@@ -445,6 +470,7 @@ type SubscriptionCase = readonly [
 const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ['onConfigGoto', (api, cb) => api.onConfigGoto(cb), 'config:goto'],
   ['onUpdateStatus', (api, cb) => api.onUpdateStatus(cb), 'updates:status'],
+  ['onUpdatePhase', (api, cb) => api.onUpdatePhase(cb), 'updates:phase'],
   [
     'onPipelineUpdate',
     (api, cb) => api.onPipelineUpdate(cb),
@@ -461,6 +487,11 @@ const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ],
   ['onActionDone', (api, cb) => api.onActionDone(cb), 'action:done'],
   ['onToast', (api, cb) => api.onToast(cb), 'groups:toast'],
+  [
+    'onCustomIconsChanged',
+    (api, cb) => api.onCustomIconsChanged(cb),
+    'customIcons:changed',
+  ],
 ];
 
 describe('src/preload.ts', () => {

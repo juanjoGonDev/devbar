@@ -30,6 +30,7 @@ vi.mock('electron', () => {
       getPath: (name: string) => `/paths/${name}`,
       getVersion: () => '1.2.0',
       quit: () => electron.calls.push('quit'),
+      relaunch: () => electron.calls.push('relaunch'),
       exit: (code: number) => electron.calls.push(`exit:${code}`),
       setLoginItemSettings: (settings: unknown) =>
         electron.calls.push(`login:${JSON.stringify(settings)}`),
@@ -54,6 +55,9 @@ vi.mock('electron', () => {
       getBounds(): unknown {
         return { x: 0, y: 0, width: 100, height: 100 };
       }
+    },
+    clipboard: {
+      writeText: (text: string) => electron.calls.push(`clipboard:${text}`),
     },
     dialog: {
       showMessageBox: (...args: unknown[]) => {
@@ -94,6 +98,8 @@ vi.mock('electron', () => {
         electron.calls.push(`openPath:${target}`);
         return Promise.resolve('');
       },
+      showItemInFolder: (target: string) =>
+        electron.calls.push(`showItem:${target}`),
     },
   };
 });
@@ -230,9 +236,15 @@ describe('src/main/electron-host.ts', () => {
   });
 
   describe('dialogs', () => {
+    const shownWindow = {
+      isDestroyed: () => false,
+      isVisible: () => true,
+      getBounds: () => ({ x: 0, y: 0, width: 1, height: 1 }),
+    };
+
     it('parents a dialog on the owner window when there is one', async () => {
       electron.calls.length = 0;
-      const h = host({ dialogOwner: () => 'owner' as never });
+      const h = host({ dialogOwner: () => shownWindow as never });
       await h.messageBox({ message: 'x' });
       await h.openDialog({});
       await h.saveDialog({});
@@ -241,6 +253,27 @@ describe('src/main/electron-host.ts', () => {
         'openDialog:2',
         'saveDialog:2',
       ]);
+    });
+
+    it('never parents a dialog on a hidden window', async () => {
+      // A dialog owned by a hidden window (the tray popover once it closed)
+      // can open invisible on some Linux window managers: the click then
+      // looks like it did nothing.
+      electron.calls.length = 0;
+      const hidden = { ...shownWindow, isVisible: () => false };
+      const h = host({ dialogOwner: () => hidden as never });
+      await h.messageBox({ message: 'x' });
+      expect(electron.calls).toEqual(['messageBox:1']);
+    });
+
+    it('falls back to the focused window when the owner is hidden', async () => {
+      electron.calls.length = 0;
+      const hidden = { ...shownWindow, isVisible: () => false };
+      electron.focused = shownWindow;
+      const h = host({ dialogOwner: () => hidden as never });
+      await h.messageBox({ message: 'x' });
+      electron.focused = null;
+      expect(electron.calls).toEqual(['messageBox:2']);
     });
 
     it('opens ownerless when nothing can parent it', async () => {
@@ -359,6 +392,35 @@ describe('src/main/electron-host.ts', () => {
         'external:https://devbar.test/2',
         'openPath:/tmp/a.dmg',
       ]);
+    });
+
+    it('serves the update flow its OS actions', async () => {
+      electron.calls.length = 0;
+      const h = host();
+      h.relaunch();
+      h.copyText('sudo apt install /tmp/a.deb');
+      h.showItemInFolder('/tmp/a.deb');
+      expect(electron.calls).toEqual([
+        'relaunch',
+        'clipboard:sudo apt install /tmp/a.deb',
+        'showItem:/tmp/a.deb',
+      ]);
+      const file = path.join(dir, 'DevBar.AppImage');
+      fs.writeFileSync(file, '');
+      h.makeExecutable(file);
+      expect(fs.statSync(file).mode & 0o111).not.toBe(0);
+      expect(h.pathExists(file)).toBe(true);
+      expect(h.pathExists(path.join(dir, 'missing'))).toBe(false);
+      await expect(
+        h.runProcess(process.execPath, ['-e', 'process.exit(0)']),
+      ).resolves.toMatchObject({ code: 0 });
+    });
+
+    it('works out once how this copy was installed', async () => {
+      const h = host();
+      const shape = await h.linuxInstallShape();
+      expect(['appImage', 'deb', 'other']).toContain(shape);
+      await expect(h.linuxInstallShape()).resolves.toBe(shape);
     });
 
     it('reports the process identity the modules branch on', () => {

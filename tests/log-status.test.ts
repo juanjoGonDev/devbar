@@ -14,6 +14,7 @@ function item(patch: Partial<LogListItem> = {}): LogListItem {
     type: 'command',
     name: 'dev',
     icon: null,
+    iconColor: null,
     lineCount: 0,
     status: 'stopped',
     warnCount: 0,

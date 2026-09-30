@@ -36,10 +36,30 @@ function inline(text: string): string {
   );
 }
 
+// GitHub's generated release notes open with an HTML comment. Repeat until
+// stable: removing one comment can join the text around it into another.
+function stripComments(text: string): string {
+  let previous: string;
+  let out = text;
+  do {
+    previous = out;
+    out = out.replace(/<!--[\s\S]*?-->/g, '');
+  } while (out !== previous);
+  return out;
+}
+
 export function renderMarkdown(source: unknown): string {
-  const lines = String(source ?? '').split(/\r?\n/);
+  const lines = stripComments(String(source ?? '')).split(/\r?\n/);
   const html: string[] = [];
   let inList = false;
+  // A heading is held back until content follows it, so an empty wrapper
+  // such as GitHub's "What's Changed" above our categories never renders.
+  let pendingHeading: string | null = null;
+  const emit = (chunk: string): void => {
+    if (pendingHeading) html.push(pendingHeading);
+    pendingHeading = null;
+    html.push(chunk);
+  };
   const closeList = (): void => {
     if (!inList) return;
     html.push('</ul>');
@@ -54,10 +74,10 @@ export function renderMarkdown(source: unknown): string {
       const marks = heading[1] ?? '#';
       const text = heading[2] ?? '';
       const level = Math.min(marks.length + 1, 6);
-      html.push(`<h${level}>${inline(text)}</h${level}>`);
+      pendingHeading = `<h${level}>${inline(text)}</h${level}>`;
     } else if (bullet) {
       if (!inList) {
-        html.push('<ul>');
+        emit('<ul>');
         inList = true;
       }
       html.push(`<li>${inline(bullet[1] ?? '')}</li>`);
@@ -65,7 +85,7 @@ export function renderMarkdown(source: unknown): string {
       closeList();
     } else {
       closeList();
-      html.push(`<p>${inline(line)}</p>`);
+      emit(`<p>${inline(line)}</p>`);
     }
   }
   closeList();

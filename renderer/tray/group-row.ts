@@ -9,6 +9,7 @@ import { formatUptime } from '../format-uptime.js';
 import { lastComboboxInteractionAt } from '../combobox.js';
 import { buildBranchSelector } from './branches.js';
 import { rerenderTray } from './host.js';
+import { icon, userIcon } from '../icon.js';
 import type {
   ActionRuntimeState,
   CommandRuntimeState,
@@ -42,10 +43,10 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
 
   // Group icon stays a plain label — it identifies the group, it is not a
   // control. Opening the logs gets its own terminal button further along.
-  const icon = document.createElement('span');
-  icon.className = 'group-icon';
-  icon.textContent = group.icon || '📦';
-  row.appendChild(icon);
+  const groupIcon = document.createElement('span');
+  groupIcon.className = 'group-icon';
+  groupIcon.append(userIcon(group.icon, 'package', group.iconColor));
+  row.appendChild(groupIcon);
 
   // Group name
   const name = document.createElement('span');
@@ -74,7 +75,7 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
     const errBadge = document.createElement('span');
     errBadge.className = 'group-error-badge';
     errBadge.title = gs.lastError;
-    errBadge.textContent = '✕';
+    errBadge.append(icon('x'));
     row.appendChild(errBadge);
   }
 
@@ -83,13 +84,14 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
   spacer.className = 'group-row-spacer';
   row.appendChild(spacer);
 
-  // Same 📜 as the per-command log buttons — one mark means "logs" at every
-  // scope. The row itself toggles open, so this swallows its own click.
+  // Same icon as the per-command log buttons — one mark means "logs" at
+  // every scope. The row itself toggles open, so this swallows its own click.
   const groupLogsBtn = document.createElement('button');
   groupLogsBtn.type = 'button';
   groupLogsBtn.className = 'ghost group-logs-btn';
-  groupLogsBtn.textContent = '📜';
+  groupLogsBtn.append(icon('scroll-text'));
   groupLogsBtn.title = `Ver todos los logs de ${group.name || 'este grupo'}`;
+  groupLogsBtn.setAttribute('aria-label', groupLogsBtn.title);
   groupLogsBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     void window.api.openLogs({ scope: 'group', groupId });
@@ -102,9 +104,12 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
 
   // Expand chevron (only if group has actions or commands)
   const caret = document.createElement('button');
+  caret.type = 'button';
   caret.className = 'caret-btn ghost';
   caret.title = isExpanded ? 'Colapsar' : 'Expandir';
-  caret.textContent = isExpanded ? '▾' : '▸';
+  caret.setAttribute('aria-label', caret.title);
+  caret.setAttribute('aria-expanded', String(isExpanded));
+  caret.append(icon(isExpanded ? 'chevron-down' : 'chevron-right'));
   caret.addEventListener('click', (e) => {
     e.stopPropagation();
     expandedState.set(groupId, !expandedState.get(groupId));
@@ -161,7 +166,8 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
     if ((gs.actions || []).length > 0) {
       const actionsDivider = document.createElement('div');
       actionsDivider.className = 'actions-divider';
-      actionsDivider.textContent = '── Acciones ──';
+      // The rules either side are drawn by CSS (::before/::after).
+      actionsDivider.textContent = 'Acciones';
       expanded.appendChild(actionsDivider);
 
       const actionsRow = document.createElement('div');
@@ -197,11 +203,14 @@ function buildCounterBtn(
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = `counter-btn ${kind}`;
-  btn.textContent = kind === 'warn' ? `⚠ ${count}` : `✕ ${count}`;
+  btn.append(
+    icon(kind === 'warn' ? 'triangle-alert' : 'circle-x'),
+    ` ${count}`,
+  );
   btn.title = `Ver logs filtrados por ${kind === 'warn' ? 'warnings' : 'errors'}`;
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    // The same level chip as the in-window nav (the "sólo ⚠ warnings" pill),
+    // The same level chip as the in-window nav (the "sólo warnings" pill),
     // not a text search: every warn/error entry point behaves identically.
     window.api.openLogs({ processId, level: kind });
   });
@@ -225,7 +234,7 @@ function buildCommandSubRow(
   if (cmd.icon) {
     const cmdIconEl = document.createElement('span');
     cmdIconEl.className = 'cmd-sub-icon';
-    cmdIconEl.textContent = cmd.icon;
+    cmdIconEl.append(userIcon(cmd.icon, 'terminal', cmd.iconColor));
     subRow.appendChild(cmdIconEl);
   }
 
@@ -263,21 +272,25 @@ function buildCommandSubRow(
 
   // Logs button
   const logsBtn = document.createElement('button');
+  logsBtn.type = 'button';
   logsBtn.className = 'ghost cmd-sub-btn';
   logsBtn.title = 'Ver logs';
-  logsBtn.textContent = '📜';
+  logsBtn.setAttribute('aria-label', logsBtn.title);
+  logsBtn.append(icon('scroll-text'));
   logsBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     window.api.openLogs(cs.processId);
   });
   subRow.appendChild(logsBtn);
 
-  // Auto-start toggle button (⚡)
-  // Filled accent when autoStart is on; muted outline when off.
+  // Auto-start toggle button. Accent when autoStart is on; muted when off.
   const autoStartBtn = document.createElement('button');
+  autoStartBtn.type = 'button';
   autoStartBtn.className = `ghost cmd-sub-btn autostart-btn${cmd.autoStart ? ' autostart-on' : ''}`;
   autoStartBtn.title = 'Auto-arrancar al iniciar DevBar';
-  autoStartBtn.textContent = '⚡';
+  autoStartBtn.setAttribute('aria-label', autoStartBtn.title);
+  autoStartBtn.setAttribute('aria-pressed', String(!!cmd.autoStart));
+  autoStartBtn.append(icon('zap'));
   autoStartBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     autoStartBtn.disabled = true;
@@ -290,9 +303,11 @@ function buildCommandSubRow(
   // Start/stop button
   const isRunning = cs.status === 'running';
   const toggle = document.createElement('button');
+  toggle.type = 'button';
   toggle.className = `ghost cmd-sub-btn ${isRunning ? 'stop-btn' : 'start-btn'}`;
-  toggle.textContent = isRunning ? '■' : '▶';
+  toggle.append(icon(isRunning ? 'square' : 'play'));
   toggle.title = isRunning ? 'Detener' : 'Iniciar';
+  toggle.setAttribute('aria-label', toggle.title);
   toggle.addEventListener('click', async (e) => {
     e.stopPropagation();
     toggle.disabled = true;
@@ -325,23 +340,22 @@ function buildActionChip(
   chip.className = `action-chip ${isRunning ? 'running' : ''} ${isDone ? 'done' : ''}`;
   chip.title = `${act.name}${actionState.lastExitCode !== null ? ` (exit ${actionState.lastExitCode})` : ''}`;
 
-  // Icon + name
-  const iconPart = act.icon ? `${act.icon} ` : '';
+  // Icon + name, then the outcome of the last run while it is fresh.
+  if (act.icon) chip.append(userIcon(act.icon, 'wand-sparkles', act.iconColor));
   if (isRunning) {
-    chip.textContent = `${iconPart}${act.name} …`;
-  } else if (isDone) {
-    const exitOk = actionState.lastExitCode === 0;
-    chip.textContent = `${iconPart}${act.name} ${exitOk ? '✓' : '✕'}`;
-    // Clear done status after a few seconds
-    if (
+    chip.append(`${act.name} …`);
+  } else if (
+    isDone &&
+    !(
       actionState.lastFinishedAt &&
       Date.now() - actionState.lastFinishedAt > 4000
-    ) {
-      chip.className = 'action-chip';
-      chip.textContent = `${iconPart}${act.name}`;
-    }
+    )
+  ) {
+    chip.append(act.name, icon(actionState.lastExitCode === 0 ? 'check' : 'x'));
   } else {
-    chip.textContent = `${iconPart}${act.name}`;
+    // Idle, or a done status old enough to fade back to a plain chip.
+    chip.className = 'action-chip';
+    chip.append(act.name);
   }
 
   chip.addEventListener('click', async (e) => {
@@ -358,9 +372,11 @@ function buildActionChip(
   const hasLog = isRunning || actionState.lastFinishedAt != null;
   if (hasLog && actionState.processId) {
     const logsBtn = document.createElement('button');
+    logsBtn.type = 'button';
     logsBtn.className = 'ghost action-logs-btn';
     logsBtn.title = 'Ver log de la acción';
-    logsBtn.textContent = '📜';
+    logsBtn.setAttribute('aria-label', logsBtn.title);
+    logsBtn.append(icon('scroll-text'));
     logsBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       window.api.openLogs(actionState.processId);

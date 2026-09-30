@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -70,9 +71,8 @@ describe('renderer/config/groups-list.ts', () => {
       await win.settle('listGroups', [group('x', { name: '', icon: '' })]);
       expect(navNames()).toEqual(['(sin nombre)']);
       expect(
-        document.querySelector<HTMLElement>('#groups-list .nav-icon')
-          ?.textContent,
-      ).toBe('📦');
+        iconText(document.querySelector<HTMLElement>('#groups-list .nav-icon')),
+      ).toBe('[package]');
     });
   });
 

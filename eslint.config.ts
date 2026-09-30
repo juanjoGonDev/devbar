@@ -118,11 +118,18 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/icon-battery.ts'],
+    files: [
+      'src/icon-battery.ts',
+      'renderer/icon-codepoints.ts',
+      'src/groups/emoji-icons.ts',
+      'src/icon-search-es.ts',
+    ],
     rules: {
-      // A flat emoji table generated from unicode.org's emoji-test.txt, not
-      // hand-written code. Splitting it would buy nothing a reviewer values,
-      // and regenerating it must stay a single mechanical step.
+      // Flat icon tables — two generated from lucide-static by
+      // scripts/generate-icons.ts, the emoji → icon lookup of the icon
+      // migration, and the hand-written Spanish search dictionary. Data, not logic: splitting them would buy nothing a
+      // reviewer values, and regenerating the generated ones must stay a
+      // single mechanical step.
       'max-lines': 'off',
     },
   },

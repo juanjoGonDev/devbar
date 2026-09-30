@@ -137,7 +137,8 @@ export function group(name: string, extra: Partial<Group> = {}): Group {
   return {
     id: `group-${name}`,
     name,
-    icon: '📦',
+    icon: 'package',
+    iconColor: null,
     path: `/tmp/${name}`,
     mode: 'single',
     order: 0,
@@ -156,7 +157,8 @@ export function command(name: string, extra: Partial<Command> = {}): Command {
   return {
     id: `cmd-${name}`,
     name,
-    icon: '⚙️',
+    icon: 'settings',
+    iconColor: null,
     command: 'npm',
     args: ['run', name],
     env: [],
@@ -180,7 +182,8 @@ export function action(name: string, extra: Partial<Action> = {}): Action {
   return {
     id: `act-${name}`,
     name,
-    icon: '🪄',
+    icon: 'wand-sparkles',
+    iconColor: null,
     command: 'make',
     args: [name],
     env: [],
@@ -228,5 +231,6 @@ export function updateStatus(version: string | null): UpdateStatus {
     staged: null,
     lastCheckAt: null,
     currentVersion: '0.0.0',
+    phase: { state: 'idle' },
   };
 }

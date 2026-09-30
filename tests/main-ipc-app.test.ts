@@ -72,6 +72,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
         staged: null,
         lastCheckAt: null,
         currentVersion: '1.2.0',
+        phase: { state: 'idle' },
       }),
       runUpdateCheck: (options) => {
         calls.push(`check:${options?.manual === true}`);
@@ -80,6 +81,14 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
       applyUpdate: () => {
         calls.push('apply');
         return Promise.resolve({ ok: true });
+      },
+      copyInstallCommand: () => {
+        calls.push('copyCommand');
+        return { ok: true };
+      },
+      showDownloadedFile: () => {
+        calls.push('showDownload');
+        return { ok: false, error: 'no_file' };
       },
     },
     snapshots: { forgetPipelineRunId: () => calls.push('forgetRunId') },
@@ -149,6 +158,8 @@ describe('src/main/ipc/app-ipc.ts', () => {
         'updates:status',
         'updates:check',
         'updates:apply',
+        'updates:copyCommand',
+        'updates:showDownload',
         'updates:changelog',
         'config:export',
         'config:import',
@@ -233,6 +244,16 @@ describe('src/main/ipc/app-ipc.ts', () => {
       await h.ipc.invoke('updates:check');
       await h.ipc.invoke('updates:apply');
       expect(h.calls).toEqual(['check:true', 'apply']);
+    });
+
+    it('copies the install command and reveals the download through the updater', () => {
+      const h = harness();
+      expect(h.ipc.invoke('updates:copyCommand')).toEqual({ ok: true });
+      expect(h.ipc.invoke('updates:showDownload')).toEqual({
+        ok: false,
+        error: 'no_file',
+      });
+      expect(h.calls).toEqual(['copyCommand', 'showDownload']);
     });
 
     it('serves the last five releases with the repo link', async () => {

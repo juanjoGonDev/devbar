@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assistedUpdatePlan,
+  linuxUpdateArtifact,
   parseBundleId,
   shouldNotifyUpdate,
   shouldStageUpdate,
@@ -13,6 +14,12 @@ const urls = {
   appImageUrl: 'https://example.test/DevBar-linux-x64.AppImage',
 };
 const none = { dmgUrl: null, setupUrl: null, debUrl: null, appImageUrl: null };
+/** Every Linux artifact published, as a full release would carry them. */
+const linuxArtifacts = {
+  ...none,
+  debUrl: urls.debUrl,
+  appImageUrl: urls.appImageUrl,
+};
 
 describe('src/main/update-plan.ts', () => {
   describe('parseBundleId', () => {
@@ -121,46 +128,16 @@ describe('src/main/update-plan.ts', () => {
       expect(plan.postDownload).toBe('open-and-quit');
     });
 
-    it('never hands the Windows installer to Linux', () => {
+    it('leaves Linux to its own flow, never the Windows installer', () => {
+      // Linux downloads go through linuxUpdateArtifact (the install shape
+      // decides the artifact); the dialog-driven plan only knows the page.
       const plan = assistedUpdatePlan({
         version: '1.2.0',
-        update: { ...none, setupUrl: urls.setupUrl, debUrl: urls.debUrl },
+        update: { ...linuxArtifacts, setupUrl: urls.setupUrl },
         platform: 'linux',
         arch: 'x64',
       });
-      expect(plan.downloadUrl).toBe(urls.debUrl);
-      expect(plan.postDownload).toBe('hand-off');
-    });
-
-    it('prefers the .deb over the AppImage on Linux', () => {
-      const plan = assistedUpdatePlan({
-        version: '1.2.0',
-        update: { ...none, debUrl: urls.debUrl, appImageUrl: urls.appImageUrl },
-        platform: 'linux',
-        arch: 'x64',
-      });
-      expect(plan.destName).toBe('DevBar-1.2.0-linux-x64.deb');
-    });
-
-    it('falls back to the AppImage and explains where it landed', () => {
-      const plan = assistedUpdatePlan({
-        version: '1.2.0',
-        update: { ...none, appImageUrl: urls.appImageUrl },
-        platform: 'linux',
-        arch: 'x64',
-      });
-      expect(plan.destName).toBe('DevBar-1.2.0-linux-x64.AppImage');
-      expect(plan.detail).toMatch(/AppImage a Descargas/);
-    });
-
-    it('names a 32-bit ARM artifact the way the release does', () => {
-      const plan = assistedUpdatePlan({
-        version: '1.2.0',
-        update: { ...none, debUrl: urls.debUrl },
-        platform: 'linux',
-        arch: 'arm',
-      });
-      expect(plan.destName).toBe('DevBar-1.2.0-linux-armv7.deb');
+      expect(plan.downloadUrl).toBeNull();
     });
 
     it('never offers Windows a Linux package when the installer is missing', () => {
@@ -170,12 +147,11 @@ describe('src/main/update-plan.ts', () => {
       // guard the Windows branch already carries.
       const plan = assistedUpdatePlan({
         version: '1.2.0',
-        update: { ...none, debUrl: urls.debUrl, appImageUrl: urls.appImageUrl },
+        update: linuxArtifacts,
         platform: 'win32',
         arch: 'x64',
       });
       expect(plan.downloadUrl).toBeNull();
-      expect(plan.postDownload).toBe('hand-off');
     });
 
     it('offers the release page when this platform has no artifact', () => {
@@ -193,11 +169,96 @@ describe('src/main/update-plan.ts', () => {
     it('offers the release page on macOS without a dmg, never the deb', () => {
       const plan = assistedUpdatePlan({
         version: '1.2.0',
-        update: { ...none, debUrl: urls.debUrl },
+        update: linuxArtifacts,
         platform: 'darwin',
         arch: 'arm64',
       });
       expect(plan.downloadUrl).toBeNull();
+    });
+  });
+
+  describe('linuxUpdateArtifact', () => {
+    const both = { debUrl: urls.debUrl, appImageUrl: urls.appImageUrl };
+
+    it('never offers an AppImage install the .deb', () => {
+      expect(
+        linuxUpdateArtifact({
+          version: '1.2.0',
+          update: both,
+          shape: 'appImage',
+          arch: 'x64',
+        }),
+      ).toEqual({
+        url: urls.appImageUrl,
+        fileName: 'DevBar-1.2.0-linux-x64.AppImage',
+        kind: 'appImage',
+      });
+      expect(
+        linuxUpdateArtifact({
+          version: '1.2.0',
+          update: { ...both, appImageUrl: null },
+          shape: 'appImage',
+          arch: 'x64',
+        }),
+      ).toBeNull();
+    });
+
+    it('gives a .deb install the package', () => {
+      expect(
+        linuxUpdateArtifact({
+          version: '1.2.0',
+          update: both,
+          shape: 'deb',
+          arch: 'arm64',
+        }),
+      ).toMatchObject({
+        fileName: 'DevBar-1.2.0-linux-arm64.deb',
+        kind: 'deb',
+      });
+    });
+
+    it('falls back to the AppImage when a .deb install has no package', () => {
+      expect(
+        linuxUpdateArtifact({
+          version: '1.2.0',
+          update: { ...both, debUrl: null },
+          shape: 'deb',
+          arch: 'x64',
+        }),
+      ).toMatchObject({ kind: 'appImage' });
+    });
+
+    it('prefers the package for an unrecognised install', () => {
+      expect(
+        linuxUpdateArtifact({
+          version: '1.2.0',
+          update: both,
+          shape: 'other',
+          arch: 'x64',
+        }),
+      ).toMatchObject({ kind: 'deb' });
+    });
+
+    it('names a 32-bit ARM artifact the way the release does', () => {
+      expect(
+        linuxUpdateArtifact({
+          version: '1.2.0',
+          update: both,
+          shape: 'other',
+          arch: 'arm',
+        }),
+      ).toMatchObject({ fileName: 'DevBar-1.2.0-linux-armv7.deb' });
+    });
+
+    it('is null when the release published nothing for Linux', () => {
+      expect(
+        linuxUpdateArtifact({
+          version: '1.2.0',
+          update: { debUrl: null, appImageUrl: null },
+          shape: 'other',
+          arch: 'x64',
+        }),
+      ).toBeNull();
     });
   });
 });

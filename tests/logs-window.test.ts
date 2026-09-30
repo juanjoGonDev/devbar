@@ -16,7 +16,8 @@ function logGroup(name: string): LogListGroup {
   return {
     groupId: `group-${name}`,
     groupName: name,
-    groupIcon: '📁',
+    groupIcon: 'folder',
+    groupIconColor: null,
     items: [],
   };
 }

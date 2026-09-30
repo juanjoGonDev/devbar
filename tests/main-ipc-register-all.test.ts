@@ -5,7 +5,10 @@ import {
 } from '../src/main/ipc/register-all.js';
 import { makeSettings, recordingIpc } from './helpers/main-fakes.js';
 
-function harness(overrides: Partial<RegisterAllDeps> = {}) {
+function harness(
+  overrides: Partial<RegisterAllDeps> = {},
+  hostOverrides: Partial<RegisterAllDeps['host']> = {},
+) {
   const calls: string[] = [];
   const host: RegisterAllDeps['host'] = {
     messageBox: () => Promise.resolve({ response: 0 }),
@@ -14,6 +17,19 @@ function harness(overrides: Partial<RegisterAllDeps> = {}) {
     saveDialog: () => Promise.resolve({ canceled: true }),
     folderDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
     files: { readText: () => '', writeText: () => undefined },
+    fileSize: () => 10,
+    readFile: () => Buffer.from('bytes'),
+    decodeImage: () => {
+      calls.push('decode');
+      return {
+        isEmpty: () => true,
+        getSize: () => ({ width: 0, height: 0 }),
+        resize: () => {
+          throw new Error('unreachable');
+        },
+        toPNG: () => Buffer.from(''),
+      };
+    },
     applyAutostart: (enabled) => calls.push(`autostart:${enabled}`),
     spawnDetached: () => {
       calls.push('spawn');
@@ -35,6 +51,7 @@ function harness(overrides: Partial<RegisterAllDeps> = {}) {
     platform: 'darwin',
     desktop: '',
     devPanelAvailable: false,
+    ...hostOverrides,
   };
   const noop = () => undefined;
   const deps = {
@@ -145,6 +162,7 @@ function harness(overrides: Partial<RegisterAllDeps> = {}) {
     fetchReleases: () => Promise.resolve([]),
     releasesUrl: 'https://github.test/releases',
     iconBattery: {},
+    customIconsChanged: () => calls.push('customIconsChanged'),
     ...overrides,
   } as unknown as RegisterAllDeps;
   const ipc = recordingIpc();
@@ -193,6 +211,21 @@ describe('src/main/ipc/register-all.ts', () => {
     it('passes the dev-panel flag from the host through', () => {
       const h = harness();
       expect(h.ipc.invoke('app:isDev')).toBe(false);
+    });
+
+    it('routes a custom icon upload through the host dialog and decoder', async () => {
+      const h = harness(
+        {},
+        {
+          openDialog: () =>
+            Promise.resolve({ canceled: false, filePaths: ['/pic.png'] }),
+        },
+      );
+      await expect(h.ipc.invoke('customIcons:upload')).resolves.toEqual({
+        ok: false,
+        error: 'No se pudo leer la imagen (usa PNG o JPEG)',
+      });
+      expect(h.calls).toContain('decode');
     });
   });
 });

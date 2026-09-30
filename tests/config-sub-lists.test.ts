@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -140,7 +141,9 @@ describe('renderer/config/sub-lists.ts', () => {
     it('lists each item with its icon, name and command line', async () => {
       await open({ commands: [command('api')], actions: [action('seed')] });
       expect(itemRows('command')).toHaveLength(1);
-      expect(textOf(itemRows('command')[0], '.sub-icon')).toBe('⚙️');
+      expect(iconText(itemRows('command')[0].querySelector('.sub-icon'))).toBe(
+        '[settings]',
+      );
       expect(textOf(itemRows('command')[0], '.sub-name')).toBe('api');
       expect(textOf(itemRows('command')[0], '.sub-cmd')).toBe('npm run api');
       expect(textOf(itemRows('action')[0], '.sub-name')).toBe('seed');
@@ -165,7 +168,7 @@ describe('renderer/config/sub-lists.ts', () => {
         ...itemRows('command')[0].querySelectorAll<HTMLButtonElement>(
           '.sub-actions .small-btn',
         ),
-      ].find((b) => b.textContent === '✎');
+      ].find((b) => b.title === 'Editar');
       click(edit);
       expect(document.getElementById('sub-dialog-title')?.textContent).toBe(
         'Editar comando: api',

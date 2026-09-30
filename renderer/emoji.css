@@ -5,6 +5,11 @@
  * carry their own emoji fonts, and many Linux desktops already ship a
  * system Noto.
  *
+ * The UI chrome no longer uses emoji at all (its icons come from the Lucide
+ * face in icons.css). What still can is CONTENT: emoji printed by the
+ * services whose logs DevBar shows, group and command names, and a stored
+ * icon the migration could not map, which renders as its own text.
+ *
  * It sits LAST in every font stack on purpose: glyph resolution walks the
  * stack per character, so this face is only reached — and only fetched —
  * where no native font covered the emoji. That is exactly the Raspberry
@@ -13,8 +18,9 @@
  * unicode-range keeps the face away from TEXT symbols. Noto Color Emoji's
  * cmap also covers glyphs like ▶ (U+25B6) and, through the stack walk,
  * would steal them from the monospace log font and repaint logs with big
- * color glyphs; arrows, box-drawing and the geometric shapes the chrome
- * itself uses (▶ ■ ▨ ◧) must keep resolving in the text font. The listed
+ * color glyphs; arrows, box-drawing and the geometric shapes DevBar's own
+ * log markers use (▶ start, ■ exited, ── pipeline ──) must keep resolving
+ * in the text font. The listed
  * ranges are the true emoji blocks (plus ⌚⏰-style faces in 23xx); the
  * picker's rare 25xx emoji fall back to monochrome there — right trade.
  */

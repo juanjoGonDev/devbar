@@ -1,3 +1,6 @@
+import { userIcon } from '../icon.js';
+import { customIconIdOf } from '../../src/custom-icons.js';
+import { createIconColorControl } from './icon-color-control.js';
 import { wireModal } from '../modal.js';
 import { buildEnvEditor, type EnvEditorHandle } from './env-editor.js';
 import type { ScheduleEditor } from './schedule-editor.js';
@@ -16,6 +19,7 @@ type SubKind = 'command' | 'action' | 'prescript';
 
 interface SubFormData {
   icon: string | null;
+  iconColor: string | null;
   name: string;
   command: string;
   args: string[];
@@ -71,7 +75,7 @@ export interface SubDialogDeps {
   schedule: ScheduleEditor;
   openIconPicker(
     anchorEl: HTMLElement,
-    onSelect: (emoji: string) => void,
+    onSelect: (value: string) => void,
   ): void;
   loadGroups(): Promise<void>;
   renderGroupDetail(): void;
@@ -90,6 +94,17 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
   let subDialogCallback: ((data: SubFormData) => unknown) | null = null;
   // Module-level ref so the submit handler can read the current editor state
   let envEditorHandle: EnvEditorHandle | null = null;
+  // Default icon of the kind being edited, for repaints from the colour segment.
+  let defaultIcon: 'terminal' | 'wand-sparkles' = 'terminal';
+  const paintIcon = (): void => {
+    const value = els.iconBtn.dataset.value || defaultIcon;
+    els.iconBtn.replaceChildren(
+      userIcon(value, defaultIcon, colorControl.value()),
+    );
+    colorControl.setImage(customIconIdOf(value) !== null);
+  };
+  // Built once around the icon button; each open() loads the item's colour.
+  const colorControl = createIconColorControl(els.iconBtn, paintIcon);
 
   function fillCommonFields(item: EditableItem | null, kind: SubKind): void {
     const isCommand = kind === 'command';
@@ -105,15 +120,17 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     // Icon button — hidden for prescripts (they don't have icons)
     const sfIconField = document.querySelector<HTMLElement>('.sf-icon-field');
     if (sfIconField) sfIconField.style.display = isPreScript ? 'none' : '';
-    els.iconBtn.textContent =
-      (item && 'icon' in item ? item.icon : null) || (isCommand ? '⚙️' : '🪄');
+    defaultIcon = isCommand ? 'terminal' : 'wand-sparkles';
+    const setIcon = (value: string): void => {
+      // The button shows the icon; the stored value rides in a data
+      // attribute, since the glyph's text is a private-use codepoint.
+      els.iconBtn.dataset.value = value;
+      paintIcon();
+    };
+    colorControl.set(item && 'iconColor' in item ? item.iconColor : null);
+    setIcon((item && 'icon' in item ? item.icon : null) || defaultIcon);
     els.iconBtn.onclick = (e) => {
-      deps.openIconPicker(
-        e.currentTarget as HTMLButtonElement,
-        (emoji: string) => {
-          els.iconBtn.textContent = emoji;
-        },
-      );
+      deps.openIconPicker(e.currentTarget as HTMLButtonElement, setIcon);
     };
 
     els.name.value = item ? item.name : '';
@@ -209,6 +226,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
       await window.api.saveCommand(groupId, {
         id: item ? item.id : undefined,
         icon: data.icon || null,
+        iconColor: data.iconColor,
         name: data.name,
         command: data.command,
         args: data.args,
@@ -237,6 +255,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     await window.api.saveAction(groupId, {
       id: item ? item.id : undefined,
       icon: data.icon || null,
+      iconColor: data.iconColor,
       name: data.name,
       command: data.command,
       args: data.args,
@@ -321,7 +340,10 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     const confirmSecsStr = els.confirmSecs ? els.confirmSecs.value.trim() : '';
     const confirmSecs = confirmSecsStr ? parseInt(confirmSecsStr, 10) : null;
     return {
-      icon: els.iconBtn.textContent,
+      icon: els.iconBtn.dataset.value || null,
+      // Kept even under an image (which it cannot tint), so switching back
+      // to a glyph brings the colour back.
+      iconColor: colorControl.value(),
       name: els.name.value.trim(),
       command: els.command.value.trim(),
       args,

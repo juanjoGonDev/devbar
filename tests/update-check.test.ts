@@ -252,7 +252,7 @@ describe('response error handling (mid-drain socket failures)', () => {
     ).resolves.toEqual([]);
   });
 
-  it('checkForUpdate: a non-200 body that errors while draining resolves null', async () => {
+  it('checkForUpdate: a non-200 body that errors while draining rejects once', async () => {
     vi.spyOn(https, 'get').mockImplementation(((
       _opts: unknown,
       cb: (res: Readable & { statusCode?: number }) => void,
@@ -269,7 +269,98 @@ describe('response error handling (mid-drain socket failures)', () => {
     }) as never);
     await expect(
       checkForUpdate({ owner: 'o', repo: 'r', currentVersion: '0.0.1' }),
-    ).resolves.toBeNull();
+    ).rejects.toThrow(/HTTP 500/);
+  });
+});
+
+describe('checkForUpdate: a failed check is an error, not "no update"', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type Listener = (...args: unknown[]) => void;
+
+  /**
+   * One scripted GitHub answer: a status + body, or a request-level event
+   * ('error' / 'timeout') fired instead of any response.
+   */
+  function mockApi(
+    spec:
+      | { status: number; body?: string }
+      | { requestEvent: 'error' | 'timeout'; error?: Error },
+  ): void {
+    vi.spyOn(https, 'get').mockImplementation(((
+      _opts: unknown,
+      cb: (res: Readable & { statusCode?: number }) => void,
+    ) => {
+      const listeners = new Map<string, Listener>();
+      const req = {
+        on: (event: string, listener: Listener) => {
+          listeners.set(event, listener);
+          return req;
+        },
+        destroy: vi.fn(),
+      };
+      setImmediate(() => {
+        if ('requestEvent' in spec) {
+          listeners.get(spec.requestEvent)?.(spec.error);
+          return;
+        }
+        const res: Readable & { statusCode?: number } = new Readable({
+          read() {},
+        });
+        res.statusCode = spec.status;
+        cb(res);
+        if (spec.body !== undefined) res.emit('data', Buffer.from(spec.body));
+        res.emit('end');
+      });
+      return req;
+    }) as never);
+  }
+
+  const check = () =>
+    checkForUpdate({
+      owner: 'o',
+      repo: 'r',
+      currentVersion: '1.0.0',
+      platform: 'linux',
+      arch: 'arm64',
+    });
+
+  it('resolves null only when the latest release is not newer', async () => {
+    mockApi({ status: 200, body: JSON.stringify({ tag_name: 'v1.0.0' }) });
+    await expect(check()).resolves.toBeNull();
+  });
+
+  it('resolves the release when it is newer', async () => {
+    mockApi({
+      status: 200,
+      body: JSON.stringify({ tag_name: 'v1.1.0', html_url: 'u', assets: [] }),
+    });
+    await expect(check()).resolves.toMatchObject({ version: '1.1.0' });
+  });
+
+  it('rejects a rate-limited answer with the status in the reason', async () => {
+    mockApi({ status: 403 });
+    await expect(check()).rejects.toThrow(/HTTP 403/);
+  });
+
+  it('rejects a body that is not JSON', async () => {
+    mockApi({ status: 200, body: '<html>' });
+    await expect(check()).rejects.toThrow(/respuesta no válida/);
+  });
+
+  it('rejects a network failure with its own message', async () => {
+    mockApi({
+      requestEvent: 'error',
+      error: new Error('getaddrinfo ENOTFOUND api.github.com'),
+    });
+    await expect(check()).rejects.toThrow(/ENOTFOUND/);
+  });
+
+  it('rejects a timeout', async () => {
+    mockApi({ requestEvent: 'timeout' });
+    await expect(check()).rejects.toThrow(/tiempo de espera/);
   });
 });
 

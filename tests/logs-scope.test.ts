@@ -409,13 +409,15 @@ describe('renderer/logs/scope.ts', () => {
         {
           groupId: 'g1',
           groupName: 'Back',
-          groupIcon: '📁',
+          groupIcon: 'folder',
+          groupIconColor: null,
           items: [
             {
               id: 'api',
               type: 'command',
               name: 'api',
               icon: null,
+              iconColor: null,
               lineCount: 0,
               status: 'running',
               warnCount: 0,

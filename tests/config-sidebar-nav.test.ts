@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flush, openConfigWindow, waitFor } from './helpers/config-window.js';
@@ -76,10 +77,10 @@ describe('renderer/config/sidebar-nav.ts', () => {
       expect(document.getElementById('config-nav')?.classList).toContain(
         'collapsed',
       );
-      expect(toggle?.textContent).toBe('▨');
+      expect(iconText(toggle)).toBe('[panel-left-open]');
       expect(localStorage.getItem('config-nav-collapsed')).toBe('1');
       toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      expect(toggle?.textContent).toBe('◧');
+      expect(iconText(toggle)).toBe('[panel-left-close]');
       expect(localStorage.getItem('config-nav-collapsed')).toBe('0');
     });
 
@@ -177,6 +178,10 @@ describe('renderer/config/sidebar-nav.ts', () => {
       expect(dlg.querySelector('[data-status]')?.textContent).toContain(
         'copiado al portapapeles',
       );
+      // Success carries the check icon, not a typed ✓ glyph.
+      expect(
+        dlg.querySelector<HTMLElement>('[data-status] .icon')?.dataset.icon,
+      ).toBe('check');
     });
 
     it('keeps the dialog open after an action until the user goes back', async () => {

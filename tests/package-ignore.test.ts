@@ -39,6 +39,12 @@ describe('packaged app contents', () => {
     expect(isIgnored('/build/assets/fonts/NotoColorEmoji.woff2')).toBe(true);
   });
 
+  it('ships the icon font: every control paints its glyph from it', () => {
+    // The directory itself must survive too, or packager never descends.
+    expect(isIgnored('/build/assets/fonts')).toBe(false);
+    expect(isIgnored('/build/assets/fonts/lucide.woff2')).toBe(false);
+  });
+
   it('still drops the TypeScript sources and dev tooling', () => {
     for (const dropped of [
       '/src/main.ts',
