@@ -25,10 +25,15 @@ function build(): HTMLDialogElement {
     <div class="modal-body">
       <p>
         Al continuar se copia al portapapeles la plantilla del informe
-        (versión, sistema y últimas líneas de <code>app.log</code>), ya
-        limpia de credenciales, y se abre GitHub con el formulario
-        pre-relleno cuando la URL no es demasiado larga.
+        (versión, sistema, errores y avisos recientes y últimas líneas de
+        <code>app.log</code>), ya limpia de credenciales, y se abre GitHub
+        con el formulario pre-relleno cuando la URL no es demasiado larga.
       </p>
+      <p class="small" data-summary></p>
+      <details data-preview hidden>
+        <summary class="small">Ver el informe</summary>
+        <pre class="small report-preview"></pre>
+      </details>
       <p class="muted small" data-status role="status"></p>
     </div>
     <div class="modal-actions">
@@ -41,6 +46,38 @@ function build(): HTMLDialogElement {
   document.body.appendChild(next);
   wireModal(next);
   return next;
+}
+
+const plural = (n: number, one: string, many: string): string =>
+  `${String(n)} ${n === 1 ? one : many}`;
+
+/** «Se incluirán 3 errores y 5 avisos recientes»: what the report lists. */
+function summaryText(errors: number, warnings: number): string {
+  if (errors === 0 && warnings === 0)
+    return 'No hay errores ni avisos recientes';
+  return `Se incluirán ${plural(errors, 'error', 'errores')} y ${plural(warnings, 'aviso', 'avisos')} recientes`;
+}
+
+/** Each open asks again; only the newest answer may paint the dialog. */
+let previewGeneration = 0;
+
+async function loadPreview(dlg: HTMLDialogElement): Promise<void> {
+  const generation = ++previewGeneration;
+  const summary = dlg.querySelector<HTMLElement>('[data-summary]');
+  const details = dlg.querySelector<HTMLElement>('[data-preview]');
+  const pre = details?.querySelector('pre');
+  if (summary) summary.textContent = '';
+  if (details) details.hidden = true;
+  try {
+    const res = await window.api.reportPreview();
+    if (generation !== previewGeneration || !res.ok) return;
+    if (summary)
+      summary.textContent = summaryText(res.errors ?? 0, res.warnings ?? 0);
+    if (pre) pre.textContent = res.text ?? '';
+    if (details) details.hidden = false;
+  } catch {
+    // No preview is not a failure: the actions below still work.
+  }
 }
 
 function setStatus(dlg: HTMLDialogElement, message: string): void {
@@ -100,6 +137,7 @@ export function openReportModal(): void {
   const dlg = dialog ?? build();
   dialog = dlg;
   setStatus(dlg, '');
+  void loadPreview(dlg);
   if (!dlg.open) dlg.showModal();
   const back = dlg.querySelector<HTMLButtonElement>('[data-back]');
   if (back) back.onclick = () => dlg.close();

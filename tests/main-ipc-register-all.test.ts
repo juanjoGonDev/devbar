@@ -27,6 +27,7 @@ function harness(overrides: Partial<RegisterAllDeps> = {}) {
     appVersion: () => '1.2.0',
     appQuit: () => calls.push('quit'),
     copyReport: () => ({ ok: true }),
+    reportPreview: () => ({ text: '', errors: 0, warnings: 0 }),
     reportIssue: () => ({
       url: 'https://github.test/issues/new',
       bodyIncluded: true,

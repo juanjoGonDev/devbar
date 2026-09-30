@@ -415,6 +415,7 @@ const FORWARDS: readonly Forward[] = [
   ],
   ['reportIssue', (api) => api.reportIssue(), 'app:reportIssue', []],
   ['copyReport', (api) => api.copyReport(), 'app:copyReport', []],
+  ['reportPreview', (api) => api.reportPreview(), 'app:reportPreview', []],
   [
     'openNotificationSettings',
     (api) => api.openNotificationSettings(),

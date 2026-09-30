@@ -1157,6 +1157,13 @@ dialog h2 {
   border-top: 1px solid var(--border);
   background: var(--bg-card-strong);
 }
+/* «Reportar fallo»: the report text, readable before it is sent. */
+.report-preview {
+  max-height: 40vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 /* Changelog-specific: the collapsible release panels inside the shared body. */
 .modal-changelog .modal-body {
   display: flex;

@@ -1,11 +1,65 @@
 import fs, { type WriteStream } from 'node:fs';
 import path from 'node:path';
 import type { BrowserWindow } from 'electron';
+import {
+  createErrorJournal,
+  type ErrorJournal,
+  type ProblemEntry,
+} from './error-journal.js';
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 let stream: WriteStream | null = null,
   bytesWritten = 0,
   maxBytes = DEFAULT_MAX_BYTES,
-  capWarned = false;
+  capWarned = false,
+  journal: ErrorJournal | null = null,
+  session = '';
+
+/** Where the run before this one left its log: `app.log` → `app.previous.log`. */
+export function previousLogPath(filePath: string): string {
+  const ext = path.extname(filePath);
+  return `${filePath.slice(0, filePath.length - ext.length)}.previous${ext}`;
+}
+
+/**
+ * The previous session's log is exactly what a crash or an update relaunch
+ * needs, so it is rotated aside (overwriting the older one) instead of
+ * truncated. Only when the rename fails does the old truncation apply.
+ */
+function rotate(filePath: string): void {
+  if (!fs.existsSync(filePath)) return;
+  try {
+    fs.renameSync(filePath, previousLogPath(filePath));
+  } catch {
+    fs.writeFileSync(filePath, '');
+  }
+}
+
+function openJournal(filePath: string): void {
+  session = new Date().toISOString();
+  journal = createErrorJournal({
+    filePath: path.join(path.dirname(filePath), 'errors.json'),
+    fs,
+    now: () => new Date(),
+    session,
+    setTimer: (fn, ms) => setTimeout(fn, ms).unref(),
+    clearTimer: (handle) => clearTimeout(handle as NodeJS.Timeout),
+  });
+}
+
+/** Recent warn/error entries, this session and persisted ones, oldest first. */
+export function recentProblems(): ProblemEntry[] {
+  return journal ? journal.entries() : [];
+}
+
+/** The id this session stamps on its problems (its start time). */
+export function currentSession(): string {
+  return session;
+}
+
+/** Persist pending problems now: crash and exit paths cannot wait. */
+export function flushProblems(): void {
+  journal?.flush();
+}
 function safeFormat(value: unknown): string {
   if (value === null) return 'null';
   if (value === undefined) return 'undefined';
@@ -33,8 +87,15 @@ export function init(options: { filePath: string; maxBytes?: number }): void {
       : DEFAULT_MAX_BYTES;
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, '');
-    stream = fs.createWriteStream(filePath, { flags: 'a' });
+    rotate(filePath);
+    openJournal(filePath);
+    const opened = fs.createWriteStream(filePath, { flags: 'a' });
+    // An unlistened stream error is an uncaught exception in the main
+    // process: a log that cannot be written stops logging, nothing more.
+    opened.on('error', () => {
+      if (stream === opened) stream = null;
+    });
+    stream = opened;
     bytesWritten = 0;
     capWarned = false;
     write('info', 'logger', [
@@ -49,7 +110,23 @@ export function init(options: { filePath: string; maxBytes?: number }): void {
     } catch {}
   }
 }
+function recordProblem(level: string, origin: string, values: unknown[]): void {
+  const lvl = level.trim();
+  if (!journal || (lvl !== 'warn' && lvl !== 'error')) return;
+  journal.record(
+    lvl,
+    origin === 'main' ? 'main' : `renderer:${origin}`,
+    values.map(safeFormat).join(' '),
+  );
+}
 function write(level: string, origin: string, args: unknown): void {
+  // Before the stream and cap checks: a session whose app.log filled up or
+  // broke must still keep its failures for the report.
+  recordProblem(
+    level,
+    origin || 'renderer',
+    Array.isArray(args) ? args : [args],
+  );
   if (!stream) return;
   if (bytesWritten >= maxBytes) {
     if (!capWarned) {

@@ -98,6 +98,7 @@ export interface AppIpcDeps {
    *  answers the URL to open (host-provided; see src/report-issue.ts). */
   reportIssue: () => { url: string; bodyIncluded: boolean };
   copyReport: () => { ok: boolean; error?: string };
+  reportPreview: () => { text: string; errors: number; warnings: number };
   setTimer?: (fn: () => void, ms: number) => unknown;
   newImportToken?: () => string;
 }
@@ -318,6 +319,14 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
   });
   // Copy-only report: the same clipboard content, nothing opens.
   ipc.handle('app:copyReport', () => deps.copyReport());
+  // What the report would carry, shown in the dialog before any action.
+  ipc.handle('app:reportPreview', () => {
+    try {
+      return { ok: true, ...deps.reportPreview() };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  });
 
   // Open an external https URL in the default browser. https-only guard so a
   // renderer bug can't fire arbitrary schemes (file:, javascript:, …).

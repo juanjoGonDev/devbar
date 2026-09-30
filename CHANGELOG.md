@@ -3,6 +3,39 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.10.0] - 2026-09-30
+
+### Añadido
+
+- **«Reportar fallo» ahora incluye los errores y avisos recientes.** Hasta
+  ahora el informe solo llevaba el entorno y el final de `app.log`, y un
+  fallo de hace un rato —una descarga o instalación de actualización que
+  falló, un cierre inesperado— ya no cabía en ese final. DevBar guarda
+  aparte los últimos 50 errores y avisos (de la app y de sus ventanas),
+  los conserva entre reinicios en un pequeño `errors.json` junto al log y
+  los añade al informe en una sección «Errores y avisos recientes», del
+  más reciente al más antiguo y marcando si son de esta sesión o de la
+  anterior. Van antes del log y, si la URL de GitHub se queda corta,
+  ceden sitio el log primero; el portapapeles siempre lleva la lista
+  entera. Pasan por la misma limpieza de credenciales que el resto del
+  informe.
+- **Los cierres inesperados quedan registrados.** Las excepciones y
+  promesas rechazadas sin capturar del proceso principal, y las ventanas
+  o procesos auxiliares que mueren, dejan ahora una línea de error en el
+  log (motivo, código de salida y ventana). DevBar se comporta ante ellos
+  igual que antes: solo se registran.
+- **El diálogo de reporte dice qué se va a enviar.** Muestra cuántos
+  errores y avisos recientes incluirá y permite leer el informe completo
+  antes de copiarlo o abrir GitHub.
+
+### Corregido
+
+- **El log de la sesión anterior se perdía al reiniciar.** Cada arranque
+  vaciaba `app.log`, así que tras un cierre inesperado o el reinicio de
+  una actualización desaparecía justo lo que explicaba el fallo. Ahora se
+  conserva como `app.previous.log` (sustituyendo al anterior) y su final
+  viaja en el informe copiado al portapapeles.
+
 ## [0.9.7] - 2026-09-22
 
 ### Corregido

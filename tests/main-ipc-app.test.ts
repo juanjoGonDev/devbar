@@ -108,6 +108,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
       calls.push('copyReport');
       return { ok: true };
     },
+    reportPreview: () => ({ text: 'REPORT', errors: 2, warnings: 1 }),
     setTimer: (fn) => timers.push(fn),
     newImportToken: () => 'tok',
     ...overrides,
@@ -161,6 +162,7 @@ describe('src/main/ipc/app-ipc.ts', () => {
         'app:openNotificationSettings',
         'app:reportIssue',
         'app:copyReport',
+        'app:reportPreview',
         'app:openExternal',
       ]);
     });
@@ -185,6 +187,29 @@ describe('src/main/ipc/app-ipc.ts', () => {
       expect(h.calls).not.toContain(
         'external:https://github.test/issues/new?title=x',
       );
+    });
+
+    it('previews the report and its problem counts without copying', async () => {
+      const h = harness();
+      expect(await h.ipc.invoke('app:reportPreview')).toEqual({
+        ok: true,
+        text: 'REPORT',
+        errors: 2,
+        warnings: 1,
+      });
+      expect(h.calls).not.toContain('copyReport');
+    });
+
+    it('answers a failed preview instead of rejecting', async () => {
+      const h = harness({
+        reportPreview: () => {
+          throw new Error('disk gone');
+        },
+      });
+      expect(await h.ipc.invoke('app:reportPreview')).toEqual({
+        ok: false,
+        error: 'disk gone',
+      });
     });
 
     it('reports failure when the browser refuses to open', async () => {
