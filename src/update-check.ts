@@ -98,6 +98,12 @@ export interface UpdateCheckOptions {
   timeoutMs?: number;
 }
 
+/**
+ * The latest release when it is newer than `currentVersion`, null when it is
+ * not. Every failure REJECTS (with a reason fit for the UI): a rate limit, a
+ * timeout or an offline host is "the check failed", never "you are up to
+ * date".
+ */
 export function checkForUpdate({
   owner,
   repo,
@@ -106,7 +112,8 @@ export function checkForUpdate({
   platform = process.platform,
   timeoutMs = 8000,
 }: UpdateCheckOptions): Promise<AvailableUpdate | null> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const fail = (reason: string): void => reject(new Error(reason));
     const req = https.get(
       {
         hostname: 'api.github.com',
@@ -122,11 +129,11 @@ export function checkForUpdate({
         // headers (mid-body reset, or a non-200 body drained by resume())
         // emits on the IncomingMessage, not the request — without this
         // handler it would be unhandled and crash the app during an
-        // update.
-        res.on('error', () => resolve(null));
+        // update. A promise settles once, so a later error is harmless.
+        res.on('error', (err: Error) => fail(err.message));
         if (res.statusCode !== 200) {
           res.resume();
-          resolve(null);
+          fail(`GitHub respondió HTTP ${res.statusCode}`);
           return;
         }
         let data = '';
@@ -134,43 +141,45 @@ export function checkForUpdate({
           data += chunk.toString();
         });
         res.on('end', () => {
+          let raw: unknown;
           try {
-            const raw: unknown = JSON.parse(data),
-              release = record(raw),
-              version = String(release.tag_name ?? '').replace(/^v/, ''),
-              suffixes = releaseAssetSuffixes(platform, arch);
-            resolve(
-              version && isNewerVersion(version, currentVersion)
-                ? {
-                    version,
-                    url:
-                      typeof release.html_url === 'string'
-                        ? release.html_url
-                        : '',
-                    dmgUrl: selectAssetUrl(release.assets, suffixes.dmg ?? ''),
-                    zipUrl: selectAssetUrl(release.assets, suffixes.zip ?? ''),
-                    setupUrl: selectAssetUrl(
-                      release.assets,
-                      suffixes.setup ?? '',
-                    ),
-                    appImageUrl: selectAssetUrl(
-                      release.assets,
-                      suffixes.appImage ?? '',
-                    ),
-                    debUrl: selectAssetUrl(release.assets, suffixes.deb ?? ''),
-                  }
-                : null,
-            );
+            raw = JSON.parse(data);
           } catch {
-            resolve(null);
+            fail('respuesta no válida de GitHub');
+            return;
           }
+          const release = record(raw),
+            version = String(release.tag_name ?? '').replace(/^v/, ''),
+            suffixes = releaseAssetSuffixes(platform, arch);
+          resolve(
+            version && isNewerVersion(version, currentVersion)
+              ? {
+                  version,
+                  url:
+                    typeof release.html_url === 'string'
+                      ? release.html_url
+                      : '',
+                  dmgUrl: selectAssetUrl(release.assets, suffixes.dmg ?? ''),
+                  zipUrl: selectAssetUrl(release.assets, suffixes.zip ?? ''),
+                  setupUrl: selectAssetUrl(
+                    release.assets,
+                    suffixes.setup ?? '',
+                  ),
+                  appImageUrl: selectAssetUrl(
+                    release.assets,
+                    suffixes.appImage ?? '',
+                  ),
+                  debUrl: selectAssetUrl(release.assets, suffixes.deb ?? ''),
+                }
+              : null,
+          );
         });
       },
     );
-    req.on('error', () => resolve(null));
+    req.on('error', (err: Error) => fail(err.message));
     req.on('timeout', () => {
       req.destroy();
-      resolve(null);
+      fail('tiempo de espera agotado');
     });
   });
 }

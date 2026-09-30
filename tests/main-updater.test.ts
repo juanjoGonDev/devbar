@@ -1,90 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createUpdater, type UpdaterDeps } from '../src/main/updater.js';
-import type { AvailableUpdate } from '../src/domain-types.js';
-
-const update: AvailableUpdate = {
-  version: '1.3.0',
-  url: 'https://github.test/releases/v1.3.0',
-  dmgUrl: null,
-  zipUrl: 'https://github.test/DevBar-1.3.0-macos-arm64.zip',
-  setupUrl: null,
-  appImageUrl: null,
-  debUrl: null,
-};
-
-function harness(overrides: Partial<UpdaterDeps> = {}) {
-  const calls: string[] = [];
-  const banners: string[] = [];
-  const toasts: { kind: string; message: string }[] = [];
-  const statuses: unknown[] = [];
-  const removed: string[] = [];
-  const dirs = new Map<string, string[]>([
-    ['/home/updates', ['1.2.0', 'file.zip']],
-  ]);
-  const deps: UpdaterDeps = {
-    repo: { owner: 'o', repo: 'r' },
-    platform: 'darwin',
-    arch: 'arm64',
-    isMac: true,
-    pid: 99,
-    appVersion: () => '1.2.0',
-    checkForUpdate: () => Promise.resolve(update),
-    fetchReleaseSha256: () =>
-      Promise.resolve(new Map([['DevBar-1.3.0-macos-arm64.zip', 'hash']])),
-    verifySha256: () => Promise.resolve(true),
-    stageableAsset: () => ({
-      url: update.zipUrl ?? '',
-      fileName: 'DevBar-1.3.0-macos-arm64.zip',
-      kind: 'macBundle',
-    }),
-    stageDownloadedArtifact: (input) => {
-      calls.push(`stage:${input.destDir}`);
-      return Promise.resolve({ version: input.version, appPath: '/staged' });
-    },
-    extractUpdate: (input) => {
-      calls.push(`extract:${input.zipPath}`);
-      return Promise.resolve({ version: input.version, appPath: '/staged' });
-    },
-    canInstallInPlace: (installed: string | null): installed is string =>
-      installed !== null,
-    installedAppPath: () => '/Applications/DevBar.app',
-    spawnSwap: () => calls.push('spawnSwap'),
-    downloadFile: (_url, dest) => {
-      calls.push('download');
-      return Promise.resolve(dest);
-    },
-    downloadsDir: () => '/Users/me/Downloads',
-    updatesDir: () => '/home/updates',
-    removeFile: (target) => removed.push(target),
-    updaterFs: {
-      mkdirSync: () => calls.push('mkdir'),
-      rmSync: (target) => removed.push(target),
-      readdirSync: (dir) => dirs.get(dir) ?? [],
-      isDirectory: (target) => !target.endsWith('.zip'),
-      readInstalledPlist: () =>
-        '<key>CFBundleIdentifier</key><string>dev.devbar.app</string>',
-    },
-    messageBox: () => Promise.resolve({ response: 1 }),
-    openPath: () => Promise.resolve(''),
-    openExternal: (url) => calls.push(`external:${url}`),
-    sendUpdateStatus: (payload) => statuses.push(payload),
-    refreshTrayIcon: () => calls.push('refreshTrayIcon'),
-    showBannerNotification: (_title, body) => banners.push(body),
-    toast: (kind, message) => toasts.push({ kind, message }),
-    markUpdateExit: () => calls.push('markUpdateExit'),
-    quitAfter: (ms) => calls.push(`quit:${ms}`),
-    configFocused: () => false,
-    ...overrides,
-  };
-  return {
-    updater: createUpdater(deps),
-    calls,
-    banners,
-    toasts,
-    statuses,
-    removed,
-  };
-}
+import { harness, update } from './helpers/updater-harness.js';
 
 describe('src/main/updater.ts', () => {
   describe('status', () => {
@@ -95,6 +10,7 @@ describe('src/main/updater.ts', () => {
         staged: null,
         lastCheckAt: null,
         currentVersion: '1.2.0',
+        phase: { state: 'idle' },
       });
       expect(h.updater.available()).toBeNull();
       expect(h.updater.staged()).toBeNull();
@@ -178,10 +94,17 @@ describe('src/main/updater.ts', () => {
       const warn = vi
         .spyOn(console, 'warn')
         .mockImplementation(() => undefined);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const h = harness({ fetchReleaseSha256: () => Promise.resolve(null) });
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.banners).toContain('v1.3.0 disponible.'));
+      await vi.waitFor(() =>
+        expect(h.banners.at(-1)).toMatch(/No se pudo preparar v1.3.0/),
+      );
       expect(h.updater.staged()).toBeNull();
+      expect(h.updater.status().phase).toMatchObject({
+        state: 'verify-failed',
+        reason: 'no se pudo obtener SHA256SUMS.txt',
+      });
       warn.mockRestore();
     });
 
@@ -189,10 +112,18 @@ describe('src/main/updater.ts', () => {
       const warn = vi
         .spyOn(console, 'warn')
         .mockImplementation(() => undefined);
+      const error = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
       const h = harness({ verifySha256: () => Promise.resolve(false) });
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.banners).toContain('v1.3.0 disponible.'));
-      expect(warn).toHaveBeenCalled();
+      await vi.waitFor(() =>
+        expect(h.banners.at(-1)).toMatch(/No se pudo preparar v1.3.0/),
+      );
+      expect(String(error.mock.calls[0]?.[0])).toMatch(
+        /^\[updates\] verify-failed v1.3.0: el hash/,
+      );
+      expect(warn).not.toHaveBeenCalled();
       warn.mockRestore();
     });
 
@@ -200,12 +131,67 @@ describe('src/main/updater.ts', () => {
       const warn = vi
         .spyOn(console, 'warn')
         .mockImplementation(() => undefined);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const h = harness({ verifySha256: () => Promise.resolve(false) });
       await h.updater.runUpdateCheck();
       await vi.waitFor(() => expect(h.banners).toHaveLength(1));
       await h.updater.runUpdateCheck({ manual: true });
       expect(h.calls.filter((call) => call === 'download')).toHaveLength(1);
       warn.mockRestore();
+      vi.restoreAllMocks();
+    });
+
+    it('reports the download progress and ends ready to restart', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const h = harness();
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+      expect(h.phases).toContainEqual({
+        state: 'downloading',
+        version: '1.3.0',
+        received: 50,
+        total: 100,
+      });
+      expect(h.updater.status().phase).toEqual({
+        state: 'ready-to-install',
+        version: '1.3.0',
+        path: '/staged',
+        install: 'restart',
+        command: null,
+      });
+      vi.restoreAllMocks();
+    });
+
+    it('makes a failed staging visible even after the launch notice', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const h = harness({
+        stageDownloadedArtifact: () =>
+          Promise.reject(new Error('la descarga no parece un AppImage válido')),
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() =>
+        expect(h.updater.status().phase).toMatchObject({
+          state: 'download-failed',
+          reason:
+            'no se pudo preparar: la descarga no parece un AppImage válido',
+        }),
+      );
+      expect(h.banners.at(-1)).toMatch(/No se pudo preparar v1.3.0/);
+      vi.restoreAllMocks();
+    });
+
+    it('keeps a staging failure in the pane while config is focused', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const h = harness({
+        verifySha256: () => Promise.resolve(false),
+        configFocused: () => true,
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() =>
+        expect(h.updater.status().phase.state).toBe('verify-failed'),
+      );
+      expect(h.banners).toEqual([]);
+      vi.restoreAllMocks();
     });
 
     it('always deletes the downloaded archive', async () => {
@@ -363,6 +349,79 @@ describe('src/main/updater.ts', () => {
         },
       });
       expect(h.updater.installedBundleId()).toBeNull();
+    });
+  });
+
+  describe('check phases', () => {
+    it('says the check failed, with the reason, instead of "up to date"', async () => {
+      const error = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      const h = harness({
+        checkForUpdate: () =>
+          Promise.reject(new Error('GitHub respondió HTTP 403')),
+      });
+      const result = await h.updater.runUpdateCheck({ manual: true });
+      expect(result.phase).toEqual({
+        state: 'check-failed',
+        reason: 'GitHub respondió HTTP 403',
+      });
+      expect(h.phases[0]).toEqual({ state: 'checking' });
+      expect(String(error.mock.calls[0]?.[0])).toContain('HTTP 403');
+      vi.restoreAllMocks();
+    });
+
+    it('keeps the release it already knew about when a later check fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      let fail = false;
+      const h = harness({
+        stageableAsset: () => null,
+        checkForUpdate: () =>
+          fail ? Promise.reject(new Error('offline')) : Promise.resolve(update),
+      });
+      await h.updater.runUpdateCheck();
+      fail = true;
+      await h.updater.runUpdateCheck();
+      expect(h.updater.available()?.version).toBe('1.3.0');
+      vi.restoreAllMocks();
+    });
+
+    it('does not paint over a failure the user still has to see', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      let checkFails = false;
+      const h = harness({
+        verifySha256: () => Promise.resolve(false),
+        checkForUpdate: () =>
+          checkFails
+            ? Promise.reject(new Error('offline'))
+            : Promise.resolve(update),
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() =>
+        expect(h.updater.status().phase.state).toBe('verify-failed'),
+      );
+      checkFails = true;
+      await h.updater.runUpdateCheck();
+      expect(h.updater.status().phase.state).toBe('verify-failed');
+      checkFails = false;
+      await h.updater.runUpdateCheck();
+      expect(h.updater.status().phase.state).toBe('verify-failed');
+      vi.restoreAllMocks();
+    });
+
+    it('is available when a release is found that cannot be staged', async () => {
+      const h = harness({ stageableAsset: () => null });
+      await h.updater.runUpdateCheck();
+      expect(h.updater.status().phase).toEqual({
+        state: 'available',
+        version: '1.3.0',
+      });
+    });
+
+    it('goes back to idle when nothing is newer', async () => {
+      const h = harness({ checkForUpdate: () => Promise.resolve(null) });
+      await h.updater.runUpdateCheck();
+      expect(h.updater.status().phase).toEqual({ state: 'idle' });
     });
   });
 });
