@@ -135,6 +135,7 @@ describe('serializeConfig', () => {
         id: 'g1',
         name: 'G1',
         icon: '📦',
+        iconColor: null,
         path: '/tmp/g1',
         mode: 'multi' as const,
         order: 0,
@@ -407,5 +408,101 @@ describe('summarizeImport', () => {
 describe('EXPORT_SCHEMA_VERSION', () => {
   it('is 4 (global pipeline: top-level preSteps + flat per-group preScripts)', () => {
     expect(EXPORT_SCHEMA_VERSION).toBe(4);
+  });
+});
+
+// ─── Icon colours and uploaded images ───────────────────────────────────────
+
+describe('icon colours and custom icons on import', () => {
+  const PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const base = (groups: unknown[], extra: Record<string, unknown> = {}) => ({
+    version: EXPORT_SCHEMA_VERSION,
+    groups,
+    ...extra,
+  });
+
+  it('keeps valid colours and the referenced images', () => {
+    const result = validateImportedConfig(
+      base(
+        [
+          {
+            id: 'g1',
+            name: 'api',
+            path: '/repos/api',
+            icon: 'img:abc123',
+            iconColor: '#22C55E',
+            commands: [
+              {
+                name: 'dev',
+                command: 'x',
+                icon: 'rocket',
+                iconColor: '#ef4444',
+              },
+            ],
+            actions: [{ name: 'seed', iconColor: null }],
+          },
+        ],
+        { customIcons: [{ id: 'abc123', name: 'logo', dataUrl: PNG }] },
+      ),
+    );
+    expectValid(result);
+    const group = result.payload.groups[0];
+    expect(group?.icon).toBe('img:abc123');
+    expect(group?.iconColor).toBe('#22c55e');
+    expect(group?.commands[0]?.iconColor).toBe('#ef4444');
+    expect(group?.actions[0]?.iconColor).toBeNull();
+    expect(result.payload.customIcons).toEqual([
+      { id: 'abc123', name: 'logo', dataUrl: PNG },
+    ]);
+  });
+
+  it('imports a file without custom icons as an empty list', () => {
+    const result = validateImportedConfig(base([]));
+    expectValid(result);
+    expect(result.payload.customIcons).toEqual([]);
+  });
+
+  it('rejects a colour that is not #rrggbb', () => {
+    for (const groups of [
+      [{ name: 'a', iconColor: 'red' }],
+      [{ name: 'a', commands: [{ name: 'd', command: 'x', iconColor: 3 }] }],
+      [{ name: 'a', actions: [{ name: 's', iconColor: '#12' }] }],
+    ]) {
+      const result = validateImportedConfig(base(groups));
+      expectInvalid(result);
+      expect(result.error).toMatch(/color de icono inválido/);
+    }
+  });
+
+  it('rejects an image that is not an inline PNG', () => {
+    const result = validateImportedConfig(
+      base([], {
+        customIcons: [
+          {
+            id: 'abc123',
+            name: 'x',
+            dataUrl: 'data:image/svg+xml;base64,PHN2Zz4=',
+          },
+        ],
+      }),
+    );
+    expectInvalid(result);
+    expect(result.error).toBe('Icono personalizado #0 inválido');
+  });
+
+  it('carries the colour of a coloured emoji an old export still has', () => {
+    const result = validateImportedConfig(
+      base([{ name: 'a', path: '/x', icon: '🟢' }]),
+    );
+    expectValid(result);
+    expect(result.payload.groups[0]?.icon).toBe('circle');
+    expect(result.payload.groups[0]?.iconColor).toBe('#22c55e');
+  });
+
+  it('serializes the custom icons it is given', () => {
+    const icons = [{ id: 'abc123', name: 'logo', dataUrl: PNG }];
+    expect(serializeConfig({ customIcons: icons }).customIcons).toEqual(icons);
+    expect(serializeConfig(null).customIcons).toEqual([]);
   });
 });

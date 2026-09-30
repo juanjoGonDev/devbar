@@ -6,6 +6,7 @@
  * this module is the part you touch — clicks, shift/ctrl ranges, ⌘A, ⌘C, Esc.
  */
 import { closestElement } from '../dom.js';
+import { icon } from '../icon.js';
 import { applySelection, selectModeFor } from '../line-selection.js';
 import {
   buffer,
@@ -15,7 +16,14 @@ import {
 } from './buffer.js';
 import { repaintSelection, reportSelection } from './status.js';
 import { updateScrollButton } from './pane.js';
-import { copyBtn, filterEl, linesEl, mainEl, statusEl } from './elements.js';
+import {
+  clearSelectionBtn,
+  copyBtn,
+  filterEl,
+  linesEl,
+  mainEl,
+  statusEl,
+} from './elements.js';
 
 function clearSelection(): void {
   buffer.selected.clear();
@@ -34,7 +42,7 @@ function selectAllVisible(): void {
 async function copyEntries(indices: readonly number[]): Promise<void> {
   try {
     await navigator.clipboard.writeText(entriesToText(indices));
-    statusEl.textContent = `Copiado ✓ (${indices.length})`;
+    statusEl.replaceChildren('Copiado ', icon('check'), ` (${indices.length})`);
     setTimeout(reportSelection, 1500);
   } catch (err) {
     statusEl.textContent = 'Error al copiar';
@@ -71,6 +79,10 @@ copyBtn.addEventListener('click', () => {
   const picked = [...buffer.selected].sort((a, b) => a - b);
   void copyEntries(picked.length ? picked : buffer.visible);
 });
+
+// A stray click is easy to make and the selection pauses following, so the
+// footer offers an explicit way out next to the count (Esc does the same).
+clearSelectionBtn.addEventListener('click', clearSelection);
 
 document.addEventListener('keydown', (e) => {
   const accel = e.metaKey || e.ctrlKey;

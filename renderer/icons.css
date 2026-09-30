@@ -1,0 +1,69 @@
+/*
+ * Lucide (ISC), bundled via the pinned lucide-static devDependency and copied
+ * to build/assets/fonts by the build — on EVERY platform, so no icon depends
+ * on what the host has installed. renderer/icon.ts is the only producer of
+ * `.icon` elements; it writes the glyph's codepoint as the span's text.
+ *
+ * font-display: block — the face is a local file, so the block period is
+ * never visible; `swap` would flash the raw private-use codepoints (tofu)
+ * for a frame on a cold start.
+ */
+@font-face {
+  font-family: 'lucide';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url(../assets/fonts/lucide.woff2) format('woff2');
+}
+
+/*
+ * A fixed square box: every glyph occupies exactly 1em × 1em whatever its
+ * drawing, so swapping ▶ for ■ (or any icon for another) never changes the
+ * width of the control around it.
+ */
+.icon {
+  font-family: 'lucide' !important;
+  font-style: normal;
+  font-weight: 400;
+  font-variant: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+  vertical-align: -0.125em;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* A user icon that is not a Lucide name (an unmigrated emoji) keeps the text
+   fonts — including the emoji fallback — and the same square box. */
+.icon.icon-text {
+  font-family: inherit !important;
+  overflow: hidden;
+}
+
+/* Icon + label controls: keep the pair on one line with a steady gap. */
+.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+/* An uploaded image (`img:<id>`) fills the same square box as a glyph, so it
+   renders at the size of the text around it wherever a user icon goes. */
+.icon.icon-img {
+  font-family: inherit !important;
+  overflow: hidden;
+}
+.icon.icon-img img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}

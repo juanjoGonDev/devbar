@@ -1,3 +1,4 @@
+import { iconButton } from '../icon.js';
 import type { EnvEntry } from '../../src/domain-types.js';
 
 export interface EnvEditorHandle {
@@ -124,11 +125,7 @@ export function buildEnvEditor(
       row.appendChild(valInput);
 
       // Delete button
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'env-delete';
-      delBtn.title = 'Eliminar';
-      delBtn.textContent = '🗑';
+      const delBtn = iconButton('trash-2', 'Eliminar', 'env-delete');
       delBtn.addEventListener('click', () => {
         entries.splice(i, 1);
         render();

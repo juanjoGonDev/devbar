@@ -23,6 +23,7 @@ import {
   normalizePreScript,
   normalizePreStep,
 } from './normalize.js';
+import { DEFAULT_GROUP_ICON, migrateIcons } from './icon-migration.js';
 import type {
   Group,
   LegacyService,
@@ -142,7 +143,7 @@ export function migrateServicesToGroups(value: unknown): {
     return normalizeGroup({
       id: uuidv4(),
       name: key ? path.basename(key) || 'Servicios' : '(no path)',
-      icon: '📦',
+      icon: DEFAULT_GROUP_ICON,
       path: key,
       mode: 'multi',
       order: index,
@@ -345,6 +346,7 @@ export interface StoreMigrationInput {
   preSteps?: unknown;
   globalSettings?: unknown;
   _services_pre_v3_backup?: unknown[];
+  _icons_pre_lucide_backup?: unknown;
 }
 
 export interface StoreMigrationPlan {
@@ -358,6 +360,20 @@ export interface StoreMigrationPlan {
   preScriptsAutoRun: boolean | null;
   /** `null` means "leave `_services_pre_v3_backup` untouched". */
   servicesBackup: unknown[] | null;
+  /** The emoji the icon migration replaced, merged into any earlier backup
+   *  (earlier entries win: they hold the TRUE original). `null` means
+   *  "leave `_icons_pre_lucide_backup` untouched". */
+  iconsBackup: Record<string, string> | null;
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  );
 }
 
 /**
@@ -390,11 +406,18 @@ export function planStoreMigration(
   const pipeline = migratePreScriptPipeline(raw);
   const idRepair = migrateServicesToGroups({ ...raw, groups: pipeline.groups });
   const currentVersion = typeof raw.version === 'number' ? raw.version : 1;
-  const changed = pipeline.changed || idRepair.changed || currentVersion !== 4;
-  const groups = idRepair.changed ? idRepair.state.groups : pipeline.groups;
-  const services = idRepair.changed
-    ? idRepair.state.services
-    : regenerateLegacyServices(pipeline.groups);
+  // Emoji icons → Lucide names, after both passes: it works on normalized
+  // groups, and is a no-op once every icon is a name (see icon-migration.ts).
+  const icons = migrateIcons(
+    idRepair.changed ? idRepair.state.groups : pipeline.groups,
+  );
+  const changed =
+    pipeline.changed ||
+    idRepair.changed ||
+    icons.changed ||
+    currentVersion !== 4;
+  const groups = icons.groups;
+  const services = regenerateLegacyServices(groups);
   return {
     changed,
     version: 4,
@@ -415,5 +438,8 @@ export function planStoreMigration(
       idRepair.changed && Array.isArray(idRepair.state._services_pre_v3_backup)
         ? idRepair.state._services_pre_v3_backup
         : null,
+    iconsBackup: icons.changed
+      ? { ...icons.backup, ...stringRecord(raw._icons_pre_lucide_backup) }
+      : null,
   };
 }

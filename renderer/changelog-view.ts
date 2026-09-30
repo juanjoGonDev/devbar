@@ -25,7 +25,7 @@ export function buildReleasesHtml(
       const notes = deps.renderMarkdown(release.body || '_Sin notas._');
       const version = deps.escapeHtml(release.version);
       const releaseButton = release.url
-        ? `<a class="small-btn cl-rel-link" href="#" data-href="${deps.escapeHtml(release.url)}">Ver release ↗</a>`
+        ? `<a class="small-btn cl-rel-link with-icon" href="#" data-href="${deps.escapeHtml(release.url)}">Ver release <span class="icon" data-icon="external-link"></span></a>`
         : '';
       return `
           <details class="cl-release"${index === 0 ? ' open' : ''}>

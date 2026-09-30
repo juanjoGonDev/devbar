@@ -17,7 +17,8 @@ function group(name: string, extra: Partial<Group> = {}): Group {
   return {
     id: `group-${name}`,
     name,
-    icon: '📦',
+    icon: 'package',
+    iconColor: null,
     path: `/tmp/${name}`,
     mode: 'single',
     order: 0,

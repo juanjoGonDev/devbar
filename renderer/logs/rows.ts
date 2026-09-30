@@ -14,6 +14,7 @@ import { ansiToHtml, stripAnsi } from './ansi.js';
 import { levelOf } from './filters.js';
 import { fmtTime, sourceColor } from './format.js';
 import { buffer } from './buffer.js';
+import { icon } from '../icon.js';
 import { nav, view } from './view.js';
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
 import type { LogEntry } from '../../src/domain-types.js';
@@ -126,10 +127,11 @@ export function buildRow(
     const commandId = view.currentCommandId;
     const btn = document.createElement('button');
     btn.className = 'silence-btn';
-    btn.textContent = entry.silenced ? '🔔' : '🔕';
+    btn.append(icon(entry.silenced ? 'bell' : 'bell-off'));
     btn.title = entry.silenced
       ? 'Quitar silencio (esta línea)'
       : 'Silenciar este patrón (matchea por substring)';
+    btn.setAttribute('aria-label', btn.title);
     btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
       const lvl = entry.originalLevel as SilenceLevel;

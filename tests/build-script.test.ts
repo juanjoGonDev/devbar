@@ -57,6 +57,14 @@ function makeRoot(): string {
     ),
     'woff2-payload',
   );
+  // The pinned Lucide icon font every platform ships.
+  mkdirSync(join(root, 'node_modules', 'lucide-static', 'font'), {
+    recursive: true,
+  });
+  writeFileSync(
+    join(root, 'node_modules', 'lucide-static', 'font', 'lucide.woff2'),
+    'lucide-payload',
+  );
   return root;
 }
 
@@ -176,6 +184,32 @@ describe('scripts/build.ts', () => {
         existsSync(
           join(root, 'build', 'assets', 'fonts', 'NotoColorEmoji.woff2'),
         ),
+      ).toBe(false);
+    });
+
+    it('copies the Lucide icon font into build/assets/fonts', async () => {
+      const run = await build(makeRoot());
+      expect(
+        readFileSync(
+          join(run.root, 'build', 'assets', 'fonts', 'lucide.woff2'),
+          'utf8',
+        ),
+      ).toBe('lucide-payload');
+    });
+
+    it('refuses to build when the icon font is missing from node_modules', async () => {
+      // Every control in the UI paints its glyph from this font: an artifact
+      // without it shows empty buttons on every platform.
+      const root = makeRoot();
+      rmSync(join(root, 'node_modules', 'lucide-static'), {
+        recursive: true,
+        force: true,
+      });
+      await expect(build(root)).rejects.toThrow(
+        /Lucide icon font missing.*pnpm install/s,
+      );
+      expect(
+        existsSync(join(root, 'build', 'assets', 'fonts', 'lucide.woff2')),
       ).toBe(false);
     });
 

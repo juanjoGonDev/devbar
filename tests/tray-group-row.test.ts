@@ -6,6 +6,7 @@ import type {
   GroupState,
 } from '../src/ipc-contract.js';
 import type { Action, Command } from '../src/domain-types.js';
+import { iconText } from './helpers/icon-text.js';
 
 /**
  * `renderer/tray/group-row.ts` builds one group's row: the collapsed line,
@@ -72,7 +73,8 @@ function groupState(overrides: Partial<GroupState> = {}): GroupState {
     group: {
       id: 'g1',
       name: 'api',
-      icon: '📦',
+      icon: 'package',
+      iconColor: null,
       path: '',
       mode: 'single',
       order: 0,
@@ -148,7 +150,7 @@ describe('renderer/tray/group-row.ts', () => {
   describe('the collapsed row', () => {
     it('shows the group icon and name', () => {
       const el = mount();
-      expect(q(el, '.group-icon').textContent).toBe('📦');
+      expect(iconText(q(el, '.group-icon'))).toBe('[package]');
       expect(q(el, '.group-name').textContent).toBe('api');
     });
 
@@ -158,8 +160,22 @@ describe('renderer/tray/group-row.ts', () => {
           group: { ...groupState().group, icon: '', name: '' },
         }),
       );
-      expect(q(el, '.group-icon').textContent).toBe('📦');
+      expect(iconText(q(el, '.group-icon'))).toBe('[package]');
       expect(q(el, '.group-name').textContent).toBe('(sin nombre)');
+    });
+
+    it('paints the group icon in its chosen colour', () => {
+      const el = mount(
+        groupState({ group: { ...groupState().group, iconColor: '#22c55e' } }),
+      );
+      expect(q(el, '.group-icon .icon').style.color).toBe('rgb(34, 197, 94)');
+    });
+
+    it('still shows a leftover emoji icon as the text it is', () => {
+      const el = mount(
+        groupState({ group: { ...groupState().group, icon: '🦄' } }),
+      );
+      expect(q(el, '.group-icon').textContent).toBe('🦄');
     });
 
     it('carries the traffic-light colour on the row and the dot', () => {
@@ -221,7 +237,7 @@ describe('renderer/tray/group-row.ts', () => {
     it('opens it from the chevron too', () => {
       const el = mount();
       click(q(el, '.caret-btn'));
-      expect(q(mount(), '.caret-btn').textContent).toBe('▾');
+      expect(iconText(q(mount(), '.caret-btn'))).toBe('[chevron-down]');
     });
 
     it('closes it again on a second click', () => {
@@ -290,8 +306,15 @@ describe('renderer/tray/group-row.ts', () => {
     });
 
     it('shows the command icon when it has one', () => {
-      const el = expandedWith(withCommand({}, { icon: '🚀' }));
-      expect(q(el, '.cmd-sub-icon').textContent).toBe('🚀');
+      const el = expandedWith(withCommand({}, { icon: 'rocket' }));
+      expect(iconText(q(el, '.cmd-sub-icon'))).toBe('[rocket]');
+    });
+
+    it('paints the command icon in its chosen colour', () => {
+      const el = expandedWith(
+        withCommand({}, { icon: 'rocket', iconColor: '#ef4444' }),
+      );
+      expect(q(el, '.cmd-sub-icon .icon').style.color).toBe('rgb(239, 68, 68)');
     });
 
     it('skips a runtime state whose command is gone from the config', () => {
@@ -307,7 +330,8 @@ describe('renderer/tray/group-row.ts', () => {
     it('starts a stopped command', () => {
       const el = expandedWith(withCommand({ status: 'stopped' }));
       const toggle = q(el, '.start-btn');
-      expect(toggle.textContent).toBe('▶');
+      expect(iconText(toggle)).toBe('[play]');
+      expect(toggle.getAttribute('aria-label')).toBe('Iniciar');
       click(toggle);
       expect(api.startProcess).toHaveBeenCalledWith('g1:c1');
     });
@@ -315,7 +339,8 @@ describe('renderer/tray/group-row.ts', () => {
     it('stops a running one', () => {
       const el = expandedWith(withCommand({ status: 'running' }));
       const toggle = q(el, '.stop-btn');
-      expect(toggle.textContent).toBe('■');
+      expect(iconText(toggle)).toBe('[square]');
+      expect(toggle.getAttribute('aria-label')).toBe('Detener');
       click(toggle);
       expect(api.stopProcess).toHaveBeenCalledWith('g1:c1');
     });
@@ -344,8 +369,8 @@ describe('renderer/tray/group-row.ts', () => {
 
     it('counts warnings and errors, each opening its own filtered view', () => {
       const el = expandedWith(withCommand({ warnCount: 2, errorCount: 3 }));
-      expect(q(el, '.counter-btn.warn').textContent).toBe('⚠ 2');
-      expect(q(el, '.counter-btn.error').textContent).toBe('✕ 3');
+      expect(iconText(q(el, '.counter-btn.warn'))).toBe('[triangle-alert] 2');
+      expect(iconText(q(el, '.counter-btn.error'))).toBe('[circle-x] 3');
       click(q(el, '.counter-btn.error'));
       expect(api.openLogs).toHaveBeenCalledWith({
         processId: 'g1:c1',
@@ -383,7 +408,7 @@ describe('renderer/tray/group-row.ts', () => {
 
     it('announces the section and shows the action', () => {
       const el = expandedWith(withAction());
-      expect(q(el, '.actions-divider').textContent).toBe('── Acciones ──');
+      expect(q(el, '.actions-divider').textContent).toBe('Acciones');
       expect(q(el, '.action-chip').textContent).toBe('migrar');
     });
 
@@ -411,7 +436,7 @@ describe('renderer/tray/group-row.ts', () => {
           lastFinishedAt: 9_000,
         }),
       );
-      expect(q(el, '.action-chip').textContent).toBe('migrar ✓');
+      expect(iconText(q(el, '.action-chip'))).toBe('migrar[check]');
     });
 
     it('crosses a run that failed, and says so on hover', () => {
@@ -423,7 +448,7 @@ describe('renderer/tray/group-row.ts', () => {
           lastFinishedAt: 9_000,
         }),
       );
-      expect(q(el, '.action-chip').textContent).toBe('migrar ✕');
+      expect(iconText(q(el, '.action-chip'))).toBe('migrar[x]');
       expect(q(el, '.action-chip').title).toBe('migrar (exit 2)');
     });
 
@@ -456,12 +481,12 @@ describe('renderer/tray/group-row.ts', () => {
         groupState({
           group: {
             ...groupState().group,
-            actions: [action({ icon: '🛠' })],
+            actions: [action({ icon: 'hammer' })],
           },
           actions: [actionState()],
         }),
       );
-      expect(q(el, '.action-chip').textContent).toBe('🛠 migrar');
+      expect(iconText(q(el, '.action-chip'))).toBe('[hammer]migrar');
     });
 
     it('skips a runtime state whose action is gone from the config', () => {

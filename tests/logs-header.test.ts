@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountLogsDom, type LogsDom } from './helpers/logs-dom.js';
@@ -21,6 +22,7 @@ function item(overrides: Partial<LogListItem> = {}): LogListItem {
     type: 'command',
     name: 'api',
     icon: null,
+    iconColor: null,
     lineCount: 0,
     status: 'stopped',
     warnCount: 0,
@@ -58,7 +60,13 @@ describe('renderer/logs/header.ts', () => {
     view.view.displayName = shown.name;
     view.view.groupName = 'Back';
     view.view.sideData = [
-      { groupId: 'g1', groupName: 'Back', groupIcon: '📁', items: [shown] },
+      {
+        groupId: 'g1',
+        groupName: 'Back',
+        groupIcon: 'folder',
+        groupIconColor: null,
+        items: [shown],
+      },
     ];
     return shown;
   }
@@ -89,7 +97,7 @@ describe('renderer/logs/header.ts', () => {
       showing({ status: 'running', startedAt: Date.now() });
       header.renderHeaderRunState();
       expect(elements.runBtn.style.display).toBe('');
-      expect(elements.runBtn.textContent).toBe('■');
+      expect(iconText(elements.runBtn)).toBe('[square]');
       expect(elements.runBtn.title).toBe('Parar');
       expect(elements.runBtn.classList.contains('on')).toBe(true);
     });
@@ -97,7 +105,7 @@ describe('renderer/logs/header.ts', () => {
     it('offers to start a stopped one', () => {
       showing({ status: 'stopped' });
       header.renderHeaderRunState();
-      expect(elements.runBtn.textContent).toBe('▶');
+      expect(iconText(elements.runBtn)).toBe('[play]');
       expect(elements.runBtn.title).toBe('Arrancar');
       expect(elements.runBtn.classList.contains('on')).toBe(false);
     });
@@ -150,7 +158,7 @@ describe('renderer/logs/header.ts', () => {
       view.view.levelFilter = new Set(['error']);
       header.renderHeaderRunState();
       expect(elements.levelPillEl.hidden).toBe(false);
-      expect(elements.levelPillTextEl.textContent).toBe('sólo ⛔ errores');
+      expect(elements.levelPillTextEl.textContent).toBe('sólo errores');
     });
   });
 

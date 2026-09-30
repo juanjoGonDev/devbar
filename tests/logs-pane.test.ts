@@ -126,14 +126,14 @@ describe('renderer/logs/pane.ts', () => {
     it('shows the escape hatch, named after what it is hiding', () => {
       pane.setLevelFilter(['warn']);
       expect(elements.levelPillEl.hidden).toBe(false);
-      expect(elements.levelPillTextEl.textContent).toBe('sólo ⚠ warnings');
+      expect(elements.levelPillTextEl.textContent).toBe('sólo warnings');
       expect(elements.levelPillEl.className).toBe('level-pill warn');
     });
 
     it('lets errors outrank warnings when it stands for both', () => {
       pane.setLevelFilter(['warn', 'error']);
       expect(elements.levelPillTextEl.textContent).toBe(
-        'sólo ⚠ warnings + ⛔ errores',
+        'sólo warnings + errores',
       );
       expect(elements.levelPillEl.className).toBe('level-pill err');
     });

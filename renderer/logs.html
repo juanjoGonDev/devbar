@@ -4,9 +4,10 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self' 'unsafe-inline'"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
     <link rel="stylesheet" href="logs.css" />
+    <link rel="stylesheet" href="icons.css" />
     <link rel="stylesheet" href="emoji.css" />
     <title>Logs</title>
   </head>
@@ -42,15 +43,16 @@
             title="Ocultar / mostrar el panel lateral"
             aria-label="Ocultar / mostrar el panel lateral"
           >
-            ◧
+            <span class="icon" data-icon="panel-left"></span>
           </button>
           <button
             id="run-toggle"
             class="run-btn"
             type="button"
             title="Arrancar / parar"
+            aria-label="Arrancar / parar"
           >
-            ▶
+            <span class="icon" data-icon="play"></span>
           </button>
           <input
             id="filter"
@@ -64,7 +66,9 @@
           -->
           <button id="level-pill" class="level-pill" type="button" hidden>
             <span id="level-pill-text"></span>
-            <span class="level-pill-x">✕</span>
+            <span class="level-pill-x"
+              ><span class="icon" data-icon="x"></span
+            ></span>
           </button>
           <label class="check spaced"
             ><input type="checkbox" id="autoscroll" checked />
@@ -79,10 +83,10 @@
             title="Limpiar"
             aria-label="Limpiar"
           >
-            🗑
+            <span class="icon" data-icon="trash-2"></span>
           </button>
           <button id="copy" class="icon-btn" title="Copiar" aria-label="Copiar">
-            📋
+            <span class="icon" data-icon="copy"></span>
           </button>
           <button
             id="toggle-silenced"
@@ -90,7 +94,7 @@
             title="Patrones silenciados"
             aria-label="Patrones silenciados"
           >
-            🔕
+            <span class="icon" data-icon="bell-off"></span>
           </button>
           <button
             id="detach"
@@ -98,7 +102,7 @@
             title="Abrir este log en una ventana aparte"
             aria-label="Abrir en ventana aparte"
           >
-            ⧉
+            <span class="icon" data-icon="app-window"></span>
           </button>
         </header>
         <div class="log-container">
@@ -111,12 +115,24 @@
             type="button"
             aria-label="Ir al final"
           >
-            ↓
+            <span class="icon" data-icon="arrow-down"></span>
           </button>
         </div>
         <footer>
           <span id="counts">0 líneas</span>
-          <span id="status"></span>
+          <span class="footer-status">
+            <span id="status"></span>
+            <button
+              id="clear-selection"
+              class="clear-selection-btn"
+              type="button"
+              title="Quitar selección (Esc)"
+              aria-label="Quitar selección"
+              hidden
+            >
+              <span class="icon" data-icon="x"></span>
+            </button>
+          </span>
         </footer>
       </div>
       <!--
@@ -138,7 +154,7 @@
             title="Cerrar"
             aria-label="Cerrar"
           >
-            ✕
+            <span class="icon" data-icon="x"></span>
           </button>
         </div>
 
@@ -151,7 +167,9 @@
           -->
           <details class="drawer-lvl" data-level="warn" open>
             <summary>
-              <span class="chevron">▶</span>
+              <span class="chevron"
+                ><span class="icon" data-icon="chevron-right"></span
+              ></span>
               <span class="lvl-tag warn">warn</span>
               <span class="lvl-name">Warnings</span>
               <span class="drawer-count" data-count="warn">0</span>
@@ -178,7 +196,9 @@
 
           <details class="drawer-lvl" data-level="error" open>
             <summary>
-              <span class="chevron">▶</span>
+              <span class="chevron"
+                ><span class="icon" data-icon="chevron-right"></span
+              ></span>
               <span class="lvl-tag err">error</span>
               <span class="lvl-name">Errores</span>
               <span class="drawer-count" data-count="error">0</span>

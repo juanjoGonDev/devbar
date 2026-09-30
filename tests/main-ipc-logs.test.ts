@@ -249,7 +249,7 @@ describe('src/main/ipc/logs-ipc.ts', () => {
     it('lists everything configured, even with no buffer yet', () => {
       const h = harness([
         makeGroup({
-          commands: [makeCommand({ id: 'c1', name: 'web', icon: '🌐' })],
+          commands: [makeCommand({ id: 'c1', name: 'web', icon: 'globe' })],
           actions: [makeAction({ id: 'a1', name: 'seed' })],
         }),
       ]);
@@ -259,7 +259,7 @@ describe('src/main/ipc/logs-ipc.ts', () => {
         'command',
         'action',
       ]);
-      expect(group?.items[0]).toMatchObject({ lineCount: 0, icon: '🌐' });
+      expect(group?.items[0]).toMatchObject({ lineCount: 0, icon: 'globe' });
     });
 
     it('adds pre-script buffers under their group', () => {
@@ -286,7 +286,7 @@ describe('src/main/ipc/logs-ipc.ts', () => {
       const [group] = h.ipc.invoke('logs:list') as LogListGroup[];
       expect(group).toMatchObject({
         groupName: '(grupo eliminado)',
-        groupIcon: '📁',
+        groupIcon: 'folder',
       });
     });
 
@@ -298,7 +298,7 @@ describe('src/main/ipc/logs-ipc.ts', () => {
         (entry) => entry.groupId === PIPELINE_LOG_GROUP_ID,
       );
       expect(pipeline?.items[0]).toMatchObject({ type: 'pipeline' });
-      expect(pipeline?.groupIcon).toBe('🧬');
+      expect(pipeline?.groupIcon).toBe('dna');
     });
   });
 });
