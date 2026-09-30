@@ -36,11 +36,20 @@ function inline(text: string): string {
   );
 }
 
+// GitHub's generated release notes open with an HTML comment. Repeat until
+// stable: removing one comment can join the text around it into another.
+function stripComments(text: string): string {
+  let previous: string;
+  let out = text;
+  do {
+    previous = out;
+    out = out.replace(/<!--[\s\S]*?-->/g, '');
+  } while (out !== previous);
+  return out;
+}
+
 export function renderMarkdown(source: unknown): string {
-  // GitHub's generated release notes open with an HTML comment.
-  const lines = String(source ?? '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .split(/\r?\n/);
+  const lines = stripComments(String(source ?? '')).split(/\r?\n/);
   const html: string[] = [];
   let inList = false;
   // A heading is held back until content follows it, so an empty wrapper

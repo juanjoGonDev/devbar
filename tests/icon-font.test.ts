@@ -27,8 +27,12 @@ function rendererSources(dir: string = rendererDir): string[] {
 
 /** Comments may name the glyphs they replaced; only code and markup count. */
 function stripComments(source: string): string {
-  return source
-    .replace(/<!--[\s\S]*?-->/g, '')
+  let html = source;
+  for (let prev = ''; prev !== html;) {
+    prev = html;
+    html = html.replace(/<!--[\s\S]*?-->/g, '');
+  }
+  return html
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
 }
