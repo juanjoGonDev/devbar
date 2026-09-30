@@ -3,6 +3,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
+    // Drops the GIT_* variables a git hook exports, so tests that drive git
+    // over throwaway repositories cannot reach the real one.
+    setupFiles: ['tests/setup/isolate-git-env.ts'],
     reporters: ['tree', 'hanging-process'],
     slowTestThreshold: 300,
     // The whole suite runs in ~7s and the slowest test that relies on this
