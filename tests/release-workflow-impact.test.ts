@@ -23,9 +23,14 @@ interface WorkflowStep {
   run?: string;
 }
 interface WorkflowJob {
+  if?: string;
+  needs?: string[];
+  permissions?: Record<string, string>;
   steps?: WorkflowStep[];
 }
 const releaseWorkflowDoc = yaml.load(releaseWorkflow) as {
+  on?: Record<string, unknown>;
+  concurrency?: { group?: string; 'cancel-in-progress'?: boolean };
   jobs: Record<string, WorkflowJob>;
 };
 const jobSteps = (job: WorkflowJob): WorkflowStep[] => job.steps ?? [];
@@ -112,6 +117,19 @@ describe('release impact workflow integration', () => {
     );
   });
 
+  it('treats a draft current release as unreleased instead of a baseline', () => {
+    const draftCheck = autoReleaseWorkflow.indexOf(
+      'if [[ "$(jq -r .isDraft <<<"$current_release_json")" != "false" ]]; then',
+    );
+    expect(draftCheck).toBeGreaterThanOrEqual(0);
+    const branch = autoReleaseWorkflow.slice(draftCheck, draftCheck + 400);
+    expect(branch).toContain('echo "ready=false" >> "$GITHUB_OUTPUT"');
+    expect(branch).toContain('exit 0');
+    expect(autoReleaseWorkflow).toContain(
+      'has no GitHub Release. Recover it before preparing another version.',
+    );
+  });
+
   it('derives automatic SemVer only from release-impacting commits', () => {
     expect(autoReleaseWorkflow).toContain(
       'mapfile -t release_commits < <(jq -r \'.commits[]\' <<<"$impact_json")',
@@ -124,13 +142,10 @@ describe('release impact workflow integration', () => {
 
   it('skips automatic installer publication without pending artifact impact', () => {
     expect(releaseWorkflow).toContain(
-      'if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then',
+      `${policyCommand} pending "$latest_release_tag" "$GITHUB_SHA"`,
     );
     expect(releaseWorkflow).toContain(
-      `${policyCommand} pending "$latest_release_tag" "$release_sha"`,
-    );
-    expect(releaseWorkflow).toContain(
-      'No release-impacting commits exist between $latest_release_tag and $release_sha; installer build skipped.',
+      'node --experimental-strip-types scripts/release-decision.ts',
     );
     expect(releaseWorkflow).toContain(
       "if: needs.detect.outputs.publish == 'true'",
@@ -141,8 +156,7 @@ describe('release impact workflow integration', () => {
     // No checkout may use a ref derived from another job's outputs: in a
     // cache-writable workflow CodeQL treats those as untrusted code
     // (cache-poisoning alerts). Build jobs use the plain immutable
-    // event-sha checkout; detect still resolves the version-introducing
-    // commit, which the release tag targets.
+    // event-sha checkout, the same commit the release tag targets.
     const writable = cacheWritableJobs();
     expect(writable.length).toBeGreaterThanOrEqual(3);
     for (const [jobName, job] of writable) {
@@ -177,24 +191,20 @@ describe('release impact workflow integration', () => {
     }
   });
 
-  it('tags the release at the resolved commit via the explicit --target', () => {
-    const stepNames = allSteps().map((step) => step.name);
-    expect(stepNames).toContain('Checkout trusted default branch');
-    expect(stepNames).toContain('Checkout release HEAD');
-    expect(stepNames).toContain('Create immutable release tag');
-    expect(stepNames).toContain('Verify published release');
-    const releaseStep = allSteps().find(
-      (step) => step.name === 'Create or validate GitHub release',
+  it('drafts the release at the event sha and keeps dispatch and the macOS build', () => {
+    const draftStep = allSteps().find(
+      (step) => step.name === 'Create draft release with every asset',
     );
+    const draftRun = draftStep?.run ?? '';
+    expect(draftRun).toContain('--draft');
     expect(
-      releaseStep?.run ?? '',
-      'the release must target the resolved commit, not the event SHA',
-    ).toContain('--target "$RELEASE_SHA"');
-    // Manual dispatch and the macOS release build remain part of the flow.
-    const workflow = yaml.load(releaseWorkflow) as {
-      on?: Record<string, unknown>;
-    };
-    expect(workflow.on?.workflow_dispatch !== undefined).toBe(true);
+      draftRun,
+      'build and tag must both be HEAD, the event sha',
+    ).toContain('--target "$GITHUB_SHA"');
+    // The version-introducing commit is gone as a tag/build target.
+    expect(releaseWorkflow).not.toContain('outputs.release_sha');
+    expect(releaseWorkflow).not.toContain('RELEASE_SHA');
+    expect(releaseWorkflowDoc.on?.workflow_dispatch !== undefined).toBe(true);
     expect(
       allSteps().some(
         (step) =>
@@ -202,6 +212,77 @@ describe('release impact workflow integration', () => {
           step.run.includes('pnpm run release:mac'),
       ),
     ).toBe(true);
+  });
+
+  it('lets a newer push cancel the in-flight release', () => {
+    expect(releaseWorkflowDoc.concurrency).toEqual({
+      group: 'release-${{ github.repository }}',
+      'cancel-in-progress': true,
+    });
+  });
+
+  it('uploads and verifies everything as a draft and publishes as the very last step', () => {
+    const publishSteps = jobSteps(releaseWorkflowDoc.jobs.publish ?? {});
+    const names = publishSteps.map((step) => step.name);
+    const order = [
+      'Verify the release set against SHA256SUMS',
+      'Remove unpublished leftovers of an interrupted run',
+      'Create draft release with every asset',
+      'Verify draft assets against SHA256SUMS',
+      'Publish the verified draft',
+    ].map((name) => names.indexOf(name));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(names.at(-1)).toBe('Publish the verified draft');
+
+    // Only the final step may publish; nothing earlier creates the tag.
+    const publishing = publishSteps.filter(
+      (step) =>
+        typeof step.run === 'string' &&
+        (step.run.includes('draft=false') ||
+          step.run.includes('--method POST')),
+    );
+    expect(publishing.map((step) => step.name)).toEqual([
+      'Publish the verified draft',
+    ]);
+    // The publish job sits after every build and the assembled set.
+    const needs = releaseWorkflowDoc.jobs.publish?.needs ?? [];
+    expect(needs).toContain('assemble');
+  });
+
+  it('cleans up only after a cancellation or failure of the publish chain', () => {
+    const cleanup = releaseWorkflowDoc.jobs.cleanup;
+    expect(cleanup).toBeDefined();
+    expect(cleanup?.if).toBe(
+      "(cancelled() || failure()) && needs.detect.outputs.publish == 'true'",
+    );
+    expect(cleanup?.needs).toEqual([
+      'detect',
+      'build-macos',
+      'build-windows',
+      'build-linux',
+      'assemble',
+      'publish',
+    ]);
+    expect(cleanup?.permissions).toEqual({ contents: 'write' });
+  });
+
+  it('never lets the cleanup touch a published release', () => {
+    const run = jobSteps(releaseWorkflowDoc.jobs.cleanup ?? {})
+      .map((step) => step.run ?? '')
+      .join('\n');
+    const guard = run.indexOf('any(.[]; .draft == false)');
+    const firstDelete = run.indexOf('--method DELETE');
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(firstDelete, 'the published guard must run first').toBeGreaterThan(
+      guard,
+    );
+    expect(run.slice(guard, firstDelete)).toContain('exit 0');
+    // It deletes only drafts this run created, never edits a release.
+    expect(run).toContain('select(.draft and .target_commitish == $sha)');
+    expect(run).not.toContain('--method PATCH');
+    expect(run).not.toContain('gh release edit');
+    expect(run).not.toContain('gh release delete');
   });
 
   // The policy decides whether a change needs a release; release-validation.yml
