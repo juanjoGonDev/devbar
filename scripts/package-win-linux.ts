@@ -233,7 +233,16 @@ export function linuxBuildOptions({
                 { target: 'deb', arch: [arch] },
               ],
         artifactName: `DevBar-${version}-linux-${contractArchName(arch)}.${ext()}`,
+        // Goes into the generated .desktop Exec line (deb and AppImage): run
+        // under XWayland on Wayland sessions, where native Wayland cannot place
+        // the tray popover. Same value as X11_OZONE_FLAG in
+        // src/main/linux-display-backend.ts (pinned by test); harmless on X11.
+        executableArgs: ['--ozone-platform=x11'],
       },
+      // Setting linux.executableArgs replaces AppImage's default Exec args
+      // (--no-sandbox); electron-builder merges these two arrays, so the
+      // AppImage entry keeps it.
+      appImage: { executableArgs: ['--no-sandbox'] },
     },
   };
 }

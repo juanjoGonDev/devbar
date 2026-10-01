@@ -21,13 +21,22 @@ import {
   type WebContents,
 } from 'electron';
 import { setLinuxAutostart, wasOpenedAtLoginFromArgv } from '../autostart.js';
-import { installedAppPath } from '../self-update.js';
+import {
+  appImagePathFromExecutable,
+  installedAppPath,
+} from '../self-update.js';
 import {
   detectLinuxInstallShape,
   runProcess,
   type LinuxInstallShape,
 } from './linux-package.js';
 import { isLinux, isMac, isWin } from '../platform.js';
+import {
+  describeLinuxDisplayBackend,
+  runsNativeWayland,
+  settleLinuxDisplayBackend,
+} from './linux-display-backend.js';
+import { nativeWaylandWorkArea } from './window-geometry.js';
 import { appHome } from '../app-paths.js';
 import { resolvedThemeIsDark, themeWindowBackground } from './theme.js';
 import { prepareIssueReport } from '../report-issue.js';
@@ -72,8 +81,21 @@ function logFilePath(): string {
   );
 }
 
+/**
+ * The Electron side of settleLinuxDisplayBackend: main.ts calls it first thing,
+ * before the single-instance lock, and skips the lock when it is relaunching.
+ */
+export function settleDisplay(): boolean {
+  return settleLinuxDisplayBackend(process, {
+    relaunch: (relaunchOptions) => app.relaunch(relaunchOptions),
+    exit: () => app.exit(0),
+    appImagePath: () => appImagePathFromExecutable(process.execPath),
+  });
+}
+
 export function createElectronHost(options: ElectronHostOptions) {
   const { dirname } = options;
+  const nativeWayland = runsNativeWayland(process);
   const rendererFile = (name: string): string =>
     path.join(dirname, '..', 'renderer', name);
   const assetFile = (name: string): string =>
@@ -156,8 +178,13 @@ export function createElectronHost(options: ElectronHostOptions) {
       new BrowserWindow(opts),
     activeDisplay,
     workArea: (): Rectangle => activeDisplay().workArea,
-    workAreaFor: (bounds: Rectangle): Rectangle =>
-      screen.getDisplayMatching(bounds).workArea,
+    // Sizes the tray popover. Native Wayland reports the whole display as the
+    // work area and places the window itself, so the height is capped there
+    // to stay clear of the panel.
+    workAreaFor: (bounds: Rectangle): Rectangle => {
+      const display = screen.getDisplayMatching(bounds);
+      return nativeWayland ? nativeWaylandWorkArea(display) : display.workArea;
+    },
     displayMatching: (rect: Rectangle) => screen.getDisplayMatching(rect),
 
     /**
@@ -308,6 +335,7 @@ export function createElectronHost(options: ElectronHostOptions) {
     /** XDG_CURRENT_DESKTOP, which names the Linux settings tool to launch. */
     desktop: process.env.XDG_CURRENT_DESKTOP ?? '',
     sessionType: process.env.XDG_SESSION_TYPE ?? 'desconocida',
+    displayBackend: describeLinuxDisplayBackend(process),
     appVersion: (): string => app.getVersion(),
     /**
      * One-click bug report: markdown (version, platform, app.log tail) to

@@ -33,7 +33,7 @@ import { createConfirmQueue } from './main/confirm-queue.js';
 import { startMainDiagnostics } from './main/crash-reporting.js';
 import { createFixtureHost, registerDevPanel } from './main/dev-panel.js';
 import { downloadFile } from './main/download-file.js';
-import { createElectronHost } from './main/electron-host.js';
+import { createElectronHost, settleDisplay } from './main/electron-host.js';
 import { setupMenubar, wireProcessEvents } from './main/lifecycle.js';
 import { createLogWindows } from './main/log-windows.js';
 import { createNotifications } from './main/notification-banner.js';
@@ -78,7 +78,8 @@ if (app.isPackaged) app.name = 'DevBar';
 
 loadShellPath();
 
-const isPrimary = app.requestSingleInstanceLock();
+// Wayland → XWayland relaunch, before the lock (see linux-display-backend.ts).
+const isPrimary = !settleDisplay() && app.requestSingleInstanceLock();
 const processManager = new ProcessManager(configStore);
 const repoWatcher = new RepoWatcher();
 /** Group-level transient errors (not persisted). */
