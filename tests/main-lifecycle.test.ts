@@ -163,7 +163,7 @@ describe('src/main/lifecycle.ts', () => {
         isMac: true,
         isLinux: false,
         sessionType: 'x11',
-        displayBackend: null,
+        displayLine: () => null,
         attachTray: () => calls.push('attachTray'),
         attachConsole: (_win, label) => calls.push(`console:${label}`),
         displayMatching: () => ({
@@ -242,13 +242,16 @@ describe('src/main/lifecycle.ts', () => {
     it('logs the Linux display backend once the tray is up', () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
       try {
-        const h = harness({
-          isLinux: true,
-          displayBackend: 'x11 (forced from wayland)',
-        });
+        // Read at ready, not at setup: the work-area half needs the screen.
+        const displayLine = vi.fn(
+          () => 'x11 (forced from wayland), workArea unreported → capped',
+        );
+        const h = harness({ isLinux: true, displayLine });
+        expect(displayLine).not.toHaveBeenCalled();
         h.events.get('ready')?.();
+        expect(displayLine).toHaveBeenCalledTimes(1);
         expect(log).toHaveBeenCalledWith(
-          '[display] linux backend: x11 (forced from wayland)',
+          '[display] linux backend: x11 (forced from wayland), workArea unreported → capped',
         );
       } finally {
         log.mockRestore();

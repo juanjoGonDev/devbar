@@ -4,7 +4,8 @@ import {
   bannerBounds,
   clampXToWorkArea,
   hasTrayBounds,
-  nativeWaylandWorkArea,
+  linuxWorkAreaNote,
+  safeLinuxWorkArea,
   taskbarSideOf,
   trayPopoverBounds,
   trayPopoverHeight,
@@ -224,16 +225,41 @@ describe('src/main/window-geometry.ts', () => {
       expect(hasTrayBounds(undefined)).toBe(false);
     });
   });
-  describe('nativeWaylandWorkArea', () => {
+  describe('safeLinuxWorkArea', () => {
     /** The reported Fedora/KDE case: 1280x800, workArea = the whole display. */
-    const fedora = {
+    const unreported = {
       bounds: { x: 0, y: 0, width: 1280, height: 800 },
       workArea: { x: 0, y: 0, width: 1280, height: 800 },
     };
+    const nearTop = { x: 1200, y: 0, width: 24, height: 24 };
+    const nearBottom = { x: 1200, y: 776, width: 24, height: 24 };
 
-    it('caps the height at 75 % of the display when Wayland reports no panel', () => {
-      // 800 - 2 * 56 = 688 vs 0.75 * 800 = 600: the smaller one wins.
-      expect(nativeWaylandWorkArea(fedora)).toEqual({
+    it('uses a work area the WM reported, untouched (X11 with a panel)', () => {
+      const display = {
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        workArea: { x: 0, y: 0, width: 1920, height: 1036 },
+      };
+      expect(safeLinuxWorkArea(display, nearBottom)).toEqual(display.workArea);
+    });
+
+    it('keeps a reported panel on any side as it is', () => {
+      const bounds = { x: 0, y: 0, width: 1920, height: 1080 };
+      for (const workArea of [
+        { x: 0, y: 36, width: 1920, height: 1044 },
+        { x: 48, y: 0, width: 1872, height: 1080 },
+        { x: 0, y: 0, width: 1872, height: 1080 },
+      ]) {
+        expect(
+          safeLinuxWorkArea({ bounds, workArea }, nearTop),
+          JSON.stringify(workArea),
+        ).toEqual(workArea);
+      }
+    });
+
+    it('caps the height at 75 % of the display when no area is reported', () => {
+      // 800 - 2 * 56 = 688 vs 0.75 * 800 = 600: the smaller one wins. Same
+      // rule on native Wayland and on an X11 WM without _NET_WORKAREA.
+      expect(safeLinuxWorkArea(unreported, nearTop)).toEqual({
         x: 0,
         y: 0,
         width: 1280,
@@ -241,12 +267,30 @@ describe('src/main/window-geometry.ts', () => {
       });
     });
 
-    it('keeps a real work area that is already smaller than the cap', () => {
+    it('sits the capped area at the display end the tray is on', () => {
+      // A bottom panel without struts: the popover stays next to the icon
+      // instead of being pulled up into the top 75 % of the screen.
+      expect(safeLinuxWorkArea(unreported, nearBottom)).toEqual({
+        x: 0,
+        y: 200,
+        width: 1280,
+        height: 600,
+      });
+    });
+
+    it('stays inside a display that does not start at the origin', () => {
       const display = {
-        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
-        workArea: { x: 0, y: 0, width: 1920, height: 700 },
+        bounds: { x: 1280, y: -200, width: 1920, height: 1080 },
+        workArea: { x: 1280, y: -200, width: 1920, height: 1080 },
       };
-      expect(nativeWaylandWorkArea(display).height).toBe(700);
+      const area = safeLinuxWorkArea(display, {
+        x: 3000,
+        y: 850,
+        width: 24,
+        height: 24,
+      });
+      expect(area).toEqual({ x: 1280, y: 70, width: 1920, height: 810 });
+      expect(area.y + area.height).toBe(display.bounds.y + 1080);
     });
 
     it('uses the two-panel margin when it is tighter than 75 %', () => {
@@ -255,17 +299,29 @@ describe('src/main/window-geometry.ts', () => {
         workArea: { x: 0, y: 0, width: 800, height: 400 },
       };
       // 400 - 112 = 288 < 0.75 * 400 = 300.
-      expect(nativeWaylandWorkArea(display).height).toBe(288);
+      expect(safeLinuxWorkArea(display, nearTop).height).toBe(288);
     });
 
     it('keeps a popover under the cap even at the tallest content', () => {
-      const capped = nativeWaylandWorkArea(fedora);
+      const capped = safeLinuxWorkArea(unreported, nearTop);
       const bounds = trayPopoverBounds(
         { x: 435, y: 150, width: 410, height: 500 },
         5000,
         capped,
       );
       expect(bounds.height).toBeLessThanOrEqual(600);
+    });
+  });
+
+  describe('linuxWorkAreaNote', () => {
+    it('says whether the work area was reported or capped', () => {
+      const bounds = { x: 0, y: 0, width: 1280, height: 800 };
+      expect(linuxWorkAreaNote({ bounds, workArea: { ...bounds } })).toBe(
+        'workArea unreported → capped',
+      );
+      expect(
+        linuxWorkAreaNote({ bounds, workArea: { ...bounds, height: 756 } }),
+      ).toBe('workArea reported');
     });
   });
 });

@@ -191,6 +191,20 @@ describe('src/main/linux-display-backend.ts', () => {
         args: [X11_OZONE_FLAG],
       });
     });
+
+    it('keeps the autostart --login and AppImage --no-sandbox arguments', () => {
+      // An autostart launch of the AppImage: AppRun adds --no-sandbox ahead
+      // of the Exec arguments, so both reach the relaunched process.
+      expect(
+        x11RelaunchOptions({
+          argv: ['/tmp/.mount_DevBarAbc/devbar', '--no-sandbox', '--login'],
+          appImage: '/home/u/Apps/DevBar.AppImage',
+        }),
+      ).toEqual({
+        execPath: '/home/u/Apps/DevBar.AppImage',
+        args: ['--no-sandbox', '--login', X11_OZONE_FLAG],
+      });
+    });
   });
   describe('settleLinuxDisplayBackend', () => {
     function effects(appImage: string | null = null) {

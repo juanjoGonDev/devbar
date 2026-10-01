@@ -33,10 +33,9 @@ import {
 import { isLinux, isMac, isWin } from '../platform.js';
 import {
   describeLinuxDisplayBackend,
-  runsNativeWayland,
   settleLinuxDisplayBackend,
 } from './linux-display-backend.js';
-import { nativeWaylandWorkArea } from './window-geometry.js';
+import { linuxWorkAreaNote, safeLinuxWorkArea } from './window-geometry.js';
 import { appHome } from '../app-paths.js';
 import { resolvedThemeIsDark, themeWindowBackground } from './theme.js';
 import { prepareIssueReport } from '../report-issue.js';
@@ -95,7 +94,6 @@ export function settleDisplay(): boolean {
 
 export function createElectronHost(options: ElectronHostOptions) {
   const { dirname } = options;
-  const nativeWayland = runsNativeWayland(process);
   const rendererFile = (name: string): string =>
     path.join(dirname, '..', 'renderer', name);
   const assetFile = (name: string): string =>
@@ -178,12 +176,12 @@ export function createElectronHost(options: ElectronHostOptions) {
       new BrowserWindow(opts),
     activeDisplay,
     workArea: (): Rectangle => activeDisplay().workArea,
-    // Sizes the tray popover. Native Wayland reports the whole display as the
-    // work area and places the window itself, so the height is capped there
-    // to stay clear of the panel.
+    // Sizes the tray popover. A Linux WM that publishes no reserved area
+    // (native Wayland, X11 without struts) reports the whole display, so the
+    // height is capped there to stay clear of the panel.
     workAreaFor: (bounds: Rectangle): Rectangle => {
       const display = screen.getDisplayMatching(bounds);
-      return nativeWayland ? nativeWaylandWorkArea(display) : display.workArea;
+      return isLinux ? safeLinuxWorkArea(display, bounds) : display.workArea;
     },
     displayMatching: (rect: Rectangle) => screen.getDisplayMatching(rect),
 
@@ -335,7 +333,11 @@ export function createElectronHost(options: ElectronHostOptions) {
     /** XDG_CURRENT_DESKTOP, which names the Linux settings tool to launch. */
     desktop: process.env.XDG_CURRENT_DESKTOP ?? '',
     sessionType: process.env.XDG_SESSION_TYPE ?? 'desconocida',
-    displayBackend: describeLinuxDisplayBackend(process),
+    displayLine: (): string | null => {
+      const backend = describeLinuxDisplayBackend(process);
+      if (!backend) return null;
+      return `${backend}, ${linuxWorkAreaNote(screen.getPrimaryDisplay())}`;
+    },
     appVersion: (): string => app.getVersion(),
     /**
      * One-click bug report: markdown (version, platform, app.log tail) to

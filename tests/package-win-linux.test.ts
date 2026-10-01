@@ -21,7 +21,6 @@ import {
   type PackageMode,
   type PackageRuntime,
 } from '../scripts/package-win-linux.js';
-import { X11_OZONE_FLAG } from '../src/main/linux-display-backend.js';
 
 /**
  * The electron-builder orchestration for win/linux. These tests pin the
@@ -283,15 +282,11 @@ describe('scripts/package-win-linux.ts', () => {
               { target: 'AppImage', arch: ['x64'] },
               { target: 'deb', arch: ['x64'] },
             ],
+            // No executableArgs: the display backend is decided at runtime
+            // (src/main/linux-display-backend.ts), and leaving them unset
+            // keeps AppImage's default --no-sandbox Exec argument.
             artifactName: 'DevBar-9.9.9-linux-x64.${ext}',
-            // XWayland on Wayland sessions: native Wayland cannot place the
-            // popover next to the tray (see src/main/linux-display-backend.ts).
-            executableArgs: [X11_OZONE_FLAG],
           },
-          // AppImage's own default is --no-sandbox; setting linux
-          // executableArgs replaces that default, so it is restated here
-          // (electron-builder merges the two arrays).
-          appImage: { executableArgs: ['--no-sandbox'] },
         },
       });
     });

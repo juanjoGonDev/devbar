@@ -15,15 +15,19 @@
  * PreSandboxStartup()` fixes the platform), which runs before the main script
  * is loaded in ElectronBrowserMainParts::PostEarlyInitialization — so
  * `app.commandLine.appendSwitch('ozone-platform', 'x11')` from main.ts is too
- * late. Packaged launchers pass the flag themselves (electron-builder
- * `linux.executableArgs`, the autostart entry); any other launch path is
- * relaunched once with the flag added.
+ * late. So this runtime check is the single source of truth for every
+ * launcher (menu entry, autostart, terminal, AppImage): a Wayland session with
+ * an X display is relaunched once with the flag added; one without (no
+ * XWayland) stays on native Wayland. No launcher passes the flag statically.
  *
  * Pure: no electron import, every input is passed in.
  */
 
 export const X11_OZONE_FLAG = '--ozone-platform=x11';
-/** Opt-out: `DEVBAR_WAYLAND_NATIVE=1` keeps DevBar on native Wayland. */
+/**
+ * Opt-out: `DEVBAR_WAYLAND_NATIVE=1` keeps DevBar on native Wayland, from any
+ * launcher that passes the environment (e.g. ~/.config/environment.d).
+ */
 const WAYLAND_NATIVE_ENV = 'DEVBAR_WAYLAND_NATIVE';
 
 export interface DisplayBackendInput {
@@ -101,11 +105,12 @@ export interface DisplayBackendEffects {
 }
 
 /**
- * Called at the very top of main, before the single-instance lock: when a
- * Wayland launch carries no ozone choice (terminal, an AppImage run directly)
- * it schedules a relaunch with the x11 flag and exits, returning true. Doing
- * it before the lock means this short-lived process never owns it, and before
- * the file logger means it never rotates app.log. `app.exit()` before the
+ * Called at the very top of main, before the login-shell PATH probe and the
+ * single-instance lock: when a Wayland launch carries no ozone choice it
+ * schedules a relaunch with the x11 flag (argv reused, so `--login` survives)
+ * and exits, returning true. Doing it first keeps this short-lived process
+ * cheap: it never spawns the shell, never owns the lock, and never rotates
+ * app.log. `app.exit()` before the
  * message loop exits synchronously, and Electron's relauncher waits for that
  * exit before starting the new process.
  */

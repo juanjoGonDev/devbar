@@ -11,7 +11,6 @@ import {
   LOGIN_ARG,
   DESKTOP_FILE_NAME,
 } from '../src/autostart.js';
-import { X11_OZONE_FLAG } from '../src/main/linux-display-backend.js';
 
 const tmpDirs: string[] = [];
 
@@ -51,11 +50,14 @@ describe('src/autostart.ts', () => {
       expect(content.endsWith('\n')).toBe(true);
     });
 
-    it('asks for XWayland so the popover can sit next to the tray on Wayland', () => {
+    it('leaves the display backend to the runtime check (no ozone flag)', () => {
+      // linux-display-backend.ts relaunches under XWayland only when the
+      // session has one; a static flag here would break a Wayland-only one.
       const content = desktopFileContent('/home/u/Apps/DevBar.AppImage');
       expect(content).toContain(
-        `Exec=/home/u/Apps/DevBar.AppImage ${LOGIN_ARG} ${X11_OZONE_FLAG}`,
+        `Exec=/home/u/Apps/DevBar.AppImage ${LOGIN_ARG}\n`,
       );
+      expect(content).not.toContain('--ozone-platform');
     });
 
     it('quotes an install path containing whitespace (Exec is a desktop string)', () => {

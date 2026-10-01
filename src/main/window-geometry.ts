@@ -115,29 +115,56 @@ export function trayPopoverBounds(
 }
 
 /** Room for one panel at each end of the display: a 56px panel is generous. */
-const NATIVE_WAYLAND_PANEL_ALLOWANCE = 56;
+const UNREPORTED_PANEL_ALLOWANCE = 56;
 /** Ceiling: never taller than three quarters of the display. */
-const NATIVE_WAYLAND_MAX_DISPLAY_FRACTION = 0.75;
+const UNREPORTED_MAX_DISPLAY_FRACTION = 0.75;
+
+type LinuxDisplay = { workArea: Rect; bounds: Rect };
 
 /**
- * The work area to size the tray popover against on native Wayland. There the
- * compositor places the window (often centred) and `workArea` is the whole
- * display, so a popover sized to it slides under the panel. Without the real
- * panel geometry, the height is capped at the smallest of the reported work
- * area, the display minus a 56px panel at each end, and 75 % of the display —
- * so a centred window stays clear of any one panel. Position is not touched:
- * the compositor ignores it anyway.
+ * Whether the window manager published a reserved area (a panel): with none,
+ * Electron reports the whole display as the work area. That is what native
+ * Wayland always does, and X11 WMs/panels without _NET_WORKAREA or struts.
  */
-export function nativeWaylandWorkArea(display: {
-  workArea: Rect;
-  bounds: Rect;
-}): Rect {
-  const height = Math.min(
-    display.workArea.height,
-    display.bounds.height - 2 * NATIVE_WAYLAND_PANEL_ALLOWANCE,
-    Math.floor(display.bounds.height * NATIVE_WAYLAND_MAX_DISPLAY_FRACTION),
+function workAreaReported({ workArea, bounds }: LinuxDisplay): boolean {
+  return (
+    workArea.x !== bounds.x ||
+    workArea.y !== bounds.y ||
+    workArea.width !== bounds.width ||
+    workArea.height !== bounds.height
   );
-  return { ...display.workArea, height };
+}
+
+/**
+ * The work area to size the tray popover against on Linux. A reported work
+ * area is used as is. An unreported one is the whole display, so a popover
+ * sized to it slides under the panel: without the real panel geometry, the
+ * height is capped at the smallest of the work area, the display minus a 56px
+ * panel at each end, and 75 % of the display. The capped area sits at the
+ * display end `near` (the tray icon, else the popover) is on, so on X11 the
+ * popover stays next to the icon, and always inside the display. Native
+ * Wayland ignores the position anyway; only the height matters there.
+ */
+export function safeLinuxWorkArea(display: LinuxDisplay, near: Rect): Rect {
+  if (workAreaReported(display)) return display.workArea;
+  const { workArea, bounds } = display;
+  // ponytail: a fixed guess, not the real panel size; read the panel geometry
+  // (portal / layer-shell) if a desktop ever exposes it to Electron.
+  const height = Math.min(
+    workArea.height,
+    bounds.height - 2 * UNREPORTED_PANEL_ALLOWANCE,
+    Math.floor(bounds.height * UNREPORTED_MAX_DISPLAY_FRACTION),
+  );
+  const nearBottom = near.y + near.height / 2 > bounds.y + bounds.height / 2;
+  const y = nearBottom ? bounds.y + bounds.height - height : bounds.y;
+  return { ...workArea, y, height };
+}
+
+/** The work-area half of the startup `[display]` line. */
+export function linuxWorkAreaNote(display: LinuxDisplay): string {
+  return workAreaReported(display)
+    ? 'workArea reported'
+    : 'workArea unreported → capped';
 }
 
 /**
