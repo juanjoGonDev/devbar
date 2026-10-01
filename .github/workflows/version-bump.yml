@@ -14,7 +14,7 @@ on:
           - major
 
 # Open a bump PR. Merging it to main triggers release.yml (which publishes
-# the GitHub Release on the detected version change).
+# the GitHub Release while the package version has none yet).
 permissions:
   contents: write
   pull-requests: write

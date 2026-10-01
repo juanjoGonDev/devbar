@@ -115,7 +115,15 @@ jobs:
             echo "Current package version $current_version has no GitHub Release. Recover it before preparing another version."
             exit 0
           fi
-          if [[ "$(jq -r .isDraft <<<"$current_release_json")" != "false" || "$(jq -r .isPrerelease <<<"$current_release_json")" != "false" ]]; then
+          # A draft is a release still in flight (release.yml drafts first and
+          # publishes last) or a leftover of a cancelled run: it counts as
+          # "no release", never as a baseline to prepare the next version on.
+          if [[ "$(jq -r .isDraft <<<"$current_release_json")" != "false" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Current package version $current_version has only a draft GitHub Release; wait for release.yml to publish it."
+            exit 0
+          fi
+          if [[ "$(jq -r .isPrerelease <<<"$current_release_json")" != "false" ]]; then
             echo "::error title=Release metadata mismatch::$current_tag must be a published stable release."
             exit 1
           fi
