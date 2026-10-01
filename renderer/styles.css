@@ -1900,9 +1900,7 @@ fieldset.schedule-group legend {
   font-size: 12px;
   overflow-wrap: anywhere;
   user-select: text;
-  font-family:
-    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
-    'Noto Color Emoji', monospace;
+  font-family: var(--font-mono);
 }
 
 .day-chips {
