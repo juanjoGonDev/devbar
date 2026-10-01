@@ -73,6 +73,16 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Corregido
 
+- **La barra se adapta a su contenido mientras está abierta.** Al añadir o
+  quitar grupos, desplegar uno, arrancar un script o aparecer un aviso, el
+  panel cambiaba de altura solo al cerrarlo y volver a pulsar el icono. En
+  Windows (y en Linux con el panel abajo) era peor: al crecer se metía por
+  debajo de la barra de tareas y salía de la pantalla. Ahora crece y encoge
+  al momento, hacia arriba si la barra de tareas está abajo, sin pasar del
+  alto de la pantalla en la que está el icono; a partir de ahí solo se
+  desplaza la lista de grupos, con la cabecera siempre visible y sin
+  barras de desplazamiento dobles.
+
 - **Los iconos de la cabecera de la barra ya no salen en azul.** El botón
   del pipeline, el de los logs y el de configuración usan ahora el mismo
   color neutro que el resto de la interfaz (y que el de salir), en tema

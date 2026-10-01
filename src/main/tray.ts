@@ -410,6 +410,21 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
   };
 }
 
+/**
+ * The tray icon's real bounds, or null where there are none: Wayland reports
+ * an empty rectangle, and menubar's tray getter throws before the tray exists.
+ */
+export function trayIconBounds(
+  bar: { tray: { getBounds: () => Rect } } | null | undefined,
+): Rect | null {
+  try {
+    const bounds = bar?.tray.getBounds();
+    return hasTrayBounds(bounds) ? bounds : null;
+  } catch {
+    return null;
+  }
+}
+
 type PositionerCalculate = (
   position: string,
   trayBounds?: Rect,

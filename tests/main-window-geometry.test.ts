@@ -5,6 +5,7 @@ import {
   clampXToWorkArea,
   hasTrayBounds,
   taskbarSideOf,
+  trayPopoverBounds,
   trayPopoverHeight,
   trayPositionForTaskbarSide,
 } from '../src/main/window-geometry.js';
@@ -85,6 +86,69 @@ describe('src/main/window-geometry.ts', () => {
     it('keeps a floor even on a tiny screen', () => {
       expect(trayPopoverHeight(10, 100)).toBe(160);
       expect(trayPopoverHeight(5000, 100)).toBe(280);
+    });
+  });
+
+  describe('trayPopoverBounds', () => {
+    /** Windows 1080p with the taskbar along the bottom edge. */
+    const winWorkArea = { x: 0, y: 0, width: 1920, height: 1040 };
+    /** macOS: the menubar takes the top 25px. */
+    const macWorkArea = { x: 0, y: 25, width: 1440, height: 875 };
+
+    it('grows upward from a bottom taskbar, keeping the bottom edge on it', () => {
+      const current = { x: 1500, y: 540, width: 410, height: 500 };
+      expect(trayPopoverBounds(current, 696, winWorkArea)).toEqual({
+        x: 1500,
+        y: 340,
+        width: 410,
+        height: 700,
+      });
+    });
+
+    it('shrinks toward a bottom taskbar instead of floating above it', () => {
+      const current = { x: 1500, y: 340, width: 410, height: 700 };
+      const next = trayPopoverBounds(current, 196, winWorkArea);
+      expect(next.height).toBe(200);
+      expect(next.y + next.height).toBe(1040);
+    });
+
+    it('grows downward from the macOS menubar, keeping the top edge', () => {
+      const current = { x: 900, y: 25, width: 410, height: 300 };
+      expect(trayPopoverBounds(current, 596, macWorkArea)).toEqual({
+        x: 900,
+        y: 25,
+        width: 410,
+        height: 600,
+      });
+    });
+
+    it('caps the height to the work area of the display it is on', () => {
+      const current = { x: 1500, y: 540, width: 410, height: 500 };
+      const next = trayPopoverBounds(current, 5000, winWorkArea);
+      expect(next.height).toBe(960);
+      expect(next.y).toBeGreaterThanOrEqual(winWorkArea.y);
+      expect(next.y + next.height).toBeLessThanOrEqual(1040);
+    });
+
+    it('places relative to a secondary display, not the primary one', () => {
+      const second = { x: 1920, y: 0, width: 1920, height: 1040 };
+      const current = { x: 3400, y: 840, width: 410, height: 200 };
+      const next = trayPopoverBounds(current, 496, second);
+      expect(next).toEqual({ x: 3400, y: 540, width: 410, height: 500 });
+    });
+
+    it('pulls a popover that would cross the bottom edge back on screen', () => {
+      // A side taskbar with the icon low on it: the popover hangs from the
+      // icon, so growing in place would run past the bottom of the screen.
+      const current = { x: 60, y: 300, width: 410, height: 300 };
+      const next = trayPopoverBounds(current, 896, winWorkArea);
+      expect(next.y + next.height).toBeLessThanOrEqual(1040);
+      expect(next.height).toBe(900);
+    });
+
+    it('keeps the popover inside the work area horizontally', () => {
+      const current = { x: 1700, y: 540, width: 410, height: 500 };
+      expect(trayPopoverBounds(current, 496, winWorkArea).x).toBe(1510);
     });
   });
 

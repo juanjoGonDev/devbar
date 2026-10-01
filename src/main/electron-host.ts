@@ -156,8 +156,8 @@ export function createElectronHost(options: ElectronHostOptions) {
       new BrowserWindow(opts),
     activeDisplay,
     workArea: (): Rectangle => activeDisplay().workArea,
-    workAreaHeight: (bounds: Rectangle): number =>
-      screen.getDisplayMatching(bounds).workAreaSize.height,
+    workAreaFor: (bounds: Rectangle): Rectangle =>
+      screen.getDisplayMatching(bounds).workArea,
     displayMatching: (rect: Rectangle) => screen.getDisplayMatching(rect),
 
     /**

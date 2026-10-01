@@ -63,6 +63,12 @@ button {
 
 /* ---------- Tray popover ---------- */
 body.tray {
+  /* The window is sized to the content by the main process; once that hits
+     the work-area cap only the group list scrolls, under a fixed header. */
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: 0 14px 14px;
   background: rgba(245, 245, 247, 0.86);
   backdrop-filter: saturate(180%) blur(20px);
@@ -83,6 +89,7 @@ body.tray {
   margin: 0 -14px 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .tray-header-row {
   display: flex;
@@ -1358,8 +1365,12 @@ dialog h2 {
    ================================================================ */
 
 .groups-list {
-  max-height: calc(100vh - 56px);
+  /* Natural height below the cap (never stretched: its scrollHeight is what
+     the popover is sized from), shrinking and scrolling above it. */
+  flex: 0 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Wrapper contains the collapsed row + optional expanded section */

@@ -50,7 +50,11 @@ import { createShutdownController } from './main/shutdown.js';
 import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
 import { createStartup } from './main/startup.js';
 import { createStateSnapshots } from './main/state-snapshot.js';
-import { createTrayController, linuxRebuildPieces } from './main/tray.js';
+import {
+  createTrayController,
+  linuxRebuildPieces,
+  trayIconBounds,
+} from './main/tray.js';
 import { buildTrayContextMenu } from './main/tray-view.js';
 import { createUpdater } from './main/updater.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
@@ -287,7 +291,8 @@ const trayHost = {
   },
   hide: () => menuBar?.hideWindow(),
   popover: () => menuBar?.window ?? null,
-  workAreaHeight: host.workAreaHeight,
+  workAreaFor: host.workAreaFor,
+  trayIconBounds: () => trayIconBounds(menuBar),
 };
 
 // Presence of the files IS the switch, rather than `!app.isPackaged`. A normal

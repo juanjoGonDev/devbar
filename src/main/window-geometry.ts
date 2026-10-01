@@ -79,6 +79,42 @@ export function trayPopoverHeight(
 }
 
 /**
+ * Where the popover goes when its content height changes while it is open.
+ *
+ * Electron's setSize keeps the top-left corner fixed, which is only right when
+ * the popover hangs from a top bar (macOS, a top Linux panel). Above a bottom
+ * taskbar (Windows' default, most bottom Linux panels) it grew DOWNWARD,
+ * behind the taskbar and off the screen, and shrank into a window floating
+ * above it — until the next show, when menubar recomputed the position from
+ * the new size. So the edge nearest the tray stays put: a popover sitting in
+ * the lower half of the work area keeps its bottom edge, any other keeps its
+ * top edge. The result is then pulled fully inside the work area, which also
+ * covers a side taskbar with the icon low on it.
+ */
+export function trayPopoverBounds(
+  current: Rect,
+  contentHeight: number,
+  workArea: Rect,
+): Rect {
+  const height = trayPopoverHeight(contentHeight, workArea.height);
+  const centre = current.y + current.height / 2;
+  const anchoredToBottom = centre > workArea.y + workArea.height / 2;
+  const wantedY = anchoredToBottom
+    ? current.y + current.height - height
+    : current.y;
+  const y = Math.max(
+    workArea.y,
+    Math.min(wantedY, workArea.y + workArea.height - height),
+  );
+  return {
+    x: clampXToWorkArea(current.x, current.width, workArea),
+    y,
+    width: current.width,
+    height,
+  };
+}
+
+/**
  * Which edge of the display the taskbar/panel sits on, from the tray icon's
  * bounds: the work area is the screen minus the taskbar, so the offset between
  * workArea and display bounds reveals the taskbar side. Same idea as menubar's
