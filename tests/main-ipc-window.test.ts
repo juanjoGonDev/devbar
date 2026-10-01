@@ -5,11 +5,16 @@ import {
 } from '../src/main/ipc/window-ipc.js';
 import { makeCommand, makeGroup, recordingIpc } from './helpers/main-fakes.js';
 import type { Group } from '../src/domain-types.js';
+import type { Rect } from '../src/main/window-geometry.js';
 
 function harness(groups: Group[] = [], overrides: Partial<WindowIpcDeps> = {}) {
   const calls: string[] = [];
   const popoverSize: [number, number][] = [];
-  let popoverBounds = { x: 0, y: 0, width: 410, height: 500 };
+  const popoverMoves: Rect[] = [];
+  let popoverBounds: Rect = { x: 0, y: 25, width: 410, height: 500 };
+  let workArea: Rect = { x: 0, y: 25, width: 1440, height: 875 };
+  let iconBounds: Rect | null = null;
+  const workAreaLookups: Rect[] = [];
   let hasPopover = true;
   let popoverDestroyed = false;
   let silencedFound = true;
@@ -54,10 +59,17 @@ function harness(groups: Group[] = [], overrides: Partial<WindowIpcDeps> = {}) {
                   throw new Error('Object has been destroyed');
                 return popoverBounds;
               },
-              setSize: (width, height) => popoverSize.push([width, height]),
+              setBounds: (rect) => {
+                popoverMoves.push(rect);
+                popoverSize.push([rect.width, rect.height]);
+              },
             }
           : null,
-      workAreaHeight: () => 900,
+      workAreaFor: (rect) => {
+        workAreaLookups.push(rect);
+        return workArea;
+      },
+      trayIconBounds: () => iconBounds,
     },
     showMessageBoxForSender: () =>
       Promise.resolve({ response: messageResponse }),
@@ -67,8 +79,17 @@ function harness(groups: Group[] = [], overrides: Partial<WindowIpcDeps> = {}) {
     ipc,
     calls,
     popoverSize,
+    popoverMoves,
     setBounds: (height: number) => {
       popoverBounds = { ...popoverBounds, height };
+    },
+    workAreaLookups,
+    setIcon: (rect: Rect) => {
+      iconBounds = rect;
+    },
+    placePopover: (bounds: Rect, area: Rect) => {
+      popoverBounds = bounds;
+      workArea = area;
     },
     dropPopover: () => {
       hasPopover = false;
@@ -143,6 +164,44 @@ describe('src/main/ipc/window-ipc.ts', () => {
         applied: 604,
       });
       expect(h.popoverSize).toEqual([]);
+    });
+
+    it('grows upward while open above a bottom taskbar', () => {
+      // The Windows report: the popover sits on the taskbar, so a taller one
+      // has to move up — growing in place pushed it behind the taskbar.
+      const h = harness();
+      h.placePopover(
+        { x: 1500, y: 540, width: 410, height: 500 },
+        { x: 0, y: 0, width: 1920, height: 1040 },
+      );
+      h.ipc.invoke('tray:setHeight', 696);
+      expect(h.popoverMoves).toEqual([
+        { x: 1500, y: 340, width: 410, height: 700 },
+      ]);
+    });
+
+    it('caps the height to the work area the popover is on', () => {
+      const h = harness();
+      expect(h.ipc.invoke('tray:setHeight', 5000)).toEqual({
+        ok: true,
+        applied: 795,
+      });
+    });
+
+    it('caps against the display the tray icon is on', () => {
+      const h = harness();
+      const icon = { x: 3400, y: 1045, width: 24, height: 30 };
+      h.setIcon(icon);
+      h.ipc.invoke('tray:setHeight', 300);
+      expect(h.workAreaLookups).toEqual([icon]);
+    });
+
+    it("falls back to the popover's display without icon bounds", () => {
+      const h = harness();
+      h.ipc.invoke('tray:setHeight', 300);
+      expect(h.workAreaLookups).toEqual([
+        { x: 0, y: 25, width: 410, height: 500 },
+      ]);
     });
 
     it('reports failure with no popover on screen', () => {

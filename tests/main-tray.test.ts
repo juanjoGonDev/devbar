@@ -17,6 +17,7 @@ import {
   createTrayController,
   patchLinuxTrayPositioning,
   TRAY_PUSH_MIN_INTERVAL_MS,
+  trayIconBounds,
   type RebuildableTray,
 } from '../src/main/tray.js';
 import type { GroupState, TrayColor } from '../src/ipc-contract.js';
@@ -575,6 +576,29 @@ describe('src/main/tray.ts', () => {
 
   // The desktop gate that decides whether any of the above runs at all
   // lives in tests/main-tray-rebuild-gate.test.ts.
+
+  describe('trayIconBounds', () => {
+    const icon = { x: 1700, y: 1045, width: 24, height: 30 };
+
+    it('reads the icon rectangle the platform reports', () => {
+      expect(trayIconBounds({ tray: { getBounds: () => icon } })).toEqual(icon);
+    });
+
+    it("treats Wayland's empty rectangle as no bounds", () => {
+      const empty = { x: 0, y: 0, width: 0, height: 0 };
+      expect(trayIconBounds({ tray: { getBounds: () => empty } })).toBeNull();
+    });
+
+    it('has none before the tray exists', () => {
+      const bar = {
+        get tray(): { getBounds: () => typeof icon } {
+          throw new Error('tray not ready');
+        },
+      };
+      expect(trayIconBounds(bar)).toBeNull();
+      expect(trayIconBounds(null)).toBeNull();
+    });
+  });
 
   describe('patchLinuxTrayPositioning', () => {
     const display = {

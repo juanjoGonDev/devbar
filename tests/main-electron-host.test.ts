@@ -174,10 +174,10 @@ describe('src/main/electron-host.ts', () => {
       electron.focused = null;
     });
 
-    it('serves the work-area height of the display a rectangle sits on', () => {
+    it('serves the work area of the display a rectangle sits on', () => {
       const h = host();
       const rect = { x: 0, y: 0, width: 10, height: 10 };
-      expect(h.workAreaHeight(rect)).toBe(875);
+      expect(h.workAreaFor(rect).height).toBe(875);
       expect(h.displayMatching(rect).bounds.height).toBe(900);
     });
   });

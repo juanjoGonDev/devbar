@@ -48,32 +48,6 @@ Todas las novedades relevantes de DevBar. El formato sigue
   o varias líneas sin querer, junto al contador «N seleccionada(s)» del pie
   aparece una ✕ para quitar la selección; la tecla Esc hace lo mismo.
 
-### Corregido
-
-- **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**
-  DevBar solo pedía las fuentes de macOS, así que Windows acababa dibujando
-  toda la interfaz con su fuente de emoji, y los logs salían borrosos. Ahora
-  usa Segoe UI y Cascadia Mono/Consolas en Windows, y las fuentes habituales
-  del escritorio en Linux.
-
-- **Los iconos de la cabecera de la barra ya no salen en azul.** El botón
-  del pipeline, el de los logs y el de configuración usan ahora el mismo
-  color neutro que el resto de la interfaz (y que el de salir), en tema
-  claro y oscuro. El azul queda solo donde significa algo: botones
-  principales, enlaces y lo seleccionado.
-
-- **El changelog ya no muestra el comentario interno de GitHub** (`<!--
-Release notes generated… -->`) ni el título vacío «What's Changed» que
-  aparecía justo encima de «Changes».
-
-- **Los botones de la derecha de cada fila ya no bailan al arrancar un
-  script.** Al pasar de ▶ a ■, al aparecer el tiempo en marcha o el aviso
-  de error, los botones de logs, auto-arranque y arranque/parada se movían
-  unos píxeles (en Windows, bastante más). Ahora cada botón tiene un
-  tamaño fijo, el selector de rama ocupa siempre el mismo hueco y es el
-  nombre del grupo el que se recorta con «…» si falta sitio. El contador
-  de tiempo reserva su ancho para no empujar nada cada segundo.
-
 - **«Reportar fallo» ahora incluye los errores y avisos recientes.** Hasta
   ahora el informe solo llevaba el entorno y el final de `app.log`, y un
   fallo de hace un rato —una descarga o instalación de actualización que
@@ -96,6 +70,39 @@ Release notes generated… -->`) ni el título vacío «What's Changed» que
   antes de copiarlo o abrir GitHub.
 
 ### Corregido
+
+- **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**
+  DevBar solo pedía las fuentes de macOS, así que Windows acababa dibujando
+  toda la interfaz con su fuente de emoji, y los logs salían borrosos. Ahora
+  usa Segoe UI y Cascadia Mono/Consolas en Windows, y las fuentes habituales
+  del escritorio en Linux.
+- **La barra se adapta a su contenido mientras está abierta.** Al añadir o
+  quitar grupos, desplegar uno, arrancar un script o aparecer un aviso, el
+  panel cambiaba de altura solo al cerrarlo y volver a pulsar el icono. En
+  Windows (y en Linux con el panel abajo) era peor: al crecer se metía por
+  debajo de la barra de tareas y salía de la pantalla. Ahora crece y encoge
+  al momento, hacia arriba si la barra de tareas está abajo, sin pasar del
+  alto de la pantalla en la que está el icono; a partir de ahí solo se
+  desplaza la lista de grupos, con la cabecera siempre visible y sin
+  barras de desplazamiento dobles.
+
+- **Los iconos de la cabecera de la barra ya no salen en azul.** El botón
+  del pipeline, el de los logs y el de configuración usan ahora el mismo
+  color neutro que el resto de la interfaz (y que el de salir), en tema
+  claro y oscuro. El azul queda solo donde significa algo: botones
+  principales, enlaces y lo seleccionado.
+
+- **El changelog ya no muestra el comentario interno de GitHub** (`<!--
+Release notes generated… -->`) ni el título vacío «What's Changed» que
+  aparecía justo encima de «Changes».
+
+- **Los botones de la derecha de cada fila ya no bailan al arrancar un
+  script.** Al pasar de ▶ a ■, al aparecer el tiempo en marcha o el aviso
+  de error, los botones de logs, auto-arranque y arranque/parada se movían
+  unos píxeles (en Windows, bastante más). Ahora cada botón tiene un
+  tamaño fijo, el selector de rama ocupa siempre el mismo hueco y es el
+  nombre del grupo el que se recorta con «…» si falta sitio. El contador
+  de tiempo reserva su ancho para no empujar nada cada segundo.
 
 - **El log de la sesión anterior se perdía al reiniciar.** Cada arranque
   vaciaba `app.log`, así que tras un cierre inesperado o el reinicio de
