@@ -73,6 +73,12 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Corregido
 
+- **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**
+  DevBar solo pedía las fuentes de macOS, así que Windows acababa dibujando
+  toda la interfaz con su fuente de emoji, y los logs salían borrosos. Ahora
+  usa Segoe UI y Cascadia Mono/Consolas en Windows, y las fuentes habituales
+  del escritorio en Linux.
+
 - **Los iconos de la cabecera de la barra ya no salen en azul.** El botón
   del pipeline, el de los logs y el de configuración usan ahora el mismo
   color neutro que el resto de la interfaz (y que el de salir), en tema

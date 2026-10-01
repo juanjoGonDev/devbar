@@ -50,7 +50,7 @@ function ensureBubble(): HTMLDivElement {
     'border:1px solid rgba(255,255,255,0.14)',
     'background:#2f2f34',
     'color:#e5e5e7',
-    'font-family:-apple-system,BlinkMacSystemFont,sans-serif',
+    'font-family:var(--font-ui)',
     'font-size:11px',
     'font-weight:400',
     'line-height:1.35',
