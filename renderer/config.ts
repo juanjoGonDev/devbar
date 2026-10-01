@@ -58,6 +58,10 @@ const testNotifyBtn = byId<HTMLButtonElement>(
   'test-notification',
   HTMLButtonElement,
 );
+const resetTrayPositionBtn = byId<HTMLButtonElement>(
+  'reset-tray-position-config',
+  HTMLButtonElement,
+);
 const autostartHint = byId<HTMLElement>('autostart-hint', HTMLElement);
 const notifHint = byId<HTMLElement>('notif-hint', HTMLElement);
 const openNotifSettingsBtn = byId<HTMLButtonElement>(
@@ -299,6 +303,7 @@ const settings = createSettingsPane(
     notifHint,
     openNotifSettings: openNotifSettingsBtn,
     testNotify: testNotifyBtn,
+    resetTrayPosition: resetTrayPositionBtn,
   },
   showToast,
 );

@@ -69,6 +69,16 @@ Todas las novedades relevantes de DevBar. El formato sigue
   errores y avisos recientes incluirá y permite leer el informe completo
   antes de copiarlo o abrir GitHub.
 
+- **El panel de la barra se puede mover y redimensionar.** Arrástralo por
+  su cabecera o tira de sus bordes y se queda donde lo dejes, con el tamaño
+  que le diste, cada vez que lo abras (también en otra pantalla). Sigue
+  ajustando su altura al contenido sin pasar nunca de la que elegiste. Si
+  esa pantalla ya no está conectada o el panel quedaría fuera de ella,
+  vuelve solo junto al icono. Para devolverlo a su sitio, pulsa «Volver
+  junto al icono» en la cabecera del panel o en Configuración → General.
+  En Linux con Wayland nativo el compositor decide la posición: ahí DevBar
+  recuerda solo el tamaño.
+
 ### Corregido
 
 - **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**

@@ -50,12 +50,9 @@ import { createShutdownController } from './main/shutdown.js';
 import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
 import { createStartup } from './main/startup.js';
 import { createStateSnapshots } from './main/state-snapshot.js';
-import {
-  createTrayController,
-  linuxRebuildPieces,
-  trayIconBounds,
-} from './main/tray.js';
+import { createTrayController, linuxRebuildPieces } from './main/tray.js';
 import { buildTrayContextMenu } from './main/tray-view.js';
+import { createTrayHost } from './main/tray-host.js';
 import { createUpdater } from './main/updater.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
 import type { Group } from './domain-types.js';
@@ -287,15 +284,7 @@ function syncRepoWatchers(): void {
   ]);
 }
 
-const trayHost = {
-  hideIfVisible: () => {
-    if (menuBar?.window?.isVisible()) menuBar.hideWindow();
-  },
-  hide: () => menuBar?.hideWindow(),
-  popover: () => menuBar?.window ?? null,
-  workAreaFor: host.workAreaFor,
-  trayIconBounds: () => trayIconBounds(menuBar),
-};
+const trayHost = createTrayHost(() => menuBar, host, configStore);
 
 // Presence of the files IS the switch, rather than `!app.isPackaged`. A normal
 // build strips src/dev and renderer/dev, so this is off; a build made with
@@ -474,6 +463,7 @@ app.whenReady().then(() => {
     invalidateTrayIconCache: trayIcon.invalidateCache,
     repaintWindows,
     scheduleBootWork,
+    pinnedPopover: trayHost.pinned,
   });
 });
 

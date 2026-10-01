@@ -18,6 +18,10 @@ import {
   regenerateLegacyServices,
 } from '../groups-model.js';
 import {
+  normalizePinnedPopover,
+  type PinnedPopover,
+} from '../main/pinned-popover-geometry.js';
+import {
   legacyLinuxConfigFile,
   migrateLegacyLinuxStore,
   packagedAppHome,
@@ -54,6 +58,8 @@ type StoreState = {
   scheduleState: Record<string, string>;
   /** Uploaded images usable as icons (see src/custom-icons.ts). */
   customIcons: CustomIcon[];
+  /** Where the user pinned the tray popover; absent while it is anchored. */
+  trayPopover?: PinnedPopover;
   /** Absent until a v1/v2 store is actually converted — see the schema. */
   _services_pre_v3_backup?: unknown[];
   /** Original emoji of every icon the Lucide migration replaced, keyed
@@ -86,6 +92,8 @@ const schema = {
   _services_pre_v3_backup: { type: 'array' },
   // Same reasoning: no default, so absent means "nothing was converted".
   _icons_pre_lucide_backup: { type: 'object' },
+  // No default either: absent IS "anchored to the tray icon".
+  trayPopover: { type: 'object' },
 } as const;
 
 /**
@@ -250,6 +258,19 @@ export function setScheduleLastRun(processId: string, iso: string): void {
   const state = { ...store.get('scheduleState', {}) };
   state[processId] = iso;
   store.set('scheduleState', state);
+}
+
+/**
+ * The pinned tray popover (see src/main/pinned-popover.ts), read through
+ * normalizePinnedPopover so a hand-edited record means "not pinned" rather
+ * than a popover restored to NaN. Null deletes the key: anchored again.
+ */
+export function getTrayPopover(): PinnedPopover | null {
+  return normalizePinnedPopover(store.get('trayPopover'));
+}
+export function saveTrayPopover(value: PinnedPopover | null): void {
+  if (value) store.set('trayPopover', value);
+  else store.delete('trayPopover');
 }
 
 /** The schema version currently on disk — what an export/backup is labelled. */

@@ -19,6 +19,10 @@ function harness(groups: Group[] = [], overrides: Partial<WindowIpcDeps> = {}) {
   let popoverDestroyed = false;
   let silencedFound = true;
   let messageResponse = 2;
+  let pinnedBounds: Rect | null = null;
+  let pinned = false;
+  let programmaticDepth = 0;
+  const programmaticMoves: Rect[] = [];
   const ipc = recordingIpc();
   registerWindowIpc(ipc, {
     configStore: { getGroup: (id) => groups.find((g) => g.id === id) ?? null },
@@ -62,6 +66,7 @@ function harness(groups: Group[] = [], overrides: Partial<WindowIpcDeps> = {}) {
               setBounds: (rect) => {
                 popoverMoves.push(rect);
                 popoverSize.push([rect.width, rect.height]);
+                if (programmaticDepth > 0) programmaticMoves.push(rect);
               },
             }
           : null,
@@ -70,6 +75,22 @@ function harness(groups: Group[] = [], overrides: Partial<WindowIpcDeps> = {}) {
         return workArea;
       },
       trayIconBounds: () => iconBounds,
+      pinned: {
+        autoHeightBounds: () => pinnedBounds,
+        programmatic: (apply) => {
+          programmaticDepth++;
+          try {
+            apply();
+          } finally {
+            programmaticDepth--;
+          }
+        },
+        isPinned: () => pinned,
+        reset: () => {
+          calls.push('resetPinned');
+          pinned = false;
+        },
+      },
     },
     showMessageBoxForSender: () =>
       Promise.resolve({ response: messageResponse }),
@@ -97,6 +118,11 @@ function harness(groups: Group[] = [], overrides: Partial<WindowIpcDeps> = {}) {
     destroyPopover: () => {
       popoverDestroyed = true;
     },
+    programmaticMoves,
+    pinAt: (bounds: Rect | null) => {
+      pinnedBounds = bounds;
+      pinned = bounds !== null;
+    },
     dropSilenced: () => {
       silencedFound = false;
     },
@@ -114,6 +140,8 @@ describe('src/main/ipc/window-ipc.ts', () => {
         'window:openConfigChangelog',
         'window:hideTray',
         'tray:setHeight',
+        'tray:pinnedState',
+        'tray:resetPosition',
         'window:openLogs',
         'window:openSilenced',
         'silenced:getForCommand',
@@ -218,9 +246,44 @@ describe('src/main/ipc/window-ipc.ts', () => {
       expect(h.ipc.invoke('tray:setHeight', 600)).toEqual({ ok: false });
     });
 
+    it('marks its own resize as programmatic, so it never pins the popover', () => {
+      const h = harness();
+      h.ipc.invoke('tray:setHeight', 600);
+      expect(h.programmaticMoves).toHaveLength(1);
+    });
+
+    it('applies the pinned bounds instead of the tray-anchored ones', () => {
+      const h = harness();
+      h.pinAt({ x: 300, y: 100, width: 460, height: 320 });
+      expect(h.ipc.invoke('tray:setHeight', 316)).toEqual({
+        ok: true,
+        applied: 320,
+      });
+      expect(h.popoverMoves).toEqual([
+        { x: 300, y: 100, width: 460, height: 320 },
+      ]);
+    });
+
     it('rejects a non-numeric height', () => {
       const h = harness();
       expect(() => h.ipc.invoke('tray:setHeight', 'tall')).toThrow(TypeError);
+    });
+  });
+
+  describe('pinned popover', () => {
+    it('tells the renderer whether the popover is pinned', () => {
+      const h = harness();
+      expect(h.ipc.invoke('tray:pinnedState')).toEqual({ pinned: false });
+      h.pinAt({ x: 300, y: 100, width: 460, height: 320 });
+      expect(h.ipc.invoke('tray:pinnedState')).toEqual({ pinned: true });
+    });
+
+    it('puts the popover back by the tray icon on request', () => {
+      const h = harness();
+      h.pinAt({ x: 300, y: 100, width: 460, height: 320 });
+      expect(h.ipc.invoke('tray:resetPosition')).toEqual({ ok: true });
+      expect(h.calls).toEqual(['resetPinned']);
+      expect(h.ipc.invoke('tray:pinnedState')).toEqual({ pinned: false });
     });
   });
 

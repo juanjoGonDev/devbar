@@ -12,6 +12,7 @@ export interface SettingsPaneElements {
   notifHint: HTMLElement;
   openNotifSettings: HTMLButtonElement;
   testNotify: HTMLButtonElement;
+  resetTrayPosition: HTMLButtonElement;
 }
 
 export interface SettingsPane {
@@ -169,6 +170,17 @@ export function createSettingsPane(
       }
     });
   }
+
+  // Same action as the popover header's button, for a popover pinned
+  // somewhere the user can no longer reach (or simply forgot about).
+  els.resetTrayPosition.addEventListener('click', async () => {
+    try {
+      await window.api.resetTrayPosition();
+      showToast('El panel vuelve a abrirse junto al icono', 'ok');
+    } catch (err) {
+      showToast(`No se pudo recolocar el panel: ${errorMessage(err)}`, 'error');
+    }
+  });
 
   if (els.testNotify) {
     els.testNotify.addEventListener('click', async () => {
