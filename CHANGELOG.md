@@ -89,11 +89,15 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - **En Linux con Wayland (KDE, GNOME…) el panel vuelve a salir junto al
   icono de la bandeja.** Antes se abría en mitad de la pantalla y su parte
   de abajo quedaba por debajo de la barra de tareas, así que los últimos
-  grupos no se alcanzaban ni desplazando. Ahora DevBar se ejecuta a través
-  de XWayland, que sí permite colocarlo al lado del icono y respetar la
-  barra de tareas. Si prefieres Wayland nativo, arranca DevBar desde una
-  terminal con la variable `DEVBAR_WAYLAND_NATIVE=1`: el panel no podrá ir
-  junto al icono, pero tampoco crecerá hasta meterse bajo la barra de
+  grupos no se alcanzaban ni desplazando. Ahora DevBar detecta solo el
+  escritorio en cualquier distribución: si la sesión tiene XWayland, se
+  ejecuta a través de él, que sí permite colocarlo al lado del icono y
+  respetar la barra de tareas; si no lo tiene, sigue en Wayland nativo. Y
+  cuando el escritorio no informa de dónde está la barra de tareas (Wayland
+  nativo o algunos gestores de ventanas X11), el panel limita su altura
+  para no meterse debajo. Si prefieres Wayland nativo, define la variable
+  `DEVBAR_WAYLAND_NATIVE=1`, valga el lanzador que valga: el panel no podrá
+  ir junto al icono, pero tampoco crecerá hasta meterse bajo la barra de
   tareas.
 
 - **Los iconos de la cabecera de la barra ya no salen en azul.** El botón

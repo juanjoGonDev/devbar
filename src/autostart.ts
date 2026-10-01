@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { X11_OZONE_FLAG } from './main/linux-display-backend.js';
 
 /**
  * Cross-platform "open at login" — the platform-neutral half.
@@ -68,8 +67,8 @@ function desktopQuote(value: string): string {
 /**
  * Render the XDG autostart file content. `exec` must be the packaged
  * executable; the `--login` argument is what makes a boot launch
- * recognisable later, and the x11 flag puts DevBar on XWayland under a
- * Wayland session (see src/main/linux-display-backend.ts) without a relaunch. The executable is quoted per the spec — the
+ * recognisable later (it survives the XWayland relaunch, see
+ * src/main/linux-display-backend.ts). The executable is quoted per the spec — the
  * desktop environment splits the Exec field on whitespace, so an
  * unquoted install path with a space would truncate the launch.
  */
@@ -79,7 +78,7 @@ export function desktopFileContent(exec: string): string {
     'Type=Application',
     'Name=DevBar',
     'Comment=Menu bar launcher for local development services',
-    `Exec=${desktopQuote(exec)} ${LOGIN_ARG} ${X11_OZONE_FLAG}`,
+    `Exec=${desktopQuote(exec)} ${LOGIN_ARG}`,
     'Terminal=false',
     'X-GNOME-Autostart-enabled=true',
     '',

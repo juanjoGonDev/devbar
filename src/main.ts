@@ -76,10 +76,11 @@ const SMOKE_MARKER_PATH = path.join(os.tmpdir(), 'devbar-smoke-ok');
 // so the data locations are pinned explicitly in app-paths.ts instead.
 if (app.isPackaged) app.name = 'DevBar';
 
-loadShellPath();
-
-// Wayland → XWayland relaunch, before the lock (see linux-display-backend.ts).
-const isPrimary = !settleDisplay() && app.requestSingleInstanceLock();
+// Wayland → XWayland relaunch first (see linux-display-backend.ts): the
+// short-lived process neither spawns the login shell nor takes the lock.
+const relaunching = settleDisplay();
+if (!relaunching) loadShellPath();
+const isPrimary = !relaunching && app.requestSingleInstanceLock();
 const processManager = new ProcessManager(configStore);
 const repoWatcher = new RepoWatcher();
 /** Group-level transient errors (not persisted). */

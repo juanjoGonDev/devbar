@@ -33,8 +33,6 @@ export interface BuildConfiguration {
   nsis?: Record<string, unknown>;
   portable?: Record<string, unknown>;
   linux?: Record<string, unknown>;
-  /** AppImageOptions (configuration.d.ts: `readonly appImage?`). */
-  appImage?: Record<string, unknown>;
 }
 
 export interface BuildOptions {

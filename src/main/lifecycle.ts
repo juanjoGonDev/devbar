@@ -93,8 +93,11 @@ export interface MenubarSetupDeps {
   isMac: boolean;
   isLinux: boolean;
   sessionType: string;
-  /** describeLinuxDisplayBackend's line for app.log; null off Linux. */
-  displayBackend: string | null;
+  /**
+   * The `[display]` line for app.log (backend + work area), read once the
+   * tray is up because it needs the screen; null off Linux.
+   */
+  displayLine: () => string | null;
   attachTray: (bar: Menubar) => void;
   attachConsole: (win: BrowserWindow, label: string) => void;
   displayMatching: (rect: Rectangle) => {
@@ -140,8 +143,8 @@ export function setupMenubar(deps: MenubarSetupDeps): Menubar {
     bar.tray.setImage(deps.defaultIcon());
     if (deps.isMac) bar.tray.setTitle('');
     // Once per run, so bug reports carry the backend the popover runs on.
-    if (deps.displayBackend)
-      console.log(`[display] linux backend: ${deps.displayBackend}`);
+    const displayLine = deps.displayLine();
+    if (displayLine) console.log(`[display] linux backend: ${displayLine}`);
     if (deps.isLinux)
       patchLinuxTrayPositioning({
         positioner: bar.positioner as unknown as {
