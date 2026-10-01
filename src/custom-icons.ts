@@ -5,8 +5,9 @@
  * them) and the renderer (which resolves `img:<id>` references).
  *
  * Only inline PNG data URLs are ever accepted: main re-encodes every upload
- * to PNG, so anything else — SVG above all, which can carry script — can only
- * come from a hand-edited or hostile file.
+ * to PNG, and an SVG upload is rasterized to PNG in the config renderer
+ * before it reaches the store, so anything else — SVG above all, which can
+ * carry script — can only come from a hand-edited or hostile file.
  */
 import type { CustomIcon, Group } from './domain-types.js';
 
@@ -50,7 +51,8 @@ export function isPngDataUrl(value: unknown): value is string {
   return body.startsWith(PNG_SIGNATURE_BASE64) && BASE64_BODY.test(body);
 }
 
-function normalizeName(value: unknown): string {
+/** The display name an icon is stored under: trimmed, capped, never empty. */
+export function customIconName(value: unknown): string {
   const name = typeof value === 'string' ? value.trim() : '';
   return name ? name.slice(0, MAX_NAME_LENGTH) : 'Imagen';
 }
@@ -61,7 +63,7 @@ function normalizeCustomIcon(value: unknown): CustomIcon | null {
   const raw = value as Record<string, unknown>;
   if (typeof raw.id !== 'string' || !ICON_ID.test(raw.id)) return null;
   if (!isPngDataUrl(raw.dataUrl)) return null;
-  return { id: raw.id, name: normalizeName(raw.name), dataUrl: raw.dataUrl };
+  return { id: raw.id, name: customIconName(raw.name), dataUrl: raw.dataUrl };
 }
 
 /** The first valid icon per id, at most MAX_CUSTOM_ICONS. Total. */
