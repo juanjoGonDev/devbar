@@ -37,9 +37,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
   azul…
 
 - **Puedes usar tus propias imágenes como icono.** En la pestaña «Mis
-  iconos» del selector, «Subir imagen…» acepta un PNG o JPEG de hasta 5 MB;
-  DevBar lo reduce a 64 px y lo guarda dentro de la configuración, así que
-  se ve igual en la barra, la configuración y los logs, y viaja con la
+  iconos» del selector, «Subir imagen…» acepta un PNG o JPEG de hasta 5 MB
+  o un SVG de hasta 1 MB. DevBar lo reduce a 64 px (un SVG se convierte a
+  PNG, nunca se guarda tal cual) y lo guarda dentro de la configuración,
+  así que se ve igual en la barra, la configuración y los logs, y viaja con la
   exportación (solo las imágenes que se usan). Subir dos veces la misma
   imagen no la duplica, y si borras una, lo que la usaba vuelve a su icono
   por defecto.

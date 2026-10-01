@@ -119,6 +119,8 @@ const api: DevBarApi = {
   getIconBattery: () => ipcRenderer.invoke('icons:get'),
   listCustomIcons: () => ipcRenderer.invoke('customIcons:list'),
   uploadCustomIcon: () => ipcRenderer.invoke('customIcons:upload'),
+  addRasterizedCustomIcon: (icon) =>
+    ipcRenderer.invoke('customIcons:addRasterized', icon),
   deleteCustomIcon: (id) => ipcRenderer.invoke('customIcons:delete', { id }),
   onCustomIconsChanged: (cb) => subscribe('customIcons:changed', cb),
   exportConfig: () => ipcRenderer.invoke('config:export'),

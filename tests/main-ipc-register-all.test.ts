@@ -224,7 +224,7 @@ describe('src/main/ipc/register-all.ts', () => {
       );
       await expect(h.ipc.invoke('customIcons:upload')).resolves.toEqual({
         ok: false,
-        error: 'No se pudo leer la imagen (usa PNG o JPEG)',
+        error: 'No se pudo leer la imagen (usa PNG, JPG o SVG)',
       });
       expect(h.calls).toContain('decode');
     });

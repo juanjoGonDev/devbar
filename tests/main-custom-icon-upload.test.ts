@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CUSTOM_ICON_EXTENSIONS,
+  MAX_SVG_BYTES,
   MAX_UPLOAD_BYTES,
   pickCustomIcon,
   scaledSize,
@@ -59,13 +60,77 @@ describe('src/main/custom-icon-upload.ts', () => {
     expect(CUSTOM_ICON_EXTENSIONS).toEqual(['png', 'jpg', 'jpeg']);
   });
 
+  it('offers PNG, JPG and SVG in the dialog', async () => {
+    const offered: { name: string; extensions: string[] }[] = [];
+    await pickCustomIcon(
+      deps({
+        openDialog: (options) => {
+          offered.push(...options.filters);
+          return Promise.resolve({ canceled: true, filePaths: [] });
+        },
+      }),
+    );
+    expect(offered).toEqual([
+      { name: 'PNG, JPG o SVG', extensions: ['png', 'jpg', 'jpeg', 'svg'] },
+    ]);
+  });
+
+  describe('an SVG file', () => {
+    const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 1"/>';
+    const svgDeps = (overrides: Partial<CustomIconUploadDeps> = {}) =>
+      deps({
+        openDialog: () =>
+          Promise.resolve({ canceled: false, filePaths: ['/pics/Mark.SVG'] }),
+        readFile: () => Buffer.from(SVG, 'utf8'),
+        decodeImage: () => {
+          throw new Error('nativeImage must not see an SVG');
+        },
+        ...overrides,
+      });
+
+    it('comes back as text for the renderer to rasterize', async () => {
+      expect(await pickCustomIcon(svgDeps())).toEqual({
+        ok: true,
+        svg: { name: 'Mark', text: SVG },
+      });
+    });
+
+    it('is refused over its own, smaller cap without being read', async () => {
+      let read = false;
+      const result = await pickCustomIcon(
+        svgDeps({
+          fileSize: () => MAX_SVG_BYTES + 1,
+          readFile: () => {
+            read = true;
+            return Buffer.from(SVG);
+          },
+        }),
+      );
+      expect(MAX_SVG_BYTES).toBeLessThan(MAX_UPLOAD_BYTES);
+      expect(result).toEqual({
+        ok: false,
+        error: 'La imagen SVG pesa más de 1 MB',
+      });
+      expect(read).toBe(false);
+    });
+
+    it('is refused when the file holds no <svg> element', async () => {
+      expect(
+        await pickCustomIcon(
+          svgDeps({ readFile: () => Buffer.from('just text') }),
+        ),
+      ).toEqual({ ok: false, error: 'El archivo no es una imagen SVG' });
+    });
+  });
+
   it('resizes, re-encodes as PNG and ids the icon by the file content', async () => {
     const log: string[] = [];
     const result = await pickCustomIcon(
       deps({ decodeImage: () => image(256, 128, log) }),
     );
     expect(log).toEqual(['resize 64x32']);
-    if (!result.ok) throw new Error('expected an upload');
+    if (!result.ok || !('icon' in result))
+      throw new Error('expected an upload');
     expect(result.icon.id).toMatch(/^[0-9a-f]{12}$/);
     expect(result.icon.name).toBe('My Logo');
     expect(result.icon.dataUrl).toBe(
@@ -79,9 +144,11 @@ describe('src/main/custom-icon-upload.ts', () => {
     const c = await pickCustomIcon(
       deps({ readFile: () => Buffer.from('other') }),
     );
-    if (!a.ok || !b.ok || !c.ok) throw new Error('expected uploads');
-    expect(a.icon.id).toBe(b.icon.id);
-    expect(a.icon.id).not.toBe(c.icon.id);
+    const icons = [a, b, c].map((r) => (r.ok && 'icon' in r ? r.icon : null));
+    const [ia, ib, ic] = icons;
+    if (!ia || !ib || !ic) throw new Error('expected uploads');
+    expect(ia.id).toBe(ib.id);
+    expect(ia.id).not.toBe(ic.id);
   });
 
   it('keeps a small image at its own size', async () => {
@@ -123,7 +190,7 @@ describe('src/main/custom-icon-upload.ts', () => {
     );
     expect(result).toEqual({
       ok: false,
-      error: 'No se pudo leer la imagen (usa PNG o JPEG)',
+      error: 'No se pudo leer la imagen (usa PNG, JPG o SVG)',
     });
   });
 

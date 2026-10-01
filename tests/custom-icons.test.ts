@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   customIconIdOf,
   customIconRef,
+  isPngDataUrl,
   MAX_CUSTOM_ICONS,
   mergeCustomIcons,
   normalizeCustomIcons,
@@ -23,6 +24,25 @@ describe('src/custom-icons.ts', () => {
     expect(customIconIdOf('rocket')).toBeNull();
     expect(customIconIdOf('img:')).toBeNull();
     expect(customIconIdOf(null)).toBeNull();
+  });
+
+  describe('isPngDataUrl', () => {
+    it('accepts an inline PNG and refuses an SVG, raw or base64', () => {
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>';
+      expect(isPngDataUrl(PNG)).toBe(true);
+      expect(
+        isPngDataUrl(
+          `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`,
+        ),
+      ).toBe(false);
+      expect(isPngDataUrl(`data:image/svg+xml,${svg}`)).toBe(false);
+      // A PNG label on SVG bytes fails the signature check.
+      expect(
+        isPngDataUrl(
+          `data:image/png;base64,${Buffer.from(svg).toString('base64')}`,
+        ),
+      ).toBe(false);
+    });
   });
 
   describe('normalizeCustomIcons', () => {
