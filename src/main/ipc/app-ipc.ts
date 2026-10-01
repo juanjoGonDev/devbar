@@ -39,6 +39,8 @@ export interface AppIpcDeps {
     }) => void;
     writeImportBackup: () => string;
     getGlobalSettings: () => GlobalSettings;
+    /** The dev panel's test groups are shown instead of the stored ones. */
+    groupsOverlayActive: () => boolean;
   };
   processManager: { stopAll(): Promise<{ ok: boolean; failed: string[] }> };
   configIo: {
@@ -243,6 +245,14 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
         };
       }
       pendingImports.delete(token);
+      // Checked before anything is stopped: the user's real services keep
+      // running underneath the dev panel's test groups.
+      if (deps.configStore.groupsOverlayActive())
+        return {
+          ok: false,
+          error:
+            'Modo grupos de prueba activo: quita los grupos de prueba en el panel Dev antes de importar.',
+        };
       try {
         const backupPath = deps.configStore.writeImportBackup();
         const stopped = await deps.processManager.stopAll();

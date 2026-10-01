@@ -69,6 +69,8 @@ interface Recorded {
   prescriptConfirms: { name: string; command: string }[];
   staged: { zipPath: string; version: string }[];
   toasts: { kind: string; message: string }[];
+  overlays: (number | null)[];
+  stops: string[];
 }
 
 let recorded: Recorded;
@@ -95,6 +97,23 @@ function makeHooks(): DevHooks {
     },
     toast: (kind, message) => void recorded.toasts.push({ kind, message }),
     currentVersion: () => '0.9.2',
+    fixtures: {
+      environment: () => ({
+        platform: 'darwin',
+        execPath: '/Applications/DevBar.app/Contents/MacOS/DevBar',
+        tmpDir: '/tmp',
+        repoPath: null,
+      }),
+      setOverlay: (groups) =>
+        void recorded.overlays.push(groups ? groups.length : null),
+      processIds: () => ['cmd:g-api:dev', 'cmd:fixture-1-services:tick'],
+      stop: (id) => {
+        recorded.stops.push(id);
+        return Promise.resolve({ ok: true });
+      },
+      removeState: () => undefined,
+      refresh: () => undefined,
+    },
   };
 }
 
@@ -121,6 +140,8 @@ describe('src/dev/dev-ipc.ts', () => {
       prescriptConfirms: [],
       staged: [],
       toasts: [],
+      overlays: [],
+      stops: [],
     };
     registerDevIpc(makeHooks());
   });
@@ -148,6 +169,8 @@ describe('src/dev/dev-ipc.ts', () => {
     it('claims exactly the dev channels the preload bridge invokes', () => {
       expect([...registry.keys()].sort()).toEqual([
         'dev:clearUpdate',
+        'dev:fixtureGroupsStatus',
+        'dev:setFixtureGroups',
         'dev:simulateBanner',
         'dev:simulateFallbackBanner',
         'dev:simulatePrescriptConfirm',
@@ -382,6 +405,33 @@ describe('src/dev/dev-ipc.ts', () => {
       expect(recorded.toasts).toEqual([
         { kind: 'ok', message: 'Toast simulado.' },
       ]);
+    });
+  });
+
+  describe('dev:setFixtureGroups', () => {
+    it('shows N copies of the test groups', async () => {
+      await expect(
+        fire('dev:setFixtureGroups', { on: true, repeat: 2 }),
+      ).resolves.toMatchObject({ ok: true, active: true, repeat: 2 });
+      expect(recorded.overlays).toEqual([6]);
+      await expect(fire('dev:fixtureGroupsStatus')).resolves.toEqual({
+        active: true,
+        repeat: 2,
+      });
+    });
+
+    it('stops only the test processes and restores the real groups', async () => {
+      await fire('dev:setFixtureGroups', { on: true, repeat: 1 });
+      await expect(
+        fire('dev:setFixtureGroups', { on: false }),
+      ).resolves.toMatchObject({ ok: true, active: false });
+      expect(recorded.stops).toEqual(['cmd:fixture-1-services:tick']);
+      expect(recorded.overlays).toEqual([3, null]);
+    });
+
+    it('reads anything but on: true as off', async () => {
+      await fire('dev:setFixtureGroups', { on: 'yes' });
+      expect(recorded.overlays).toEqual([]);
     });
   });
 });

@@ -19,6 +19,9 @@ let calls: DevCall[];
 let pending: { resolve: () => void; reject: (error: unknown) => void }[];
 /** When set, every dev call parks until the test releases it. */
 let deferCalls: boolean;
+/** The main process's side of "Grupos de prueba", faked. */
+let fixtures: { active: boolean; repeat: number; fail: string | null };
+let fixtureCalls: unknown[][];
 
 const DEV_METHODS = [
   'simulateUpdate',
@@ -44,6 +47,20 @@ function installApi(): void {
       });
     };
   }
+  dev.fixtureGroupsStatus = () =>
+    Promise.resolve({ active: fixtures.active, repeat: fixtures.repeat });
+  dev.setFixtureGroups = (...args: unknown[]) => {
+    fixtureCalls.push(args);
+    const [on, repeat] = args as [boolean, number];
+    if (fixtures.fail)
+      return Promise.resolve({ ok: false, ...fixtures, error: fixtures.fail });
+    fixtures = {
+      ...fixtures,
+      active: on,
+      repeat: on ? repeat : fixtures.repeat,
+    };
+    return Promise.resolve({ ok: true, ...fixtures });
+  };
   Object.defineProperty(window, 'api', {
     configurable: true,
     value: { dev },
@@ -77,6 +94,8 @@ describe('renderer/dev/dev-panel.ts', () => {
     calls = [];
     pending = [];
     deferCalls = false;
+    fixtures = { active: false, repeat: 1, fail: null };
+    fixtureCalls = [];
     installApi();
   });
 
@@ -114,6 +133,7 @@ describe('renderer/dev/dev-panel.ts', () => {
         'Notificaciones',
         'Icono de la barra',
         'Diálogos y avisos',
+        'Grupos de prueba',
       ]);
     });
 
@@ -251,6 +271,81 @@ describe('renderer/dev/dev-panel.ts', () => {
       pending[0]?.reject(new Error('No handler registered for dev:...'));
       await settle();
       expect(target.disabled).toBe(false);
+    });
+  });
+
+  describe('the test groups card', () => {
+    function repeatInput(section: HTMLElement): HTMLInputElement {
+      const input = section.querySelector<HTMLInputElement>('input.dev-repeat');
+      if (!input) throw new Error('no repeat field');
+      return input;
+    }
+
+    it('offers to load them, one copy by default', async () => {
+      const { section } = mount();
+      await settle();
+      const input = repeatInput(section);
+      expect(button(section, 'Cargar grupos de prueba')).toBeTruthy();
+      expect(input.type).toBe('number');
+      expect([input.min, input.max, input.value]).toEqual(['1', '20', '1']);
+      expect(input.getAttribute('aria-label')).toBe('Repetir ×N');
+    });
+
+    it('loads the number of copies typed', async () => {
+      const { section } = mount();
+      await settle();
+      repeatInput(section).value = '4';
+
+      button(section, 'Cargar grupos de prueba').click();
+      await settle();
+
+      expect(fixtureCalls).toEqual([[true, 4]]);
+      expect(button(section, 'Quitar grupos de prueba')).toBeTruthy();
+      expect(section.textContent).toContain('4 copias');
+    });
+
+    it('keeps the copies between 1 and 20', async () => {
+      const { section } = mount();
+      await settle();
+      repeatInput(section).value = '99';
+
+      button(section, 'Cargar grupos de prueba').click();
+      await settle();
+
+      expect(fixtureCalls).toEqual([[true, 20]]);
+    });
+
+    it('picks up test groups that were already on when config opened', async () => {
+      fixtures = { active: true, repeat: 3, fail: null };
+      const { section } = mount();
+      await settle();
+
+      expect(button(section, 'Quitar grupos de prueba')).toBeTruthy();
+      expect(repeatInput(section).value).toBe('3');
+    });
+
+    it('takes them off again', async () => {
+      fixtures = { active: true, repeat: 2, fail: null };
+      const { section } = mount();
+      await settle();
+
+      button(section, 'Quitar grupos de prueba').click();
+      await settle();
+
+      expect(fixtureCalls).toEqual([[false, 2]]);
+      expect(button(section, 'Cargar grupos de prueba')).toBeTruthy();
+    });
+
+    it('says why when a test process would not stop', async () => {
+      fixtures = { active: true, repeat: 1, fail: 'No se pudieron parar: x' };
+      const { section } = mount();
+      await settle();
+
+      button(section, 'Quitar grupos de prueba').click();
+      await settle();
+
+      expect(section.textContent).toContain('No se pudieron parar: x');
+      expect(button(section, 'Quitar grupos de prueba').disabled).toBe(false);
     });
   });
 });

@@ -1,10 +1,26 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDevHooks,
+  createFixtureHost,
+  fixtureEnvironment,
   registerDevPanel,
   type DevPanelDeps,
 } from '../src/main/dev-panel.js';
 import type { DevHooks } from '../src/dev/dev-ipc.js';
+
+const fixtures: DevPanelDeps['fixtures'] = {
+  environment: () => ({
+    platform: 'linux',
+    execPath: '/opt/devbar',
+    tmpDir: '/tmp',
+    repoPath: null,
+  }),
+  setOverlay: () => undefined,
+  processIds: () => [],
+  stop: () => Promise.resolve({ ok: true }),
+  removeState: () => undefined,
+  refresh: () => undefined,
+};
 
 function deps(overrides: Partial<DevPanelDeps> = {}) {
   const calls: string[] = [];
@@ -19,7 +35,12 @@ function deps(overrides: Partial<DevPanelDeps> = {}) {
     showBanner: () => calls.push('showBanner'),
     showFallbackBanner: () => calls.push('showFallbackBanner'),
     showCompletionNotification: () => calls.push('showCompletionNotification'),
-    openPrescriptConfirm: () => calls.push('openPrescriptConfirm'),
+    showConfirmModal: (script, origin, groupName) => {
+      calls.push(
+        `confirm:${script.name}:${script.command}:${origin}:${groupName}`,
+      );
+      return Promise.resolve(true);
+    },
     toast: () => calls.push('toast'),
     installedBundle: () => '/Applications/DevBar.app',
     updatesDir: () => '/home/updates',
@@ -27,6 +48,7 @@ function deps(overrides: Partial<DevPanelDeps> = {}) {
     removeFile: () => calls.push('removeFile'),
     stagedVersion: () => '1.3.0',
     pruneStagedUpdates: (keep) => calls.push(`prune:${keep}`),
+    fixtures,
     ...overrides,
   };
   return { base, calls };
@@ -66,12 +88,13 @@ describe('src/main/dev-panel.ts', () => {
       expect(hooks.currentVersion()).toBe('1.2.0');
       expect(hooks.installedBundle()).toBe('/Applications/DevBar.app');
       expect(hooks.updatesDir()).toBe('/home/updates');
+      expect(hooks.fixtures).toBe(fixtures);
       expect(d.calls).toEqual([
         'setSimulatedTrayColor',
         'showBanner',
         'showFallbackBanner',
         'showCompletionNotification',
-        'openPrescriptConfirm',
+        'confirm:vpn:connect:interactive:null',
         'toast',
       ]);
     });
@@ -116,6 +139,81 @@ describe('src/main/dev-panel.ts', () => {
       const load = vi.fn(() => Promise.reject(new Error('not found')));
       registerDevPanel(true, deps().base, load);
       await vi.waitFor(() => expect(load).toHaveBeenCalled());
+    });
+  });
+
+  describe('createFixtureHost', () => {
+    it('hands the overlay the process manager and the repaint it needs', async () => {
+      const calls: string[] = [];
+      const host = createFixtureHost({
+        app: { isPackaged: true, getAppPath: () => '/app' },
+        pathExists: () => true,
+        setOverlay: (groups) => calls.push(`overlay:${groups?.length ?? 0}`),
+        processManager: {
+          allStates: () => [{ id: 'cmd:g:a' }, { id: 'act:g:b' }],
+          stop: (id) => {
+            calls.push(`stop:${id}`);
+            return Promise.resolve({ ok: true });
+          },
+          removeState: (id) => calls.push(`remove:${id}`),
+        },
+        refresh: () => calls.push('refresh'),
+      });
+
+      expect(host.processIds()).toEqual(['cmd:g:a', 'act:g:b']);
+      await host.stop('cmd:g:a');
+      host.removeState('cmd:g:a');
+      host.setOverlay(null);
+      host.refresh();
+      expect(calls).toEqual([
+        'stop:cmd:g:a',
+        'remove:cmd:g:a',
+        'overlay:0',
+        'refresh',
+      ]);
+      expect(host.environment()).toMatchObject({
+        platform: process.platform,
+        execPath: process.execPath,
+        repoPath: null,
+      });
+    });
+  });
+
+  describe('fixtureEnvironment', () => {
+    const base = {
+      platform: 'darwin' as const,
+      execPath: '/repo/node_modules/electron/dist/Electron',
+      tmpDir: '/tmp',
+      appPath: '/repo',
+    };
+
+    it('points a fixture at the checkout itself in a dev run', () => {
+      expect(
+        fixtureEnvironment({
+          ...base,
+          isPackaged: false,
+          exists: (target) => target === '/repo/.git',
+        }),
+      ).toEqual({
+        platform: 'darwin',
+        execPath: base.execPath,
+        tmpDir: '/tmp',
+        repoPath: '/repo',
+      });
+    });
+
+    it('has no repository inside an installed app', () => {
+      expect(
+        fixtureEnvironment({ ...base, isPackaged: true, exists: () => true })
+          .repoPath,
+      ).toBeNull();
+    });
+
+    it('has none when the dev run is not a checkout', () => {
+      expect(
+        fixtureEnvironment({ ...base, isPackaged: false, exists: () => false })
+          .repoPath,
+      ).toBeNull();
     });
   });
 });
