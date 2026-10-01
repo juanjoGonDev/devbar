@@ -228,6 +228,23 @@ describe('renderer/config/settings-pane.ts', () => {
     });
   });
 
+  describe('tray popover position', () => {
+    it('puts a pinned popover back by the tray icon', async () => {
+      win = await openConfigWindow();
+      click('reset-tray-position-config');
+      expect(win.callCount('resetTrayPosition')).toBe(1);
+      await win.settle('resetTrayPosition', { ok: true });
+      expect(toastText()).toBe('El panel vuelve a abrirse junto al icono');
+    });
+
+    it('says so when main could not reset it', async () => {
+      win = await openConfigWindow();
+      click('reset-tray-position-config');
+      await win.fail('resetTrayPosition', new Error('sin ventana'));
+      expect(toastText()).toContain('sin ventana');
+    });
+  });
+
   describe('per-OS copy', () => {
     it('names the macOS login items and notification panel', async () => {
       win = await openConfigWindow('darwin');

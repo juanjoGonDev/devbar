@@ -91,6 +91,25 @@ body.tray {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+/* The popover is moved by dragging its header (frameless window). Every
+   control in it opts back out, or a click would start a window drag instead;
+   the branch dropdown is appended to <body> and can overlap the header, so
+   it opts out too. The first drag pins the popover (src/main/pinned-popover.ts). */
+.tray-header {
+  -webkit-app-region: drag;
+}
+.tray-header button,
+.tray-header input,
+.tray-header select,
+.tray-header a,
+.tray-header [role='button'],
+.combobox-list {
+  -webkit-app-region: no-drag;
+}
+/* Beats `.tray-header button.ghost.icon-only { display: inline-flex }`. */
+#reset-tray-position[hidden] {
+  display: none;
+}
 .tray-header-row {
   display: flex;
   align-items: center;

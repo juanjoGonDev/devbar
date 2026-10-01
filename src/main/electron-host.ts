@@ -33,6 +33,7 @@ import {
 import { isLinux, isMac, isWin } from '../platform.js';
 import {
   describeLinuxDisplayBackend,
+  runsNativeWayland,
   settleLinuxDisplayBackend,
 } from './linux-display-backend.js';
 import { linuxWorkAreaNote, safeLinuxWorkArea } from './window-geometry.js';
@@ -184,6 +185,9 @@ export function createElectronHost(options: ElectronHostOptions) {
       return isLinux ? safeLinuxWorkArea(display, bounds) : display.workArea;
     },
     displayMatching: (rect: Rectangle) => screen.getDisplayMatching(rect),
+    /** Every connected display, for restoring a pinned tray popover. */
+    displays: (): { id: number; workArea: Rectangle }[] =>
+      screen.getAllDisplays().map((d) => ({ id: d.id, workArea: d.workArea })),
 
     /**
      * Window icon for dev mode: `electron .` runs on the Electron shell, so the
@@ -333,6 +337,11 @@ export function createElectronHost(options: ElectronHostOptions) {
     /** XDG_CURRENT_DESKTOP, which names the Linux settings tool to launch. */
     desktop: process.env.XDG_CURRENT_DESKTOP ?? '',
     sessionType: process.env.XDG_SESSION_TYPE ?? 'desconocida',
+    /**
+     * Native Wayland: the compositor ignores programmatic window positions,
+     * so a pinned popover gets its size back there, never its spot.
+     */
+    nativeWayland: runsNativeWayland(process),
     displayLine: (): string | null => {
       const backend = describeLinuxDisplayBackend(process);
       if (!backend) return null;

@@ -277,6 +277,13 @@ const FORWARDS: readonly Forward[] = [
     [{ groupId: 'g1', commandId: 'c1' }],
   ],
   ['setTrayHeight', (api) => api.setTrayHeight(420), 'tray:setHeight', [420]],
+  ['getTrayPinned', (api) => api.getTrayPinned(), 'tray:pinnedState', []],
+  [
+    'resetTrayPosition',
+    (api) => api.resetTrayPosition(),
+    'tray:resetPosition',
+    [],
+  ],
   ['getSettings', (api) => api.getSettings(), 'settings:get', []],
   [
     'saveSettings',
@@ -499,6 +506,7 @@ const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ],
   ['onActionDone', (api, cb) => api.onActionDone(cb), 'action:done'],
   ['onToast', (api, cb) => api.onToast(cb), 'groups:toast'],
+  ['onTrayPinned', (api, cb) => api.onTrayPinned(cb), 'tray:pinned'],
   [
     'onCustomIconsChanged',
     (api, cb) => api.onCustomIconsChanged(cb),

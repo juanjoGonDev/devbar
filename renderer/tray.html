@@ -29,6 +29,17 @@
         <span id="alerts-summary" class="alerts-summary"></span>
         <span id="pipeline-trigger" class="pipeline-trigger-host"></span>
         <span class="spacer"></span>
+        <!-- Only while the user has pinned the popover away from the icon. -->
+        <button
+          id="reset-tray-position"
+          class="ghost icon-only"
+          type="button"
+          title="Volver junto al icono"
+          aria-label="Volver junto al icono"
+          hidden
+        >
+          <span class="icon" data-icon="pin-off"></span>
+        </button>
         <button
           id="open-telemetry"
           class="ghost icon-only"

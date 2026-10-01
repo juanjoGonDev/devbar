@@ -86,6 +86,10 @@ vi.mock('electron', () => {
     },
     screen: {
       getDisplayMatching: () => display(0),
+      getAllDisplays: () => [
+        { ...display(0), id: 1 },
+        { ...display(1440), id: 2 },
+      ],
       getDisplayNearestPoint: () => display(1440),
       getCursorScreenPoint: () => ({ x: 1500, y: 100 }),
     },
@@ -179,6 +183,17 @@ describe('src/main/electron-host.ts', () => {
       const rect = { x: 0, y: 0, width: 10, height: 10 };
       expect(h.workAreaFor(rect).height).toBe(875);
       expect(h.displayMatching(rect).bounds.height).toBe(900);
+    });
+
+    it('lists every display by id and work area, for a pinned popover', () => {
+      expect(
+        host()
+          .displays()
+          .map((d) => [d.id, d.workArea.x]),
+      ).toEqual([
+        [1, 0],
+        [2, 1440],
+      ]);
     });
   });
 
@@ -432,6 +447,8 @@ describe('src/main/electron-host.ts', () => {
       expect(typeof h.isLinux).toBe('boolean');
       expect(typeof h.desktop).toBe('string');
       expect(typeof h.sessionType).toBe('string');
+      // Only a Linux Wayland session runs natively; this suite never is one.
+      expect(h.nativeWayland).toBe(false);
     });
   });
   describe('bug report and crash hooks', () => {

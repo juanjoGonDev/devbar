@@ -100,6 +100,9 @@ const api: DevBarApi = {
   getSilencedForCommand: (groupId, commandId) =>
     ipcRenderer.invoke('silenced:getForCommand', { groupId, commandId }),
   setTrayHeight: (height) => ipcRenderer.invoke('tray:setHeight', height),
+  getTrayPinned: () => ipcRenderer.invoke('tray:pinnedState'),
+  resetTrayPosition: () => ipcRenderer.invoke('tray:resetPosition'),
+  onTrayPinned: (cb) => subscribe('tray:pinned', cb),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
   testNotification: () => ipcRenderer.invoke('notifications:test'),

@@ -316,6 +316,11 @@ export interface DevBarApi extends UpdatesApi {
   setTrayHeight(
     height: number,
   ): Promise<{ ok: boolean; applied?: number | undefined }>;
+  /** Whether the user pinned the popover away from the tray icon. */
+  getTrayPinned(): Promise<{ pinned: boolean }>;
+  /** Forgets the pinned spot and puts the popover back by the tray icon. */
+  resetTrayPosition(): Promise<SimpleResult>;
+  onTrayPinned(callback: (pinned: boolean) => void): () => void;
   getSettings(): Promise<GlobalSettings>;
   saveSettings(patch: Partial<GlobalSettings>): Promise<GlobalSettings>;
   testNotification(): Promise<SimpleResult>;
