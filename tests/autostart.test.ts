@@ -11,6 +11,7 @@ import {
   LOGIN_ARG,
   DESKTOP_FILE_NAME,
 } from '../src/autostart.js';
+import { X11_OZONE_FLAG } from '../src/main/linux-display-backend.js';
 
 const tmpDirs: string[] = [];
 
@@ -48,6 +49,13 @@ describe('src/autostart.ts', () => {
       );
       // Trailing newline so the file ends cleanly.
       expect(content.endsWith('\n')).toBe(true);
+    });
+
+    it('asks for XWayland so the popover can sit next to the tray on Wayland', () => {
+      const content = desktopFileContent('/home/u/Apps/DevBar.AppImage');
+      expect(content).toContain(
+        `Exec=/home/u/Apps/DevBar.AppImage ${LOGIN_ARG} ${X11_OZONE_FLAG}`,
+      );
     });
 
     it('quotes an install path containing whitespace (Exec is a desktop string)', () => {

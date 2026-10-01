@@ -4,6 +4,7 @@ import {
   bannerBounds,
   clampXToWorkArea,
   hasTrayBounds,
+  nativeWaylandWorkArea,
   taskbarSideOf,
   trayPopoverBounds,
   trayPopoverHeight,
@@ -221,6 +222,50 @@ describe('src/main/window-geometry.ts', () => {
     it('rejects the empty Wayland rectangle and a missing one', () => {
       expect(hasTrayBounds({ x: 0, y: 0, width: 0, height: 0 })).toBe(false);
       expect(hasTrayBounds(undefined)).toBe(false);
+    });
+  });
+  describe('nativeWaylandWorkArea', () => {
+    /** The reported Fedora/KDE case: 1280x800, workArea = the whole display. */
+    const fedora = {
+      bounds: { x: 0, y: 0, width: 1280, height: 800 },
+      workArea: { x: 0, y: 0, width: 1280, height: 800 },
+    };
+
+    it('caps the height at 75 % of the display when Wayland reports no panel', () => {
+      // 800 - 2 * 56 = 688 vs 0.75 * 800 = 600: the smaller one wins.
+      expect(nativeWaylandWorkArea(fedora)).toEqual({
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 600,
+      });
+    });
+
+    it('keeps a real work area that is already smaller than the cap', () => {
+      const display = {
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        workArea: { x: 0, y: 0, width: 1920, height: 700 },
+      };
+      expect(nativeWaylandWorkArea(display).height).toBe(700);
+    });
+
+    it('uses the two-panel margin when it is tighter than 75 %', () => {
+      const display = {
+        bounds: { x: 0, y: 0, width: 800, height: 400 },
+        workArea: { x: 0, y: 0, width: 800, height: 400 },
+      };
+      // 400 - 112 = 288 < 0.75 * 400 = 300.
+      expect(nativeWaylandWorkArea(display).height).toBe(288);
+    });
+
+    it('keeps a popover under the cap even at the tallest content', () => {
+      const capped = nativeWaylandWorkArea(fedora);
+      const bounds = trayPopoverBounds(
+        { x: 435, y: 150, width: 410, height: 500 },
+        5000,
+        capped,
+      );
+      expect(bounds.height).toBeLessThanOrEqual(600);
     });
   });
 });

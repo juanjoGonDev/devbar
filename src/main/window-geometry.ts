@@ -114,6 +114,32 @@ export function trayPopoverBounds(
   };
 }
 
+/** Room for one panel at each end of the display: a 56px panel is generous. */
+const NATIVE_WAYLAND_PANEL_ALLOWANCE = 56;
+/** Ceiling: never taller than three quarters of the display. */
+const NATIVE_WAYLAND_MAX_DISPLAY_FRACTION = 0.75;
+
+/**
+ * The work area to size the tray popover against on native Wayland. There the
+ * compositor places the window (often centred) and `workArea` is the whole
+ * display, so a popover sized to it slides under the panel. Without the real
+ * panel geometry, the height is capped at the smallest of the reported work
+ * area, the display minus a 56px panel at each end, and 75 % of the display —
+ * so a centred window stays clear of any one panel. Position is not touched:
+ * the compositor ignores it anyway.
+ */
+export function nativeWaylandWorkArea(display: {
+  workArea: Rect;
+  bounds: Rect;
+}): Rect {
+  const height = Math.min(
+    display.workArea.height,
+    display.bounds.height - 2 * NATIVE_WAYLAND_PANEL_ALLOWANCE,
+    Math.floor(display.bounds.height * NATIVE_WAYLAND_MAX_DISPLAY_FRACTION),
+  );
+  return { ...display.workArea, height };
+}
+
 /**
  * Which edge of the display the taskbar/panel sits on, from the tray icon's
  * bounds: the work area is the screen minus the taskbar, so the offset between

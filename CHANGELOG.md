@@ -83,6 +83,16 @@ Todas las novedades relevantes de DevBar. El formato sigue
   desplaza la lista de grupos, con la cabecera siempre visible y sin
   barras de desplazamiento dobles.
 
+- **En Linux con Wayland (KDE, GNOME…) el panel vuelve a salir junto al
+  icono de la bandeja.** Antes se abría en mitad de la pantalla y su parte
+  de abajo quedaba por debajo de la barra de tareas, así que los últimos
+  grupos no se alcanzaban ni desplazando. Ahora DevBar se ejecuta a través
+  de XWayland, que sí permite colocarlo al lado del icono y respetar la
+  barra de tareas. Si prefieres Wayland nativo, arranca DevBar desde una
+  terminal con la variable `DEVBAR_WAYLAND_NATIVE=1`: el panel no podrá ir
+  junto al icono, pero tampoco crecerá hasta meterse bajo la barra de
+  tareas.
+
 - **Los iconos de la cabecera de la barra ya no salen en azul.** El botón
   del pipeline, el de los logs y el de configuración usan ahora el mismo
   color neutro que el resto de la interfaz (y que el de salir), en tema
