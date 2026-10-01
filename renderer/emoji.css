@@ -35,3 +35,20 @@
     U+231a-231b, U+2328, U+23cf, U+23e9-23f3, U+23f8-23fa, U+24c2, U+2600-27bf,
     U+2934-2935, U+2b00-2bff, U+3030, U+303d, U+3297, U+3299, U+1f000-1faff;
 }
+
+/* One font stack per role for every window. The text fonts come first, one
+   per OS (system-ui, then Segoe UI on Windows, the usual Linux desktop fonts),
+   and the emoji fonts only after them: when Windows found no Apple font it
+   used to fall through to 'Segoe UI Emoji' and draw all body text with it. */
+:root {
+  --font-ui:
+    system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+    'Segoe UI Variable Text', 'Segoe UI', Ubuntu, Cantarell, 'Noto Sans',
+    'DejaVu Sans', Roboto, 'Helvetica Neue', Arial, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'Cascadia Mono',
+    'Cascadia Code', Consolas, 'JetBrains Mono', 'Ubuntu Mono',
+    'DejaVu Sans Mono', 'Liberation Mono', 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Noto Color Emoji', monospace;
+}
