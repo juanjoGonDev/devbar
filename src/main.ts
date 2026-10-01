@@ -31,7 +31,7 @@ import { withSpanishSearch } from './icon-search.js';
 import { createAppWindows } from './main/app-windows.js';
 import { createConfirmQueue } from './main/confirm-queue.js';
 import { startMainDiagnostics } from './main/crash-reporting.js';
-import { registerDevPanel } from './main/dev-panel.js';
+import { createFixtureHost, registerDevPanel } from './main/dev-panel.js';
 import { downloadFile } from './main/download-file.js';
 import { createElectronHost } from './main/electron-host.js';
 import { setupMenubar, wireProcessEvents } from './main/lifecycle.js';
@@ -313,20 +313,7 @@ const devHooks = {
   showBanner: notifications.showBannerNotification,
   showFallbackBanner: notifications.showCustomBanner,
   showCompletionNotification: notifications.showCompletionNotification,
-  // Dev-only manual trigger, unrelated to the real pipeline: a pipeline cancel
-  // must never close this simulated dialog, and no real group backs it.
-  openPrescriptConfirm: (name: string, command: string) =>
-    void confirms.showConfirmModal(
-      {
-        name,
-        command,
-        args: [],
-        confirmSecs: null,
-        confirmOnTimeout: 'cancel',
-      },
-      'interactive',
-      null,
-    ),
+  showConfirmModal: confirms.showConfirmModal,
   toast,
   installedBundle: selfUpdate.installedAppPath,
   updatesDir: host.updatesDir,
@@ -334,6 +321,16 @@ const devHooks = {
   removeFile: host.removeFile,
   stagedVersion: () => updater.staged()?.version ?? null,
   pruneStagedUpdates: updater.pruneStagedUpdates,
+  fixtures: createFixtureHost({
+    app,
+    pathExists: host.pathExists,
+    setOverlay: configStore.setGroupsOverlay,
+    processManager,
+    refresh: () => {
+      syncRepoWatchers();
+      broadcast();
+    },
+  }),
 };
 
 function registerIpc(): void {

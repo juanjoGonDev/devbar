@@ -3352,6 +3352,15 @@ body.prescript-confirm {
   width: 150px;
   font-variant-numeric: tabular-nums;
 }
+.dev-repeat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dev-repeat {
+  width: 64px;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Inline text button that reads as a link, for pointing at system settings. */
 .linkish {

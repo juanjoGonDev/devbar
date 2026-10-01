@@ -1,5 +1,9 @@
+import os from 'node:os';
+import path from 'node:path';
 import type { DevHooks } from '../dev/dev-ipc.js';
+import type { FixtureEnvironment } from '../dev/fixture-groups.js';
 import type { AvailableUpdate } from '../domain-types.js';
+import type { ConfirmQueue } from './confirm-queue.js';
 import type { TrayColor } from '../ipc-contract.js';
 
 /**
@@ -30,7 +34,7 @@ export interface DevPanelDeps {
     options?: { cta?: { label: string; action: string } },
   ) => void;
   showCompletionNotification: (title: string, body: string) => void;
-  openPrescriptConfirm: (name: string, command: string) => void;
+  showConfirmModal: ConfirmQueue['showConfirmModal'];
   toast: (kind: string, message: string) => void;
   installedBundle: () => string | null;
   updatesDir: () => string;
@@ -38,6 +42,64 @@ export interface DevPanelDeps {
   removeFile: (target: string) => void;
   stagedVersion: () => string | null;
   pruneStagedUpdates: (keep: string) => void;
+  fixtures: DevHooks['fixtures'];
+}
+
+/**
+ * Where the dev panel's test groups run. In a dev run the app path is the
+ * checkout itself, which gives one fixture a real branch selector; an
+ * installed app has no repository to offer, so everything uses the temp dir.
+ */
+export function fixtureEnvironment(input: {
+  platform: NodeJS.Platform;
+  execPath: string;
+  tmpDir: string;
+  appPath: string;
+  isPackaged: boolean;
+  exists: (target: string) => boolean;
+}): FixtureEnvironment {
+  const isCheckout =
+    !input.isPackaged && input.exists(path.join(input.appPath, '.git'));
+  return {
+    platform: input.platform,
+    execPath: input.execPath,
+    tmpDir: input.tmpDir,
+    repoPath: isCheckout ? input.appPath : null,
+  };
+}
+
+/**
+ * The running app's side of the "Grupos de prueba" overlay: the groups
+ * overlay in the store, the process manager the fixture processes run in, and
+ * the repaint that shows the swap in every window.
+ */
+export function createFixtureHost(deps: {
+  app: { isPackaged: boolean; getAppPath: () => string };
+  pathExists: (target: string) => boolean;
+  setOverlay: DevHooks['fixtures']['setOverlay'];
+  processManager: {
+    allStates: () => readonly { id: string }[];
+    stop: DevHooks['fixtures']['stop'];
+    removeState: (id: string) => void;
+  };
+  refresh: () => void;
+}): DevHooks['fixtures'] {
+  return {
+    environment: () =>
+      fixtureEnvironment({
+        platform: process.platform,
+        execPath: process.execPath,
+        tmpDir: os.tmpdir(),
+        appPath: deps.app.getAppPath(),
+        isPackaged: deps.app.isPackaged,
+        exists: deps.pathExists,
+      }),
+    setOverlay: deps.setOverlay,
+    processIds: () => deps.processManager.allStates().map((entry) => entry.id),
+    stop: (id) => deps.processManager.stop(id),
+    removeState: (id) => deps.processManager.removeState(id),
+    refresh: deps.refresh,
+  };
 }
 
 export function createDevHooks(deps: DevPanelDeps): DevHooks {
@@ -59,9 +121,23 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
       deps.showFallbackBanner(title, body, options),
     showCompletionNotification: (title, body) =>
       deps.showCompletionNotification(title, body),
+    // Dev-only manual trigger, unrelated to the real pipeline: a pipeline
+    // cancel must never close this simulated dialog, and no real group backs
+    // it.
     openPrescriptConfirm: (name, command) =>
-      deps.openPrescriptConfirm(name, command),
+      void deps.showConfirmModal(
+        {
+          name,
+          command,
+          args: [],
+          confirmSecs: null,
+          confirmOnTimeout: 'cancel',
+        },
+        'interactive',
+        null,
+      ),
     toast: (kind, message) => deps.toast(kind, message),
+    fixtures: deps.fixtures,
     // Not process.execPath: unpackaged that resolves to Electron's own bundle,
     // which passes the guard and then fails deep inside the copy.
     installedBundle: () => deps.installedBundle(),
