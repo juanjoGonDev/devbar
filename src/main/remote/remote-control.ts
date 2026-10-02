@@ -115,7 +115,13 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
       })),
     };
   };
-  const changed = (): void => deps.send('remote:changed', status());
+  // At quit the windows are being torn down: a push then only logs
+  // "Render frame was disposed", so shutdown stops without telling them.
+  let shuttingDown = false;
+  const send = (channel: string, payload: unknown): void => {
+    if (!shuttingDown) deps.send(channel, payload);
+  };
+  const changed = (): void => send('remote:changed', status());
 
   const live = createLive({
     runtime,
@@ -138,7 +144,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     if (timer !== undefined) timers.clearTimeout(timer);
     expiries.delete(requestId);
     const closed: RemotePairRequestClosed = { requestId, outcome };
-    deps.send('remote:pairRequestClosed', closed);
+    send('remote:pairRequestClosed', closed);
   };
 
   const sessionApi = createApi({
@@ -148,7 +154,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     hostInfo,
     devicesChanged: changed,
     pairRequested: (request) => {
-      deps.send('remote:pairRequest', request);
+      send('remote:pairRequest', request);
       const expire = (): void => {
         if (pairing.expire(request.requestId))
           closeRequest(request.requestId, 'expired');
@@ -313,7 +319,10 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     startIfEnabled: async () => {
       if (devices.settings().enabled) await start();
     },
-    close: () => void stop(),
+    close: () => {
+      shuttingDown = true;
+      void stop();
+    },
   };
 }
 

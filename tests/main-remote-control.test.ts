@@ -662,6 +662,19 @@ describe('src/main/remote/remote-control.ts', () => {
 
       expect(h.remote.status().listening).toBe(false);
     });
+
+    it('pushes nothing to the windows, which are being torn down', async () => {
+      const h = harness({ enabled: true });
+      await h.remote.startIfEnabled();
+      h.remote.startPairing();
+      h.sent.length = 0;
+
+      h.remote.close();
+      await Promise.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(h.channels()).toEqual([]);
+    });
   });
 });
 
