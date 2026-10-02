@@ -3439,6 +3439,38 @@ body.prescript-confirm {
   color: var(--error);
   font-size: 12px;
 }
+/* The port is rarely touched, so it hides behind a gear in the card's
+   corner; the summary is lifted out of the flow and the field opens below. */
+.remote-main-card {
+  position: relative;
+  padding-right: 52px;
+}
+.remote-port-settings > summary {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+}
+.remote-port-settings > summary::-webkit-details-marker {
+  display: none;
+}
+.remote-port-settings > summary:hover,
+.remote-port-settings[open] > summary {
+  background: var(--bg-row-hover);
+  color: var(--accent);
+}
+.remote-port-settings > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .remote-port {
   margin: 14px 0 0;
 }

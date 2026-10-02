@@ -14,6 +14,8 @@ export interface RemoteElements {
   state: HTMLElement;
   address: HTMLElement;
   error: HTMLElement;
+  /** The collapsed gear section that holds the port field. */
+  portSettings: HTMLDetailsElement;
   port: PortElements;
   deviceCount: HTMLElement;
   addDevice: HTMLButtonElement;
@@ -45,6 +47,10 @@ export function remoteElements(): RemoteElements {
     state: byId<HTMLElement>('remote-state', HTMLElement),
     address: byId<HTMLElement>('remote-address', HTMLElement),
     error: byId<HTMLElement>('remote-error', HTMLElement),
+    portSettings: byId<HTMLDetailsElement>(
+      'remote-port-settings',
+      HTMLDetailsElement,
+    ),
     port: {
       input: byId<HTMLInputElement>('remote-port', HTMLInputElement),
       apply: byId<HTMLButtonElement>('remote-port-apply', HTMLButtonElement),

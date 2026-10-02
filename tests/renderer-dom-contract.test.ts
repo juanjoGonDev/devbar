@@ -37,6 +37,7 @@ const TAGS_BY_CONSTRUCTOR: Record<string, readonly string[]> = {
   HTMLSelectElement: ['select'],
   HTMLButtonElement: ['button'],
   HTMLDialogElement: ['dialog'],
+  HTMLDetailsElement: ['details'],
   HTMLDivElement: ['div'],
   HTMLSpanElement: ['span'],
   HTMLUListElement: ['ul'],

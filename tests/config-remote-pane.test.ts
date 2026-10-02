@@ -128,6 +128,28 @@ describe('renderer/config/remote-pane.ts', () => {
       expect(text('remote-error')).toBe('El puerto 47821 ya está en uso.');
     });
 
+    it('keeps the port behind a collapsed gear section', async () => {
+      win = await openWith(status(ON));
+      const settings = el<HTMLDetailsElement>('remote-port-settings');
+
+      expect(settings.open).toBe(false);
+      expect(settings.contains(el('remote-port'))).toBe(true);
+      expect(
+        settings.querySelector('summary')?.getAttribute('aria-label'),
+      ).toBe('Ajustes del servicio');
+      expect(text('remote-port-hint').replace(/\s+/g, ' ')).toBe(
+        'Si lo cambias, tendrás que volver a añadir el acceso directo en el móvil.',
+      );
+    });
+
+    it('opens the gear section when the server could not listen', async () => {
+      win = await openWith(
+        status({ enabled: true, error: 'El puerto 47821 ya está en uso.' }),
+      );
+
+      expect(el<HTMLDetailsElement>('remote-port-settings').open).toBe(true);
+    });
+
     it('asks main to start the server and paints what it answers', async () => {
       win = await openWith(status());
       const toggle = el<HTMLInputElement>('remote-enabled');

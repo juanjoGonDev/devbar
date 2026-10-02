@@ -47,6 +47,8 @@ export function createRemotePane(
       : 'Sin red local';
     els.error.hidden = !status.error;
     els.error.textContent = status.error ?? '';
+    // A failed listen is almost always the port: show where to change it.
+    if (status.error) els.portSettings.open = true;
     portField.render(status.port);
     els.addDevice.disabled = !status.listening || !address;
     if (!status.listening) pair.close();
