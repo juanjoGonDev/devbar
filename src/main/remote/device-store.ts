@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { RemoteDeviceView } from '../../ipc-contract/remote-api.js';
+import { isRemotePort } from '../../remote-port.js';
 
 /**
  * The linked devices and the remote-control switches, persisted under their
@@ -45,6 +46,8 @@ export interface DeviceStore {
   settings(): { enabled: boolean; autoUnlink: boolean; port: number };
   setEnabled(enabled: boolean): void;
   setAutoUnlink(enabled: boolean): void;
+  /** Persists a port that already passed `isRemotePort`. */
+  setPort(port: number): void;
   list(): RemoteDeviceView[];
   add(input: { name: string; client: string }): {
     device: RemoteDeviceView;
@@ -94,12 +97,7 @@ function normalizeDevice(value: unknown): RemoteDevice | null {
 }
 
 function normalizePort(value: unknown): number {
-  return typeof value === 'number' &&
-    Number.isInteger(value) &&
-    value >= 1024 &&
-    value <= 65535
-    ? value
-    : DEFAULT_REMOTE_PORT;
+  return isRemotePort(value) ? value : DEFAULT_REMOTE_PORT;
 }
 
 /** Whatever is on disk, as a state the rest of the module can trust. */
@@ -157,6 +155,10 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
     },
     setAutoUnlink: (enabled) => {
       state.autoUnlink = enabled;
+      persist();
+    },
+    setPort: (port) => {
+      state.port = port;
       persist();
     },
     list: () => state.devices.map(view),

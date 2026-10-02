@@ -114,8 +114,11 @@ function harness(
   let interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = {
     en0: [nic('192.168.1.20')],
   };
+  /** What the server was asked, in order: `start:<port>` and `stop`. */
+  const lifecycle: string[] = [];
   const server: RemoteServer = {
     start: () => {
+      lifecycle.push(`start:${serverDeps?.port ?? '?'}`);
       if (failListen) {
         serverDeps?.onStateChange();
         return Promise.resolve();
@@ -125,13 +128,14 @@ function harness(
       return Promise.resolve();
     },
     stop: () => {
+      lifecycle.push('stop');
       listening = false;
       serverDeps?.onStateChange();
       return Promise.resolve();
     },
     listening: () => listening,
     error: () => failListen,
-    port: () => 47821,
+    port: () => serverDeps?.port ?? 0,
   };
   const schedule = (repeat: boolean) => (fn: () => void, ms: number) => {
     const timer = { fn, ms, cleared: false, repeat };
@@ -216,6 +220,7 @@ function harness(
     openStream,
     sent,
     timers,
+    lifecycle,
     codeOf,
     stored: () => stored as RemoteControlState | undefined,
     channels: () => sent.map((entry) => entry.channel),
@@ -326,6 +331,131 @@ describe('src/main/remote/remote-control.ts', () => {
       const on = harness({ enabled: true });
       await on.remote.startIfEnabled();
       expect(on.remote.status().listening).toBe(true);
+    });
+  });
+
+  describe('setPort', () => {
+    it.each([80, 70_000, 50_000.5, Number.NaN])(
+      'refuses %s with the reason and changes nothing',
+      async (port) => {
+        const h = harness();
+        await h.remote.setEnabled(true);
+
+        expect(await h.remote.setPort(port)).toEqual({
+          ok: false,
+          error: 'El puerto debe ser un número entero entre 1024 y 65535.',
+        });
+        expect(h.stored()?.port).toBe(47821);
+        expect(h.lifecycle).toEqual(['start:47821']);
+      },
+    );
+
+    it('persists and shows the port while off, starting nothing', async () => {
+      const h = harness();
+
+      const result = await h.remote.setPort(50123);
+
+      expect(result).toEqual({ ok: true, status: h.remote.status() });
+      expect(h.remote.status()).toMatchObject({
+        port: 50123,
+        listening: false,
+      });
+      expect(h.stored()?.port).toBe(50123);
+      expect(h.lifecycle.some((step) => step.startsWith('start'))).toBe(false);
+      expect(h.lastOn('remote:changed')).toMatchObject({ port: 50123 });
+    });
+
+    it('restarts a running server on the new port', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+
+      const result = await h.remote.setPort(50123);
+
+      expect(h.lifecycle).toEqual(['start:47821', 'stop', 'start:50123']);
+      expect(result).toMatchObject({
+        ok: true,
+        status: { port: 50123, listening: true },
+      });
+      expect(h.stored()?.port).toBe(50123);
+      expect(h.lastOn('remote:changed')).toMatchObject({
+        port: 50123,
+        listening: true,
+      });
+    });
+
+    it('builds the pairing URL on the new port', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      await h.remote.setPort(50123);
+
+      const pairing = h.remote.startPairing();
+
+      if (!pairing.ok) throw new Error(pairing.error);
+      expect(pairing.url).toMatch(/^http:\/\/192\.168\.1\.20:50123\/pair\?c=/);
+    });
+
+    it('retires the pairing code issued on the old port', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const pairing = h.remote.startPairing();
+      if (!pairing.ok) throw new Error(pairing.error);
+
+      await h.remote.setPort(50123);
+
+      expect(
+        h.api({
+          method: 'POST',
+          pathname: '/api/pair/request',
+          body: { code: h.codeOf(pairing.url), name: 'x' },
+        }).status,
+      ).toBe(410);
+    });
+
+    it('cancels a pairing request waiting for an answer', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const requestId = scanAndRequest(h);
+
+      await h.remote.setPort(50123);
+
+      expect(h.lastOn('remote:pairRequestClosed')).toEqual({
+        requestId,
+        outcome: 'cancelled',
+      });
+    });
+
+    it('shows a listen failure on the new port like any other', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      h.failListen('El puerto 50123 ya está en uso por otra aplicación.');
+
+      expect(await h.remote.setPort(50123)).toMatchObject({
+        ok: true,
+        status: {
+          listening: false,
+          error: 'El puerto 50123 ya está en uso por otra aplicación.',
+        },
+      });
+    });
+
+    it('brings the server up on a free port when the old one was taken', async () => {
+      const h = harness();
+      h.failListen('El puerto 47821 ya está en uso por otra aplicación.');
+      await h.remote.setEnabled(true);
+      h.failListen(null);
+
+      expect(await h.remote.setPort(50123)).toMatchObject({
+        ok: true,
+        status: { port: 50123, listening: true, error: null },
+      });
+    });
+
+    it('leaves a running server alone when the port is the same', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+
+      expect(await h.remote.setPort(47821)).toMatchObject({ ok: true });
+      expect(h.lifecycle).toEqual(['start:47821']);
     });
   });
 
@@ -633,6 +763,19 @@ describe('src/main/remote/remote-control.ts — phones', () => {
     await h.remote.setEnabled(false);
 
     expect(stream.ended()).toBe(true);
+  });
+
+  it('closes every stream when the port changes, and the phone stays linked', async () => {
+    const { h, token } = await linked();
+    const stream = h.openStream(token);
+
+    await h.remote.setPort(50123);
+
+    expect(stream.ended()).toBe(true);
+    expect(h.remote.status().devices).toHaveLength(1);
+    await expect(
+      h.call({ pathname: '/api/state', token }),
+    ).resolves.toMatchObject({ status: 200 });
   });
 
   it('closes the desktop request dialog when the phone cancels', async () => {

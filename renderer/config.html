@@ -266,6 +266,36 @@
               <code id="remote-address" class="remote-address"></code>
             </div>
             <p id="remote-error" class="remote-error" hidden></p>
+            <div class="field remote-port">
+              <label for="remote-port">Puerto</label>
+              <div class="remote-port-row">
+                <input
+                  type="number"
+                  id="remote-port"
+                  min="1024"
+                  max="65535"
+                  step="1"
+                  inputmode="numeric"
+                  aria-describedby="remote-port-hint remote-port-error"
+                  disabled
+                />
+                <button
+                  type="button"
+                  id="remote-port-apply"
+                  class="small-btn"
+                  disabled
+                >
+                  Aplicar
+                </button>
+              </div>
+              <small id="remote-port-hint" class="muted remote-port-hint"
+                >Si otra aplicación ya usa este puerto, elige otro. Los móviles
+                vinculados siguen vinculados; los accesos añadidos a la pantalla
+                de inicio apuntan al puerto anterior y hay que volver a
+                añadirlos.</small
+              >
+              <p id="remote-port-error" class="remote-error" hidden></p>
+            </div>
           </section>
           <section class="settings-card">
             <div class="remote-card-head">

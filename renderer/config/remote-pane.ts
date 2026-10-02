@@ -2,12 +2,13 @@ import type { RemoteStatus } from '../../src/ipc-contract/remote-api.js';
 import { createDeviceList } from './remote-devices.js';
 import type { RemoteElements } from './remote-elements.js';
 import { createPairDialog } from './remote-pair-dialog.js';
+import { createPortField } from './remote-port.js';
 import { createRequestDialog } from './remote-request-dialog.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
- * «Control remoto»: the switch, the linked devices and auto-unlink. Main
- * owns the state; this paints whatever `RemoteStatus` it last reported
+ * «Control remoto»: the switch, the port, the linked devices and auto-unlink.
+ * Main owns the state; this paints whatever `RemoteStatus` it last reported
  * (answers and `remote:changed` pushes alike) and forwards the clicks.
  */
 
@@ -26,6 +27,10 @@ export function createRemotePane(
   });
   const pair = createPairDialog(els.pair);
   const request = createRequestDialog(els.request, showToast);
+  const portField = createPortField(els.port, {
+    showToast,
+    onApplied: (next) => apply(next),
+  });
 
   function render(): void {
     if (!status) return;
@@ -42,6 +47,7 @@ export function createRemotePane(
       : 'Sin red local';
     els.error.hidden = !status.error;
     els.error.textContent = status.error ?? '';
+    portField.render(status.port);
     els.addDevice.disabled = !status.listening || !address;
     if (!status.listening) pair.close();
     els.deviceCount.textContent = String(status.devices.length);

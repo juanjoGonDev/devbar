@@ -498,6 +498,12 @@ const FORWARDS: readonly Forward[] = [
     [{ enabled: false }],
   ],
   [
+    'setRemotePort',
+    (api) => api.setRemotePort(50123),
+    'remote:setPort',
+    [{ port: 50123 }],
+  ],
+  [
     'renameRemoteDevice',
     (api) => api.renameRemoteDevice('d1', 'Tablet'),
     'remote:renameDevice',

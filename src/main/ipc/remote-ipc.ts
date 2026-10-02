@@ -2,6 +2,8 @@ import type { IpcMainInvokeEvent } from 'electron';
 import type { RemoteControl } from '../remote/remote-control.js';
 import {
   ipcBooleanField,
+  ipcNumber,
+  ipcRecord,
   ipcStringField,
   type IpcRegistrar,
 } from '../ipc-validators.js';
@@ -19,6 +21,7 @@ export interface RemoteIpcDeps {
     | 'status'
     | 'setEnabled'
     | 'setAutoUnlink'
+    | 'setPort'
     | 'renameDevice'
     | 'unlinkDevice'
     | 'startPairing'
@@ -41,6 +44,11 @@ export function registerRemoteIpc(
     'remote:setAutoUnlink',
     (_e: IpcMainInvokeEvent, payload: unknown) =>
       remote.setAutoUnlink(ipcBooleanField(payload, 'enabled')),
+  );
+  // Only the type is checked here: the range is the user's to get wrong, so
+  // setPort answers it with a reason the section can show.
+  ipc.handle('remote:setPort', (_e: IpcMainInvokeEvent, payload: unknown) =>
+    remote.setPort(ipcNumber(ipcRecord(payload).port, 'port')),
   );
   ipc.handle(
     'remote:renameDevice',

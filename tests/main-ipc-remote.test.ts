@@ -28,6 +28,10 @@ function harness() {
     status: record('status', STATUS),
     setEnabled: record('setEnabled', Promise.resolve(STATUS)),
     setAutoUnlink: record('setAutoUnlink', STATUS),
+    setPort: record(
+      'setPort',
+      Promise.resolve({ ok: true as const, status: STATUS }),
+    ),
     renameDevice: record('renameDevice', { ok: true as const }),
     unlinkDevice: record('unlinkDevice', { ok: true as const }),
     startPairing: record('startPairing', {
@@ -52,6 +56,7 @@ describe('src/main/ipc/remote-ipc.ts', () => {
   it.each([
     ['remote:setEnabled', { enabled: true }, ['setEnabled', true]],
     ['remote:setAutoUnlink', { enabled: false }, ['setAutoUnlink', false]],
+    ['remote:setPort', { port: 50123 }, ['setPort', 50123]],
     [
       'remote:renameDevice',
       { id: 'd1', name: 'Tablet' },
@@ -85,6 +90,8 @@ describe('src/main/ipc/remote-ipc.ts', () => {
   it.each([
     ['remote:setEnabled', { enabled: 'yes' }],
     ['remote:setAutoUnlink', null],
+    ['remote:setPort', { port: '50123' }],
+    ['remote:setPort', { port: Number.NaN }],
     ['remote:renameDevice', { id: 'd1', name: 7 }],
     ['remote:unlinkDevice', { id: ['d1'] }],
     ['remote:respondPairing', { requestId: 'r1', accept: 'true' }],

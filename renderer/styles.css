@@ -3439,6 +3439,26 @@ body.prescript-confirm {
   color: var(--error);
   font-size: 12px;
 }
+.remote-port {
+  margin: 14px 0 0;
+}
+.remote-port-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.remote-port input {
+  width: 110px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.remote-port-hint {
+  display: block;
+  margin-top: 6px;
+}
+.remote-port .remote-error {
+  margin-top: 6px;
+}
 .remote-card-head {
   display: flex;
   align-items: center;

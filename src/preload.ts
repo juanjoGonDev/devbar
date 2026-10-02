@@ -128,6 +128,7 @@ const api: DevBarApi = {
     ipcRenderer.invoke('remote:setEnabled', { enabled }),
   setRemoteAutoUnlink: (enabled) =>
     ipcRenderer.invoke('remote:setAutoUnlink', { enabled }),
+  setRemotePort: (port) => ipcRenderer.invoke('remote:setPort', { port }),
   renameRemoteDevice: (id, name) =>
     ipcRenderer.invoke('remote:renameDevice', { id, name }),
   unlinkRemoteDevice: (id) => ipcRenderer.invoke('remote:unlinkDevice', { id }),

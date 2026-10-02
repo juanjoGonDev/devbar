@@ -239,5 +239,16 @@ describe('src/main/remote/device-store.ts', () => {
       });
       expect(h.last()).toMatchObject({ enabled: true, autoUnlink: false });
     });
+
+    it('persists a new port and keeps the linked devices', () => {
+      const h = harness();
+      h.store.add({ name: 'iPhone', client: 'Safari · iOS' });
+
+      h.store.setPort(50123);
+
+      expect(h.store.settings().port).toBe(50123);
+      expect(h.last()).toMatchObject({ port: 50123 });
+      expect(h.last()?.devices).toHaveLength(1);
+    });
   });
 });

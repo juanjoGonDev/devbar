@@ -39,6 +39,10 @@ export interface RemoteQrMatrix {
   modules: boolean[];
 }
 
+/** A port change: the status it left, or why it was refused (Spanish). */
+export type RemotePortResult =
+  { ok: true; status: RemoteStatus } | { ok: false; error: string };
+
 export type RemotePairingResult =
   | { ok: true; url: string; expiresAt: number; qr: RemoteQrMatrix }
   | { ok: false; error: string };
@@ -65,6 +69,11 @@ export interface RemoteApi {
   /** Persists the switch and starts/stops the LAN server. */
   setRemoteEnabled(enabled: boolean): Promise<RemoteStatus>;
   setRemoteAutoUnlink(enabled: boolean): Promise<RemoteStatus>;
+  /**
+   * Persists the port (1024–65535) and, with the switch on, restarts the
+   * server on it: the active pairing code and every open stream end there.
+   */
+  setRemotePort(port: number): Promise<RemotePortResult>;
   renameRemoteDevice(id: string, name: string): Promise<SimpleResult>;
   unlinkRemoteDevice(id: string): Promise<SimpleResult>;
   /** Issues THE single-use pairing code (replacing any previous one). */

@@ -12,8 +12,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
   «Permitir control remoto» que viene **desactivado**: hasta que lo enciendes,
   DevBar no abre nada en la red. Al activarlo se ve la dirección del equipo
   (por ejemplo `192.168.1.20:47821`) y si el servicio está activo; si el
-  puerto ya lo usa otra aplicación, lo dice ahí mismo. Úsalo solo en redes de
-  confianza: la conexión no va cifrada.
+  puerto ya lo usa otra aplicación, lo dice ahí mismo y puedes cambiarlo desde
+  ahí. Úsalo solo en redes de confianza: la conexión no va cifrada.
 
 - **Tus grupos, en el bolsillo.** Con el móvil vinculado abres la dirección en
   el navegador y ves lo mismo que en la barra: cada grupo con su rama y sus
@@ -24,6 +24,11 @@ Todas las novedades relevantes de DevBar. El formato sigue
   paras todo lo que esté en marcha. Todo se actualiza solo al momento, sin
   recargar; si se corta la red, la página dice «Reconectando…» y vuelve en
   cuanto puede.
+
+- **Añádela a la pantalla de inicio.** Desde el navegador del móvil, «Añadir
+  a pantalla de inicio» deja un icono de DevBar que abre el panel
+  directamente. Necesita estar en la misma red que el ordenador: sin conexión
+  con él no hay nada que mostrar.
 
 - **Los logs, también desde el móvil.** La pestaña «Logs» muestra las últimas
   líneas de cualquier comando o acción y sigue añadiendo las nuevas en

@@ -172,6 +172,163 @@ describe('renderer/config/remote-pane.ts', () => {
     });
   });
 
+  describe('the port field', () => {
+    const RANGE = 'El puerto debe ser un número entero entre 1024 y 65535.';
+    const port = () => el<HTMLInputElement>('remote-port');
+    const applyBtn = () => el<HTMLButtonElement>('remote-port-apply');
+    const type = (value: string): void => {
+      port().value = value;
+      port().dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const enter = (): void => {
+      port().dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    };
+
+    it('shows the port, editable with the switch off, and nothing to apply', async () => {
+      win = await openWith(status());
+
+      expect(port().value).toBe('47821');
+      expect(port().disabled).toBe(false);
+      expect(applyBtn().disabled).toBe(true);
+      expect(el('remote-port-error').hidden).toBe(true);
+    });
+
+    it('stays locked until main reports the status', async () => {
+      win = await openConfigWindow();
+
+      expect(port().disabled).toBe(true);
+      expect(applyBtn().disabled).toBe(true);
+    });
+
+    it.each([
+      ['a different valid port', '50123', false],
+      ['the current port', '47821', true],
+      ['a privileged port', '80', true],
+      ['a port past 65535', '70000', true],
+      ['an empty field', '', true],
+    ])('offers «Aplicar» only for %s', async (_label, value, disabled) => {
+      win = await openWith(status(ON));
+
+      type(value);
+
+      expect(applyBtn().disabled).toBe(disabled);
+    });
+
+    it('asks main for the new port and paints what it answers', async () => {
+      win = await openWith(status(ON));
+
+      type('50123');
+      click(applyBtn());
+      expect(applyBtn().disabled).toBe(true);
+      await win.settle('setRemotePort', {
+        ok: true,
+        status: status({ ...ON, port: 50123 }),
+      });
+
+      expect(win.argsFor('setRemotePort')).toEqual([[50123]]);
+      expect(text('remote-address')).toBe('192.168.1.20:50123');
+      expect(port().value).toBe('50123');
+      expect(applyBtn().disabled).toBe(true);
+    });
+
+    it('applies with Enter', async () => {
+      win = await openWith(status());
+
+      type('50123');
+      enter();
+      await win.settle('setRemotePort', {
+        ok: true,
+        status: status({ port: 50123 }),
+      });
+
+      expect(win.argsFor('setRemotePort')).toEqual([[50123]]);
+    });
+
+    it('explains an invalid port inline without asking main', async () => {
+      win = await openWith(status());
+
+      type('80');
+      enter();
+      await flush();
+
+      expect(win.callCount('setRemotePort')).toBe(0);
+      expect(el('remote-port-error').hidden).toBe(false);
+      expect(text('remote-port-error')).toBe(RANGE);
+      expect(port().getAttribute('aria-invalid')).toBe('true');
+
+      type('8080');
+      expect(el('remote-port-error').hidden).toBe(true);
+      expect(port().hasAttribute('aria-invalid')).toBe(false);
+    });
+
+    it('explains an invalid port when the field is left', async () => {
+      win = await openWith(status());
+
+      type('70000');
+      port().dispatchEvent(new Event('change'));
+
+      expect(text('remote-port-error')).toBe(RANGE);
+    });
+
+    it('shows a refusal from main inline', async () => {
+      win = await openWith(status());
+
+      type('50123');
+      click(applyBtn());
+      await win.settle('setRemotePort', { ok: false, error: RANGE });
+
+      expect(text('remote-port-error')).toBe(RANGE);
+      expect(applyBtn().disabled).toBe(false);
+    });
+
+    it('shows a listen failure on the new port where it always has', async () => {
+      win = await openWith(status(ON));
+      const taken = 'El puerto 50123 ya está en uso por otra aplicación.';
+
+      type('50123');
+      click(applyBtn());
+      await win.settle('setRemotePort', {
+        ok: true,
+        status: status({ enabled: true, port: 50123, error: taken }),
+      });
+
+      expect(text('remote-error')).toBe(taken);
+      expect(el('remote-port-error').hidden).toBe(true);
+    });
+
+    it('reports a call that failed and lets the user retry', async () => {
+      win = await openWith(status());
+
+      type('50123');
+      click(applyBtn());
+      await win.fail('setRemotePort', new Error('boom'));
+
+      expect(text('toast')).toContain('boom');
+      expect(applyBtn().disabled).toBe(false);
+    });
+
+    it('keeps what the user is typing across pushes from main', async () => {
+      win = await openWith(status());
+
+      type('50123');
+      await win.push('onRemoteChanged', status(ON));
+
+      expect(port().value).toBe('50123');
+      expect(applyBtn().disabled).toBe(false);
+    });
+
+    it('follows a port change pushed from main while untouched', async () => {
+      win = await openWith(status());
+
+      await win.push('onRemoteChanged', status({ port: 50123 }));
+
+      expect(port().value).toBe('50123');
+      expect(applyBtn().disabled).toBe(true);
+    });
+  });
+
   describe('the security card', () => {
     it('saves the auto-unlink switch', async () => {
       win = await openWith(status());

@@ -1,4 +1,5 @@
 import { byId } from '../dom.js';
+import type { PortElements } from './remote-port.js';
 
 /**
  * Every element of the «Control remoto» section and its two dialogs, resolved
@@ -13,6 +14,7 @@ export interface RemoteElements {
   state: HTMLElement;
   address: HTMLElement;
   error: HTMLElement;
+  port: PortElements;
   deviceCount: HTMLElement;
   addDevice: HTMLButtonElement;
   devices: HTMLUListElement;
@@ -43,6 +45,11 @@ export function remoteElements(): RemoteElements {
     state: byId<HTMLElement>('remote-state', HTMLElement),
     address: byId<HTMLElement>('remote-address', HTMLElement),
     error: byId<HTMLElement>('remote-error', HTMLElement),
+    port: {
+      input: byId<HTMLInputElement>('remote-port', HTMLInputElement),
+      apply: byId<HTMLButtonElement>('remote-port-apply', HTMLButtonElement),
+      error: byId<HTMLElement>('remote-port-error', HTMLElement),
+    },
     deviceCount: byId<HTMLElement>('remote-device-count', HTMLElement),
     addDevice: byId<HTMLButtonElement>('remote-add-device', HTMLButtonElement),
     devices: byId<HTMLUListElement>('remote-devices', HTMLUListElement),

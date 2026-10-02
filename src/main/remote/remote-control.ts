@@ -3,9 +3,11 @@ import os from 'node:os';
 import type {
   RemotePairingResult,
   RemotePairRequestClosed,
+  RemotePortResult,
   RemoteStatus,
 } from '../../ipc-contract/remote-api.js';
 import type { SimpleResult } from '../../ipc-contract/simple-result.js';
+import { remotePortError } from '../../remote-port.js';
 import { sendToRenderers } from '../renderer-bus.js';
 import { createApi, type ApiRequest, type ApiResponse } from './api.js';
 import { createControlApi } from './control-api.js';
@@ -62,6 +64,12 @@ export interface RemoteControl {
   status(): RemoteStatus;
   setEnabled(enabled: boolean): Promise<RemoteStatus>;
   setAutoUnlink(enabled: boolean): RemoteStatus;
+  /**
+   * Persists a valid port and moves the server there: one server per port,
+   * so the pairing code and the streams of the old one end with it. Linked
+   * phones stay linked — a cookie is scoped to the host, not the port.
+   */
+  setPort(port: number): Promise<RemotePortResult>;
   renameDevice(id: string, name: string): SimpleResult;
   unlinkDevice(id: string): SimpleResult;
   startPairing(): RemotePairingResult;
@@ -186,21 +194,23 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     setCookie: clearedSessionCookie(),
   });
 
-  const server = (deps.createServer ?? createRemoteServer)({
-    port: devices.settings().port,
-    addresses,
-    readStatic: deps.readStatic,
-    onStateChange: changed,
-    api: (request) => {
-      if (!controlApi.handles(request.pathname)) return sessionApi(request);
-      const device = caller(request);
-      return device ? controlApi.handle(request, device) : unlinked();
-    },
-    stream: (request) => {
-      const device = caller(request);
-      return device ? live.stream(request, device) : unlinked();
-    },
-  });
+  const serverFor = (port: number): RemoteServer =>
+    (deps.createServer ?? createRemoteServer)({
+      port,
+      addresses,
+      readStatic: deps.readStatic,
+      onStateChange: changed,
+      api: (request) => {
+        if (!controlApi.handles(request.pathname)) return sessionApi(request);
+        const device = caller(request);
+        return device ? controlApi.handle(request, device) : unlinked();
+      },
+      stream: (request) => {
+        const device = caller(request);
+        return device ? live.stream(request, device) : unlinked();
+      },
+    });
+  let server = serverFor(devices.settings().port);
 
   /**
    * Auto-unlink, sparing whoever is connected: a phone can sit on one open
@@ -244,6 +254,20 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
       if (enabled && server.listening()) pruneStale();
       changed();
       return status();
+    },
+    setPort: async (port) => {
+      const error = remotePortError(port);
+      if (error !== null) return { ok: false, error };
+      if (port !== devices.settings().port) {
+        devices.setPort(port);
+        // The switch decides, not `listening()`: a listen that failed on the
+        // old port is exactly what the user is fixing here.
+        await stop();
+        server = serverFor(port);
+        if (devices.settings().enabled) await start();
+        else changed();
+      }
+      return { ok: true, status: status() };
     },
     renameDevice: (id, name) => {
       const outcome = devices.rename(id, name);
