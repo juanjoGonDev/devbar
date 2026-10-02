@@ -27,6 +27,16 @@ const ASSETS = new Map<string, StaticAsset>([
   // The shared font stacks (--font-ui) every window's CSS builds on.
   ['/emoji.css', { file: 'emoji.css', type: CSS }],
   ['/remote.js', { file: 'remote.js', type: JS }],
+  // "Add to Home Screen": over plain HTTP there is no service worker, so
+  // this buys an icon and a standalone window, not offline use.
+  [
+    '/remote.webmanifest',
+    { file: 'remote.webmanifest', type: 'application/manifest+json' },
+  ],
+  ...[192, 512].map((size): [string, StaticAsset] => [
+    `/remote-icon-${size}.png`,
+    { file: `remote-icon-${size}.png`, type: 'image/png' },
+  ]),
   ...[
     'api',
     'app',

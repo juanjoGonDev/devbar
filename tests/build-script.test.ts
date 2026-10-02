@@ -145,6 +145,18 @@ describe('scripts/build.ts', () => {
       ).toBe('body{margin:0}');
     });
 
+    it("copies the phone page's web manifest and PNG icons", async () => {
+      const root = makeRoot();
+      writeFileSync(join(root, 'renderer', 'remote.webmanifest'), '{}');
+      writeFileSync(join(root, 'renderer', 'remote-icon-192.png'), 'png');
+      const run = await build(root);
+      const out = join(run.root, 'build', 'renderer');
+      expect(readFileSync(join(out, 'remote.webmanifest'), 'utf8')).toBe('{}');
+      expect(readFileSync(join(out, 'remote-icon-192.png'), 'utf8')).toBe(
+        'png',
+      );
+    });
+
     it('does NOT copy renderer sources into the build', async () => {
       // tsc owns the .ts emit; copying the source would ship it, and the
       // window would have two candidates for the same module.
