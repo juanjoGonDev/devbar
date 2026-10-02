@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   anyAppWindowOpen,
   applyDockVisibility,
+  broadcastTheme,
   createWindowRegistry,
   MAIN_LOGS_KEY,
   refreshWindowBackgrounds,
@@ -58,6 +59,18 @@ describe('src/main/renderer-bus.ts', () => {
       expect(themeTargets(registry)).toHaveLength(1);
     });
 
+    it('pushes the theme to every themed renderer', () => {
+      const registry = createWindowRegistry(() => null);
+      const modal = fakeWindow('confirm');
+      registry.prescriptConfirm.set('t1', asWindow(modal));
+
+      broadcastTheme(registry, 'dark');
+
+      expect(modal.sent).toEqual([
+        { channel: 'settings:theme', payload: 'dark' },
+      ]);
+    });
+
     it('skips a destroyed modal', () => {
       const dead = fakeWindow();
       dead.destroy();
@@ -68,6 +81,19 @@ describe('src/main/renderer-bus.ts', () => {
   });
 
   describe('sendToRenderers', () => {
+    it('also feeds the listeners that are not windows', () => {
+      const registry = createWindowRegistry(() => null);
+      const heard: unknown[] = [];
+      registry.listeners.add({
+        send: (channel, payload) => heard.push([channel, payload]),
+      });
+
+      sendToRenderers(registry, 'groups:toast', { kind: 'ok', message: 'hi' });
+
+      expect(heard).toEqual([['groups:toast', { kind: 'ok', message: 'hi' }]]);
+      expect(anyAppWindowOpen(registry)).toBe(false);
+    });
+
     it('pushes the payload to every live renderer', () => {
       const config = fakeWindow('config');
       const registry = createWindowRegistry(() => null);

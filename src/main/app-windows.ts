@@ -32,6 +32,8 @@ export interface AppWindowsDeps {
   commandName: (groupId: string, commandId: string) => string | null;
   /** A modal closed without a decision => implicit cancel. */
   onConfirmWindowClosed: (token: string) => void;
+  /** The config window is gone (a «Control remoto» QR shown in it dies). */
+  onConfigClosed?: () => void;
 }
 
 export interface AppWindows {
@@ -106,6 +108,7 @@ export function createAppWindows(deps: AppWindowsDeps): AppWindows {
     win.on('closed', () => {
       forceCloseConfig = false;
       if (registry.config === win) registry.config = null;
+      deps.onConfigClosed?.();
       deps.onWindowsChanged();
     });
     deps.attachConsole(win, 'config');

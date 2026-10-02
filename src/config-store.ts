@@ -38,11 +38,13 @@ import {
 
 export {
   getGlobalSettings,
+  getRemoteControl,
   getScheduleLastRun,
   getTrayPopover,
   groupsOverlayActive,
   setGroupsOverlay,
   saveGlobalSettings,
+  saveRemoteControl,
   saveTrayPopover,
   setScheduleLastRun,
 } from './config-store/store.js';

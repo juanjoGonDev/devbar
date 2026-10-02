@@ -484,6 +484,49 @@ const FORWARDS: readonly Forward[] = [
     'window:confirmCloseConfig',
     [],
   ],
+  ['getRemoteStatus', (api) => api.getRemoteStatus(), 'remote:getStatus', []],
+  [
+    'setRemoteEnabled',
+    (api) => api.setRemoteEnabled(true),
+    'remote:setEnabled',
+    [{ enabled: true }],
+  ],
+  [
+    'setRemoteAutoUnlink',
+    (api) => api.setRemoteAutoUnlink(false),
+    'remote:setAutoUnlink',
+    [{ enabled: false }],
+  ],
+  [
+    'renameRemoteDevice',
+    (api) => api.renameRemoteDevice('d1', 'Tablet'),
+    'remote:renameDevice',
+    [{ id: 'd1', name: 'Tablet' }],
+  ],
+  [
+    'unlinkRemoteDevice',
+    (api) => api.unlinkRemoteDevice('d1'),
+    'remote:unlinkDevice',
+    [{ id: 'd1' }],
+  ],
+  [
+    'startRemotePairing',
+    (api) => api.startRemotePairing(),
+    'remote:startPairing',
+    [],
+  ],
+  [
+    'cancelRemotePairing',
+    (api) => api.cancelRemotePairing(),
+    'remote:cancelPairing',
+    [],
+  ],
+  [
+    'respondRemotePairing',
+    (api) => api.respondRemotePairing('r1', true),
+    'remote:respondPairing',
+    [{ requestId: 'r1', accept: true }],
+  ],
 ];
 
 type SubscriptionCase = readonly [
@@ -517,6 +560,17 @@ const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
     'onCustomIconsChanged',
     (api, cb) => api.onCustomIconsChanged(cb),
     'customIcons:changed',
+  ],
+  ['onRemoteChanged', (api, cb) => api.onRemoteChanged(cb), 'remote:changed'],
+  [
+    'onRemotePairRequest',
+    (api, cb) => api.onRemotePairRequest(cb),
+    'remote:pairRequest',
+  ],
+  [
+    'onRemotePairRequestClosed',
+    (api, cb) => api.onRemotePairRequestClosed(cb),
+    'remote:pairRequestClosed',
   ],
 ];
 

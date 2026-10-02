@@ -139,6 +139,20 @@ describe('src/main/app-windows.ts', () => {
       expect(h.registry.config).toBeNull();
     });
 
+    it('says when the config window is gone, so its pairing code dies too', () => {
+      let closed = 0;
+      const h = harness({
+        onConfigClosed: () => {
+          closed += 1;
+        },
+      });
+      h.appWindows.ensureConfigWindow();
+
+      h.windows[0]?.emit('closed');
+
+      expect(closed).toBe(1);
+    });
+
     it('reopens after the window was destroyed', () => {
       const h = harness();
       h.appWindows.ensureConfigWindow();

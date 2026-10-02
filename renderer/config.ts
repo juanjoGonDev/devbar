@@ -18,6 +18,8 @@ import { createSidebarNav } from './config/sidebar-nav.js';
 import { createSettingsPane } from './config/settings-pane.js';
 import { wireBackupButtons } from './config/backup-pane.js';
 import { wireUpdatesPane } from './config/updates-pane.js';
+import { createRemotePane } from './config/remote-pane.js';
+import { remoteElements } from './config/remote-elements.js';
 initTheme();
 hydrateIcons(document);
 
@@ -318,6 +320,8 @@ wireBackupButtons({
   renderGroupDetail: () => groupDetail.render(),
   refreshPipeline,
 });
+
+createRemotePane(remoteElements(), showToast);
 
 // ────────────────────── Live updates ───────────────────────────────────
 

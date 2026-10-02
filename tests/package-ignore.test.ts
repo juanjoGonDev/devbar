@@ -30,6 +30,10 @@ describe('packaged app contents', () => {
       '/build/assets/icon.png',
       '/package.json',
       '/node_modules/menubar/index.js',
+      // «Control remoto»: the phone page and the QR encoder main uses.
+      '/build/renderer/remote.html',
+      '/build/renderer/remote/app.js',
+      '/node_modules/qrcode-generator/dist/qrcode.mjs',
     ]) {
       expect(isIgnored(kept), kept).toBe(false);
     }

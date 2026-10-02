@@ -48,6 +48,12 @@ export interface NotificationDeps {
   platform: NodeJS.Platform;
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
   clearTimer?: (timer: NodeJS.Timeout) => void;
+  /** Every notice that reaches the user, for «Control remoto»'s log. */
+  onNotice?: (notice: {
+    title: string;
+    body: string;
+    action: string | null;
+  }) => void;
 }
 
 export interface Notifications {
@@ -150,6 +156,7 @@ export function createNotifications(deps: NotificationDeps): Notifications {
     body: string,
     options: { cta?: BannerCta } = {},
   ): void {
+    deps.onNotice?.({ title, body, action: options.cta?.action ?? null });
     if (!deps.notificationsSupported()) {
       console.log('[notify] sistema no soportado → banner propio');
       showCustomBanner(title, body, options);

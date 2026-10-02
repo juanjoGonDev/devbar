@@ -16,6 +16,8 @@ const rendererDir = path.resolve(
 const WINDOWS: ReadonlyArray<[script: string, html: string]> = [
   ['config.ts', 'config.html'],
   ['pipeline-editor.ts', 'config.html'],
+  // «Control remoto» resolves its section and dialogs in one module.
+  ['config/remote-elements.ts', 'config.html'],
   ['tray.ts', 'tray.html'],
   // The logs window resolves every element it binds in one module, so that is
   // where its contract with `logs.html` is written down.
@@ -23,6 +25,10 @@ const WINDOWS: ReadonlyArray<[script: string, html: string]> = [
   ['notification.ts', 'notification.html'],
   ['prescript-confirm.ts', 'prescript-confirm.html'],
   ['silenced.ts', 'silenced.html'],
+  // The phone page of «Control remoto» (served over HTTP, not a window):
+  // the pairing flow, and the linked panel's elements in one module.
+  ['remote/app.ts', 'remote.html'],
+  ['remote/elements.ts', 'remote.html'],
 ];
 
 const TAGS_BY_CONSTRUCTOR: Record<string, readonly string[]> = {
@@ -40,6 +46,7 @@ const TAGS_BY_CONSTRUCTOR: Record<string, readonly string[]> = {
   HTMLLabelElement: ['label'],
   HTMLParagraphElement: ['p'],
   HTMLPreElement: ['pre'],
+  HTMLProgressElement: ['progress'],
   HTMLImageElement: ['img'],
   HTMLFormElement: ['form'],
   HTMLTableElement: ['table'],

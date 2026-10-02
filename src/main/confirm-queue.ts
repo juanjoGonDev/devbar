@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { Action, Command, Group, PreScript } from '../domain-types.js';
 import type { PrescriptConfirmContext } from '../ipc-contract.js';
+import type { RemoteConfirmView } from '../ipc-contract/remote-wire.js';
 import type { ConfirmDecision } from './ipc-validators.js';
 
 /**
@@ -39,6 +40,8 @@ interface PendingConfirm {
   win: ConfirmWindowLike | null;
   context: PrescriptConfirmContext;
   origin: ConfirmOrigin;
+  /** When main answers by itself (epoch ms), or null when it never does. */
+  deadline: number | null;
 }
 
 export interface ConfirmQueueDeps {
@@ -50,6 +53,7 @@ export interface ConfirmQueueDeps {
   newToken?: () => string;
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
   clearTimer?: (timer: NodeJS.Timeout) => void;
+  now?: () => number;
 }
 
 export interface ConfirmQueue {
@@ -70,14 +74,23 @@ export interface ConfirmQueue {
   resolveConfirm: (token: string, decision: ConfirmDecision) => void;
   hasPending: (token: string) => boolean;
   getContext: (token: string) => PrescriptConfirmContext | null;
+  /** Every open confirmation, for surfaces other than its modal (a phone). */
+  pending: () => RemoteConfirmView[];
+  /** Called after a confirmation opens or closes; returns the unsubscribe. */
+  onChange: (listener: () => void) => () => void;
 }
 
 export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
   const newToken = deps.newToken ?? (() => crypto.randomUUID());
   const setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
   const clearTimer = deps.clearTimer ?? ((timer) => clearTimeout(timer));
+  const now = deps.now ?? Date.now;
 
   const pendingConfirms = new Map<string, PendingConfirm>();
+  const listeners = new Set<() => void>();
+  const changed = (): void => {
+    for (const listener of [...listeners]) listener();
+  };
   let confirmChain: Promise<void> = Promise.resolve();
   /**
    * Bumped only by a pipeline cancel, so a PIPELINE job still queued behind
@@ -96,6 +109,7 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     if (entry.timer) clearTimer(entry.timer);
     if (entry.win && !entry.win.isDestroyed()) entry.win.close();
     entry.resolve(decision === 'confirm');
+    changed();
   }
 
   function showConfirmModal(
@@ -118,9 +132,12 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
           logo: deps.logo(),
           groupName,
         },
+        deadline:
+          script.confirmSecs == null ? null : now() + script.confirmSecs * 1000,
       };
       pendingConfirms.set(token, entry);
       entry.win = deps.openWindow(token);
+      changed();
       // AUTHORITATIVE auto-resolve timer lives in MAIN (ADR-1) — the
       // renderer's countdown is purely cosmetic and never resolves on its own.
       if (script.confirmSecs != null) {
@@ -161,6 +178,22 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     resolveConfirm,
     hasPending: (token) => pendingConfirms.has(token),
     getContext: (token) => pendingConfirms.get(token)?.context ?? null,
+    // The logo stays out: it is the desktop modal's data URL, kilobytes a
+    // phone has no use for.
+    pending: () =>
+      [...pendingConfirms].map(([token, { context, deadline }]) => ({
+        token,
+        name: context.name,
+        command: context.command,
+        groupName: context.groupName,
+        secs: context.secs,
+        onTimeout: context.onTimeout,
+        deadline,
+      })),
+    onChange: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
 
     /**
      * Cancels every pending PIPELINE confirmation — the pipeline is global, so

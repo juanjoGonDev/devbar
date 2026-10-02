@@ -34,7 +34,10 @@ function harness(
   const branchesChanged = vi.fn<(repoPath: string) => void>();
   const ipc = recordingIpc();
   registerRuntimeIpc(ipc, {
-    configStore: { getGroup: (id) => groups.find((g) => g.id === id) ?? null },
+    configStore: {
+      getGroup: (id) => groups.find((g) => g.id === id) ?? null,
+      listGroups: () => groups,
+    },
     processManager: {
       start: (pid) => {
         calls.push(`start:${pid}`);

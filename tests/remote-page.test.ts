@@ -1,0 +1,399 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  LINKED,
+  loadPage,
+  pageHarness,
+  settle,
+  start,
+  state,
+  text,
+  UNLINKED,
+  visibleView,
+} from './helpers/remote-page.js';
+
+/**
+ * The phone page (`renderer/remote.html` + `renderer/remote/app.ts`), driven
+ * against a fake `fetch`: which view a browser lands on for each answer of
+ * the server, and exactly what it sends. The linked panel has suites of its
+ * own (tests/remote-*.test.ts).
+ */
+
+const harness = pageHarness;
+const input = (id: string): HTMLInputElement =>
+  document.getElementById(id) as HTMLInputElement;
+const click = (id: string): void => {
+  document
+    .getElementById(id)
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+};
+const submit = (): void => {
+  document
+    .getElementById('pair-form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+};
+
+describe('renderer/remote/app.ts', () => {
+  beforeEach(() => {
+    loadPage();
+  });
+
+  describe('first load', () => {
+    it('explains how to link a browser that is not linked', async () => {
+      const h = harness();
+      h.answer('GET /api/me', UNLINKED);
+
+      await start(h);
+
+      expect(visibleView()).toBe('unlinked');
+      expect(text('unlinked-title')).toBe('Este dispositivo no está vinculado');
+      expect(
+        document
+          .getElementById('expired-note')
+          ?.classList.contains('is-emphasised'),
+      ).toBe(false);
+      expect(h.calls).toEqual([
+        { url: '/api/me', method: 'GET', headers: {}, body: undefined },
+      ]);
+    });
+
+    it('shows the linked view for a linked browser, even with a code', async () => {
+      const h = harness('?c=abc');
+      h.answer('GET /api/me', LINKED);
+
+      await start(h);
+
+      expect(visibleView()).toBe('linked');
+      expect(text('host-name')).toBe('Mac-de-Ana');
+      expect(h.callsTo('/api/state')).toHaveLength(1);
+    });
+
+    it('never hides the page itself while it switches views', async () => {
+      const h = harness();
+      h.answer('GET /api/me', LINKED);
+
+      await start(h);
+
+      expect(document.body.hidden).toBe(false);
+      expect(document.body.dataset.screen).toBe('linked');
+    });
+
+    it('offers a retry when DevBar cannot be reached', async () => {
+      const h = harness();
+      h.answer('GET /api/me', new Error('offline'), UNLINKED);
+
+      await start(h);
+      expect(visibleView()).toBe('error');
+
+      click('retry');
+      await settle();
+      expect(visibleView()).toBe('unlinked');
+    });
+
+    it('treats an unexpected answer as unreachable', async () => {
+      const h = harness();
+      h.answer('GET /api/me', { status: 500, body: { error: 'internal' } });
+
+      await start(h);
+
+      expect(visibleView()).toBe('error');
+    });
+  });
+
+  describe('pairing', () => {
+    async function pairing(): Promise<ReturnType<typeof harness>> {
+      const h = harness('?c=CODE123');
+      h.answer('GET /api/me', UNLINKED);
+      await start(h);
+      return h;
+    }
+
+    it('asks for a name, prefilled from the device', async () => {
+      await pairing();
+
+      expect(visibleView()).toBe('pair');
+      expect(text('pair-title')).toBe('Vincular con Mac-de-Ana');
+      expect(input('device-name').value).toBe('iPhone');
+    });
+
+    it('sends the code and the name as a DevBar JSON request', async () => {
+      const h = await pairing();
+      h.answer('POST /api/pair/request', {
+        status: 200,
+        body: { requestId: 'r1', verificationCode: '482913', expiresAt: 1 },
+      });
+      input('device-name').value = '  iPhone de Ana ';
+
+      submit();
+      await settle();
+
+      expect(h.calls[1]).toEqual({
+        url: '/api/pair/request',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-DevBar-Request': '1',
+        },
+        body: { code: 'CODE123', name: 'iPhone de Ana' },
+      });
+      expect(visibleView()).toBe('waiting');
+      expect(text('verification-code')).toBe('482 913');
+      // The spent code leaves the address bar: a reload must not reuse it.
+      expect(h.urls).toEqual(['/']);
+    });
+
+    it('refuses an empty name without asking the server', async () => {
+      const h = await pairing();
+      input('device-name').value = '   ';
+
+      submit();
+      await settle();
+
+      expect(h.calls).toHaveLength(1);
+      expect(text('pair-error')).toBe('Ponle un nombre de 1 a 40 caracteres.');
+    });
+
+    it('sends a stale code back to the explanation, with the QR note stressed', async () => {
+      const h = await pairing();
+      h.answer('POST /api/pair/request', {
+        status: 410,
+        body: { error: 'expired' },
+      });
+
+      submit();
+      await settle();
+
+      expect(visibleView()).toBe('unlinked');
+      expect(
+        document
+          .getElementById('expired-note')
+          ?.classList.contains('is-emphasised'),
+      ).toBe(true);
+    });
+
+    it.each([
+      [
+        429,
+        { error: 'rate-limited' },
+        'Demasiados intentos. Espera un minuto y vuelve a probar.',
+      ],
+      [400, { error: 'invalid-name' }, 'Ponle un nombre de 1 a 40 caracteres.'],
+      [
+        500,
+        { error: 'internal' },
+        'No se pudo conectar con DevBar. Inténtalo de nuevo.',
+      ],
+    ])('explains a %i answer on the form', async (status, body, message) => {
+      const h = await pairing();
+      h.answer('POST /api/pair/request', { status, body });
+
+      submit();
+      await settle();
+
+      expect(visibleView()).toBe('pair');
+      expect(text('pair-error')).toBe(message);
+      expect(
+        (document.getElementById('pair-submit') as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+
+    describe('waiting for the computer', () => {
+      async function waiting(): Promise<ReturnType<typeof harness>> {
+        const h = await pairing();
+        h.answer('POST /api/pair/request', {
+          status: 200,
+          body: { requestId: 'r1', verificationCode: '482913', expiresAt: 1 },
+        });
+        submit();
+        await settle();
+        return h;
+      }
+
+      it('polls every second until the computer accepts, then shows linked', async () => {
+        const h = await waiting();
+        h.answer(
+          'GET /api/pair/status',
+          { status: 200, body: { status: 'pending' } },
+          {
+            status: 200,
+            body: {
+              status: 'accepted',
+              device: { id: 'd1', name: 'iPhone de Ana' },
+            },
+          },
+        );
+        h.answer('GET /api/me', LINKED);
+
+        await h.tick();
+        expect(visibleView()).toBe('waiting');
+        await h.tick();
+
+        expect(
+          h.calls.filter((c) => c.url === '/api/pair/status?id=r1'),
+        ).toHaveLength(2);
+        expect(visibleView()).toBe('linked');
+      });
+
+      it('says so when the computer rejects it', async () => {
+        const h = await waiting();
+        h.answer('GET /api/pair/status', {
+          status: 200,
+          body: { status: 'rejected' },
+        });
+
+        await h.tick();
+
+        expect(visibleView()).toBe('result');
+        expect(text('result-title')).toBe('Vinculación rechazada');
+        expect(h.pending()).toBe(0);
+      });
+
+      it('says so when nobody answers in time', async () => {
+        const h = await waiting();
+        h.answer('GET /api/pair/status', {
+          status: 404,
+          body: { error: 'unknown-request' },
+        });
+
+        await h.tick();
+
+        expect(visibleView()).toBe('result');
+        expect(text('result-title')).toBe('La solicitud ha caducado');
+
+        click('result-done');
+        expect(visibleView()).toBe('unlinked');
+      });
+
+      it('keeps polling through a dropped request, then gives up', async () => {
+        const h = await waiting();
+        h.answer('GET /api/pair/status', new Error('wifi blip'));
+
+        for (let i = 0; i < 4; i++) await h.tick();
+        expect(visibleView()).toBe('waiting');
+        await h.tick();
+
+        expect(visibleView()).toBe('error');
+        expect(h.pending()).toBe(0);
+      });
+
+      it('stops waiting on «Cancelar», and tells the computer', async () => {
+        const h = await waiting();
+        h.answer('POST /api/pair/cancel', { status: 200, body: { ok: true } });
+
+        click('pair-cancel');
+        await settle();
+
+        expect(visibleView()).toBe('unlinked');
+        expect(h.callsTo('/api/pair/cancel')[0]?.body).toEqual({
+          requestId: 'r1',
+        });
+        // The poll is cancelled, not merely ignored.
+        expect(h.pending()).toBe(0);
+      });
+    });
+  });
+});
+
+/** jsdom has no EventSource; the page only needs one that stays quiet. */
+class FakeEventSource {
+  static opened: string[] = [];
+  constructor(url: string) {
+    FakeEventSource.opened.push(url);
+  }
+  addEventListener(): void {}
+  close(): void {}
+}
+
+describe('renderer/remote.ts', () => {
+  /** Serves the real page with stubbed browser globals, by route. */
+  async function boot(
+    url: string,
+    routes: Record<string, { status: number; body: unknown }>,
+  ) {
+    loadPage();
+    window.history.replaceState(null, '', url);
+    const fetchStub = vi.fn((target: string, init?: RequestInit) => {
+      const reply = routes[`${init?.method ?? 'GET'} ${target.split('?')[0]}`];
+      return reply
+        ? Promise.resolve({
+            status: reply.status,
+            json: () => Promise.resolve(reply.body),
+          })
+        : Promise.reject(new Error(`unexpected ${target}`));
+    });
+    vi.stubGlobal('fetch', fetchStub);
+    vi.stubGlobal('EventSource', FakeEventSource);
+    vi.resetModules();
+    await import('../renderer/remote.js');
+    await settle();
+    return fetchStub;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('boots against the browser globals and reads the code from the URL', async () => {
+    const fetchStub = await boot('/pair?c=CODE', {
+      'GET /api/me': UNLINKED,
+      'POST /api/pair/request': {
+        status: 200,
+        body: { requestId: 'r1', verificationCode: '123456', expiresAt: 1 },
+      },
+    });
+    const clearTimer = vi.spyOn(window, 'clearTimeout');
+
+    expect(fetchStub).toHaveBeenCalledWith('/api/me', undefined);
+    expect(visibleView()).toBe('pair');
+    submit();
+    await settle();
+
+    expect(visibleView()).toBe('waiting');
+    expect(window.location.pathname + window.location.search).toBe('/');
+    click('pair-cancel');
+    expect(clearTimer).toHaveBeenCalled();
+  });
+
+  it('asks the browser to confirm before unlinking', async () => {
+    await boot('/', { 'GET /api/me': LINKED });
+    const asked = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    click('unlink');
+
+    expect(asked).toHaveBeenCalledOnce();
+    expect(visibleView()).toBe('linked');
+    expect(FakeEventSource.opened).toEqual(['/api/events']);
+  });
+
+  it('keeps working when the browser refuses localStorage', async () => {
+    vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+
+    await boot('/', {
+      'GET /api/me': LINKED,
+      'GET /api/state': { status: 200, body: state() },
+      'GET /api/notices': { status: 200, body: { notices: [] } },
+    });
+
+    expect(visibleView()).toBe('linked');
+    expect(text('host-name')).toBe('Mac-de-Ana');
+  });
+
+  it('stops its clock once the device is unlinked', async () => {
+    await boot('/', {
+      'GET /api/me': LINKED,
+      'POST /api/unlink': { status: 200, body: { ok: true } },
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const stopClock = vi.spyOn(window, 'clearInterval');
+
+    click('unlink');
+    await settle();
+
+    expect(visibleView()).toBe('unlinked');
+    expect(stopClock).toHaveBeenCalled();
+  });
+});

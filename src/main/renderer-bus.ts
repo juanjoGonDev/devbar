@@ -34,6 +34,12 @@ export interface WindowRegistry {
   readonly logs: Map<string, WindowLike>;
   readonly silenced: Map<string, WindowLike>;
   readonly prescriptConfirm: Map<string, WindowLike>;
+  /**
+   * Subscribers to the renderer stream that are not windows — the event hub
+   * of «Control remoto», which relays it to linked phones. They hear what
+   * the windows hear, and never count as an open window.
+   */
+  readonly listeners: Set<WebContentsLike>;
 }
 
 /** Key of the shared multi-log window (sidebar + one visible log). */
@@ -48,6 +54,7 @@ export function createWindowRegistry(
     logs: new Map(),
     silenced: new Map(),
     prescriptConfirm: new Map(),
+    listeners: new Set(),
   };
 }
 
@@ -69,6 +76,7 @@ export function rendererTargets(registry: WindowRegistry): WebContentsLike[] {
     if (alive(win)) targets.push(win.webContents);
   for (const win of registry.silenced.values())
     if (alive(win)) targets.push(win.webContents);
+  targets.push(...registry.listeners);
   return targets;
 }
 
@@ -82,6 +90,11 @@ export function themeTargets(registry: WindowRegistry): WebContentsLike[] {
   for (const win of registry.prescriptConfirm.values())
     if (alive(win)) targets.push(win.webContents);
   return targets;
+}
+
+/** The resolved theme preference, on its own channel. */
+export function broadcastTheme(registry: WindowRegistry, theme: string): void {
+  for (const wc of themeTargets(registry)) wc.send('settings:theme', theme);
 }
 
 export function sendToRenderers(

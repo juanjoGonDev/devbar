@@ -3371,3 +3371,237 @@ body.prescript-confirm {
 .linkish:hover {
   text-decoration: underline;
 }
+
+/* ── Control remoto (renderer/config/remote-pane.ts) ──────────────────
+   The switch card, the linked-device list and the two pairing dialogs. */
+.remote-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 159, 10, 0.12);
+  font-size: 12px;
+}
+.remote-warning .icon {
+  margin-top: 1px;
+  color: #c76a00;
+}
+:root[data-theme='dark'] .remote-warning .icon {
+  color: #ff9f0a;
+}
+.remote-endpoint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.remote-endpoint[hidden] {
+  display: none;
+}
+.remote-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--bg-row-hover);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.remote-pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.remote-pill.is-on,
+.remote-seen.is-online {
+  color: #1f8f3a;
+}
+.remote-pill.is-on {
+  background: rgba(48, 209, 88, 0.14);
+}
+:root[data-theme='dark'] .remote-pill.is-on,
+:root[data-theme='dark'] .remote-seen.is-online {
+  color: var(--running);
+}
+.remote-address {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  user-select: text;
+}
+.remote-error {
+  margin: 10px 0 0;
+  color: var(--error);
+  font-size: 12px;
+}
+.remote-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.remote-card-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.remote-card-head .spacer {
+  flex: 1;
+}
+.remote-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-row-hover);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.remote-devices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.remote-device {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.remote-device:first-child {
+  border-top: none;
+}
+.remote-device-main {
+  flex: 1;
+  min-width: 0;
+}
+.remote-device-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+}
+.remote-device-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.remote-rename-btn {
+  padding: 2px 5px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+button.remote-rename-btn:hover {
+  background: var(--bg-row-hover);
+  color: inherit;
+}
+.remote-rename {
+  width: 100%;
+  max-width: 280px;
+  padding: 2px 6px;
+  font: inherit;
+  font-weight: 600;
+}
+.remote-device-meta,
+.remote-seen {
+  color: var(--muted);
+  font-size: 11px;
+}
+.remote-device-meta {
+  margin-top: 2px;
+}
+.remote-device-side {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+}
+.remote-empty {
+  margin: 0;
+}
+.modal.remote-modal {
+  width: 440px;
+}
+.remote-pair-body,
+.remote-request-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+/* Always black on white, whatever the theme: a scanner needs the contrast. */
+.remote-qr {
+  width: 220px;
+  height: 220px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--border);
+  transition: opacity 0.2s ease;
+}
+.remote-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.remote-qr.is-used {
+  opacity: 0.2;
+}
+.remote-countdown {
+  margin: 12px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.remote-progress {
+  width: 220px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-row-hover);
+}
+.remote-progress-bar {
+  width: 100%;
+  height: 100%;
+  background: var(--accent);
+  transition: width 1s linear;
+}
+.remote-steps {
+  align-self: stretch;
+  margin: 16px 0 0;
+  padding-left: 20px;
+  font-size: 12px;
+  text-align: left;
+}
+.remote-steps li + li {
+  margin-top: 4px;
+}
+.remote-pair-actions {
+  align-items: center;
+}
+.remote-pair-actions .spacer {
+  flex: 1;
+}
+.remote-request-name {
+  margin: 12px 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.remote-verification {
+  margin: 14px 0 4px;
+  font-family: var(--font-mono);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
