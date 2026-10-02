@@ -20,6 +20,7 @@ function harness(overrides: Partial<ShutdownDeps> = {}) {
     isPrimary: true,
     smokeMode: false,
     repoWatcher: { closeAll: () => calls.push('closeAll') },
+    remoteServer: { close: () => calls.push('remoteClose') },
     preScriptRunner: {
       isRunning: () => false,
       cancel: () => calls.push('cancel'),
@@ -84,6 +85,16 @@ describe('src/main/shutdown.ts', () => {
       await h.controller.cleanup();
       expect(h.calls.slice(0, 2)).toEqual(['releaseGuard', 'closeAll']);
       expect(h.controller.phase()).toBe('done');
+    });
+
+    it('stops the remote-control server with the watchers, before the services', async () => {
+      const h = harness();
+      await h.controller.cleanup();
+      expect(h.calls.slice(0, 3)).toEqual([
+        'releaseGuard',
+        'closeAll',
+        'remoteClose',
+      ]);
     });
 
     it('cancels a running pipeline', async () => {

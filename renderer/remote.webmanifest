@@ -1,0 +1,13 @@
+{
+  "name": "DevBar — Control remoto",
+  "short_name": "DevBar",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f2f2f7",
+  "theme_color": "#f2f2f7",
+  "icons": [
+    { "src": "/remote-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/remote-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -78,7 +78,8 @@ export async function buildApp(
   for (const name of fs.readdirSync(path.join(root, 'renderer'))) {
     // Only the assets the window loads as-is: the renderer's .ts sources are
     // the tsc emit's job, and copying them would ship source into the build.
-    if (name.endsWith('.html') || name.endsWith('.css')) {
+    // The phone page also needs its web manifest and home-screen icons.
+    if (/\.(html|css|webmanifest|png)$/.test(name)) {
       fs.copyFileSync(
         path.join(root, 'renderer', name),
         path.join(rendererOut, name),

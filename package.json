@@ -1,6 +1,6 @@
 {
   "name": "devbar",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Menu bar service launcher for macOS, Windows and Linux",
   "main": "build/src/main.js",
   "packageManager": "pnpm@10.32.1",
@@ -69,6 +69,7 @@
   "dependencies": {
     "electron-store": "11.0.2",
     "menubar": "9.5.3",
+    "qrcode-generator": "2.0.4",
     "uuid": "14.0.2"
   },
   "pnpm": {

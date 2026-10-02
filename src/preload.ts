@@ -123,6 +123,22 @@ const api: DevBarApi = {
     ipcRenderer.invoke('customIcons:addRasterized', icon),
   deleteCustomIcon: (id) => ipcRenderer.invoke('customIcons:delete', { id }),
   onCustomIconsChanged: (cb) => subscribe('customIcons:changed', cb),
+  getRemoteStatus: () => ipcRenderer.invoke('remote:getStatus'),
+  setRemoteEnabled: (enabled) =>
+    ipcRenderer.invoke('remote:setEnabled', { enabled }),
+  setRemoteAutoUnlink: (enabled) =>
+    ipcRenderer.invoke('remote:setAutoUnlink', { enabled }),
+  setRemotePort: (port) => ipcRenderer.invoke('remote:setPort', { port }),
+  renameRemoteDevice: (id, name) =>
+    ipcRenderer.invoke('remote:renameDevice', { id, name }),
+  unlinkRemoteDevice: (id) => ipcRenderer.invoke('remote:unlinkDevice', { id }),
+  startRemotePairing: () => ipcRenderer.invoke('remote:startPairing'),
+  cancelRemotePairing: () => ipcRenderer.invoke('remote:cancelPairing'),
+  respondRemotePairing: (requestId, accept) =>
+    ipcRenderer.invoke('remote:respondPairing', { requestId, accept }),
+  onRemoteChanged: (cb) => subscribe('remote:changed', cb),
+  onRemotePairRequest: (cb) => subscribe('remote:pairRequest', cb),
+  onRemotePairRequestClosed: (cb) => subscribe('remote:pairRequestClosed', cb),
   exportConfig: () => ipcRenderer.invoke('config:export'),
   importConfig: () => ipcRenderer.invoke('config:import'),
   confirmImport: (args) => ipcRenderer.invoke('config:confirmImport', args),

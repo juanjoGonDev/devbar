@@ -3,6 +3,77 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.11.0] - 2026-10-01
+
+### Añadido
+
+- **Control remoto: maneja DevBar desde el móvil en tu red local.** En
+  Configuración hay una sección nueva, «Control remoto», con un interruptor
+  «Permitir control remoto» que viene **desactivado**: hasta que lo enciendes,
+  DevBar no abre nada en la red. Al activarlo se ve la dirección del equipo
+  (por ejemplo `192.168.1.20:47821`) y si el servicio está activo; si el
+  puerto ya lo usa otra aplicación, lo dice ahí mismo y puedes cambiarlo desde
+  ahí. Úsalo solo en redes de confianza: la conexión no va cifrada.
+
+- **Tus grupos, en el bolsillo.** Con el móvil vinculado abres la dirección en
+  el navegador y ves lo mismo que en la barra: cada grupo con su rama y sus
+  servicios, cuánto llevan en marcha, cuántos warnings y errores acumulan y el
+  total de todo el equipo. Desde ahí arrancas y paras cada servicio, lanzas
+  sus acciones, ejecutas el pipeline, cambias de rama (DevBar para y vuelve a
+  arrancar los servicios del grupo, como en la barra) o, con «Detener todo»,
+  paras todo lo que esté en marcha. Todo se actualiza solo al momento, sin
+  recargar; si se corta la red, la página dice «Reconectando…» y vuelve en
+  cuanto puede.
+
+- **Añádela a la pantalla de inicio.** Desde el navegador del móvil, «Añadir
+  a pantalla de inicio» deja un icono de DevBar que abre el panel
+  directamente. Necesita estar en la misma red que el ordenador: sin conexión
+  con él no hay nada que mostrar.
+
+- **Los logs, también desde el móvil.** La pestaña «Logs» muestra las últimas
+  líneas de cualquier comando o acción y sigue añadiendo las nuevas en
+  directo, con filtros para ver solo los warnings o los errores y botones para
+  reiniciar, detener o iniciar el proceso. Mientras lees más arriba no te
+  arrastra al final; «Ir al final» te devuelve.
+
+- **Responde desde el móvil a los scripts que piden confirmación.** Cuando un
+  comando, una acción o un paso del pipeline pregunta «¿Ejecutar…?», el móvil
+  pregunta lo mismo, con su cuenta atrás en el botón que gana si nadie
+  contesta. Vale la primera respuesta: si contestas en el móvil, el diálogo
+  del ordenador se cierra solo, y si contestas en el ordenador, el móvil te
+  lo dice y cierra el suyo.
+
+- **Avisos en el móvil.** La pestaña «Avisos» recoge lo que DevBar te va
+  contando —acciones que terminan o fallan, el pipeline, las acciones
+  programadas, las actualizaciones—, agrupado por día y con un contador de
+  los que aún no has leído en ese dispositivo.
+
+- **Ajustes y actualizaciones desde el móvil.** En «Ajustes» puedes cambiar
+  si DevBar se inicia al arrancar el sistema, si avisa al terminar las
+  acciones y si silencia los warnings o los errores. Si hay una versión nueva
+  ya descargada, «Actualizar» la instala desde el móvil: DevBar se reinicia
+  en el ordenador y la página se reconecta sola. Si la actualización tiene
+  que instalarse a mano, el móvil te indica que lo hagas desde el ordenador.
+
+- **Vincular un móvil es escanear un QR y aceptarlo en el ordenador.**
+  «Añadir dispositivo» muestra un código QR de un solo uso que caduca a los
+  5 minutos y se renueva solo mientras la ventana está abierta; al cerrarla,
+  el código deja de valer. El móvil lo escanea, le pones nombre y DevBar te
+  pregunta en el ordenador si quieres vincularlo, con un código de 6 cifras
+  que debe coincidir con el que ve el móvil. Sin tu «Vincular» no se vincula
+  nada: si no respondes en un minuto, la solicitud se rechaza sola, y si el
+  móvil cancela, el diálogo del ordenador se cierra al momento. Cualquier
+  otro equipo de la red que abra la dirección solo ve que no está vinculado.
+
+- **Lista de dispositivos vinculados.** Cada uno muestra su nombre (que
+  puedes cambiar desde el ordenador o desde el propio móvil), el navegador y
+  sistema desde el que se vinculó, la fecha, y «Conectado ahora» mientras
+  tiene la página abierta o cuándo se conectó por última vez. «Desvincular»
+  le quita el acceso al momento —el móvil se entera y deja de mostrar nada—,
+  y el propio móvil también puede desvincularse. Por defecto, un dispositivo
+  que lleva 30 días sin conectarse se desvincula solo; puedes desactivarlo en
+  «Seguridad».
+
 ## [0.10.0] - 2026-09-30
 
 ### Añadido

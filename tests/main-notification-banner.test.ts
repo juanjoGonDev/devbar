@@ -220,6 +220,32 @@ describe('src/main/notification-banner.ts', () => {
     });
   });
 
+  describe('onNotice', () => {
+    it('hands every banner to the notice log, with its call to action', () => {
+      const notices: unknown[] = [];
+      const h = harness({ onNotice: (notice) => notices.push(notice) });
+
+      h.notifications.showBannerNotification('DevBar — actualización', 'v2', {
+        cta: { label: 'Ver', action: 'open-about' },
+      });
+      h.notifications.showCompletionNotification('DevBar — pre-scripts', 'ok');
+
+      expect(notices).toEqual([
+        { title: 'DevBar — actualización', body: 'v2', action: 'open-about' },
+        { title: 'DevBar — pre-scripts', body: 'ok', action: null },
+      ]);
+    });
+
+    it('logs nothing for a completion the user asked not to hear about', () => {
+      const onNotice = vi.fn();
+      const h = harness({ onNotice, notifySuccessEnabled: () => false });
+
+      h.notifications.showCompletionNotification('DevBar', 'listo');
+
+      expect(onNotice).not.toHaveBeenCalled();
+    });
+  });
+
   describe('runNotificationAction', () => {
     it('maps every known CTA and ignores the rest', () => {
       const h = harness();
