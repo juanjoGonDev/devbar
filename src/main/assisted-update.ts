@@ -1,13 +1,18 @@
 import path from 'node:path';
 import { errorMessage } from './ipc-validators.js';
 import { assistedUpdatePlan } from './update-plan.js';
+import {
+  downloadVerified,
+  type VerifiedDownloadDeps,
+} from './update-download.js';
+import type { PhaseStore } from './update-phase.js';
 import type { AvailableUpdate } from '../domain-types.js';
 
 /**
- * The assisted update — reached when an in-place update is not possible for
- * this install shape (or before a staged download exists): download the
- * platform's artifact to the user's Downloads folder, verify its seal, and
- * hand it to the OS.
+ * The assisted update for macOS and Windows — reached when an in-place update
+ * is not possible for this install shape (or before a staged download exists):
+ * download the platform's artifact to the user's Downloads folder, verify its
+ * seal, and hand it to the OS. Linux has its own flow (linux-update.ts).
  *
  * The seal has to be checked HERE rather than during staging, because the file
  * is opened straight from Downloads — mounted, installed or executed by the OS
@@ -19,6 +24,8 @@ export interface ApplyUpdateResult {
   ok: boolean;
   error?: string;
   cancelled?: boolean;
+  /** Another download/install is already running; nothing was started. */
+  busy?: boolean;
   quitting?: boolean;
   inPlace?: boolean;
   fellBack?: boolean;
@@ -26,21 +33,10 @@ export interface ApplyUpdateResult {
   path?: string | undefined;
 }
 
-export interface AssistedUpdateDeps {
-  repo: { owner: string; repo: string };
+export interface AssistedUpdateDeps extends VerifiedDownloadDeps {
   platform: NodeJS.Platform;
   arch: string;
   downloadsDir: () => string;
-  downloadFile: (url: string, dest: string) => Promise<string>;
-  fetchReleaseSha256: (
-    owner: string,
-    repo: string,
-    version: string,
-  ) => Promise<Map<string, string> | null>;
-  verifySha256: (
-    filePath: string,
-    expected: string | undefined,
-  ) => Promise<boolean>;
   messageBox: (options: {
     type: 'question' | 'warning';
     buttons: string[];
@@ -60,12 +56,12 @@ export interface AssistedUpdateDeps {
   /** Record this exit as an UPDATE so the relaunch may resume the services. */
   markUpdateExit: () => void;
   quitAfter: (ms: number) => void;
-  removeFile: (target: string) => void;
 }
 
 export async function runAssistedUpdate(
   deps: AssistedUpdateDeps,
   update: AvailableUpdate,
+  phase: PhaseStore,
 ): Promise<ApplyUpdateResult> {
   const { version, url } = update;
   const plan = assistedUpdatePlan({
@@ -98,61 +94,43 @@ export async function runAssistedUpdate(
     'DevBar — actualización',
     `Descargando v${version}…`,
   );
-  try {
-    await deps.downloadFile(plan.downloadUrl, dest);
-  } catch (err) {
-    deps.toast('error', `Descarga falló: ${errorMessage(err)}`);
-    deps.openExternal(url); // fall back to the release page
-    return { ok: false, error: errorMessage(err), fellBack: true };
-  }
-
-  try {
-    const manifest = await deps.fetchReleaseSha256(
-      deps.repo.owner,
-      deps.repo.repo,
-      version,
-    );
-    if (!manifest) throw new Error('no se pudo obtener SHA256SUMS.txt');
-    const verified = await deps.verifySha256(dest, manifest.get(plan.destName));
-    if (!verified)
-      throw new Error('el hash de la descarga no coincide con SHA256SUMS.txt');
-  } catch (err) {
+  const download = await downloadVerified(deps, phase, {
+    version,
+    url: plan.downloadUrl,
+    dest,
+    fileName: plan.destName,
+  });
+  if (!download.ok) {
     deps.toast(
       'error',
-      `Integridad de la descarga no verificada: ${errorMessage(err)}`,
+      download.step === 'download'
+        ? `Descarga falló: ${download.reason}`
+        : `Integridad de la descarga no verificada: ${download.reason}`,
     );
-    deps.removeFile(dest);
     deps.openExternal(url); // fall back to the release page
-    return { ok: false, error: errorMessage(err), fellBack: true };
+    return { ok: false, error: download.reason, fellBack: true };
   }
 
-  if (plan.postDownload !== 'hand-off') {
-    const openErr = await deps.openPath(dest);
-    if (openErr) {
-      deps.toast('error', `No se pudo abrir el instalador: ${openErr}`);
-      // macOS: don't quit and strand the user; open the release page.
-      if (plan.postDownload === 'open-and-quit-with-page-fallback')
-        deps.openExternal(url);
-      return { ok: false, error: openErr, fellBack: true };
-    }
-    // Quit so the artifact can replace us. The installer / DMG mount outlives
-    // this process; the single-instance lock means this is the only instance.
-    // A small delay lets the Finder window surface first.
-    deps.markUpdateExit();
-    deps.quitAfter(1200);
-    return { ok: true, path: dest, quitting: true };
+  const openErr = await deps.openPath(dest);
+  if (openErr) {
+    phase.set({
+      state: 'install-failed',
+      version,
+      reason: openErr,
+      path: dest,
+      command: null,
+    });
+    deps.toast('error', `No se pudo abrir el instalador: ${openErr}`);
+    // macOS: don't quit and strand the user; open the release page.
+    if (plan.postDownload === 'open-and-quit-with-page-fallback')
+      deps.openExternal(url);
+    return { ok: false, error: openErr, fellBack: true };
   }
-
-  // Linux package/AppImage: the user installs it with the package manager or a
-  // double-click — no quit needed from us. Deliberately NOT markUpdateExit:
-  // unlike the macOS/Windows branches (which quit within a second of marking),
-  // this path returns and the app keeps running for as long as the user wants.
-  // The exit reason has no reset, so marking here would make EVERY later exit —
-  // including a deliberate tray "Salir" hours afterwards — flush the snapshot
-  // as `update` and resume the services the user just stopped.
-  deps.toast(
-    'ok',
-    `v${version} descargada a ${dest}. Cierra DevBar e instálala/éjecútala.`,
-  );
-  return { ok: true, path: dest };
+  // Quit so the artifact can replace us. The installer / DMG mount outlives
+  // this process; the single-instance lock means this is the only instance.
+  // A small delay lets the Finder window surface first.
+  phase.set({ state: 'restarting', version });
+  deps.markUpdateExit();
+  deps.quitAfter(1200);
+  return { ok: true, path: dest, quitting: true };
 }

@@ -22,6 +22,11 @@ import {
 } from 'electron';
 import { setLinuxAutostart, wasOpenedAtLoginFromArgv } from '../autostart.js';
 import { installedAppPath } from '../self-update.js';
+import {
+  detectLinuxInstallShape,
+  runProcess,
+  type LinuxInstallShape,
+} from './linux-package.js';
 import { isLinux, isMac, isWin } from '../platform.js';
 import { appHome } from '../app-paths.js';
 import { resolvedThemeIsDark, themeWindowBackground } from './theme.js';
@@ -81,6 +86,21 @@ export function createElectronHost(options: ElectronHostOptions) {
   };
 
   let confirmLogo: string | null = null;
+  let installShape: Promise<LinuxInstallShape> | null = null;
+
+  /**
+   * The dialog parent, only while it is on screen: a dialog owned by a hidden
+   * window (the tray popover after it closed) can open invisible on some
+   * Linux window managers, and the click then seems to do nothing.
+   */
+  const shownOwner = (): BrowserWindow | null => {
+    const shown = (win: BrowserWindow | null): win is BrowserWindow =>
+      Boolean(win && !win.isDestroyed() && win.isVisible());
+    const owner = options.dialogOwner();
+    if (shown(owner)) return owner;
+    const focused = BrowserWindow.getFocusedWindow();
+    return shown(focused) ? focused : null;
+  };
 
   /** Assembles the report body the two report actions share. */
   const buildReport = (): {
@@ -171,7 +191,7 @@ export function createElectronHost(options: ElectronHostOptions) {
     },
 
     messageBox: (opts: MessageBoxOptions) => {
-      const owner = options.dialogOwner();
+      const owner = shownOwner();
       return owner
         ? dialog.showMessageBox(owner, opts)
         : dialog.showMessageBox(opts);
@@ -183,13 +203,13 @@ export function createElectronHost(options: ElectronHostOptions) {
         : dialog.showMessageBox(opts);
     },
     openDialog: (opts: OpenDialogOptions) => {
-      const owner = options.dialogOwner();
+      const owner = shownOwner();
       return owner
         ? dialog.showOpenDialog(owner, opts)
         : dialog.showOpenDialog(opts);
     },
     saveDialog: (opts: SaveDialogOptions) => {
-      const owner = options.dialogOwner();
+      const owner = shownOwner();
       return owner
         ? dialog.showSaveDialog(owner, opts)
         : dialog.showSaveDialog(opts);
@@ -208,6 +228,19 @@ export function createElectronHost(options: ElectronHostOptions) {
     decodeImage: (bytes: Buffer): NativeImage =>
       nativeImage.createFromBuffer(bytes),
     removeFile: (target: string): void => fs.rmSync(target, { force: true }),
+    pathExists: (target: string): boolean => fs.existsSync(target),
+    makeExecutable: (target: string): void => fs.chmodSync(target, 0o755),
+    runProcess,
+    /** AppImage, .deb or neither — asked of dpkg once per launch. */
+    linuxInstallShape: (): Promise<LinuxInstallShape> =>
+      (installShape ??= detectLinuxInstallShape({
+        appImage: installedAppPath(),
+        execPath: process.execPath,
+        run: runProcess,
+      })),
+    relaunch: (): void => app.relaunch(),
+    copyText: (text: string): void => clipboard.writeText(text),
+    showItemInFolder: (target: string): void => shell.showItemInFolder(target),
     writeFile: (target: string, contents: string): void =>
       fs.writeFileSync(target, contents),
     updaterFs: {

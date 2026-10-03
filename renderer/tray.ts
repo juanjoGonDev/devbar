@@ -1,15 +1,12 @@
 import './report-uncaught.js';
 import { formatUptime } from './format-uptime.js';
 import { isComboboxOpen, setComboboxHostHooks } from './combobox.js';
-import type {
-  GroupState,
-  PipelineState,
-  UpdateStatus,
-} from '../src/ipc-contract.js';
+import type { GroupState, PipelineState } from '../src/ipc-contract.js';
 import { byId } from './dom.js';
 import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
 import { setTrayHost, showToast } from './tray/host.js';
+import { wireUpdateChip } from './tray/update-chip.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
@@ -396,35 +393,7 @@ if (window.api.getAppVersion) {
     });
 }
 
-// A pending update puts a small red dot on the version chip — same cue as the
-// menubar mark and the one in config, so the user knows where to click.
-function markVersionUpdate(status: UpdateStatus): void {
-  const el = document.getElementById('app-version');
-  if (!el) return;
-  const version = status && status.available ? status.available.version : null;
-  el.classList.toggle('has-update', !!version);
-  el.title = version
-    ? `v${version} disponible — ver changelog`
-    : 'Ver changelog';
-}
-
-if (window.api.getUpdateStatus) {
-  const pushedUpdateStatus = latestWins();
-  const initialUpdateStatus = pushedUpdateStatus.claim();
-  window.api
-    .getUpdateStatus()
-    .then((status) => {
-      // Same race as the group states: a pushed status that landed first
-      // would be undone here, dropping the dot from the version chip until
-      // the next check hours later.
-      if (initialUpdateStatus()) markVersionUpdate(status);
-    })
-    .catch(() => {});
-  window.api.onUpdateStatus((status) => {
-    pushedUpdateStatus.invalidate();
-    markVersionUpdate(status);
-  });
-}
+wireUpdateChip();
 
 installTooltips();
 watchCustomIcons();

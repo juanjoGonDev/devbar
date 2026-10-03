@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   runAssistedUpdate,
   type AssistedUpdateDeps,
 } from '../src/main/assisted-update.js';
+import { createPhaseStore } from '../src/main/update-phase.js';
 import type { AvailableUpdate } from '../src/domain-types.js';
+import type { UpdatePhase } from '../src/ipc-contract.js';
 
 const update: AvailableUpdate = {
   version: '1.3.0',
@@ -23,8 +25,9 @@ function harness(overrides: Partial<AssistedUpdateDeps> = {}) {
     platform: 'darwin',
     arch: 'arm64',
     downloadsDir: () => '/Users/me/Downloads',
-    downloadFile: (_url, dest) => {
+    downloadFile: (_url, dest, options) => {
       calls.push(`download:${dest}`);
+      options?.onProgress?.({ received: 1, total: 2 });
       return Promise.resolve(dest);
     },
     fetchReleaseSha256: () =>
@@ -40,14 +43,23 @@ function harness(overrides: Partial<AssistedUpdateDeps> = {}) {
     removeFile: (target) => calls.push(`remove:${target}`),
     ...overrides,
   };
-  return { deps, calls, toasts };
+  const phases: UpdatePhase[] = [];
+  const phase = createPhaseStore((next) => phases.push(next));
+  return {
+    deps,
+    calls,
+    toasts,
+    phases,
+    phase,
+    run: (target: AvailableUpdate) => runAssistedUpdate(deps, target, phase),
+  };
 }
 
 describe('src/main/assisted-update.ts', () => {
   describe('runAssistedUpdate', () => {
     it('downloads, verifies, opens the installer and quits on macOS', async () => {
       const h = harness();
-      await expect(runAssistedUpdate(h.deps, update)).resolves.toEqual({
+      await expect(h.run(update)).resolves.toEqual({
         ok: true,
         path: '/Users/me/Downloads/DevBar-1.3.0-macos-arm64.dmg',
         quitting: true,
@@ -58,7 +70,7 @@ describe('src/main/assisted-update.ts', () => {
 
     it('does nothing when the user declines the dialog', async () => {
       const h = harness({ messageBox: () => Promise.resolve({ response: 0 }) });
-      await expect(runAssistedUpdate(h.deps, update)).resolves.toEqual({
+      await expect(h.run(update)).resolves.toEqual({
         ok: false,
         cancelled: true,
       });
@@ -69,7 +81,7 @@ describe('src/main/assisted-update.ts', () => {
       const h = harness({
         messageBox: () => Promise.reject(new Error('no window')),
       });
-      await expect(runAssistedUpdate(h.deps, update)).resolves.toEqual({
+      await expect(h.run(update)).resolves.toEqual({
         ok: false,
         error: 'no window',
       });
@@ -78,7 +90,7 @@ describe('src/main/assisted-update.ts', () => {
     it('opens the release page when this platform has no artifact', async () => {
       const h = harness();
       await expect(
-        runAssistedUpdate(h.deps, { ...update, dmgUrl: null, debUrl: null }),
+        h.run({ ...update, dmgUrl: null, debUrl: null }),
       ).resolves.toEqual({ ok: true, opened: 'page' });
       expect(h.calls).toEqual([`external:${update.url}`]);
     });
@@ -87,7 +99,7 @@ describe('src/main/assisted-update.ts', () => {
       const h = harness({
         downloadFile: () => Promise.reject(new Error('ECONNRESET')),
       });
-      await expect(runAssistedUpdate(h.deps, update)).resolves.toMatchObject({
+      await expect(h.run(update)).resolves.toMatchObject({
         ok: false,
         error: 'ECONNRESET',
         fellBack: true,
@@ -97,7 +109,7 @@ describe('src/main/assisted-update.ts', () => {
 
     it('deletes the artifact and falls back when the manifest is missing', async () => {
       const h = harness({ fetchReleaseSha256: () => Promise.resolve(null) });
-      const result = await runAssistedUpdate(h.deps, update);
+      const result = await h.run(update);
       expect(result).toMatchObject({ fellBack: true });
       expect(h.calls).toContain(
         'remove:/Users/me/Downloads/DevBar-1.3.0-macos-arm64.dmg',
@@ -106,14 +118,14 @@ describe('src/main/assisted-update.ts', () => {
 
     it('never opens an artifact whose digest does not match', async () => {
       const h = harness({ verifySha256: () => Promise.resolve(false) });
-      const result = await runAssistedUpdate(h.deps, update);
+      const result = await h.run(update);
       expect(result).toMatchObject({ fellBack: true });
       expect(h.toasts[0]?.message).toMatch(/Integridad/);
     });
 
     it('opens the release page when the macOS mount fails, rather than stranding the user', async () => {
       const h = harness({ openPath: () => Promise.resolve('no mountable') });
-      await expect(runAssistedUpdate(h.deps, update)).resolves.toMatchObject({
+      await expect(h.run(update)).resolves.toMatchObject({
         ok: false,
         error: 'no mountable',
         fellBack: true,
@@ -136,26 +148,51 @@ describe('src/main/assisted-update.ts', () => {
         ...update,
         setupUrl: 'https://github.test/DevBar-1.3.0-win-x64-setup.exe',
       };
-      await expect(
-        runAssistedUpdate(h.deps, windowsUpdate),
-      ).resolves.toMatchObject({ ok: false, fellBack: true });
+      await expect(h.run(windowsUpdate)).resolves.toMatchObject({
+        ok: false,
+        fellBack: true,
+      });
       expect(h.calls).not.toContain(`external:${update.url}`);
     });
 
-    it('hands a Linux package over and keeps running', async () => {
+    it('walks the phases with progress on the way to the installer', async () => {
+      const h = harness();
+      await h.run(update);
+      expect(h.phases.map((p) => p.state)).toEqual([
+        'downloading',
+        'downloading',
+        'verifying',
+        'restarting',
+      ]);
+      expect(h.phases[1]).toMatchObject({ received: 1, total: 2 });
+    });
+
+    it('leaves the failure visible in the phase, not only in a toast', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const h = harness({
-        platform: 'linux',
-        arch: 'x64',
-        fetchReleaseSha256: () =>
-          Promise.resolve(new Map([['DevBar-1.3.0-linux-x64.deb', 'hash']])),
+        downloadFile: () => Promise.reject(new Error('ECONNRESET')),
       });
-      await expect(runAssistedUpdate(h.deps, update)).resolves.toEqual({
-        ok: true,
-        path: '/Users/me/Downloads/DevBar-1.3.0-linux-x64.deb',
+      await h.run(update);
+      expect(h.phase.get()).toEqual({
+        state: 'download-failed',
+        version: '1.3.0',
+        reason: 'ECONNRESET',
       });
-      // Deliberately NOT an update exit: the app keeps running afterwards.
-      expect(h.calls).not.toContain('markUpdateExit');
-      expect(h.toasts[0]?.kind).toBe('ok');
+      vi.restoreAllMocks();
+    });
+
+    it('marks an installer that would not open as an install failure', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const h = harness({ openPath: () => Promise.resolve('no mountable') });
+      await h.run(update);
+      expect(h.phase.get()).toEqual({
+        state: 'install-failed',
+        version: '1.3.0',
+        reason: 'no mountable',
+        path: '/Users/me/Downloads/DevBar-1.3.0-macos-arm64.dmg',
+        command: null,
+      });
+      vi.restoreAllMocks();
     });
   });
 });
