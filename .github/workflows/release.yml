@@ -7,20 +7,25 @@ on:
   # No dispatch inputs: any workflow input is a CodeQL taint source, and a
   # tainted ref reaching a checkout/cache step in this default-branch
   # workflow is a cache-poisoning alert. The dispatch path recovers the
-  # version currently in package.json on main (detect resolves and verifies
-  # the introducing commit against the live tag and release state), so it
-  # needs no operator-supplied data.
+  # version currently in package.json on main (detect checks it against the
+  # live tag and release state), so it needs no operator-supplied data.
   workflow_dispatch:
 
 permissions: read-all
 
+# A newer push to main cancels the in-flight release entirely: a merged PR
+# stack lands as several pushes, and only the last HEAD carries every PR.
+# Cancelling is safe because the release is built as a DRAFT and only
+# published (which creates the tag) as the very last step; the cleanup job
+# removes what a cancelled run left behind, and the next detect self-heals
+# whatever the cleanup could not.
 concurrency:
   group: release-${{ github.repository }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   detect:
-    name: Resolve version-introducing commit
+    name: Decide whether HEAD publishes the current version
     if: >-
       github.repository == 'juanjoGonDev/devbar' &&
       github.event.repository.fork == false &&
@@ -33,9 +38,8 @@ jobs:
     outputs:
       publish: ${{ steps.release.outputs.publish }}
       version: ${{ steps.release.outputs.version }}
-      release_sha: ${{ steps.release.outputs.release_sha }}
       release_tag: ${{ steps.release.outputs.release_tag }}
-      tag_exists: ${{ steps.release.outputs.tag_exists }}
+      tag_at_head: ${{ steps.release.outputs.tag_at_head }}
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,159 +52,94 @@ jobs:
         with:
           node-version: 22
 
-      - name: Resolve version change or recovery release
+      - name: Decide release for the current version
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-
-          read_package_version() {
-            git show "$1:package.json" 2>/dev/null \
-              | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version" \
-              2>/dev/null || true
-          }
 
           current_version=$(node -p "require('./package.json').version")
           if ! [[ "$current_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "::error title=Invalid release version::$current_version is not a stable semantic version."
             exit 1
           fi
-
-          # Recovery (workflow_dispatch) re-resolves the version currently in
-          # package.json against the full first-parent history; a push
-          # resolves only the version that push introduced.
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            release_range="$GITHUB_SHA"
-          else
-            zero_sha=0000000000000000000000000000000000000000
-            previous_version=
-            if [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "$zero_sha" ]]; then
-              previous_version=$(read_package_version "$BEFORE_SHA")
-            fi
-            if [[ -z "$previous_version" || "$previous_version" == "$current_version" ]]; then
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-              echo "package.json version did not change on this push."
-              exit 0
-            fi
-            release_range="${BEFORE_SHA}..${GITHUB_SHA}"
-          fi
-
-          release_sha=
-          while IFS= read -r candidate_sha; do
-            candidate_version=$(read_package_version "$candidate_sha")
-            if [[ "$candidate_version" != "$current_version" ]]; then
-              continue
-            fi
-
-            parent_sha=$(git rev-parse "${candidate_sha}^1" 2>/dev/null || true)
-            parent_version=
-            if [[ -n "$parent_sha" ]]; then
-              parent_version=$(read_package_version "$parent_sha")
-            fi
-            if [[ "$parent_version" != "$current_version" ]]; then
-              release_sha="$candidate_sha"
-              break
-            fi
-          done < <(git rev-list --first-parent "$release_range" -- package.json)
-
-          if [[ -z "$release_sha" ]]; then
-            echo "::error title=Unresolved release commit::No default-branch commit introduced package version $current_version."
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor "$release_sha" "$GITHUB_SHA"; then
-            echo "::error title=Invalid release commit::$release_sha is not an ancestor of $GITHUB_SHA."
-            exit 1
-          fi
-
-          if [[ "$release_sha" != "$GITHUB_SHA" ]]; then
-            echo "::warning title=Release commit is not HEAD::The version-introducing commit $release_sha differs from the push HEAD $GITHUB_SHA; the build uses HEAD."
-          fi
-
           release_tag="v${current_version}"
-          expected_assets=(
-            "DevBar-${current_version}-macos-arm64.dmg"
-            "DevBar-${current_version}-macos-arm64.zip"
-            "DevBar-${current_version}-macos-x64.dmg"
-            "DevBar-${current_version}-macos-x64.zip"
-            "DevBar-${current_version}-win-x64-setup.exe"
-            "DevBar-${current_version}-win-x64-portable.exe"
-            "DevBar-${current_version}-win-arm64-setup.exe"
-            "DevBar-${current_version}-win-arm64-portable.exe"
-            "DevBar-${current_version}-linux-x64.AppImage"
-            "DevBar-${current_version}-linux-x64.deb"
-            "DevBar-${current_version}-linux-arm64.AppImage"
-            "DevBar-${current_version}-linux-arm64.deb"
-            "DevBar-${current_version}-linux-armv7.AppImage"
-            "DevBar-${current_version}-linux-armv7.deb"
-            "SHA256SUMS.txt"
-          )
 
-          if release_json=$(gh release view "$release_tag" --json tagName,isDraft,isPrerelease,assets 2>/dev/null); then
-            if [[ "$(jq -r .isDraft <<<"$release_json")" != "false" || "$(jq -r .isPrerelease <<<"$release_json")" != "false" ]]; then
-              echo "::error title=Release metadata mismatch::$release_tag must be a published stable release."
-              exit 1
-            fi
+          # Every release carrying this tag name. A draft has no git tag yet
+          # and several drafts may share one name. Best effort: drafts are
+          # only listed for tokens with push access, so the publish job
+          # re-reads this state with contents: write before acting on it.
+          release_state=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            | jq -s -r --arg tag "$release_tag" '
+                [add // [] | .[] | select(.tag_name == $tag)] as $matches
+                | if any($matches[]; .draft == false) then "published"
+                  elif ($matches | length) > 0 then "draft"
+                  else "none" end')
 
-            git fetch --force origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
-            existing_sha=$(git rev-list -n 1 "$release_tag")
-            if [[ "$existing_sha" != "$release_sha" ]]; then
-              echo "::error title=Release target mismatch::$release_tag points to $existing_sha instead of $release_sha."
-              exit 1
-            fi
+          latest_release_tag=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
 
-            mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"$release_json" | sort)
-            mapfile -t sorted_expected_assets < <(printf '%s\n' "${expected_assets[@]}" | sort)
-            if [[ "${actual_assets[*]}" != "${sorted_expected_assets[*]}" ]]; then
-              echo "::error title=Release asset mismatch::$release_tag does not contain the exact expected installer set."
-              exit 1
-            fi
-
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "GitHub Release $release_tag already exists with the expected target and assets."
-            exit 0
-          fi
-
-          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
-            latest_release_tag=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
-            if [[ -n "$latest_release_tag" ]]; then
-              if [[ "$latest_release_tag" == "$release_tag" ]]; then
-                echo "::error title=Release state mismatch::$release_tag is listed as the latest stable release but could not be resolved by tag."
-                exit 1
-              fi
-              git fetch --force origin "refs/tags/${latest_release_tag}:refs/tags/${latest_release_tag}"
-              latest_release_sha=$(git rev-list -n 1 "$latest_release_tag")
-              if ! git merge-base --is-ancestor "$latest_release_sha" "$release_sha"; then
-                echo "::error title=Invalid release impact baseline::$latest_release_tag is not an ancestor of $release_sha."
-                exit 1
-              fi
-              impact_json=$(node --experimental-strip-types scripts/release-impact-policy.ts pending "$latest_release_tag" "$release_sha")
-              if [[ "$(jq -r .publish <<<"$impact_json")" != "true" ]]; then
-                echo "publish=false" >> "$GITHUB_OUTPUT"
-                echo "No release-impacting commits exist between $latest_release_tag and $release_sha; installer build skipped."
-                exit 0
-              fi
-            fi
-          fi
-
-          tag_exists=false
+          existing_tag_sha=
           if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then
             git fetch --force origin "refs/tags/${release_tag}:refs/tags/${release_tag}"
-            existing_sha=$(git rev-list -n 1 "$release_tag")
-            if [[ "$existing_sha" != "$release_sha" ]]; then
-              echo "::error title=Release tag collision::$release_tag points to $existing_sha instead of $release_sha."
-              exit 1
-            fi
-            tag_exists=true
+            existing_tag_sha=$(git rev-list -n 1 "$release_tag")
           fi
 
-          echo "publish=true" >> "$GITHUB_OUTPUT"
-          echo "version=$current_version" >> "$GITHUB_OUTPUT"
-          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
-          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
-          echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
+          # A push publishes only with release-impacting commits since the
+          # latest published release; recovery (workflow_dispatch) skips the
+          # check, and a published current version never needs it.
+          pending_impact=unknown
+          if [[ "$EVENT_NAME" == "push" && "$release_state" != "published" && -n "$latest_release_tag" ]]; then
+            git fetch --force origin "refs/tags/${latest_release_tag}:refs/tags/${latest_release_tag}"
+            latest_release_sha=$(git rev-list -n 1 "$latest_release_tag")
+            if ! git merge-base --is-ancestor "$latest_release_sha" "$GITHUB_SHA"; then
+              echo "::error title=Invalid release impact baseline::$latest_release_tag is not an ancestor of $GITHUB_SHA."
+              exit 1
+            fi
+            impact_json=$(node --experimental-strip-types scripts/release-impact-policy.ts pending "$latest_release_tag" "$GITHUB_SHA")
+            pending_impact=$(jq -r .publish <<<"$impact_json")
+          fi
+
+          decision=$(node --experimental-strip-types scripts/release-decision.ts \
+            --current "$current_version" \
+            --latest "${latest_release_tag#v}" \
+            --state "$release_state" \
+            --tag-sha "$existing_tag_sha" \
+            --head "$GITHUB_SHA" \
+            --event "$EVENT_NAME" \
+            --impact "$pending_impact")
+          action=$(jq -r .action <<<"$decision")
+          reason=$(jq -r .reason <<<"$decision")
+
+          case "$action" in
+            fail)
+              echo "::error title=Release decision failed::$reason"
+              exit 1
+              ;;
+            skip)
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "$reason"
+              exit 0
+              ;;
+            heal)
+              echo "::warning title=Healing interrupted release::$reason"
+              ;;
+            publish)
+              echo "$reason"
+              ;;
+            *)
+              echo "::error title=Unknown release decision::$action"
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "publish=true"
+            echo "version=$current_version"
+            echo "release_tag=$release_tag"
+            echo "tag_at_head=$(jq -r .tagAtHead <<<"$decision")"
+          } >> "$GITHUB_OUTPUT"
 
   build-macos:
     name: Build & verify macOS installers
@@ -213,9 +152,8 @@ jobs:
     steps:
       # Plain default-branch checkout (the event sha — an immutable ref).
       # CodeQL treats any checkout whose ref comes from another job's
-      # outputs as untrusted code in this cache-writable workflow; in the
-      # normal flow the version-introducing commit IS the push HEAD, and
-      # detect warns when they differ.
+      # outputs as untrusted code in this cache-writable workflow; the
+      # release tag targets this same event sha, so build and tag agree.
       - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -267,9 +205,8 @@ jobs:
     steps:
       # Plain default-branch checkout (the event sha — an immutable ref).
       # CodeQL treats any checkout whose ref comes from another job's
-      # outputs as untrusted code in this cache-writable workflow; in the
-      # normal flow the version-introducing commit IS the push HEAD, and
-      # detect warns when they differ.
+      # outputs as untrusted code in this cache-writable workflow; the
+      # release tag targets this same event sha, so build and tag agree.
       - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -371,9 +308,8 @@ jobs:
     steps:
       # Plain default-branch checkout (the event sha — an immutable ref).
       # CodeQL treats any checkout whose ref comes from another job's
-      # outputs as untrusted code in this cache-writable workflow; in the
-      # normal flow the version-introducing commit IS the push HEAD, and
-      # detect warns when they differ.
+      # outputs as untrusted code in this cache-writable workflow; the
+      # release tag targets this same event sha, so build and tag agree.
       - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -455,9 +391,8 @@ jobs:
     steps:
       # Plain default-branch checkout (the event sha — an immutable ref).
       # CodeQL treats any checkout whose ref comes from another job's
-      # outputs as untrusted code in this cache-writable workflow; in the
-      # normal flow the version-introducing commit IS the push HEAD, and
-      # detect warns when they differ.
+      # outputs as untrusted code in this cache-writable workflow; the
+      # release tag targets this same event sha, so build and tag agree.
       - name: Checkout release HEAD
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -514,6 +449,14 @@ jobs:
     # derived from another job's outputs (CodeQL privileged-checkout rule).
     # Everything this job needs arrives as a verified build artifact, and
     # tag/release operations use the GitHub API instead of local git.
+    #
+    # Draft first, publish last: the release is created as a DRAFT (GitHub
+    # creates no git tag for a draft, and drafts are excluded from
+    # /releases/latest and from unauthenticated listings, so the in-app
+    # updater never sees one), every asset is uploaded and checked against
+    # SHA256SUMS.txt, and only the final step flips it to published, which
+    # is when GitHub creates the tag at the event sha. A run cancelled before
+    # that step leaves at most a draft, which cleanup or the next run removes.
     needs: ['detect', 'assemble']
     if: needs.detect.outputs.publish == 'true'
     runs-on: ubuntu-latest
@@ -522,10 +465,12 @@ jobs:
     permissions:
       contents: write
     # No checkout in this job, so `gh` has no local .git to infer the repo
-    # from. GH_REPO gives every invocation — including `gh release view` in
-    # the Verify published release step, which omits --repo — the context.
+    # from. GH_REPO gives every invocation the context.
     env:
       GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.detect.outputs.version }}
+      RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
     steps:
       - name: Download verified release set
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -533,115 +478,190 @@ jobs:
           name: release-final-${{ needs.detect.outputs.version }}
           path: dist/release
 
-      - name: Create immutable release tag
-        if: needs.detect.outputs.tag_exists != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.detect.outputs.release_sha }}
+      - name: Verify the release set against SHA256SUMS
         run: |
           set -euo pipefail
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            # commits/tags/{tag} resolves the ref (dereferencing annotated
-            # tags) and returns the commit — .sha matches detect's
-            # 'git rev-list -n 1' comparison for both lightweight and
-            # annotated tags.
-            existing_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/tags/${RELEASE_TAG}" --jq '.sha')
-            [[ "$existing_sha" == "$RELEASE_SHA" ]]
-            exit 0
-          fi
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-            -f ref="refs/tags/${RELEASE_TAG}" \
-            -f sha="$RELEASE_SHA" >/dev/null
+          printf '%s\n' \
+            "DevBar-${VERSION}-macos-arm64.dmg" \
+            "DevBar-${VERSION}-macos-arm64.zip" \
+            "DevBar-${VERSION}-macos-x64.dmg" \
+            "DevBar-${VERSION}-macos-x64.zip" \
+            "DevBar-${VERSION}-win-x64-setup.exe" \
+            "DevBar-${VERSION}-win-x64-portable.exe" \
+            "DevBar-${VERSION}-win-arm64-setup.exe" \
+            "DevBar-${VERSION}-win-arm64-portable.exe" \
+            "DevBar-${VERSION}-linux-x64.AppImage" \
+            "DevBar-${VERSION}-linux-x64.deb" \
+            "DevBar-${VERSION}-linux-arm64.AppImage" \
+            "DevBar-${VERSION}-linux-arm64.deb" \
+            "DevBar-${VERSION}-linux-armv7.AppImage" \
+            "DevBar-${VERSION}-linux-armv7.deb" \
+            "SHA256SUMS.txt" \
+            | LC_ALL=C sort > "$RUNNER_TEMP/expected-assets.txt"
 
-      - name: Create or validate GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.detect.outputs.version }}
-          RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.detect.outputs.release_sha }}
+          cd dist/release
+          find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort | diff -u "$RUNNER_TEMP/expected-assets.txt" -
+          sha256sum --check --strict SHA256SUMS.txt
+          sed -E 's/^[0-9a-f]{64} [ *]//' SHA256SUMS.txt | LC_ALL=C sort \
+            | diff -u <(grep -vx 'SHA256SUMS.txt' "$RUNNER_TEMP/expected-assets.txt") -
+
+      - name: Remove unpublished leftovers of an interrupted run
         run: |
           set -euo pipefail
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$RELEASE_SHA" \
-              --title "DevBar $RELEASE_TAG" \
-              --generate-notes \
-              "dist/release/DevBar-$VERSION-macos-arm64.dmg" \
-              "dist/release/DevBar-$VERSION-macos-arm64.zip" \
-              "dist/release/DevBar-$VERSION-macos-x64.dmg" \
-              "dist/release/DevBar-$VERSION-macos-x64.zip" \
-              "dist/release/DevBar-$VERSION-win-x64-setup.exe" \
-              "dist/release/DevBar-$VERSION-win-x64-portable.exe" \
-              "dist/release/DevBar-$VERSION-win-arm64-setup.exe" \
-              "dist/release/DevBar-$VERSION-win-arm64-portable.exe" \
-              "dist/release/DevBar-$VERSION-linux-x64.AppImage" \
-              "dist/release/DevBar-$VERSION-linux-x64.deb" \
-              "dist/release/DevBar-$VERSION-linux-arm64.AppImage" \
-              "dist/release/DevBar-$VERSION-linux-arm64.deb" \
-              "dist/release/DevBar-$VERSION-linux-armv7.AppImage" \
-              "dist/release/DevBar-$VERSION-linux-armv7.deb" \
-              "dist/release/SHA256SUMS.txt"
+          # Re-read the live state with write access (detect may not see
+          # drafts). A published release is never touched: abort instead.
+          releases=$(gh api --paginate "repos/${GH_REPO}/releases?per_page=100" \
+            | jq -s -c --arg tag "$RELEASE_TAG" '[add // [] | .[] | select(.tag_name == $tag) | {id, draft}]')
+          if jq -e 'any(.[]; .draft == false)' <<<"$releases" >/dev/null; then
+            echo "::error title=Release already published::$RELEASE_TAG is published; it is never touched."
+            exit 1
           fi
-          # The tag targets the version-introducing commit, but the
-          # artifacts are always built from the event HEAD. When the two
-          # differ, say which commit the binaries actually came from.
-          if [ "$RELEASE_SHA" != "$GITHUB_SHA" ]; then
-            body=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body)
-            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-              --notes "$(printf '%s\n\n---\nBuilt from commit: %s (release tag targets %s, the version-introducing commit).' "$body" "$GITHUB_SHA" "$RELEASE_SHA")"
+          for release_id in $(jq -r '.[].id' <<<"$releases"); do
+            echo "Deleting leftover draft release $release_id for $RELEASE_TAG."
+            gh api --method DELETE "repos/${GH_REPO}/releases/${release_id}" >/dev/null \
+              || echo "Draft $release_id is already gone."
+          done
+
+          if gh api "repos/${GH_REPO}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            # commits/tags/{tag} dereferences annotated tags to the commit.
+            tag_sha=$(gh api "repos/${GH_REPO}/commits/tags/${RELEASE_TAG}" --jq '.sha')
+            if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "::warning title=Leftover release tag::Deleting unpublished $RELEASE_TAG at $tag_sha; the release is tagged at $GITHUB_SHA."
+              gh api --method DELETE "repos/${GH_REPO}/git/refs/tags/${RELEASE_TAG}" >/dev/null
+            fi
           fi
 
-      - name: Verify published release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.detect.outputs.version }}
-          RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
-          RELEASE_SHA: ${{ needs.detect.outputs.release_sha }}
+      - name: Create draft release with every asset
+        id: draft
         run: |
           set -euo pipefail
-          release_json=$(gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease,assets,url)
-          [[ "$(jq -r .tagName <<<"$release_json")" == "$RELEASE_TAG" ]]
-          [[ "$(jq -r .isDraft <<<"$release_json")" == "false" ]]
-          [[ "$(jq -r .isPrerelease <<<"$release_json")" == "false" ]]
+          mapfile -t assets < "$RUNNER_TEMP/expected-assets.txt"
+          gh release create "$RELEASE_TAG" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "DevBar $RELEASE_TAG" \
+            --generate-notes \
+            "${assets[@]/#/dist/release/}"
 
-          expected_assets=(
-            "DevBar-${VERSION}-macos-arm64.dmg"
-            "DevBar-${VERSION}-macos-arm64.zip"
-            "DevBar-${VERSION}-macos-x64.dmg"
-            "DevBar-${VERSION}-macos-x64.zip"
-            "DevBar-${VERSION}-win-x64-setup.exe"
-            "DevBar-${VERSION}-win-x64-portable.exe"
-            "DevBar-${VERSION}-win-arm64-setup.exe"
-            "DevBar-${VERSION}-win-arm64-portable.exe"
-            "DevBar-${VERSION}-linux-x64.AppImage"
-            "DevBar-${VERSION}-linux-x64.deb"
-            "DevBar-${VERSION}-linux-arm64.AppImage"
-            "DevBar-${VERSION}-linux-arm64.deb"
-            "DevBar-${VERSION}-linux-armv7.AppImage"
-            "DevBar-${VERSION}-linux-armv7.deb"
-            "SHA256SUMS.txt"
-          )
-          actual_assets=()
-          while IFS= read -r asset; do actual_assets+=("$asset"); done \
-            < <(jq -r '.assets[].name' <<<"$release_json" | sort)
-          sorted_expected_assets=()
-          while IFS= read -r asset; do sorted_expected_assets+=("$asset"); done \
-            < <(printf '%s\n' "${expected_assets[@]}" | sort)
-          [[ "${actual_assets[*]}" == "${sorted_expected_assets[*]}" ]]
+          release_id=$(gh api --paginate "repos/${GH_REPO}/releases?per_page=100" \
+            | jq -s -r --arg tag "$RELEASE_TAG" '
+                [add // [] | .[] | select(.tag_name == $tag and .draft)]
+                | if length == 1 then .[0].id else error("expected exactly one draft for \($tag), found \(length)") end')
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
 
-          # commits/tags/{tag} resolves the ref (dereferencing annotated
-          # tags): compare the tag's COMMIT, matching detect's
-          # 'git rev-list -n 1'.
-          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/tags/${RELEASE_TAG}" --jq '.sha')
-          [[ "$tag_sha" == "$RELEASE_SHA" ]]
+      - name: Verify draft assets against SHA256SUMS
+        env:
+          RELEASE_ID: ${{ steps.draft.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          release_json=$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}")
+          [[ "$(jq -r .draft <<<"$release_json")" == "true" ]]
+          [[ "$(jq -r .prerelease <<<"$release_json")" == "false" ]]
+          [[ "$(jq -r .tag_name <<<"$release_json")" == "$RELEASE_TAG" ]]
 
-          release_url=$(jq -r .url <<<"$release_json")
+          jq -r '.assets[].name' <<<"$release_json" | LC_ALL=C sort \
+            | diff -u "$RUNNER_TEMP/expected-assets.txt" -
+
+          while IFS= read -r name; do
+            asset=$(jq -c --arg name "$name" '.assets[] | select(.name == $name)' <<<"$release_json")
+            [[ "$(jq -r .state <<<"$asset")" == "uploaded" ]]
+            [[ "$(jq -r .size <<<"$asset")" == "$(stat -c %s "dist/release/$name")" ]]
+            # Asset digests are reported by GitHub for recent uploads; when
+            # present they must match the local file byte for byte.
+            digest=$(jq -r '.digest // empty' <<<"$asset")
+            if [[ -n "$digest" ]]; then
+              [[ "$digest" == "sha256:$(sha256sum "dist/release/$name" | cut -d' ' -f1)" ]]
+            fi
+          done < "$RUNNER_TEMP/expected-assets.txt"
+
+          sums_id=$(jq -r '.assets[] | select(.name == "SHA256SUMS.txt") | .id' <<<"$release_json")
+          gh api -H 'Accept: application/octet-stream' "repos/${GH_REPO}/releases/assets/${sums_id}" \
+            > "$RUNNER_TEMP/remote-SHA256SUMS.txt"
+          cmp "$RUNNER_TEMP/remote-SHA256SUMS.txt" dist/release/SHA256SUMS.txt
+
+      # Final step of the final job. Publishing creates the tag at the draft's
+      # target (the event sha). The API is addressed by release id: the
+      # equivalent of `gh release edit --draft=false`, without any ambiguity
+      # between drafts that share a tag name.
+      - name: Publish the verified draft
+        env:
+          RELEASE_ID: ${{ steps.draft.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GH_REPO}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            tag_sha=$(gh api "repos/${GH_REPO}/commits/tags/${RELEASE_TAG}" --jq '.sha')
+            if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "::error title=Release tag collision::$RELEASE_TAG appeared at $tag_sha instead of $GITHUB_SHA."
+              exit 1
+            fi
+          fi
+
+          gh api --method PATCH "repos/${GH_REPO}/releases/${RELEASE_ID}" -F draft=false >/dev/null
+
+          release_json=$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}")
+          [[ "$(jq -r .draft <<<"$release_json")" == "false" ]]
+          tag_sha=$(gh api "repos/${GH_REPO}/commits/tags/${RELEASE_TAG}" --jq '.sha')
+          [[ "$tag_sha" == "$GITHUB_SHA" ]]
           {
             echo "### DevBar release published"
-            echo "- Release: $release_url"
+            echo "- Release: $(jq -r .html_url <<<"$release_json")"
             echo "- Tag: $RELEASE_TAG"
-            echo "- Commit: $RELEASE_SHA"
-            echo "- Assets: ${actual_assets[*]}"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Assets: $(jq -r '[.assets[].name] | join(" ")' <<<"$release_json")"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup:
+    name: Remove this run's unpublished release leftovers
+    # Runs when a newer push cancels this run or any release job fails.
+    # GitHub still runs cancelled() jobs on cancellation, but briefly, so
+    # this stays quick and idempotent; the next run's publish job heals
+    # whatever this job could not finish. It only ever deletes a DRAFT that
+    # this run created (target = this run's sha) and a tag this run created;
+    # it never deletes or edits a published release or its tag.
+    needs:
+      [
+        'detect',
+        'build-macos',
+        'build-windows',
+        'build-linux',
+        'assemble',
+        'publish',
+      ]
+    if: (cancelled() || failure()) && needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.detect.outputs.release_tag }}
+      TAG_AT_HEAD: ${{ needs.detect.outputs.tag_at_head }}
+    steps:
+      - name: Delete this run's draft release and unpublished tag
+        run: |
+          set -euo pipefail
+          releases=$(gh api --paginate "repos/${GH_REPO}/releases?per_page=100" \
+            | jq -s -c --arg tag "$RELEASE_TAG" '[add // [] | .[] | select(.tag_name == $tag) | {id, draft, target_commitish}]')
+          if jq -e 'any(.[]; .draft == false)' <<<"$releases" >/dev/null; then
+            echo "$RELEASE_TAG is published; nothing is touched."
+            exit 0
+          fi
+
+          for release_id in $(jq -r --arg sha "$GITHUB_SHA" '.[] | select(.draft and .target_commitish == $sha) | .id' <<<"$releases"); do
+            echo "Deleting draft release $release_id for $RELEASE_TAG."
+            gh api --method DELETE "repos/${GH_REPO}/releases/${release_id}" >/dev/null \
+              || echo "Draft $release_id is already gone."
+          done
+
+          # Only a tag this run created: it points to this run's sha and did
+          # not already point there when detect ran.
+          if [[ "$TAG_AT_HEAD" != "true" ]] \
+            && gh api "repos/${GH_REPO}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            tag_sha=$(gh api "repos/${GH_REPO}/commits/tags/${RELEASE_TAG}" --jq '.sha')
+            if [[ "$tag_sha" == "$GITHUB_SHA" ]]; then
+              echo "Deleting unpublished tag $RELEASE_TAG at $tag_sha."
+              gh api --method DELETE "repos/${GH_REPO}/git/refs/tags/${RELEASE_TAG}" >/dev/null \
+                || echo "Tag $RELEASE_TAG is already gone."
+            fi
+          fi
