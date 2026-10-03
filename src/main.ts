@@ -30,6 +30,7 @@ import { ICON_BATTERY } from './icon-battery.js';
 import { withSpanishSearch } from './icon-search.js';
 import { createAppWindows } from './main/app-windows.js';
 import { createConfirmQueue } from './main/confirm-queue.js';
+import { startMainDiagnostics } from './main/crash-reporting.js';
 import { registerDevPanel } from './main/dev-panel.js';
 import { downloadFile } from './main/download-file.js';
 import { createElectronHost } from './main/electron-host.js';
@@ -92,15 +93,9 @@ const host = createElectronHost({
     BrowserWindow.getFocusedWindow(),
 });
 
-// File logger, initialised before anything noisy so we capture early
-// `console.*` from the main process. The renderer side is hooked later, when
-// each BrowserWindow is created (we need its `webContents` to subscribe).
-try {
-  logger.init({ filePath: host.logFilePath() });
-  logger.attachMainConsole();
-} catch (e) {
-  console.error('logger init failed:', e); // never block startup
-}
+// File logger (main console now; each BrowserWindow's console is hooked
+// when it is created) plus the crash hooks that write through it.
+startMainDiagnostics(host);
 
 // Resource samples in app.log — fans-spin-up reports need numbers.
 attachProductionSampling(host, () => app.getAppMetrics());

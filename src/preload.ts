@@ -162,6 +162,7 @@ const api: DevBarApi = {
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   reportIssue: () => ipcRenderer.invoke('app:reportIssue'),
   copyReport: () => ipcRenderer.invoke('app:copyReport'),
+  reportPreview: () => ipcRenderer.invoke('app:reportPreview'),
   openNotificationSettings: () =>
     ipcRenderer.invoke('app:openNotificationSettings'),
   confirmDirty: (context) =>
