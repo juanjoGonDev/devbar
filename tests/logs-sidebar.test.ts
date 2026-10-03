@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountLogsDom } from './helpers/logs-dom.js';
@@ -24,6 +25,7 @@ function item(overrides: Partial<LogListItem> = {}): LogListItem {
     type: 'command',
     name: 'api',
     icon: null,
+    iconColor: null,
     lineCount: 0,
     status: 'stopped',
     warnCount: 0,
@@ -39,7 +41,8 @@ function group(overrides: Partial<LogListGroup> = {}): LogListGroup {
   return {
     groupId: 'g1',
     groupName: 'Back',
-    groupIcon: '📁',
+    groupIcon: 'folder',
+    groupIconColor: null,
     items: [item()],
     ...overrides,
   };
@@ -138,8 +141,8 @@ describe('renderer/logs/sidebar.ts', () => {
       expect(elements.sideTreeEl.getElementsByClassName('side-item')[0]).toBe(
         row,
       );
-      expect(row?.getElementsByClassName('s-badges')[0]?.textContent).toBe(
-        '⚠ 3',
+      expect(iconText(row?.getElementsByClassName('s-badges')[0])).toBe(
+        '[triangle-alert] 3',
       );
     });
 
@@ -153,8 +156,8 @@ describe('renderer/logs/sidebar.ts', () => {
       await sidebar.refreshSidebar();
       await sidebar.refreshSidebar();
       expect(
-        elements.sideTreeEl.getElementsByClassName('a-badges')[0]?.textContent,
-      ).toBe('⚠ 4');
+        iconText(elements.sideTreeEl.getElementsByClassName('a-badges')[0]),
+      ).toBe('[triangle-alert] 4');
     });
 
     it('rebuilds when a service appeared', async () => {
@@ -343,11 +346,10 @@ describe('renderer/logs/sidebar.ts', () => {
       ]);
       await sidebar.refreshSidebar();
       const clock = (): string =>
-        elements.sideTreeEl.getElementsByClassName('b time')[0]?.textContent ??
-        '';
-      expect(clock()).toBe('⏱ 1s');
+        iconText(elements.sideTreeEl.getElementsByClassName('b time')[0]);
+      expect(clock()).toBe('[timer] 1s');
       vi.advanceTimersByTime(4000);
-      expect(clock()).toBe('⏱ 5s');
+      expect(clock()).toBe('[timer] 5s');
     });
 
     it('does not touch the tree of a detached window', async () => {

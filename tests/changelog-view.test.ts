@@ -45,6 +45,8 @@ describe('buildReleasesHtml', () => {
     // No url → no release link for that panel.
     expect(html).not.toContain('data-href=""');
     expect(html.match(/cl-rel-link/g)).toHaveLength(2);
+    // The external-link mark is an icon placeholder the window hydrates.
+    expect(html).toContain('data-icon="external-link"');
   });
 
   it('flags the installed version and prereleases', () => {

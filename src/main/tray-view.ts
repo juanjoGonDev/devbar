@@ -106,9 +106,11 @@ export function buildTrayMenuTemplate({
     const ready =
       stagedUpdate !== null && stagedUpdate.version === availableUpdate.version;
     items.push({
+      // Plain text: a native menu cannot use the bundled icon font, and a
+      // symbol glyph renders differently (or as tofu) per OS.
       label: ready
-        ? `⬆︎ Reiniciar e instalar v${availableUpdate.version}`
-        : `⬆︎ Actualizar a v${availableUpdate.version}…`,
+        ? `Reiniciar e instalar v${availableUpdate.version}`
+        : `Actualizar a v${availableUpdate.version}…`,
       click: () => onApplyUpdate(),
     });
     items.push({ type: 'separator' });

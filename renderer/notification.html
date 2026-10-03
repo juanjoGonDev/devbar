@@ -12,9 +12,7 @@
         margin: 0;
         background: transparent;
         overflow: hidden;
-        font-family:
-          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple Color Emoji',
-          'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+        font-family: var(--font-ui);
         cursor: default;
         -webkit-user-select: none;
         user-select: none;
@@ -94,6 +92,8 @@
         font-size: 14px;
         cursor: pointer;
         padding: 2px 4px;
+        display: inline-flex;
+        align-items: center;
         border-radius: 6px;
       }
       #close:hover {
@@ -115,6 +115,7 @@
         background: #2f8bff;
       }
     </style>
+    <link rel="stylesheet" href="icons.css" />
     <link rel="stylesheet" href="emoji.css" />
   </head>
   <body>
@@ -125,7 +126,9 @@
         <div id="body"></div>
       </div>
       <button id="cta" style="display: none"></button>
-      <button id="close" title="Cerrar">✕</button>
+      <button id="close" title="Cerrar" aria-label="Cerrar">
+        <span class="icon" data-icon="x"></span>
+      </button>
       <div id="progress"></div>
     </div>
     <script type="module" src="notification.js"></script>

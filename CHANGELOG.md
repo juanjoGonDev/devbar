@@ -3,6 +3,77 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.10.0] - 2026-09-30
+
+### Añadido
+
+- **Iconos profesionales en toda la interfaz, iguales en cualquier sistema.**
+  Los emoji y símbolos sueltos (▶, ■, ✓, ✕, 📜, ⚙️…) que hacían de botones
+  dependían de las fuentes de cada equipo: en la Raspberry Pi salían como
+  cuadros vacíos y en Windows cada uno tenía un tamaño distinto. Ahora
+  todos los iconos salen de [Lucide](https://lucide.dev), una fuente de
+  iconos que va empaquetada dentro de DevBar en macOS, Windows y Linux
+  (x64, arm64 y armv7): no hay que instalar nada.
+
+- **El icono de cada grupo, comando y acción se elige ahora entre los
+  iconos de Lucide.** El selector busca por nombre y por etiquetas en
+  español y en inglés —«cohete» o `rocket`, «carrito» o `shopping cart`—,
+  sin importar mayúsculas ni tildes («contrasena» encuentra «contraseña»),
+  y recuerda los últimos que usaste. Al pasar el ratón por un icono ves
+  también su nombre en español. Tus iconos actuales se convierten solos al
+  abrir la nueva versión —📦 pasa a ser una caja, 🐳 un contenedor, 🚀 un
+  cohete…— y los emoji originales quedan guardados en la configuración por
+  si hicieran falta. Un emoji sin equivalente pasa al icono por defecto; y
+  si alguna configuración importada trae uno que no se reconoce, se sigue
+  mostrando tal cual en lugar de desaparecer.
+
+- **Cada icono puede tener su color.** Junto al botón del icono, en el
+  grupo y en cada comando o acción, hay una fila de colores listos para
+  usar (que se leen bien en tema claro y oscuro), un selector para
+  cualquier otro color y «Sin color» para volver al de siempre. El color se
+  ve en la barra, en la configuración y en la ventana de logs, y viaja con
+  la configuración al exportarla. Los emoji de color se convierten con el
+  suyo: 🟢 pasa a ser un círculo verde, 🟥 un cuadrado rojo, 💙 un corazón
+  azul…
+
+- **Puedes usar tus propias imágenes como icono.** En la pestaña «Mis
+  iconos» del selector, «Subir imagen…» acepta un PNG o JPEG de hasta 5 MB;
+  DevBar lo reduce a 64 px y lo guarda dentro de la configuración, así que
+  se ve igual en la barra, la configuración y los logs, y viaja con la
+  exportación (solo las imágenes que se usan). Subir dos veces la misma
+  imagen no la duplica, y si borras una, lo que la usaba vuelve a su icono
+  por defecto.
+
+- **Puedes quitar la selección de líneas en los logs.** Si seleccionas una
+  o varias líneas sin querer, junto al contador «N seleccionada(s)» del pie
+  aparece una ✕ para quitar la selección; la tecla Esc hace lo mismo.
+
+### Corregido
+
+- **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**
+  DevBar solo pedía las fuentes de macOS, así que Windows acababa dibujando
+  toda la interfaz con su fuente de emoji, y los logs salían borrosos. Ahora
+  usa Segoe UI y Cascadia Mono/Consolas en Windows, y las fuentes habituales
+  del escritorio en Linux.
+
+- **Los iconos de la cabecera de la barra ya no salen en azul.** El botón
+  del pipeline, el de los logs y el de configuración usan ahora el mismo
+  color neutro que el resto de la interfaz (y que el de salir), en tema
+  claro y oscuro. El azul queda solo donde significa algo: botones
+  principales, enlaces y lo seleccionado.
+
+- **El changelog ya no muestra el comentario interno de GitHub** (`<!--
+Release notes generated… -->`) ni el título vacío «What's Changed» que
+  aparecía justo encima de «Changes».
+
+- **Los botones de la derecha de cada fila ya no bailan al arrancar un
+  script.** Al pasar de ▶ a ■, al aparecer el tiempo en marcha o el aviso
+  de error, los botones de logs, auto-arranque y arranque/parada se movían
+  unos píxeles (en Windows, bastante más). Ahora cada botón tiene un
+  tamaño fijo, el selector de rama ocupa siempre el mismo hueco y es el
+  nombre del grupo el que se recorta con «…» si falta sitio. El contador
+  de tiempo reserva su ancho para no empujar nada cada segundo.
+
 ## [0.9.8] - 2026-09-30
 
 ### Seguridad

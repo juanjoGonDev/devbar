@@ -1,3 +1,4 @@
+import { iconButton } from '../icon.js';
 import type {
   Action,
   Command,
@@ -76,11 +77,11 @@ function addScheduleRuleRow(rulesEl: HTMLElement, rule: ScheduleRule): void {
   makeDayChips(days, (rule && rule.days) || []);
   row.appendChild(days);
 
-  const remove = document.createElement('button');
-  remove.type = 'button';
-  remove.className = 'small-btn danger rule-remove';
-  remove.textContent = '🗑';
-  remove.title = 'Quitar este horario';
+  const remove = iconButton(
+    'trash-2',
+    'Quitar este horario',
+    'small-btn danger rule-remove',
+  );
   remove.addEventListener('click', () => row.remove());
   row.appendChild(remove);
 

@@ -46,9 +46,7 @@ body {
   height: 100%;
   background: var(--sil-bg);
   color: var(--sil-fg);
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Apple Color Emoji',
-    'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }
@@ -172,9 +170,7 @@ body.non-mac .silenced-header {
 
 .pattern-list .pattern {
   flex: 1;
-  font-family:
-    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
-    'Noto Color Emoji', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--sil-pattern);
   overflow: hidden;
@@ -216,9 +212,7 @@ body.non-mac .silenced-header {
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 12px;
-  font-family:
-    ui-monospace, 'SF Mono', Menlo, 'Apple Color Emoji', 'Segoe UI Emoji',
-    'Noto Color Emoji', monospace;
+  font-family: var(--font-mono);
 }
 
 .add-row input[type='text']:focus {

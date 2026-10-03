@@ -7,3 +7,7 @@ app.log
 *.log
 *.icns
 *.png
+# Generated from lucide-static by scripts/generate-icons.ts (kept byte-exact
+# so tests/generate-icons.test.ts can detect a stale regeneration).
+renderer/icon-codepoints.ts
+src/icon-battery.ts

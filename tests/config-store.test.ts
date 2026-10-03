@@ -186,6 +186,31 @@ describe('src/config-store/store.ts', () => {
       expect(raw._services_pre_v3_backup).toEqual([service]);
     });
 
+    it('turns stored emoji icons into Lucide names, backing the originals up', async () => {
+      const store = await harness.open({
+        seed: {
+          version: 4,
+          groups: [
+            {
+              ...legacyGroup('api'),
+              icon: '🐳',
+              commands: [
+                { id: 'c1', name: 'dev', command: 'pnpm dev', icon: '🔧' },
+              ],
+            },
+          ],
+        },
+      });
+
+      const [group] = store.listGroups();
+      expect(group?.icon).toBe('container');
+      expect(group?.commands[0]?.icon).toBe('wrench');
+      expect(harness.onDisk()._icons_pre_lucide_backup).toEqual({
+        'group:g-api': '🐳',
+        'command:g-api/c1': '🔧',
+      });
+    });
+
     it('relabels a v3 store as v4 even when its content needed no change', async () => {
       const store = await harness.open({
         seed: { version: 3, groups: [], preSteps: [], globalSettings: {} },
@@ -419,7 +444,7 @@ describe('src/config-store/store.ts', () => {
 
     it('hands the groups back to the next session unchanged', async () => {
       const first = await harness.open();
-      first.saveGroup({ ...legacyGroup('api'), icon: '🚀' });
+      first.saveGroup({ ...legacyGroup('api'), icon: 'rocket' });
       first.saveGroup(legacyGroup('web'));
 
       const second = await harness.open({ home: harness.home() });
@@ -428,7 +453,7 @@ describe('src/config-store/store.ts', () => {
         'api',
         'web',
       ]);
-      expect(second.getGroup('g-api')?.icon).toBe('🚀');
+      expect(second.getGroup('g-api')?.icon).toBe('rocket');
     });
   });
 });

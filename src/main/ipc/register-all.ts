@@ -2,15 +2,20 @@ import { openNotificationSettings } from '../notification-settings.js';
 import type { IpcRegistrar } from '../ipc-validators.js';
 import { registerAppIpc, type AppIpcDeps } from './app-ipc.js';
 import { registerConfigIpc, type ConfigIpcDeps } from './config-ipc.js';
+import { registerIconsIpc, type IconsIpcDeps } from './icons-ipc.js';
+import {
+  pickCustomIcon,
+  type CustomIconUploadDeps,
+} from '../custom-icon-upload.js';
 import { registerLogsIpc, type LogsIpcDeps } from './logs-ipc.js';
 import { registerRuntimeIpc, type RuntimeIpcDeps } from './runtime-ipc.js';
 import { registerWindowIpc, type WindowIpcDeps } from './window-ipc.js';
 
 /**
- * One call that stands the whole IPC surface up. The five handler modules each
+ * One call that stands the whole IPC surface up. The handler modules each
  * declare the narrow slice they need; this is where the app's collaborators and
  * its Electron host are matched to those slices, so `main.ts` hands over one
- * object and nothing has to repeat the adapter plumbing five times.
+ * object and nothing has to repeat the adapter plumbing once per module.
  */
 
 interface IpcHost {
@@ -20,6 +25,10 @@ interface IpcHost {
   saveDialog: AppIpcDeps['dialogs']['save'];
   folderDialog: AppIpcDeps['dialogs']['folder'];
   files: AppIpcDeps['files'];
+  /** Raw file access and `nativeImage` for custom icon uploads. */
+  fileSize: CustomIconUploadDeps['fileSize'];
+  readFile: CustomIconUploadDeps['readFile'];
+  decodeImage: CustomIconUploadDeps['decodeImage'];
   applyAutostart: (enabled: boolean) => void;
   spawnDetached: Parameters<
     typeof openNotificationSettings
@@ -41,7 +50,8 @@ export interface RegisterAllDeps {
   configStore: ConfigIpcDeps['configStore'] &
     RuntimeIpcDeps['configStore'] &
     LogsIpcDeps['configStore'] &
-    AppIpcDeps['configStore'];
+    AppIpcDeps['configStore'] &
+    IconsIpcDeps['configStore'];
   processManager: ConfigIpcDeps['processManager'] &
     RuntimeIpcDeps['processManager'] &
     LogsIpcDeps['processManager'] &
@@ -68,6 +78,7 @@ export interface RegisterAllDeps {
   fetchReleases: AppIpcDeps['fetchReleases'];
   releasesUrl: string;
   iconBattery: unknown;
+  customIconsChanged: IconsIpcDeps['customIconsChanged'];
 }
 
 export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
@@ -82,6 +93,18 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
   registerWindowIpc(ipc, {
     ...deps,
     showMessageBoxForSender: host.messageBoxForSender,
+  });
+  registerIconsIpc(ipc, {
+    configStore: deps.configStore,
+    pickCustomIcon: () =>
+      pickCustomIcon({
+        openDialog: host.openDialog,
+        fileSize: host.fileSize,
+        readFile: host.readFile,
+        decodeImage: host.decodeImage,
+      }),
+    confirm: host.messageBox,
+    customIconsChanged: deps.customIconsChanged,
   });
   registerAppIpc(ipc, {
     ...deps,

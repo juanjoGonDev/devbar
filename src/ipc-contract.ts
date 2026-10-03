@@ -2,6 +2,7 @@ import type {
   Action,
   AvailableUpdate,
   Command,
+  CustomIcon,
   GlobalSettings,
   Group,
   LogEntry,
@@ -103,6 +104,7 @@ export interface LogListItem {
   type: 'command' | 'action' | 'prescript' | 'pipeline';
   name: string;
   icon: string | null;
+  iconColor: string | null;
   lineCount: number;
   status: ProcessStatus;
   warnCount: number;
@@ -116,14 +118,22 @@ export interface LogListGroup {
   groupId: string;
   groupName: string;
   groupIcon: string;
+  groupIconColor: string | null;
   items: LogListItem[];
 }
+/** One pickable icon: a Lucide name (what Group/Command/Action.icon store)
+ *  and the search tags it is found by. */
 export interface IconBatteryItem {
-  emoji: string;
-  label: string;
-  group: string;
-  keywords?: readonly string[];
+  name: string;
+  tags: readonly string[];
+  /** Spanish search terms, added by main from src/icon-search-es.ts. */
+  es?: readonly string[];
+  /** The name, translated word by word — the picker's tooltip. */
+  esName?: string;
 }
+export type CustomIconUploadResult =
+  | { ok: true; icon: CustomIcon }
+  | { ok: false; canceled?: boolean; error?: string };
 export interface UpdateStatus {
   available: AvailableUpdate | null;
   /** Downloaded and unpacked — applying it is just a restart. */
@@ -314,6 +324,12 @@ export interface DevBarApi {
   applyUpdate(): Promise<Record<string, unknown>>;
   onUpdateStatus(callback: (payload: UpdateStatus) => void): () => void;
   getIconBattery(): Promise<readonly IconBatteryItem[]>;
+  listCustomIcons(): Promise<CustomIcon[]>;
+  /** Opens the file dialog in main; resolves once the image is stored. */
+  uploadCustomIcon(): Promise<CustomIconUploadResult>;
+  /** Asks for confirmation in main before deleting. */
+  deleteCustomIcon(id: string): Promise<{ ok: boolean; canceled?: boolean }>;
+  onCustomIconsChanged(callback: (icons: CustomIcon[]) => void): () => void;
   exportConfig(): Promise<ExportResult>;
   importConfig(): Promise<ImportResult>;
   confirmImport(args: {

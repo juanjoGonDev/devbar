@@ -16,6 +16,7 @@
   "ignoreBinaries": ["dpkg-deb"],
   "ignoreDependencies": [
     "@fontsource/noto-color-emoji",
+    "lucide-static",
     "@types/debug",
     "@types/electron-positioner"
   ]

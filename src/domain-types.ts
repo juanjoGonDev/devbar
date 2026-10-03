@@ -31,6 +31,8 @@ export interface Command extends ConfirmConfig {
   id: string;
   name: string;
   icon: string | null;
+  /** `#rrggbb`, or null to inherit the text colour (see icon-color.ts). */
+  iconColor: string | null;
   command: string;
   args: string[];
   env: EnvEntry[];
@@ -49,6 +51,7 @@ export interface Action extends ConfirmConfig {
   id: string;
   name: string;
   icon: string | null;
+  iconColor: string | null;
   command: string;
   args: string[];
   env: EnvEntry[];
@@ -81,7 +84,9 @@ export interface PreStep {
 export interface Group {
   id: string;
   name: string;
+  /** A Lucide icon name, or `img:<id>` for an uploaded image (CustomIcon). */
   icon: string;
+  iconColor: string | null;
   path: string;
   mode: 'single' | 'multi';
   order: number;
@@ -101,6 +106,18 @@ export interface Group {
    * by making boot slower, which is visible and self-explanatory.
    */
   waitForPipeline: boolean;
+}
+
+/**
+ * An image the user uploaded as an icon: a PNG, at most 64 px on its longest
+ * side, stored inline as a data URL. Referenced from an icon field as
+ * `img:<id>`; the id is a hash of the uploaded file, so uploading the same
+ * file twice yields one icon.
+ */
+export interface CustomIcon {
+  id: string;
+  name: string;
+  dataUrl: string;
 }
 
 export interface LegacyService {

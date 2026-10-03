@@ -1,10 +1,18 @@
-import type { GlobalSettings, Group, PreStep } from './domain-types.js';
+import type {
+  CustomIcon,
+  GlobalSettings,
+  Group,
+  PreStep,
+} from './domain-types.js';
 import {
   normalizeGroup,
   normalizePreStep,
   validateGroupShape,
   migratePreScriptPipeline,
 } from './groups-model.js';
+import { migrateIcons } from './groups/icon-migration.js';
+import { validateCustomIcons } from './custom-icons.js';
+import { normalizeIconColor } from './icon-color.js';
 
 export const EXPORT_SCHEMA_VERSION = 4;
 /** A v3 export/store file (nested per-group `preSteps`) still imports. */
@@ -36,6 +44,27 @@ function invalidEnv(value: unknown): boolean {
   return !isRecord(value);
 }
 
+/** A colour that is present but not `#rrggbb` — null/absent mean inherit. */
+function invalidIconColor(value: unknown): boolean {
+  return value !== undefined && value !== null && !normalizeIconColor(value);
+}
+
+/** The first group/command/action of `group` with a malformed icon colour. */
+function iconColorError(
+  group: UnknownRecord,
+  groupLabel: string,
+): string | null {
+  const nested = [group.commands, group.actions].flatMap((list) =>
+    isUnknownArray(list) ? list : [],
+  );
+  const offender = [group, ...nested].some((entity) =>
+    invalidIconColor(record(entity).iconColor),
+  );
+  return offender
+    ? `Grupo "${groupLabel}" tiene un color de icono inválido (debe ser #rrggbb)`
+    : null;
+}
+
 export interface SerializedConfig {
   exportedAt: string;
   appVersion: string | null;
@@ -43,12 +72,15 @@ export interface SerializedConfig {
   groups: Group[];
   preSteps: PreStep[];
   globalSettings: Partial<GlobalSettings>;
+  /** The uploaded images the exported groups reference. */
+  customIcons: CustomIcon[];
 }
 export interface ImportPayload {
   version: number;
   groups: Group[];
   preSteps: PreStep[];
   globalSettings: Partial<GlobalSettings>;
+  customIcons: CustomIcon[];
 }
 export type ImportValidation =
   { ok: true; payload: ImportPayload } | { ok: false; error: string };
@@ -60,6 +92,7 @@ export function serializeConfig(
         groups?: Group[];
         preSteps?: PreStep[];
         globalSettings?: Partial<GlobalSettings>;
+        customIcons?: CustomIcon[];
       }
     | null
     | undefined,
@@ -74,6 +107,7 @@ export function serializeConfig(
     groups: Array.isArray(raw.groups) ? raw.groups : [],
     preSteps: Array.isArray(raw.preSteps) ? raw.preSteps : [],
     globalSettings: raw.globalSettings ?? {},
+    customIcons: Array.isArray(raw.customIcons) ? raw.customIcons : [],
   };
 }
 
@@ -232,6 +266,8 @@ export function validateImportedConfig(value: unknown): ImportValidation {
     };
   if (!isUnknownArray(value.groups))
     return { ok: false, error: 'groups debe ser un array' };
+  const customIcons = validateCustomIcons(value.customIcons);
+  if (!customIcons.ok) return customIcons;
 
   // A v3 export nests script DEFINITIONS inside per-group steps; reuse the
   // SAME concatenate-and-hoist migration the live store uses (D4) so the two
@@ -264,6 +300,8 @@ export function validateImportedConfig(value: unknown): ImportValidation {
   for (let index = 0; index < rawGroups.length; index++) {
     const rawGroup = record(rawGroups[index]);
     const groupLabel = label(rawGroup, index);
+    const colorError = iconColorError(rawGroup, groupLabel);
+    if (colorError) return { ok: false, error: colorError };
     const commands = isUnknownArray(rawGroup.commands) ? rawGroup.commands : [];
     for (const candidate of commands) {
       const command = record(candidate);
@@ -369,9 +407,12 @@ export function validateImportedConfig(value: unknown): ImportValidation {
     ok: true,
     payload: {
       version: EXPORT_SCHEMA_VERSION,
-      groups: cleanGroups,
+      // An export from before the icon font still carries emoji icons; it
+      // gets the same conversion the live store applies on load.
+      groups: migrateIcons(cleanGroups).groups,
       preSteps: cleanSteps,
       globalSettings: cleanGlobalSettings,
+      customIcons: customIcons.icons,
     },
   };
 }

@@ -24,7 +24,7 @@ describe('normalizeGroup', () => {
   it('applies defaults for minimal input', () => {
     const g = normalizeGroup({ path: '/some/path' });
     expect(g.name).toBe('Servicios');
-    expect(g.icon).toBe('📦');
+    expect(g.icon).toBe('package');
     expect(g.mode).toBe('multi');
     expect(g.silenceWarnings).toBe(false);
     expect(g.silenceErrors).toBe(false);
@@ -590,3 +590,28 @@ describe('normalizeGroup — preScripts field', () => {
 });
 
 // ─── Legacy configs the pre-TypeScript versions accepted ───────────────
+
+// ─── Icon colour ──────────────────────────────────────────────────────
+
+describe('iconColor', () => {
+  it('defaults to null (inherit) on groups, commands and actions', () => {
+    const g = normalizeGroup({ commands: [{}], actions: [{}] });
+    expect(g.iconColor).toBeNull();
+    expect(g.commands[0]?.iconColor).toBeNull();
+    expect(g.actions[0]?.iconColor).toBeNull();
+  });
+
+  it('keeps a valid #rrggbb, lowercased', () => {
+    expect(normalizeGroup({ iconColor: '#22C55E' }).iconColor).toBe('#22c55e');
+    expect(normalizeCommand({ iconColor: '#ef4444' }).iconColor).toBe(
+      '#ef4444',
+    );
+    expect(normalizeAction({ iconColor: '#3b82f6' }).iconColor).toBe('#3b82f6');
+  });
+
+  it('drops anything that is not a hex colour', () => {
+    expect(normalizeGroup({ iconColor: 'red' }).iconColor).toBeNull();
+    expect(normalizeCommand({ iconColor: 12 }).iconColor).toBeNull();
+    expect(normalizeAction({ iconColor: '#12' }).iconColor).toBeNull();
+  });
+});
