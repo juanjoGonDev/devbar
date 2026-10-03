@@ -122,6 +122,94 @@ describe('src/main/ipc/icons-ipc.ts', () => {
     });
   });
 
+  describe('an SVG upload', () => {
+    const SVG = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+    const svgUpload = () =>
+      harness({
+        pickCustomIcon: () =>
+          Promise.resolve({ ok: true, svg: { name: 'mark', text: SVG } }),
+      });
+    const isPng = (icon: CustomIcon) =>
+      icon.dataUrl.startsWith('data:image/png;base64,');
+
+    it('hands the text back to rasterize and stores nothing yet', async () => {
+      const h = svgUpload();
+      expect(await h.ipc.invoke('customIcons:upload')).toEqual({
+        ok: true,
+        svg: { name: 'mark', text: SVG },
+      });
+      expect(h.library()).toEqual([]);
+      expect(h.changed).toEqual([]);
+    });
+
+    it('stores the rasterized PNG, id-ed by its pixels, and tells every window', async () => {
+      const h = svgUpload();
+      await h.ipc.invoke('customIcons:upload');
+      const res = await h.ipc.invoke('customIcons:addRasterized', {
+        name: '  mark  ',
+        dataUrl: PNG,
+      });
+      const [stored] = h.library();
+      expect(stored?.id).toMatch(/^[0-9a-f]{12}$/);
+      expect(res).toEqual({
+        ok: true,
+        icon: { id: stored?.id, name: 'mark', dataUrl: PNG },
+      });
+      expect(h.changed).toHaveLength(1);
+      // The same pixels dedupe onto the same icon.
+      const again = await h.ipc.invoke('customIcons:addRasterized', {
+        name: 'otra',
+        dataUrl: PNG,
+      });
+      expect(again).toEqual(res);
+      expect(h.library()).toHaveLength(1);
+      expect(h.library().every(isPng)).toBe(true);
+    });
+
+    it('never stores anything but a PNG, whatever the renderer sends', async () => {
+      const h = svgUpload();
+      for (const dataUrl of [
+        `data:image/svg+xml;base64,${Buffer.from(SVG).toString('base64')}`,
+        'data:image/png;base64,AAAA',
+        `${PNG}${'A'.repeat(200_000)}`,
+      ]) {
+        expect(
+          await h.ipc.invoke('customIcons:addRasterized', {
+            name: 'mark',
+            dataUrl,
+          }),
+        ).toEqual({ ok: false, error: 'La imagen resultante no es válida' });
+      }
+      expect(h.library()).toEqual([]);
+      expect(h.changed).toEqual([]);
+    });
+
+    it('reports a full library as an error', async () => {
+      const h = harness({
+        configStore: {
+          listCustomIcons: () => [],
+          addCustomIcon: () => {
+            throw new Error('lleno');
+          },
+          deleteCustomIcon: () => undefined,
+        },
+      });
+      expect(
+        await h.ipc.invoke('customIcons:addRasterized', {
+          name: 'mark',
+          dataUrl: PNG,
+        }),
+      ).toEqual({ ok: false, error: 'lleno' });
+    });
+
+    it('rejects a malformed payload', () => {
+      const h = harness();
+      expect(() =>
+        h.ipc.invoke('customIcons:addRasterized', { name: 'x' }),
+      ).toThrow('Invalid IPC dataUrl');
+    });
+  });
+
   it('deletes only after the user confirms', async () => {
     const h = harness();
     h.setLibrary([logo]);

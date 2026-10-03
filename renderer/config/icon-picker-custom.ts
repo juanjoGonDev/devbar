@@ -1,12 +1,20 @@
 import { customIconRef } from '../../src/custom-icons.js';
 import type { CustomIcon } from '../../src/domain-types.js';
+import type {
+  CustomIconAddResult,
+  CustomIconUploadResult,
+} from '../../src/ipc-contract.js';
 import { customIconList, icon, iconButton, setCustomIcons } from '../icon.js';
+import { rasterizeSvg } from './svg-rasterize.js';
 
 /**
  * The picker's "Mis iconos" tab: the uploaded images, an upload button, and
  * a delete button on each image. Upload and delete run in main (the file
  * dialog, the confirmation); what comes back is applied to this window's
  * library straight away, so the grid never waits for the change push.
+ *
+ * An SVG comes back from main as text: it is rasterized here (see
+ * svg-rasterize.ts) and the PNG is sent back to main to be stored.
  */
 
 export interface CustomIconPanelDeps {
@@ -17,6 +25,19 @@ export interface CustomIconPanelDeps {
   select(value: string): void;
   /** Re-renders the panel after the library changed. */
   rerender(): void;
+}
+
+/** Settles an upload: a raster one as is, an SVG once rasterized. */
+async function storedUpload(
+  res: CustomIconUploadResult,
+): Promise<CustomIconAddResult> {
+  if (!res.ok || !('svg' in res)) return res;
+  const raster = await rasterizeSvg(res.svg.text);
+  if (!raster.ok) return { ok: false, error: raster.error };
+  return window.api.addRasterizedCustomIcon({
+    name: res.svg.name,
+    dataUrl: raster.dataUrl,
+  });
 }
 
 function upsert(added: CustomIcon): void {
@@ -61,7 +82,7 @@ export function renderCustomIconPanel(
     upload.disabled = true;
     status.textContent = '';
     try {
-      const res = await window.api.uploadCustomIcon();
+      const res = await storedUpload(await window.api.uploadCustomIcon());
       if (res.ok) {
         upsert(res.icon);
         deps.select(customIconRef(res.icon.id));
@@ -83,7 +104,8 @@ export function renderCustomIconPanel(
     for (const item of icons) body.append(customCell(item, deps));
   } else {
     body.className = 'icon-custom-empty muted small';
-    body.textContent = 'PNG o JPEG, hasta 5 MB. Se reduce a 64 px.';
+    body.textContent =
+      'PNG, JPG o SVG, hasta 5 MB (1 MB si es SVG). Se reduce a 64 px.';
   }
   host.append(bar, body);
 }
