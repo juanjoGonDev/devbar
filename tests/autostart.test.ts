@@ -50,6 +50,16 @@ describe('src/autostart.ts', () => {
       expect(content.endsWith('\n')).toBe(true);
     });
 
+    it('leaves the display backend to the runtime check (no ozone flag)', () => {
+      // linux-display-backend.ts relaunches under XWayland only when the
+      // session has one; a static flag here would break a Wayland-only one.
+      const content = desktopFileContent('/home/u/Apps/DevBar.AppImage');
+      expect(content).toContain(
+        `Exec=/home/u/Apps/DevBar.AppImage ${LOGIN_ARG}\n`,
+      );
+      expect(content).not.toContain('--ozone-platform');
+    });
+
     it('quotes an install path containing whitespace (Exec is a desktop string)', () => {
       const content = desktopFileContent('/home/u my app/DevBar.AppImage');
       // Unquoted, the desktop environment would split the path on the

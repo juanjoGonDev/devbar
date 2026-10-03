@@ -73,6 +73,30 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Corregido
 
+- **La barra se adapta a su contenido mientras está abierta.** Al añadir o
+  quitar grupos, desplegar uno, arrancar un script o aparecer un aviso, el
+  panel cambiaba de altura solo al cerrarlo y volver a pulsar el icono. En
+  Windows (y en Linux con el panel abajo) era peor: al crecer se metía por
+  debajo de la barra de tareas y salía de la pantalla. Ahora crece y encoge
+  al momento, hacia arriba si la barra de tareas está abajo, sin pasar del
+  alto de la pantalla en la que está el icono; a partir de ahí solo se
+  desplaza la lista de grupos, con la cabecera siempre visible y sin
+  barras de desplazamiento dobles.
+
+- **En Linux con Wayland (KDE, GNOME…) el panel vuelve a salir junto al
+  icono de la bandeja.** Antes se abría en mitad de la pantalla y su parte
+  de abajo quedaba por debajo de la barra de tareas, así que los últimos
+  grupos no se alcanzaban ni desplazando. Ahora DevBar detecta solo el
+  escritorio en cualquier distribución: si la sesión tiene XWayland, se
+  ejecuta a través de él, que sí permite colocarlo al lado del icono y
+  respetar la barra de tareas; si no lo tiene, sigue en Wayland nativo. Y
+  cuando el escritorio no informa de dónde está la barra de tareas (Wayland
+  nativo o algunos gestores de ventanas X11), el panel limita su altura
+  para no meterse debajo. Si prefieres Wayland nativo, define la variable
+  `DEVBAR_WAYLAND_NATIVE=1`, valga el lanzador que valga: el panel no podrá
+  ir junto al icono, pero tampoco crecerá hasta meterse bajo la barra de
+  tareas.
+
 - **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**
   DevBar solo pedía las fuentes de macOS, así que Windows acababa dibujando
   toda la interfaz con su fuente de emoji, y los logs salían borrosos. Ahora

@@ -18,8 +18,10 @@ import {
   readCustomIcons,
   writeCustomIcons,
   persistState,
+  groupsOverlayActive,
+  readStoredGroups,
+  readStoredPreSteps,
   readGroups,
-  readPreSteps,
   readVersion,
   saveGlobalSettings,
   storeDirectory,
@@ -37,6 +39,8 @@ import {
 export {
   getGlobalSettings,
   getScheduleLastRun,
+  groupsOverlayActive,
+  setGroupsOverlay,
   saveGlobalSettings,
   setScheduleLastRun,
 } from './config-store/store.js';
@@ -56,6 +60,10 @@ export {
   deleteCustomIcon,
   listCustomIcons,
 } from './config-store/custom-icons-store.js';
+
+/** Why an import is refused while the dev panel's test groups are shown. */
+const OVERLAY_IMPORT_REFUSAL =
+  'Modo grupos de prueba activo: quita los grupos de prueba en el panel Dev antes de importar.';
 
 export function listGroups(): Group[] {
   return readGroups();
@@ -232,14 +240,16 @@ export function setGroupSilence(
 }
 
 export function exportConfig(): ReturnType<typeof serializeConfig> {
-  const groups = readGroups();
+  // The stored groups even while the dev overlay is on: an export is the
+  // user's configuration, and test groups have no business in it.
+  const groups = readStoredGroups();
   // Only the images the exported configuration uses travel with it.
   const referenced = referencedCustomIconIds(groups);
   return serializeConfig(
     {
       version: readVersion(),
       groups,
-      preSteps: readPreSteps(),
+      preSteps: readStoredPreSteps(),
       globalSettings: getGlobalSettings(),
       customIcons: readCustomIcons().filter((icon) => referenced.has(icon.id)),
     },
@@ -253,6 +263,7 @@ export function replaceConfig(payload: {
   globalSettings: Partial<GlobalSettings>;
   customIcons?: readonly CustomIcon[];
 }): void {
+  if (groupsOverlayActive()) throw new Error(OVERLAY_IMPORT_REFUSAL);
   writeVersion(payload.version);
   // Added to the library, never replacing it: an import overwrites the
   // configuration, but the uploads it does not use are still the user's.
@@ -272,8 +283,8 @@ export function writeImportBackup(): string {
   const snapshot = {
     backedUpAt: new Date().toISOString(),
     version: readVersion(),
-    groups: readGroups(),
-    preSteps: readPreSteps(),
+    groups: readStoredGroups(),
+    preSteps: readStoredPreSteps(),
     globalSettings: getGlobalSettings(),
     customIcons: readCustomIcons(),
   };

@@ -223,6 +223,19 @@ interface DevSimulationApi {
   simulateSuccess(): Promise<SimpleResult>;
   simulatePrescriptConfirm(): Promise<SimpleResult>;
   simulateToast(kind: 'ok' | 'error'): Promise<SimpleResult>;
+  /** Whether the "Grupos de prueba" are shown, and how many copies. */
+  fixtureGroupsStatus(): Promise<FixtureGroupsStatus>;
+  /** Shows `repeat` copies of the test groups instead of the real ones, or
+   *  (off) stops their processes and brings the real groups back. */
+  setFixtureGroups(
+    on: boolean,
+    repeat: number,
+  ): Promise<FixtureGroupsStatus & { ok: boolean; error?: string }>;
+}
+
+interface FixtureGroupsStatus {
+  active: boolean;
+  repeat: number;
 }
 
 export interface DevBarApi extends UpdatesApi {

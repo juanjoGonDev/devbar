@@ -168,6 +168,26 @@ describe('renderer/tray.ts', () => {
       await nextFrame();
       expect(win.callCount('setTrayHeight')).toBeGreaterThan(0);
     });
+
+    it('follows the content while open, without waiting for the next show', async () => {
+      const win = await openTray();
+      await win.settle('getGroupStates', [groupState('api')]);
+      await nextFrame();
+      // jsdom has no layout: stand in for the list growing once a banner
+      // appears outside any state render.
+      Object.defineProperty(byId('groups'), 'scrollHeight', {
+        configurable: true,
+        get: () => 480,
+      });
+      await win.push('onUpdatePhase', {
+        state: 'downloading',
+        version: '9.9.9',
+        received: 42,
+        total: 100,
+      });
+      await nextFrame();
+      expect(win.argsFor('setTrayHeight').at(-1)).toEqual([480]);
+    });
   });
 
   describe('initial update status', () => {

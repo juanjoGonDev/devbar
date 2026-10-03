@@ -67,7 +67,8 @@ function desktopQuote(value: string): string {
 /**
  * Render the XDG autostart file content. `exec` must be the packaged
  * executable; the `--login` argument is what makes a boot launch
- * recognisable later. The executable is quoted per the spec — the
+ * recognisable later (it survives the XWayland relaunch, see
+ * src/main/linux-display-backend.ts). The executable is quoted per the spec — the
  * desktop environment splits the Exec field on whitespace, so an
  * unquoted install path with a space would truncate the launch.
  */

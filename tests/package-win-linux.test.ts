@@ -282,6 +282,9 @@ describe('scripts/package-win-linux.ts', () => {
               { target: 'AppImage', arch: ['x64'] },
               { target: 'deb', arch: ['x64'] },
             ],
+            // No executableArgs: the display backend is decided at runtime
+            // (src/main/linux-display-backend.ts), and leaving them unset
+            // keeps AppImage's default --no-sandbox Exec argument.
             artifactName: 'DevBar-9.9.9-linux-x64.${ext}',
           },
         },

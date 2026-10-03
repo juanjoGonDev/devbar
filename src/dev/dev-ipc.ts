@@ -3,6 +3,7 @@ import { buildSimulatedUpdate } from './simulate-update.js';
 import type { AvailableUpdate } from '../domain-types.js';
 import type { TrayColor } from '../ipc-contract.js';
 import { parseTrayCount } from '../tray-icon.js';
+import { createFixtureMode, type FixtureHost } from './fixture-mode.js';
 
 /**
  * Everything the simulation panel needs to reach back into the running app.
@@ -41,6 +42,8 @@ export interface DevHooks {
   stageLocalUpdate(zipPath: string, version: string): Promise<void>;
   toast(kind: string, message: string): void;
   currentVersion(): string;
+  /** What the "Grupos de prueba" overlay needs from the running app. */
+  fixtures: FixtureHost;
 }
 
 const TRAY_COLORS: readonly TrayColor[] = [
@@ -90,6 +93,21 @@ function simulatedUpdate(version: string): AvailableUpdate {
 }
 
 export function registerDevIpc(hooks: DevHooks): void {
+  const fixtureMode = createFixtureMode(hooks.fixtures);
+
+  // "Grupos de prueba": the app shows only the fixture set while it is on,
+  // with the user's own groups hidden but untouched (see fixture-mode.ts).
+  ipcMain.handle('dev:fixtureGroupsStatus', () => fixtureMode.status());
+  ipcMain.handle(
+    'dev:setFixtureGroups',
+    (_e: IpcMainInvokeEvent, payload: unknown) => {
+      const raw = asRecord(payload);
+      return raw.on === true
+        ? fixtureMode.enable(raw.repeat)
+        : fixtureMode.disable();
+    },
+  );
+
   ipcMain.handle(
     'dev:simulateUpdate',
     (_e: IpcMainInvokeEvent, payload: unknown) => {
