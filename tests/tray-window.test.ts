@@ -90,6 +90,7 @@ function updateStatus(version: string | null): UpdateStatus {
     staged: null,
     lastCheckAt: null,
     currentVersion: '0.0.0',
+    phase: { state: 'idle' },
   };
 }
 
@@ -209,6 +210,64 @@ describe('renderer/tray.ts', () => {
       const win = await openTray();
       await win.fail('getUpdateStatus', new Error('sin red'));
       expect(byId('app-version').classList.contains('has-update')).toBe(false);
+    });
+  });
+
+  describe('update progress', () => {
+    const label = () => byId('update-progress-label');
+
+    it('shows the download percentage next to the version chip', async () => {
+      const win = await openTray();
+      await win.push('onUpdatePhase', {
+        state: 'downloading',
+        version: '9.9.9',
+        received: 42,
+        total: 100,
+      });
+      expect(label().hidden).toBe(false);
+      expect(label().textContent).toBe('Descargando 42 %');
+    });
+
+    it('shows a download of unknown size without a number', async () => {
+      const win = await openTray();
+      await win.push('onUpdatePhase', {
+        state: 'downloading',
+        version: '9.9.9',
+        received: 42,
+        total: null,
+      });
+      expect(label().textContent).toBe('Descargando…');
+    });
+
+    it('flags a failure with its reason on hover', async () => {
+      const win = await openTray();
+      await win.push('onUpdatePhase', {
+        state: 'install-failed',
+        version: '9.9.9',
+        reason: 'autenticación cancelada',
+        path: '/tmp/a.deb',
+        command: null,
+      });
+      expect(label().textContent).toBe('Actualización fallida');
+      expect(label().title).toBe('autenticación cancelada');
+    });
+
+    it('names the step that is running', async () => {
+      const win = await openTray();
+      await win.push('onUpdatePhase', {
+        state: 'installing',
+        version: '9.9.9',
+      });
+      expect(label().textContent).toBe('Instalando…');
+      await win.push('onUpdatePhase', { state: 'verifying', version: '9.9.9' });
+      expect(label().textContent).toBe('Verificando…');
+    });
+
+    it('hides once nothing is happening', async () => {
+      const win = await openTray();
+      await win.push('onUpdatePhase', { state: 'verifying', version: '9.9.9' });
+      await win.push('onUpdatePhase', { state: 'idle' });
+      expect(label().hidden).toBe(true);
     });
   });
 

@@ -294,6 +294,34 @@
               ></button>
               <span id="update-status" class="muted small"></span>
             </div>
+            <progress
+              id="update-progress"
+              class="update-progress"
+              max="100"
+              hidden
+            ></progress>
+            <div id="update-help" class="update-help" hidden>
+              <p id="update-help-text" class="muted small"></p>
+              <code id="update-command" class="update-command" hidden></code>
+              <div class="copy-actions">
+                <button
+                  type="button"
+                  id="update-copy-command"
+                  class="small-btn"
+                  hidden
+                >
+                  Copiar comando
+                </button>
+                <button
+                  type="button"
+                  id="update-open-folder"
+                  class="small-btn"
+                  hidden
+                >
+                  Abrir carpeta
+                </button>
+              </div>
+            </div>
           </section>
         </section>
       </div>

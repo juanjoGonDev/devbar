@@ -293,6 +293,18 @@ const FORWARDS: readonly Forward[] = [
   ['getUpdateStatus', (api) => api.getUpdateStatus(), 'updates:status', []],
   ['checkForUpdates', (api) => api.checkForUpdates(), 'updates:check', []],
   ['applyUpdate', (api) => api.applyUpdate(), 'updates:apply', []],
+  [
+    'copyUpdateCommand',
+    (api) => api.copyUpdateCommand(),
+    'updates:copyCommand',
+    [],
+  ],
+  [
+    'showUpdateDownload',
+    (api) => api.showUpdateDownload(),
+    'updates:showDownload',
+    [],
+  ],
   ['getIconBattery', (api) => api.getIconBattery(), 'icons:get', []],
   ['listCustomIcons', (api) => api.listCustomIcons(), 'customIcons:list', []],
   [
@@ -457,6 +469,7 @@ type SubscriptionCase = readonly [
 const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ['onConfigGoto', (api, cb) => api.onConfigGoto(cb), 'config:goto'],
   ['onUpdateStatus', (api, cb) => api.onUpdateStatus(cb), 'updates:status'],
+  ['onUpdatePhase', (api, cb) => api.onUpdatePhase(cb), 'updates:phase'],
   [
     'onPipelineUpdate',
     (api, cb) => api.onPipelineUpdate(cb),

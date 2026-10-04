@@ -10,6 +10,10 @@ interface ScriptedResponse {
   status: number;
   location?: string;
   body?: string;
+  /** Sent in order instead of `body`, one push per chunk. */
+  chunks?: string[];
+  /** Advertised as content-length. */
+  length?: number;
   failMidBody?: boolean;
 }
 
@@ -42,14 +46,21 @@ function script(responses: ScriptedResponse[], onRequest?: () => void): void {
       headers: Record<string, unknown>;
     };
     res.statusCode = spec.status;
-    res.headers = spec.location ? { location: spec.location } : {};
+    res.headers = {
+      ...(spec.location ? { location: spec.location } : {}),
+      ...(spec.length !== undefined
+        ? { 'content-length': String(spec.length) }
+        : {}),
+    };
     setImmediate(() => {
       cb(res);
       if (spec.failMidBody) {
         res.destroy(new Error('ECONNRESET'));
         return;
       }
-      if (spec.status === 200) res.push(spec.body ?? 'payload');
+      if (spec.status === 200)
+        for (const chunk of spec.chunks ?? [spec.body ?? 'payload'])
+          res.push(chunk);
       res.push(null);
     });
     onRequest?.();
@@ -130,7 +141,9 @@ describe('src/main/download-file.ts', () => {
         })),
       );
       await expect(
-        downloadFile('https://github.test/a.zip', path.join(dir, 'a.zip'), 2),
+        downloadFile('https://github.test/a.zip', path.join(dir, 'a.zip'), {
+          redirects: 2,
+        }),
       ).rejects.toThrow('too many redirects');
     });
 
@@ -146,6 +159,69 @@ describe('src/main/download-file.ts', () => {
       await expect(
         downloadFile('https://github.test/a.zip', path.join(dir, 'a.zip')),
       ).rejects.toThrow(/ECONNRESET/);
+    });
+  });
+
+  describe('progress', () => {
+    it('reports the bytes received against the advertised length', async () => {
+      script([{ status: 200, chunks: ['ab', 'cd', 'ef'], length: 6 }]);
+      const reports: { received: number; total: number | null }[] = [];
+      await downloadFile('https://github.test/a.zip', path.join(dir, 'a.zip'), {
+        onProgress: (progress) => reports.push(progress),
+      });
+      expect(reports[0]).toEqual({ received: 0, total: 6 });
+      expect(reports.at(-1)).toEqual({ received: 6, total: 6 });
+    });
+
+    it('reports an unknown total when the server sends no length', async () => {
+      script([{ status: 200, body: 'abc' }]);
+      const reports: { received: number; total: number | null }[] = [];
+      await downloadFile('https://github.test/a.zip', path.join(dir, 'a.zip'), {
+        onProgress: (progress) => reports.push(progress),
+      });
+      expect(reports.at(-1)).toEqual({ received: 3, total: null });
+    });
+
+    it('follows a redirect before it starts counting', async () => {
+      script([
+        { status: 302, location: 'https://cdn.test/a.zip' },
+        { status: 200, body: 'abcd', length: 4 },
+      ]);
+      const reports: { received: number; total: number | null }[] = [];
+      await downloadFile('https://github.test/a.zip', path.join(dir, 'a.zip'), {
+        onProgress: (progress) => reports.push(progress),
+      });
+      expect(reports.at(-1)).toEqual({ received: 4, total: 4 });
+    });
+
+    it('throttles to whole-percent steps when chunks arrive faster than the clock', async () => {
+      const chunks = Array.from({ length: 400 }, () => 'x');
+      script([{ status: 200, chunks, length: 400 }]);
+      const reports: { received: number; total: number | null }[] = [];
+      await downloadFile('https://github.test/a.zip', path.join(dir, 'a.zip'), {
+        onProgress: (progress) => reports.push(progress),
+        now: () => 0,
+      });
+      // One report per whole percent (plus the opening zero), never per chunk.
+      expect(reports.length).toBeLessThanOrEqual(102);
+      expect(reports.at(-1)).toEqual({ received: 400, total: 400 });
+    });
+
+    it('reports on the clock alone when the total is unknown', async () => {
+      const chunks = ['a', 'b', 'c', 'd'];
+      script([{ status: 200, chunks }]);
+      let clock = 0;
+      const reports: { received: number; total: number | null }[] = [];
+      await downloadFile('https://github.test/a.zip', path.join(dir, 'a.zip'), {
+        onProgress: (progress) => {
+          reports.push(progress);
+        },
+        now: () => (clock += 100),
+      });
+      // 100 ms per chunk: only every third tick crosses the 250 ms step, and
+      // the finished byte count always lands.
+      expect(reports.length).toBeLessThan(chunks.length + 1);
+      expect(reports.at(-1)).toEqual({ received: 4, total: null });
     });
   });
 });
