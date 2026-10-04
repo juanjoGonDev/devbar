@@ -284,7 +284,9 @@ describe('src/main/ipc/window-ipc.ts', () => {
     it('shows the test banner ungated', () => {
       const h = harness();
       expect(h.ipc.invoke('notifications:test')).toEqual({ ok: true });
-      expect(h.calls[0]).toMatch(/^banner:DevBar:/);
+      // Plain text: a native notification cannot use the bundled icon font,
+      // and an emoji would depend on the OS emoji font again.
+      expect(h.calls[0]).toBe('banner:DevBar:Notificación de prueba');
     });
 
     it('dismisses the current banner', () => {

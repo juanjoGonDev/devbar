@@ -731,6 +731,7 @@ describe('serializeConfig -> validateImportedConfig round-trip', () => {
           id: 'g1',
           name: 'My Group',
           icon: '📦',
+          iconColor: null,
           path: '/some/path',
           mode: 'multi' as const,
           order: 0,

@@ -20,27 +20,46 @@ import { toggleRunById } from './header.js';
 import { openScope, selectLog } from './scope.js';
 import { setText } from './elements.js';
 import { view } from './view.js';
+import { customIconsVersion, icon, userIcon, type IconName } from '../icon.js';
 import type {
   LogListGroup,
   LogListItem,
   SilenceLevel,
 } from '../../src/ipc-contract.js';
 
-const TYPE_ICON: Record<LogListItem['type'], string> = {
-  command: '⚙️',
-  action: '⚡️',
-  prescript: '🧪',
-  pipeline: '🧩',
+const TYPE_ICON: Record<LogListItem['type'], IconName> = {
+  command: 'terminal',
+  action: 'wand-sparkles',
+  prescript: 'flask-conical',
+  pipeline: 'puzzle',
 };
+
+/**
+ * Paints a user icon into `host` only when it changed — this runs on every
+ * one-second repaint, and the name/icon of a row arrive through it (see the
+ * module doc), so it must be cheap and idempotent like `setText`.
+ */
+function paintIcon(
+  host: HTMLElement,
+  value: string | null,
+  fallback: IconName,
+  color: string | null,
+): void {
+  // The library version is part of the key: an `img:<id>` whose image was
+  // just uploaded or deleted must repaint although its value did not change.
+  const key = `${value ?? ''}|${fallback}|${color ?? ''}|${customIconsVersion()}`;
+  if (host.dataset.icon === key) return;
+  host.dataset.icon = key;
+  host.replaceChildren(userIcon(value, fallback, color));
+}
 
 function groupOpenKey(groupId: string): string {
   return `devbar.logs.group.${groupId}`;
 }
 
 /** The pipeline bucket is a cross-cutting view, and says so with its own mark. */
-function groupIcon(group: LogListGroup): string {
-  if (group.groupIcon) return group.groupIcon;
-  return group.groupId === PIPELINE_LOG_GROUP_ID ? '🧬' : '📁';
+function groupFallbackIcon(group: LogListGroup): IconName {
+  return group.groupId === PIPELINE_LOG_GROUP_ID ? 'dna' : 'folder';
 }
 
 /**
@@ -58,7 +77,10 @@ function levelCountButton(
   btn.type = 'button';
   btn.className = `b ${level === 'warn' ? 'warn' : 'err'} clickable`;
   btn.title = label;
-  btn.textContent = `${level === 'warn' ? '⚠' : '⛔'} ${count}`;
+  btn.append(
+    icon(level === 'warn' ? 'triangle-alert' : 'circle-x'),
+    ` ${count}`,
+  );
   btn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -112,7 +134,7 @@ function renderBadges(host: HTMLElement, item: LogListItem): void {
     b.title = runtime.live
       ? 'Tiempo en ejecución'
       : 'Duración de la última ejecución';
-    b.textContent = `⏱ ${runtime.text}`;
+    b.append(icon('timer'), ` ${runtime.text}`);
     host.appendChild(b);
   }
   if (!host.childElementCount) {
@@ -178,7 +200,7 @@ export function paintSideItem(row: HTMLElement, item: LogListItem): void {
   // open window through this path, and only this one — the tree is rebuilt
   // solely when a service appears or goes away.
   const ico = row.querySelector<HTMLElement>('.s-ico');
-  if (ico) setText(ico, item.icon || TYPE_ICON[item.type]);
+  if (ico) paintIcon(ico, item.icon, TYPE_ICON[item.type], item.iconColor);
   const name = row.querySelector<HTMLElement>('.s-name');
   if (name) {
     name.textContent = item.name;
@@ -195,8 +217,14 @@ export function paintSideItem(row: HTMLElement, item: LogListItem): void {
     const runnable = canRun(item);
     run.style.display = runnable ? '' : 'none';
     const running = isRunning(item);
-    run.textContent = running ? '■' : '▶';
+    const glyph = running ? 'square' : 'play';
+    // Repainted every second: only swap the glyph when the state flipped.
+    if (run.dataset.icon !== glyph) {
+      run.dataset.icon = glyph;
+      run.replaceChildren(icon(glyph));
+    }
     run.title = running ? 'Parar' : 'Arrancar';
+    run.setAttribute('aria-label', run.title);
     run.classList.toggle('on', running);
   }
   row.classList.toggle('active', item.id === view.processId);
@@ -214,7 +242,7 @@ export function buildAllRow(): HTMLElement {
   row.classList.toggle('active', view.mergedIsAll);
   const ico = document.createElement('span');
   ico.className = 'a-ico';
-  ico.textContent = '📜';
+  ico.append(icon('scroll-text'));
   const name = document.createElement('span');
   name.className = 'a-name';
   name.textContent = 'Todo';
@@ -285,7 +313,7 @@ export function buildGroupRow(group: LogListGroup): HTMLElement {
   const summary = document.createElement('summary');
   const chevron = document.createElement('span');
   chevron.className = 'chevron';
-  chevron.textContent = '▶';
+  chevron.append(icon('chevron-right'));
   const gIco = document.createElement('span');
   gIco.className = 'g-ico';
   // Name on top, its group-wide warn/error totals underneath — the same
@@ -300,7 +328,7 @@ export function buildGroupRow(group: LogListGroup): HTMLElement {
   const gAll = document.createElement('button');
   gAll.type = 'button';
   gAll.className = 'g-all';
-  gAll.textContent = '📜'; // same mark as every other "open logs" control
+  gAll.append(icon('scroll-text')); // same mark as every other "open logs" control
   gAll.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -368,7 +396,13 @@ export function paintGroupSummary(
   // renamed in the config keeps the same id, so the tree is not rebuilt and
   // this is the only path the new name can arrive through.
   const ico = details.querySelector<HTMLElement>('.g-ico');
-  if (ico) setText(ico, groupIcon(group));
+  if (ico)
+    paintIcon(
+      ico,
+      group.groupIcon,
+      groupFallbackIcon(group),
+      group.groupIconColor,
+    );
   const gName = details.querySelector<HTMLElement>('.g-name');
   if (gName) setText(gName, group.groupName);
   // Real groups open their merged view from the `g-all` control; the pipeline
@@ -379,7 +413,11 @@ export function paintGroupSummary(
     (details.dataset.groupId === PIPELINE_LOG_GROUP_ID
       ? details.querySelector<HTMLElement>('summary')
       : null);
-  if (opener) opener.title = `Ver todos los logs de ${group.groupName} juntos`;
+  if (opener) {
+    opener.title = `Ver todos los logs de ${group.groupName} juntos`;
+    if (opener.classList.contains('g-all'))
+      opener.setAttribute('aria-label', opener.title);
+  }
   const dot = details.querySelector<HTMLElement>('.g-dot');
   if (dot) {
     const state = groupDotClass(group.items);

@@ -111,14 +111,12 @@ describe('renderer/logs/filters.ts', () => {
 
   describe('levelPillLabel', () => {
     it('names the single level the view is pinned to', () => {
-      expect(levelPillLabel(['warn'])).toBe('sólo ⚠ warnings');
-      expect(levelPillLabel(['error'])).toBe('sólo ⛔ errores');
+      expect(levelPillLabel(['warn'])).toBe('sólo warnings');
+      expect(levelPillLabel(['error'])).toBe('sólo errores');
     });
 
     it('joins both levels when the pin covers the two', () => {
-      expect(levelPillLabel(['warn', 'error'])).toBe(
-        'sólo ⚠ warnings + ⛔ errores',
-      );
+      expect(levelPillLabel(['warn', 'error'])).toBe('sólo warnings + errores');
     });
   });
 

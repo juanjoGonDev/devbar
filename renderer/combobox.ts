@@ -1,3 +1,5 @@
+import { icon } from './icon.js';
+
 export interface ComboboxOption {
   value: string;
   label: string;
@@ -199,7 +201,7 @@ export function createCombobox({
       if (current) {
         const check = document.createElement('span');
         check.className = 'combobox-check';
-        check.textContent = '✓';
+        check.append(icon('check'));
         item.appendChild(check);
       }
       const label = document.createElement('span');

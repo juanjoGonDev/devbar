@@ -1,3 +1,4 @@
+import { icon } from '../icon.js';
 import type { PreStep } from '../../src/domain-types.js';
 
 /** Joins/splits a `PreStepScriptRef` for use as a DOM `data-id` — UUIDs never
@@ -109,10 +110,12 @@ export function buildSummaryStrip(
 
     const head = document.createElement('span');
     head.className = 'pipeline-summary-step-head';
-    head.textContent =
-      step.lanes.length > 1
-        ? `${step.index} · ${step.mode === 'parallel' ? '∥' : '→'}`
-        : `${step.index}`;
+    head.textContent = `${step.index}`;
+    if (step.lanes.length > 1)
+      head.append(
+        ' · ',
+        icon(step.mode === 'parallel' ? 'split' : 'arrow-right'),
+      );
     block.appendChild(head);
 
     if (step.isEmpty) {

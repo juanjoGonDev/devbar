@@ -3,6 +3,7 @@ import {
   attachCrossContainerDragHandlers,
 } from './dnd-helper.js';
 import { latestWins } from './latest-wins.js';
+import { icon, iconButton } from './icon.js';
 import { buildAutoRunToggle } from './pipeline/auto-run-toggle.js';
 import {
   buildSummaryStrip,
@@ -232,7 +233,7 @@ export function initPipelineEditor(
     dragHandle.className = 'drag-handle';
     dragHandle.draggable = true;
     dragHandle.title = 'Arrastra para mover a otro paso';
-    dragHandle.textContent = '⋮⋮';
+    dragHandle.append(icon('grip-vertical'));
     li.appendChild(dragHandle);
 
     if (!resolved) {
@@ -268,7 +269,10 @@ export function initPipelineEditor(
       if (script.timeoutMs) {
         const timeout = document.createElement('span');
         timeout.className = 'muted small';
-        timeout.textContent = `⏱ ${Math.round(script.timeoutMs / 1000)}s`;
+        timeout.append(
+          icon('timer'),
+          ` ${Math.round(script.timeoutMs / 1000)}s`,
+        );
         li.appendChild(timeout);
       }
     }
@@ -277,11 +281,7 @@ export function initPipelineEditor(
     spacer.style.flex = '1';
     li.appendChild(spacer);
 
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'small-btn danger';
-    removeBtn.title = 'Quitar del paso';
-    removeBtn.textContent = '×';
+    const removeBtn = iconButton('x', 'Quitar del paso', 'small-btn danger');
     removeBtn.addEventListener('click', async () => {
       if (
         !(await write(() =>
@@ -309,7 +309,7 @@ export function initPipelineEditor(
     dragHandle.className = 'drag-handle';
     dragHandle.draggable = true;
     dragHandle.title = 'Arrastra para reordenar';
-    dragHandle.textContent = '⋮⋮';
+    dragHandle.append(icon('grip-vertical'));
     header.appendChild(dragHandle);
 
     const stepLabel = document.createElement('span');
@@ -324,8 +324,11 @@ export function initPipelineEditor(
     for (const mode of ['parallel', 'serial'] as const) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'mode-btn';
-      btn.textContent = mode === 'parallel' ? 'Paralelo ⇉' : 'Serie →';
+      btn.className = 'mode-btn with-icon';
+      btn.append(
+        mode === 'parallel' ? 'Paralelo' : 'Serie',
+        icon(mode === 'parallel' ? 'split' : 'arrow-right'),
+      );
       btn.setAttribute('aria-pressed', String(step.mode === mode));
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -341,11 +344,7 @@ export function initPipelineEditor(
     spacer.style.flex = '1';
     header.appendChild(spacer);
 
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.className = 'small-btn danger';
-    delBtn.title = 'Eliminar paso';
-    delBtn.textContent = '×';
+    const delBtn = iconButton('x', 'Eliminar paso', 'small-btn danger');
     delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!confirm(`¿Eliminar el paso ${stepNumber}?`)) return;

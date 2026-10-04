@@ -85,14 +85,3 @@ describe('renderer/emoji.css', () => {
     }
   });
 });
-
-describe('tray quit button glyph', () => {
-  it('does not use ⏻ — no installed or bundled font carries it', () => {
-    // Raspberry Pi OS has no font for U+23FB POWER SYMBOL and Noto Color
-    // Emoji does not cover it either: the button rendered as tofu. ⏹
-    // (U+23F9, an emoji codepoint) is covered everywhere.
-    const tray = readFileSync(path.join(rendererDir, 'tray.html'), 'utf8');
-    expect(tray).not.toContain('⏻');
-    expect(tray).toMatch(/id="quit-app"[^>]*>\s*⏹\s*<\/button>/s);
-  });
-});

@@ -9,6 +9,8 @@
  */
 import './report-uncaught.js';
 import { initTheme } from './theme.js';
+import { hydrateIcons } from './icon.js';
+import { watchCustomIcons } from './custom-icons.js';
 import { installTooltips } from './tooltip.js';
 import { logsParams } from './logs/params.js';
 import { installNav, view } from './logs/view.js';
@@ -22,6 +24,7 @@ import './logs/selection-ui.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 
 initTheme();
+hydrateIcons(document);
 
 // A detached window shows a single log and hides the sidebar; the shared
 // window keeps the sidebar and swaps the visible log in place.
@@ -96,3 +99,4 @@ window.api.onUpdate(() => {
 });
 
 installTooltips();
+watchCustomIcons();

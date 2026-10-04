@@ -197,7 +197,7 @@ export function registerWindowIpc(
   ipc.handle('notifications:test', () => {
     deps.notifications.showBannerNotification(
       'DevBar',
-      'Notificación de prueba ✅',
+      'Notificación de prueba',
     );
     return { ok: true };
   });

@@ -294,6 +294,19 @@ const FORWARDS: readonly Forward[] = [
   ['checkForUpdates', (api) => api.checkForUpdates(), 'updates:check', []],
   ['applyUpdate', (api) => api.applyUpdate(), 'updates:apply', []],
   ['getIconBattery', (api) => api.getIconBattery(), 'icons:get', []],
+  ['listCustomIcons', (api) => api.listCustomIcons(), 'customIcons:list', []],
+  [
+    'uploadCustomIcon',
+    (api) => api.uploadCustomIcon(),
+    'customIcons:upload',
+    [],
+  ],
+  [
+    'deleteCustomIcon',
+    (api) => api.deleteCustomIcon('abc123'),
+    'customIcons:delete',
+    [{ id: 'abc123' }],
+  ],
   ['exportConfig', (api) => api.exportConfig(), 'config:export', []],
   ['importConfig', (api) => api.importConfig(), 'config:import', []],
   [
@@ -460,6 +473,11 @@ const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ],
   ['onActionDone', (api, cb) => api.onActionDone(cb), 'action:done'],
   ['onToast', (api, cb) => api.onToast(cb), 'groups:toast'],
+  [
+    'onCustomIconsChanged',
+    (api, cb) => api.onCustomIconsChanged(cb),
+    'customIcons:changed',
+  ],
 ];
 
 describe('src/preload.ts', () => {

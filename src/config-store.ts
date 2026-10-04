@@ -11,8 +11,12 @@ import {
   reorderByIds,
 } from './groups-model.js';
 import { serializeConfig } from './config-io.js';
+import { mergeCustomIcons, referencedCustomIconIds } from './custom-icons.js';
+import type { CustomIcon } from './domain-types.js';
 import {
   getGlobalSettings,
+  readCustomIcons,
+  writeCustomIcons,
   persistState,
   readGroups,
   readPreSteps,
@@ -47,6 +51,11 @@ export {
   savePreStep,
   unassignScriptFromStep,
 } from './config-store/pipeline-store.js';
+export {
+  addCustomIcon,
+  deleteCustomIcon,
+  listCustomIcons,
+} from './config-store/custom-icons-store.js';
 
 export function listGroups(): Group[] {
   return readGroups();
@@ -223,12 +232,16 @@ export function setGroupSilence(
 }
 
 export function exportConfig(): ReturnType<typeof serializeConfig> {
+  const groups = readGroups();
+  // Only the images the exported configuration uses travel with it.
+  const referenced = referencedCustomIconIds(groups);
   return serializeConfig(
     {
       version: readVersion(),
-      groups: readGroups(),
+      groups,
       preSteps: readPreSteps(),
       globalSettings: getGlobalSettings(),
+      customIcons: readCustomIcons().filter((icon) => referenced.has(icon.id)),
     },
     app.getVersion(),
   );
@@ -238,8 +251,13 @@ export function replaceConfig(payload: {
   groups: unknown[];
   preSteps?: unknown[];
   globalSettings: Partial<GlobalSettings>;
+  customIcons?: readonly CustomIcon[];
 }): void {
   writeVersion(payload.version);
+  // Added to the library, never replacing it: an import overwrites the
+  // configuration, but the uploads it does not use are still the user's.
+  if (payload.customIcons?.length)
+    writeCustomIcons(mergeCustomIcons(readCustomIcons(), payload.customIcons));
   saveGlobalSettings(payload.globalSettings);
   const safeGroups = payload.groups
     .map(normalizeGroup)
@@ -257,6 +275,7 @@ export function writeImportBackup(): string {
     groups: readGroups(),
     preSteps: readPreSteps(),
     globalSettings: getGlobalSettings(),
+    customIcons: readCustomIcons(),
   };
   fs.writeFileSync(backupPath, JSON.stringify(snapshot, null, 2), 'utf8');
   return backupPath;

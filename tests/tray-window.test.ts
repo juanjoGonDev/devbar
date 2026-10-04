@@ -5,6 +5,7 @@ import {
   loadRendererWindow,
   type RendererWindow,
 } from './helpers/renderer-dom.js';
+import { iconText } from './helpers/icon-text.js';
 import type {
   CommandRuntimeState,
   GroupState,
@@ -21,7 +22,8 @@ function groupState(
     group: {
       id: `group-${name}`,
       name,
-      icon: '📦',
+      icon: 'package',
+      iconColor: null,
       path: '',
       mode: 'single',
       order: 0,
@@ -247,6 +249,15 @@ describe('renderer/tray.ts', () => {
       expect(openConfig).toHaveBeenCalledTimes(1);
     });
 
+    it('paints the header buttons with bundled icons', async () => {
+      await openTray();
+      expect(iconText(byId('open-telemetry')).trim()).toBe('[scroll-text]');
+      expect(iconText(byId('open-config')).trim()).toBe('[settings]');
+      expect(iconText(byId('quit-app')).trim()).toBe('[power]');
+      // Hydrated: the placeholder now holds the glyph itself.
+      expect(byId('quit-app').querySelector('.icon')?.textContent).not.toBe('');
+    });
+
     it('quits the app', async () => {
       const quit = vi.fn();
       await openTray({ quit });
@@ -265,7 +276,9 @@ describe('renderer/tray.ts', () => {
     it('adds up the warnings and errors across every group', async () => {
       const win = await openTray();
       await win.settle('getGroupStates', [noisy(2, 1), noisy(3, 0)]);
-      expect(byId('alerts-summary').textContent).toBe('⚠ 5✕ 1');
+      expect(iconText(byId('alerts-summary'))).toBe(
+        '[triangle-alert] 5[circle-x] 1',
+      );
     });
 
     it('stays hidden when nothing is wrong', async () => {
@@ -293,7 +306,7 @@ describe('renderer/tray.ts', () => {
           ],
         }),
       ]);
-      expect(byId('alerts-summary').textContent).toBe('✕ 2');
+      expect(iconText(byId('alerts-summary'))).toBe('[circle-x] 2');
     });
 
     it('opens the telemetry view already filtered to that level', async () => {
@@ -320,7 +333,7 @@ describe('renderer/tray.ts', () => {
       const win = await openTray();
       await win.push('onPipelineUpdate', pipelineState({ totalSteps: 2 }));
       const trigger = host().querySelector('.prescripts-trigger');
-      expect(trigger?.textContent).toBe('▶▶');
+      expect(iconText(trigger)).toBe('[fast-forward]');
       expect((trigger as HTMLElement).title).toBe('Ejecutar pipeline');
     });
 
@@ -386,7 +399,10 @@ describe('renderer/tray.ts', () => {
         'onPipelineUpdate',
         pipelineState({ status: 'running', currentStep: 1, totalSteps: 2 }),
       );
-      click(host().querySelector('.prestep-cancel') ?? host());
+      const cancel = host().querySelector('.prestep-cancel');
+      expect(iconText(cancel)).toBe('[x]');
+      expect(cancel?.getAttribute('aria-label')).toBe('Cancelar pipeline');
+      click(cancel ?? host());
       expect(win.callCount('cancelPreScripts')).toBe(1);
     });
 
@@ -396,7 +412,9 @@ describe('renderer/tray.ts', () => {
         'onPipelineUpdate',
         pipelineState({ status: 'done', totalSteps: 2 }),
       );
-      expect(host().querySelector('.prestep-badge.ok')?.textContent).toBe('✓');
+      expect(iconText(host().querySelector('.prestep-badge.ok'))).toBe(
+        '[check]',
+      );
     });
 
     it('shows the failure and what it said', async () => {
@@ -410,7 +428,7 @@ describe('renderer/tray.ts', () => {
         }),
       );
       const badge = host().querySelector('.prestep-badge.err') as HTMLElement;
-      expect(badge.textContent).toBe('✕');
+      expect(iconText(badge)).toBe('[x]');
       expect(badge.title).toBe('migración falló');
     });
 
@@ -421,7 +439,9 @@ describe('renderer/tray.ts', () => {
         'onPipelineUpdate',
         pipelineState({ status: 'done', totalSteps: 1, lastRunId: 'run-7' }),
       );
-      click(host().querySelector('.prestep-logs-btn') ?? host());
+      const logs = host().querySelector('.prestep-logs-btn');
+      expect(iconText(logs)).toBe('[scroll-text]');
+      click(logs ?? host());
       expect(openLogs).toHaveBeenCalledWith('pre-pipeline:run-7');
     });
 

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountLogsDom, type LogsDom } from './helpers/logs-dom.js';
@@ -25,6 +26,7 @@ function item(overrides: Partial<LogListItem> = {}): LogListItem {
     type: 'command',
     name: 'api',
     icon: null,
+    iconColor: null,
     lineCount: 0,
     status: 'stopped',
     warnCount: 0,
@@ -41,6 +43,7 @@ function group(overrides: Partial<LogListGroup> = {}): LogListGroup {
     groupId: 'g1',
     groupName: 'Back',
     groupIcon: '',
+    groupIconColor: null,
     items: [item()],
     ...overrides,
   };
@@ -87,7 +90,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
   }
 
   function badgeLabels(host: HTMLElement | null): string[] {
-    return Array.from(host?.children ?? [], (el) => el.textContent ?? '');
+    return Array.from(host?.children ?? [], (el) => iconText(el));
   }
 
   describe('a service row', () => {
@@ -110,12 +113,18 @@ describe('renderer/logs/sidebar-rows.ts', () => {
 
     it('falls back to an icon for the kind of thing it is', () => {
       const icon = (shown: LogListItem): string =>
-        buildRow(shown).getElementsByClassName('s-ico')[0]?.textContent ?? '';
+        iconText(buildRow(shown).getElementsByClassName('s-ico')[0]);
+      expect(icon(item({ icon: 'rocket' }))).toBe('[rocket]');
+      expect(icon(item({ icon: null, type: 'command' }))).toBe('[terminal]');
+      expect(icon(item({ icon: null, type: 'action' }))).toBe(
+        '[wand-sparkles]',
+      );
+      expect(icon(item({ icon: null, type: 'prescript' }))).toBe(
+        '[flask-conical]',
+      );
+      expect(icon(item({ icon: null, type: 'pipeline' }))).toBe('[puzzle]');
+      // An unmigrated emoji still shows as itself.
       expect(icon(item({ icon: '🚀' }))).toBe('🚀');
-      expect(icon(item({ icon: null, type: 'command' }))).toBe('⚙️');
-      expect(icon(item({ icon: null, type: 'action' }))).toBe('⚡️');
-      expect(icon(item({ icon: null, type: 'prescript' }))).toBe('🧪');
-      expect(icon(item({ icon: null, type: 'pipeline' }))).toBe('🧩');
     });
 
     it('colours the dot by the loudest thing the service has to say', () => {
@@ -148,7 +157,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       );
       expect(
         badgeLabels(row.getElementsByClassName('s-badges')[0] as HTMLElement),
-      ).toEqual(['⚠ 2', '⛔ 1', '⏱ 5s']);
+      ).toEqual(['[triangle-alert] 2', '[circle-x] 1', '[timer] 5s']);
     });
 
     it('marks a live clock apart from a finished one', () => {
@@ -171,13 +180,13 @@ describe('renderer/logs/sidebar-rows.ts', () => {
         item({ status: 'running', startedAt: Date.now() }),
       );
       const run = running.getElementsByClassName('s-run')[0] as HTMLElement;
-      expect(run.textContent).toBe('■');
+      expect(iconText(run)).toBe('[square]');
       expect(run.title).toBe('Parar');
       expect(run.classList.contains('on')).toBe(true);
 
       const stopped = buildRow(item({ status: 'stopped' }));
       const idle = stopped.getElementsByClassName('s-run')[0] as HTMLElement;
-      expect(idle.textContent).toBe('▶');
+      expect(iconText(idle)).toBe('[play]');
       expect(idle.classList.contains('on')).toBe(false);
     });
 
@@ -265,11 +274,35 @@ describe('renderer/logs/sidebar-rows.ts', () => {
 
     it('a rename in the config reaches an open window through the paint', () => {
       const row = buildRow(item({ name: 'api' }));
-      rows.paintSideItem(row, item({ name: 'api gateway', icon: '🚀' }));
+      rows.paintSideItem(row, item({ name: 'api gateway', icon: 'rocket' }));
       expect(row.getElementsByClassName('s-name')[0]?.textContent).toBe(
         'api gateway',
       );
-      expect(row.getElementsByClassName('s-ico')[0]?.textContent).toBe('🚀');
+      expect(iconText(row.getElementsByClassName('s-ico')[0])).toBe('[rocket]');
+    });
+
+    it('repaints the icon when its colour or the image library changes', async () => {
+      // Same module instance the rows paint through (the DOM mount resets
+      // the module graph).
+      const { setCustomIcons } = await import('../renderer/icon.js');
+      const row = buildRow(item({ icon: 'rocket' }));
+      const glyph = () =>
+        row
+          .getElementsByClassName('s-ico')[0]
+          ?.querySelector<HTMLElement>('.icon');
+      rows.paintSideItem(row, item({ icon: 'rocket', iconColor: '#3b82f6' }));
+      expect(glyph()?.style.color).toBe('rgb(59, 130, 246)');
+      rows.paintSideItem(row, item({ icon: 'img:abc123' }));
+      expect(glyph()?.dataset.icon).toBe('terminal');
+      setCustomIcons([
+        {
+          id: 'abc123',
+          name: 'logo',
+          dataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      ]);
+      rows.paintSideItem(row, item({ icon: 'img:abc123' }));
+      expect(glyph()?.className).toBe('icon icon-img');
     });
   });
 
@@ -297,9 +330,13 @@ describe('renderer/logs/sidebar-rows.ts', () => {
 
     it('falls back to a folder when the group set no icon', () => {
       const plain = mount(rows.buildGroupRow(group({ groupIcon: '' })));
-      expect(plain.getElementsByClassName('g-ico')[0]?.textContent).toBe('📁');
-      const custom = mount(rows.buildGroupRow(group({ groupIcon: '🐍' })));
-      expect(custom.getElementsByClassName('g-ico')[0]?.textContent).toBe('🐍');
+      expect(iconText(plain.getElementsByClassName('g-ico')[0])).toBe(
+        '[folder]',
+      );
+      const custom = mount(rows.buildGroupRow(group({ groupIcon: 'code' })));
+      expect(iconText(custom.getElementsByClassName('g-ico')[0])).toBe(
+        '[code]',
+      );
     });
 
     it('lists one row per service inside it', () => {
@@ -351,7 +388,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
         badgeLabels(
           details.getElementsByClassName('g-badges')[0] as HTMLElement,
         ),
-      ).toEqual(['⚠ 5', '⛔ 1']);
+      ).toEqual(['[triangle-alert] 5', '[circle-x] 1']);
     });
 
     it('a group total opens the merged view already pinned to that level', () => {
@@ -364,7 +401,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       expect([...view.view.levelFilter]).toEqual(['error']);
     });
 
-    it('the 📜 control opens the whole group, without folding the header', () => {
+    it('the logs control opens the whole group, without folding the header', () => {
       const details = mount(rows.buildGroupRow(group())) as HTMLDetailsElement;
       const all = details.getElementsByClassName('g-all')[0] as HTMLElement;
       expect(all.title).toBe('Ver todos los logs de Back juntos');
@@ -411,12 +448,13 @@ describe('renderer/logs/sidebar-rows.ts', () => {
         groupId: PIPELINE_LOG_GROUP_ID,
         groupName: 'Pipeline',
         groupIcon: '',
+        groupIconColor: null,
       });
 
     it('marks itself as the cross-cutting view it is', () => {
       const details = mount(rows.buildPipelineRow(pipeline()));
-      expect(details.getElementsByClassName('g-ico')[0]?.textContent).toBe(
-        '🧬',
+      expect(iconText(details.getElementsByClassName('g-ico')[0])).toBe(
+        '[dna]',
       );
     });
 
@@ -440,7 +478,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       expect(event.defaultPrevented).toBe(true);
     });
 
-    it('carries its opener label on the summary, having no 📜 control', () => {
+    it('carries its opener label on the summary, having no logs control', () => {
       const details = mount(rows.buildPipelineRow(pipeline()));
       const summary = details.querySelector('summary') as HTMLElement;
       expect(summary.title).toBe('Ver todos los logs de Pipeline juntos');
@@ -476,7 +514,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       const row = mount(rows.buildAllRow());
       expect(
         badgeLabels(row.getElementsByClassName('a-badges')[0] as HTMLElement),
-      ).toEqual(['⚠ 3', '⛔ 4']);
+      ).toEqual(['[triangle-alert] 3', '[circle-x] 4']);
     });
 
     it('shows nothing at all when everything is quiet', () => {

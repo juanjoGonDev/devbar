@@ -1,4 +1,5 @@
 import { wireModal } from './modal.js';
+import { hydrateIcons, icon } from './icon.js';
 
 /**
  * The «Reportar fallo» dialog: explains what is about to happen (the
@@ -20,7 +21,7 @@ function build(): HTMLDialogElement {
     <header class="modal-header">
       <h2>Reportar fallo</h2>
       <span class="spacer"></span>
-      <button type="button" class="modal-close" data-close aria-label="Cerrar">×</button>
+      <button type="button" class="modal-close" data-close aria-label="Cerrar"><span class="icon" data-icon="x"></span></button>
     </header>
     <div class="modal-body">
       <p>
@@ -32,20 +33,31 @@ function build(): HTMLDialogElement {
       <p class="muted small" data-status role="status"></p>
     </div>
     <div class="modal-actions">
-      <button type="button" class="small-btn" data-copy>📋 Copiar reporte</button>
+      <button type="button" class="small-btn with-icon" data-copy><span class="icon" data-icon="copy"></span> Copiar reporte</button>
       <button type="button" class="small-btn" data-back>Volver</button>
       <button type="button" class="small-btn primary" data-github>
         Reportar bug en GitHub
       </button>
     </div>`;
+  hydrateIcons(next);
   document.body.appendChild(next);
   wireModal(next);
   return next;
 }
 
-function setStatus(dlg: HTMLDialogElement, message: string): void {
+/** A leading check icon marks the outcomes that did what was asked. */
+interface Outcome {
+  ok: boolean;
+  message: string;
+}
+
+function setStatus(dlg: HTMLDialogElement, outcome: Outcome | null): void {
   const status = dlg.querySelector<HTMLElement>('[data-status]');
-  if (status) status.textContent = message;
+  if (!status) return;
+  status.replaceChildren();
+  if (!outcome) return;
+  if (outcome.ok) status.append(icon('check'), ' ');
+  status.append(outcome.message);
 }
 
 /**
@@ -59,14 +71,21 @@ function githubOutcomeMessage(res: {
   ok: boolean;
   bodyIncluded?: boolean;
   copied?: boolean;
-}): string {
-  return res.ok
-    ? res.bodyIncluded
-      ? '✓ Formulario preparado en GitHub — el informe completo sigue en el portapapeles'
-      : '✓ Copiado al portapapeles — pégalo en GitHub'
-    : res.copied
-      ? '✓ Copiado al portapapeles — el navegador no se abrió; pégalo en GitHub'
-      : 'No se pudo preparar';
+}): Outcome {
+  if (res.ok)
+    return {
+      ok: true,
+      message: res.bodyIncluded
+        ? 'Formulario preparado en GitHub — el informe completo sigue en el portapapeles'
+        : 'Copiado al portapapeles — pégalo en GitHub',
+    };
+  return res.copied
+    ? {
+        ok: true,
+        message:
+          'Copiado al portapapeles — el navegador no se abrió; pégalo en GitHub',
+      }
+    : { ok: false, message: 'No se pudo preparar' };
 }
 
 async function runAction(
@@ -77,7 +96,7 @@ async function runAction(
     copied?: boolean;
     error?: string;
   }>,
-  success: (res: { ok: boolean }) => string,
+  success: (res: { ok: boolean }) => Outcome,
   failure: string,
 ): Promise<void> {
   const buttons = dlg.querySelectorAll<HTMLButtonElement>(
@@ -87,7 +106,7 @@ async function runAction(
   try {
     setStatus(dlg, success(await action()));
   } catch {
-    setStatus(dlg, failure);
+    setStatus(dlg, { ok: false, message: failure });
   } finally {
     buttons.forEach((b) => (b.disabled = false));
   }
@@ -99,7 +118,7 @@ export function openReportModal(): void {
   if (dialog && !dialog.isConnected) dialog = null;
   const dlg = dialog ?? build();
   dialog = dlg;
-  setStatus(dlg, '');
+  setStatus(dlg, null);
   if (!dlg.open) dlg.showModal();
   const back = dlg.querySelector<HTMLButtonElement>('[data-back]');
   if (back) back.onclick = () => dlg.close();
@@ -119,7 +138,9 @@ export function openReportModal(): void {
         dlg,
         () => window.api.copyReport(),
         (res) =>
-          res.ok ? '✓ Informe copiado al portapapeles' : 'No se pudo copiar',
+          res.ok
+            ? { ok: true, message: 'Informe copiado al portapapeles' }
+            : { ok: false, message: 'No se pudo copiar' },
         'No se pudo copiar el informe',
       );
 }

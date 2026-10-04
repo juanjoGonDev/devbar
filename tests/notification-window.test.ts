@@ -6,6 +6,7 @@ import {
   type RendererWindow,
 } from './helpers/renderer-dom.js';
 import { installJsdomGaps } from './helpers/logs-dom.js';
+import { iconText } from './helpers/icon-text.js';
 
 /**
  * `renderer/notification.ts` is the banner DevBar shows instead of a system
@@ -104,6 +105,8 @@ describe('renderer/notification.ts', () => {
 
     it('dismisses itself from the close control', async () => {
       const win = await openBanner('?title=Listo');
+      expect(iconText(byId('close'))).toBe('[x]');
+      expect(byId('close').getAttribute('aria-label')).toBe('Cerrar');
       byId('close').click();
       expect(win.callCount('dismissNotification')).toBe(1);
     });

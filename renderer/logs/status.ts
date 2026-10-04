@@ -8,7 +8,13 @@
  */
 import { queuedAfter } from '../pending-queue.js';
 import { buffer } from './buffer.js';
-import { copyBtn, linesEl, pausedEl, statusEl } from './elements.js';
+import {
+  clearSelectionBtn,
+  copyBtn,
+  linesEl,
+  pausedEl,
+  statusEl,
+} from './elements.js';
 import type { LogEntry } from '../../src/domain-types.js';
 
 /** Lines held back from the buffer while the viewer is paused. */
@@ -59,6 +65,7 @@ export function keepQueuedAfter(watermark: (entry: LogEntry) => number): void {
 export function reportSelection(): void {
   const count = buffer.selected.size;
   copyBtn.title = count ? `Copiar ${count} línea(s) seleccionada(s)` : 'Copiar';
+  clearSelectionBtn.hidden = count === 0;
   if (count) statusEl.textContent = `${count} seleccionada(s)`;
   else if (pausedEl.checked) statusEl.textContent = 'Pausado';
   else statusEl.textContent = '';

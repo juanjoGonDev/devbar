@@ -1,3 +1,4 @@
+import { icon, userIcon } from '../icon.js';
 import { attachDragHandlers } from '../dnd-helper.js';
 import { latestWins } from '../latest-wins.js';
 import type { Group } from '../../src/domain-types.js';
@@ -86,12 +87,12 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
     handle.className = 'drag-handle';
     handle.draggable = true;
     handle.title = 'Arrastra para reordenar';
-    handle.textContent = '⋮⋮';
+    handle.append(icon('grip-vertical'));
     card.appendChild(handle);
 
     const iconEl = document.createElement('span');
     iconEl.className = 'nav-icon';
-    iconEl.textContent = group.icon || '📦';
+    iconEl.append(userIcon(group.icon, 'package', group.iconColor));
     card.appendChild(iconEl);
 
     const nameEl = document.createElement('span');

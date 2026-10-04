@@ -203,6 +203,10 @@ export function createElectronHost(options: ElectronHostOptions) {
       writeText: (filePath: string, contents: string): void =>
         fs.writeFileSync(filePath, contents, 'utf8'),
     },
+    fileSize: (filePath: string): number => fs.statSync(filePath).size,
+    readFile: (filePath: string): Buffer => fs.readFileSync(filePath),
+    decodeImage: (bytes: Buffer): NativeImage =>
+      nativeImage.createFromBuffer(bytes),
     removeFile: (target: string): void => fs.rmSync(target, { force: true }),
     writeFile: (target: string, contents: string): void =>
       fs.writeFileSync(target, contents),

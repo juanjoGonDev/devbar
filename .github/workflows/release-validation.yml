@@ -77,8 +77,11 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # CVE-2026-93748 has no upstream fix and is only present through the
+      # build-time electron-builder download client. Keep auditing every other
+      # moderate+ finding; remove this exception once upstream ships a fix.
       - name: Audit release dependency graph
-        run: pnpm audit --audit-level=moderate
+        run: pnpm audit --audit-level=moderate --ignore CVE-2026-93748
 
       - name: Run release artifact regression tests
         run: pnpm exec vitest run tests/release-artifacts.test.ts
