@@ -428,6 +428,43 @@ describe('src/config-store/store.ts', () => {
     });
   });
 
+  describe('trayPopover', () => {
+    const pinned = { displayId: 7, x: 120, y: 40, width: 460, height: 620 };
+
+    it('is not pinned in a store that has never been written', async () => {
+      const store = await harness.open();
+
+      expect(store.getTrayPopover()).toBeNull();
+    });
+
+    it('remembers the pinned popover across a restart', async () => {
+      const first = await harness.open();
+      first.saveTrayPopover(pinned);
+
+      const second = await harness.open({ home: harness.home() });
+
+      expect(second.getTrayPopover()).toEqual(pinned);
+    });
+
+    it('removes the key from disk on a reset', async () => {
+      const store = await harness.open();
+      store.saveTrayPopover(pinned);
+
+      store.saveTrayPopover(null);
+
+      expect(store.getTrayPopover()).toBeNull();
+      expect(harness.onDisk()).not.toHaveProperty('trayPopover');
+    });
+
+    it('treats a hand-edited record as not pinned', async () => {
+      const store = await harness.open({
+        seed: { version: 4, trayPopover: { displayId: 7, x: 'left' } },
+      });
+
+      expect(store.getTrayPopover()).toBeNull();
+    });
+  });
+
   describe('every write', () => {
     it('keeps the legacy services mirror in step with the groups', async () => {
       const store = await harness.open();

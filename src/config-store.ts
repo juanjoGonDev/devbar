@@ -39,9 +39,11 @@ import {
 export {
   getGlobalSettings,
   getScheduleLastRun,
+  getTrayPopover,
   groupsOverlayActive,
   setGroupsOverlay,
   saveGlobalSettings,
+  saveTrayPopover,
   setScheduleLastRun,
 } from './config-store/store.js';
 export {

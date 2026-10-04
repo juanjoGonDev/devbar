@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -114,6 +117,39 @@ function click(el: Element): void {
 /** Lets the one-frame resize debounce actually run. */
 async function nextFrame(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 40));
+}
+
+/**
+ * Every `selector { … -webkit-app-region: … }` rule in the shipped CSS. jsdom
+ * neither lays out nor understands app regions, so the contract is checked
+ * against the real stylesheet: which rule each element MATCHES.
+ */
+function appRegionRules(): { selector: string; region: string }[] {
+  const css = fs
+    .readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        '../renderer/styles.css',
+      ),
+      'utf8',
+    )
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(
+    ([, selectors = '', body = '']) => {
+      const region = /-webkit-app-region:\s*([a-z-]+)/.exec(body)?.[1];
+      if (!region) return [];
+      return selectors
+        .split(',')
+        .map((selector) => ({ selector: selector.trim(), region }));
+    },
+  );
+}
+
+/** The app regions `el` falls under, from the rules it matches. */
+function regionsOf(el: Element): string[] {
+  return appRegionRules()
+    .filter(({ selector }) => el.matches(selector))
+    .map(({ region }) => region);
 }
 
 describe('renderer/tray.ts', () => {
@@ -681,6 +717,86 @@ describe('renderer/tray.ts', () => {
       byId('groups').appendChild(stray);
       vi.advanceTimersByTime(1000);
       expect(stray.textContent).toBe('sin datos');
+    });
+  });
+
+  describe('the pinned popover', () => {
+    function resetButton(): HTMLButtonElement {
+      const el = document.getElementById('reset-tray-position');
+      if (!(el instanceof HTMLButtonElement))
+        throw new Error('no #reset-tray-position');
+      return el;
+    }
+
+    it('hides "Volver junto al icono" while the popover hangs from the icon', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: false });
+      expect(resetButton().hidden).toBe(true);
+    });
+
+    it('shows it once the popover is pinned, with an accessible label', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: true });
+      const button = resetButton();
+      expect(button.hidden).toBe(false);
+      expect(button.getAttribute('aria-label')).toBe('Volver junto al icono');
+      expect(button.title).toBe('Volver junto al icono');
+      expect(iconText(button)).toBe('[pin-off]');
+    });
+
+    it('follows the pinned state main pushes', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: false });
+      await win.push('onTrayPinned', true);
+      expect(resetButton().hidden).toBe(false);
+      await win.push('onTrayPinned', false);
+      expect(resetButton().hidden).toBe(true);
+    });
+
+    it('asks main to re-anchor the popover', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: true });
+      click(resetButton());
+      expect(win.callCount('resetTrayPosition')).toBe(1);
+    });
+  });
+
+  describe('dragging the popover by its header', () => {
+    it('makes the header a drag region', async () => {
+      await openTray();
+      const header = document.querySelector('.tray-header');
+      if (!header) throw new Error('no header');
+      expect(regionsOf(header)).toEqual(['drag']);
+    });
+
+    it('keeps every control in the header clickable', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: true });
+      await win.settle('getPipelineState', pipelineState({ lastRunId: '3' }));
+      await win.settle('getGroupStates', [
+        groupState('api', {
+          commands: [commandState({ warnCount: 2, errorCount: 1 })],
+        }),
+      ]);
+      const controls = document.querySelectorAll(
+        '.tray-header button, .tray-header input, .tray-header select, .tray-header a',
+      );
+      expect(controls.length).toBeGreaterThan(5);
+      for (const control of controls)
+        expect(regionsOf(control), control.outerHTML).toContain('no-drag');
+    });
+
+    it('leaves the group rows and the branch dropdown out of the drag region', async () => {
+      const win = await openTray();
+      await win.settle('getGroupStates', [groupState('api')]);
+      const list = document.createElement('div');
+      list.className = 'combobox-list';
+      document.body.appendChild(list);
+      expect(regionsOf(list)).toEqual(['no-drag']);
+      const rows = document.querySelectorAll('#groups *');
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows)
+        expect(regionsOf(row), row.outerHTML).not.toContain('drag');
     });
   });
 });

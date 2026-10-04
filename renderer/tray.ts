@@ -329,6 +329,23 @@ byId('quit-app', HTMLButtonElement).addEventListener('click', () => {
   window.api.quit();
 });
 
+// "Volver junto al icono": only while the user has pinned the popover away
+// from the tray icon (dragged or resized it). Main pushes every change.
+const resetTrayPositionBtn = byId('reset-tray-position', HTMLButtonElement);
+function showPinned(pinned: boolean): void {
+  resetTrayPositionBtn.hidden = !pinned;
+}
+resetTrayPositionBtn.addEventListener('click', () => {
+  void window.api.resetTrayPosition();
+});
+window.api.onTrayPinned(showPinned);
+window.api
+  .getTrayPinned()
+  .then(({ pinned }) => showPinned(pinned))
+  .catch(() => {
+    /* stays hidden: the popover is anchored as far as this window knows */
+  });
+
 let lastPathSignature = '';
 const pushedGroupStates = latestWins();
 window.api.onUpdate((groupStates) => {
