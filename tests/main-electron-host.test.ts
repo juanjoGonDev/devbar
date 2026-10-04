@@ -35,6 +35,7 @@ vi.mock('electron', () => {
       setLoginItemSettings: (settings: unknown) =>
         electron.calls.push(`login:${JSON.stringify(settings)}`),
       getLoginItemSettings: () => electron.loginItem,
+      on: (event: string) => electron.calls.push(`app.on:${event}`),
     },
     BrowserWindow: class {
       static getFocusedWindow(): unknown {
@@ -431,6 +432,26 @@ describe('src/main/electron-host.ts', () => {
       expect(typeof h.isLinux).toBe('boolean');
       expect(typeof h.desktop).toBe('string');
       expect(typeof h.sessionType).toBe('string');
+    });
+  });
+  describe('bug report and crash hooks', () => {
+    it('previews the report with its problem counts, copying nothing', () => {
+      const preview = host().reportPreview();
+      expect(preview.text).toContain('### Entorno');
+      expect(preview.text).toContain('### Errores y avisos recientes');
+      expect(preview).toMatchObject({ errors: 0, warnings: 0 });
+    });
+
+    it('subscribes crash hooks to the process and the app', () => {
+      electron.calls.length = 0;
+      const h = host();
+      const listener = vi.fn();
+      h.onProcess('devbar-test-event', listener);
+      process.emit('devbar-test-event' as 'exit', 0);
+      process.removeListener('devbar-test-event', listener);
+      expect(listener).toHaveBeenCalledTimes(1);
+      h.onApp('child-process-gone', () => undefined);
+      expect(electron.calls).toEqual(['app.on:child-process-gone']);
     });
   });
 });

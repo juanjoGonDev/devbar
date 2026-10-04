@@ -12,6 +12,14 @@
  * and puts the clipboard text where it belongs.
  */
 
+import type { ProblemEntry } from './error-journal.js';
+import {
+  fenceFor,
+  formatProblem,
+  problemsSection,
+  URL_ENTRY_CHARS,
+} from './report-problems.js';
+
 const ISSUES_URL = 'https://github.com/juanjoGonDev/devbar/issues/new';
 
 /**
@@ -46,6 +54,26 @@ export function maxUrlCharsFor(platform: string): number {
  *  URL carries the longest END of this same tail that its budget allows. */
 export const CLIPBOARD_TAIL_LINES = 400;
 export const CLIPBOARD_TAIL_CHARS = 12_000;
+
+/** The previous session's log rides on the clipboard only, shorter. */
+const PREVIOUS_TAIL_LINES = 100;
+const PREVIOUS_TAIL_CHARS = 4_000;
+
+/** Optional report sections beyond the current log tail. */
+interface ReportExtras {
+  /** Recent warn/error entries, oldest first (as the journal keeps them). */
+  problems?: readonly ProblemEntry[];
+  /** The current session id, to tell its entries from older ones. */
+  session?: string;
+  /** app.previous.log, when there is one. */
+  previousLog?: string | null;
+}
+
+/** Pre-rendered sections handed to `buildIssueBody`. */
+interface BodySections {
+  problems?: string;
+  previousLogTail?: string;
+}
 
 interface IssueContext {
   version: string;
@@ -97,10 +125,23 @@ function environmentSection(ctx: IssueContext): string {
   ].join('\n');
 }
 
-/** The markdown body: what the issue template would ask for, pre-answered. */
+function fencedLog(heading: string, text: string): string[] {
+  // The log can itself carry ``` runs (it may quote markdown): the fence
+  // must be strictly longer than any of them, or GitHub would render the
+  // rest as Markdown.
+  const fence = fenceFor(text);
+  return ['', heading, '', `${fence}text`, text, fence];
+}
+
+/**
+ * The markdown body: what the issue template would ask for, pre-answered.
+ * Order is priority: template, environment, recent problems, log tail —
+ * the previous session's log last (it only ever rides on the clipboard).
+ */
 export function buildIssueBody(
   ctx: IssueContext,
   logTail?: string | null,
+  extra: BodySections = {},
 ): string {
   const sections = [
     '### ¿Qué ha pasado?',
@@ -109,24 +150,16 @@ export function buildIssueBody(
     '',
     environmentSection(ctx),
   ];
-  if (logTail && logTail.trim()) {
-    // The log can itself carry ``` runs (it may quote markdown): a fixed
-    // ``` fence would let the content close the block early and GitHub
-    // would render the rest as Markdown. The fence must be strictly
-    // longer than any backtick run in the content.
-    const longestRun = logTail
-      .match(/`+/g)
-      ?.reduce((max, run) => Math.max(max, run.length), 0);
-    const fence = '`'.repeat(Math.max(3, (longestRun ?? 0) + 1));
+  if (extra.problems) sections.push('', extra.problems);
+  if (logTail && logTail.trim())
+    sections.push(...fencedLog('### Log de la app (últimas líneas)', logTail));
+  if (extra.previousLogTail && extra.previousLogTail.trim())
     sections.push(
-      '',
-      '### Log de la app (últimas líneas)',
-      '',
-      `${fence}text`,
-      logTail,
-      fence,
+      ...fencedLog(
+        '### Log de la sesión anterior (últimas líneas)',
+        extra.previousLogTail,
+      ),
     );
-  }
   return sections.join('\n');
 }
 
@@ -138,9 +171,13 @@ function issueUrl(ctx: IssueContext): string {
   return `${ISSUES_URL}?title=${encodeURIComponent(issueTitle(ctx))}`;
 }
 
-function issueUrlWithBody(ctx: IssueContext, logTail: string): string {
+function issueUrlWithBody(
+  ctx: IssueContext,
+  logTail: string,
+  problems?: string,
+): string {
   return `${issueUrl(ctx)}&body=${encodeURIComponent(
-    buildIssueBody(ctx, logTail),
+    buildIssueBody(ctx, logTail, problems ? { problems } : {}),
   )}`;
 }
 
@@ -180,19 +217,22 @@ function fitTailToBudget(
   ctx: IssueContext,
   tail: string,
   budget: number,
+  problems?: string,
 ): string {
-  if (issueUrlWithBody(ctx, tail).length <= budget) return tail;
-  let fits = 0;
+  const fits = (candidate: string): boolean =>
+    issueUrlWithBody(ctx, candidate, problems).length <= budget;
+  if (fits(tail)) return tail;
+  let kept = 0;
   let over = tail.length;
-  while (over - fits > 1) {
-    const middle = Math.floor((fits + over) / 2);
+  while (over - kept > 1) {
+    const middle = Math.floor((kept + over) / 2);
     const candidate = keepTail(tail, NO_LINE_LIMIT, middle);
-    if (issueUrlWithBody(ctx, candidate).length <= budget) fits = middle;
+    if (fits(candidate)) kept = middle;
     else over = middle;
   }
-  return fits === 0
+  return kept === 0
     ? ''
-    : openOnLineBoundary(tail, keepTail(tail, NO_LINE_LIMIT, fits));
+    : openOnLineBoundary(tail, keepTail(tail, NO_LINE_LIMIT, kept));
 }
 
 interface PreparedIssue {
@@ -286,9 +326,43 @@ function redactSecrets(text: string): string {
   return out;
 }
 
+/** Newest first, redacted BEFORE any shortening can split a secret. */
+function safeProblems(extras: ReportExtras): ProblemEntry[] {
+  return [...(extras.problems ?? [])].reverse().map((entry) => ({
+    ...entry,
+    source: redactSecrets(entry.source),
+    message: redactSecrets(entry.message),
+  }));
+}
+
+/**
+ * The most entries (newest first) whose section still fits the URL with
+ * no log at all: problems outrank the log tail. Undefined when not even
+ * the bare heading fits — the section then stays on the clipboard.
+ */
+function fitProblemsToBudget(
+  ctx: IssueContext,
+  entries: ProblemEntry[],
+  session: string,
+  budget: number,
+): string | undefined {
+  const items = entries.map((e) => formatProblem(e, session, URL_ENTRY_CHARS));
+  let best: string | undefined;
+  for (let count = 0; count <= items.length; count += 1) {
+    const section = problemsSection(
+      items.slice(0, count),
+      items.length - count,
+    );
+    if (issueUrlWithBody(ctx, '', section).length > budget) break;
+    best = section;
+  }
+  return best;
+}
+
 export function prepareIssueReport(
   ctx: IssueContext,
   log?: string | null,
+  extras?: ReportExtras,
 ): PreparedIssue {
   // Both export sinks derive from the SAME redacted log — redaction runs
   // BEFORE any truncation, so no cut can split a secret open — and what
@@ -299,13 +373,39 @@ export function prepareIssueReport(
     CLIPBOARD_TAIL_LINES,
     CLIPBOARD_TAIL_CHARS,
   );
-  const clipboardText = buildIssueBody(ctx, clipboardTail);
+  const problems = extras ? safeProblems(extras) : [];
+  const session = extras?.session ?? '';
+  const previousLog = extras?.previousLog
+    ? keepTail(
+        redactSecrets(extras.previousLog),
+        PREVIOUS_TAIL_LINES,
+        PREVIOUS_TAIL_CHARS,
+      )
+    : '';
+  const clipboardText = buildIssueBody(ctx, clipboardTail, {
+    ...(extras?.problems
+      ? {
+          problems: problemsSection(
+            problems.map((e) => formatProblem(e, session)),
+            0,
+          ),
+        }
+      : {}),
+    previousLogTail: previousLog,
+  });
   const budget = maxUrlCharsFor(ctx.platform);
   // Nothing to shorten towards: even the environment overflows the URL.
   if (issueUrlWithBody(ctx, '').length > budget)
     return { url: issueUrl(ctx), bodyIncluded: false, clipboardText };
+  const urlProblems = extras?.problems
+    ? fitProblemsToBudget(ctx, problems, session, budget)
+    : undefined;
   return {
-    url: issueUrlWithBody(ctx, fitTailToBudget(ctx, clipboardTail, budget)),
+    url: issueUrlWithBody(
+      ctx,
+      fitTailToBudget(ctx, clipboardTail, budget, urlProblems),
+      urlProblems,
+    ),
     bodyIncluded: true,
     clipboardText,
   };

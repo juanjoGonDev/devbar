@@ -31,7 +31,14 @@ import { isLinux, isMac, isWin } from '../platform.js';
 import { appHome } from '../app-paths.js';
 import { resolvedThemeIsDark, themeWindowBackground } from './theme.js';
 import { prepareIssueReport } from '../report-issue.js';
-import { readTail, REPORT_TAIL_BYTES } from '../logger.js';
+import { countProblems } from '../report-problems.js';
+import {
+  currentSession,
+  previousLogPath,
+  readTail,
+  recentProblems,
+  REPORT_TAIL_BYTES,
+} from '../logger.js';
 import {
   applyAutostart as applyAutostartTo,
   wasOpenedAtLogin as resolveWasOpenedAtLogin,
@@ -102,17 +109,14 @@ export function createElectronHost(options: ElectronHostOptions) {
     return shown(focused) ? focused : null;
   };
 
-  /** Assembles the report body the two report actions share. */
-  const buildReport = (): {
-    clipboardText: string;
-    url: string;
-    bodyIncluded: boolean;
-  } => {
-    // Bounded read from the end: the report only ever uses the last
+  /** Assembles the report body the report actions share. */
+  const buildReport = () => {
+    // Bounded reads from the end: the report only ever uses the last
     // few thousand chars, and one oversized entry must not make the
     // click slurp the whole file.
-    const tail = readTail(logFilePath(), REPORT_TAIL_BYTES);
-    return prepareIssueReport(
+    const file = logFilePath();
+    const problems = recentProblems();
+    const report = prepareIssueReport(
       {
         version: app.getVersion(),
         platform: process.platform,
@@ -121,8 +125,14 @@ export function createElectronHost(options: ElectronHostOptions) {
         node: process.versions.node ?? '',
         osRelease: os.release(),
       },
-      tail,
+      readTail(file, REPORT_TAIL_BYTES),
+      {
+        problems,
+        session: currentSession(),
+        previousLog: readTail(previousLogPath(file), REPORT_TAIL_BYTES),
+      },
     );
+    return { ...report, ...countProblems(problems) };
   };
 
   return {
@@ -322,6 +332,22 @@ export function createElectronHost(options: ElectronHostOptions) {
           error: error instanceof Error ? error.message : String(error),
         };
       }
+    },
+    /** What the report would carry, for the dialog to show before any
+     *  action: the full clipboard text and how many problems it lists. */
+    reportPreview: (): { text: string; errors: number; warnings: number } => {
+      const { clipboardText, errors, warnings } = buildReport();
+      return { text: clipboardText, errors, warnings };
+    },
+    /** Process- and app-level events, for the crash hooks. */
+    onProcess: (event: string, listener: (...args: never[]) => void): void => {
+      process.on(event, listener as (...args: unknown[]) => void);
+    },
+    onApp: (event: string, listener: (...args: never[]) => void): void => {
+      app.on(
+        event as 'child-process-gone',
+        listener as (...args: unknown[]) => void,
+      );
     },
     appQuit: (): void => app.quit(),
     appExit: (code: number): void => app.exit(code),
