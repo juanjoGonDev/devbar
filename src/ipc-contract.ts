@@ -214,7 +214,6 @@ interface ApplyImportResult {
   backupPath?: string | undefined;
   error?: string | undefined;
 }
-type NotificationAction = string;
 
 /**
  * Simulation hooks for events that are painful to reproduce by hand. The
@@ -322,7 +321,7 @@ export interface DevBarApi {
   saveSettings(patch: Partial<GlobalSettings>): Promise<GlobalSettings>;
   testNotification(): Promise<SimpleResult>;
   dismissNotification(): Promise<SimpleResult>;
-  notificationAction(action: NotificationAction): Promise<SimpleResult>;
+  notificationAction(action: string): Promise<SimpleResult>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<UpdateStatus>;
   applyUpdate(): Promise<Record<string, unknown>>;

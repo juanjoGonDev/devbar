@@ -119,7 +119,7 @@ describe('src/main/tray-view.ts', () => {
         ...base,
         availableUpdate: { version: '1.2.0' },
       });
-      expect(first?.label).toBe('Actualizar a v1.2.0…');
+      expect(first?.label).toBe('⬆︎ Actualizar a v1.2.0…');
     });
 
     it('offers a restart once the staged version matches', () => {
@@ -128,7 +128,7 @@ describe('src/main/tray-view.ts', () => {
         availableUpdate: { version: '1.2.0' },
         stagedUpdate: { version: '1.2.0' },
       });
-      expect(first?.label).toBe('Reiniciar e instalar v1.2.0');
+      expect(first?.label).toBe('⬆︎ Reiniciar e instalar v1.2.0');
     });
 
     it('still offers the download when a DIFFERENT version is staged', () => {
@@ -137,7 +137,7 @@ describe('src/main/tray-view.ts', () => {
         availableUpdate: { version: '1.3.0' },
         stagedUpdate: { version: '1.2.0' },
       });
-      expect(first?.label).toBe('Actualizar a v1.3.0…');
+      expect(first?.label).toBe('⬆︎ Actualizar a v1.3.0…');
     });
 
     it('shows the download percentage while the update downloads', () => {
