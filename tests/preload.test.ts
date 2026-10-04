@@ -238,6 +238,18 @@ const FORWARDS: readonly Forward[] = [
     'dev:simulateToast',
     [{ kind: 'error' }],
   ],
+  [
+    'dev.fixtureGroupsStatus',
+    (api) => api.dev.fixtureGroupsStatus(),
+    'dev:fixtureGroupsStatus',
+    [],
+  ],
+  [
+    'dev.setFixtureGroups',
+    (api) => api.dev.setFixtureGroups(true, 3),
+    'dev:setFixtureGroups',
+    [{ on: true, repeat: 3 }],
+  ],
   ['openConfig', (api) => api.openConfig(), 'window:openConfig', []],
   [
     'openConfigChangelog',

@@ -7,6 +7,7 @@ import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
 import { setTrayHost, showToast } from './tray/host.js';
 import { wireUpdateChip } from './tray/update-chip.js';
+import { installAutoHeight } from './tray/auto-height.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
@@ -237,14 +238,14 @@ function render(groupStates: GroupState[]): void {
     empty.innerHTML =
       'No hay grupos configurados.<br/>Pulsa <strong>Configuración</strong> para añadir uno.';
     groupsEl.appendChild(empty);
-    scheduleTrayResize();
+    autoHeight.schedule();
     return;
   }
 
   for (const gs of groupStates) {
     groupsEl.appendChild(renderGroupRow(gs));
   }
-  scheduleTrayResize();
+  autoHeight.schedule();
 }
 
 // ─────────────────────── Dynamic popover height ──────────────────────
@@ -280,24 +281,25 @@ function measureContentHeight(): number {
   return Math.ceil(padTop + headerBlock + groups.scrollHeight + padBottom);
 }
 
-let _resizeRaf = 0;
-/**
- * Resize the tray window to its natural content height, debounced to one
- * animation frame. No-ops while a dropdown is open (the combobox owns the
- * height then); closeList() re-runs it once the dropdown count hits 0.
- */
+// Every DOM change in the popover — a state render, a row expanding, the
+// update chip, a banner — re-measures on the next frame, so the height
+// follows the content while the popover is open. While a dropdown is open the
+// combobox owns the height (requestHostHeight grows to fit it); closeList()
+// forces a resend once the count hits 0, which shrinks the window back.
+const autoHeight = installAutoHeight({
+  root: document.body,
+  measure: measureContentHeight,
+  send: (height) => {
+    if (window.api?.setTrayHeight) void window.api.setTrayHeight(height);
+  },
+  isSuspended: isComboboxOpen,
+});
+/** Re-measures on the next frame and resends even an unchanged height. */
 function scheduleTrayResize(): void {
-  if (_resizeRaf) cancelAnimationFrame(_resizeRaf);
-  _resizeRaf = requestAnimationFrame(() => {
-    _resizeRaf = 0;
-    // While a dropdown is open the combobox owns the height (requestHostHeight
-    // grows to fit it); shrinking here would clip it. closeList() re-runs this
-    // once the count hits 0.
-    if (isComboboxOpen()) return;
-    if (!window.api || !window.api.setTrayHeight) return;
-    window.api.setTrayHeight(measureContentHeight());
-  });
+  autoHeight.schedule(true);
 }
+// Shown again (possibly on another display, with another cap): resend.
+window.addEventListener('focus', scheduleTrayResize);
 /** Replay a state update that was deferred while a dropdown was open. */
 function flushPendingRender(): void {
   if (!_pendingStates) return;

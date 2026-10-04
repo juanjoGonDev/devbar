@@ -145,7 +145,8 @@ function harness(
       hideIfVisible: noop,
       hide: noop,
       popover: () => null,
-      workAreaHeight: () => 900,
+      workAreaFor: () => ({ x: 0, y: 0, width: 1440, height: 900 }),
+      trayIconBounds: () => null,
     },
     updater: {
       status: () => ({}),

@@ -86,6 +86,9 @@ const api: DevBarApi = {
     simulatePrescriptConfirm: () =>
       ipcRenderer.invoke('dev:simulatePrescriptConfirm'),
     simulateToast: (kind) => ipcRenderer.invoke('dev:simulateToast', { kind }),
+    fixtureGroupsStatus: () => ipcRenderer.invoke('dev:fixtureGroupsStatus'),
+    setFixtureGroups: (on, repeat) =>
+      ipcRenderer.invoke('dev:setFixtureGroups', { on, repeat }),
   },
   openConfig: () => ipcRenderer.invoke('window:openConfig'),
   openConfigChangelog: () => ipcRenderer.invoke('window:openConfigChangelog'),

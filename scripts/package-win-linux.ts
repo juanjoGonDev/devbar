@@ -232,6 +232,9 @@ export function linuxBuildOptions({
                 { target: 'AppImage', arch: [arch] },
                 { target: 'deb', arch: [arch] },
               ],
+        // No executableArgs on purpose: the display backend is decided at
+        // runtime (src/main/linux-display-backend.ts), and leaving them unset
+        // keeps AppImage's default --no-sandbox Exec argument.
         artifactName: `DevBar-${version}-linux-${contractArchName(arch)}.${ext()}`,
       },
     },

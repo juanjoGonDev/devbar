@@ -159,11 +159,37 @@ function runMigration(): void {
 }
 runMigration();
 
-export function readGroups(): Group[] {
+/**
+ * The dev panel's "Grupos de prueba": while set, every group (and pipeline)
+ * read and write in the app goes to this in-memory copy instead of the store,
+ * so the user's configuration is hidden but never read-modify-written. Never
+ * persisted: a restart always comes back on the real groups.
+ */
+let overlay: { groups: Group[]; preSteps: PreStep[] } | null = null;
+
+export function setGroupsOverlay(groups: readonly Group[] | null): void {
+  overlay = groups
+    ? { groups: structuredClone([...groups]), preSteps: [] }
+    : null;
+}
+export function groupsOverlayActive(): boolean {
+  return overlay !== null;
+}
+
+/** The groups the user stored, whatever the overlay says (export, backup). */
+export function readStoredGroups(): Group[] {
   return store.get('groups', []).map(normalizeGroup);
 }
-export function readPreSteps(): PreStep[] {
+export function readStoredPreSteps(): PreStep[] {
   return store.get('preSteps', []).map(normalizePreStep);
+}
+// Copies, both ways: every caller mutates what it read before persisting it,
+// and that must not reach the overlay until it actually does persist.
+export function readGroups(): Group[] {
+  return overlay ? structuredClone(overlay.groups) : readStoredGroups();
+}
+export function readPreSteps(): PreStep[] {
+  return overlay ? structuredClone(overlay.preSteps) : readStoredPreSteps();
 }
 /**
  * Successor to the old `persistGroups`: writes `groups`, regenerates
@@ -178,6 +204,10 @@ export function persistState(
   steps?: readonly PreStep[],
 ): void {
   const prunedSteps = prunePipelineRefs(steps ?? readPreSteps(), groups);
+  if (overlay) {
+    overlay = { groups: structuredClone(groups), preSteps: prunedSteps };
+    return;
+  }
   store.set('groups', groups);
   store.set('services', regenerateLegacyServices(groups));
   store.set('preSteps', prunedSteps);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow, Menu, NativeImage } from 'electron';
 import type { Menubar } from 'menubar';
 import {
@@ -163,6 +163,7 @@ describe('src/main/lifecycle.ts', () => {
         isMac: true,
         isLinux: false,
         sessionType: 'x11',
+        displayLine: () => null,
         attachTray: () => calls.push('attachTray'),
         attachConsole: (_win, label) => calls.push(`console:${label}`),
         displayMatching: () => ({
@@ -236,6 +237,25 @@ describe('src/main/lifecycle.ts', () => {
       const linux = harness({ isLinux: true });
       linux.events.get('ready')?.();
       expect(linux.calls).toContain('broadcast');
+    });
+
+    it('logs the Linux display backend once the tray is up', () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        // Read at ready, not at setup: the work-area half needs the screen.
+        const displayLine = vi.fn(
+          () => 'x11 (forced from wayland), workArea unreported → capped',
+        );
+        const h = harness({ isLinux: true, displayLine });
+        expect(displayLine).not.toHaveBeenCalled();
+        h.events.get('ready')?.();
+        expect(displayLine).toHaveBeenCalledTimes(1);
+        expect(log).toHaveBeenCalledWith(
+          '[display] linux backend: x11 (forced from wayland), workArea unreported → capped',
+        );
+      } finally {
+        log.mockRestore();
+      }
     });
 
     it('captures the popover console once its window exists', () => {

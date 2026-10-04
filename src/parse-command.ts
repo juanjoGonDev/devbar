@@ -51,7 +51,7 @@ export function splitCommand(
     ? { command: cmd, args: [] }
     : { command: executable, args: tokens.slice(1) };
 }
-function shellQuote(value: string | null | undefined): string {
+export function shellQuote(value: string | null | undefined): string {
   if (value == null || value === '') return "''";
   if (/^[A-Za-z0-9_\-./:=@+,]+$/.test(value)) return value;
   return `'${value.replace(/'/g, "'\\''")}'`;

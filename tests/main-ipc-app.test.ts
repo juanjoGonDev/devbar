@@ -31,6 +31,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
   let folderResult = { canceled: false, filePaths: ['/chosen'] };
   let messageResponse = 1;
   let stopAll = { ok: true, failed: [] as string[] };
+  let overlayActive = false;
   let validation: ReturnType<AppIpcDeps['configIo']['validateImportedConfig']> =
     {
       ok: true,
@@ -43,8 +44,14 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
       replaceConfig: () => calls.push('replaceConfig'),
       writeImportBackup: () => '/backup.json',
       getGlobalSettings: () => makeSettings({ autostart: true }),
+      groupsOverlayActive: () => overlayActive,
     },
-    processManager: { stopAll: () => Promise.resolve(stopAll) },
+    processManager: {
+      stopAll: () => {
+        calls.push('stopAll');
+        return Promise.resolve(stopAll);
+      },
+    },
     configIo: {
       validateImportedConfig: () => validation,
       summarizeImport: () => preview,
@@ -125,6 +132,9 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
   return {
     ipc,
     calls,
+    setOverlayActive: (value: boolean) => {
+      overlayActive = value;
+    },
     written,
     timers,
     setSave: (value: typeof saveResult) => {
@@ -423,6 +433,7 @@ describe('src/main/ipc/app-ipc.ts', () => {
         h.ipc.invoke('config:applyImport', { token: 'tok' }),
       ).resolves.toEqual({ ok: true, backupPath: '/backup.json' });
       expect(h.calls).toEqual([
+        'stopAll',
         'forgetRunId',
         'replaceConfig',
         'syncRepoWatchers',
@@ -438,6 +449,21 @@ describe('src/main/ipc/app-ipc.ts', () => {
       await expect(
         h.ipc.invoke('config:applyImport', { token: 'tok' }),
       ).resolves.toMatchObject({ ok: false });
+      expect(h.calls).not.toContain('replaceConfig');
+    });
+
+    it('refuses while the dev test groups are shown, before stopping anything', async () => {
+      // The user's real services keep running underneath the test groups;
+      // an import would stop every one of them and then be refused anyway.
+      const h = harness();
+      h.setOverlayActive(true);
+      await h.ipc.invoke('config:import');
+      const result = (await h.ipc.invoke('config:applyImport', {
+        token: 'tok',
+      })) as { ok: boolean; error?: string };
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('Modo grupos de prueba activo');
+      expect(h.calls).not.toContain('stopAll');
       expect(h.calls).not.toContain('replaceConfig');
     });
 
@@ -468,6 +494,7 @@ describe('src/main/ipc/app-ipc.ts', () => {
           },
           writeImportBackup: () => '/backup.json',
           getGlobalSettings: () => makeSettings(),
+          groupsOverlayActive: () => false,
         },
       });
       await h.ipc.invoke('config:import');
