@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIconPicker } from '../renderer/config/icon-picker.js';
 import { customIconList, setCustomIcons } from '../renderer/icon.js';
 import type { CustomIcon } from '../src/domain-types.js';
@@ -9,6 +9,24 @@ import type {
 } from '../src/ipc-contract.js';
 
 /** The picker's uploads tab, its Spanish search and its tooltips. */
+
+// jsdom cannot rasterize; the rasterizer has its own test
+// (config-svg-rasterize.test.ts), so here it only answers.
+type RasterResult =
+  { ok: true; dataUrl: string } | { ok: false; error: string };
+const raster = vi.hoisted(() => {
+  const state: { result: RasterResult; texts: string[] } = {
+    result: { ok: true, dataUrl: '' },
+    texts: [],
+  };
+  return state;
+});
+vi.mock('../renderer/config/svg-rasterize.js', () => ({
+  rasterizeSvg: (text: string) => {
+    raster.texts.push(text);
+    return Promise.resolve(raster.result);
+  },
+}));
 
 const RECENTS_KEY = 'devbar.recentIcons';
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
@@ -28,6 +46,8 @@ const BATTERY: IconBatteryItem[] = [
 
 interface Api {
   upload: CustomIconUploadResult | Error;
+  added: { name: string; dataUrl: string }[];
+  addResult: CustomIconUploadResult;
   deleted: string[];
   deleteOk: boolean;
 }
@@ -35,6 +55,8 @@ interface Api {
 function setup(api: Partial<Api> = {}) {
   const state: Api = {
     upload: { ok: false, canceled: true },
+    added: [],
+    addResult: { ok: true, icon: logo },
     deleted: [],
     deleteOk: true,
     ...api,
@@ -58,6 +80,10 @@ function setup(api: Partial<Api> = {}) {
         state.upload instanceof Error
           ? Promise.reject(state.upload)
           : Promise.resolve(state.upload),
+      addRasterizedCustomIcon: (icon: { name: string; dataUrl: string }) => {
+        state.added.push(icon);
+        return Promise.resolve(state.addResult);
+      },
       deleteCustomIcon: (id: string) => {
         state.deleted.push(id);
         return Promise.resolve(
@@ -101,6 +127,8 @@ describe('icon picker — uploads and Spanish search', () => {
   beforeEach(() => {
     localStorage.clear();
     setCustomIcons([]);
+    raster.texts.length = 0;
+    raster.result = { ok: true, dataUrl: PNG };
   });
 
   it('lists uploads under "Mis iconos", each deletable', async () => {
@@ -124,7 +152,7 @@ describe('icon picker — uploads and Spanish search', () => {
     h.open();
     h.tab('custom')?.click();
     expect(h.grid.querySelector('.icon-custom-empty')?.textContent).toMatch(
-      /PNG o JPEG/,
+      /PNG, JPG o SVG/,
     );
     expect(h.grid.querySelector('.icon-upload-btn')?.textContent).toContain(
       'Subir imagen…',
@@ -144,6 +172,58 @@ describe('icon picker — uploads and Spanish search', () => {
     expect(JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]')).toEqual([
       'img:abc123',
     ]);
+  });
+
+  it('rasterizes an SVG upload, stores the PNG through main and picks it', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+    const h = setup({
+      upload: { ok: true, svg: { name: 'Marca', text: svg } },
+    });
+    await flush();
+    h.open();
+    h.tab('custom')?.click();
+    h.grid.querySelector<HTMLButtonElement>('.icon-upload-btn')?.click();
+    await flush();
+    expect(raster.texts).toEqual([svg]);
+    expect(h.state.added).toEqual([{ name: 'Marca', dataUrl: PNG }]);
+    expect(h.picked).toEqual(['img:abc123']);
+    expect(customIconList()).toEqual([logo]);
+  });
+
+  it('shows why an SVG could not be rasterized, and stores nothing', async () => {
+    raster.result = {
+      ok: false,
+      error: 'La imagen SVG está vacía o depende de recursos externos',
+    };
+    const h = setup({
+      upload: { ok: true, svg: { name: 'Marca', text: '<svg/>' } },
+    });
+    await flush();
+    h.open();
+    h.tab('custom')?.click();
+    h.grid.querySelector<HTMLButtonElement>('.icon-upload-btn')?.click();
+    await flush();
+    expect(h.grid.querySelector('.icon-custom-status')?.textContent).toBe(
+      'La imagen SVG está vacía o depende de recursos externos',
+    );
+    expect(h.state.added).toEqual([]);
+    expect(h.picked).toEqual([]);
+  });
+
+  it('shows why main refused the rasterized PNG', async () => {
+    const h = setup({
+      upload: { ok: true, svg: { name: 'Marca', text: '<svg/>' } },
+      addResult: { ok: false, error: 'La imagen resultante no es válida' },
+    });
+    await flush();
+    h.open();
+    h.tab('custom')?.click();
+    h.grid.querySelector<HTMLButtonElement>('.icon-upload-btn')?.click();
+    await flush();
+    expect(h.grid.querySelector('.icon-custom-status')?.textContent).toBe(
+      'La imagen resultante no es válida',
+    );
+    expect(h.picked).toEqual([]);
   });
 
   it('shows why an upload failed, and stays quiet on a cancel', async () => {

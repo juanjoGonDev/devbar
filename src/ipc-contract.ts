@@ -1,7 +1,6 @@
 import type {
   Action,
   Command,
-  CustomIcon,
   GlobalSettings,
   Group,
   LogEntry,
@@ -14,9 +13,14 @@ import type {
 } from './domain-types.js';
 import type { SimpleResult } from './ipc-contract/simple-result.js';
 import type { UpdatesApi } from './ipc-contract/updates-api.js';
+import type { CustomIconsApi } from './ipc-contract/custom-icons-api.js';
 
 export type { UpdatePhase } from './update-phase-types.js';
 export type { UpdateStatus } from './ipc-contract/updates-api.js';
+export type {
+  CustomIconAddResult,
+  CustomIconUploadResult,
+} from './ipc-contract/custom-icons-api.js';
 export type SilenceLevel = 'warn' | 'error';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
 export interface CommandRuntimeState {
@@ -125,9 +129,6 @@ export interface IconBatteryItem {
   /** The name, translated word by word — the picker's tooltip. */
   esName?: string;
 }
-export type CustomIconUploadResult =
-  | { ok: true; icon: CustomIcon }
-  | { ok: false; canceled?: boolean; error?: string };
 export interface ImportPreview {
   groupsCount: number;
   commandsCount: number;
@@ -235,7 +236,7 @@ interface FixtureGroupsStatus {
   repeat: number;
 }
 
-export interface DevBarApi extends UpdatesApi {
+export interface DevBarApi extends UpdatesApi, CustomIconsApi {
   listGroups(): Promise<Group[]>;
   getGroupStates(): Promise<GroupState[]>;
   saveGroup(
@@ -324,12 +325,6 @@ export interface DevBarApi extends UpdatesApi {
   dismissNotification(): Promise<SimpleResult>;
   notificationAction(action: string): Promise<SimpleResult>;
   getIconBattery(): Promise<readonly IconBatteryItem[]>;
-  listCustomIcons(): Promise<CustomIcon[]>;
-  /** Opens the file dialog in main; resolves once the image is stored. */
-  uploadCustomIcon(): Promise<CustomIconUploadResult>;
-  /** Asks for confirmation in main before deleting. */
-  deleteCustomIcon(id: string): Promise<{ ok: boolean; canceled?: boolean }>;
-  onCustomIconsChanged(callback: (icons: CustomIcon[]) => void): () => void;
   exportConfig(): Promise<ExportResult>;
   importConfig(): Promise<ImportResult>;
   confirmImport(args: {

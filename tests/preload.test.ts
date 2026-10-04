@@ -333,6 +333,12 @@ const FORWARDS: readonly Forward[] = [
     [],
   ],
   [
+    'addRasterizedCustomIcon',
+    (api) => api.addRasterizedCustomIcon({ name: 'mark', dataUrl: 'data:x' }),
+    'customIcons:addRasterized',
+    [{ name: 'mark', dataUrl: 'data:x' }],
+  ],
+  [
     'deleteCustomIcon',
     (api) => api.deleteCustomIcon('abc123'),
     'customIcons:delete',
