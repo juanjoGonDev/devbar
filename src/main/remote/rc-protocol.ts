@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 
 /**
  * devbar-rc/1, the application-level encryption of «Control remoto», on the
@@ -260,27 +261,21 @@ export function nonce(counter: number): Buffer {
   return value;
 }
 
-/** ChaCha20-Poly1305: ciphertext ‖ 16-byte tag. */
+/**
+ * ChaCha20-Poly1305: ciphertext ‖ 16-byte tag. From @noble/ciphers — the
+ * same code the phone runs — because Electron's crypto is BoringSSL, which
+ * has no 'chacha20-poly1305' for createCipheriv (tests/main-remote-rc-
+ * electron.test.ts runs this module in Electron to keep that true).
+ */
 export function seal(
   key: Uint8Array,
   counter: number,
   associated: Uint8Array,
   plaintext: Uint8Array,
 ): Buffer {
-  const cipher = crypto.createCipheriv(
-    'chacha20-poly1305',
-    key,
-    nonce(counter),
-    {
-      authTagLength: TAG_BYTES,
-    },
+  return Buffer.from(
+    chacha20poly1305(key, nonce(counter), associated).encrypt(plaintext),
   );
-  cipher.setAAD(associated, { plaintextLength: plaintext.length });
-  return Buffer.concat([
-    cipher.update(plaintext),
-    cipher.final(),
-    cipher.getAuthTag(),
-  ]);
 }
 
 /** The plaintext, or null when anything about the message is off. */
@@ -291,17 +286,10 @@ export function open(
   sealed: Uint8Array,
 ): Buffer | null {
   if (sealed.length < TAG_BYTES) return null;
-  const body = sealed.subarray(0, sealed.length - TAG_BYTES);
   try {
-    const decipher = crypto.createDecipheriv(
-      'chacha20-poly1305',
-      key,
-      nonce(counter),
-      { authTagLength: TAG_BYTES },
+    return Buffer.from(
+      chacha20poly1305(key, nonce(counter), associated).decrypt(sealed),
     );
-    decipher.setAAD(associated, { plaintextLength: body.length });
-    decipher.setAuthTag(sealed.subarray(body.length));
-    return Buffer.concat([decipher.update(body), decipher.final()]);
   } catch {
     return null;
   }

@@ -17,6 +17,9 @@ importers:
 
   .:
     dependencies:
+      '@noble/ciphers':
+        specifier: 2.4.0
+        version: 2.4.0
       electron-store:
         specifier: 11.0.2
         version: 11.0.2
@@ -36,9 +39,6 @@ importers:
       '@fontsource/noto-color-emoji':
         specifier: 5.3.2
         version: 5.3.2
-      '@noble/ciphers':
-        specifier: 2.4.0
-        version: 2.4.0
       '@noble/curves':
         specifier: 2.4.0
         version: 2.4.0

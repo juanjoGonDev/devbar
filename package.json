@@ -43,7 +43,6 @@
   "devDependencies": {
     "@electron/packager": "20.3.0",
     "@fontsource/noto-color-emoji": "5.3.2",
-    "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@types/debug": "4.1.13",
@@ -70,6 +69,7 @@
     "vitest": "5.0.1"
   },
   "dependencies": {
+    "@noble/ciphers": "2.4.0",
     "electron-store": "11.0.2",
     "menubar": "9.5.3",
     "qrcode-generator": "2.0.4",
