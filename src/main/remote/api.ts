@@ -27,7 +27,9 @@ import type { VerifyTokens } from './verify-tokens.js';
  *
  *   me            who this is talking to — the host name for anyone, the
  *                 device and the DevBar version once the session proved it;
- *   pair.*        the pairing handshake, open to an unauthenticated session;
+ *   pair.*        the pairing handshake, open to an unauthenticated session:
+ *                 `pair.claim` spends the QR's code for this session (once
+ *                 per session), whose `pair.request` then redeems the claim;
  *                 the new key signs "devbar-rc/1 pair" ‖ T to show it is held;
  *   auth          the device signs "devbar-rc/1 auth" ‖ id ‖ T of THIS
  *                 handshake with its key, and the session becomes that
@@ -78,11 +80,16 @@ export interface SessionApiDeps {
     | 'remove'
     | 'touch'
   >;
-  pairing: Pick<Pairing, 'request' | 'status' | 'takeAccepted' | 'withdraw'>;
+  pairing: Pick<
+    Pairing,
+    'claim' | 'request' | 'status' | 'takeAccepted' | 'withdraw'
+  >;
   verifyTokens: Pick<VerifyTokens, 'consume'>;
   limiter: RateLimiter;
   hostInfo(): { name: string; version: string };
   devicesChanged(): void;
+  /** A phone spent the QR's code: the desktop shows a fresh one. */
+  pairClaimed(): void;
   pairRequested(request: RemotePairRequest): void;
   /** The phone cancelled a pending request: the desktop closes its dialog. */
   pairWithdrawn(requestId: string): void;
@@ -168,18 +175,32 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
     });
   };
 
+  const pairClaim: Handler = (args, call) => {
+    if (!deps.limiter.allow(call.ip))
+      return json(429, { error: 'rate-limited' });
+    const code = record(args)?.code;
+    if (typeof code !== 'string') return invalidRequest();
+    if (call.session.pairClaimed)
+      return json(409, { error: 'already-claimed' });
+    const result = pairing.claim({ code, sid: call.session.id });
+    if (!result.ok) return json(410, { error: result.reason });
+    call.session.pairClaimed = true;
+    deps.pairClaimed();
+    return json(200, { expiresAt: result.expiresAt });
+  };
+
   const pairRequest: Handler = (args, call) => {
     if (!deps.limiter.allow(call.ip))
       return json(429, { error: 'rate-limited' });
     const body = record(args);
-    if (!body || typeof body.code !== 'string') return invalidRequest();
+    if (!body) return invalidRequest();
     const name = normalizeDeviceName(body.name);
     if (name === null) return json(400, { error: 'invalid-name' });
-    // Checked before the code is spent: a bad proof leaves it usable.
+    // Checked before the claim is spent: a bad proof leaves it usable.
     const devicePub = provenKey(body, pairMessage(call.session.transcript));
     if (!devicePub) return invalidRequest();
     const result = pairing.request({
-      code: body.code,
+      sid: call.session.id,
       name,
       client: clientLabel(call.userAgent),
       ip: call.ip,
@@ -267,6 +288,7 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
 
   const ops = new Map<string, Handler>([
     ['me', me],
+    ['pair.claim', pairClaim],
     ['pair.request', pairRequest],
     ['pair.status', pairStatus],
     ['pair.cancel', pairCancel],

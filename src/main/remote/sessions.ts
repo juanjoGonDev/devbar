@@ -48,6 +48,8 @@ export interface Session {
   deviceId: string | null;
   /** The process whose log lines this session's stream carries. */
   logsId: string | null;
+  /** It spent a pairing code (`pair.claim`): one per session. */
+  pairClaimed: boolean;
   /** One phone→desktop message; null when forged, tampered or replayed. */
   open(kind: InboundKind, counter: number, sealed: Uint8Array): Buffer | null;
   /** One desktop→phone reply, with the next counter. */
@@ -100,6 +102,7 @@ function createSession(ip: string, material: SessionMaterial): Session {
     transcript: material.transcript,
     deviceId: null,
     logsId: null,
+    pairClaimed: false,
     open: (kind, counter, sealed) => {
       // The window is checked first and only moves once the message
       // authenticated: a forged counter cannot push genuine ones out.

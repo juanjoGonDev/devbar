@@ -189,12 +189,13 @@ export function createRemoteClient(fetcher: Fetcher, hooks: ClientHooks) {
         suggestedName: text(answer.body.suggestedName),
       };
     },
-    /** Asks to be paired with `device`, proving it holds the key. */
+    /** Spends the QR's code for this session, before the name is asked. */
+    claimPairing: (code: string) => call('pair.claim', { code }),
+    /** Asks this session's claim to pair `device`, proving it holds the key. */
     requestPairing: (
-      code: string,
       name: string,
       device: { secretKey: Uint8Array; publicKey: Uint8Array },
-    ) => provenCall('pair.request', device, pairMessage, { code, name }),
+    ) => provenCall('pair.request', device, pairMessage, { name }),
     /** Replaces this device's key with `next`, proving it holds it. */
     rotateKey: (next: { secretKey: Uint8Array; publicKey: Uint8Array }) =>
       provenCall('device.rotate', next, rotateMessage, {}),

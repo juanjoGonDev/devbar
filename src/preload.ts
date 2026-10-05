@@ -144,6 +144,8 @@ const api: DevBarApi = {
     ipcRenderer.invoke('remote:securityCode', { id }),
   renewRemoteIdentity: () => ipcRenderer.invoke('remote:renewIdentity'),
   onRemoteChanged: (cb) => subscribe('remote:changed', cb),
+  onRemotePairCodeClaimed: (cb) =>
+    subscribe('remote:pairCodeClaimed', () => cb()),
   onRemotePairRequest: (cb) => subscribe('remote:pairRequest', cb),
   onRemotePairRequestClosed: (cb) => subscribe('remote:pairRequestClosed', cb),
   exportConfig: () => ipcRenderer.invoke('config:export'),

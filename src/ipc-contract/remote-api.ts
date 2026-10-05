@@ -143,6 +143,8 @@ export interface RemoteApi {
    */
   renewRemoteIdentity(): Promise<SimpleResult>;
   onRemoteChanged(callback: (status: RemoteStatus) => void): () => void;
+  /** A phone claimed the code on screen: the QR dialog shows a fresh one. */
+  onRemotePairCodeClaimed(callback: () => void): () => void;
   onRemotePairRequest(
     callback: (request: RemotePairRequest) => void,
   ): () => void;

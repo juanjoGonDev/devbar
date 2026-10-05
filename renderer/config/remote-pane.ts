@@ -137,6 +137,7 @@ export function createRemotePane(
   els.addDevice.addEventListener('click', () => pair.open());
 
   window.api.onRemoteChanged(apply);
+  window.api.onRemotePairCodeClaimed(() => pair.codeClaimed());
   window.api.onRemotePairRequest((incoming) => {
     pair.codeUsed();
     request.show(incoming);

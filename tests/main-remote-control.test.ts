@@ -24,23 +24,12 @@ import type { SecretBox } from '../src/main/remote/identity.js';
  * does over the encrypted channel is tests/remote-rc-e2e.test.ts.
  */
 
-/** Redeems a pairing link as a phone would; the status of the answer. */
+/** Claims a pairing link's code as a phone would; the answer's status. */
 async function redeem(h: ReturnType<typeof harness>, url: string) {
   const { code, key } = pairingLink(url);
   const channel = createChannel(h.net.fetch);
   await channel.open(key);
-  const device = generateSigningKey();
-  const answer = await channel.send('pair.request', {
-    code,
-    name: 'x',
-    devicePub: toB64(device.publicKey),
-    sig: toB64(
-      sign(
-        device.secretKey,
-        pairMessage(channel.handshake() ?? new Uint8Array()),
-      ),
-    ),
-  });
+  const answer = await channel.send('pair.claim', { code });
   return answer.status;
 }
 
@@ -304,6 +293,46 @@ describe('src/main/remote/remote-control.ts', () => {
   });
 
   describe('the pairing handshake', () => {
+    it('tells the desktop the moment a phone claims the code, before it asks', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const pairing = h.remote.startPairing();
+      if (!pairing.ok) throw new Error(pairing.error);
+
+      expect(await redeem(h, pairing.url)).toBe(200);
+
+      expect(h.channels()).toContain('remote:pairCodeClaimed');
+      expect(h.channels()).not.toContain('remote:pairRequest');
+      expect(await redeem(h, pairing.url)).toBe(410);
+    });
+
+    it('lets a phone that claimed in time ask after the code has run out', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const pairing = h.remote.startPairing();
+      if (!pairing.ok) throw new Error(pairing.error);
+      const { code, key } = pairingLink(pairing.url);
+      const channel = createChannel(h.net.fetch);
+      await channel.open(key);
+      await channel.send('pair.claim', { code });
+      h.advance(90_000);
+
+      const device = generateSigningKey();
+      const answer = await channel.send('pair.request', {
+        name: 'iPhone de Ana',
+        devicePub: toB64(device.publicKey),
+        sig: toB64(
+          sign(
+            device.secretKey,
+            pairMessage(channel.handshake() ?? new Uint8Array()),
+          ),
+        ),
+      });
+
+      expect(answer.status).toBe(200);
+      expect(h.channels()).toContain('remote:pairRequest');
+    });
+
     it('tells the desktop, then links the phone once it is accepted', async () => {
       const h = harness();
       await h.remote.setEnabled(true);

@@ -6,23 +6,29 @@ import type { RemotePairRequest } from '../../ipc-contract/remote-api.js';
  * injected):
  *
  *   1. The desktop issues THE pairing code — one at a time, single use,
- *      5 minutes. It travels in the QR's fragment, so it proves the phone saw
- *      this screen and never crosses the network in clear.
- *   2. The phone redeems it for a request: a 60 s window and a 6-digit
+ *      30 seconds. It travels in the QR's fragment, so it proves the phone
+ *      saw this screen and never crosses the network in clear.
+ *   2. The phone claims it right after its handshake (`claim`): the code is
+ *      spent there, and that session — only that one — holds a claim for
+ *      two minutes, the time to name the device. So a code can last only
+ *      seconds on screen without rushing whoever types the name.
+ *   3. The claim is redeemed for a request: a 60 s window and a 6-digit
  *      verification number that only the phone shows. Seeing the code is not
  *      enough — someone at the desk must type those digits (`checkCode`,
  *      compared in constant time), which is what tells them they accept THEIR
  *      phone and not a neighbour who photographed the screen first. Three
  *      wrong codes reject the request; accepting re-checks the digits.
- *   3. The phone polls the request; the server hands an accepted one over
+ *   4. The phone polls the request; the server hands an accepted one over
  *      exactly once (`takeAccepted`), which is when the device is created
  *      with the public key the phone sent along (devbar-rc/1: the phone
  *      proves it holds the matching private key on every connection).
  *
- * Nothing here is persisted: a restart drops every code and request.
+ * Nothing here is persisted: a restart drops every code, claim and request.
  */
 
-const CODE_TTL_MS = 5 * 60_000;
+const CODE_TTL_MS = 30_000;
+/** How long a claimed code leaves its session to send the request. */
+const CLAIM_TTL_MS = 2 * 60_000;
 const REQUEST_TTL_MS = 60_000;
 /** How long a settled request stays readable for the phone's next poll. */
 const SETTLED_RETENTION_MS = 60_000;
@@ -34,6 +40,8 @@ const SIX_DIGITS = /^\d{6}$/;
 
 type PairRequestStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
 type PairCodeRefusal = 'invalid' | 'expired' | 'used';
+/** No live claim on that session: never made, lapsed or already spent. */
+type PairClaimRefusal = 'claim-expired';
 
 export interface PairingDeps {
   now(): number;
@@ -46,8 +54,14 @@ export interface Pairing {
   startPairing(): { code: string; expiresAt: number };
   cancelPairing(): void;
   hasActiveCode(): boolean;
-  request(input: {
+  /** Spends the code for session `sid`, which may then send its request. */
+  claim(input: {
     code: string;
+    sid: string;
+  }): { ok: true; expiresAt: number } | { ok: false; reason: PairCodeRefusal };
+  /** Redeems the live claim of session `sid`. */
+  request(input: {
+    sid: string;
     name: string;
     client: string;
     ip: string;
@@ -55,7 +69,7 @@ export interface Pairing {
     devicePub: string;
   }):
     | { ok: true; request: RemotePairRequest; verificationCode: string }
-    | { ok: false; reason: PairCodeRefusal };
+    | { ok: false; reason: PairClaimRefusal };
   /** Null once the request is unknown, handed over or forgotten. */
   status(requestId: string): PairRequestStatus | null;
   /**
@@ -77,7 +91,7 @@ export interface Pairing {
   withdraw(requestId: string): boolean;
   /** Expires a pending request that is due; true when it just expired. */
   expire(requestId: string): boolean;
-  /** Drops the code and every request; the ids that were still pending. */
+  /** Drops the code, every claim and every request; the pending ids. */
   clear(): string[];
 }
 
@@ -109,6 +123,8 @@ export function createPairing(deps: PairingDeps): Pairing {
   let active: { code: string; expiresAt: number } | null = null;
   const retired: { code: string; reason: 'expired' | 'used' }[] = [];
   const entries = new Map<string, Entry>();
+  /** Live claims: session id → when the claim lapses. */
+  const claims = new Map<string, number>();
 
   const retire = (code: string, reason: 'expired' | 'used'): void => {
     retired.unshift({ code, reason });
@@ -160,12 +176,24 @@ export function createPairing(deps: PairingDeps): Pairing {
       active = null;
     },
     hasActiveCode: () => active !== null && deps.now() < active.expiresAt,
-    request: ({ code, name, client, ip, devicePub }) => {
+    claim: ({ code, sid }) => {
       const now = deps.now();
+      for (const [id, lapsesAt] of claims)
+        if (now >= lapsesAt) claims.delete(id);
       if (!active || !sameSecret(active.code, code) || now >= active.expiresAt)
         return { ok: false, reason: refusal(code) };
       retire(active.code, 'used');
       active = null;
+      const expiresAt = now + CLAIM_TTL_MS;
+      claims.set(sid, expiresAt);
+      return { ok: true, expiresAt };
+    },
+    request: ({ sid, name, client, ip, devicePub }) => {
+      const now = deps.now();
+      const lapsesAt = claims.get(sid);
+      claims.delete(sid);
+      if (lapsesAt === undefined || now >= lapsesAt)
+        return { ok: false, reason: 'claim-expired' };
       const request: RemotePairRequest = {
         requestId: randomBytes(16).toString('base64url'),
         name,
@@ -222,6 +250,7 @@ export function createPairing(deps: PairingDeps): Pairing {
     clear: () => {
       if (active) retire(active.code, 'expired');
       active = null;
+      claims.clear();
       const pending = [...entries.values()]
         .filter((entry) => entry.status === 'pending')
         .map((entry) => entry.request.requestId);

@@ -3,6 +3,7 @@ import { createChannel, RemoteError } from '../renderer/remote/channel.js';
 import {
   fromB64,
   generateSigningKey,
+  pairMessage,
   rotateMessage,
   safetyCode,
   sign,
@@ -100,6 +101,38 @@ describe('devbar-rc/1 end to end', () => {
       const channel = createChannel(h.net.fetch);
       expect(await codeOf(channel.open(key))).toBe('changed');
       expect(channel.ready()).toBe(false);
+    });
+
+    it('lets only the connection that claimed the code ask to be linked', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const pairing = h.remote.startPairing();
+      if (!pairing.ok) throw new Error(pairing.error);
+      const { code, key } = pairingLink(pairing.url);
+      const claimer = createChannel(h.net.fetch);
+      await claimer.open(key);
+      const other = createChannel(h.net.fetch);
+      await other.open(key);
+      const device = generateSigningKey();
+      const ask = (channel: typeof other) =>
+        channel.send('pair.request', {
+          name: 'iPhone de Ana',
+          devicePub: toB64(device.publicKey),
+          sig: toB64(
+            sign(
+              device.secretKey,
+              pairMessage(channel.handshake() ?? new Uint8Array()),
+            ),
+          ),
+        });
+
+      await claimer.send('pair.claim', { code });
+
+      await expect(ask(other)).resolves.toEqual({
+        status: 410,
+        body: { error: 'claim-expired' },
+      });
+      await expect(ask(claimer)).resolves.toMatchObject({ status: 200 });
     });
 
     it('closes the desktop request dialog when the phone cancels', async () => {

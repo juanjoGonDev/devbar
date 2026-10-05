@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createPairing } from '../src/main/remote/pairing.js';
 
 const MINUTE = 60_000;
+const SECOND = 1000;
 const DEVICE_PUB = 'P'.repeat(42) + 'A';
 /** The six digits the fixed `randomInt` below draws. */
 const DIGITS = '482913';
@@ -15,17 +16,28 @@ function harness() {
     randomBytes: (size) => Buffer.alloc(size, ++bytes),
     randomInt: () => 482_913,
   });
-  const ask = (code: string) =>
+  let sessions = 0;
+  const nextSid = () => `sid-${++sessions}`;
+  /** The phone's request, on the session that holds (or lacks) a claim. */
+  const requestOn = (sid: string) =>
     pairing.request({
-      code,
+      sid,
       name: 'iPhone',
       client: 'Safari · iOS',
       ip: '192.168.1.40',
       devicePub: DEVICE_PUB,
     });
+  /** What a phone does: claims the code on a session, then asks on it. */
+  const ask = (code: string) => {
+    const sid = nextSid();
+    const claimed = pairing.claim({ code, sid });
+    return claimed.ok ? requestOn(sid) : claimed;
+  };
   return {
     pairing,
     ask,
+    requestOn,
+    nextSid,
     advance: (ms: number) => {
       clock += ms;
     },
@@ -40,13 +52,13 @@ function requestIdOf(result: ReturnType<ReturnType<typeof harness>['ask']>) {
 
 describe('src/main/remote/pairing.ts', () => {
   describe('startPairing', () => {
-    it('issues a url-safe code that expires in five minutes', () => {
+    it('issues a url-safe code that expires in thirty seconds', () => {
       const h = harness();
 
       const { code, expiresAt } = h.pairing.startPairing();
 
       expect(code).toMatch(/^[A-Za-z0-9_-]{24}$/);
-      expect(expiresAt).toBe(h.now() + 5 * MINUTE);
+      expect(expiresAt).toBe(h.now() + 30 * SECOND);
     });
 
     it('keeps only one active code: a new one retires the previous', () => {
@@ -59,8 +71,87 @@ describe('src/main/remote/pairing.ts', () => {
     });
   });
 
+  describe('claim', () => {
+    it('spends the code on the session that claims it, for two minutes', () => {
+      const h = harness();
+      const { code } = h.pairing.startPairing();
+
+      expect(h.pairing.claim({ code, sid: 'sid-a' })).toEqual({
+        ok: true,
+        expiresAt: h.now() + 2 * MINUTE,
+      });
+      expect(h.pairing.hasActiveCode()).toBe(false);
+      expect(h.pairing.claim({ code, sid: 'sid-b' })).toEqual({
+        ok: false,
+        reason: 'used',
+      });
+    });
+
+    it('refuses a code once its thirty seconds are up', () => {
+      const h = harness();
+      const { code } = h.pairing.startPairing();
+      h.advance(30 * SECOND);
+
+      expect(h.pairing.claim({ code, sid: 'sid-a' })).toEqual({
+        ok: false,
+        reason: 'expired',
+      });
+    });
+
+    it('lets the phone take longer than the code lasts to send its request', () => {
+      const h = harness();
+      const { code } = h.pairing.startPairing();
+      h.advance(29 * SECOND);
+      h.pairing.claim({ code, sid: 'sid-a' });
+      h.advance(MINUTE);
+
+      expect(h.requestOn('sid-a').ok).toBe(true);
+    });
+
+    it('binds the claim to its session: another one is refused', () => {
+      const h = harness();
+      h.pairing.claim({ code: h.pairing.startPairing().code, sid: 'sid-a' });
+
+      expect(h.requestOn('sid-b')).toEqual({
+        ok: false,
+        reason: 'claim-expired',
+      });
+      expect(h.requestOn('sid-a').ok).toBe(true);
+    });
+
+    it('lapses two minutes after it was made', () => {
+      const h = harness();
+      h.pairing.claim({ code: h.pairing.startPairing().code, sid: 'sid-a' });
+      h.advance(2 * MINUTE);
+
+      expect(h.requestOn('sid-a')).toEqual({
+        ok: false,
+        reason: 'claim-expired',
+      });
+    });
+
+    it('is spent by the request it allows', () => {
+      const h = harness();
+      h.pairing.claim({ code: h.pairing.startPairing().code, sid: 'sid-a' });
+
+      expect(h.requestOn('sid-a').ok).toBe(true);
+      expect(h.requestOn('sid-a')).toEqual({
+        ok: false,
+        reason: 'claim-expired',
+      });
+    });
+
+    it('outlives the QR being cancelled: the phone already scanned it', () => {
+      const h = harness();
+      h.pairing.claim({ code: h.pairing.startPairing().code, sid: 'sid-a' });
+      h.pairing.cancelPairing();
+
+      expect(h.requestOn('sid-a').ok).toBe(true);
+    });
+  });
+
   describe('request', () => {
-    it('consumes the code and opens a 60 s request with a 6-digit check', () => {
+    it('opens a 60 s request with a 6-digit check, once per claim', () => {
       const h = harness();
       const { code } = h.pairing.startPairing();
 
@@ -77,6 +168,16 @@ describe('src/main/remote/pairing.ts', () => {
         expiresAt: h.now() + MINUTE,
       });
       expect(h.ask(code)).toEqual({ ok: false, reason: 'used' });
+    });
+
+    it('refuses a session that never claimed a code', () => {
+      const h = harness();
+      h.pairing.startPairing();
+
+      expect(h.requestOn(h.nextSid())).toEqual({
+        ok: false,
+        reason: 'claim-expired',
+      });
     });
 
     it("keeps the phone's key and its six digits out of what the desktop is shown", () => {
@@ -97,8 +198,9 @@ describe('src/main/remote/pairing.ts', () => {
         randomInt: () => 42,
       });
       const { code } = pairing.startPairing();
+      pairing.claim({ code, sid: 'sid-a' });
       const result = pairing.request({
-        code,
+        sid: 'sid-a',
         name: 'a',
         client: 'b',
         ip: 'c',
@@ -106,14 +208,6 @@ describe('src/main/remote/pairing.ts', () => {
       });
 
       expect(result.ok && result.verificationCode).toBe('000042');
-    });
-
-    it('refuses an expired code', () => {
-      const h = harness();
-      const { code } = h.pairing.startPairing();
-      h.advance(5 * MINUTE);
-
-      expect(h.ask(code)).toEqual({ ok: false, reason: 'expired' });
     });
 
     it('refuses a cancelled or made-up code', () => {
@@ -294,14 +388,16 @@ describe('src/main/remote/pairing.ts', () => {
   });
 
   describe('clear', () => {
-    it('drops the code and every pending request, returning the pending ids', () => {
+    it('drops the code, every claim and every pending request, returning the pending ids', () => {
       const h = harness();
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
+      h.pairing.claim({ code: h.pairing.startPairing().code, sid: 'sid-a' });
       const { code } = h.pairing.startPairing();
 
       expect(h.pairing.clear()).toEqual([id]);
       expect(h.pairing.status(id)).toBeNull();
       expect(h.ask(code).ok).toBe(false);
+      expect(h.requestOn('sid-a').ok).toBe(false);
     });
   });
 });

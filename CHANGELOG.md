@@ -86,15 +86,17 @@ Todas las novedades relevantes de DevBar. El formato sigue
   que instalarse a mano, el móvil te indica que lo hagas desde el ordenador.
 
 - **Vincular un móvil es escanear un QR y aceptarlo en el ordenador.**
-  «Añadir dispositivo» muestra un código QR de un solo uso que caduca a los
-  5 minutos y se renueva solo mientras la ventana está abierta; al cerrarla,
-  el código deja de valer. El móvil lo escanea, le pones nombre y te muestra
-  un código de 6 cifras: escríbelo en el ordenador, en «¿Vincular este
-  dispositivo?», y solo entonces se activa «Vincular». Con tres códigos
-  equivocados la solicitud se rechaza. Sin tu «Vincular» no se vincula nada:
-  si no respondes en un minuto, la solicitud se rechaza sola, y si el móvil
-  cancela, el diálogo del ordenador se cierra al momento. Cualquier otro
-  equipo de la red que abra la dirección solo ve que no está vinculado.
+  «Añadir dispositivo» muestra un código QR de un solo uso que se renueva cada
+  30 segundos mientras la ventana está abierta, y al momento en cuanto un
+  móvil lo escanea; al cerrarla, el código deja de valer. El móvil lo
+  escanea, le pones nombre (tienes dos minutos, aunque el QR ya haya cambiado)
+  y te muestra un código de 6 cifras: escríbelo en el ordenador, en
+  «¿Vincular este dispositivo?», y solo entonces se activa «Vincular». Con
+  tres códigos equivocados la solicitud se rechaza. Sin tu «Vincular» no se
+  vincula nada: si no respondes en un minuto, la solicitud se rechaza sola, y
+  si el móvil cancela, el diálogo del ordenador se cierra al momento.
+  Cualquier otro equipo de la red que abra la dirección solo ve que no está
+  vinculado.
 
 - **Lista de dispositivos vinculados.** Cada uno muestra su nombre (que
   puedes cambiar desde el ordenador o desde el propio móvil), si está

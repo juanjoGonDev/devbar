@@ -51,9 +51,10 @@ import { createVerifyTokens } from './verify-tokens.js';
  * it or the user renews the key.
  *
  * Pushes to the windows: `remote:changed` (the whole status, after anything
- * that changes it — a phone connecting included), `remote:pairRequest` (a
- * phone is waiting for an answer) and `remote:pairRequestClosed` (answered,
- * expired or cancelled, from either end).
+ * that changes it — a phone connecting included), `remote:pairCodeClaimed`
+ * (a phone spent the QR's code), `remote:pairRequest` (a phone is waiting
+ * for an answer) and `remote:pairRequestClosed` (answered, expired or
+ * cancelled, from either end).
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -209,6 +210,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     limiter: createRateLimiter({ limit: 5, windowMs: 60_000, now }),
     hostInfo,
     devicesChanged: changed,
+    pairClaimed: () => desk.claimed(),
     pairRequested: (request) => desk.requested(request),
     pairWithdrawn: (requestId) => desk.withdrawn(requestId),
     deviceUnlinked: forget,

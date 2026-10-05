@@ -678,6 +678,26 @@ describe('src/preload.ts', () => {
       },
     );
 
+    it('registers onRemotePairCodeClaimed with a payload-free callback', () => {
+      let calls = 0;
+      const dispose = exposedApi().onRemotePairCodeClaimed(() => {
+        calls += 1;
+      });
+
+      expect(ipc.on.map((entry) => entry.channel)).toEqual([
+        'remote:pairCodeClaimed',
+      ]);
+      const registered = ipc.on[0];
+      if (!registered) throw new Error('nothing was registered');
+      registered.handler({ sender: 'main' }, null);
+      expect(calls).toBe(1);
+
+      dispose();
+      expect(ipc.removed).toEqual([
+        { channel: 'remote:pairCodeClaimed', handler: registered.handler },
+      ]);
+    });
+
     it('registers onConfigCloseRequested with a payload-free callback', () => {
       let calls = 0;
       const dispose = exposedApi().onConfigCloseRequested(() => {

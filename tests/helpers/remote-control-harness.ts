@@ -260,9 +260,11 @@ export async function scanAndRequest(
   const { code, key } = pairingLink(pairing.url);
   const channel = createChannel(net.fetch);
   await channel.open(key);
+  // What the phone does right after the handshake, before the name form.
+  const claim = await channel.send('pair.claim', { code });
+  if (claim.status !== 200) throw new Error(`claim refused: ${claim.status}`);
   const device = generateSigningKey();
   const answer = await channel.send('pair.request', {
-    code,
     name,
     devicePub: toB64(device.publicKey),
     sig: toB64(sign(device.secretKey, pairMessage(transcriptOf(channel)))),

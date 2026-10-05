@@ -262,6 +262,14 @@ export function nonce(counter: number): Buffer {
 }
 
 /**
+ * The same bytes as a plain Uint8Array: @noble/ciphers knows a byte array by
+ * `instanceof` or by its class name, and a Buffer from another realm (the
+ * jsdom the phone-page tests run in) passes neither.
+ */
+const plain = (bytes: Uint8Array): Uint8Array =>
+  new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+/**
  * ChaCha20-Poly1305: ciphertext ‖ 16-byte tag. From @noble/ciphers — the
  * same code the phone runs — because Electron's crypto is BoringSSL, which
  * has no 'chacha20-poly1305' for createCipheriv (tests/main-remote-rc-
@@ -274,7 +282,11 @@ export function seal(
   plaintext: Uint8Array,
 ): Buffer {
   return Buffer.from(
-    chacha20poly1305(key, nonce(counter), associated).encrypt(plaintext),
+    chacha20poly1305(
+      plain(key),
+      plain(nonce(counter)),
+      plain(associated),
+    ).encrypt(plain(plaintext)),
   );
 }
 
@@ -288,7 +300,11 @@ export function open(
   if (sealed.length < TAG_BYTES) return null;
   try {
     return Buffer.from(
-      chacha20poly1305(key, nonce(counter), associated).decrypt(sealed),
+      chacha20poly1305(
+        plain(key),
+        plain(nonce(counter)),
+        plain(associated),
+      ).decrypt(plain(sealed)),
     );
   } catch {
     return null;

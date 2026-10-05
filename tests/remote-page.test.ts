@@ -255,11 +255,19 @@ describe('renderer/remote/app.ts', () => {
   });
 
   describe('pairing', () => {
+    const CLAIMED = { status: 200, body: { expiresAt: 1 } };
+    const expiredNoteStressed = (): boolean | undefined =>
+      document
+        .getElementById('expired-note')
+        ?.classList.contains('is-emphasised');
+
     async function pairing(
       options: Parameters<typeof pairingHarness>[1] = {},
+      claim: { status: number; body: unknown } | Error = CLAIMED,
     ): Promise<ReturnType<typeof harness>> {
       const h = pairingHarness('CODE123', options);
       h.answer('me', UNLINKED);
+      h.answer('pair.claim', claim);
       await start(h);
       return h;
     }
@@ -270,6 +278,41 @@ describe('renderer/remote/app.ts', () => {
       expect(h.urls[0]).toBe('/');
     });
 
+    it('claims the code right after the handshake, before the form', async () => {
+      const h = await pairing();
+
+      expect(h.calls.map((c) => c.op)).toEqual(['me', 'pair.claim']);
+      expect(h.callsTo('pair.claim')[0]?.body).toEqual({ code: 'CODE123' });
+      expect(visibleView()).toBe('pair');
+    });
+
+    it.each(['expired', 'used', 'invalid'])(
+      'sends a %s code back to the explanation, with the QR note stressed',
+      async (error) => {
+        const h = await pairing({}, { status: 410, body: { error } });
+
+        expect(visibleView()).toBe('unlinked');
+        expect(expiredNoteStressed()).toBe(true);
+        expect(text('expired-note')).toBe(
+          '¿Venías de un QR? Cada código dura 30 segundos y solo sirve una vez: genera uno nuevo en el ordenador y vuelve a escanearlo.',
+        );
+        expect(h.callsTo('pair.request')).toEqual([]);
+      },
+    );
+
+    it('says to wait when the computer is taking no more attempts', async () => {
+      await pairing({}, { status: 429, body: { error: 'rate-limited' } });
+
+      expect(visibleView()).toBe('result');
+      expect(text('result-title')).toBe('Demasiados intentos');
+    });
+
+    it('offers to retry a claim that never got an answer', async () => {
+      await pairing({}, new Error('wifi blip'));
+
+      expect(visibleView()).toBe('error');
+    });
+
     it('asks for a name, prefilled from the device', async () => {
       await pairing();
 
@@ -278,7 +321,7 @@ describe('renderer/remote/app.ts', () => {
       expect(input('device-name').value).toBe('iPhone');
     });
 
-    it('sends the code, the name and a fresh device key, sealed', async () => {
+    it('sends the name and a fresh device key, sealed, on the session that claimed', async () => {
       const h = await pairing();
       h.answer('pair.request', {
         status: 200,
@@ -289,13 +332,14 @@ describe('renderer/remote/app.ts', () => {
       submit();
       await settle();
 
-      const sent = h.callsTo('pair.request')[0]?.body as Record<string, string>;
+      const [call] = h.callsTo('pair.request');
+      const sent = call?.body as Record<string, string>;
       expect(sent).toEqual({
-        code: 'CODE123',
         name: 'iPhone de Ana',
         devicePub: expect.stringMatching(/^[\w-]{43}$/) as unknown,
         sig: expect.stringMatching(/^[\w-]{86}$/) as unknown,
       });
+      expect(call?.transcript).toEqual(h.callsTo('pair.claim')[0]?.transcript);
       expect(visibleView()).toBe('waiting');
       expect(text('verification-code')).toBe('482 913');
       expect(
@@ -378,19 +422,20 @@ describe('renderer/remote/app.ts', () => {
       expect(h.hellos()).toBe(0);
     });
 
-    it('sends a stale code back to the explanation, with the QR note stressed', async () => {
+    it('says the code expired when the claim ran out before «Vincular»', async () => {
       const h = await pairing();
-      h.answer('pair.request', { status: 410, body: { error: 'expired' } });
+      h.answer('pair.request', {
+        status: 410,
+        body: { error: 'claim-expired' },
+      });
 
       submit();
       await settle();
 
-      expect(visibleView()).toBe('unlinked');
-      expect(
-        document
-          .getElementById('expired-note')
-          ?.classList.contains('is-emphasised'),
-      ).toBe(true);
+      expect(visibleView()).toBe('pair');
+      expect(text('pair-error')).toBe(
+        'El código ha caducado, escanea uno nuevo.',
+      );
     });
 
     it.each([
@@ -566,6 +611,7 @@ describe('renderer/remote.ts', () => {
         `/pair#c=CODE&k=${fake.serverKey()}`,
       );
       fake.answer('me', UNLINKED);
+      fake.answer('pair.claim', { status: 200, body: { expiresAt: 1 } });
       fake.answer('pair.request', {
         status: 200,
         body: { requestId: 'r1', verificationCode: '123456', expiresAt: 1 },

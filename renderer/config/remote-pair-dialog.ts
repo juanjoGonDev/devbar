@@ -7,21 +7,24 @@ import { errorMessage } from './toast.js';
 
 /**
  * «Vincular dispositivo»: the QR of THE pairing code, with its countdown.
- * When the code runs out the dialog asks for a new one by itself; closing it
+ * When the code runs out, or a phone claims it, the dialog asks for a new one
+ * by itself; closing it
  * — the ✕, «Cancelar», Esc or the backdrop — cancels the code in main, so a
  * QR left on screen in a photo is worthless once the dialog is gone. A page
  * that goes away with the dialog still open (a reload) cancels it too; main
  * does the same when the whole window closes.
  */
 
-/** Main issues every code for 5 minutes (src/main/remote/pairing.ts). */
-const CODE_TTL_MS = 5 * 60_000;
+/** Main issues every code for 30 seconds (src/main/remote/pairing.ts). */
+const CODE_TTL_MS = 30_000;
 
 export interface PairDialog {
   open(): void;
   /** The server went down: no code can be redeemed any more. */
   close(): void;
-  /** A phone redeemed the code: it is spent, stop counting. */
+  /** A phone claimed the code on screen: the next one goes up at once. */
+  codeClaimed(): void;
+  /** A phone is waiting for an answer: the QR steps aside, stop counting. */
   codeUsed(): void;
   requestClosed(outcome: RemotePairRequestClosed['outcome']): void;
 }
@@ -100,6 +103,9 @@ export function createPairDialog(els: RemoteElements['pair']): PairDialog {
     },
     close: () => {
       if (els.dialog.open) els.dialog.close();
+    },
+    codeClaimed: () => {
+      if (els.dialog.open) void issue();
     },
     codeUsed: () => {
       if (!els.dialog.open) return;

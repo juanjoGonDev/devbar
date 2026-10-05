@@ -534,22 +534,25 @@ describe('renderer/config/remote-pane.ts', () => {
       return opened;
     }
 
-    it('opens with a fresh QR and a five-minute countdown', async () => {
+    it('opens with a fresh QR and a thirty-second countdown', async () => {
       win = await openPairing();
       expect(dialogOpen('remote-pair-dialog')).toBe(true);
 
       await win.settle('startRemotePairing', {
         ok: true,
         url: 'http://192.168.1.20:47821/pair#c=abc&k=K',
-        expiresAt: Date.now() + 5 * 60_000,
+        expiresAt: Date.now() + 30_000,
         qr: QR,
       });
 
       expect(el('remote-qr').querySelector('svg')).not.toBeNull();
       expect(text('remote-pair-countdown')).toBe(
-        'Caduca en 5:00 · se renueva solo',
+        'Caduca en 0:30 · se renueva solo',
       );
       expect(el('remote-pair-progress').style.width).toBe('100%');
+      expect(
+        document.querySelector('.remote-pair-actions small')?.textContent,
+      ).toBe('Un solo uso, se renueva cada 30 segundos.');
     });
 
     it('counts down and renews the code by itself when it runs out', async () => {
@@ -557,18 +560,40 @@ describe('renderer/config/remote-pane.ts', () => {
       await win.settle('startRemotePairing', {
         ok: true,
         url: 'u',
-        expiresAt: Date.now() + 5 * 60_000,
+        expiresAt: Date.now() + 30_000,
         qr: QR,
       });
 
-      vi.advanceTimersByTime(60_000);
+      vi.advanceTimersByTime(6_000);
       expect(text('remote-pair-countdown')).toBe(
-        'Caduca en 4:00 · se renueva solo',
+        'Caduca en 0:24 · se renueva solo',
       );
       expect(el('remote-pair-progress').style.width).toBe('80%');
 
-      vi.advanceTimersByTime(4 * 60_000);
+      vi.advanceTimersByTime(24_000);
       expect(win.callCount('startRemotePairing')).toBe(2);
+    });
+
+    it('shows a fresh code the moment a phone claims the one on screen', async () => {
+      win = await openPairing();
+      await win.settle('startRemotePairing', {
+        ok: true,
+        url: 'u',
+        expiresAt: Date.now() + 30_000,
+        qr: QR,
+      });
+
+      await win.push('onRemotePairCodeClaimed');
+
+      expect(win.callCount('startRemotePairing')).toBe(2);
+    });
+
+    it('asks for no code when a claim arrives with the dialog closed', async () => {
+      win = await openWith(status(ON));
+
+      await win.push('onRemotePairCodeClaimed');
+
+      expect(win.callCount('startRemotePairing')).toBe(0);
     });
 
     it('shows why a code could not be issued', async () => {

@@ -28,6 +28,7 @@ function session(deviceId: string | null): Session {
     transcript: Buffer.from('T'),
     deviceId,
     logsId: null,
+    pairClaimed: false,
     open: () => null,
     seal: () => ({ n: 1, ct: '' }),
     sealEvent: () => '',

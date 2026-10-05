@@ -1,4 +1,4 @@
-import type { Me, RemoteClient } from './api.js';
+import type { Answer, Me, RemoteClient } from './api.js';
 import { RemoteError } from './channel.js';
 import { LOST } from './context.js';
 import type { RemoteEnv } from './env.js';
@@ -9,10 +9,12 @@ import { showView } from './view.js';
 /**
  * Pairing from the QR (`/pair#c=<code>&k=<identity key>`): the page trusts
  * the key that came in the fragment — straight from the computer's screen —
- * and shakes hands only with a DevBar that proves it holds it. Then the form
- * (this device's name), a fresh Ed25519 key pair for the device (which signs
- * the handshake to prove it is held), the 6-digit code the user types on the
- * computer to accept it, and — once accepted — the keys to keep.
+ * and shakes hands only with a DevBar that proves it holds it. It claims the
+ * code at once (it only lasts 30 seconds; the claim leaves this session two
+ * minutes), then the form (this device's name), a fresh Ed25519 key pair for
+ * the device (which signs the handshake to prove it is held), the 6-digit
+ * code the user types on the computer to accept it, and — once accepted —
+ * the keys to keep.
  */
 
 const POLL_MS = 1000;
@@ -20,6 +22,7 @@ const POLL_MS = 1000;
 const MAX_POLL_FAILURES = 5;
 const NAME_HINT = 'Ponle un nombre de 1 a 40 caracteres.';
 const UNREACHABLE = 'No se pudo conectar con DevBar. Inténtalo de nuevo.';
+const CLAIM_EXPIRED = 'El código ha caducado, escanea uno nuevo.';
 const NO_STORAGE =
   'Este navegador no deja guardar datos de esta página. Ábrela fuera del modo privado.';
 
@@ -51,7 +54,7 @@ export interface PairFlow {
 
 export function createPairFlow(deps: PairFlowDeps): PairFlow {
   const { env, client, els } = deps;
-  let pairing: { code: string; serverKey: Uint8Array; me: Me } | null = null;
+  let pairing: { serverKey: Uint8Array; me: Me } | null = null;
   /** Bumped to abandon a poll loop (cancel, a new view). */
   let pollRound = 0;
   let pollTimer: unknown = null;
@@ -131,7 +134,7 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
     els.pairError.hidden = true;
     const device = generateSigningKey();
     try {
-      const answer = await client.requestPairing(pairing.code, name, device);
+      const answer = await client.requestPairing(name, device);
       if (answer.status === 200) {
         env.replaceUrl('/');
         const digits = String(answer.body.verificationCode ?? '');
@@ -140,10 +143,8 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
         stop();
         waitingOn = String(answer.body.requestId ?? '');
         poll(waitingOn, device, pollRound, 0);
-      } else if (answer.status === 410) {
-        env.replaceUrl('/');
-        deps.showUnlinked(true);
-      } else if (answer.status === 429)
+      } else if (answer.status === 410) formError(CLAIM_EXPIRED);
+      else if (answer.status === 429)
         formError('Demasiados intentos. Espera un minuto y vuelve a probar.');
       else if (answer.status === 400) formError(NAME_HINT);
       else formError(UNREACHABLE);
@@ -174,9 +175,11 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
       showView('loading');
       client.trust({ serverKey, device: null });
       let me: Me;
+      let claim: Answer;
       try {
         await client.reconnect();
         me = await client.me();
+        claim = await client.claimPairing(code);
       } catch (error) {
         if (error instanceof RemoteError && error.code === 'changed')
           deps.showResult(
@@ -186,7 +189,14 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
         else showView('error');
         return;
       }
-      pairing = { code, serverKey, me };
+      if (claim.status === 410) return deps.showUnlinked(true);
+      if (claim.status === 429)
+        return deps.showResult(
+          'Demasiados intentos',
+          'Espera un minuto y vuelve a escanear el código.',
+        );
+      if (claim.status !== 200) return showView('error');
+      pairing = { serverKey, me };
       els.pairTitle.textContent = `Vincular con ${me.hostName}`;
       els.deviceName.value = me.suggestedName;
       els.pairError.hidden = true;

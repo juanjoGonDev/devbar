@@ -34,6 +34,7 @@ function session(): Session {
     transcript: Buffer.from(`transcript-${sessions}`),
     deviceId: null,
     logsId: null,
+    pairClaimed: false,
     open: () => null,
     seal: () => ({ n: 1, ct: '' }),
     sealEvent: () => '',
@@ -84,6 +85,7 @@ function harness() {
       requests.push(request);
     },
     pairWithdrawn: (requestId) => events.push(`withdrawn:${requestId}`),
+    pairClaimed: () => events.push('pairClaimed'),
     deviceUnlinked: (id) => events.push(`unlinked:${id}`),
     deviceRotated: (id) => events.push(`rotated:${id}`),
     deviceAuthenticated: (id, ip) => events.push(`authenticated:${id}@${ip}`),
@@ -93,11 +95,13 @@ function harness() {
     return api.handle(op, args, call);
   };
   const call = (op: string, args: unknown = {}) => callOn(session(), op, args);
+  /** A fresh QR scanned on `on`: its code claimed there. */
+  const claimOn = (on: Session) =>
+    callOn(on, 'pair.claim', { code: pairing.startPairing().code });
   /** Pairing up to the desktop's decision; the phone's request id. */
   const request = (key = deviceKey(), on = session()) => {
-    const { code } = pairing.startPairing();
+    claimOn(on);
     const answer = callOn(on, 'pair.request', {
-      code,
       name: 'iPhone de Ana',
       devicePub: key.pub,
       sig: key.pairProof(on),
@@ -122,6 +126,7 @@ function harness() {
     api,
     call,
     callOn,
+    claimOn,
     devices,
     pairing,
     tokens,
@@ -141,6 +146,7 @@ describe('src/main/remote/api.ts', () => {
     const { api } = harness();
     for (const op of [
       'me',
+      'pair.claim',
       'pair.request',
       'pair.status',
       'pair.cancel',
@@ -186,19 +192,95 @@ describe('src/main/remote/api.ts', () => {
     });
   });
 
-  describe('pair.request', () => {
-    it('opens a request for a valid code and tells the desktop', () => {
+  describe('pair.claim', () => {
+    it('spends a valid code for this session, for two minutes, and tells the desktop', () => {
       const h = harness();
       const { code } = h.pairing.startPairing();
-      const key = deviceKey();
-      const on = session();
 
-      const answer = h.callOn(on, 'pair.request', {
-        code,
-        name: '  iPhone de Ana ',
+      expect(h.call('pair.claim', { code })).toEqual({
+        status: 200,
+        body: { expiresAt: 10_000_000 + 2 * 60_000 },
+      });
+      expect(h.pairing.hasActiveCode()).toBe(false);
+      expect(h.events).toEqual(['pairClaimed']);
+    });
+
+    it('answers 410 with the reason for an unknown, used or expired code', () => {
+      const h = harness();
+      const { code } = h.pairing.startPairing();
+      h.call('pair.claim', { code });
+      const stale = h.pairing.startPairing().code;
+      h.advance(30_000);
+
+      expect(h.call('pair.claim', { code: 'nope' })).toEqual({
+        status: 410,
+        body: { error: 'invalid' },
+      });
+      expect(h.call('pair.claim', { code })).toEqual({
+        status: 410,
+        body: { error: 'used' },
+      });
+      expect(h.call('pair.claim', { code: stale })).toEqual({
+        status: 410,
+        body: { error: 'expired' },
+      });
+      expect(h.events).toEqual(['pairClaimed']);
+    });
+
+    it('claims once per session, leaving the next code to someone else', () => {
+      const h = harness();
+      const on = session();
+      h.claimOn(on);
+
+      expect(h.claimOn(on)).toEqual({
+        status: 409,
+        body: { error: 'already-claimed' },
+      });
+      expect(h.pairing.hasActiveCode()).toBe(true);
+    });
+
+    it('needs a code', () => {
+      expect(harness().call('pair.claim', {})).toEqual({
+        status: 400,
+        body: { error: 'invalid-request' },
+      });
+    });
+
+    it('shares the five attempts a minute per address of pairing', () => {
+      const h = harness();
+      for (let i = 0; i < 5; i++) h.call('pair.claim', { code: 'x' });
+
+      expect(h.call('pair.claim', { code: 'x' })).toEqual({
+        status: 429,
+        body: { error: 'rate-limited' },
+      });
+      expect(h.call('pair.request', {})).toEqual({
+        status: 429,
+        body: { error: 'rate-limited' },
+      });
+    });
+  });
+
+  describe('pair.request', () => {
+    /** A request on `on` with a key that proves it is held there. */
+    const ask = (
+      h: ReturnType<typeof harness>,
+      on: Session,
+      name = 'x',
+      key = deviceKey(),
+    ) =>
+      h.callOn(on, 'pair.request', {
+        name,
         devicePub: key.pub,
         sig: key.pairProof(on),
       });
+
+    it("opens a request for the session's claim and tells the desktop", () => {
+      const h = harness();
+      const on = session();
+      h.claimOn(on);
+
+      const answer = ask(h, on, '  iPhone de Ana ');
 
       expect(answer.status).toBe(200);
       expect(answer.body).toMatchObject({
@@ -210,55 +292,64 @@ describe('src/main/remote/api.ts', () => {
         client: 'Safari · iOS',
         ip: '192.168.1.40',
       });
-      expect(h.events).toEqual(['pairRequested']);
+      expect(h.events).toEqual(['pairClaimed', 'pairRequested']);
     });
 
-    it('answers 410 with the reason for a used or unknown code', () => {
+    it('answers 410 claim-expired to a session that claimed nothing', () => {
       const h = harness();
-      const key = deviceKey();
+      h.pairing.startPairing();
+
+      expect(ask(h, session())).toEqual({
+        status: 410,
+        body: { error: 'claim-expired' },
+      });
+      expect(h.requests).toEqual([]);
+    });
+
+    it('answers 410 claim-expired to a session that is not the one that claimed', () => {
+      const h = harness();
+      h.claimOn(session());
+
+      expect(ask(h, session())).toEqual({
+        status: 410,
+        body: { error: 'claim-expired' },
+      });
+    });
+
+    it('answers 410 claim-expired once the two minutes of the claim are up', () => {
+      const h = harness();
       const on = session();
+      h.claimOn(on);
+      h.advance(2 * 60_000);
 
-      expect(
-        h.callOn(on, 'pair.request', {
-          code: 'nope',
-          name: 'x',
-          devicePub: key.pub,
-          sig: key.pairProof(on),
-        }),
-      ).toEqual({ status: 410, body: { error: 'invalid' } });
+      expect(ask(h, on)).toEqual({
+        status: 410,
+        body: { error: 'claim-expired' },
+      });
     });
 
-    it('refuses an invalid name or key before spending the code', () => {
+    it('refuses an invalid name or key before spending the claim', () => {
       const h = harness();
-      const { code } = h.pairing.startPairing();
       const key = deviceKey();
       const on = session();
       const sig = key.pairProof(on);
+      h.claimOn(on);
 
       expect(
-        h.callOn(on, 'pair.request', {
-          code,
-          name: '',
-          devicePub: key.pub,
-          sig,
-        }),
+        h.callOn(on, 'pair.request', { name: '', devicePub: key.pub, sig }),
       ).toEqual({ status: 400, body: { error: 'invalid-name' } });
       expect(
-        h.callOn(on, 'pair.request', {
-          code,
-          name: 'x',
-          devicePub: 'short',
-          sig,
-        }),
+        h.callOn(on, 'pair.request', { name: 'x', devicePub: 'short', sig }),
       ).toEqual({ status: 400, body: { error: 'invalid-request' } });
-      expect(h.pairing.hasActiveCode()).toBe(true);
+      expect(ask(h, on, 'x', key).status).toBe(200);
     });
 
-    it('refuses a key that does not prove it is held, before spending the code', () => {
+    it('refuses a key that does not prove it is held, before spending the claim', () => {
       const h = harness();
-      const { code } = h.pairing.startPairing();
       const key = deviceKey();
       const on = session();
+      // Straight on the state machine: five refusals fill the rate limit.
+      h.pairing.claim({ code: h.pairing.startPairing().code, sid: on.id });
 
       for (const sig of [
         undefined,
@@ -269,39 +360,47 @@ describe('src/main/remote/api.ts', () => {
       ])
         expect(
           h.callOn(on, 'pair.request', {
-            code,
             name: 'x',
             devicePub: key.pub,
             sig,
           }),
         ).toEqual({ status: 400, body: { error: 'invalid-request' } });
-      expect(h.pairing.hasActiveCode()).toBe(true);
       expect(h.requests).toEqual([]);
+      expect(
+        h.pairing.request({
+          sid: on.id,
+          name: 'x',
+          client: 'Safari · iOS',
+          ip: on.ip,
+          devicePub: key.pub,
+        }).ok,
+      ).toBe(true);
     });
 
     it('refuses a small-order key, whose "proof" anyone can forge', () => {
       const h = harness();
-      const { code } = h.pairing.startPairing();
+      const on = session();
+      h.claimOn(on);
 
       expect(
-        h.call('pair.request', {
-          code,
+        h.callOn(on, 'pair.request', {
           name: 'x',
           devicePub: WEAK_KEY,
           sig: FORGED_SIG,
         }),
       ).toEqual({ status: 400, body: { error: 'invalid-request' } });
-      expect(h.pairing.hasActiveCode()).toBe(true);
+      expect(ask(h, on).status).toBe(200);
     });
 
     it('allows five attempts a minute per address, then answers 429', () => {
       const h = harness();
       for (let i = 0; i < 5; i++)
-        h.call('pair.request', { code: 'x', name: 'n', devicePub: 'x' });
+        h.call('pair.request', { name: 'n', devicePub: 'x' });
 
-      expect(
-        h.call('pair.request', { code: 'x', name: 'n', devicePub: 'x' }),
-      ).toEqual({ status: 429, body: { error: 'rate-limited' } });
+      expect(h.call('pair.request', { name: 'n', devicePub: 'x' })).toEqual({
+        status: 429,
+        body: { error: 'rate-limited' },
+      });
     });
   });
 

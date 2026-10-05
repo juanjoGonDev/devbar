@@ -13,8 +13,9 @@ import type { TimerHandle, Timers } from './timers.js';
 /**
  * The desktop's side of pairing, between the state machine
  * (src/main/remote/pairing.ts) and the config window: the QR link, the
- * pushes that open and close «¿Vincular este dispositivo?», the minute each
- * request waits, and the six digits the user types there.
+ * push that renews it once a phone claims its code, the pushes that open and
+ * close «¿Vincular este dispositivo?», the minute each request waits, and
+ * the six digits the user types there.
  *
  * The link is `/pair#c=<code>&k=<identity key>`: both ride in the fragment,
  * which the browser never sends anywhere, so the code cannot be read off the
@@ -38,6 +39,8 @@ export interface PairingDeskDeps {
 export interface PairingDesk {
   /** THE pairing code, as a link to `origin` that pins `identityKey`. */
   start(origin: string, identityKey: Uint8Array): RemotePairingResult;
+  /** A phone claimed the code: the QR dialog shows a fresh one at once. */
+  claimed(): void;
   /** A phone asked: the dialog opens, and closes itself at the deadline. */
   requested(request: RemotePairRequest): void;
   /** The phone withdrew its request. */
@@ -69,6 +72,7 @@ export function createPairingDesk(deps: PairingDeskDeps): PairingDesk {
       const url = `${origin}/pair#c=${code}&k=${toB64(identityKey)}`;
       return { ok: true, url, expiresAt, qr: qrMatrix(url) };
     },
+    claimed: () => deps.send('remote:pairCodeClaimed', null),
     requested: (request) => {
       deps.send('remote:pairRequest', request);
       const expire = (): void => {
