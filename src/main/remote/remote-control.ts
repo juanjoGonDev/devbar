@@ -16,7 +16,7 @@ import {
 } from './connection-alerts.js';
 import { createControlApi } from './control-api.js';
 import { createDeviceStore, type RemoteControlState } from './device-store.js';
-import { createIdentityKeys, type SecretBox } from './identity.js';
+import { createIdentityKeys } from './identity.js';
 import { lanAddresses } from './lan.js';
 import { createLive } from './live.js';
 import { createPairing } from './pairing.js';
@@ -47,13 +47,12 @@ import { createVerifyTokens } from './verify-tokens.js';
  * need. `main.ts` builds it with `remoteControlFor`
  * (src/main/remote/remote-wiring.ts) and does nothing else with the pieces.
  *
- * The server never starts behind an identity key it cannot read (a locked
- * or denied keychain): the status says why (`keyError`) until a retry reads
- * it or the user renews the key. Reading it can wait on the keychain for as
- * long as a macOS permission prompt stays open, so nothing here blocks on
- * it: the status says it is waiting (`keyPending`), and every start, stop,
- * port change and renewal runs one at a time behind it — one identity and
- * one server, however often the switch is pressed meanwhile.
+ * The server never starts behind an identity key it cannot read (a
+ * hand-edited record, or one a pre-release build sealed with the OS
+ * keychain): the status says so (`keyError`) until the user renews the key.
+ * Listening and closing take their time, so every start, stop, port change
+ * and renewal runs one at a time — one server, however often the switch is
+ * pressed meanwhile.
  *
  * Pushes to the windows: `remote:changed` (the whole status, after anything
  * that changes it — a phone connecting included), `remote:pairCodeClaimed`
@@ -65,7 +64,7 @@ import { createVerifyTokens } from './verify-tokens.js';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOT_LINKED = 'Ese dispositivo ya no está vinculado.';
 const KEY_ERROR =
-  'No se pudo leer la clave de seguridad del llavero del sistema. Desbloquéalo y pulsa Reintentar.';
+  'No se pudo leer la clave del equipo. Pulsa «Renovar clave del equipo» para crear una nueva.';
 
 export interface RemoteControlDeps {
   readState: () => unknown;
@@ -77,8 +76,6 @@ export interface RemoteControlDeps {
   networkInterfaces: () => NodeJS.Dict<os.NetworkInterfaceInfo[]>;
   /** What a linked phone drives: the app's own collaborators. */
   runtime: RemoteControlRuntime;
-  /** Electron's safeStorage, which seals the identity key when it can. */
-  secretBox?: SecretBox | null;
   /** The desktop banner (src/main/notification-banner.ts). */
   showBanner?: ConnectionAlertsDeps['showBanner'];
   now?: () => number;
@@ -111,7 +108,7 @@ export interface RemoteControl {
     code: string,
   ): SimpleResult;
   /** The device's security code, and the QR its phone verifies it with. */
-  securityCode(id: string): Promise<RemoteSecurityCodeResult>;
+  securityCode(id: string): RemoteSecurityCodeResult;
   /**
    * A new identity key: sessions, streams and pairing end; all unverified.
    * The only way an unreadable key is ever replaced.
@@ -120,8 +117,8 @@ export interface RemoteControl {
   /** A banner or completion the user was shown, for the phones' «Avisos». */
   notice(banner: { title: string; body: string; action: string | null }): void;
   /**
-   * Boot: brings the server up when the user left the switch on. It may wait
-   * on the keychain, so boot kicks it off without awaiting it.
+   * Boot: brings the server up when the user left the switch on. Boot kicks
+   * it off once the tray is up, without awaiting it.
    */
   startIfEnabled(): Promise<void>;
   /** Shutdown: stops listening (fire and forget). */
@@ -141,15 +138,12 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
   const identity = createIdentityKeys({
     read: () => devices.identity(),
     write: (record) => devices.saveIdentity(record),
-    secretBox: deps.secretBox ?? null,
   });
   const sessions = createSessionTable({ now });
   const verifyTokens = createVerifyTokens({ now });
   let pruneTimer: TimerHandle = null;
   /** Set while the stored identity cannot be read: the server stays off. */
   let keyError: string | null = null;
-  /** Set while a start waits on the keychain for the identity key. */
-  let keyPending = false;
   /** Starts, stops, port changes and renewals: one at a time. */
   const serial = createSerial();
   const hostInfo = () => ({
@@ -166,8 +160,6 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
       listening: server.listening(),
       error: settings.enabled ? server.error() : null,
       keyError: settings.enabled ? keyError : null,
-      keyPending: settings.enabled && keyPending,
-      keyUnsealed: identity.unsealed(),
       addresses: addresses(),
       devices: devices.list().map((device) => ({
         ...device,
@@ -305,26 +297,12 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     if (pruneStale() > 0) changed();
   };
 
-  /** The identity key, saying meanwhile that the keychain is being asked. */
-  const loadIdentity = async (): Promise<boolean> => {
-    if (!identity.loaded()) {
-      keyPending = true;
-      keyError = null;
-      changed();
-    }
-    try {
-      return await identity.load();
-    } finally {
-      keyPending = false;
-    }
-  };
-
   /** Only ever run through `serial`. */
   const start = async (): Promise<void> => {
-    const readable = await loadIdentity();
+    const readable = identity.load();
     // Fail closed: never a server behind a key the phones did not pin.
     keyError = readable ? null : KEY_ERROR;
-    // The keychain may have taken its time: the switch, or the app, may be
+    // It may have waited behind earlier work: the switch, or the app, may be
     // off by now.
     if (!readable || shuttingDown || !devices.settings().enabled) {
       changed();
@@ -416,10 +394,10 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     checkPairCode: (requestId, code) => desk.checkCode(requestId, code),
     respondPairing: (requestId, accept, code) =>
       desk.respond(requestId, accept, code),
-    securityCode: async (id) => {
+    securityCode: (id) => {
       if (!devices.find(id)) return { ok: false, error: NOT_LINKED };
       // With the server off the key may not be in memory yet.
-      if (!(await identity.load())) return { ok: false, error: KEY_ERROR };
+      if (!identity.load()) return { ok: false, error: KEY_ERROR };
       const device = devices.find(id);
       const devicePub = fromB64(devices.devicePub(id));
       if (!device || !devicePub) return { ok: false, error: NOT_LINKED };
@@ -440,7 +418,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     },
     renewIdentity: () =>
       serial(async () => {
-        await identity.renew();
+        identity.renew();
         devices.clearVerified();
         verifyTokens.clear();
         desk.clear();

@@ -13,8 +13,8 @@ const PUB_A = 'A'.repeat(42) + 'A';
 const PUB_B = 'B'.repeat(42) + 'A';
 const IDENTITY = {
   publicKey: 'C'.repeat(42) + 'A',
-  secret: 'sealed',
-  sealed: true,
+  secret: 'D'.repeat(42) + 'A',
+  sealed: false,
 };
 
 function harness(seed: unknown = undefined) {
@@ -125,6 +125,15 @@ describe('src/main/remote/device-store.ts', () => {
       expect(state.devices).toEqual([
         { ...base, verifiedAt: null, lastIp: null },
       ]);
+    });
+
+    it('keeps a seed a pre-release build sealed with the keychain, for identity.ts to refuse', () => {
+      // Dropped here, it would read as "no identity" and be replaced silently.
+      const sealed = { ...IDENTITY, secret: 'djEwLXNlYWxlZA', sealed: true };
+
+      expect(normalizeRemoteState({ identity: sealed }).identity).toEqual(
+        sealed,
+      );
     });
 
     it('drops an identity that is not a well-formed record', () => {

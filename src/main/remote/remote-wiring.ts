@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { sendToRenderers } from '../renderer-bus.js';
 import type { RemoteControlState } from './device-store.js';
-import type { SecretBox } from './identity.js';
 import {
   createRemoteControl,
   type RemoteControl,
@@ -12,8 +11,7 @@ import { remoteRuntime, type RemoteAppWiring } from './runtime.js';
 
 /**
  * «Control remoto» wired to the real collaborators: the disk, the OS, the
- * window fan-out, the keychain (safeStorage), the desktop banner and the
- * app's own runtime. Everything it decides lives in
+ * window fan-out, the desktop banner and the app's own runtime. Everything it decides lives in
  * src/main/remote/remote-control.ts; this only hands it what main.ts has.
  */
 
@@ -25,7 +23,6 @@ interface RemoteWiring extends RemoteAppWiring {
   host: RemoteAppWiring['host'] & {
     rendererFile(name: string): string;
     appVersion(): string;
-    safeStorage: SecretBox;
   };
   configStore: RemoteAppWiring['configStore'] & {
     getRemoteControl(): unknown;
@@ -52,7 +49,6 @@ export function remoteControlDeps(wiring: RemoteWiring): RemoteControlDeps {
     hostName: () => os.hostname().split('.')[0] ?? os.hostname(),
     networkInterfaces: () => os.networkInterfaces(),
     runtime: remoteRuntime(wiring),
-    secretBox: wiring.host.safeStorage,
     showBanner: (title, body, options) =>
       wiring.notifications.showBannerNotification(title, body, options),
   };

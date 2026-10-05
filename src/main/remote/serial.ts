@@ -3,9 +3,9 @@
  * handed over: each starts only once the one before it has settled. A task
  * that fails still fails for whoever awaited it, and the line goes on.
  *
- * «Control remoto» puts in it whatever can wait on the OS keychain — loading
- * or renewing the identity key, starting and stopping the server — so a
- * prompt the user has not answered yet never lets two of them interleave.
+ * «Control remoto» puts in it starting and stopping the server, port changes
+ * and key renewals: listening and closing take their time, and two of them
+ * must never interleave.
  */
 export type Serial = <T>(task: () => Promise<T>) => Promise<T>;
 

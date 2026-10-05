@@ -9,8 +9,8 @@ import { fakeAppWiring } from './helpers/remote-wiring.js';
 
 /**
  * «Control remoto» handed the real collaborators main.ts has: the renderer
- * directory, the config store, the window fan-out, the keychain and the
- * desktop banner.
+ * directory, the config store, the window fan-out and the desktop banner.
+ * Nothing of the OS keychain: the identity key lives in the config file.
  */
 
 describe('src/main/remote/remote-wiring.ts', () => {
@@ -46,12 +46,6 @@ describe('src/main/remote/remote-wiring.ts', () => {
         ...app.host,
         rendererFile: (name) => path.join(dir, name),
         appVersion: () => '0.11.0',
-        safeStorage: {
-          isAsyncEncryptionAvailable: () => Promise.resolve(false),
-          encryptStringAsync: () => Promise.resolve(Buffer.alloc(0)),
-          decryptStringAsync: () =>
-            Promise.resolve({ shouldReEncrypt: false, result: '' }),
-        },
       },
       configStore: {
         ...app.configStore,
@@ -91,7 +85,7 @@ describe('src/main/remote/remote-wiring.ts', () => {
     expect(deps.readState()).toEqual({ enabled: true });
   });
 
-  it('hands connection banners to the app notifications, and the keychain over', async () => {
+  it('hands connection banners to the app notifications', () => {
     const { deps, banners } = wiring();
     const options = {
       cta: { label: 'Ver dispositivos', action: 'open-remote' },
@@ -101,9 +95,7 @@ describe('src/main/remote/remote-wiring.ts', () => {
     deps.showBanner?.('DevBar — control remoto', 'hola', options);
 
     expect(banners).toEqual([['DevBar — control remoto', 'hola', options]]);
-    await expect(deps.secretBox?.isAsyncEncryptionAvailable()).resolves.toBe(
-      false,
-    );
+    expect(deps).not.toHaveProperty('secretBox');
   });
 
   it('names the host without its local domain', () => {

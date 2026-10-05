@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DAY,
   harness,
+  linkPhone,
   pairingLink,
   scanAndRequest,
+  settle,
 } from './helpers/remote-control-harness.js';
 import { createChannel } from '../renderer/remote/channel.js';
 import {
@@ -16,7 +18,6 @@ import type {
   RemotePairRequest,
   RemoteStatus,
 } from '../src/ipc-contract/remote-api.js';
-import { fakeKeychain } from './helpers/fake-keychain.js';
 
 /**
  * «Control remoto» assembled: the switch, the port, pairing and the device
@@ -46,8 +47,6 @@ describe('src/main/remote/remote-control.ts', () => {
         listening: false,
         error: null,
         keyError: null,
-        keyPending: false,
-        keyUnsealed: false,
         addresses: ['192.168.1.20'],
         devices: [],
       });
@@ -460,21 +459,53 @@ describe('src/main/remote/remote-control.ts', () => {
   });
 
   describe('the identity key', () => {
-    /** A run that sealed its identity, then a keychain that will not open. */
-    async function lockedOut() {
-      const keychain = fakeKeychain();
-      const first = harness(undefined, { secretBox: keychain });
+    const KEY_ERROR =
+      'No se pudo leer la clave del equipo. Pulsa «Renovar clave del equipo» para crear una nueva.';
+
+    /** A run that left the switch on, linked a phone and stopped. */
+    async function earlierRun() {
+      const first = harness();
       await first.remote.setEnabled(true);
+      const phone = await linkPhone(first);
       first.remote.close();
-      keychain.setLocked(true);
-      const h = harness(structuredClone(first.stored()), {
-        secretBox: keychain,
-      });
-      return { h, keychain, first };
+      const state = first.stored();
+      if (!state?.identity) throw new Error('no identity stored');
+      return { phone, state: structuredClone(state) };
     }
 
-    it('keeps the server off when the key cannot be read, and says why', async () => {
-      const { h, first } = await lockedOut();
+    /** The next launch, on a seed a pre-release build sealed with the keychain. */
+    async function sealedByKeychain() {
+      const { phone, state } = await earlierRun();
+      if (!state.identity) throw new Error('no identity stored');
+      state.identity = {
+        ...state.identity,
+        secret: Buffer.from('v10-sealed-by-the-keychain').toString('base64'),
+        sealed: true,
+      };
+      return { h: harness(structuredClone(state)), phone, state };
+    }
+
+    it('starts on the same key the earlier run stored, as it is', async () => {
+      const { state } = await earlierRun();
+      const h = harness(structuredClone(state));
+
+      await h.remote.startIfEnabled();
+
+      expect(h.remote.status()).toMatchObject({
+        listening: true,
+        keyError: null,
+      });
+      expect(state.identity?.sealed).toBe(false);
+      expect(h.stored()?.identity).toEqual(state.identity);
+      const pairing = h.remote.startPairing();
+      if (!pairing.ok) throw new Error(pairing.error);
+      expect(toB64(pairingLink(pairing.url).key)).toBe(
+        state.identity?.publicKey,
+      );
+    });
+
+    it('keeps the server off when the key cannot be read, and says how to fix it', async () => {
+      const { h, state } = await sealedByKeychain();
 
       await h.remote.startIfEnabled();
 
@@ -482,47 +513,109 @@ describe('src/main/remote/remote-control.ts', () => {
       expect(h.remote.status()).toMatchObject({
         enabled: true,
         listening: false,
-        keyError:
-          'No se pudo leer la clave de seguridad del llavero del sistema. Desbloquéalo y pulsa Reintentar.',
+        keyError: KEY_ERROR,
       });
       // Nothing was replaced: the phones' pinned key is still the one stored.
-      expect(h.stored()?.identity).toEqual(first.stored()?.identity);
+      expect(h.stored()?.identity).toEqual(state.identity);
       expect(h.remote.startPairing()).toMatchObject({ ok: false });
     });
 
-    it('starts with the same key once the keychain answers again (Reintentar)', async () => {
-      const { h, keychain, first } = await lockedOut();
+    it('still cannot read it when the switch is pressed again', async () => {
+      const { h, state } = await sealedByKeychain();
       await h.remote.startIfEnabled();
-      keychain.setLocked(false);
 
       const status = await h.remote.setEnabled(true);
 
-      expect(status).toMatchObject({ listening: true, keyError: null });
-      expect(h.stored()?.identity).toEqual(first.stored()?.identity);
+      expect(status).toMatchObject({ listening: false, keyError: KEY_ERROR });
+      expect(h.stored()?.identity).toEqual(state.identity);
     });
 
     it('replaces an unreadable key only when renewed, then starts', async () => {
-      const { h, first } = await lockedOut();
+      const { h, state } = await sealedByKeychain();
       await h.remote.startIfEnabled();
 
       await expect(h.remote.renewIdentity()).resolves.toEqual({ ok: true });
 
+      expect(h.stored()?.identity).toMatchObject({ sealed: false });
       expect(h.stored()?.identity?.publicKey).not.toBe(
-        first.stored()?.identity?.publicKey,
+        state.identity?.publicKey,
       );
-      expect(h.remote.status()).toMatchObject({ keyError: null });
-      expect(h.lifecycle).toContain('start:47821');
-    });
-
-    it('notes a key stored without the keychain, where there was none', async () => {
-      const h = harness(undefined, { secretBox: null });
-
-      await h.remote.setEnabled(true);
-
       expect(h.remote.status()).toMatchObject({
         listening: true,
-        keyUnsealed: true,
+        keyError: null,
       });
+      expect(h.lifecycle).toEqual(['start:47821']);
+    });
+
+    it('fails closed on the security code too, until the key is renewed', async () => {
+      const { h, phone } = await sealedByKeychain();
+      await h.remote.setEnabled(false);
+
+      expect(h.remote.securityCode(phone.deviceId)).toEqual({
+        ok: false,
+        error: KEY_ERROR,
+      });
+      await h.remote.renewIdentity();
+
+      expect(h.remote.securityCode(phone.deviceId)).toMatchObject({
+        ok: true,
+        verified: false,
+        url: null,
+        qr: null,
+      });
+    });
+  });
+
+  describe('one start at a time', () => {
+    it('starts one server when the switch is pressed twice while it is still starting', async () => {
+      const h = harness();
+      const release = h.holdStart();
+
+      const once = h.remote.setEnabled(true);
+      const twice = h.remote.setEnabled(true);
+      await settle();
+      expect(h.lifecycle).toEqual(['start:47821']);
+      release();
+      await Promise.all([once, twice]);
+
+      expect(h.lifecycle).toEqual(['start:47821']);
+      expect(h.remote.status()).toMatchObject({ listening: true });
+    });
+
+    it('ends off when the switch went off while the server was still starting', async () => {
+      const h = harness();
+      const release = h.holdStart();
+
+      const on = h.remote.setEnabled(true);
+      await settle();
+      const off = h.remote.setEnabled(false);
+      await settle();
+      expect(h.lifecycle).toEqual(['start:47821']);
+      release();
+      await Promise.all([on, off]);
+
+      expect(h.lifecycle).toEqual(['start:47821', 'stop']);
+      expect(h.remote.status()).toMatchObject({
+        enabled: false,
+        listening: false,
+      });
+    });
+
+    it('moves to a port changed while the server was still starting, once it started', async () => {
+      const h = harness({ enabled: true });
+      const release = h.holdStart();
+
+      const boot = h.remote.startIfEnabled();
+      const moved = h.remote.setPort(50123);
+      await settle();
+      release();
+      await boot;
+
+      await expect(moved).resolves.toMatchObject({
+        ok: true,
+        status: { port: 50123, listening: true },
+      });
+      expect(h.lifecycle).toEqual(['start:47821', 'stop', 'start:50123']);
     });
   });
 

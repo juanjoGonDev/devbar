@@ -18,7 +18,6 @@ import {
   sign,
   toB64,
 } from '../../renderer/remote/rc-protocol.js';
-import { fakeKeychain } from './fake-keychain.js';
 import { bridge } from './rc-bridge.js';
 
 /**
@@ -29,6 +28,11 @@ import { bridge } from './rc-bridge.js';
  */
 
 export const DAY = 24 * 60 * 60 * 1000;
+
+/** Lets every promise chain that can move on do so. */
+export function settle(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 interface FakeTimer {
   fn: () => void;
@@ -122,16 +126,18 @@ export function harness(
   const lifecycle: string[] = [];
   /** Desktop banners «Control remoto» asked for. */
   const banners: { title: string; body: string; options: unknown }[] = [];
+  /** Set by `holdStart`: a start waits on it before it listens. */
+  let held: Promise<void> | null = null;
   const server: RemoteServer = {
-    start: () => {
+    start: async () => {
       lifecycle.push(`start:${serverDeps?.port ?? '?'}`);
+      if (held) await held;
       if (failListen) {
         serverDeps?.onStateChange();
-        return Promise.resolve();
+        return;
       }
       listening = true;
       serverDeps?.onStateChange();
-      return Promise.resolve();
     },
     stop: () => {
       lifecycle.push('stop');
@@ -173,7 +179,6 @@ export function harness(
       return server;
     },
     runtime: fakeRuntime(),
-    secretBox: fakeKeychain(),
     showBanner: (title, body, options) =>
       banners.push({ title, body, options }),
     ...overrides,
@@ -206,6 +211,20 @@ export function harness(
       sent.filter((entry) => entry.channel === channel).at(-1)?.payload,
     failListen: (message: string | null) => {
       failListen = message;
+    },
+    /**
+     * Keeps every start from listening until the returned release runs, as
+     * a real listen takes its time.
+     */
+    holdStart: (): (() => void) => {
+      let release = (): void => undefined;
+      held = new Promise((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        held = null;
+        release();
+      };
     },
     setInterfaces: (value: NodeJS.Dict<os.NetworkInterfaceInfo[]>) => {
       interfaces = value;

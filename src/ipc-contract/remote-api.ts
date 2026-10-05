@@ -43,18 +43,11 @@ export interface RemoteStatus {
   /** Why the server could not listen (port in use…), in Spanish. */
   error: string | null;
   /**
-   * The stored identity key could not be read (a locked or denied
-   * keychain), so the server stays off: «Reintentar» tries again.
+   * The stored identity key could not be read (a hand-edited record, or one
+   * a pre-release build sealed with the OS keychain), so the server stays
+   * off until the user renews it («Renovar clave del equipo»).
    */
   keyError: string | null;
-  /**
-   * The server is waiting on the OS keychain for the identity key (on macOS
-   * the user may have a permission prompt open): not an error, it is just
-   * not listening yet. The next status push says how it went.
-   */
-  keyPending: boolean;
-  /** The identity key is stored without the OS keychain (none was there). */
-  keyUnsealed: boolean;
   /** This machine's private LAN IPv4 addresses. */
   addresses: string[];
   devices: RemoteDeviceRow[];

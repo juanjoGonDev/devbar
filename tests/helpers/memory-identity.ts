@@ -6,8 +6,8 @@ import {
 
 /**
  * A desktop identity key held in memory only: what the protocol tests sign
- * with when storing it (and the keychain, src/main/remote/identity.ts) is
- * not what they are about.
+ * with when storing it (src/main/remote/identity.ts) is not what they are
+ * about.
  */
 export function memoryIdentity() {
   const fresh = (): Identity => identityFromSeed(generateIdentity().seed);

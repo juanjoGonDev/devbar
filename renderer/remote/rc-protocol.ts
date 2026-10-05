@@ -20,6 +20,11 @@ import { sha256 } from '@noble/hashes/sha2.js';
  * the user unlinks the device there. A secure context (HTTPS with a trusted
  * certificate) is what would close it, and a LAN address cannot get one.
  *
+ * On the desktop, the identity seed this phone pins lives in a file only
+ * that user can read (0600), not in the OS keychain: ad-hoc signed updates
+ * are a new app to macOS each time, and could not open what the last one
+ * sealed (src/main/remote/identity.ts).
+ *
  * The constants are duplicated on purpose (this page imports nothing from
  * src/); tests/remote-rc-cross.test.ts fails the moment the two drift.
  */

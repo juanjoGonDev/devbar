@@ -14,11 +14,9 @@ import { errorMessage, type ShowToast } from './toast.js';
  * Main owns the state; this paints whatever `RemoteStatus` it last reported
  * (answers and `remote:changed` pushes alike) and forwards the clicks.
  *
- * When this computer's key cannot be read (a locked keychain), main keeps
- * the server off and says why: «Reintentar» asks it to start again, and
- * «Renovar clave del equipo» is the only way to replace the key. While the
- * keychain has yet to answer (a macOS permission prompt still open), the
- * section only notes that it is waiting: not an error, just not listening.
+ * When this computer's key cannot be read, main keeps the server off and
+ * says so: «Renovar clave del equipo» is the only way to replace the key,
+ * and main starts the server once it has.
  */
 
 /** Repaint cadence, so «Última conexión hace …» keeps counting. */
@@ -60,10 +58,8 @@ export function createRemotePane(
       : 'Sin red local';
     els.error.hidden = !status.error;
     els.error.textContent = status.error ?? '';
-    els.keyPending.hidden = !status.keyPending;
     els.keyError.hidden = !status.keyError;
-    els.keyErrorText.textContent = status.keyError ?? '';
-    els.keyUnsealed.hidden = !status.keyUnsealed;
+    els.keyError.textContent = status.keyError ?? '';
     // A failed listen is almost always the port: show where to change it.
     if (status.error) els.portSettings.open = true;
     portField.render(status.port);
@@ -123,17 +119,6 @@ export function createRemotePane(
       showToast(`Error: ${errorMessage(err)}`, 'error');
     } finally {
       els.renewIdentity.disabled = false;
-    }
-  });
-
-  els.keyRetry.addEventListener('click', async () => {
-    els.keyRetry.disabled = true;
-    try {
-      apply(await window.api.setRemoteEnabled(true));
-    } catch (err) {
-      showToast(`Error: ${errorMessage(err)}`, 'error');
-    } finally {
-      els.keyRetry.disabled = false;
     }
   });
 

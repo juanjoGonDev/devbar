@@ -43,6 +43,16 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
  * so the user can unlink it. Closing this for good needs a secure context
  * (HTTPS with a certificate the phone trusts), which a LAN address cannot
  * get.
+ *
+ * The desktop's half: the seed of its identity key is stored as it is, in
+ * the config file, which only this user can read and write (0600, like a
+ * key in ~/.ssh — src/main/remote/identity.ts). Other accounts on this
+ * computer cannot read it; a program running as this user can, and with it
+ * pose as this computer to the linked phones. It is not kept in the OS
+ * keychain: DevBar releases are ad-hoc signed, so to macOS every update is a
+ * different app that may not open the keychain item the last one sealed the
+ * seed with — the identity would be lost, and every phone verified again,
+ * on each update.
  */
 
 export const PROTOCOL = 'devbar-rc/1';

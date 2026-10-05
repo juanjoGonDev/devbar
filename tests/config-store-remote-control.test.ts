@@ -1,11 +1,13 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The `remoteControl` key of `src/config-store/store.ts`, through the real
  * `electron-store` (only `electron` is faked). It holds the linked devices'
- * token hashes, so the point here is as much where it does NOT go — exports,
- * import backups, the settings every window reads — as where it does.
+ * public keys and this computer's identity seed, so the point here is as
+ * much where it does NOT go — exports, import backups, the settings every
+ * window reads, other users of this computer — as where it does.
  */
 
 const electronState = vi.hoisted(() => ({
@@ -51,8 +53,8 @@ const STATE = {
   ],
   identity: {
     publicKey: 'B'.repeat(43),
-    secret: 'c2VhbGVkLXNlZWQ',
-    sealed: true,
+    secret: 'c2VlZC1pbi10aGUtY2xlYXI',
+    sealed: false,
   },
 };
 
@@ -81,7 +83,7 @@ describe('remoteControl store key', () => {
 
     const backup = fs.readFileSync(store.writeImportBackup(), 'utf8');
 
-    for (const secret of ['devicePub', 'c2VhbGVkLXNlZWQ', 'identity']) {
+    for (const secret of ['devicePub', 'c2VlZC1pbi10aGUtY2xlYXI', 'identity']) {
       expect(JSON.stringify(store.exportConfig())).not.toContain(secret);
       expect(backup).not.toContain(secret);
     }
@@ -95,5 +97,35 @@ describe('remoteControl store key', () => {
     store.replaceConfig({ version: 4, groups: [], globalSettings: {} });
 
     expect(store.getRemoteControl()).toEqual(STATE);
+  });
+
+  // POSIX modes only: on Windows the user's AppData ACLs do this job.
+  describe.skipIf(process.platform === 'win32')('the file it lives in', () => {
+    const configFile = (): string => path.join(harness.dir(), 'config.json');
+    const mode = (): number => fs.statSync(configFile()).mode & 0o777;
+
+    it('is readable and writable by its user only, as it holds the identity seed', async () => {
+      const store = await harness.open();
+
+      store.saveRemoteControl(STATE);
+
+      expect(mode()).toBe(0o600);
+    });
+
+    it('is created that way, before anything is saved in it', async () => {
+      await harness.open();
+
+      expect(mode()).toBe(0o600);
+    });
+
+    it('is tightened on the next start when an earlier version left it readable by others', async () => {
+      const first = await harness.open();
+      first.saveRemoteControl(STATE);
+      fs.chmodSync(configFile(), 0o644);
+
+      await harness.open({ home: harness.home() });
+
+      expect(mode()).toBe(0o600);
+    });
   });
 });

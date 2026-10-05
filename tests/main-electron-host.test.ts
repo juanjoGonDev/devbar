@@ -93,34 +93,6 @@ vi.mock('electron', () => {
       getDisplayNearestPoint: () => display(1440),
       getCursorScreenPoint: () => ({ x: 1500, y: 100 }),
     },
-    // Only the async half answers: a sync call would block the main process
-    // on a macOS keychain prompt, so the fake makes one fail loudly.
-    safeStorage: {
-      isEncryptionAvailable: () => {
-        throw new Error('sync safeStorage call');
-      },
-      encryptString: () => {
-        throw new Error('sync safeStorage call');
-      },
-      decryptString: () => {
-        throw new Error('sync safeStorage call');
-      },
-      isAsyncEncryptionAvailable: () => {
-        electron.calls.push('safe:available');
-        return Promise.resolve(true);
-      },
-      encryptStringAsync: (plain: string) => {
-        electron.calls.push(`safe:encrypt:${plain}`);
-        return Promise.resolve(Buffer.from(`sealed:${plain}`));
-      },
-      decryptStringAsync: (sealed: Buffer) => {
-        electron.calls.push(`safe:decrypt:${sealed.toString()}`);
-        return Promise.resolve({
-          shouldReEncrypt: true,
-          result: sealed.toString().replace('sealed:', ''),
-        });
-      },
-    },
     shell: {
       openExternal: (url: string) => {
         electron.calls.push(`external:${url}`);
@@ -480,21 +452,11 @@ describe('src/main/electron-host.ts', () => {
     });
   });
   describe('the keychain', () => {
-    it('seals and unseals through the async safeStorage, passing the re-seal hint on', async () => {
-      electron.calls.length = 0;
-      const box = host().safeStorage;
-
-      await expect(box.isAsyncEncryptionAvailable()).resolves.toBe(true);
-      const sealed = await box.encryptStringAsync('seed');
-      await expect(box.decryptStringAsync(sealed)).resolves.toEqual({
-        shouldReEncrypt: true,
-        result: 'seed',
-      });
-      expect(electron.calls).toEqual([
-        'safe:available',
-        'safe:encrypt:seed',
-        'safe:decrypt:sealed:seed',
-      ]);
+    // Ad-hoc signed builds are a new app to macOS on every update, so the
+    // keychain item one sealed with is not one the next can open: «Control
+    // remoto» keeps its key in the user-only config file instead.
+    it('offers no safeStorage to seal secrets with', () => {
+      expect(host()).not.toHaveProperty('safeStorage');
     });
   });
 

@@ -262,8 +262,8 @@ describe('src/main/lifecycle.ts', () => {
       expect(h.calls).toContain('scheduleBootWork');
     });
 
-    // Boot work includes «Control remoto», whose key may wait on a keychain
-    // prompt: none of it may run before the popover is up and painted.
+    // Boot work includes «Control remoto», which opens a LAN server: none of
+    // it may run before the popover is up and painted.
     it('holds the boot work until the tray and its popover are ready, then runs it after the first paint', () => {
       const h = harness();
       h.events.get('after-create-window')?.();

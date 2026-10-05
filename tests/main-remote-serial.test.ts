@@ -3,8 +3,8 @@ import { createSerial } from '../src/main/remote/serial.js';
 
 /**
  * One task at a time, in call order: what keeps two starts of «Control
- * remoto» (or a start and a key renewal) from interleaving while one of
- * them waits on the keychain.
+ * remoto» (or a start and a key renewal) from interleaving while the server
+ * is still opening or closing its port.
  */
 
 /** A promise the test resolves by hand. */

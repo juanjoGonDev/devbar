@@ -10,6 +10,7 @@ import type {
   PreStep,
 } from '../domain-types.js';
 import { normalizeCustomIcons } from '../custom-icons.js';
+import { OWNER_ONLY, restrictToOwner } from './owner-only.js';
 import {
   normalizeGroup,
   normalizePreStep,
@@ -99,9 +100,10 @@ const schema = {
   trayPopover: { type: 'object' },
   // Its own key, never part of globalSettings: those reach every window and
   // every export/backup, and this holds the linked devices' public keys and
-  // this computer's identity key (sealed by the OS keychain where there is
-  // one). Absent means "never configured" — src/main/remote/device-store.ts
-  // reads that as the defaults (off).
+  // this computer's identity seed, as it is — which is why the whole file is
+  // readable by its user only (see `configFileMode` below). Absent means
+  // "never configured" — src/main/remote/device-store.ts reads that as the
+  // defaults (off).
   remoteControl: { type: 'object' },
 } as const;
 
@@ -114,8 +116,14 @@ const schema = {
 const storeOptions: {
   name: string;
   schema: typeof schema;
+  configFileMode: number;
   cwd?: string;
-} = { name: 'config', schema };
+} = {
+  name: 'config',
+  schema,
+  // It holds «Control remoto»'s identity seed: user-only, like ~/.ssh keys.
+  configFileMode: OWNER_ONLY,
+};
 const storeDir = packagedAppHome();
 if (storeDir !== undefined) {
   storeOptions.cwd = storeDir;
@@ -147,6 +155,9 @@ if (storeDir !== undefined) {
   }
 }
 const store = new Store<StoreState>(storeOptions);
+// conf applies `configFileMode` only when it writes: a file an earlier
+// version left readable by others is tightened here, on the next start.
+restrictToOwner(store.path);
 
 function runMigration(): void {
   // The whole decision — pipeline hoisting (seeing the PRISTINE raw group

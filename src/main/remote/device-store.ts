@@ -29,11 +29,16 @@ interface RemoteDevice extends RemoteDeviceView {
 
 /**
  * This computer's Ed25519 identity (src/main/remote/identity.ts): the public
- * key, and the 32-byte seed — sealed by the OS keychain when it can be.
+ * key and the 32-byte seed, both base64url, in the user-only config file.
  */
 export interface StoredIdentity {
   publicKey: string;
   secret: string;
+  /**
+   * Always false when written now. True only in a record a pre-release build
+   * sealed with the OS keychain: kept as it is, so identity.ts can refuse it
+   * instead of it reading as "no identity" and being replaced silently.
+   */
   sealed: boolean;
 }
 

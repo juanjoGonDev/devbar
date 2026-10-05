@@ -14,14 +14,8 @@ export interface RemoteElements {
   state: HTMLElement;
   address: HTMLElement;
   error: HTMLElement;
-  /** Waiting on the keychain for this computer's key: a note, not an error. */
-  keyPending: HTMLElement;
-  /** This computer's key could not be read: why, and «Reintentar». */
+  /** This computer's key could not be read: renewing it is the way out. */
   keyError: HTMLElement;
-  keyErrorText: HTMLElement;
-  keyRetry: HTMLButtonElement;
-  /** The Seguridad card's note on a key kept without the keychain. */
-  keyUnsealed: HTMLElement;
   /** The collapsed gear section that holds the port field. */
   portSettings: HTMLDetailsElement;
   port: PortElements;
@@ -67,11 +61,7 @@ export function remoteElements(): RemoteElements {
     state: byId<HTMLElement>('remote-state', HTMLElement),
     address: byId<HTMLElement>('remote-address', HTMLElement),
     error: byId<HTMLElement>('remote-error', HTMLElement),
-    keyPending: byId<HTMLElement>('remote-key-pending', HTMLElement),
     keyError: byId<HTMLElement>('remote-key-error', HTMLElement),
-    keyErrorText: byId<HTMLElement>('remote-key-error-text', HTMLElement),
-    keyRetry: byId<HTMLButtonElement>('remote-key-retry', HTMLButtonElement),
-    keyUnsealed: byId<HTMLElement>('remote-key-unsealed', HTMLElement),
     portSettings: byId<HTMLDetailsElement>(
       'remote-port-settings',
       HTMLDetailsElement,

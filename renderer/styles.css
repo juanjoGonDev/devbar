@@ -3576,25 +3576,6 @@ button.remote-rename-btn:hover {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-/* Waiting on the keychain for this computer's key: a note, not an error. */
-.remote-key-pending {
-  margin: 10px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-/* This computer's key could not be read: why, and «Reintentar». */
-.remote-key-error {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-}
-.remote-key-error[hidden] {
-  display: none;
-}
-.remote-key-error .remote-error {
-  margin: 0;
-}
 .remote-device-side {
   display: flex;
   flex-shrink: 0;
