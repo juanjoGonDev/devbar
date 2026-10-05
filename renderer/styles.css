@@ -2775,9 +2775,6 @@ dialog form {
 }
 
 .update-progress-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;

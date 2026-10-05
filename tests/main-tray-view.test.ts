@@ -119,7 +119,7 @@ describe('src/main/tray-view.ts', () => {
         ...base,
         availableUpdate: { version: '1.2.0' },
       });
-      expect(first?.label).toBe('Actualizar a v1.2.0…');
+      expect(first?.label).toBe('⬆︎ Actualizar a v1.2.0…');
     });
 
     it('offers a restart once the staged version matches', () => {
@@ -128,7 +128,7 @@ describe('src/main/tray-view.ts', () => {
         availableUpdate: { version: '1.2.0' },
         stagedUpdate: { version: '1.2.0' },
       });
-      expect(first?.label).toBe('Reiniciar e instalar v1.2.0');
+      expect(first?.label).toBe('⬆︎ Reiniciar e instalar v1.2.0');
     });
 
     it('still offers the download when a DIFFERENT version is staged', () => {
@@ -137,7 +137,7 @@ describe('src/main/tray-view.ts', () => {
         availableUpdate: { version: '1.3.0' },
         stagedUpdate: { version: '1.2.0' },
       });
-      expect(first?.label).toBe('Actualizar a v1.3.0…');
+      expect(first?.label).toBe('⬆︎ Actualizar a v1.3.0…');
     });
 
     it('shows the download percentage while the update downloads', () => {
@@ -151,7 +151,7 @@ describe('src/main/tray-view.ts', () => {
           total: 100,
         },
       });
-      expect(first?.label).toBe('Descargando v1.2.0 — 42 %');
+      expect(first?.label).toBe('⬆︎ Descargando v1.2.0 — 42 %');
       expect(first?.enabled).toBe(false);
     });
 
@@ -166,20 +166,28 @@ describe('src/main/tray-view.ts', () => {
           total: null,
         },
       });
-      expect(first?.label).toBe('Descargando v1.2.0…');
+      expect(first?.label).toBe('⬆︎ Descargando v1.2.0…');
     });
 
     it.each<[UpdatePhase, string, boolean]>([
-      [{ state: 'verifying', version: '1.2.0' }, 'Verificando v1.2.0…', false],
-      [{ state: 'installing', version: '1.2.0' }, 'Instalando v1.2.0…', false],
+      [
+        { state: 'verifying', version: '1.2.0' },
+        '⬆︎ Verificando v1.2.0…',
+        false,
+      ],
+      [
+        { state: 'installing', version: '1.2.0' },
+        '⬆︎ Instalando v1.2.0…',
+        false,
+      ],
       [
         { state: 'restarting', version: '1.2.0' },
-        'Reiniciando para instalar v1.2.0…',
+        '⬆︎ Reiniciando para instalar v1.2.0…',
         false,
       ],
       [
         { state: 'download-failed', version: '1.2.0', reason: 'x' },
-        'Reintentar la actualización a v1.2.0…',
+        '⬆︎ Reintentar la actualización a v1.2.0…',
         true,
       ],
       [
@@ -190,7 +198,7 @@ describe('src/main/tray-view.ts', () => {
           path: '/tmp/a.deb',
           command: null,
         },
-        'Reintentar la actualización a v1.2.0…',
+        '⬆︎ Reintentar la actualización a v1.2.0…',
         true,
       ],
       [
@@ -201,7 +209,7 @@ describe('src/main/tray-view.ts', () => {
           install: 'package',
           command: 'sudo apt install /tmp/a.deb',
         },
-        'Instalar v1.2.0 ahora',
+        '⬆︎ Instalar v1.2.0 ahora',
         true,
       ],
     ])('labels the %j phase', (updatePhase, label, enabled) => {
@@ -230,7 +238,7 @@ describe('src/main/tray-view.ts', () => {
         onApplyUpdate,
         onOpenConfig,
       });
-      expect(first?.label).toBe('v1.2.0 descargada — ver instrucciones…');
+      expect(first?.label).toBe('⬆︎ v1.2.0 descargada — ver instrucciones…');
       (first?.click as (() => void) | undefined)?.();
       expect(onOpenConfig).toHaveBeenCalledTimes(1);
       expect(onApplyUpdate).not.toHaveBeenCalled();
@@ -242,7 +250,7 @@ describe('src/main/tray-view.ts', () => {
         availableUpdate: { version: '1.3.0' },
         updatePhase: { state: 'installing', version: '1.2.0' },
       });
-      expect(first?.label).toBe('Actualizar a v1.3.0…');
+      expect(first?.label).toBe('⬆︎ Actualizar a v1.3.0…');
     });
 
     it('runs the update callback when the entry is clicked', () => {

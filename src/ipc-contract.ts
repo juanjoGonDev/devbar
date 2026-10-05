@@ -22,10 +22,8 @@ export type {
   CustomIconAddResult,
   CustomIconUploadResult,
 } from './ipc-contract/custom-icons-api.js';
-
 export type SilenceLevel = 'warn' | 'error';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
-
 export interface CommandRuntimeState {
   commandId: string;
   processId: string;
@@ -201,7 +199,6 @@ interface ApplyImportResult {
   backupPath?: string | undefined;
   error?: string | undefined;
 }
-type NotificationAction = string;
 
 /**
  * Simulation hooks for events that are painful to reproduce by hand. The
@@ -327,7 +324,7 @@ export interface DevBarApi extends UpdatesApi, CustomIconsApi, RemoteApi {
   saveSettings(patch: Partial<GlobalSettings>): Promise<GlobalSettings>;
   testNotification(): Promise<SimpleResult>;
   dismissNotification(): Promise<SimpleResult>;
-  notificationAction(action: NotificationAction): Promise<SimpleResult>;
+  notificationAction(action: string): Promise<SimpleResult>;
   getIconBattery(): Promise<readonly IconBatteryItem[]>;
   exportConfig(): Promise<ExportResult>;
   importConfig(): Promise<ImportResult>;

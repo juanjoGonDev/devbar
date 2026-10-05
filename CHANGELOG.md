@@ -132,13 +132,11 @@ Todas las novedades relevantes de DevBar. El formato sigue
   ceden sitio el log primero; el portapapeles siempre lleva la lista
   entera. Pasan por la misma limpieza de credenciales que el resto del
   informe.
-
 - **Los cierres inesperados quedan registrados.** Las excepciones y
   promesas rechazadas sin capturar del proceso principal, y las ventanas
   o procesos auxiliares que mueren, dejan ahora una línea de error en el
   log (motivo, código de salida y ventana). DevBar se comporta ante ellos
   igual que antes: solo se registran.
-
 - **El diálogo de reporte dice qué se va a enviar.** Muestra cuántos
   errores y avisos recientes incluirá y permite leer el informe completo
   antes de copiarlo o abrir GitHub.
@@ -155,6 +153,11 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Corregido
 
+- **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**
+  DevBar solo pedía las fuentes de macOS, así que Windows acababa dibujando
+  toda la interfaz con su fuente de emoji, y los logs salían borrosos. Ahora
+  usa Segoe UI y Cascadia Mono/Consolas en Windows, y las fuentes habituales
+  del escritorio en Linux.
 - **La barra se adapta a su contenido mientras está abierta.** Al añadir o
   quitar grupos, desplegar uno, arrancar un script o aparecer un aviso, el
   panel cambiaba de altura solo al cerrarlo y volver a pulsar el icono. En
@@ -179,12 +182,6 @@ Todas las novedades relevantes de DevBar. El formato sigue
   ir junto al icono, pero tampoco crecerá hasta meterse bajo la barra de
   tareas.
 
-- **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**
-  DevBar solo pedía las fuentes de macOS, así que Windows acababa dibujando
-  toda la interfaz con su fuente de emoji, y los logs salían borrosos. Ahora
-  usa Segoe UI y Cascadia Mono/Consolas en Windows, y las fuentes habituales
-  del escritorio en Linux.
-
 - **Los iconos de la cabecera de la barra ya no salen en azul.** El botón
   del pipeline, el de los logs y el de configuración usan ahora el mismo
   color neutro que el resto de la interfaz (y que el de salir), en tema
@@ -202,40 +199,6 @@ Release notes generated… -->`) ni el título vacío «What's Changed» que
   tamaño fijo, el selector de rama ocupa siempre el mismo hueco y es el
   nombre del grupo el que se recorta con «…» si falta sitio. El contador
   de tiempo reserva su ancho para no empujar nada cada segundo.
-
-- **En Linux y Raspberry Pi, «Actualizar» no hacía nada visible.** La
-  descarga no enseñaba progreso, un fallo de descarga o de verificación
-  solo llegaba al popover de la bandeja (que en muchos paneles ni se
-  abre), y el `.deb` acababa en Descargas sin que nadie lo instalase.
-  Ahora el apartado de actualizaciones de Configuración muestra en todo
-  momento en qué punto está: comprobando, descargando —con porcentaje,
-  megas y barra de progreso—, verificando, lista para instalar,
-  instalando o el fallo concreto con su motivo y un botón «Reintentar».
-  La bandeja enseña el porcentaje junto a la versión y en su menú.
-
-- **Las instalaciones desde el `.deb` se actualizan solas.** Tras
-  descargar y verificar el paquete, «Instalar ahora» lo instala con el
-  gestor de paquetes (se pide la contraseña en el diálogo del sistema) y
-  DevBar se reinicia en la versión nueva. Si no se puede —no hay
-  `pkexec`, cancelas la contraseña o `apt` falla— el paquete se queda
-  descargado y tienes el comando exacto (`sudo apt install …`) con
-  botones para copiarlo, abrir la carpeta o reintentar.
-
-- **A quien usa la AppImage ya no se le ofrece el `.deb`.** Si la carpeta
-  de la AppImage no admite escritura, la nueva se descarga en Descargas,
-  ya ejecutable, con instrucciones y un botón para abrir la carpeta. Si
-  la actualización en sitio falla, el motivo se ve y se puede reintentar
-  sin reiniciar DevBar.
-
-- **«Al día» cuando en realidad no se había podido comprobar.** Un límite
-  de peticiones de GitHub, un corte de red o un tiempo de espera ahora se
-  muestran como «No se pudo comprobar: …» en vez de anunciar que no hay
-  versiones nuevas.
-
-- **El aviso de actualización ya no dice «Se abrirá la página de la
-  release»** cuando lo que hace es descargar el paquete, y los diálogos
-  ya no se abren colgados de una ventana oculta, donde algunos gestores
-  de ventanas los dejaban invisibles.
 
 - **El log de la sesión anterior se perdía al reiniciar.** Cada arranque
   vaciaba `app.log`, así que tras un cierre inesperado o el reinicio de

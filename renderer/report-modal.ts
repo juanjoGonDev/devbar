@@ -50,6 +50,21 @@ function build(): HTMLDialogElement {
   return next;
 }
 
+/** A leading check icon marks the outcomes that did what was asked. */
+interface Outcome {
+  ok: boolean;
+  message: string;
+}
+
+function setStatus(dlg: HTMLDialogElement, outcome: Outcome | null): void {
+  const status = dlg.querySelector<HTMLElement>('[data-status]');
+  if (!status) return;
+  status.replaceChildren();
+  if (!outcome) return;
+  if (outcome.ok) status.append(icon('check'), ' ');
+  status.append(outcome.message);
+}
+
 const plural = (n: number, one: string, many: string): string =>
   `${String(n)} ${n === 1 ? one : many}`;
 
@@ -80,21 +95,6 @@ async function loadPreview(dlg: HTMLDialogElement): Promise<void> {
   } catch {
     // No preview is not a failure: the actions below still work.
   }
-}
-
-/** A leading check icon marks the outcomes that did what was asked. */
-interface Outcome {
-  ok: boolean;
-  message: string;
-}
-
-function setStatus(dlg: HTMLDialogElement, outcome: Outcome | null): void {
-  const status = dlg.querySelector<HTMLElement>('[data-status]');
-  if (!status) return;
-  status.replaceChildren();
-  if (!outcome) return;
-  if (outcome.ok) status.append(icon('check'), ' ');
-  status.append(outcome.message);
 }
 
 /**

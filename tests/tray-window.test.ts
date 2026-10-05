@@ -281,7 +281,7 @@ describe('renderer/tray.ts', () => {
         total: 100,
       });
       expect(label().hidden).toBe(false);
-      expect(iconText(label())).toBe('[arrow-down] Descargando 42 %');
+      expect(label().textContent).toBe('Descargando 42 %');
     });
 
     it('shows a download of unknown size without a number', async () => {
@@ -292,7 +292,7 @@ describe('renderer/tray.ts', () => {
         received: 42,
         total: null,
       });
-      expect(iconText(label())).toBe('[arrow-down] Descargando…');
+      expect(label().textContent).toBe('Descargando…');
     });
 
     it('flags a failure with its reason on hover', async () => {
@@ -304,7 +304,7 @@ describe('renderer/tray.ts', () => {
         path: '/tmp/a.deb',
         command: null,
       });
-      expect(iconText(label())).toBe('[triangle-alert] Actualización fallida');
+      expect(label().textContent).toBe('Actualización fallida');
       expect(label().title).toBe('autenticación cancelada');
     });
 
@@ -314,9 +314,9 @@ describe('renderer/tray.ts', () => {
         state: 'installing',
         version: '9.9.9',
       });
-      expect(iconText(label())).toBe('[package] Instalando…');
+      expect(label().textContent).toBe('Instalando…');
       await win.push('onUpdatePhase', { state: 'verifying', version: '9.9.9' });
-      expect(iconText(label())).toBe('[clock] Verificando…');
+      expect(label().textContent).toBe('Verificando…');
     });
 
     it('hides once nothing is happening', async () => {
