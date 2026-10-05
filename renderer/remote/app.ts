@@ -1,28 +1,43 @@
 import { createRemoteClient, type Me } from './api.js';
+import type { DeviceIdentity } from './context.js';
 import type { RemoteEnv } from './env.js';
 import { fillGlyphs } from './glyphs.js';
+import {
+  clearKeys,
+  keyMaterial,
+  readKeys,
+  writeKeys,
+  type DeviceKeys,
+} from './keys.js';
 import { startPanel, type Panel } from './panel.js';
+import { createPairFlow } from './pair-flow.js';
+import { fromB64, KEY_BYTES } from './rc-protocol.js';
+import { verifyDevice, type VerifyFragment } from './verify-flow.js';
 import { byId, showView } from './view.js';
 
 export type { RemoteEnv } from './env.js';
 
 /**
- * The phone page's flow. It decides its view from /api/me alone:
+ * The phone page's flow. Everything travels over devbar-rc/1; what the page
+ * shows depends on where it was opened and on the keys this device keeps:
  *
- *   linked                → the control panel (renderer/remote/panel.ts);
- *   not linked, ?c=<code> → the pairing form, then the verification code
- *                           while the computer decides;
- *   not linked            → how to link it from the computer.
+ *   /pair?c=…#k=…    → pairing, trusting the identity key of the QR
+ *                      (renderer/remote/pair-flow.ts);
+ *   /verify#k=…&d=…&p=…
+ *                    → comparing a security code (verify-flow.ts);
+ *   anything else    → with keys, a handshake against the pinned key, the
+ *                      sign-in and the control panel; without, how to link.
  *
- * The browser's globals arrive as `RemoteEnv` (renderer/remote.ts), so every
+ * A pinned key the desktop no longer presents stops everything at «La
+ * clave de seguridad ha cambiado» until the user scans the new code. The
+ * browser's globals arrive as `RemoteEnv` (renderer/remote.ts), so every
  * step can be driven from a test.
  */
 
-const POLL_MS = 1000;
-/** Consecutive failed polls before the page stops and says so. */
-const MAX_POLL_FAILURES = 5;
-const NAME_HINT = 'Ponle un nombre de 1 a 40 caracteres.';
-const UNREACHABLE = 'No se pudo conectar con DevBar. Inténtalo de nuevo.';
+type Route =
+  | { kind: 'home' }
+  | { kind: 'pair'; code: string; key: Uint8Array | null }
+  | ({ kind: 'verify' } & VerifyFragment);
 
 function elements() {
   return {
@@ -38,41 +53,98 @@ function elements() {
     resultText: byId<HTMLElement>('result-text', HTMLElement),
     resultDone: byId<HTMLButtonElement>('result-done', HTMLButtonElement),
     retry: byId<HTMLButtonElement>('retry', HTMLButtonElement),
+    keychangedTitle: byId<HTMLElement>('keychanged-title', HTMLElement),
+    keychangedRetry: byId<HTMLButtonElement>(
+      'keychanged-retry',
+      HTMLButtonElement,
+    ),
+    verifiedNote: byId<HTMLElement>('verified-note', HTMLElement),
+    verifiedDone: byId<HTMLButtonElement>('verified-done', HTMLButtonElement),
+    mismatchDone: byId<HTMLButtonElement>('mismatch-done', HTMLButtonElement),
   };
+}
+
+/** Where the page was opened; the fragment is cleared from the URL at once. */
+function takeRoute(env: RemoteEnv): Route {
+  const fragment = new URLSearchParams(env.hash.replace(/^#/, ''));
+  const verify = env.pathname === '/verify';
+  if (env.hash) env.replaceUrl(verify ? '/' : `${env.pathname}${env.search}`);
+  if (verify)
+    return {
+      kind: 'verify',
+      k: fragment.get('k'),
+      d: fragment.get('d'),
+      p: fragment.get('p'),
+    };
+  const code = new URLSearchParams(env.search).get('c');
+  if (code)
+    return { kind: 'pair', code, key: fromB64(fragment.get('k'), KEY_BYTES) };
+  return { kind: 'home' };
 }
 
 export async function startRemoteApp(env: RemoteEnv): Promise<void> {
   const els = elements();
   fillGlyphs(document);
-  const client = createRemoteClient(env.fetch);
-  const code = new URLSearchParams(env.search).get('c');
-  /** Bumped to abandon a poll loop (cancel, a new view). */
-  let pollRound = 0;
-  let pollTimer: unknown = null;
-  /** The request the phone is waiting on, to withdraw on «Cancelar». */
-  let waitingOn: string | null = null;
+  /** Only the panel's own calls may decide that trust is lost. */
+  let mode: 'device' | 'flow' = 'device';
+  let keys: DeviceKeys | null = null;
   let panel: Panel | null = null;
+  const client = createRemoteClient(env.fetch, {
+    onLost: (reason) => {
+      if (mode !== 'device') return;
+      if (reason === 'unlinked') showUnlinked(false, true);
+      else showKeyChanged();
+    },
+  });
 
-  const stopPolling = (): void => {
-    pollRound += 1;
-    if (pollTimer !== null) env.clearTimeout(pollTimer);
-    pollTimer = null;
+  const trustKeys = (next: DeviceKeys): boolean => {
+    const material = keyMaterial(next);
+    if (!material) return false;
+    keys = next;
+    client.trust({
+      serverKey: material.serverKey,
+      device: { id: next.deviceId, secretKey: material.secretKey },
+    });
+    return true;
   };
 
-  const showUnlinked = (fromStaleCode: boolean): void => {
-    stopPolling();
-    waitingOn = null;
+  const identity: DeviceIdentity = {
+    keys: () => {
+      if (!keys) throw new Error('no device keys');
+      return keys;
+    },
+    writable: () => keys !== null && writeKeys(env, keys),
+    replace: (next) => writeKeys(env, next) && trustKeys(next),
+  };
+
+  function leaveFlows(): void {
+    pairing.stop();
     panel?.stop();
+  }
+
+  function showUnlinked(fromStaleCode: boolean, forget = false): void {
+    leaveFlows();
+    if (forget) {
+      clearKeys(env);
+      keys = null;
+    }
     els.expiredNote.classList.toggle('is-emphasised', fromStaleCode);
     showView('unlinked');
-  };
+  }
 
-  const showResult = (title: string, body: string): void => {
-    stopPolling();
+  function showResult(title: string, body: string): void {
+    leaveFlows();
     els.resultTitle.textContent = title;
     els.resultText.textContent = body;
     showView('result');
-  };
+  }
+
+  function showKeyChanged(): void {
+    leaveFlows();
+    const host = keys?.hostName || 'este ordenador';
+    els.keychangedTitle.textContent = `La clave de seguridad de ${host} ha cambiado`;
+    showView('keychanged');
+  }
 
   const showLinked = (me: Me): void => {
     // The panel wires listeners on the page itself: one per page load. Any
@@ -86,114 +158,84 @@ export async function startRemoteApp(env: RemoteEnv): Promise<void> {
       env,
       client,
       me,
-      onUnlinked: () => showUnlinked(false),
+      identity,
+      onUnlinked: () => showUnlinked(false, true),
     });
   };
 
-  const showPairForm = (me: Me): void => {
-    els.pairTitle.textContent = `Vincular con ${me.hostName}`;
-    els.deviceName.value = me.suggestedName;
-    els.pairError.hidden = true;
-    showView('pair');
-  };
+  const pairing = createPairFlow({
+    env,
+    client,
+    els,
+    linked: (next) => {
+      if (!writeKeys(env, next)) {
+        showResult(
+          'No se pudo guardar la vinculación',
+          'Este navegador no ha dejado guardar las claves de esta página. Desvincula el dispositivo en el ordenador y vuelve a vincularlo fuera del modo privado.',
+        );
+        return;
+      }
+      void boot();
+    },
+    showUnlinked: (stale) => showUnlinked(stale),
+    showResult,
+  });
 
   async function boot(): Promise<void> {
-    stopPolling();
+    mode = 'device';
+    pairing.stop();
     showView('loading');
+    const stored = readKeys(env);
+    if (!stored || !trustKeys(stored)) {
+      showUnlinked(false);
+      return;
+    }
     let me: Me;
     try {
+      await client.reconnect();
       me = await client.me();
-    } catch {
-      showView('error');
+    } catch (error) {
+      // A lost trust already switched the view (onLost).
+      if (document.body.dataset.screen === 'loading') showView('error');
       return;
     }
-    if (me.linked) showLinked(me);
-    else if (code) showPairForm(me);
-    else showUnlinked(false);
+    if (!me.linked) showUnlinked(false, true);
+    else showLinked(me);
   }
 
-  function poll(requestId: string, round: number, failures: number): void {
-    pollTimer = env.setTimeout(() => {
-      void (async () => {
-        let answer;
-        try {
-          answer = await client.pairStatus(requestId);
-        } catch {
-          if (round !== pollRound) return;
-          if (failures + 1 >= MAX_POLL_FAILURES) {
-            stopPolling();
-            showView('error');
-          } else poll(requestId, round, failures + 1);
-          return;
-        }
-        if (round !== pollRound) return;
-        const status = answer.status === 200 ? answer.body.status : 'expired';
-        if (status === 'pending') poll(requestId, round, 0);
-        else if (status === 'accepted') void boot();
-        else if (status === 'rejected')
-          showResult(
-            'Vinculación rechazada',
-            'El ordenador ha rechazado este dispositivo. Si eras tú, genera un código nuevo en DevBar y vuelve a escanearlo.',
-          );
-        else
-          showResult(
-            'La solicitud ha caducado',
-            'Nadie la aceptó a tiempo en el ordenador. Genera un código nuevo en DevBar y vuelve a escanearlo.',
-          );
-      })();
-    }, POLL_MS);
-  }
-
-  const formError = (message: string): void => {
-    els.pairError.textContent = message;
-    els.pairError.hidden = false;
-  };
-
-  els.pairForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const name = els.deviceName.value.trim();
-    if (!code) return;
-    if (!name || name.length > 40) {
-      formError(NAME_HINT);
+  async function run(route: Route): Promise<void> {
+    if (route.kind === 'home') return boot();
+    mode = 'flow';
+    if (route.kind === 'pair') {
+      if (route.key) return pairing.start(route.code, route.key);
+      // A link without its key (an old QR, a typed address): not trusted.
+      env.replaceUrl('/');
+      showUnlinked(true);
       return;
     }
-    els.pairSubmit.disabled = true;
-    els.pairError.hidden = true;
-    void (async () => {
-      try {
-        const answer = await client.requestPairing(code, name);
-        if (answer.status === 200) {
-          env.replaceUrl('/');
-          const digits = String(answer.body.verificationCode ?? '');
-          els.verificationCode.textContent = `${digits.slice(0, 3)} ${digits.slice(3)}`;
-          showView('waiting');
-          stopPolling();
-          waitingOn = String(answer.body.requestId ?? '');
-          poll(waitingOn, pollRound, 0);
-        } else if (answer.status === 410) {
-          env.replaceUrl('/');
-          showUnlinked(true);
-        } else if (answer.status === 429)
-          formError('Demasiados intentos. Espera un minuto y vuelve a probar.');
-        else if (answer.status === 400) formError(NAME_HINT);
-        else formError(UNREACHABLE);
-      } catch {
-        formError(UNREACHABLE);
-      } finally {
-        els.pairSubmit.disabled = false;
-      }
-    })();
-  });
+    return verifyDevice(
+      {
+        env,
+        client,
+        note: els.verifiedNote,
+        kept: (next) => {
+          keys = next;
+        },
+        unlinked: () => showUnlinked(false, true),
+      },
+      route,
+    );
+  }
 
-  els.pairCancel.addEventListener('click', () => {
-    const requestId = waitingOn;
-    showUnlinked(false);
-    // Best effort: the computer closes its dialog right away instead of
-    // waiting out the minute. Nothing changes here if it never arrives.
-    if (requestId) void client.cancelPairing(requestId).catch(() => undefined);
-  });
+  const route = takeRoute(env);
   els.resultDone.addEventListener('click', () => showUnlinked(false));
-  els.retry.addEventListener('click', () => void boot());
+  els.retry.addEventListener('click', () => void run(route));
+  for (const button of [
+    els.keychangedRetry,
+    els.verifiedDone,
+    els.mismatchDone,
+  ])
+    button.addEventListener('click', () => void boot());
 
-  await boot();
+  await run(route);
 }

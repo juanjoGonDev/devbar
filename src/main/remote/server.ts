@@ -1,11 +1,10 @@
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import type { ApiRequest, ApiResponse } from './api.js';
-import type { EventSink } from './events.js';
 import {
   checkMutation,
   HTML_CSP,
   readJsonBody,
-  readSessionToken,
+  readSessionId,
   SECURITY_HEADERS,
 } from './http-guard.js';
 import { isAllowedHost, normalizeIp } from './lan.js';
@@ -22,8 +21,15 @@ import { staticAsset } from './static-files.js';
  * Events stream, handed to `stream` once the same gates have passed.
  */
 
+/** The raw text side of an open event stream. */
+export interface StreamSink {
+  /** False when the client cannot keep up (the stream is then cut). */
+  write(chunk: string): boolean;
+  end(): void;
+}
+
 /** What `stream` answers: a refusal, or a stream to open. */
-export type StreamAnswer = ApiResponse | { open(sink: EventSink): () => void };
+export type StreamAnswer = ApiResponse | { open(sink: StreamSink): () => void };
 
 export interface RemoteServerDeps {
   port: number;
@@ -67,15 +73,9 @@ function listenError(error: unknown, port: number): string {
   return `No se pudo abrir el puerto ${port}: ${detail}`;
 }
 
-function sendJson(
-  res: ServerResponse,
-  status: number,
-  body: unknown,
-  setCookie?: string,
-): void {
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader('Content-Type', JSON_TYPE);
-  if (setCookie) res.setHeader('Set-Cookie', [setCookie]);
   res.end(JSON.stringify(body));
 }
 
@@ -98,7 +98,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     method,
     pathname: url.pathname,
     query: url.searchParams,
-    token: readSessionToken(req.headers.cookie),
+    sessionId: readSessionId(req.headers['x-devbar-session']),
     ip: normalizeIp(req.socket.remoteAddress),
     userAgent: req.headers['user-agent'],
     body,
@@ -110,7 +110,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     answer: StreamAnswer,
   ): void {
     if (!('open' in answer)) {
-      sendJson(res, answer.status, answer.body, answer.setCookie);
+      sendJson(res, answer.status, answer.body);
       return;
     }
     res.writeHead(200, {
@@ -156,7 +156,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       body = read.value;
     }
     const answer = await deps.api(apiRequest(req, url, method, body));
-    sendJson(res, answer.status, answer.body, answer.setCookie);
+    sendJson(res, answer.status, answer.body);
   }
 
   function serveStatic(res: ServerResponse, url: URL): void {

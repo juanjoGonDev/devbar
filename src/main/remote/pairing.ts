@@ -14,8 +14,9 @@ import type { RemotePairRequest } from '../../ipc-contract/remote-api.js';
  *      they are accepting THEIR phone and not a neighbour who photographed
  *      the screen first.
  *   3. The phone polls the request; the server hands an accepted one over
- *      exactly once (`takeAccepted`), which is when the device and its token
- *      are created.
+ *      exactly once (`takeAccepted`), which is when the device is created
+ *      with the public key the phone sent along (devbar-rc/1: the phone
+ *      proves it holds the matching private key on every connection).
  *
  * Nothing here is persisted: a restart drops every code and request.
  */
@@ -46,6 +47,8 @@ export interface Pairing {
     name: string;
     client: string;
     ip: string;
+    /** The phone's Ed25519 public key, base64url. */
+    devicePub: string;
   }):
     | { ok: true; request: RemotePairRequest }
     | { ok: false; reason: PairCodeRefusal };
@@ -53,7 +56,7 @@ export interface Pairing {
   status(requestId: string): PairRequestStatus | null;
   /** False when the request is not pending (answered, expired, unknown). */
   respond(requestId: string, accept: boolean): boolean;
-  takeAccepted(requestId: string): RemotePairRequest | null;
+  takeAccepted(requestId: string): AcceptedRequest | null;
   /** The phone gave up on a pending request; true when it was pending. */
   withdraw(requestId: string): boolean;
   /** Expires a pending request that is due; true when it just expired. */
@@ -62,8 +65,12 @@ export interface Pairing {
   clear(): string[];
 }
 
+/** An accepted request, with the key the new device will be known by. */
+type AcceptedRequest = RemotePairRequest & { devicePub: string };
+
 interface Entry {
   request: RemotePairRequest;
+  devicePub: string;
   status: PairRequestStatus;
   settledAt: number | null;
 }
@@ -127,7 +134,7 @@ export function createPairing(deps: PairingDeps): Pairing {
       active = null;
     },
     hasActiveCode: () => active !== null && deps.now() < active.expiresAt,
-    request: ({ code, name, client, ip }) => {
+    request: ({ code, name, client, ip, devicePub }) => {
       const now = deps.now();
       if (!active || !sameSecret(active.code, code) || now >= active.expiresAt)
         return { ok: false, reason: refusal(code) };
@@ -143,6 +150,7 @@ export function createPairing(deps: PairingDeps): Pairing {
       };
       entries.set(request.requestId, {
         request,
+        devicePub,
         status: 'pending',
         settledAt: null,
       });
@@ -160,7 +168,7 @@ export function createPairing(deps: PairingDeps): Pairing {
       const entry = settle(requestId);
       if (entry?.status !== 'accepted') return null;
       entries.delete(requestId);
-      return { ...entry.request };
+      return { ...entry.request, devicePub: entry.devicePub };
     },
     withdraw: (requestId) => {
       if (settle(requestId)?.status !== 'pending') return false;

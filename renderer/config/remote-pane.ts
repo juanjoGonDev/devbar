@@ -4,10 +4,13 @@ import type { RemoteElements } from './remote-elements.js';
 import { createPairDialog } from './remote-pair-dialog.js';
 import { createPortField } from './remote-port.js';
 import { createRequestDialog } from './remote-request-dialog.js';
+import { createSafetyDialog } from './remote-safety-dialog.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
- * «Control remoto»: the switch, the port, the linked devices and auto-unlink.
+ * «Control remoto»: the switch, the port, the linked devices (with their
+ * security codes) and the Seguridad card — auto-unlink, the connection
+ * notice and renewing this computer's key.
  * Main owns the state; this paints whatever `RemoteStatus` it last reported
  * (answers and `remote:changed` pushes alike) and forwards the clicks.
  */
@@ -21,9 +24,11 @@ export function createRemotePane(
 ): void {
   let status: RemoteStatus | null = null;
 
+  const safety = createSafetyDialog(els.safety, showToast);
   const devices = createDeviceList(els.devices, {
     showToast,
     onIdle: () => render(),
+    onSecurityCode: (device) => void safety.open(device),
   });
   const pair = createPairDialog(els.pair);
   const request = createRequestDialog(els.request, showToast);
@@ -39,6 +44,8 @@ export function createRemotePane(
     els.enabled.disabled = false;
     els.autoUnlink.checked = status.autoUnlink;
     els.autoUnlink.disabled = false;
+    els.notifyConnections.checked = status.notifyConnections;
+    els.notifyConnections.disabled = false;
     els.endpoint.hidden = !status.enabled;
     els.state.textContent = status.listening ? 'Activo' : 'Desactivado';
     els.state.classList.toggle('is-on', status.listening);
@@ -55,6 +62,7 @@ export function createRemotePane(
     els.deviceCount.textContent = String(status.devices.length);
     els.devicesEmpty.hidden = status.devices.length > 0;
     devices.render(status.devices, Date.now());
+    safety.update(status.devices);
   }
 
   const apply = (next: RemoteStatus): void => {
@@ -81,6 +89,32 @@ export function createRemotePane(
   };
   wireSwitch(els.enabled, (on) => window.api.setRemoteEnabled(on));
   wireSwitch(els.autoUnlink, (on) => window.api.setRemoteAutoUnlink(on));
+  wireSwitch(els.notifyConnections, (on) =>
+    window.api.setRemoteNotifyConnections(on),
+  );
+
+  els.renewIdentity.addEventListener('click', async () => {
+    if (
+      !confirm(
+        '¿Renovar la clave del equipo? Los móviles vinculados dejarán de conectarse hasta que escanees otra vez su código de seguridad.',
+      )
+    )
+      return;
+    els.renewIdentity.disabled = true;
+    try {
+      const result = await window.api.renewRemoteIdentity();
+      if (result.ok)
+        showToast(
+          'Clave del equipo renovada. Verifica de nuevo cada dispositivo.',
+          'ok',
+        );
+      else showToast(result.error ?? 'No se pudo renovar la clave.', 'error');
+    } catch (err) {
+      showToast(`Error: ${errorMessage(err)}`, 'error');
+    } finally {
+      els.renewIdentity.disabled = false;
+    }
+  });
 
   els.addDevice.addEventListener('click', () => pair.open());
 

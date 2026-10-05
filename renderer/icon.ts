@@ -47,6 +47,7 @@ export type IconName =
   | 'save'
   | 'scroll-text'
   | 'settings'
+  | 'shield-check'
   | 'split'
   | 'square'
   | 'terminal'

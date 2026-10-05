@@ -276,6 +276,42 @@
               <input type="checkbox" role="switch" id="set-silenceErrors" />
             </label>
           </div>
+          <h3 class="section-title">Seguridad</h3>
+          <div class="card list security-card">
+            <div class="row">
+              <span class="row-label">
+                <span data-glyph="lock" class="is-secure"></span>
+                Cifrado de extremo a extremo
+              </span>
+              <span class="value">Activo</span>
+            </div>
+            <div class="row">
+              <span class="row-label">
+                <span data-glyph="key"></span>
+                Clave nueva en cada conexión
+              </span>
+              <span class="value">Sí</span>
+            </div>
+            <div class="row security-code-row">
+              <span>Código de seguridad</span>
+              <span
+                id="security-code"
+                class="security-code"
+                aria-label="Código de seguridad"
+              ></span>
+            </div>
+            <div class="row">
+              <span>Estado</span>
+              <span id="security-status" class="verified-badge"></span>
+            </div>
+            <button type="button" id="rotate-keys" class="row-button">
+              Renovar claves de este dispositivo
+            </button>
+          </div>
+          <p class="footer-note">
+            Para verificarlo, abre en el ordenador DevBar › Configuración ›
+            Control remoto › Código de seguridad y escanéalo con la cámara.
+          </p>
           <h3 class="section-title">Este dispositivo</h3>
           <div class="card list">
             <button type="button" id="rename" class="row-button">
@@ -365,6 +401,60 @@
         </dialog>
 
         <p id="toast" class="toast" role="status" hidden></p>
+      </section>
+
+      <section data-view="keychanged" class="view" hidden>
+        <div class="card is-alert">
+          <p class="view-glyph"><span data-glyph="shieldAlert"></span></p>
+          <h2 id="keychanged-title">La clave de seguridad ha cambiado</h2>
+          <p>
+            Puede que hayas renovado la clave en el ordenador. Por seguridad,
+            este dispositivo no se conectará hasta que la verifiques.
+          </p>
+        </div>
+        <ol class="card steps">
+          <li>
+            En el ordenador, abre DevBar › Configuración › Control remoto.
+          </li>
+          <li>
+            Pulsa <strong>Código de seguridad</strong> en este dispositivo.
+          </li>
+          <li>Escanéalo con la cámara de este móvil.</li>
+        </ol>
+        <button type="button" id="keychanged-retry" class="button">
+          Reintentar
+        </button>
+      </section>
+
+      <section data-view="verified" class="view" hidden>
+        <div class="card is-success">
+          <p class="view-glyph"><span data-glyph="shieldCheck"></span></p>
+          <h2>Conexión verificada</h2>
+          <p id="verified-text">
+            El código coincide: lo que viaja entre este dispositivo y el
+            ordenador va cifrado con estas claves.
+          </p>
+          <p id="verified-note" class="note" hidden>
+            No se pudo avisar al ordenador. Vuelve a escanear el código cuando
+            estés en la misma red.
+          </p>
+        </div>
+        <button type="button" id="verified-done" class="button primary">
+          Continuar
+        </button>
+      </section>
+
+      <section data-view="mismatch" class="view" hidden>
+        <div class="card is-danger">
+          <p class="view-glyph"><span data-glyph="shieldAlert"></span></p>
+          <h2>El código no coincide</h2>
+          <p>
+            El código no coincide con el de este dispositivo, así que no se ha
+            verificado nada. Comprueba que escaneas el código de seguridad de
+            este dispositivo en DevBar › Configuración › Control remoto.
+          </p>
+        </div>
+        <button type="button" id="mismatch-done" class="button">Volver</button>
       </section>
 
       <section data-view="error" class="view" hidden>

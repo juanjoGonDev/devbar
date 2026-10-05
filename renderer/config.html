@@ -254,6 +254,14 @@
                 rechazo.</small
               >
             </label>
+            <p class="remote-secure-note">
+              <span class="icon" data-icon="lock"></span>
+              <span
+                >Cifrado de extremo a extremo: lo que viaja entre DevBar y tus
+                dispositivos va cifrado, con una clave nueva en cada
+                conexión.</span
+              >
+            </p>
             <div id="remote-endpoint" class="remote-endpoint" hidden>
               <span id="remote-state" class="remote-pill">Desactivado</span>
               <code id="remote-address" class="remote-address"></code>
@@ -324,6 +332,27 @@
               <input type="checkbox" id="remote-auto-unlink" disabled />
               <span>Desvincular tras 30 días sin conexión</span>
             </label>
+            <label class="toggle">
+              <input type="checkbox" id="remote-notify-connections" disabled />
+              <span>Avisar cuando un dispositivo se conecte</span>
+            </label>
+            <div class="remote-renew">
+              <div>
+                <strong>Clave del equipo</strong>
+                <small class="muted"
+                  >Genera una clave nueva. Cada móvil tendrá que escanear otra
+                  vez su código de seguridad para volver a conectarse.</small
+                >
+              </div>
+              <button
+                type="button"
+                id="remote-renew-identity"
+                class="small-btn with-icon"
+              >
+                <span class="icon" data-icon="key-round"></span> Renovar clave
+                del equipo
+              </button>
+            </div>
           </section>
         </section>
 
@@ -703,6 +732,46 @@
         <small class="muted">Un solo uso, caduca a los 5 minutos.</small>
         <span class="spacer"></span>
         <button type="button" data-close>Cancelar</button>
+      </div>
+    </dialog>
+
+    <!-- «Control remoto»: a device's security code (remote-safety-dialog.ts) -->
+    <dialog id="remote-safety-dialog" class="modal remote-modal">
+      <header class="modal-header">
+        <h2>Código de seguridad</h2>
+        <span class="spacer"></span>
+        <button
+          type="button"
+          class="modal-close"
+          data-close
+          aria-label="Cerrar"
+        >
+          <span class="icon" data-icon="x"></span>
+        </button>
+      </header>
+      <div class="modal-body remote-pair-body">
+        <p id="remote-safety-device" class="remote-request-name"></p>
+        <p id="remote-safety-status" class="remote-verified"></p>
+        <div
+          id="remote-safety-qr"
+          class="remote-qr"
+          role="img"
+          aria-label="Código QR para verificar este dispositivo"
+        ></div>
+        <p id="remote-safety-hint" class="muted small remote-safety-hint"></p>
+        <div
+          id="remote-safety-code"
+          class="remote-safety-code"
+          aria-label="Código de seguridad"
+        ></div>
+        <p class="muted small">
+          Si el móvil muestra el mismo código en Ajustes › Seguridad, la
+          conexión entre los dos está cifrada con estas claves.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button type="button" data-close>Cerrar</button>
       </div>
     </dialog>
 

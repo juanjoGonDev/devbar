@@ -17,9 +17,10 @@ const BANNER_PREFIX = /^DevBar — /;
 type NoticeInput = Pick<RemoteNotice, 'kind' | 'title' | 'body'>;
 
 export interface NoticeLog {
-  add(input: NoticeInput): RemoteNotice;
-  /** Newest first. */
-  list(): RemoteNotice[];
+  /** `hiddenFrom`: the one device this notice is about, which skips it. */
+  add(input: NoticeInput, hiddenFrom?: string): RemoteNotice;
+  /** Newest first; as `forDevice` sees it, when given. */
+  list(forDevice?: string): RemoteNotice[];
 }
 
 export function toastNotice(kind: string, message: string): NoticeInput {
@@ -50,15 +51,20 @@ export function bannerNotice(banner: {
 }
 
 export function createNoticeLog(deps: { now: () => number }): NoticeLog {
-  const notices: RemoteNotice[] = [];
+  const notices: { notice: RemoteNotice; hiddenFrom: string | null }[] = [];
   let nextId = 1;
   return {
-    add: (input) => {
+    add: (input, hiddenFrom) => {
       const notice = { id: nextId++, ts: deps.now(), ...input };
-      notices.unshift(notice);
+      notices.unshift({ notice, hiddenFrom: hiddenFrom ?? null });
       notices.length = Math.min(notices.length, NOTICE_LIMIT);
       return notice;
     },
-    list: () => [...notices],
+    list: (forDevice) =>
+      notices
+        .filter(
+          (entry) => forDevice === undefined || entry.hiddenFrom !== forDevice,
+        )
+        .map((entry) => entry.notice),
   };
 }

@@ -25,6 +25,7 @@ function status(extra: Partial<RemoteStatus> = {}): RemoteStatus {
   return {
     enabled: false,
     autoUnlink: true,
+    notifyConnections: true,
     port: 47821,
     listening: false,
     error: null,
@@ -41,6 +42,7 @@ function device(extra: Partial<RemoteDeviceRow> = {}): RemoteDeviceRow {
     client: 'Safari · iOS',
     createdAt: Date.UTC(2026, 9, 1, 10),
     lastSeenAt: Date.now(),
+    verifiedAt: null,
     connected: false,
     ...extra,
   };

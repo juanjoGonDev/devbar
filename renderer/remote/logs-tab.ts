@@ -187,16 +187,16 @@ export function createLogsTab(
     const current = target();
     if (!current) return;
     if (current.kind === 'action') {
-      await ctx.run('/api/actions/run', {
+      await ctx.run('actions.run', {
         groupId: current.groupId,
         actionId: current.id,
       });
       return;
     }
     const body = { processId: current.processId };
-    const stopped = await ctx.run('/api/process/stop', body);
+    const stopped = await ctx.run('process.stop', body);
     if (stopped?.status === 200 && stopped.body.ok === true)
-      await ctx.run('/api/process/start', body, {
+      await ctx.run('process.start', body, {
         pending: 'Pendiente de confirmación',
       });
   }
@@ -205,15 +205,15 @@ export function createLogsTab(
     const current = target();
     if (!current) return;
     if (running())
-      await ctx.run('/api/process/stop', { processId: current.processId });
+      await ctx.run('process.stop', { processId: current.processId });
     else if (current.kind === 'action')
-      await ctx.run('/api/actions/run', {
+      await ctx.run('actions.run', {
         groupId: current.groupId,
         actionId: current.id,
       });
     else
       await ctx.run(
-        '/api/process/start',
+        'process.start',
         { processId: current.processId },
         {
           pending: 'Pendiente de confirmación',

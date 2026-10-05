@@ -22,7 +22,16 @@ export function byId<T extends HTMLElement>(
 }
 
 export type ViewName =
-  'loading' | 'unlinked' | 'pair' | 'waiting' | 'result' | 'linked' | 'error';
+  | 'loading'
+  | 'unlinked'
+  | 'pair'
+  | 'waiting'
+  | 'result'
+  | 'linked'
+  | 'error'
+  | 'keychanged'
+  | 'verified'
+  | 'mismatch';
 
 /**
  * Shows exactly one `section[data-view]`, and names it on the body

@@ -124,7 +124,7 @@ export function createGroupsTab(
       () =>
         void send(
           command.processId,
-          up ? '/api/process/stop' : '/api/process/start',
+          up ? 'process.stop' : 'process.start',
           { processId: command.processId },
           up ? undefined : PENDING,
         ),
@@ -143,7 +143,7 @@ export function createGroupsTab(
       () =>
         void send(
           action.processId,
-          '/api/actions/run',
+          'actions.run',
           { groupId: group.id, actionId: action.id },
           PENDING,
         ),
@@ -270,7 +270,7 @@ export function createGroupsTab(
       )
     )
       return;
-    void ctx.run('/api/stop-all').then((answer) => {
+    void ctx.run('stopAll').then((answer) => {
       const stopped = answer?.body.stopped;
       if (answer?.status === 200 && typeof stopped === 'number')
         ctx.toast(
@@ -280,7 +280,7 @@ export function createGroupsTab(
   });
   els.runPipeline.addEventListener(
     'click',
-    () => void send('pipeline', '/api/pipeline/run', {}),
+    () => void send('pipeline', 'pipeline.run', {}),
   );
   els.confirmBanner.addEventListener('click', () => {
     const token = last?.confirms[0]?.token;

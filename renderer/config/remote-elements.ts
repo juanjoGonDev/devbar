@@ -2,7 +2,7 @@ import { byId } from '../dom.js';
 import type { PortElements } from './remote-port.js';
 
 /**
- * Every element of the «Control remoto» section and its two dialogs, resolved
+ * Every element of the «Control remoto» section and its three dialogs, resolved
  * in one place: config.ts calls this once, and
  * tests/renderer-dom-contract.test.ts checks each assertion against
  * config.html.
@@ -22,6 +22,16 @@ export interface RemoteElements {
   devices: HTMLUListElement;
   devicesEmpty: HTMLElement;
   autoUnlink: HTMLInputElement;
+  notifyConnections: HTMLInputElement;
+  renewIdentity: HTMLButtonElement;
+  safety: {
+    dialog: HTMLDialogElement;
+    device: HTMLElement;
+    status: HTMLElement;
+    qr: HTMLElement;
+    hint: HTMLElement;
+    code: HTMLElement;
+  };
   pair: {
     dialog: HTMLDialogElement;
     qr: HTMLElement;
@@ -61,6 +71,25 @@ export function remoteElements(): RemoteElements {
     devices: byId<HTMLUListElement>('remote-devices', HTMLUListElement),
     devicesEmpty: byId<HTMLElement>('remote-devices-empty', HTMLElement),
     autoUnlink: byId<HTMLInputElement>('remote-auto-unlink', HTMLInputElement),
+    notifyConnections: byId<HTMLInputElement>(
+      'remote-notify-connections',
+      HTMLInputElement,
+    ),
+    renewIdentity: byId<HTMLButtonElement>(
+      'remote-renew-identity',
+      HTMLButtonElement,
+    ),
+    safety: {
+      dialog: byId<HTMLDialogElement>(
+        'remote-safety-dialog',
+        HTMLDialogElement,
+      ),
+      device: byId<HTMLElement>('remote-safety-device', HTMLElement),
+      status: byId<HTMLElement>('remote-safety-status', HTMLElement),
+      qr: byId<HTMLElement>('remote-safety-qr', HTMLElement),
+      hint: byId<HTMLElement>('remote-safety-hint', HTMLElement),
+      code: byId<HTMLElement>('remote-safety-code', HTMLElement),
+    },
     pair: {
       dialog: byId<HTMLDialogElement>('remote-pair-dialog', HTMLDialogElement),
       qr: byId<HTMLElement>('remote-qr', HTMLElement),

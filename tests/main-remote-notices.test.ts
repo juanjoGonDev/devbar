@@ -92,6 +92,24 @@ describe('src/main/remote/notices.ts', () => {
       expect(log.list().map((notice) => notice.title)).toEqual(['b', 'a']);
     });
 
+    it('keeps a notice out of the list of the one device it is hidden from', () => {
+      const log = createNoticeLog({ now: () => 1 });
+
+      log.add({ kind: 'info', title: 'for all', body: '' });
+      const hidden = log.add({ kind: 'info', title: 'not d1', body: '' }, 'd1');
+
+      expect(hidden).toEqual({
+        id: 2,
+        ts: 1,
+        kind: 'info',
+        title: 'not d1',
+        body: '',
+      });
+      expect(log.list('d1').map((n) => n.title)).toEqual(['for all']);
+      expect(log.list('d2').map((n) => n.title)).toEqual(['not d1', 'for all']);
+      expect(log.list()).toHaveLength(2);
+    });
+
     it('keeps only the most recent fifty', () => {
       const log = createNoticeLog({ now: () => 1 });
 

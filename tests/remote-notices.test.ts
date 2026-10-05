@@ -47,10 +47,11 @@ async function withNotices(options: Parameters<typeof startLinked>[1] = {}) {
   const { loadPage, pageHarness, start, LINKED } =
     await import('./helpers/remote-page.js');
   loadPage();
-  const h = pageHarness('', options);
-  h.answer('GET /api/me', LINKED);
-  h.answer('GET /api/state', { status: 200, body: state() });
-  h.answer('GET /api/notices', { status: 200, body: { notices: NOTICES } });
+  const h = pageHarness('/', options);
+  h.seedKeys();
+  h.answer('me', LINKED);
+  h.answer('state', { status: 200, body: state() });
+  h.answer('notices', { status: 200, body: { notices: NOTICES } });
   await start(h);
   h.source().emit('open');
   return h;
@@ -105,7 +106,9 @@ describe('renderer/remote/notices-tab.ts', () => {
 
     expect(badge().hidden).toBe(true);
     expect(tabButton('notices').getAttribute('aria-label')).toBe('Avisos');
-    expect([...storage.keys()]).toEqual(['devbar-remote:read:d1']);
+    expect(
+      [...storage.keys()].filter((key) => key.startsWith('devbar-remote:')),
+    ).toEqual(['devbar-remote:read:d1']);
 
     await withNotices({ storage });
     expect(badge().hidden).toBe(true);
@@ -149,7 +152,7 @@ describe('renderer/remote/notices-tab.ts', () => {
     it('can be answered right here, with its countdown', async () => {
       const h = await startLinked(state({ confirms: [CONFIRM] }));
       byId<HTMLDialogElement>('confirm-dialog').close();
-      h.answer('POST /api/confirm', { status: 200, body: { ok: true } });
+      h.answer('confirm', { status: 200, body: { ok: true } });
       tap(tabButton('notices'));
 
       expect(byId('confirm-card').hidden).toBe(false);
@@ -165,7 +168,7 @@ describe('renderer/remote/notices-tab.ts', () => {
       tapId('confirm-card-run');
       await settle();
 
-      expect(h.callsTo('/api/confirm')[0]?.body).toEqual({
+      expect(h.callsTo('confirm')[0]?.body).toEqual({
         token: 't1',
         decision: 'confirm',
       });

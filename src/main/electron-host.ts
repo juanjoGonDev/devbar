@@ -9,6 +9,7 @@ import {
   dialog,
   nativeImage,
   nativeTheme,
+  safeStorage,
   screen,
   shell,
   type BrowserWindowConstructorOptions,
@@ -348,6 +349,17 @@ export function createElectronHost(options: ElectronHostOptions) {
       return `${backend}, ${linuxWorkAreaNote(screen.getPrimaryDisplay())}`;
     },
     appVersion: (): string => app.getVersion(),
+    /**
+     * The OS keychain, through Electron: it seals the identity key of
+     * «Control remoto» (src/main/remote/identity.ts) where there is one.
+     */
+    safeStorage: {
+      isEncryptionAvailable: (): boolean => safeStorage.isEncryptionAvailable(),
+      encryptString: (plain: string): Buffer =>
+        safeStorage.encryptString(plain),
+      decryptString: (sealed: Buffer): string =>
+        safeStorage.decryptString(sealed),
+    },
     /**
      * One-click bug report: markdown (version, platform, app.log tail) to
      * the clipboard ALWAYS, then GitHub's new-issue form — with the body

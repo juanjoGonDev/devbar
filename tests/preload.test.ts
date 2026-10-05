@@ -533,6 +533,24 @@ const FORWARDS: readonly Forward[] = [
     'remote:respondPairing',
     [{ requestId: 'r1', accept: true }],
   ],
+  [
+    'setRemoteNotifyConnections',
+    (api) => api.setRemoteNotifyConnections(false),
+    'remote:setNotifyConnections',
+    [{ enabled: false }],
+  ],
+  [
+    'getRemoteSecurityCode',
+    (api) => api.getRemoteSecurityCode('d1'),
+    'remote:securityCode',
+    [{ id: 'd1' }],
+  ],
+  [
+    'renewRemoteIdentity',
+    (api) => api.renewRemoteIdentity(),
+    'remote:renewIdentity',
+    [],
+  ],
 ];
 
 type SubscriptionCase = readonly [

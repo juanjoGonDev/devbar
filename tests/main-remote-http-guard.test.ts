@@ -2,13 +2,12 @@ import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
   checkMutation,
-  clearedSessionCookie,
   readJsonBody,
-  readSessionToken,
-  sessionCookie,
+  readSessionId,
 } from '../src/main/remote/http-guard.js';
 
-const TOKEN = 'A'.repeat(43);
+/** A 16-byte session id in base64url: 22 characters. */
+const SID = 'A'.repeat(21) + 'g';
 const POST_HEADERS = {
   host: '192.168.1.20:47821',
   'content-type': 'application/json',
@@ -16,30 +15,17 @@ const POST_HEADERS = {
 };
 
 describe('src/main/remote/http-guard.ts', () => {
-  describe('session cookie', () => {
-    it('is HttpOnly, SameSite=Strict, site-wide and long-lived', () => {
-      expect(sessionCookie(TOKEN)).toBe(
-        `devbar_session=${TOKEN}; HttpOnly; SameSite=Strict; Path=/; Max-Age=34560000`,
-      );
+  describe('readSessionId', () => {
+    it('reads a well-formed session id from the X-DevBar-Session header', () => {
+      expect(readSessionId(SID)).toBe(SID);
     });
 
-    it('is cleared with the same attributes and no lifetime', () => {
-      expect(clearedSessionCookie()).toBe(
-        'devbar_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0',
-      );
-    });
-
-    it('reads the token back from a Cookie header among others', () => {
-      expect(readSessionToken(`theme=dark; devbar_session=${TOKEN}`)).toBe(
-        TOKEN,
-      );
-    });
-
-    it('ignores a missing, empty or malformed session cookie', () => {
-      expect(readSessionToken(undefined)).toBeNull();
-      expect(readSessionToken('devbar_session=')).toBeNull();
-      expect(readSessionToken('devbar_session=../../etc')).toBeNull();
-      expect(readSessionToken('other=1')).toBeNull();
+    it('ignores a missing, repeated or malformed header', () => {
+      expect(readSessionId(undefined)).toBeNull();
+      expect(readSessionId('')).toBeNull();
+      expect(readSessionId([SID, SID])).toBeNull();
+      expect(readSessionId('../../etc/passwd')).toBeNull();
+      expect(readSessionId(`${SID}A`)).toBeNull();
     });
   });
 

@@ -40,7 +40,7 @@ const TAIL = {
 };
 
 async function openLogs(h: PageHarness, tail: unknown = TAIL): Promise<void> {
-  h.answer('GET /api/logs', { status: 200, body: tail });
+  h.answer('logs', { status: 200, body: tail });
   tap(tabButton('logs'));
   await settle();
 }
@@ -71,7 +71,9 @@ describe('renderer/remote/logs-tab.ts', () => {
     const h = await startLinked();
     await openLogs(h);
 
-    expect(h.callsTo('/api/logs?id=cmd%3Ag1%3Aapi&tail=300')).toHaveLength(1);
+    expect(h.callsTo('logs').map((c) => c.body)).toEqual([
+      { id: 'cmd:g1:api', tail: 300 },
+    ]);
     expect(shown()).toEqual(['ready', 'careful', 'boom']);
     const rows = document.querySelectorAll('#log-panel .log-line');
     expect(rows[0]?.querySelector('.ts')?.textContent).toBe('10:12:41');
@@ -82,11 +84,16 @@ describe('renderer/remote/logs-tab.ts', () => {
   it('subscribes to the live lines only while the tab is open', async () => {
     const h = await startLinked();
     await openLogs(h);
-    expect(h.source().url).toBe('/api/events?logs=cmd%3Ag1%3Aapi');
+    expect(h.callsTo('logs.subscribe').map((c) => c.body)).toEqual([
+      { id: 'cmd:g1:api' },
+    ]);
 
     tap(tabButton('groups'));
+    await settle();
 
-    expect(h.source().url).toBe('/api/events');
+    expect(h.callsTo('logs.subscribe').at(-1)?.body).toEqual({ id: null });
+    // One stream all along: switching processes never reopens it.
+    expect(h.sources).toHaveLength(1);
   });
 
   it('appends live lines once, after the tail it already has', async () => {
@@ -134,7 +141,7 @@ describe('renderer/remote/logs-tab.ts', () => {
   it('says a stopped process with no lines has to be started', async () => {
     const h = await startLinked();
     await openLogs(h, { id: 'cmd:g1:api', seq: 0, lines: [] });
-    h.answer('GET /api/logs', {
+    h.answer('logs', {
       status: 200,
       body: { id: 'cmd:g1:jobs', seq: 0, lines: [] },
     });
@@ -146,7 +153,9 @@ describe('renderer/remote/logs-tab.ts', () => {
     expect(text('log-empty')).toBe(
       'Proceso detenido. Inícialo para ver sus logs.',
     );
-    expect(h.source().url).toBe('/api/events?logs=cmd%3Ag1%3Ajobs');
+    expect(h.callsTo('logs.subscribe').at(-1)?.body).toEqual({
+      id: 'cmd:g1:jobs',
+    });
   });
 
   it('stops following the tail while the user reads further up', async () => {
@@ -181,21 +190,21 @@ describe('renderer/remote/logs-tab.ts', () => {
   it('restarts a command: stop, then start', async () => {
     const h = await startLinked();
     await openLogs(h);
-    h.answer('POST /api/process/stop', { status: 200, body: { ok: true } });
-    h.answer('POST /api/process/start', { status: 200, body: { ok: true } });
+    h.answer('process.stop', { status: 200, body: { ok: true } });
+    h.answer('process.start', { status: 200, body: { ok: true } });
 
     tapId('log-restart');
     await settle();
 
     expect(
-      h.calls.filter((c) => c.method === 'POST').map((c) => c.url),
-    ).toEqual(['/api/process/stop', '/api/process/start']);
+      h.calls.map((c) => c.op).filter((op) => op.startsWith('process.')),
+    ).toEqual(['process.stop', 'process.start']);
   });
 
   it('offers to stop a running process and to start a stopped one', async () => {
     const h = await startLinked();
     await openLogs(h);
-    h.answer('POST /api/process/stop', { status: 200, body: { ok: true } });
+    h.answer('process.stop', { status: 200, body: { ok: true } });
 
     expect(text('log-toggle')).toBe('Detener');
     tapId('log-toggle');
@@ -205,18 +214,18 @@ describe('renderer/remote/logs-tab.ts', () => {
     if (api) Object.assign(api, { status: 'stopped', color: 'stopped' });
     h.source().emit('state', next);
 
-    expect(h.callsTo('/api/process/stop')).toHaveLength(1);
+    expect(h.callsTo('process.stop')).toHaveLength(1);
     expect(text('log-toggle')).toBe('Iniciar');
   });
 
   it('runs an action again from «Reiniciar»', async () => {
     const h = await startLinked();
     await openLogs(h);
-    h.answer('GET /api/logs', {
+    h.answer('logs', {
       status: 200,
       body: { id: 'act:g1:seed', seq: 0, lines: [] },
     });
-    h.answer('POST /api/actions/run', { status: 200, body: { ok: true } });
+    h.answer('actions.run', { status: 200, body: { ok: true } });
     select().value = 'act:g1:seed';
     select().dispatchEvent(new Event('change'));
     await settle();
@@ -224,7 +233,7 @@ describe('renderer/remote/logs-tab.ts', () => {
     tapId('log-restart');
     await settle();
 
-    expect(h.callsTo('/api/actions/run')[0]?.body).toEqual({
+    expect(h.callsTo('actions.run')[0]?.body).toEqual({
       groupId: 'g1',
       actionId: 'seed',
     });
@@ -233,7 +242,7 @@ describe('renderer/remote/logs-tab.ts', () => {
 
   it('says so when the tail cannot be read', async () => {
     const h = await startLinked();
-    h.answer('GET /api/logs', new Error('offline'));
+    h.answer('logs', new Error('offline'));
 
     tap(tabButton('logs'));
     await settle();

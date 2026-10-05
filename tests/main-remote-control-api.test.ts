@@ -20,6 +20,7 @@ const DEVICE: RemoteDeviceView = {
   client: 'Safari · iOS',
   createdAt: 1,
   lastSeenAt: 1,
+  verifiedAt: null,
 };
 
 const GROUPS: Group[] = [
@@ -89,7 +90,9 @@ function harness(overrides: Partial<ControlApiDeps> = {}) {
       >),
     logs: (id) => logs.get(id) ?? [],
     logSeq: (id) => logs.get(id)?.at(-1)?.seq ?? 0,
-    notices: () => [{ id: 1, ts: 1, kind: 'info', title: 'hola', body: '' }],
+    notices: (deviceId) => [
+      { id: 1, ts: 1, kind: 'info', title: `hola ${deviceId}`, body: '' },
+    ],
     confirms: {
       hasPending: (token) => pendingTokens.has(token),
       resolveConfirm: (token, decision) => {
@@ -127,7 +130,7 @@ function harness(overrides: Partial<ControlApiDeps> = {}) {
         method: 'GET',
         pathname: '/api/state',
         query: new URLSearchParams(),
-        token: 'x',
+        sessionId: 'S'.repeat(22),
         ip: '192.168.1.40',
         userAgent: undefined,
         body: undefined,
@@ -156,15 +159,6 @@ function harness(overrides: Partial<ControlApiDeps> = {}) {
 
 describe('src/main/remote/control-api.ts', () => {
   describe('routing', () => {
-    it('claims only its own paths', () => {
-      const { api } = harness();
-
-      expect(api.handles('/api/state')).toBe(true);
-      expect(api.handles('/api/settings')).toBe(true);
-      expect(api.handles('/api/me')).toBe(false);
-      expect(api.handles('/api/pair/request')).toBe(false);
-    });
-
     it('answers 405 to a known path with the wrong method', async () => {
       const h = harness();
 
@@ -417,13 +411,13 @@ describe('src/main/remote/control-api.ts', () => {
   });
 
   describe('GET /api/notices', () => {
-    it('answers the notice log', async () => {
+    it('answers the notice log as the calling device sees it', async () => {
       const h = harness();
 
       await expect(h.get('/api/notices')).resolves.toEqual({
         status: 200,
         body: {
-          notices: [{ id: 1, ts: 1, kind: 'info', title: 'hola', body: '' }],
+          notices: [{ id: 1, ts: 1, kind: 'info', title: 'hola d1', body: '' }],
         },
       });
     });
@@ -592,7 +586,7 @@ describe('src/main/remote/control-api.ts', () => {
 
       await expect(
         h.post('/api/device/rename', { name: 'x' }),
-      ).resolves.toMatchObject({ status: 401 });
+      ).resolves.toEqual({ status: 401, body: { error: 'unlinked' } });
     });
   });
 });

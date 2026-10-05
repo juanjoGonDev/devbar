@@ -6,12 +6,13 @@ import { STATIC_FILES, staticAsset } from '../src/main/remote/static-files.js';
 const RENDERER = path.join(import.meta.dirname, '..', 'renderer');
 
 describe('src/main/remote/static-files.ts', () => {
-  it('serves the page shell for the root and the pairing link', () => {
+  it('serves the page shell for the root, the pairing and the verification links', () => {
     expect(staticAsset('/')).toEqual({
       file: 'remote.html',
       type: 'text/html; charset=utf-8',
     });
     expect(staticAsset('/pair')?.file).toBe('remote.html');
+    expect(staticAsset('/verify')?.file).toBe('remote.html');
   });
 
   it('labels stylesheets and modules with their content types', () => {
@@ -74,18 +75,32 @@ describe('src/main/remote/static-files.ts', () => {
     '/%2e%2e/package.json',
     '/remote.js.map',
     '/REMOTE.JS',
+    '/remote/app.js',
+    '/remote/rc-protocol.js',
   ])('serves nothing for %s', (pathname) => {
     expect(staticAsset(pathname)).toBeNull();
   });
 
-  it('whitelists every compiled module of the phone page, and only those', () => {
-    const modules = fs
-      .readdirSync(path.join(RENDERER, 'remote'))
-      .filter((file) => file.endsWith('.ts'))
-      .map((file) => `remote/${file.replace(/\.ts$/, '.js')}`);
+  it('serves the phone page as its one bundle, and no module of it', () => {
+    // scripts/build.ts bundles renderer/remote.ts (and everything it
+    // imports, the @noble crypto included) into build/renderer/remote.js.
     const served = STATIC_FILES.filter((file) => file.endsWith('.js'));
 
-    expect([...served].sort()).toEqual(['remote.js', ...modules].sort());
+    expect(served).toEqual(['remote.js']);
+  });
+
+  it('serves exactly the shell, its styles, the bundle and the home-screen files', () => {
+    expect([...STATIC_FILES].sort()).toEqual(
+      [
+        'emoji.css',
+        'remote-icon-192.png',
+        'remote-icon-512.png',
+        'remote.css',
+        'remote.html',
+        'remote.js',
+        'remote.webmanifest',
+      ].sort(),
+    );
   });
 
   it('only whitelists files that exist in renderer/ (as source)', () => {

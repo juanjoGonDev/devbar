@@ -7,13 +7,14 @@ import type { PanelContext } from './context.js';
 import { UNREACHABLE } from './context.js';
 import type { PanelElements } from './elements.js';
 import { shortDate } from './format.js';
+import { createSecuritySection } from './security-section.js';
 import { settingsView } from './wire.js';
 
 /**
  * «Ajustes»: the update (installable from here only when DevBar has it staged
  * — anything else is installed on the computer), the four global switches a
- * phone may change, and this device: its name, when it was linked, and
- * unlinking it.
+ * phone may change, «Seguridad» (renderer/remote/security-section.ts), and
+ * this device: its name, when it was linked, and unlinking it.
  */
 
 const SWITCHES = [
@@ -86,9 +87,7 @@ export function createSettingsTab(
     )
       return;
     els.updateApply.disabled = true;
-    const answer = await ctx.client
-      .post('/api/update/apply', {})
-      .catch(() => null);
+    const answer = await ctx.client.call('update.apply', {}).catch(() => null);
     els.updateApply.disabled = false;
     if (answer?.status === 202) {
       restarting = true;
@@ -104,7 +103,7 @@ export function createSettingsTab(
     const wanted = input.checked;
     input.disabled = true;
     const answer = await ctx.client
-      .post('/api/settings', { [key]: wanted })
+      .call('settings.set', { [key]: wanted })
       .catch(() => null);
     input.disabled = false;
     if (answer?.status === 200) paintSwitches(settingsView(answer.body));
@@ -126,7 +125,7 @@ export function createSettingsTab(
   async function rename(): Promise<void> {
     const name = els.renameInput.value.trim();
     const answer = await ctx.client
-      .post('/api/device/rename', { name })
+      .call('device.rename', { name })
       .catch(() => null);
     if (answer?.status === 200) {
       device = { ...device, name };
@@ -144,7 +143,7 @@ export function createSettingsTab(
     )
       return;
     els.unlink.disabled = true;
-    const answer = await ctx.client.unlink().catch(() => null);
+    const answer = await ctx.client.call('unlink').catch(() => null);
     els.unlink.disabled = false;
     if (answer?.status === 200 || answer?.status === 401) ctx.unlinked();
     else ctx.toast(answer ? 'No se pudo desvincular.' : UNREACHABLE);
@@ -168,10 +167,12 @@ export function createSettingsTab(
   els.unlink.addEventListener('click', () => void unlink());
 
   paintDevice();
+  const security = createSecuritySection(els, ctx);
 
   return {
     show: () => {
       paintDevice();
+      security.paint();
       ctx.client
         .settings()
         .then(paintSwitches, () =>

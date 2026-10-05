@@ -43,6 +43,9 @@
   "devDependencies": {
     "@electron/packager": "20.3.0",
     "@fontsource/noto-color-emoji": "5.3.2",
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "@types/debug": "4.1.13",
     "@types/electron-positioner": "4.1.4",
     "@types/js-yaml": "4.0.9",

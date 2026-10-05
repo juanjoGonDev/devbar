@@ -29,7 +29,7 @@ const SETTINGS = {
 
 async function openSettings(update?: RemoteUpdateView): Promise<PageHarness> {
   const h = await startLinked(update ? state({ update }) : state());
-  h.answer('GET /api/settings', { status: 200, body: SETTINGS });
+  h.answer('settings.get', { status: 200, body: SETTINGS });
   tap(tabButton('settings'));
   await settle();
   return h;
@@ -50,7 +50,7 @@ describe('renderer/remote/settings-tab.ts', () => {
 
     it('saves a switch the moment it changes', async () => {
       const h = await openSettings();
-      h.answer('POST /api/settings', {
+      h.answer('settings.set', {
         status: 200,
         body: { ...SETTINGS, silenceWarnings: true },
       });
@@ -59,16 +59,15 @@ describe('renderer/remote/settings-tab.ts', () => {
       toggle('silenceWarnings').dispatchEvent(new Event('change'));
       await settle();
 
-      expect(h.callsTo('/api/settings').at(-1)).toMatchObject({
-        method: 'POST',
-        body: { silenceWarnings: true },
+      expect(h.callsTo('settings.set').at(-1)?.body).toEqual({
+        silenceWarnings: true,
       });
       expect(toggle('silenceWarnings').checked).toBe(true);
     });
 
     it('puts a switch back when the save fails', async () => {
       const h = await openSettings();
-      h.answer('POST /api/settings', new Error('offline'));
+      h.answer('settings.set', new Error('offline'));
 
       toggle('autostart').checked = false;
       toggle('autostart').dispatchEvent(new Event('change'));
@@ -94,7 +93,7 @@ describe('renderer/remote/settings-tab.ts', () => {
         state: 'ready',
         version: '0.12.0',
       });
-      h.answer('POST /api/update/apply', {
+      h.answer('update.apply', {
         status: 202,
         body: { ok: true, restarting: true },
       });
@@ -107,7 +106,7 @@ describe('renderer/remote/settings-tab.ts', () => {
       await settle();
 
       expect(h.confirms).toHaveLength(1);
-      expect(h.callsTo('/api/update/apply')).toHaveLength(1);
+      expect(h.callsTo('update.apply')).toHaveLength(1);
       expect(text('update-title')).toBe('Reiniciando DevBar…');
       expect(byId('update-progress').hidden).toBe(false);
     });
@@ -123,7 +122,7 @@ describe('renderer/remote/settings-tab.ts', () => {
       tapId('update-apply');
       await settle();
 
-      expect(h.callsTo('/api/update/apply')).toEqual([]);
+      expect(h.callsTo('update.apply')).toEqual([]);
     });
 
     it('says when the update is no longer ready', async () => {
@@ -132,7 +131,7 @@ describe('renderer/remote/settings-tab.ts', () => {
         state: 'ready',
         version: '0.12.0',
       });
-      h.answer('POST /api/update/apply', {
+      h.answer('update.apply', {
         status: 409,
         body: { error: 'not-ready' },
       });
@@ -190,7 +189,7 @@ describe('renderer/remote/settings-tab.ts', () => {
 
     it('renames it', async () => {
       const h = await openSettings();
-      h.answer('POST /api/device/rename', { status: 200, body: { ok: true } });
+      h.answer('device.rename', { status: 200, body: { ok: true } });
 
       tapId('rename');
       expect(byId('rename-form').hidden).toBe(false);
@@ -200,7 +199,7 @@ describe('renderer/remote/settings-tab.ts', () => {
       );
       await settle();
 
-      expect(h.callsTo('/api/device/rename')[0]?.body).toEqual({
+      expect(h.callsTo('device.rename')[0]?.body).toEqual({
         name: 'Móvil',
       });
       expect(text('device-name-value')).toBe('Móvil');
@@ -209,7 +208,7 @@ describe('renderer/remote/settings-tab.ts', () => {
 
     it('explains a name DevBar refuses', async () => {
       const h = await openSettings();
-      h.answer('POST /api/device/rename', {
+      h.answer('device.rename', {
         status: 400,
         body: { error: 'invalid-name' },
       });
@@ -227,24 +226,18 @@ describe('renderer/remote/settings-tab.ts', () => {
       expect(byId('rename-form').hidden).toBe(true);
     });
 
-    it('asks first, then unlinks as a DevBar JSON request', async () => {
+    it('asks first, then unlinks and forgets its keys', async () => {
       const h = await openSettings();
-      h.answer('POST /api/unlink', { status: 200, body: { ok: true } });
+      h.answer('unlink', { status: 200, body: { ok: true } });
 
       tapId('unlink');
       await settle();
 
       expect(h.confirms).toHaveLength(1);
-      expect(h.callsTo('/api/unlink')[0]).toMatchObject({
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-DevBar-Request': '1',
-        },
-        body: {},
-      });
+      expect(h.callsTo('unlink')[0]?.body).toEqual({});
       expect(visibleView()).toBe('unlinked');
       expect(h.source().closed).toBe(true);
+      expect(h.keys()).toBeNull();
     });
 
     it('does nothing when the user changes their mind', async () => {
@@ -254,13 +247,13 @@ describe('renderer/remote/settings-tab.ts', () => {
       tapId('unlink');
       await settle();
 
-      expect(h.callsTo('/api/unlink')).toEqual([]);
+      expect(h.callsTo('unlink')).toEqual([]);
       expect(visibleView()).toBe('linked');
     });
 
     it('lands on the unlinked view if the computer already removed it', async () => {
       const h = await openSettings();
-      h.answer('POST /api/unlink', {
+      h.answer('unlink', {
         status: 401,
         body: { error: 'unlinked' },
       });
@@ -273,7 +266,7 @@ describe('renderer/remote/settings-tab.ts', () => {
 
     it('says so when the unlink cannot reach DevBar', async () => {
       const h = await openSettings();
-      h.answer('POST /api/unlink', new Error('offline'));
+      h.answer('unlink', new Error('offline'));
 
       tapId('unlink');
       await settle();
@@ -284,7 +277,7 @@ describe('renderer/remote/settings-tab.ts', () => {
 
     it('reads the current name again each time the tab opens', async () => {
       const h = await openSettings();
-      h.answer('GET /api/me', {
+      h.answer('me', {
         status: 200,
         body: {
           ...LINKED.body,

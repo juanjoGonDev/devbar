@@ -1,18 +1,15 @@
 import type { LogEntry } from '../../domain-types.js';
 import type { GroupState, PipelineState } from '../../ipc-contract.js';
-import type { RemoteDeviceView } from '../../ipc-contract/remote-api.js';
 import type {
   RemoteConfirmView,
   RemoteNotice,
   RemoteStateView,
 } from '../../ipc-contract/remote-wire.js';
 import type { UpdateStatus } from '../../ipc-contract/updates-api.js';
-import type { ApiRequest } from './api.js';
-import { createEventHub } from './events.js';
+import { createEventHub, type EventSink, type StreamOwner } from './events.js';
 import { bannerNotice, createNoticeLog, toastNotice } from './notices.js';
-import type { StreamAnswer } from './server.js';
 import type { TimerHandle, Timers } from './timers.js';
-import { idField, record } from './validate.js';
+import { record } from './validate.js';
 import { groupViews, logLine, pipelineView, updateView } from './views.js';
 
 /**
@@ -35,6 +32,10 @@ import { groupViews, logLine, pipelineView, updateView } from './views.js';
  */
 
 const PUSH_DEBOUNCE_MS = 250;
+
+/** A refusal, or a stream to open on the sink the caller seals. */
+export type LiveStream =
+  { status: number; body: unknown } | { open(sink: EventSink): () => void };
 
 /** What the app hands the live layer (built in remote-control.ts). */
 export interface RemoteRuntime {
@@ -62,9 +63,19 @@ export interface LiveDeps {
 
 export interface Live {
   state(): Promise<RemoteStateView>;
-  stream(request: ApiRequest, device: RemoteDeviceView): StreamAnswer;
-  notices(): RemoteNotice[];
+  stream(owner: StreamOwner): LiveStream;
+  /** That session's streams carry this process's log lines (or none). */
+  subscribe(sessionId: string, logsId: string | null): void;
+  /** Ends those sessions' streams without a word: the phone reconnects. */
+  closeSessions(sessionIds: readonly string[]): void;
+  /** The notice log, as `deviceId` sees it when given. */
+  notices(deviceId?: string): RemoteNotice[];
   notice(banner: { title: string; body: string; action: string | null }): void;
+  /** A notice about one device, for every phone but that one. */
+  announce(
+    notice: Pick<RemoteNotice, 'kind' | 'title' | 'body'>,
+    aboutDevice: string,
+  ): void;
   branchSwitched(groupId: string): void;
   isConnected(deviceId: string): boolean;
   /** Says `unlinked` to that device's streams and closes them. */
@@ -176,16 +187,12 @@ export function createLive(deps: LiveDeps): Live {
       return snapshot();
     },
 
-    stream: (request, device) => {
-      const raw = request.query.get('logs');
-      const logsId = raw === null ? null : idField({ raw }, 'raw');
-      if (raw !== null && logsId === null)
-        return { status: 400, body: { error: 'invalid-request' } };
-      if (!hub.canAttach(device.id))
+    stream: (owner) => {
+      if (!hub.canAttach(owner.deviceId))
         return { status: 429, body: { error: 'too-many-streams' } };
       return {
         open: (sink) => {
-          const client = hub.attach(device.id, logsId, sink);
+          const client = hub.attach(owner, sink);
           if (!client) {
             sink.end();
             return () => undefined;
@@ -197,8 +204,12 @@ export function createLive(deps: LiveDeps): Live {
       };
     },
 
-    notices: () => notices.list(),
+    subscribe: (sessionId, logsId) => hub.subscribe(sessionId, logsId),
+    closeSessions: (sessionIds) => hub.closeSessions(sessionIds),
+    notices: (deviceId) => notices.list(deviceId),
     notice: (banner) => addNotice(bannerNotice(banner)),
+    announce: (notice, aboutDevice) =>
+      hub.broadcast('notice', notices.add(notice, aboutDevice), aboutDevice),
     branchSwitched: (groupId) => void readBranches([groupId]),
     isConnected: (deviceId) => hub.isConnected(deviceId),
     drop: (deviceId) => hub.drop(deviceId),

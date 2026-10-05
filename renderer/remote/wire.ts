@@ -191,7 +191,7 @@ function logLines(value: unknown): RemoteLogLine[] {
     }));
 }
 
-/** A `log` event, or the answer of GET /api/logs (which also has `seq`). */
+/** A `log` event, or the answer of the `logs` call (which also has `seq`). */
 export function logBatch(value: unknown): {
   id: string;
   lines: RemoteLogLine[];

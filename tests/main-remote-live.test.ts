@@ -5,8 +5,6 @@ import type { GroupState, PipelineState } from '../src/ipc-contract.js';
 import type { RemoteConfirmView } from '../src/ipc-contract/remote-wire.js';
 import type { UpdateStatus } from '../src/ipc-contract/updates-api.js';
 import type { LogEntry } from '../src/domain-types.js';
-import type { RemoteDeviceView } from '../src/ipc-contract/remote-api.js';
-import type { ApiRequest } from '../src/main/remote/api.js';
 import { makeCommand, makeGroup } from './helpers/main-fakes.js';
 
 interface FakeTimer {
@@ -15,14 +13,6 @@ interface FakeTimer {
   cleared: boolean;
   repeat: boolean;
 }
-
-const DEVICE: RemoteDeviceView = {
-  id: 'd1',
-  name: 'iPhone',
-  client: 'Safari · iOS',
-  createdAt: 1,
-  lastSeenAt: 1,
-};
 
 const PIPELINE: PipelineState = {
   status: 'idle',
@@ -49,10 +39,11 @@ function sink() {
   const chunks: string[] = [];
   let ended = false;
   const fake: EventSink = {
-    write: (chunk) => {
-      chunks.push(chunk);
+    event: (type, data) => {
+      chunks.push(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
       return true;
     },
+    heartbeat: () => true,
     end: () => {
       ended = true;
     },
@@ -139,22 +130,21 @@ function harness() {
       presence += 1;
     },
   });
-  const request = (query = ''): ApiRequest => ({
-    method: 'GET',
-    pathname: '/api/events',
-    query: new URLSearchParams(query),
-    token: 'x',
-    ip: '192.168.1.40',
-    userAgent: undefined,
-    body: null,
+  let sessions = 0;
+  /** A stream owner: device d1, a new session each time. */
+  const owner = (logsId: string | null = null, deviceId = 'd1') => ({
+    deviceId,
+    sessionId: `s${++sessions}`,
+    logsId,
   });
-  /** Opens a stream the way the server does, and returns its sink. */
-  const open = (query = '') => {
+  /** Opens a stream the way the secure layer does, and returns its sink. */
+  const open = (logsId: string | null = null, deviceId = 'd1') => {
     const phone = sink();
-    const answer = live.stream(request(query), DEVICE);
+    const from = owner(logsId, deviceId);
+    const answer = live.stream(from);
     if (!('open' in answer)) throw new Error(`refused: ${answer.status}`);
     const detach = answer.open(phone.fake);
-    return { ...phone, detach };
+    return { ...phone, detach, sessionId: from.sessionId };
   };
   const settle = async () => {
     for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -162,7 +152,7 @@ function harness() {
   return {
     live,
     open,
-    request,
+    owner,
     settle,
     branches,
     emit: (channel: string, payload: unknown = null) => bus?.(channel, payload),
@@ -240,19 +230,21 @@ describe('src/main/remote/live.ts', () => {
       h.open();
       h.open();
 
-      expect(h.live.stream(h.request(), DEVICE)).toEqual({
+      expect(h.live.stream(h.owner())).toEqual({
         status: 429,
         body: { error: 'too-many-streams' },
       });
     });
 
-    it('refuses a malformed log subscription', () => {
+    it('ends the streams of the sessions it is told to close', () => {
       const h = harness();
+      const closing = h.open();
+      const stays = h.open();
 
-      expect(h.live.stream(h.request('logs='), DEVICE)).toEqual({
-        status: 400,
-        body: { error: 'invalid-request' },
-      });
+      h.live.closeSessions([closing.sessionId]);
+
+      expect(closing.ended()).toBe(true);
+      expect(stays.ended()).toBe(false);
     });
   });
 
@@ -363,6 +355,29 @@ describe('src/main/remote/live.ts', () => {
 
       expect(h.live.notices()[0]).toMatchObject({ kind: 'scheduled' });
     });
+
+    it('announces to every phone but the one the notice is about', () => {
+      const h = harness();
+      const subject = h.open(null, 'd1');
+      const other = h.open(null, 'd2');
+
+      h.live.announce(
+        {
+          kind: 'info',
+          title: 'Control remoto',
+          body: '«iPhone» se ha conectado',
+        },
+        'd1',
+      );
+
+      expect(subject.events().map((e) => e.event)).toEqual(['state']);
+      expect(other.events().at(-1)).toMatchObject({
+        event: 'notice',
+        data: { title: 'Control remoto' },
+      });
+      expect(h.live.notices('d1')).toEqual([]);
+      expect(h.live.notices('d2')).toHaveLength(1);
+    });
   });
 
   describe('confirmations', () => {
@@ -421,7 +436,7 @@ describe('src/main/remote/live.ts', () => {
   describe('logs', () => {
     it('relays the lines of the process a stream subscribed to', () => {
       const h = harness();
-      const phone = h.open('logs=cmd:g1:web');
+      const phone = h.open('cmd:g1:web');
 
       h.log('cmd:g1:web', {
         ts: 5,
@@ -448,6 +463,25 @@ describe('src/main/remote/live.ts', () => {
           },
         },
       ]);
+    });
+  });
+
+  describe('subscribe', () => {
+    it("switches an open session's stream to another process's lines", () => {
+      const h = harness();
+      const phone = h.open();
+
+      h.live.subscribe(phone.sessionId, 'cmd:g1:web');
+      h.log('cmd:g1:web', {
+        ts: 5,
+        seq: 1,
+        stream: 'stdout',
+        level: null,
+        line: 'hola',
+      });
+      h.fire(100);
+
+      expect(phone.events().filter((e) => e.event === 'log')).toHaveLength(1);
     });
   });
 

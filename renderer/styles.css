@@ -3371,6 +3371,24 @@ body.prescript-confirm {
 
 /* ── Control remoto (renderer/config/remote-pane.ts) ──────────────────
    The switch card, the linked-device list and the two pairing dialogs. */
+/* A feature, not a warning: the lock and the plain text colour. */
+.remote-secure-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-row-hover);
+  font-size: 12px;
+}
+.remote-secure-note .icon {
+  margin-top: 1px;
+  color: #1f8f3a;
+}
+:root[data-theme='dark'] .remote-secure-note .icon {
+  color: var(--running);
+}
 .remote-endpoint {
   display: flex;
   align-items: center;
@@ -3628,6 +3646,66 @@ button.remote-rename-btn:hover {
   margin: 12px 0 2px;
   font-size: 15px;
   font-weight: 600;
+}
+.remote-verified {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-row-hover);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.remote-verified.is-verified {
+  background: rgba(48, 209, 88, 0.14);
+  color: #1f8f3a;
+}
+:root[data-theme='dark'] .remote-verified.is-verified {
+  color: var(--running);
+}
+.remote-device-name-row .remote-verified {
+  margin-left: 6px;
+}
+#remote-safety-status {
+  margin-bottom: 12px;
+}
+.remote-safety-hint {
+  max-width: 300px;
+  margin: 12px 0 8px;
+}
+.remote-safety-hint:empty {
+  display: none;
+}
+.remote-safety-code {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 6px 18px;
+  margin: 8px 0 4px;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  user-select: text;
+}
+.remote-renew {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.remote-renew > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.remote-renew button {
+  flex-shrink: 0;
 }
 .remote-verification {
   margin: 14px 0 4px;

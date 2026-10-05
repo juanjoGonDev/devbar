@@ -4,20 +4,18 @@ import type { IncomingHttpHeaders } from 'node:http';
  * The HTTP-level rules of the remote-control server, kept apart from the
  * routing so each can be checked on its own.
  *
- * The transport is plain HTTP on the LAN, so the browser's own protections
- * are what is left to lean on: an HttpOnly + SameSite=Strict cookie, and a
- * mutation shape (JSON + a custom header + a matching Origin) that a page on
- * another origin cannot produce without a CORS preflight — which this server
- * never answers.
+ * The transport is plain HTTP on the LAN (no certificate a phone would trust
+ * exists for a LAN address); what crosses it is sealed by devbar-rc/1
+ * (src/main/remote/secure-api.ts). On top of that the browser's own
+ * protections still apply: a mutation shape (JSON + a custom header + a
+ * matching Origin) that a page on another origin cannot produce without a
+ * CORS preflight — which this server never answers. No cookie is ever set:
+ * a session is a handshake, named by the `X-DevBar-Session` header.
  */
 
-const SESSION_COOKIE = 'devbar_session';
-/** ~400 days, the longest lifetime browsers honour. */
-const SESSION_MAX_AGE_S = 34_560_000;
-const COOKIE_ATTRIBUTES = 'HttpOnly; SameSite=Strict; Path=/';
 const MAX_BODY_BYTES = 16 * 1024;
-/** `randomBytes(32)` in base64url is exactly 43 characters. */
-const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+/** A 16-byte session id in base64url is exactly 22 characters. */
+const SESSION_ID_SHAPE = /^[A-Za-z0-9_-]{22}$/;
 
 /** Sent on every response, whatever it is. */
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
@@ -31,23 +29,13 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 export const HTML_CSP =
   "default-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'";
 
-export function sessionCookie(token: string): string {
-  return `${SESSION_COOKIE}=${token}; ${COOKIE_ATTRIBUTES}; Max-Age=${SESSION_MAX_AGE_S}`;
-}
-
-export function clearedSessionCookie(): string {
-  return `${SESSION_COOKIE}=; ${COOKIE_ATTRIBUTES}; Max-Age=0`;
-}
-
-/** The session token, when the Cookie header carries a well-formed one. */
-export function readSessionToken(cookie: string | undefined): string | null {
-  for (const part of (cookie ?? '').split(';')) {
-    const [name, ...rest] = part.trim().split('=');
-    if (name !== SESSION_COOKIE) continue;
-    const value = rest.join('=');
-    return TOKEN_SHAPE.test(value) ? value : null;
-  }
-  return null;
+/** The session id of the `X-DevBar-Session` header, when well-formed. */
+export function readSessionId(
+  header: string | string[] | undefined,
+): string | null {
+  return typeof header === 'string' && SESSION_ID_SHAPE.test(header)
+    ? header
+    : null;
 }
 
 export type Verdict = { ok: true } | { ok: false; status: number };

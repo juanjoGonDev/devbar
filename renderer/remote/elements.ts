@@ -96,6 +96,9 @@ export function panelElements() {
       linkedOn: byId<HTMLElement>('device-linked', HTMLElement),
       unlink: byId<HTMLButtonElement>('unlink', HTMLButtonElement),
       footer: byId<HTMLElement>('connected-footer', HTMLElement),
+      securityCode: byId<HTMLElement>('security-code', HTMLElement),
+      securityStatus: byId<HTMLElement>('security-status', HTMLElement),
+      rotateKeys: byId<HTMLButtonElement>('rotate-keys', HTMLButtonElement),
     },
     confirm: {
       dialog: byId<HTMLDialogElement>('confirm-dialog', HTMLDialogElement),

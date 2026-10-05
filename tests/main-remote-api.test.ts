@@ -1,14 +1,51 @@
 import { describe, expect, it } from 'vitest';
-import { createApi, type ApiRequest } from '../src/main/remote/api.js';
+import { createSessionApi, type RpcCall } from '../src/main/remote/api.js';
 import { createDeviceStore } from '../src/main/remote/device-store.js';
 import { createPairing } from '../src/main/remote/pairing.js';
 import { createRateLimiter } from '../src/main/remote/rate-limit.js';
+import {
+  authMessage,
+  generateIdentity,
+  identityFromSeed,
+  toB64,
+} from '../src/main/remote/rc-protocol.js';
+import type { Session } from '../src/main/remote/sessions.js';
 import type { RemotePairRequest } from '../src/ipc-contract/remote-api.js';
+
+/**
+ * The session-level operations of devbar-rc/1, as plain functions of an
+ * already-decrypted call: what an unauthenticated session may do (who am I
+ * talking to, pairing), how a device proves who it is (`auth`), and what
+ * only a proven device may do to itself (unlink, verify, rotate its key).
+ */
 
 const IPHONE_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
-const COOKIE = /^devbar_session=([A-Za-z0-9_-]{43}); HttpOnly/;
-const CLEARED = 'devbar_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0';
+
+let sessions = 0;
+function session(): Session {
+  sessions += 1;
+  return {
+    id: `sid-${sessions}`,
+    ip: '192.168.1.40',
+    transcript: Buffer.from(`transcript-${sessions}`),
+    deviceId: null,
+    logsId: null,
+    open: () => null,
+    seal: () => ({ n: 1, ct: '' }),
+    sealEvent: () => '',
+  };
+}
+
+function deviceKey() {
+  const { seed, publicKey } = generateIdentity();
+  const signer = identityFromSeed(seed);
+  return {
+    pub: toB64(publicKey),
+    /** The auth proof over this session's transcript. */
+    prove: (on: Session) => toB64(signer.sign(authMessage(on.transcript))),
+  };
+}
 
 function harness() {
   let clock = 10_000_000;
@@ -21,7 +58,7 @@ function harness() {
     now,
   });
   const pairing = createPairing({ now });
-  const api = createApi({
+  const api = createSessionApi({
     devices,
     pairing,
     limiter: createRateLimiter({ limit: 5, windowMs: 60_000, now }),
@@ -33,43 +70,44 @@ function harness() {
     },
     pairWithdrawn: (requestId) => events.push(`withdrawn:${requestId}`),
     deviceUnlinked: (id) => events.push(`unlinked:${id}`),
+    deviceRotated: (id) => events.push(`rotated:${id}`),
+    deviceAuthenticated: (id, ip) => events.push(`authenticated:${id}@${ip}`),
   });
-  const call = (request: Partial<ApiRequest>) =>
-    api({
-      method: 'GET',
-      pathname: '/api/me',
-      query: new URLSearchParams(),
-      token: null,
-      ip: '192.168.1.40',
-      userAgent: IPHONE_UA,
-      body: undefined,
-      ...request,
-    });
-  const requestPairing = (code: string, name = 'iPhone de Ana', ip?: string) =>
-    call({
-      method: 'POST',
-      pathname: '/api/pair/request',
-      body: { code, name },
-      ...(ip ? { ip } : {}),
-    });
-  const pollStatus = (id: string) =>
-    call({ pathname: '/api/pair/status', query: new URLSearchParams({ id }) });
-  /** The whole handshake, accepted: the session token the phone ends with. */
-  const link = (): string => {
+  const callOn = (on: Session, op: string, args: unknown = {}) => {
+    const call: RpcCall = { session: on, ip: on.ip, userAgent: IPHONE_UA };
+    return api.handle(op, args, call);
+  };
+  const call = (op: string, args: unknown = {}) => callOn(session(), op, args);
+  /** Pairing up to the desktop's decision; the phone's request id. */
+  const request = (key = deviceKey(), on = session()) => {
     const { code } = pairing.startPairing();
-    const answer = requestPairing(code).body as { requestId: string };
-    pairing.respond(answer.requestId, true);
-    const cookie = pollStatus(answer.requestId).setCookie ?? '';
-    return COOKIE.exec(cookie)?.[1] ?? '';
+    const answer = callOn(on, 'pair.request', {
+      code,
+      name: 'iPhone de Ana',
+      devicePub: key.pub,
+    });
+    return (answer.body as { requestId: string }).requestId;
+  };
+  /** The whole pairing, accepted; then an authenticated session. */
+  const link = () => {
+    const key = deviceKey();
+    const requestId = request(key);
+    pairing.respond(requestId, true);
+    const answer = call('pair.status', { requestId });
+    const deviceId = (answer.body as { deviceId: string }).deviceId;
+    const on = session();
+    callOn(on, 'auth', { deviceId, sig: key.prove(on) });
+    return { key, deviceId, session: on };
   };
   return {
+    api,
     call,
+    callOn,
     devices,
     pairing,
     events,
     requests,
-    requestPairing,
-    pollStatus,
+    request,
     link,
     advance: (ms: number) => {
       clock += ms;
@@ -78,11 +116,27 @@ function harness() {
 }
 
 describe('src/main/remote/api.ts', () => {
-  describe('GET /api/me', () => {
-    it('tells an unknown browser it is not linked, with a name to suggest', () => {
+  it('knows exactly the session-level operations', () => {
+    const { api } = harness();
+    for (const op of [
+      'me',
+      'pair.request',
+      'pair.status',
+      'pair.cancel',
+      'auth',
+      'unlink',
+      'verify.done',
+      'device.rotate',
+    ])
+      expect(api.handles(op), op).toBe(true);
+    expect(api.handles('state')).toBe(false);
+  });
+
+  describe('me', () => {
+    it('tells an unauthenticated session the host name and a name to suggest', () => {
       const h = harness();
 
-      expect(h.call({})).toEqual({
+      expect(h.call('me')).toEqual({
         status: 200,
         body: {
           linked: false,
@@ -92,237 +146,258 @@ describe('src/main/remote/api.ts', () => {
       });
     });
 
-    it('clears a session cookie that no longer matches a device', () => {
+    it('describes the device an authenticated session proved to be', () => {
       const h = harness();
+      const { deviceId, session: on } = h.link();
 
-      expect(h.call({ token: 'x'.repeat(43) })).toMatchObject({
-        status: 200,
-        body: { linked: false },
-        setCookie: CLEARED,
-      });
-    });
-
-    it('recognises a linked device and records that it was seen', () => {
-      const h = harness();
-      const token = h.link();
-      h.events.length = 0;
-      h.advance(2 * 60_000);
-
-      const response = h.call({ token });
-
-      expect(response).toEqual({
+      expect(h.callOn(on, 'me')).toEqual({
         status: 200,
         body: {
           linked: true,
           device: {
-            id: h.devices.list()[0]?.id,
+            id: deviceId,
             name: 'iPhone de Ana',
             createdAt: 10_000_000,
           },
           host: { name: 'mac-de-ana', version: '0.11.0' },
         },
       });
-      expect(h.events).toEqual(['changed']);
     });
   });
 
-  describe('POST /api/pair/request', () => {
+  describe('pair.request', () => {
     it('opens a request for a valid code and tells the desktop', () => {
       const h = harness();
       const { code } = h.pairing.startPairing();
 
-      const response = h.requestPairing(code);
+      const answer = h.call('pair.request', {
+        code,
+        name: '  iPhone de Ana ',
+        devicePub: deviceKey().pub,
+      });
 
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({
-        requestId: h.requests[0]?.requestId,
-        verificationCode: h.requests[0]?.verificationCode,
-        expiresAt: h.requests[0]?.expiresAt,
+      expect(answer.status).toBe(200);
+      expect(answer.body).toMatchObject({
+        requestId: expect.any(String) as unknown,
+        verificationCode: expect.stringMatching(/^\d{6}$/) as unknown,
       });
       expect(h.requests[0]).toMatchObject({
         name: 'iPhone de Ana',
         client: 'Safari · iOS',
         ip: '192.168.1.40',
       });
+      expect(h.events).toEqual(['pairRequested']);
     });
 
     it('answers 410 with the reason for a used or unknown code', () => {
       const h = harness();
-      const { code } = h.pairing.startPairing();
-      h.requestPairing(code);
-
-      expect(h.requestPairing(code)).toEqual({
-        status: 410,
-        body: { error: 'used' },
-      });
-      expect(h.requestPairing('nope')).toEqual({
-        status: 410,
-        body: { error: 'invalid' },
-      });
-    });
-
-    it('refuses an invalid name before spending the code', () => {
-      const h = harness();
-      const { code } = h.pairing.startPairing();
-
-      expect(h.requestPairing(code, '   ')).toEqual({
-        status: 400,
-        body: { error: 'invalid-name' },
-      });
-      expect(h.requestPairing(code).status).toBe(200);
-    });
-
-    it('refuses a body that is not the expected shape', () => {
-      const h = harness();
+      const pub = deviceKey().pub;
 
       expect(
-        h.call({ method: 'POST', pathname: '/api/pair/request', body: [1] }),
+        h.call('pair.request', { code: 'nope', name: 'x', devicePub: pub }),
+      ).toEqual({ status: 410, body: { error: 'invalid' } });
+    });
+
+    it('refuses an invalid name or key before spending the code', () => {
+      const h = harness();
+      const { code } = h.pairing.startPairing();
+
+      expect(
+        h.call('pair.request', { code, name: '', devicePub: deviceKey().pub }),
+      ).toEqual({ status: 400, body: { error: 'invalid-name' } });
+      expect(
+        h.call('pair.request', { code, name: 'x', devicePub: 'short' }),
       ).toEqual({ status: 400, body: { error: 'invalid-request' } });
+      expect(h.pairing.hasActiveCode()).toBe(true);
     });
 
     it('allows five attempts a minute per address, then answers 429', () => {
       const h = harness();
-      const statuses = Array.from(
-        { length: 6 },
-        () => h.requestPairing('guess').status,
-      );
+      for (let i = 0; i < 5; i++)
+        h.call('pair.request', { code: 'x', name: 'n', devicePub: 'x' });
 
-      expect(statuses).toEqual([410, 410, 410, 410, 410, 429]);
-      expect(h.requestPairing('guess', 'x', '192.168.1.41').status).toBe(410);
+      expect(
+        h.call('pair.request', { code: 'x', name: 'n', devicePub: 'x' }),
+      ).toEqual({ status: 429, body: { error: 'rate-limited' } });
     });
   });
 
-  describe('GET /api/pair/status', () => {
-    it('reports pending, then sets the session cookie exactly once on accept', () => {
+  describe('pair.status', () => {
+    it('reports pending, then creates the device with its key exactly once', () => {
       const h = harness();
-      const { code } = h.pairing.startPairing();
-      const { requestId } = h.requestPairing(code).body as {
-        requestId: string;
-      };
+      const key = deviceKey();
+      const requestId = h.request(key);
 
-      expect(h.pollStatus(requestId)).toEqual({
+      expect(h.call('pair.status', { requestId })).toEqual({
         status: 200,
         body: { status: 'pending' },
       });
       h.pairing.respond(requestId, true);
-      const accepted = h.pollStatus(requestId);
+      const answer = h.call('pair.status', { requestId });
 
-      expect(accepted).toMatchObject({
+      const deviceId = h.devices.list()[0]?.id;
+      expect(answer).toEqual({
         status: 200,
-        body: {
-          status: 'accepted',
-          device: { name: 'iPhone de Ana' },
-        },
+        body: { status: 'accepted', deviceId },
       });
-      const token = COOKIE.exec(accepted.setCookie ?? '')?.[1] ?? '';
-      expect(h.devices.findByToken(token)?.client).toBe('Safari · iOS');
-      expect(h.events).toContain('changed');
-      // The token is never handed out a second time.
-      expect(h.pollStatus(requestId)).toEqual({
+      expect(h.devices.devicePub(deviceId ?? '')).toBe(key.pub);
+      expect(h.call('pair.status', { requestId })).toEqual({
         status: 404,
         body: { error: 'unknown-request' },
       });
+      expect(h.devices.list()).toHaveLength(1);
     });
 
     it('reports a rejection without creating anything', () => {
       const h = harness();
-      const { code } = h.pairing.startPairing();
-      const { requestId } = h.requestPairing(code).body as {
-        requestId: string;
-      };
+      const requestId = h.request();
       h.pairing.respond(requestId, false);
 
-      expect(h.pollStatus(requestId)).toEqual({
+      expect(h.call('pair.status', { requestId })).toEqual({
         status: 200,
         body: { status: 'rejected' },
       });
       expect(h.devices.list()).toEqual([]);
     });
 
-    it('answers 400 without an id', () => {
-      const h = harness();
-
-      expect(h.call({ pathname: '/api/pair/status' })).toEqual({
+    it('answers 400 without a request id', () => {
+      expect(harness().call('pair.status', {})).toEqual({
         status: 400,
         body: { error: 'invalid-request' },
       });
     });
   });
 
-  describe('POST /api/pair/cancel', () => {
-    const cancel = (h: ReturnType<typeof harness>, body: unknown) =>
-      h.call({ method: 'POST', pathname: '/api/pair/cancel', body });
-
+  describe('pair.cancel', () => {
     it('withdraws the pending request so the desktop can close its dialog', () => {
       const h = harness();
-      const { code } = h.pairing.startPairing();
-      const { requestId } = h.requestPairing(code).body as {
-        requestId: string;
-      };
+      const requestId = h.request();
 
-      expect(cancel(h, { requestId })).toEqual({
+      expect(h.call('pair.cancel', { requestId })).toEqual({
         status: 200,
         body: { ok: true },
       });
       expect(h.events).toContain(`withdrawn:${requestId}`);
-      expect(h.pollStatus(requestId).status).toBe(404);
-    });
-
-    it('answers 404 for a request that is no longer pending', () => {
-      const h = harness();
-
-      expect(cancel(h, { requestId: 'ghost' })).toEqual({
-        status: 404,
-        body: { error: 'unknown-request' },
-      });
-    });
-
-    it('answers 400 to a body without a request id', () => {
-      const h = harness();
-
-      expect(cancel(h, { requestId: 7 }).status).toBe(400);
+      expect(h.call('pair.cancel', { requestId }).status).toBe(404);
+      expect(h.call('pair.cancel', {}).status).toBe(400);
     });
   });
 
-  describe('POST /api/unlink', () => {
-    it('removes the calling device and clears its cookie', () => {
+  describe('auth', () => {
+    it('binds the session to the device whose key signed this handshake', () => {
       const h = harness();
-      const token = h.link();
-      const id = h.devices.list()[0]?.id;
+      const { deviceId, session: on } = h.link();
 
-      expect(
-        h.call({ method: 'POST', pathname: '/api/unlink', token, body: {} }),
-      ).toEqual({ status: 200, body: { ok: true }, setCookie: CLEARED });
-      expect(h.events).toContain(`unlinked:${id}`);
-      expect(h.devices.list()).toEqual([]);
-      expect(h.call({ token }).body).toMatchObject({ linked: false });
+      expect(on.deviceId).toBe(deviceId);
+      expect(h.events).toContain(`authenticated:${deviceId}@192.168.1.40`);
     });
 
-    it('answers 401 to a caller that is not linked', () => {
+    it('refuses a proof made for another handshake', () => {
       const h = harness();
+      const { key, deviceId } = h.link();
+      const elsewhere = session();
+      const on = session();
 
       expect(
-        h.call({ method: 'POST', pathname: '/api/unlink', body: {} }),
-      ).toEqual({
+        h.callOn(on, 'auth', { deviceId, sig: key.prove(elsewhere) }),
+      ).toEqual({ status: 401, body: { error: 'unlinked' } });
+      expect(on.deviceId).toBeNull();
+    });
+
+    it('refuses another key, an unknown device and a malformed proof alike', () => {
+      const h = harness();
+      const { deviceId } = h.link();
+      const on = session();
+
+      for (const args of [
+        { deviceId, sig: deviceKey().prove(on) },
+        { deviceId: 'ghost', sig: deviceKey().prove(on) },
+        { deviceId, sig: 'short' },
+        {},
+      ])
+        expect(h.callOn(on, 'auth', args)).toEqual({
+          status: 401,
+          body: { error: 'unlinked' },
+        });
+      expect(on.deviceId).toBeNull();
+      expect(
+        h.events.filter((e) => e.startsWith('authenticated:')),
+      ).toHaveLength(1);
+    });
+  });
+
+  describe('unlink', () => {
+    it('removes the calling device and tells the live layer', () => {
+      const h = harness();
+      const { deviceId, session: on } = h.link();
+      h.events.length = 0;
+
+      expect(h.callOn(on, 'unlink')).toEqual({
+        status: 200,
+        body: { ok: true },
+      });
+      expect(h.devices.list()).toEqual([]);
+      expect(h.events).toEqual([`unlinked:${deviceId}`, 'changed']);
+    });
+
+    it('answers 401 to a session that is not a linked device', () => {
+      expect(harness().call('unlink')).toEqual({
         status: 401,
         body: { error: 'unlinked' },
-        setCookie: CLEARED,
       });
     });
   });
 
-  describe('routing', () => {
-    it('answers 404 to an unknown endpoint and 405 to a wrong method', () => {
+  describe('verify.done', () => {
+    it('records that this device verified the security code', () => {
       const h = harness();
+      const { deviceId, session: on } = h.link();
+      h.advance(5000);
 
-      expect(h.call({ pathname: '/api/nope' })).toEqual({
-        status: 404,
-        body: { error: 'not-found' },
+      expect(h.callOn(on, 'verify.done')).toEqual({
+        status: 200,
+        body: { ok: true },
       });
-      expect(h.call({ method: 'POST', pathname: '/api/me' })).toEqual({
-        status: 405,
-        body: { error: 'method-not-allowed' },
+      expect(h.devices.find(deviceId)?.verifiedAt).toBe(10_005_000);
+      expect(h.events.at(-1)).toBe('changed');
+      expect(h.call('verify.done').status).toBe(401);
+    });
+  });
+
+  describe('device.rotate', () => {
+    it('replaces the key, unverifies the device and drops its sessions', () => {
+      const h = harness();
+      const { deviceId, session: on } = h.link();
+      h.callOn(on, 'verify.done');
+      const next = deviceKey();
+      h.events.length = 0;
+
+      expect(h.callOn(on, 'device.rotate', { devicePub: next.pub })).toEqual({
+        status: 200,
+        body: { ok: true },
       });
+      expect(h.devices.devicePub(deviceId)).toBe(next.pub);
+      expect(h.devices.find(deviceId)?.verifiedAt).toBeNull();
+      expect(h.events).toEqual([`rotated:${deviceId}`, 'changed']);
+
+      // From now on only the new key proves who the device is.
+      const fresh = session();
+      expect(
+        h.callOn(fresh, 'auth', { deviceId, sig: next.prove(fresh) }).status,
+      ).toBe(200);
+    });
+
+    it('refuses a malformed key, and an unauthenticated session', () => {
+      const h = harness();
+      const { session: on } = h.link();
+
+      expect(h.callOn(on, 'device.rotate', { devicePub: 'x' })).toEqual({
+        status: 400,
+        body: { error: 'invalid-request' },
+      });
+      expect(
+        h.call('device.rotate', { devicePub: deviceKey().pub }).status,
+      ).toBe(401);
     });
   });
 });

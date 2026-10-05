@@ -1,8 +1,14 @@
 import type { RemoteStateView } from '../../src/ipc-contract/remote-wire.js';
 import type { Me, RemoteClient } from './api.js';
+import { RemoteError } from './channel.js';
 import { createConfirmDialog } from './confirm-dialog.js';
-import { createConnection } from './connection.js';
-import type { ConfirmAnswer, PanelContext, TabName } from './context.js';
+import { createConnection, type Verdict } from './connection.js';
+import type {
+  ConfirmAnswer,
+  DeviceIdentity,
+  PanelContext,
+  TabName,
+} from './context.js';
 import { UNREACHABLE } from './context.js';
 import { panelElements } from './elements.js';
 import type { RemoteEnv } from './env.js';
@@ -33,6 +39,7 @@ export interface PanelDeps {
   env: RemoteEnv;
   client: RemoteClient;
   me: Me;
+  identity: DeviceIdentity;
   /** This device is no longer linked (from here, the stream or the server). */
   onUnlinked(): void;
 }
@@ -69,9 +76,28 @@ export function startPanel(deps: PanelDeps): Panel {
     deps.onUnlinked();
   };
 
+  /** A fresh handshake, then who we are now. */
+  const check = async (): Promise<Verdict> => {
+    try {
+      await client.reconnect();
+    } catch (error) {
+      // A changed key or an unknown device: the client told the app already.
+      if (
+        error instanceof RemoteError &&
+        ['changed', 'unlinked'].includes(error.code)
+      )
+        return 'lost';
+      throw error;
+    }
+    const fresh = await client.me();
+    if (!fresh.linked) return 'unlinked';
+    return fresh.version === me.version ? 'linked' : 'reload';
+  };
+
   const ctx: PanelContext = {
     env,
     client,
+    identity: deps.identity,
     serverNow: () => env.now() + skew,
     hostName: () => current?.host.name || me.hostName,
     state: () => current,
@@ -82,8 +108,8 @@ export function startPanel(deps: PanelDeps): Panel {
       showTab('logs');
     },
     openConfirm: (token) => confirm.open(token),
-    run: async (path, body = {}, options = {}) => {
-      const answer = await client.post(path, body).catch(() => null);
+    run: async (op, body = {}, options = {}) => {
+      const answer = await client.call(op, body).catch(() => null);
       if (!answer) toast(UNREACHABLE);
       else if (answer.status === 401) unlinked();
       else if (answer.status === 202) {
@@ -102,7 +128,7 @@ export function startPanel(deps: PanelDeps): Panel {
     },
     answerConfirm: async (token, decision): Promise<ConfirmAnswer> => {
       const answer = await client
-        .post('/api/confirm', { token, decision })
+        .call('confirm', { token, decision })
         .catch(() => null);
       if (answer?.status === 200) return 'ok';
       if (answer?.status === 409) return 'gone';
@@ -176,11 +202,9 @@ export function startPanel(deps: PanelDeps): Panel {
     openEvents: (url) => env.openEvents(url),
     setTimeout: (fn, ms) => env.setTimeout(fn, ms),
     clearTimeout: (handle) => env.clearTimeout(handle),
-    check: async () => {
-      const fresh = await client.me();
-      if (!fresh.linked) return 'unlinked';
-      return fresh.version === me.version ? 'linked' : 'reload';
-    },
+    events: () => client.events(),
+    check,
+    subscribe: (id) => client.call('logs.subscribe', { id }),
     onEvent,
     onStatus: (status) => {
       const back = status === 'live' && everLive;

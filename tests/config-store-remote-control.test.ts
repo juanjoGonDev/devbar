@@ -35,17 +35,24 @@ const harness = configStoreHarness(electronState);
 const STATE = {
   enabled: true,
   autoUnlink: false,
+  notifyConnections: true,
   port: 47821,
   devices: [
     {
       id: 'd1',
       name: 'iPhone',
-      tokenHash: 'a'.repeat(64),
+      devicePub: 'A'.repeat(43),
       client: 'Safari · iOS',
       createdAt: 1,
       lastSeenAt: 2,
+      verifiedAt: null,
     },
   ],
+  identity: {
+    publicKey: 'B'.repeat(43),
+    secret: 'c2VhbGVkLXNlZWQ',
+    sealed: true,
+  },
 };
 
 describe('remoteControl store key', () => {
@@ -73,8 +80,10 @@ describe('remoteControl store key', () => {
 
     const backup = fs.readFileSync(store.writeImportBackup(), 'utf8');
 
-    expect(JSON.stringify(store.exportConfig())).not.toContain('tokenHash');
-    expect(backup).not.toContain('tokenHash');
+    for (const secret of ['devicePub', 'c2VhbGVkLXNlZWQ', 'identity']) {
+      expect(JSON.stringify(store.exportConfig())).not.toContain(secret);
+      expect(backup).not.toContain(secret);
+    }
     expect(store.getGlobalSettings()).not.toHaveProperty('remoteControl');
   });
 

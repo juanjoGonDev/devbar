@@ -123,27 +123,25 @@ describe('renderer/remote/groups-tab.ts', () => {
   describe('starting and stopping', () => {
     it('stops a running service and starts a stopped one', async () => {
       const h = await startLinked();
-      h.answer('POST /api/process/stop', { status: 200, body: { ok: true } });
-      h.answer('POST /api/process/start', { status: 200, body: { ok: true } });
+      h.answer('process.stop', { status: 200, body: { ok: true } });
+      h.answer('process.start', { status: 200, body: { ok: true } });
 
       tap(buttonNamed('Detener API'));
       await settle();
       tap(buttonNamed('Iniciar Cola de jobs'));
       await settle();
 
-      expect(h.callsTo('/api/process/stop')[0]).toMatchObject({
-        method: 'POST',
-        headers: { 'X-DevBar-Request': '1' },
-        body: { processId: 'cmd:g1:api' },
+      expect(h.callsTo('process.stop')[0]?.body).toEqual({
+        processId: 'cmd:g1:api',
       });
-      expect(h.callsTo('/api/process/start')[0]?.body).toEqual({
+      expect(h.callsTo('process.start')[0]?.body).toEqual({
         processId: 'cmd:g1:jobs',
       });
     });
 
     it('says why a start failed', async () => {
       const h = await startLinked();
-      h.answer('POST /api/process/start', {
+      h.answer('process.start', {
         status: 200,
         body: { ok: false, error: 'Port 3000 in use' },
       });
@@ -156,7 +154,7 @@ describe('renderer/remote/groups-tab.ts', () => {
 
     it('waits for the confirmation of a start that asks first', async () => {
       const h = await startLinked();
-      h.answer('POST /api/process/start', {
+      h.answer('process.start', {
         status: 202,
         body: { pending: true },
       });
@@ -169,7 +167,7 @@ describe('renderer/remote/groups-tab.ts', () => {
 
     it('says so when DevBar cannot be reached', async () => {
       const h = await startLinked();
-      h.answer('POST /api/process/start', new Error('offline'));
+      h.answer('process.start', new Error('offline'));
 
       tap(buttonNamed('Iniciar Cola de jobs'));
       await settle();
@@ -179,12 +177,12 @@ describe('renderer/remote/groups-tab.ts', () => {
 
     it('runs an action from its chip', async () => {
       const h = await startLinked();
-      h.answer('POST /api/actions/run', { status: 200, body: { ok: true } });
+      h.answer('actions.run', { status: 200, body: { ok: true } });
 
       tap(buttonNamed('Ejecutar Seed de datos'));
       await settle();
 
-      expect(h.callsTo('/api/actions/run')[0]?.body).toEqual({
+      expect(h.callsTo('actions.run')[0]?.body).toEqual({
         groupId: 'g1',
         actionId: 'seed',
       });
@@ -192,7 +190,7 @@ describe('renderer/remote/groups-tab.ts', () => {
 
     it('runs the pipeline and shows it running', async () => {
       const h = await startLinked();
-      h.answer('POST /api/pipeline/run', {
+      h.answer('pipeline.run', {
         status: 202,
         body: { pending: true },
       });
@@ -211,7 +209,7 @@ describe('renderer/remote/groups-tab.ts', () => {
         }),
       );
 
-      expect(h.callsTo('/api/pipeline/run')).toHaveLength(1);
+      expect(h.callsTo('pipeline.run')).toHaveLength(1);
       expect(text('pipeline-label')).toBe('Pipeline en curso · paso 1 de 2');
       expect(byId<HTMLButtonElement>('run-pipeline').disabled).toBe(true);
     });
@@ -239,12 +237,12 @@ describe('renderer/remote/groups-tab.ts', () => {
       await settle();
 
       expect(h.confirms).toHaveLength(1);
-      expect(h.callsTo('/api/stop-all')).toEqual([]);
+      expect(h.callsTo('stopAll')).toEqual([]);
     });
 
     it('stops everything once confirmed', async () => {
       const h = await startLinked();
-      h.answer('POST /api/stop-all', {
+      h.answer('stopAll', {
         status: 200,
         body: { ok: true, stopped: 2 },
       });
@@ -252,13 +250,13 @@ describe('renderer/remote/groups-tab.ts', () => {
       tapId('stop-all');
       await settle();
 
-      expect(h.callsTo('/api/stop-all')).toHaveLength(1);
+      expect(h.callsTo('stopAll')).toHaveLength(1);
       expect(text('toast')).toBe('2 servicios detenidos');
     });
 
     it('opens the logs of a service', async () => {
       const h = await startLinked();
-      h.answer('GET /api/logs', {
+      h.answer('logs', {
         status: 200,
         body: { id: 'cmd:g1:api', seq: 0, lines: [] },
       });
@@ -304,11 +302,11 @@ describe('renderer/remote/groups-tab.ts', () => {
   describe('branches', () => {
     it('lists the branches and switches to the one picked', async () => {
       const h = await startLinked();
-      h.answer('GET /api/branches', {
+      h.answer('branches', {
         status: 200,
         body: { ok: true, branches: ['main', 'feat/x'] },
       });
-      h.answer('POST /api/branch', { status: 200, body: { ok: true } });
+      h.answer('branch', { status: 200, body: { ok: true } });
 
       tap(buttonNamed('Cambiar de rama, actual main'));
       await settle();
@@ -325,7 +323,7 @@ describe('renderer/remote/groups-tab.ts', () => {
       tap(picks[1]);
       await settle();
 
-      expect(h.callsTo('/api/branch')[0]?.body).toEqual({
+      expect(h.callsTo('branch')[0]?.body).toEqual({
         groupId: 'g1',
         branch: 'feat/x',
       });
@@ -334,11 +332,11 @@ describe('renderer/remote/groups-tab.ts', () => {
 
     it('keeps the sheet open with the reason a switch failed', async () => {
       const h = await startLinked();
-      h.answer('GET /api/branches', {
+      h.answer('branches', {
         status: 200,
         body: { ok: true, branches: ['main', 'feat/x'] },
       });
-      h.answer('POST /api/branch', {
+      h.answer('branch', {
         status: 200,
         body: { ok: false, error: 'Working tree has uncommitted changes' },
       });
@@ -356,7 +354,7 @@ describe('renderer/remote/groups-tab.ts', () => {
 
     it('explains a branch list that could not be read', async () => {
       const h = await startLinked();
-      h.answer('GET /api/branches', {
+      h.answer('branches', {
         status: 200,
         body: { ok: false, branches: [], error: 'not a git repository' },
       });
@@ -394,7 +392,7 @@ describe('renderer/remote/groups-tab.ts', () => {
 
     it('reloads the page when DevBar came back updated', async () => {
       const h = await startLinked();
-      h.answer('GET /api/me', {
+      h.answer('me', {
         status: 200,
         body: {
           linked: true,
@@ -422,9 +420,10 @@ describe('renderer/remote/groups-tab.ts', () => {
         await import('./helpers/remote-page.js');
       loadPage();
       const h = pageHarness();
-      h.answer('GET /api/me', LINKED);
-      h.answer('GET /api/state', new Error('offline'));
-      h.answer('GET /api/notices', new Error('offline'));
+      h.seedKeys();
+      h.answer('me', LINKED);
+      h.answer('state', new Error('offline'));
+      h.answer('notices', new Error('offline'));
 
       await start(h);
 

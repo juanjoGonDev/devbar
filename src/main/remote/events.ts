@@ -3,8 +3,9 @@ import type { TimerHandle, Timers } from './timers.js';
 
 /**
  * The open /api/events streams (Server-Sent Events) of the linked phones,
- * and the fan-out over them. The hub only knows streams and frames: who may
- * open one, and what goes in each event, is decided by its caller.
+ * and the fan-out over them. The hub only knows streams and events: who may
+ * open one, what goes in each event and how it is sealed for its session
+ * (src/main/remote/secure-api.ts) is decided by its caller.
  *
  * Limits keep a misbehaving page from holding the process hostage: a few
  * streams per device, a ceiling overall, and a client whose socket buffer
@@ -19,9 +20,18 @@ const LOG_FLUSH_MS = 100;
 const LOG_BATCH_MAX = 500;
 
 export interface EventSink {
-  /** False when the client cannot keep up: the hub drops it. */
-  write(chunk: string): boolean;
+  /** One event; false when the client cannot keep up: the hub drops it. */
+  event(type: string, data: unknown): boolean;
+  /** A keep-alive; false like `event`. */
+  heartbeat(): boolean;
   end(): void;
+}
+
+/** Who a stream belongs to, and which process's log lines it carries. */
+export interface StreamOwner {
+  deviceId: string;
+  sessionId: string;
+  logsId: string | null;
 }
 
 interface EventClient {
@@ -41,12 +51,13 @@ export interface EventHubDeps {
 export interface EventHub {
   canAttach(deviceId: string): boolean;
   /** Null when a limit is reached (check `canAttach` first). */
-  attach(
-    deviceId: string,
-    logsId: string | null,
-    sink: EventSink,
-  ): EventClient | null;
-  broadcast(event: string, data: unknown): void;
+  attach(owner: StreamOwner, sink: EventSink): EventClient | null;
+  /** Points one session's streams at another process's lines, or none. */
+  subscribe(sessionId: string, logsId: string | null): void;
+  /** Ends those sessions' streams, quietly: the phone reconnects. */
+  closeSessions(sessionIds: readonly string[]): void;
+  /** To every stream; `exceptDevice`'s streams are left out. */
+  broadcast(event: string, data: unknown, exceptDevice?: string): void;
   /** Whether any stream subscribed to this process's log lines. */
   watches(processId: string): boolean;
   log(processId: string, line: RemoteLogLine): void;
@@ -57,14 +68,9 @@ export interface EventHub {
   hasClients(): boolean;
 }
 
-interface Client {
-  deviceId: string;
-  logsId: string | null;
+interface Client extends StreamOwner {
   sink: EventSink;
 }
-
-const frame = (event: string, data: unknown): string =>
-  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
 export function createEventHub(deps: EventHubDeps): EventHub {
   const perDevice = deps.perDevice ?? 3;
@@ -92,8 +98,9 @@ export function createEventHub(deps: EventHubDeps): EventHub {
     if (countFor(client.deviceId) === 0) deps.onPresenceChange(client.deviceId);
   }
 
-  function write(client: Client, chunk: string): void {
-    if (client.sink.write(chunk)) return;
+  /** Delivers through `send`; a client that cannot keep up is dropped. */
+  function write(client: Client, send: (sink: EventSink) => boolean): void {
+    if (send(client.sink)) return;
     remove(client);
     client.sink.end();
   }
@@ -107,33 +114,49 @@ export function createEventHub(deps: EventHubDeps): EventHub {
     flushTimer = null;
     for (const [id, lines] of pendingLogs)
       for (const client of [...clients])
-        if (client.logsId === id) write(client, frame('log', { id, lines }));
+        if (client.logsId === id)
+          write(client, (sink) => sink.event('log', { id, lines }));
     pendingLogs.clear();
   }
 
   return {
     canAttach,
 
-    attach: (deviceId, logsId, sink) => {
+    attach: (owner, sink) => {
+      const { deviceId } = owner;
       if (!canAttach(deviceId)) return null;
-      const client: Client = { deviceId, logsId, sink };
+      const client: Client = { ...owner, sink };
       const first = countFor(deviceId) === 0;
       clients.add(client);
       heartbeat ??= timers.setInterval(() => {
-        for (const each of [...clients]) write(each, ': heartbeat\n\n');
+        for (const each of [...clients]) write(each, (s) => s.heartbeat());
       }, HEARTBEAT_MS);
       if (first) deps.onPresenceChange(deviceId);
       return {
         send: (event, data) => {
-          if (clients.has(client)) write(client, frame(event, data));
+          if (clients.has(client)) write(client, (s) => s.event(event, data));
         },
         detach: () => remove(client),
       };
     },
 
-    broadcast: (event, data) => {
-      const chunk = frame(event, data);
-      for (const client of [...clients]) write(client, chunk);
+    subscribe: (sessionId, logsId) => {
+      for (const client of clients)
+        if (client.sessionId === sessionId) client.logsId = logsId;
+    },
+
+    closeSessions: (sessionIds) => {
+      for (const client of [...clients]) {
+        if (!sessionIds.includes(client.sessionId)) continue;
+        remove(client);
+        client.sink.end();
+      }
+    },
+
+    broadcast: (event, data, exceptDevice) => {
+      for (const client of [...clients])
+        if (client.deviceId !== exceptDevice)
+          write(client, (sink) => sink.event(event, data));
     },
 
     watches,
@@ -150,7 +173,7 @@ export function createEventHub(deps: EventHubDeps): EventHub {
     drop: (deviceId) => {
       for (const client of [...clients]) {
         if (client.deviceId !== deviceId) continue;
-        client.sink.write(frame('unlinked', {}));
+        client.sink.event('unlinked', {});
         remove(client);
         client.sink.end();
       }

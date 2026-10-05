@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { generateSigningKey, toB64 } from '../renderer/remote/rc-protocol.js';
 import {
   LINKED,
   loadPage,
   pageHarness,
+  pairingHarness,
   settle,
   start,
+  startLinked,
   state,
   text,
   UNLINKED,
@@ -13,10 +16,12 @@ import {
 } from './helpers/remote-page.js';
 
 /**
- * The phone page (`renderer/remote.html` + `renderer/remote/app.ts`), driven
- * against a fake `fetch`: which view a browser lands on for each answer of
- * the server, and exactly what it sends. The linked panel has suites of its
- * own (tests/remote-*.test.ts).
+ * The phone page (`renderer/remote.html` + `renderer/remote/app.ts`) against
+ * a real devbar-rc/1 server (tests/helpers/remote-page.ts): which view a
+ * browser lands on for the keys it holds and where it was opened — the
+ * panel, pairing from a QR, a changed computer key — and what it sends.
+ * Verifying a security code is tests/remote-verify.test.ts; the linked
+ * panel has suites of its own (tests/remote-*.test.ts).
  */
 
 const harness = pageHarness;
@@ -32,6 +37,11 @@ const submit = (): void => {
     .getElementById('pair-form')
     ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 };
+const linkedAnswers = (h: ReturnType<typeof harness>): void => {
+  h.answer('me', LINKED);
+  h.answer('state', { status: 200, body: state() });
+  h.answer('notices', { status: 200, body: { notices: [] } });
+};
 
 describe('renderer/remote/app.ts', () => {
   beforeEach(() => {
@@ -39,9 +49,8 @@ describe('renderer/remote/app.ts', () => {
   });
 
   describe('first load', () => {
-    it('explains how to link a browser that is not linked', async () => {
+    it('explains how to link a browser with no keys, asking DevBar nothing', async () => {
       const h = harness();
-      h.answer('GET /api/me', UNLINKED);
 
       await start(h);
 
@@ -52,25 +61,27 @@ describe('renderer/remote/app.ts', () => {
           .getElementById('expired-note')
           ?.classList.contains('is-emphasised'),
       ).toBe(false);
-      expect(h.calls).toEqual([
-        { url: '/api/me', method: 'GET', headers: {}, body: undefined },
-      ]);
+      expect([h.hellos(), h.calls.length]).toEqual([0, 0]);
     });
 
-    it('shows the linked view for a linked browser, even with a code', async () => {
-      const h = harness('?c=abc');
-      h.answer('GET /api/me', LINKED);
+    it('shakes hands with the pinned key, signs in and shows the panel', async () => {
+      const h = harness();
+      h.seedKeys();
+      linkedAnswers(h);
 
       await start(h);
 
       expect(visibleView()).toBe('linked');
       expect(text('host-name')).toBe('Mac-de-Ana');
-      expect(h.callsTo('/api/state')).toHaveLength(1);
+      expect(h.hellos()).toBe(1);
+      expect(h.calls.map((c) => c.op).slice(0, 2)).toEqual(['auth', 'me']);
+      expect(h.source().url).toMatch(/^\/api\/events\?sid=[\w-]{22}$/);
     });
 
     it('never hides the page itself while it switches views', async () => {
       const h = harness();
-      h.answer('GET /api/me', LINKED);
+      h.seedKeys();
+      linkedAnswers(h);
 
       await start(h);
 
@@ -80,33 +91,113 @@ describe('renderer/remote/app.ts', () => {
 
     it('offers a retry when DevBar cannot be reached', async () => {
       const h = harness();
-      h.answer('GET /api/me', new Error('offline'), UNLINKED);
+      h.seedKeys();
+      h.answer('me', new Error('offline'));
+      linkedAnswers(h);
 
       await start(h);
       expect(visibleView()).toBe('error');
 
       click('retry');
       await settle();
-      expect(visibleView()).toBe('unlinked');
+      expect(visibleView()).toBe('linked');
     });
 
     it('treats an unexpected answer as unreachable', async () => {
       const h = harness();
-      h.answer('GET /api/me', { status: 500, body: { error: 'internal' } });
+      h.seedKeys();
+      h.answer('me', { status: 500, body: { error: 'internal' } });
 
       await start(h);
 
       expect(visibleView()).toBe('error');
     });
+
+    it('forgets its keys when the computer no longer knows it', async () => {
+      const h = harness();
+      h.seedKeys();
+      h.forgetDevice();
+
+      await start(h);
+
+      expect(visibleView()).toBe('unlinked');
+      expect(h.keys()).toBeNull();
+    });
+
+    it('lands on «not linked» when the browser refuses localStorage', async () => {
+      const h = harness('/', { storage: 'broken' });
+      h.storage?.clear();
+
+      await start(h);
+
+      expect(visibleView()).toBe('unlinked');
+    });
+  });
+
+  describe('a changed computer key', () => {
+    it('stops before sending anything, and says whose key changed', async () => {
+      const h = harness();
+      h.seedKeys();
+      h.renewIdentity();
+
+      await start(h);
+
+      expect(visibleView()).toBe('keychanged');
+      expect(text('keychanged-title')).toBe(
+        'La clave de seguridad de Mac-de-Ana ha cambiado',
+      );
+      expect(h.calls).toEqual([]);
+      // The keys stay: scanning the new code is how the phone gets back.
+      expect(h.keys()).not.toBeNull();
+
+      click('keychanged-retry');
+      await settle();
+      expect(visibleView()).toBe('keychanged');
+      expect(h.calls).toEqual([]);
+    });
+
+    it('stops there too when a reconnect meets the new key', async () => {
+      const h = await startLinked();
+      h.renewIdentity();
+
+      h.source().emit('error');
+      await h.tick();
+
+      expect(visibleView()).toBe('keychanged');
+      expect(h.pending()).toBe(0);
+    });
+  });
+
+  it('shakes hands again, transparently, when DevBar forgot the session', async () => {
+    const h = await startLinked();
+    h.answer('process.stop', { status: 200, body: { ok: true } });
+    h.dropSessions();
+
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="Detener API"]')
+      ?.click();
+    await settle();
+
+    expect(h.callsTo('process.stop')).toHaveLength(1);
+    expect(h.hellos()).toBe(2);
+    expect(visibleView()).toBe('linked');
   });
 
   describe('pairing', () => {
-    async function pairing(): Promise<ReturnType<typeof harness>> {
-      const h = harness('?c=CODE123');
-      h.answer('GET /api/me', UNLINKED);
+    async function pairing(
+      options: Parameters<typeof pairingHarness>[1] = {},
+    ): Promise<ReturnType<typeof harness>> {
+      const h = pairingHarness('CODE123', options);
+      h.answer('me', UNLINKED);
       await start(h);
       return h;
     }
+
+    it('takes the key out of the address bar at once', async () => {
+      const h = await pairing();
+
+      expect(h.urls[0]).toBe('/pair?c=CODE123');
+    });
 
     it('asks for a name, prefilled from the device', async () => {
       await pairing();
@@ -116,9 +207,9 @@ describe('renderer/remote/app.ts', () => {
       expect(input('device-name').value).toBe('iPhone');
     });
 
-    it('sends the code and the name as a DevBar JSON request', async () => {
+    it('sends the code, the name and a fresh device key, sealed', async () => {
       const h = await pairing();
-      h.answer('POST /api/pair/request', {
+      h.answer('pair.request', {
         status: 200,
         body: { requestId: 'r1', verificationCode: '482913', expiresAt: 1 },
       });
@@ -127,19 +218,15 @@ describe('renderer/remote/app.ts', () => {
       submit();
       await settle();
 
-      expect(h.calls[1]).toEqual({
-        url: '/api/pair/request',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-DevBar-Request': '1',
-        },
-        body: { code: 'CODE123', name: 'iPhone de Ana' },
+      expect(h.callsTo('pair.request')[0]?.body).toEqual({
+        code: 'CODE123',
+        name: 'iPhone de Ana',
+        devicePub: expect.stringMatching(/^[\w-]{43}$/) as unknown,
       });
       expect(visibleView()).toBe('waiting');
       expect(text('verification-code')).toBe('482 913');
       // The spent code leaves the address bar: a reload must not reuse it.
-      expect(h.urls).toEqual(['/']);
+      expect(h.urls.at(-1)).toBe('/');
     });
 
     it('refuses an empty name without asking the server', async () => {
@@ -149,16 +236,48 @@ describe('renderer/remote/app.ts', () => {
       submit();
       await settle();
 
-      expect(h.calls).toHaveLength(1);
+      expect(h.callsTo('pair.request')).toEqual([]);
       expect(text('pair-error')).toBe('Ponle un nombre de 1 a 40 caracteres.');
+    });
+
+    it('will not pair a browser that cannot keep the keys', async () => {
+      const h = await pairing({ storage: 'broken' });
+
+      submit();
+      await settle();
+
+      expect(h.callsTo('pair.request')).toEqual([]);
+      expect(text('pair-error')).toMatch(/no deja guardar datos/);
+    });
+
+    it('refuses to pair with a DevBar that does not hold the key of the QR', async () => {
+      const h = pageHarness('/pair?c=CODE123');
+      h.env.hash = `#k=${toB64(generateSigningKey().publicKey)}`;
+
+      await start(h);
+
+      expect(visibleView()).toBe('result');
+      expect(text('result-title')).toBe('No se pudo verificar el ordenador');
+      expect(h.calls).toEqual([]);
+    });
+
+    it('trusts no QR without its key (an old code, a typed address)', async () => {
+      const h = pageHarness('/pair?c=CODE123');
+
+      await start(h);
+
+      expect(visibleView()).toBe('unlinked');
+      expect(
+        document
+          .getElementById('expired-note')
+          ?.classList.contains('is-emphasised'),
+      ).toBe(true);
+      expect(h.hellos()).toBe(0);
     });
 
     it('sends a stale code back to the explanation, with the QR note stressed', async () => {
       const h = await pairing();
-      h.answer('POST /api/pair/request', {
-        status: 410,
-        body: { error: 'expired' },
-      });
+      h.answer('pair.request', { status: 410, body: { error: 'expired' } });
 
       submit();
       await settle();
@@ -185,7 +304,7 @@ describe('renderer/remote/app.ts', () => {
       ],
     ])('explains a %i answer on the form', async (status, body, message) => {
       const h = await pairing();
-      h.answer('POST /api/pair/request', { status, body });
+      h.answer('pair.request', { status, body });
 
       submit();
       await settle();
@@ -200,7 +319,7 @@ describe('renderer/remote/app.ts', () => {
     describe('waiting for the computer', () => {
       async function waiting(): Promise<ReturnType<typeof harness>> {
         const h = await pairing();
-        h.answer('POST /api/pair/request', {
+        h.answer('pair.request', {
           status: 200,
           body: { requestId: 'r1', verificationCode: '482913', expiresAt: 1 },
         });
@@ -209,48 +328,54 @@ describe('renderer/remote/app.ts', () => {
         return h;
       }
 
-      it('polls every second until the computer accepts, then shows linked', async () => {
+      it('polls every second until accepted, keeps the keys, signs in and shows linked', async () => {
         const h = await waiting();
-        h.answer(
-          'GET /api/pair/status',
-          { status: 200, body: { status: 'pending' } },
-          {
-            status: 200,
-            body: {
-              status: 'accepted',
-              device: { id: 'd1', name: 'iPhone de Ana' },
-            },
-          },
+        const devicePub = String(
+          (h.callsTo('pair.request')[0]?.body as { devicePub: string })
+            .devicePub,
         );
-        h.answer('GET /api/me', LINKED);
+        h.knowDevice('d1', devicePub);
+        h.answer(
+          'pair.status',
+          { status: 200, body: { status: 'pending' } },
+          { status: 200, body: { status: 'accepted', deviceId: 'd1' } },
+        );
+        linkedAnswers(h);
 
         await h.tick();
         expect(visibleView()).toBe('waiting');
         await h.tick();
 
-        expect(
-          h.calls.filter((c) => c.url === '/api/pair/status?id=r1'),
-        ).toHaveLength(2);
+        expect(h.callsTo('pair.status').map((c) => c.body)).toEqual([
+          { requestId: 'r1' },
+          { requestId: 'r1' },
+        ]);
+        expect(h.keys()).toMatchObject({
+          serverIdPub: h.serverKey(),
+          deviceId: 'd1',
+          devicePub,
+          verified: false,
+          hostName: 'Mac-de-Ana',
+        });
+        expect(h.callsTo('auth')).toHaveLength(1);
         expect(visibleView()).toBe('linked');
       });
 
       it('says so when the computer rejects it', async () => {
         const h = await waiting();
-        h.answer('GET /api/pair/status', {
-          status: 200,
-          body: { status: 'rejected' },
-        });
+        h.answer('pair.status', { status: 200, body: { status: 'rejected' } });
 
         await h.tick();
 
         expect(visibleView()).toBe('result');
         expect(text('result-title')).toBe('Vinculación rechazada');
         expect(h.pending()).toBe(0);
+        expect(h.keys()).toBeNull();
       });
 
       it('says so when nobody answers in time', async () => {
         const h = await waiting();
-        h.answer('GET /api/pair/status', {
+        h.answer('pair.status', {
           status: 404,
           body: { error: 'unknown-request' },
         });
@@ -266,7 +391,7 @@ describe('renderer/remote/app.ts', () => {
 
       it('keeps polling through a dropped request, then gives up', async () => {
         const h = await waiting();
-        h.answer('GET /api/pair/status', new Error('wifi blip'));
+        h.answer('pair.status', new Error('wifi blip'));
 
         for (let i = 0; i < 4; i++) await h.tick();
         expect(visibleView()).toBe('waiting');
@@ -278,15 +403,13 @@ describe('renderer/remote/app.ts', () => {
 
       it('stops waiting on «Cancelar», and tells the computer', async () => {
         const h = await waiting();
-        h.answer('POST /api/pair/cancel', { status: 200, body: { ok: true } });
+        h.answer('pair.cancel', { status: 200, body: { ok: true } });
 
         click('pair-cancel');
         await settle();
 
         expect(visibleView()).toBe('unlinked');
-        expect(h.callsTo('/api/pair/cancel')[0]?.body).toEqual({
-          requestId: 'r1',
-        });
+        expect(h.callsTo('pair.cancel')[0]?.body).toEqual({ requestId: 'r1' });
         // The poll is cancelled, not merely ignored.
         expect(h.pending()).toBe(0);
       });
@@ -305,87 +428,81 @@ class FakeEventSource {
 }
 
 describe('renderer/remote.ts', () => {
-  /** Serves the real page with stubbed browser globals, by route. */
+  /** Serves the real page with the browser's own globals stubbed. */
   async function boot(
     url: string,
-    routes: Record<string, { status: number; body: unknown }>,
+    prepare: (h: ReturnType<typeof harness>) => void,
   ) {
     loadPage();
     window.history.replaceState(null, '', url);
-    const fetchStub = vi.fn((target: string, init?: RequestInit) => {
-      const reply = routes[`${init?.method ?? 'GET'} ${target.split('?')[0]}`];
-      return reply
-        ? Promise.resolve({
-            status: reply.status,
-            json: () => Promise.resolve(reply.body),
-          })
-        : Promise.reject(new Error(`unexpected ${target}`));
-    });
-    vi.stubGlobal('fetch', fetchStub);
+    const h = pageHarness(url);
+    prepare(h);
+    const keys = h.storage?.get('devbar.remote.keys');
+    if (keys) window.localStorage.setItem('devbar.remote.keys', keys);
+    vi.stubGlobal('fetch', h.env.fetch);
     vi.stubGlobal('EventSource', FakeEventSource);
     vi.resetModules();
     await import('../renderer/remote.js');
     await settle();
-    return fetchStub;
+    return h;
   }
 
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    window.localStorage.clear();
     window.history.replaceState(null, '', '/');
+    FakeEventSource.opened = [];
   });
 
-  it('boots against the browser globals and reads the code from the URL', async () => {
-    const fetchStub = await boot('/pair?c=CODE', {
-      'GET /api/me': UNLINKED,
-      'POST /api/pair/request': {
+  it('boots against the browser globals and clears the key from the URL', async () => {
+    const h = await boot('/pair?c=CODE', (fake) => {
+      window.history.replaceState(
+        null,
+        '',
+        `/pair?c=CODE#k=${fake.serverKey()}`,
+      );
+      fake.answer('me', UNLINKED);
+      fake.answer('pair.request', {
         status: 200,
         body: { requestId: 'r1', verificationCode: '123456', expiresAt: 1 },
-      },
+      });
     });
     const clearTimer = vi.spyOn(window, 'clearTimeout');
 
-    expect(fetchStub).toHaveBeenCalledWith('/api/me', undefined);
+    expect(window.location.hash).toBe('');
     expect(visibleView()).toBe('pair');
     submit();
     await settle();
 
+    expect(h.callsTo('pair.request')).toHaveLength(1);
     expect(visibleView()).toBe('waiting');
     expect(window.location.pathname + window.location.search).toBe('/');
+    expect(window.localStorage.getItem('devbar.remote.probe')).toBeNull();
     click('pair-cancel');
     expect(clearTimer).toHaveBeenCalled();
   });
 
   it('asks the browser to confirm before unlinking', async () => {
-    await boot('/', { 'GET /api/me': LINKED });
+    await boot('/', (fake) => {
+      fake.seedKeys();
+      linkedAnswers(fake);
+    });
     const asked = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     click('unlink');
 
     expect(asked).toHaveBeenCalledOnce();
     expect(visibleView()).toBe('linked');
-    expect(FakeEventSource.opened).toEqual(['/api/events']);
+    expect(FakeEventSource.opened).toHaveLength(1);
+    expect(FakeEventSource.opened[0]).toMatch(/^\/api\/events\?sid=/);
   });
 
-  it('keeps working when the browser refuses localStorage', async () => {
-    vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
-      throw new Error('SecurityError');
-    });
-
-    await boot('/', {
-      'GET /api/me': LINKED,
-      'GET /api/state': { status: 200, body: state() },
-      'GET /api/notices': { status: 200, body: { notices: [] } },
-    });
-
-    expect(visibleView()).toBe('linked');
-    expect(text('host-name')).toBe('Mac-de-Ana');
-  });
-
-  it('stops its clock once the device is unlinked', async () => {
-    await boot('/', {
-      'GET /api/me': LINKED,
-      'POST /api/unlink': { status: 200, body: { ok: true } },
+  it('stops its clock once the device is unlinked, and forgets its keys', async () => {
+    await boot('/', (fake) => {
+      fake.seedKeys();
+      linkedAnswers(fake);
+      fake.answer('unlink', { status: 200, body: { ok: true } });
     });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     const stopClock = vi.spyOn(window, 'clearInterval');
@@ -395,5 +512,6 @@ describe('renderer/remote.ts', () => {
 
     expect(visibleView()).toBe('unlinked');
     expect(stopClock).toHaveBeenCalled();
+    expect(window.localStorage.getItem('devbar.remote.keys')).toBeNull();
   });
 });

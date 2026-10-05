@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createPairing } from '../src/main/remote/pairing.js';
 
 const MINUTE = 60_000;
+const DEVICE_PUB = 'P'.repeat(42) + 'A';
 
 function harness() {
   let clock = 5_000_000;
@@ -18,6 +19,7 @@ function harness() {
       name: 'iPhone',
       client: 'Safari · iOS',
       ip: '192.168.1.40',
+      devicePub: DEVICE_PUB,
     });
   return {
     pairing,
@@ -75,6 +77,13 @@ describe('src/main/remote/pairing.ts', () => {
       expect(h.ask(code)).toEqual({ ok: false, reason: 'used' });
     });
 
+    it("keeps the phone's public key out of what the desktop is shown", () => {
+      const h = harness();
+      const result = h.ask(h.pairing.startPairing().code);
+
+      expect(JSON.stringify(result)).not.toContain(DEVICE_PUB);
+    });
+
     it('pads a short verification number to six digits', () => {
       const pairing = createPairing({
         now: () => 0,
@@ -82,7 +91,13 @@ describe('src/main/remote/pairing.ts', () => {
         randomInt: () => 42,
       });
       const { code } = pairing.startPairing();
-      const result = pairing.request({ code, name: 'a', client: 'b', ip: 'c' });
+      const result = pairing.request({
+        code,
+        name: 'a',
+        client: 'b',
+        ip: 'c',
+        devicePub: DEVICE_PUB,
+      });
 
       expect(result.ok && result.request.verificationCode).toBe('000042');
     });
@@ -121,7 +136,11 @@ describe('src/main/remote/pairing.ts', () => {
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
       h.pairing.respond(id, true);
 
-      expect(h.pairing.takeAccepted(id)?.name).toBe('iPhone');
+      expect(h.pairing.takeAccepted(id)).toMatchObject({
+        name: 'iPhone',
+        client: 'Safari · iOS',
+        devicePub: DEVICE_PUB,
+      });
       expect(h.pairing.takeAccepted(id)).toBeNull();
       expect(h.pairing.status(id)).toBeNull();
     });

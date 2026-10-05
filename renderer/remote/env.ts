@@ -1,4 +1,4 @@
-import type { Fetcher } from './api.js';
+import type { Fetcher } from './channel.js';
 import type { EventSourceLike } from './connection.js';
 
 /**
@@ -10,15 +10,23 @@ import type { EventSourceLike } from './connection.js';
 interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 export interface RemoteEnv {
   fetch: Fetcher;
+  /** `location.pathname`: `/`, `/pair` or `/verify`. */
+  pathname: string;
   /** `location.search`. */
   search: string;
+  /**
+   * `location.hash`: where a QR puts what must never cross the network (an
+   * identity key, a device's keys). Read once, then cleared from the URL.
+   */
+  hash: string;
   /** `location.hostname`: the address this page was served from. */
   hostname: string;
-  /** `history.replaceState` — drops a spent code from the address bar. */
+  /** `history.replaceState` — drops a spent code or a fragment from the URL. */
   replaceUrl(url: string): void;
   confirm(message: string): boolean;
   setTimeout(fn: () => void, ms: number): unknown;

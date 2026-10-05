@@ -3,13 +3,14 @@ import type { RemoteDeviceView } from '../../ipc-contract/remote-api.js';
 import { isRemotePort } from '../../remote-port.js';
 
 /**
- * The linked devices and the remote-control switches, persisted under their
- * own `remoteControl` store key — never in globalSettings, which every window
- * reads and every export/backup dumps.
+ * The linked devices, the remote-control switches and this computer's
+ * identity key, persisted under their own `remoteControl` store key — never
+ * in globalSettings, which every window reads and every export/backup dumps.
  *
- * A device's session token is handed out exactly once (`add`) and only its
- * sha256 is stored: the config file, a backup of it, or a renderer that
- * somehow read the state can never hand anyone a working session.
+ * A device is known by its Ed25519 public key (devbar-rc/1): it proves who
+ * it is by signing each handshake, so nothing stored here — the config file,
+ * a backup of it — is a credential anyone could replay. The public key never
+ * leaves main either: the views the windows get do not carry it.
  */
 
 const DEFAULT_REMOTE_PORT = 47821;
@@ -17,19 +18,33 @@ const DEVICE_NAME_MAX = 40;
 /** `lastSeenAt` reaches the disk at most this often per device. */
 const LAST_SEEN_PERSIST_MS = 60_000;
 const STALE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
-const TOKEN_HASH = /^[0-9a-f]{64}$/;
+/** A raw 32-byte key in unpadded base64url. */
+const RAW_KEY = /^[A-Za-z0-9_-]{43}$/;
 const CONTROL_CHARS = /\p{Cc}/u;
 
 interface RemoteDevice extends RemoteDeviceView {
-  /** sha256 hex of the session token. */
-  tokenHash: string;
+  /** The device's Ed25519 public key, base64url. */
+  devicePub: string;
+}
+
+/**
+ * This computer's Ed25519 identity (src/main/remote/identity.ts): the public
+ * key, and the 32-byte seed — sealed by the OS keychain when it can be.
+ */
+export interface StoredIdentity {
+  publicKey: string;
+  secret: string;
+  sealed: boolean;
 }
 
 export interface RemoteControlState {
   enabled: boolean;
   autoUnlink: boolean;
+  /** A desktop notice when a linked device connects. */
+  notifyConnections: boolean;
   port: number;
   devices: RemoteDevice[];
+  identity: StoredIdentity | null;
 }
 
 export interface DeviceStoreDeps {
@@ -37,33 +52,44 @@ export interface DeviceStoreDeps {
   write(state: RemoteControlState): void;
   now(): number;
   randomUUID?: () => string;
-  randomBytes?: (size: number) => Buffer;
 }
 
 type RenameOutcome = 'ok' | 'invalid-name' | 'not-found';
 
 export interface DeviceStore {
-  settings(): { enabled: boolean; autoUnlink: boolean; port: number };
+  settings(): {
+    enabled: boolean;
+    autoUnlink: boolean;
+    notifyConnections: boolean;
+    port: number;
+  };
   setEnabled(enabled: boolean): void;
   setAutoUnlink(enabled: boolean): void;
+  setNotifyConnections(enabled: boolean): void;
   /** Persists a port that already passed `isRemotePort`. */
   setPort(port: number): void;
   list(): RemoteDeviceView[];
-  add(input: { name: string; client: string }): {
-    device: RemoteDeviceView;
-    token: string;
-  };
+  add(input: {
+    name: string;
+    client: string;
+    devicePub: string;
+  }): RemoteDeviceView;
   rename(id: string, name: string): RenameOutcome;
   remove(id: string): boolean;
-  findByToken(token: string): RemoteDeviceView | null;
+  find(id: string): RemoteDeviceView | null;
+  /** The device's public key (base64url), null for an unknown device. */
+  devicePub(id: string): string | null;
+  /** A new key for the device: it is unverified again. */
+  setDevicePub(id: string, devicePub: string): boolean;
+  markVerified(id: string): boolean;
+  /** The identity changed: no device has compared it yet. */
+  clearVerified(): void;
+  identity(): StoredIdentity | null;
+  saveIdentity(identity: StoredIdentity): void;
   /** Marks the device as seen now; true when that reached the disk. */
   touch(id: string): boolean;
   /** Removes devices unseen for 30 days (auto-unlink only); the count. */
   pruneStale(): number;
-}
-
-export function hashToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 /** The trimmed name when it is 1–40 printable characters, else null. */
@@ -82,18 +108,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeDevice(value: unknown): RemoteDevice | null {
   if (!isRecord(value)) return null;
-  const { id, name, tokenHash, client, createdAt, lastSeenAt } = value;
+  const { id, name, devicePub, client, createdAt, lastSeenAt } = value;
+  const verifiedAt = value.verifiedAt ?? null;
   if (
     typeof id !== 'string' ||
     typeof name !== 'string' ||
-    typeof tokenHash !== 'string' ||
-    !TOKEN_HASH.test(tokenHash) ||
+    typeof devicePub !== 'string' ||
+    !RAW_KEY.test(devicePub) ||
     typeof client !== 'string' ||
     typeof createdAt !== 'number' ||
-    typeof lastSeenAt !== 'number'
+    typeof lastSeenAt !== 'number' ||
+    (verifiedAt !== null && typeof verifiedAt !== 'number')
   )
     return null;
-  return { id, name, tokenHash, client, createdAt, lastSeenAt };
+  return { id, name, devicePub, client, createdAt, lastSeenAt, verifiedAt };
+}
+
+function normalizeIdentity(value: unknown): StoredIdentity | null {
+  if (!isRecord(value)) return null;
+  const { publicKey, secret, sealed } = value;
+  if (
+    typeof publicKey !== 'string' ||
+    !RAW_KEY.test(publicKey) ||
+    typeof secret !== 'string' ||
+    typeof sealed !== 'boolean'
+  )
+    return null;
+  return { publicKey, secret, sealed };
 }
 
 function normalizePort(value: unknown): number {
@@ -107,28 +148,22 @@ export function normalizeRemoteState(raw: unknown): RemoteControlState {
   return {
     enabled: record.enabled === true,
     autoUnlink: record.autoUnlink !== false,
+    notifyConnections: record.notifyConnections !== false,
     port: normalizePort(record.port),
     devices: devices
       .map(normalizeDevice)
       .filter((device): device is RemoteDevice => device !== null),
+    identity: normalizeIdentity(record.identity),
   };
 }
 
 function view(device: RemoteDevice): RemoteDeviceView {
-  const { tokenHash: _hash, ...rest } = device;
+  const { devicePub: _key, ...rest } = device;
   return rest;
-}
-
-/** Constant-time comparison of two hex digests of the same length. */
-function sameHash(a: string, b: string): boolean {
-  const left = Buffer.from(a, 'hex');
-  const right = Buffer.from(b, 'hex');
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
 export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
   const randomUUID = deps.randomUUID ?? (() => crypto.randomUUID());
-  const randomBytes = deps.randomBytes ?? ((size) => crypto.randomBytes(size));
   const state = normalizeRemoteState(deps.read());
   /** The lastSeenAt each device last had ON DISK. */
   const persistedSeen = new Map(
@@ -147,6 +182,7 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
     settings: () => ({
       enabled: state.enabled,
       autoUnlink: state.autoUnlink,
+      notifyConnections: state.notifyConnections,
       port: state.port,
     }),
     setEnabled: (enabled) => {
@@ -157,25 +193,29 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
       state.autoUnlink = enabled;
       persist();
     },
+    setNotifyConnections: (enabled) => {
+      state.notifyConnections = enabled;
+      persist();
+    },
     setPort: (port) => {
       state.port = port;
       persist();
     },
     list: () => state.devices.map(view),
-    add: ({ name, client }) => {
-      const token = randomBytes(32).toString('base64url');
+    add: ({ name, client, devicePub }) => {
       const now = deps.now();
       const device: RemoteDevice = {
         id: randomUUID(),
         name,
-        tokenHash: hashToken(token),
+        devicePub,
         client,
         createdAt: now,
         lastSeenAt: now,
+        verifiedAt: null,
       };
       state.devices.push(device);
       persist();
-      return { device: view(device), token };
+      return view(device);
     },
     rename: (id, name) => {
       const normalized = normalizeDeviceName(name);
@@ -194,15 +234,34 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
       persist();
       return true;
     },
-    findByToken: (token) => {
-      if (!token) return null;
-      const hash = hashToken(token);
-      // Every device is compared, matched or not, so the time taken says
-      // nothing about which (or whether one) matched.
-      let found: RemoteDevice | null = null;
-      for (const device of state.devices)
-        if (sameHash(device.tokenHash, hash)) found = device;
-      return found ? view(found) : null;
+    find: (id) => {
+      const device = byId(id);
+      return device ? view(device) : null;
+    },
+    devicePub: (id) => byId(id)?.devicePub ?? null,
+    setDevicePub: (id, devicePub) => {
+      const device = byId(id);
+      if (!device) return false;
+      device.devicePub = devicePub;
+      device.verifiedAt = null;
+      persist();
+      return true;
+    },
+    markVerified: (id) => {
+      const device = byId(id);
+      if (!device) return false;
+      device.verifiedAt = deps.now();
+      persist();
+      return true;
+    },
+    clearVerified: () => {
+      for (const device of state.devices) device.verifiedAt = null;
+      persist();
+    },
+    identity: () => (state.identity ? { ...state.identity } : null),
+    saveIdentity: (identity) => {
+      state.identity = { ...identity };
+      persist();
     },
     touch: (id) => {
       const device = byId(id);

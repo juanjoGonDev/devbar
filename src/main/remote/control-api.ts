@@ -7,7 +7,6 @@ import type {
 import type { ApplyUpdateResult } from '../assisted-update.js';
 import type { ConfirmDecision } from '../ipc-validators.js';
 import { findRunnable, type RuntimeActions } from '../runtime-actions.js';
-import { clearedSessionCookie } from './http-guard.js';
 import type { ApiRequest, ApiResponse } from './api.js';
 import {
   branchField,
@@ -23,8 +22,9 @@ import { logLine, settingsView } from './views.js';
  * What a linked phone can do: read the state, start and stop things, switch
  * branches, read logs and notices, answer confirmations, change the four
  * whitelisted settings, install a staged update and rename itself. Every
- * route runs for an authenticated device only (remote-control.ts checks the
- * session before calling `handle`), and every body and query is narrowed by
+ * route runs for an authenticated device only (src/main/remote/rpc.ts maps
+ * each devbar-rc/1 operation onto one of these routes once the session has
+ * proved which device it is), and every body and query is narrowed by
  * src/main/remote/validate.ts before anything acts on it.
  *
  * The actions themselves are src/main/runtime-actions.ts — the very code the
@@ -53,7 +53,8 @@ export interface ControlApiDeps {
   logs(processId: string): readonly LogEntry[];
   /** How far the process's log count has got: the snapshot/stream boundary. */
   logSeq(processId: string): number;
-  notices(): RemoteNotice[];
+  /** The notice log as this device sees it (notices about itself left out). */
+  notices(deviceId: string): RemoteNotice[];
   confirms: {
     hasPending(token: string): boolean;
     resolveConfirm(token: string, decision: ConfirmDecision): void;
@@ -74,7 +75,6 @@ export interface ControlApiDeps {
 }
 
 export interface ControlApi {
-  handles(pathname: string): boolean;
   handle(request: ApiRequest, device: RemoteDeviceView): Promise<ApiResponse>;
 }
 
@@ -216,11 +216,7 @@ export function createControlApi(deps: ControlApiDeps): ControlApi {
       typeof name === 'string' ? name : '',
     );
     if (result === 'invalid-name') return json(400, { error: 'invalid-name' });
-    if (result === 'not-found')
-      return {
-        ...json(401, { error: 'unlinked' }),
-        setCookie: clearedSessionCookie(),
-      };
+    if (result === 'not-found') return json(401, { error: 'unlinked' });
     return json(200, { ok: true });
   };
 
@@ -237,17 +233,18 @@ export function createControlApi(deps: ControlApiDeps): ControlApi {
     ['GET /api/branches', listBranches],
     ['POST /api/branch', switchBranch],
     ['GET /api/logs', logs],
-    ['GET /api/notices', () => json(200, { notices: deps.notices() })],
+    [
+      'GET /api/notices',
+      (_request, device) => json(200, { notices: deps.notices(device.id) }),
+    ],
     ['POST /api/confirm', confirm],
     ['GET /api/settings', () => json(200, settingsView(deps.settings.get()))],
     ['POST /api/settings', saveSettings],
     ['POST /api/update/apply', applyUpdate],
     ['POST /api/device/rename', rename],
   ]);
-  const paths = new Set([...routes.keys()].map((key) => key.split(' ')[1]));
 
   return {
-    handles: (pathname) => paths.has(pathname),
     handle: async (request, device) => {
       const handler = routes.get(`${request.method} ${request.pathname}`);
       if (!handler) return json(405, { error: 'method-not-allowed' });

@@ -128,6 +128,8 @@ const api: DevBarApi = {
     ipcRenderer.invoke('remote:setEnabled', { enabled }),
   setRemoteAutoUnlink: (enabled) =>
     ipcRenderer.invoke('remote:setAutoUnlink', { enabled }),
+  setRemoteNotifyConnections: (enabled) =>
+    ipcRenderer.invoke('remote:setNotifyConnections', { enabled }),
   setRemotePort: (port) => ipcRenderer.invoke('remote:setPort', { port }),
   renameRemoteDevice: (id, name) =>
     ipcRenderer.invoke('remote:renameDevice', { id, name }),
@@ -136,6 +138,9 @@ const api: DevBarApi = {
   cancelRemotePairing: () => ipcRenderer.invoke('remote:cancelPairing'),
   respondRemotePairing: (requestId, accept) =>
     ipcRenderer.invoke('remote:respondPairing', { requestId, accept }),
+  getRemoteSecurityCode: (id) =>
+    ipcRenderer.invoke('remote:securityCode', { id }),
+  renewRemoteIdentity: () => ipcRenderer.invoke('remote:renewIdentity'),
   onRemoteChanged: (cb) => subscribe('remote:changed', cb),
   onRemotePairRequest: (cb) => subscribe('remote:pairRequest', cb),
   onRemotePairRequestClosed: (cb) => subscribe('remote:pairRequestClosed', cb),

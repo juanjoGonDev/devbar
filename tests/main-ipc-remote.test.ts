@@ -9,6 +9,7 @@ import { recordingIpc } from './helpers/main-fakes.js';
 const STATUS: RemoteStatus = {
   enabled: true,
   autoUnlink: true,
+  notifyConnections: true,
   port: 47821,
   listening: true,
   error: null,
@@ -28,6 +29,7 @@ function harness() {
     status: record('status', STATUS),
     setEnabled: record('setEnabled', Promise.resolve(STATUS)),
     setAutoUnlink: record('setAutoUnlink', STATUS),
+    setNotifyConnections: record('setNotifyConnections', STATUS),
     setPort: record(
       'setPort',
       Promise.resolve({ ok: true as const, status: STATUS }),
@@ -40,6 +42,11 @@ function harness() {
     }),
     cancelPairing: record('cancelPairing', undefined),
     respondPairing: record('respondPairing', { ok: true as const }),
+    securityCode: record('securityCode', {
+      ok: false as const,
+      error: 'gone',
+    }),
+    renewIdentity: record('renewIdentity', { ok: true as const }),
   };
   const ipc = recordingIpc();
   registerRemoteIpc(ipc, { remote });
@@ -56,6 +63,11 @@ describe('src/main/ipc/remote-ipc.ts', () => {
   it.each([
     ['remote:setEnabled', { enabled: true }, ['setEnabled', true]],
     ['remote:setAutoUnlink', { enabled: false }, ['setAutoUnlink', false]],
+    [
+      'remote:setNotifyConnections',
+      { enabled: false },
+      ['setNotifyConnections', false],
+    ],
     ['remote:setPort', { port: 50123 }, ['setPort', 50123]],
     [
       'remote:renameDevice',
@@ -68,6 +80,8 @@ describe('src/main/ipc/remote-ipc.ts', () => {
       { requestId: 'r1', accept: true },
       ['respondPairing', 'r1', true],
     ],
+    ['remote:securityCode', { id: 'd1' }, ['securityCode', 'd1']],
+    ['remote:renewIdentity', undefined, ['renewIdentity']],
   ])('%s hands the validated payload over', (channel, payload, call) => {
     const h = harness();
 
@@ -90,11 +104,13 @@ describe('src/main/ipc/remote-ipc.ts', () => {
   it.each([
     ['remote:setEnabled', { enabled: 'yes' }],
     ['remote:setAutoUnlink', null],
+    ['remote:setNotifyConnections', { enabled: 1 }],
     ['remote:setPort', { port: '50123' }],
     ['remote:setPort', { port: Number.NaN }],
     ['remote:renameDevice', { id: 'd1', name: 7 }],
     ['remote:unlinkDevice', { id: ['d1'] }],
     ['remote:respondPairing', { requestId: 'r1', accept: 'true' }],
+    ['remote:securityCode', { id: 3 }],
   ])(
     '%s refuses a malformed payload before touching anything',
     (channel, payload) => {

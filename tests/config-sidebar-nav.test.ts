@@ -254,6 +254,12 @@ describe('renderer/config/sidebar-nav.ts', () => {
       await win.settle('getChangelog', { releases: [], repoUrl: null });
     });
 
+    it('jumps to «Control remoto» when a connection notice asks for it', async () => {
+      win = await openConfigWindow();
+      await win.push('onConfigGoto', 'remote');
+      expect(activeSections()).toEqual(['remote']);
+    });
+
     it('ignores a target it does not know', async () => {
       win = await openConfigWindow();
       await win.push('onConfigGoto', 'somewhere-else');

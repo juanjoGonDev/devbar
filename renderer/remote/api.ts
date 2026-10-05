@@ -3,21 +3,30 @@ import type {
   RemoteSettingsView,
   RemoteStateView,
 } from '../../src/ipc-contract/remote-wire.js';
+import {
+  createChannel,
+  RemoteError,
+  type Answer,
+  type EventReader,
+  type Fetcher,
+} from './channel.js';
 import { logBatch, noticesView, settingsView, stateView } from './wire.js';
 
-/**
- * The phone page's side of src/main/remote/api.ts and control-api.ts. Every
- * answer is read as `unknown` and narrowed (here or in wire.ts), so the views
- * only ever see shapes they can trust; every POST carries the JSON content
- * type and the `X-DevBar-Request` header the server demands of a mutation.
- * Requests that DevBar never answered reject; any answer resolves, whatever
- * its status, and the caller decides what that status means.
- */
+export type { Answer, Fetcher } from './channel.js';
 
-export type Fetcher = (
-  url: string,
-  init?: RequestInit,
-) => Promise<{ status: number; json(): Promise<unknown> }>;
+/**
+ * The phone page's side of the «Control remoto» API, over devbar-rc/1
+ * (renderer/remote/channel.ts). It knows whom to trust — the identity key
+ * from the pairing QR, or the one this device pinned — and, for a linked
+ * device, signs in (`auth`) after every handshake. A session the desktop
+ * forgot is replaced transparently: the call is retried once on a fresh one.
+ *
+ * Every answer is read as `unknown` and narrowed (here or in wire.ts). Calls
+ * DevBar never answered reject; any answer resolves, whatever its status,
+ * and the caller decides what it means. Losing trust — another identity key,
+ * or a device the desktop no longer knows — is reported once through
+ * `onLost`, and the call rejects.
+ */
 
 export interface Me {
   linked: boolean;
@@ -29,15 +38,15 @@ export interface Me {
   suggestedName: string;
 }
 
-export interface Answer {
-  status: number;
-  body: Record<string, unknown>;
+/** Who to trust: a desktop identity key, and this device's own key once linked. */
+export interface Trust {
+  serverKey: Uint8Array;
+  device: { id: string; secretKey: Uint8Array } | null;
 }
 
-const MUTATION_HEADERS = {
-  'Content-Type': 'application/json',
-  'X-DevBar-Request': '1',
-};
+export interface ClientHooks {
+  onLost(reason: 'changed' | 'unlinked'): void;
+}
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -48,35 +57,78 @@ function record(value: unknown): Record<string, unknown> {
 const text = (value: unknown): string =>
   typeof value === 'string' ? value : '';
 
-export function createRemoteClient(fetcher: Fetcher) {
-  const read = async (url: string, init?: RequestInit): Promise<Answer> => {
-    const response = await fetcher(url, init);
-    let body: unknown = null;
-    try {
-      body = await response.json();
-    } catch {
-      /* not JSON — the status alone has to do */
-    }
-    return { status: response.status, body: record(body) };
-  };
-  const post = (url: string, payload: unknown = {}): Promise<Answer> =>
-    read(url, {
-      method: 'POST',
-      headers: MUTATION_HEADERS,
-      body: JSON.stringify(payload),
+const isLost = (error: unknown): error is RemoteError =>
+  error instanceof RemoteError &&
+  (error.code === 'changed' || error.code === 'unlinked');
+
+export function createRemoteClient(fetcher: Fetcher, hooks: ClientHooks) {
+  const channel = createChannel(fetcher);
+  let trust: Trust | null = null;
+  let connecting: Promise<void> | null = null;
+
+  async function handshake(): Promise<void> {
+    if (!trust) throw new RemoteError('session');
+    const { serverKey, device } = trust;
+    await channel.open(serverKey);
+    if (!device) return;
+    const answer = await channel.send('auth', {
+      deviceId: device.id,
+      sig: channel.proof(device.secretKey),
     });
-  /** A GET whose answer is only usable as a 200. */
-  const ok = async (url: string): Promise<Answer> => {
-    const answer = await read(url);
+    if (answer.status === 200) return;
+    channel.close();
+    throw new RemoteError(answer.status === 401 ? 'unlinked' : 'http');
+  }
+
+  /** One handshake at a time, however many calls are waiting for it. */
+  const connect = (): Promise<void> => {
+    connecting ??= handshake()
+      .catch((error: unknown) => {
+        if (isLost(error)) hooks.onLost(error.code as 'changed' | 'unlinked');
+        throw error;
+      })
+      .finally(() => {
+        connecting = null;
+      });
+    return connecting;
+  };
+
+  async function call(op: string, args: unknown = {}): Promise<Answer> {
+    if (!channel.ready()) await connect();
+    try {
+      return await channel.send(op, args);
+    } catch (error) {
+      if (!(error instanceof RemoteError) || error.code !== 'session')
+        throw error;
+      await connect();
+      return channel.send(op, args);
+    }
+  }
+
+  /** A read whose answer is only usable as a 200. */
+  const ok = async (op: string, args: unknown = {}): Promise<Answer> => {
+    const answer = await call(op, args);
     if (answer.status !== 200) throw new Error(`HTTP ${answer.status}`);
     return answer;
   };
 
   return {
-    post,
+    /** From now on, trust this; the next call shakes hands again. */
+    trust: (next: Trust): void => {
+      trust = next;
+      channel.close();
+    },
+    /** A fresh handshake (and sign-in) right now. */
+    reconnect: (): Promise<void> => {
+      channel.close();
+      return connect();
+    },
+    call,
+    /** The reader for a stream on the current session, if there is one. */
+    events: (): EventReader | null => channel.events(),
     /** Throws when DevBar cannot be reached or answers nonsense. */
     me: async (): Promise<Me> => {
-      const answer = await ok('/api/me');
+      const answer = await ok('me');
       const host = record(answer.body.host);
       const device = record(answer.body.device);
       return {
@@ -90,23 +142,18 @@ export function createRemoteClient(fetcher: Fetcher) {
         suggestedName: text(answer.body.suggestedName),
       };
     },
-    requestPairing: (code: string, name: string) =>
-      post('/api/pair/request', { code, name }),
-    pairStatus: (requestId: string) =>
-      read(`/api/pair/status?id=${encodeURIComponent(requestId)}`),
-    cancelPairing: (requestId: string) =>
-      post('/api/pair/cancel', { requestId }),
-    unlink: () => post('/api/unlink', {}),
+    requestPairing: (code: string, name: string, devicePub: string) =>
+      call('pair.request', { code, name, devicePub }),
+    pairStatus: (requestId: string) => call('pair.status', { requestId }),
+    cancelPairing: (requestId: string) => call('pair.cancel', { requestId }),
     state: async (): Promise<RemoteStateView> =>
-      stateView((await ok('/api/state')).body),
+      stateView((await ok('state')).body),
     notices: async (): Promise<RemoteNotice[]> =>
-      noticesView((await ok('/api/notices')).body),
+      noticesView((await ok('notices')).body),
     settings: async (): Promise<RemoteSettingsView> =>
-      settingsView((await ok('/api/settings')).body),
+      settingsView((await ok('settings.get')).body),
     logs: async (id: string, tail = 300) => {
-      const answer = await ok(
-        `/api/logs?id=${encodeURIComponent(id)}&tail=${tail}`,
-      );
+      const answer = await ok('logs', { id, tail });
       const seq = answer.body.seq;
       return {
         ...logBatch(answer.body),
@@ -114,9 +161,7 @@ export function createRemoteClient(fetcher: Fetcher) {
       };
     },
     branches: async (groupId: string) => {
-      const { body } = await ok(
-        `/api/branches?groupId=${encodeURIComponent(groupId)}`,
-      );
+      const { body } = await ok('branches', { groupId });
       const branches = Array.isArray(body.branches) ? body.branches : [];
       return {
         ok: body.ok === true,

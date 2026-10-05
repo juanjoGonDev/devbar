@@ -2,14 +2,17 @@ import { startRemoteApp } from './remote/app.js';
 
 /**
  * Entry point of the phone page (renderer/remote.html), served to LAN
- * browsers by the remote-control server. Unlike every other renderer entry it
+ * browsers by the remote-control server as ONE esbuild bundle (scripts/
+ * build.ts), the @noble crypto included. Unlike every other renderer entry it
  * has no `window.api` and no error reporting back to main: it talks to DevBar
- * over HTTP and Server-Sent Events only (see renderer/remote/api.ts and
- * renderer/remote/connection.ts).
+ * over HTTP and Server-Sent Events only, every message sealed by devbar-rc/1
+ * (see renderer/remote/channel.ts and renderer/remote/connection.ts).
  */
 void startRemoteApp({
   fetch: (url, init) => fetch(url, init),
+  pathname: location.pathname,
   search: location.search,
+  hash: location.hash,
   hostname: location.hostname,
   replaceUrl: (url) => history.replaceState(null, '', url),
   confirm: (message) => window.confirm(message),

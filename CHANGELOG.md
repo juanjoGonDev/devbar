@@ -13,7 +13,34 @@ Todas las novedades relevantes de DevBar. El formato sigue
   DevBar no abre nada en la red. Al activarlo se ve la dirección del equipo
   (por ejemplo `192.168.1.20:47821`) y si el servicio está activo; si el
   puerto ya lo usa otra aplicación, lo dice ahí mismo y puedes cambiarlo desde
-  ahí. Úsalo solo en redes de confianza: la conexión no va cifrada.
+  ahí.
+
+- **Cifrado de extremo a extremo, con una clave nueva en cada conexión.** Lo
+  que viaja entre DevBar y tus dispositivos —el estado, los logs, las órdenes,
+  los avisos— va cifrado de extremo a extremo, y cada conexión estrena sus
+  propias claves: lo que alguien pudiera grabar hoy en la red no le sirve
+  mañana. Al escanear el QR de vinculación, el móvil se queda con la clave de
+  tu ordenador y en cada conexión comprueba que sigue hablando con él.
+
+- **Verifica la conexión como en WhatsApp.** Cada dispositivo vinculado tiene
+  su «Código de seguridad»: seis grupos de cifras y un QR en Configuración ›
+  Control remoto, y los mismos seis grupos en el móvil, en Ajustes ›
+  Seguridad. Escanea el QR con la cámara del móvil y, si todo coincide, el
+  dispositivo pasa a «Verificado» en los dos lados; si no coincide, el móvil
+  lo dice bien claro y no marca nada.
+
+- **Renueva las claves cuando quieras.** Desde el móvil, «Renovar claves de
+  este dispositivo»; desde el ordenador, «Renovar clave del equipo» en
+  Seguridad. Después de renovar, el dispositivo vuelve a «Sin verificar».
+  Si cambias la clave del ordenador, cada móvil se detiene y te avisa de que
+  la clave ha cambiado hasta que escanees su nuevo código de seguridad.
+
+- **Sabes quién se conecta.** Cuando un dispositivo vinculado se conecta,
+  DevBar te avisa en el ordenador («iPhone de Ana» se ha conectado desde
+  192.168.1.40) con un botón «Ver dispositivos», y los demás móviles lo ven en
+  «Avisos». Avisa la primera vez y después de diez minutos sin conexión, no en
+  cada recarga; puedes apagarlo en Seguridad con «Avisar cuando un
+  dispositivo se conecte».
 
 - **Tus grupos, en el bolsillo.** Con el móvil vinculado abres la dirección en
   el navegador y ves lo mismo que en la barra: cada grupo con su rama y sus
@@ -66,9 +93,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
   otro equipo de la red que abra la dirección solo ve que no está vinculado.
 
 - **Lista de dispositivos vinculados.** Cada uno muestra su nombre (que
-  puedes cambiar desde el ordenador o desde el propio móvil), el navegador y
-  sistema desde el que se vinculó, la fecha, y «Conectado ahora» mientras
-  tiene la página abierta o cuándo se conectó por última vez. «Desvincular»
+  puedes cambiar desde el ordenador o desde el propio móvil), si está
+  verificado, el navegador y sistema desde el que se vinculó, la fecha, y
+  «Conectado ahora» mientras tiene la página abierta o cuándo se conectó por
+  última vez. «Desvincular»
   le quita el acceso al momento —el móvil se entera y deja de mostrar nada—,
   y el propio móvil también puede desvincularse. Por defecto, un dispositivo
   que lleva 30 días sin conectarse se desvincula solo; puedes desactivarlo en

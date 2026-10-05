@@ -1,8 +1,9 @@
 import type { SimpleResult } from './simple-result.js';
 
 /**
- * A linked phone (or any browser) as the config window sees it. The session
- * token's hash never leaves main: nothing here can re-authenticate anyone.
+ * A linked phone (or any browser) as the config window sees it. Its public
+ * key stays in main: the window gets the safety code built from it instead
+ * (`getRemoteSecurityCode`).
  */
 export interface RemoteDeviceView {
   id: string;
@@ -11,6 +12,12 @@ export interface RemoteDeviceView {
   client: string;
   createdAt: number;
   lastSeenAt: number;
+  /**
+   * When the phone scanned this device's security code, proving both ends
+   * hold the keys the other expects; null until then, and again after either
+   * side renews its keys.
+   */
+  verifiedAt: number | null;
 }
 
 /** A linked device in the «Control remoto» list, with its live presence. */
@@ -24,6 +31,8 @@ export interface RemoteStatus {
   /** The user's switch — the server may still be down (see `error`). */
   enabled: boolean;
   autoUnlink: boolean;
+  /** A desktop notice when a linked device connects. */
+  notifyConnections: boolean;
   port: number;
   listening: boolean;
   /** Why the server could not listen (port in use…), in Spanish. */
@@ -42,6 +51,21 @@ export interface RemoteQrMatrix {
 /** A port change: the status it left, or why it was refused (Spanish). */
 export type RemotePortResult =
   { ok: true; status: RemoteStatus } | { ok: false; error: string };
+
+/**
+ * A device's security code (six groups of five digits, the same the phone
+ * shows), and — while the server is reachable — the QR the phone scans to
+ * compare them for the user.
+ */
+export type RemoteSecurityCodeResult =
+  | {
+      ok: true;
+      code: string[];
+      verified: boolean;
+      url: string | null;
+      qr: RemoteQrMatrix | null;
+    }
+  | { ok: false; error: string };
 
 export type RemotePairingResult =
   | { ok: true; url: string; expiresAt: number; qr: RemoteQrMatrix }
@@ -69,6 +93,7 @@ export interface RemoteApi {
   /** Persists the switch and starts/stops the LAN server. */
   setRemoteEnabled(enabled: boolean): Promise<RemoteStatus>;
   setRemoteAutoUnlink(enabled: boolean): Promise<RemoteStatus>;
+  setRemoteNotifyConnections(enabled: boolean): Promise<RemoteStatus>;
   /**
    * Persists the port (1024–65535) and, with the switch on, restarts the
    * server on it: the active pairing code and every open stream end there.
@@ -83,6 +108,12 @@ export interface RemoteApi {
     requestId: string,
     accept: boolean,
   ): Promise<SimpleResult>;
+  getRemoteSecurityCode(id: string): Promise<RemoteSecurityCodeResult>;
+  /**
+   * A new identity key for this computer: every open session ends, any
+   * pairing is cancelled and every device has to verify it again.
+   */
+  renewRemoteIdentity(): Promise<SimpleResult>;
   onRemoteChanged(callback: (status: RemoteStatus) => void): () => void;
   onRemotePairRequest(
     callback: (request: RemotePairRequest) => void,

@@ -946,6 +946,74 @@ svg.i {
   text-align: center;
 }
 
+/* Ajustes › Seguridad (renderer/remote/security-section.ts) */
+.row-label {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.security-card .value {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.row-label svg.i {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.row-label .is-secure svg.i {
+  color: var(--go);
+}
+.security-code-row {
+  align-items: flex-start;
+  padding: 12px 0;
+}
+.security-code {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  user-select: text;
+}
+.verified-badge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--field);
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+.verified-badge.is-verified {
+  background: var(--go-bg);
+  color: var(--go);
+}
+
+/* The verification and key-change screens: a big glyph on a tinted card. */
+.view-glyph {
+  margin: 0 0 8px;
+}
+.view-glyph svg.i {
+  width: 40px;
+  height: 40px;
+}
+.card.is-success .view-glyph {
+  color: var(--go);
+}
+.card.is-danger {
+  background: var(--error-bg);
+}
+.card.is-danger h2,
+.card.is-danger .view-glyph {
+  color: var(--error-text);
+}
+.card.is-alert .view-glyph {
+  color: var(--warn-text);
+}
+
 /* Bottom tab bar */
 .tabbar {
   position: fixed;

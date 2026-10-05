@@ -25,7 +25,7 @@ describe('renderer/remote/confirm-dialog.ts', () => {
   it('asks as the desktop modal does, from any tab', async () => {
     const h = await startLinked();
     tap(tabButton('settings'));
-    h.answer('GET /api/settings', { status: 200, body: {} });
+    h.answer('settings.get', { status: 200, body: {} });
 
     h.source().emit('confirm', { now: NOW, confirms: [CONFIRM] });
 
@@ -74,13 +74,13 @@ describe('renderer/remote/confirm-dialog.ts', () => {
 
   it('answers and closes', async () => {
     const h = await startLinked();
-    h.answer('POST /api/confirm', { status: 200, body: { ok: true } });
+    h.answer('confirm', { status: 200, body: { ok: true } });
     h.source().emit('confirm', { now: NOW, confirms: [CONFIRM] });
 
     tapId('confirm-run');
     await settle();
 
-    expect(h.callsTo('/api/confirm')[0]?.body).toEqual({
+    expect(h.callsTo('confirm')[0]?.body).toEqual({
       token: 't1',
       decision: 'confirm',
     });
@@ -89,7 +89,7 @@ describe('renderer/remote/confirm-dialog.ts', () => {
 
   it('says so when someone else answered first', async () => {
     const h = await startLinked();
-    h.answer('POST /api/confirm', {
+    h.answer('confirm', {
       status: 409,
       body: { error: 'already-answered' },
     });
@@ -117,7 +117,7 @@ describe('renderer/remote/confirm-dialog.ts', () => {
 
   it('asks about the next one queued behind, once the first is settled', async () => {
     const h = await startLinked();
-    h.answer('POST /api/confirm', { status: 200, body: { ok: true } });
+    h.answer('confirm', { status: 200, body: { ok: true } });
     const second = { ...CONFIRM, token: 't2', name: 'seed' };
     h.source().emit('confirm', { now: NOW, confirms: [CONFIRM, second] });
 

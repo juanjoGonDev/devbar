@@ -45,7 +45,7 @@ import {
   refreshWindowBackgrounds,
   sendToRenderers,
 } from './main/renderer-bus.js';
-import { remoteControlFor } from './main/remote/remote-control.js';
+import { remoteControlFor } from './main/remote/remote-wiring.js';
 import { createScheduleRunner } from './main/schedule-runner.js';
 import { createShutdownController } from './main/shutdown.js';
 import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
@@ -286,7 +286,7 @@ const wiring = {
 };
 
 // «Control remoto»: the LAN server for linked phones, off unless enabled.
-const remote = remoteControlFor(wiring);
+const remote = remoteControlFor({ ...wiring, notifications });
 
 const shutdown = createShutdownController({
   isPrimary,

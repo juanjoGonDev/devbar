@@ -35,7 +35,7 @@ export function createBranchSheet(
     for (const each of buttons) each.disabled = true;
     status(`Cambiando a ${branch}…`);
     const answer = await ctx.client
-      .post('/api/branch', { groupId, branch })
+      .call('branch', { groupId, branch })
       .catch(() => null);
     for (const each of buttons) each.disabled = false;
     if (answer?.status === 401) {

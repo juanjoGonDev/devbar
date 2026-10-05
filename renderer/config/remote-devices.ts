@@ -1,13 +1,14 @@
 import type { RemoteDeviceRow } from '../../src/ipc-contract/remote-api.js';
 import { iconButton } from '../icon.js';
 import { formatDate, lastSeen } from './remote-format.js';
+import { paintVerified } from './remote-safety-dialog.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
  * The «Dispositivos vinculados» rows: name (renamed inline — Enter or leaving
- * the field saves, Escape cancels), client and link date, presence («Conectado
- * ahora» while the phone holds an event stream open), and
- * «Desvincular». While a name is being edited the list is not repainted, so
+ * the field saves, Escape cancels) with «Verificado» / «Sin verificar»,
+ * client and link date, presence («Conectado ahora» while the phone holds an
+ * event stream open), «Código de seguridad» and «Desvincular». While a name is being edited the list is not repainted, so
  * a push from main cannot wipe what the user is typing.
  */
 
@@ -28,7 +29,11 @@ function element<K extends keyof HTMLElementTagNameMap>(
 
 export function createDeviceList(
   list: HTMLUListElement,
-  deps: { showToast: ShowToast; onIdle(): void },
+  deps: {
+    showToast: ShowToast;
+    onIdle(): void;
+    onSecurityCode(device: RemoteDeviceRow): void;
+  },
 ): DeviceList {
   let editing = false;
 
@@ -101,9 +106,12 @@ export function createDeviceList(
     const nameRow = element('div', 'remote-device-name-row');
     const rename = iconButton('pencil', 'Renombrar', 'remote-rename-btn');
     rename.addEventListener('click', () => startRename(item, device));
+    const verified = element('span', 'remote-verified');
+    paintVerified(verified, device.verifiedAt !== null);
     nameRow.append(
       element('strong', 'remote-device-name', device.name),
       rename,
+      verified,
     );
     main.append(
       nameRow,
@@ -128,8 +136,14 @@ export function createDeviceList(
     );
     unlinkBtn.type = 'button';
     unlinkBtn.addEventListener('click', () => void unlink(device, unlinkBtn));
+    const safetyBtn = iconButton(
+      'shield-check',
+      'Código de seguridad',
+      'remote-safety-btn',
+    );
+    safetyBtn.addEventListener('click', () => deps.onSecurityCode(device));
     const side = element('div', 'remote-device-side');
-    side.append(presence, unlinkBtn);
+    side.append(presence, safetyBtn, unlinkBtn);
 
     item.append(main, side);
     return item;

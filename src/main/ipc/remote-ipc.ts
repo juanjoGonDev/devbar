@@ -9,8 +9,9 @@ import {
 } from '../ipc-validators.js';
 
 /**
- * «Control remoto» from the config window: the switches, the device list and
- * the desktop half of the pairing handshake. Every payload is narrowed before
+ * «Control remoto» from the config window: the switches, the device list,
+ * the desktop half of the pairing handshake, each device's security code and
+ * renewing this computer's key. Every payload is narrowed before
  * it reaches src/main/remote; the device-name rule itself lives there, so the
  * phone's pairing form and a rename here are held to the same one.
  */
@@ -21,12 +22,15 @@ export interface RemoteIpcDeps {
     | 'status'
     | 'setEnabled'
     | 'setAutoUnlink'
+    | 'setNotifyConnections'
     | 'setPort'
     | 'renameDevice'
     | 'unlinkDevice'
     | 'startPairing'
     | 'cancelPairing'
     | 'respondPairing'
+    | 'securityCode'
+    | 'renewIdentity'
   >;
 }
 
@@ -44,6 +48,11 @@ export function registerRemoteIpc(
     'remote:setAutoUnlink',
     (_e: IpcMainInvokeEvent, payload: unknown) =>
       remote.setAutoUnlink(ipcBooleanField(payload, 'enabled')),
+  );
+  ipc.handle(
+    'remote:setNotifyConnections',
+    (_e: IpcMainInvokeEvent, payload: unknown) =>
+      remote.setNotifyConnections(ipcBooleanField(payload, 'enabled')),
   );
   // Only the type is checked here: the range is the user's to get wrong, so
   // setPort answers it with a reason the section can show.
@@ -68,6 +77,12 @@ export function registerRemoteIpc(
     remote.cancelPairing();
     return { ok: true };
   });
+  ipc.handle(
+    'remote:securityCode',
+    (_e: IpcMainInvokeEvent, payload: unknown) =>
+      remote.securityCode(ipcStringField(payload, 'id')),
+  );
+  ipc.handle('remote:renewIdentity', () => remote.renewIdentity());
   ipc.handle(
     'remote:respondPairing',
     (_e: IpcMainInvokeEvent, payload: unknown) =>

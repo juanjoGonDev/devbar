@@ -288,14 +288,14 @@ describe('src/main/remote/server.ts', () => {
     it('hands the vetted request to the API and relays its answer', async () => {
       const h = harness();
       await h.server.start();
-      h.answer({ status: 201, body: { hi: 1 }, setCookie: 'devbar_session=x' });
+      h.answer({ status: 201, body: { hi: 1 } });
 
-      const token = 'T'.repeat(43);
+      const sessionId = 'S'.repeat(21) + 'A';
       const reply = await h.post(
-        '/api/pair/request',
-        { code: 'c', name: 'n' },
+        '/api/rpc',
+        { n: 1, ct: 'x' },
         {
-          cookie: `devbar_session=${token}`,
+          'x-devbar-session': sessionId,
           'user-agent': 'TestAgent/1',
           origin: `http://127.0.0.1:${h.server.port()}`,
         },
@@ -303,18 +303,28 @@ describe('src/main/remote/server.ts', () => {
 
       expect(reply.status).toBe(201);
       expect(JSON.parse(reply.body)).toEqual({ hi: 1 });
-      expect(reply.headers['set-cookie']).toEqual(['devbar_session=x']);
+      // Nothing about a session lives in the browser's cookie jar.
+      expect(reply.headers['set-cookie']).toBeUndefined();
       expect(reply.headers['content-type']).toBe(
         'application/json; charset=utf-8',
       );
       expect(h.apiCalls[0]).toMatchObject({
         method: 'POST',
-        pathname: '/api/pair/request',
-        token,
+        pathname: '/api/rpc',
+        sessionId,
         ip: '127.0.0.1',
         userAgent: 'TestAgent/1',
-        body: { code: 'c', name: 'n' },
+        body: { n: 1, ct: 'x' },
       });
+    });
+
+    it('passes no session id when the header is malformed', async () => {
+      const h = harness();
+      await h.server.start();
+
+      await h.post('/api/rpc', {}, { 'x-devbar-session': '../etc' });
+
+      expect(h.apiCalls[0]?.sessionId).toBeNull();
     });
 
     it('passes the query string of a GET through', async () => {

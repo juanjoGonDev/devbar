@@ -236,6 +236,19 @@ describe('src/main/notification-banner.ts', () => {
       ]);
     });
 
+    it('leaves out a banner whose caller keeps its own record', () => {
+      const notices: unknown[] = [];
+      const h = harness({ onNotice: (notice) => notices.push(notice) });
+
+      h.notifications.showBannerNotification('DevBar — control remoto', 'x', {
+        cta: { label: 'Ver dispositivos', action: 'open-remote' },
+        record: false,
+      });
+
+      expect(notices).toEqual([]);
+      expect(h.natives).toHaveLength(1);
+    });
+
     it('logs nothing for a completion the user asked not to hear about', () => {
       const onNotice = vi.fn();
       const h = harness({ onNotice, notifySuccessEnabled: () => false });
@@ -252,8 +265,9 @@ describe('src/main/notification-banner.ts', () => {
       h.notifications.runNotificationAction('open-about');
       h.notifications.runNotificationAction('open-changelog');
       h.notifications.runNotificationAction('install-update');
+      h.notifications.runNotificationAction('open-remote');
       h.notifications.runNotificationAction('nonsense');
-      expect(h.opened).toEqual(['about', 'about-changelog']);
+      expect(h.opened).toEqual(['about', 'about-changelog', 'remote']);
       expect(h.applied).toEqual(['update']);
     });
   });
