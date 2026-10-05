@@ -16,7 +16,7 @@ import type {
   RemotePairRequest,
   RemoteStatus,
 } from '../src/ipc-contract/remote-api.js';
-import type { SecretBox } from '../src/main/remote/identity.js';
+import { fakeKeychain } from './helpers/fake-keychain.js';
 
 /**
  * «Control remoto» assembled: the switch, the port, pairing and the device
@@ -33,22 +33,6 @@ async function redeem(h: ReturnType<typeof harness>, url: string) {
   return answer.status;
 }
 
-/** A keychain that can be switched off, like a locked or denied one. */
-function switchableKeychain(): SecretBox & { setAvailable(on: boolean): void } {
-  let available = true;
-  return {
-    setAvailable: (on) => {
-      available = on;
-    },
-    isEncryptionAvailable: () => available,
-    encryptString: (plain) => Buffer.from(`box:${plain}`),
-    decryptString: (sealed) => {
-      if (!available) throw new Error('keychain locked');
-      return sealed.toString().slice(4);
-    },
-  };
-}
-
 describe('src/main/remote/remote-control.ts', () => {
   describe('status', () => {
     it('starts off with the default port and the LAN addresses', () => {
@@ -62,6 +46,7 @@ describe('src/main/remote/remote-control.ts', () => {
         listening: false,
         error: null,
         keyError: null,
+        keyPending: false,
         keyUnsealed: false,
         addresses: ['192.168.1.20'],
         devices: [],
@@ -477,11 +462,11 @@ describe('src/main/remote/remote-control.ts', () => {
   describe('the identity key', () => {
     /** A run that sealed its identity, then a keychain that will not open. */
     async function lockedOut() {
-      const keychain = switchableKeychain();
+      const keychain = fakeKeychain();
       const first = harness(undefined, { secretBox: keychain });
       await first.remote.setEnabled(true);
       first.remote.close();
-      keychain.setAvailable(false);
+      keychain.setLocked(true);
       const h = harness(structuredClone(first.stored()), {
         secretBox: keychain,
       });
@@ -508,7 +493,7 @@ describe('src/main/remote/remote-control.ts', () => {
     it('starts with the same key once the keychain answers again (Reintentar)', async () => {
       const { h, keychain, first } = await lockedOut();
       await h.remote.startIfEnabled();
-      keychain.setAvailable(true);
+      keychain.setLocked(false);
 
       const status = await h.remote.setEnabled(true);
 
@@ -520,8 +505,7 @@ describe('src/main/remote/remote-control.ts', () => {
       const { h, first } = await lockedOut();
       await h.remote.startIfEnabled();
 
-      expect(h.remote.renewIdentity()).toEqual({ ok: true });
-      await Promise.resolve();
+      await expect(h.remote.renewIdentity()).resolves.toEqual({ ok: true });
 
       expect(h.stored()?.identity?.publicKey).not.toBe(
         first.stored()?.identity?.publicKey,

@@ -14,6 +14,7 @@ const STATUS: RemoteStatus = {
   listening: true,
   error: null,
   keyError: null,
+  keyPending: false,
   keyUnsealed: false,
   addresses: ['192.168.1.20'],
   devices: [],
@@ -49,11 +50,14 @@ function harness() {
       attemptsLeft: 2,
     }),
     respondPairing: record('respondPairing', { ok: true as const }),
-    securityCode: record('securityCode', {
-      ok: false as const,
-      error: 'gone',
-    }),
-    renewIdentity: record('renewIdentity', { ok: true as const }),
+    securityCode: record(
+      'securityCode',
+      Promise.resolve({ ok: false as const, error: 'gone' }),
+    ),
+    renewIdentity: record(
+      'renewIdentity',
+      Promise.resolve({ ok: true as const }),
+    ),
   };
   const ipc = recordingIpc();
   registerRemoteIpc(ipc, { remote });

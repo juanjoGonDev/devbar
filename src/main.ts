@@ -379,9 +379,12 @@ function registerIpc(): void {
  * Work that only makes sense once the tray exists: the 300 ms delay lets the
  * renderer paint its initial empty state before boot auto-start floods it, and
  * the schedule loop is aligned to the wall-clock minute so a 13:02 schedule
- * fires at ~13:02:00 rather than up to 59 s late.
+ * fires at ~13:02:00 rather than up to 59 s late. «Control remoto» starts
+ * here too, never awaited: reading its key may wait on a keychain prompt,
+ * which must not hold back the tray popover.
  */
 function scheduleBootWork(): void {
+  void remote.startIfEnabled();
   setTimeout(() => void startup.autoStartAllMarkedCommands(), 300);
   setTimeout(() => void schedules.checkSchedules(new Date()), 1000);
   schedules.startScheduleLoop();
@@ -461,8 +464,6 @@ app.whenReady().then(() => {
     });
     return;
   }
-
-  void remote.startIfEnabled();
 
   menuBar = setupMenubar({
     ...host,

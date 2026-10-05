@@ -7,7 +7,6 @@ import {
 import type { ApiRequest } from '../../src/main/remote/api.js';
 import type { EventSink } from '../../src/main/remote/events.js';
 import { readSessionId } from '../../src/main/remote/http-guard.js';
-import { createIdentityKeys } from '../../src/main/remote/identity.js';
 import { createRateLimiter } from '../../src/main/remote/rate-limit.js';
 import {
   authMessage,
@@ -16,8 +15,8 @@ import {
 } from '../../src/main/remote/rc-protocol.js';
 import { createSecureApi } from '../../src/main/remote/secure-api.js';
 import { createSessionTable } from '../../src/main/remote/sessions.js';
-import type { StoredIdentity } from '../../src/main/remote/device-store.js';
 import type { RemoteStateView } from '../../src/ipc-contract/remote-wire.js';
+import { memoryIdentity } from './memory-identity.js';
 import { LINKED, loadPage, NOW, settle, state } from './remote-page-dom.js';
 
 export {
@@ -138,14 +137,7 @@ export function pageHarness(
   let hellos = 0;
   let clock = NOW;
 
-  let identityRecord: StoredIdentity | null = null;
-  const identity = createIdentityKeys({
-    read: () => identityRecord,
-    write: (record) => {
-      identityRecord = record;
-    },
-    secretBox: null,
-  });
+  const identity = memoryIdentity();
   const sessions = createSessionTable({ now: () => clock });
   /** The sealing sink of each open stream, by its fake EventSource. */
   const sinks = new Map<FakeSource, EventSink>();

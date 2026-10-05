@@ -353,13 +353,18 @@ export function createElectronHost(options: ElectronHostOptions) {
      * The OS keychain, through Electron: it seals the identity key of
      * «Control remoto» (src/main/remote/identity.ts) where there is one. A
      * sealed key it cannot open (locked, denied) keeps that server off.
+     * Only the async calls: on macOS the sync ones block the main process
+     * — tray included — for as long as a keychain prompt stays unanswered.
      */
     safeStorage: {
-      isEncryptionAvailable: (): boolean => safeStorage.isEncryptionAvailable(),
-      encryptString: (plain: string): Buffer =>
-        safeStorage.encryptString(plain),
-      decryptString: (sealed: Buffer): string =>
-        safeStorage.decryptString(sealed),
+      isAsyncEncryptionAvailable: (): Promise<boolean> =>
+        safeStorage.isAsyncEncryptionAvailable(),
+      encryptStringAsync: (plain: string): Promise<Buffer> =>
+        safeStorage.encryptStringAsync(plain),
+      decryptStringAsync: (
+        sealed: Buffer,
+      ): Promise<{ shouldReEncrypt: boolean; result: string }> =>
+        safeStorage.decryptStringAsync(sealed),
     },
     /**
      * One-click bug report: markdown (version, platform, app.log tail) to

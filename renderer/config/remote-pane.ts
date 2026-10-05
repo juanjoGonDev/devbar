@@ -16,7 +16,9 @@ import { errorMessage, type ShowToast } from './toast.js';
  *
  * When this computer's key cannot be read (a locked keychain), main keeps
  * the server off and says why: «Reintentar» asks it to start again, and
- * «Renovar clave del equipo» is the only way to replace the key.
+ * «Renovar clave del equipo» is the only way to replace the key. While the
+ * keychain has yet to answer (a macOS permission prompt still open), the
+ * section only notes that it is waiting: not an error, just not listening.
  */
 
 /** Repaint cadence, so «Última conexión hace …» keeps counting. */
@@ -58,6 +60,7 @@ export function createRemotePane(
       : 'Sin red local';
     els.error.hidden = !status.error;
     els.error.textContent = status.error ?? '';
+    els.keyPending.hidden = !status.keyPending;
     els.keyError.hidden = !status.keyError;
     els.keyErrorText.textContent = status.keyError ?? '';
     els.keyUnsealed.hidden = !status.keyUnsealed;

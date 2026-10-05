@@ -26,6 +26,7 @@ import { createRateLimiter } from './rate-limit.js';
 import { fromB64, safetyCode, toB64 } from './rc-protocol.js';
 import { createRpc } from './rpc.js';
 import { createSecureApi } from './secure-api.js';
+import { createSerial } from './serial.js';
 import { createSessionTable } from './sessions.js';
 import type { RemoteControlRuntime } from './runtime.js';
 import {
@@ -48,7 +49,11 @@ import { createVerifyTokens } from './verify-tokens.js';
  *
  * The server never starts behind an identity key it cannot read (a locked
  * or denied keychain): the status says why (`keyError`) until a retry reads
- * it or the user renews the key.
+ * it or the user renews the key. Reading it can wait on the keychain for as
+ * long as a macOS permission prompt stays open, so nothing here blocks on
+ * it: the status says it is waiting (`keyPending`), and every start, stop,
+ * port change and renewal runs one at a time behind it — one identity and
+ * one server, however often the switch is pressed meanwhile.
  *
  * Pushes to the windows: `remote:changed` (the whole status, after anything
  * that changes it — a phone connecting included), `remote:pairCodeClaimed`
@@ -106,15 +111,18 @@ export interface RemoteControl {
     code: string,
   ): SimpleResult;
   /** The device's security code, and the QR its phone verifies it with. */
-  securityCode(id: string): RemoteSecurityCodeResult;
+  securityCode(id: string): Promise<RemoteSecurityCodeResult>;
   /**
    * A new identity key: sessions, streams and pairing end; all unverified.
    * The only way an unreadable key is ever replaced.
    */
-  renewIdentity(): SimpleResult;
+  renewIdentity(): Promise<SimpleResult>;
   /** A banner or completion the user was shown, for the phones' «Avisos». */
   notice(banner: { title: string; body: string; action: string | null }): void;
-  /** Boot: brings the server up when the user left the switch on. */
+  /**
+   * Boot: brings the server up when the user left the switch on. It may wait
+   * on the keychain, so boot kicks it off without awaiting it.
+   */
   startIfEnabled(): Promise<void>;
   /** Shutdown: stops listening (fire and forget). */
   close(): void;
@@ -140,6 +148,10 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
   let pruneTimer: TimerHandle = null;
   /** Set while the stored identity cannot be read: the server stays off. */
   let keyError: string | null = null;
+  /** Set while a start waits on the keychain for the identity key. */
+  let keyPending = false;
+  /** Starts, stops, port changes and renewals: one at a time. */
+  const serial = createSerial();
   const hostInfo = () => ({
     name: deps.hostName(),
     version: deps.appVersion(),
@@ -154,6 +166,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
       listening: server.listening(),
       error: settings.enabled ? server.error() : null,
       keyError: settings.enabled ? keyError : null,
+      keyPending: settings.enabled && keyPending,
       keyUnsealed: identity.unsealed(),
       addresses: addresses(),
       devices: devices.list().map((device) => ({
@@ -292,14 +305,32 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     if (pruneStale() > 0) changed();
   };
 
+  /** The identity key, saying meanwhile that the keychain is being asked. */
+  const loadIdentity = async (): Promise<boolean> => {
+    if (!identity.loaded()) {
+      keyPending = true;
+      keyError = null;
+      changed();
+    }
+    try {
+      return await identity.load();
+    } finally {
+      keyPending = false;
+    }
+  };
+
+  /** Only ever run through `serial`. */
   const start = async (): Promise<void> => {
+    const readable = await loadIdentity();
     // Fail closed: never a server behind a key the phones did not pin.
-    keyError = identity.available() ? null : KEY_ERROR;
-    if (keyError !== null) {
+    keyError = readable ? null : KEY_ERROR;
+    // The keychain may have taken its time: the switch, or the app, may be
+    // off by now.
+    if (!readable || shuttingDown || !devices.settings().enabled) {
       changed();
       return;
     }
-    await server.start();
+    if (!server.listening()) await server.start();
     if (!server.listening()) return;
     prune();
     pruneTimer ??= timers.setInterval(prune, DAY_MS);
@@ -318,7 +349,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     status,
     setEnabled: async (enabled) => {
       devices.setEnabled(enabled);
-      await (enabled ? start() : stop());
+      await serial(enabled ? start : stop);
       return status();
     },
     setAutoUnlink: (enabled) => {
@@ -335,7 +366,8 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     setPort: async (port) => {
       const error = remotePortError(port);
       if (error !== null) return { ok: false, error };
-      if (port !== devices.settings().port) {
+      await serial(async () => {
+        if (port === devices.settings().port) return;
         devices.setPort(port);
         // The switch decides, not `listening()`: a listen that failed on the
         // old port is exactly what the user is fixing here.
@@ -343,7 +375,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
         server = serverFor(port);
         if (devices.settings().enabled) await start();
         else changed();
-      }
+      });
       return { ok: true, status: status() };
     },
     renameDevice: (id, name) => {
@@ -384,11 +416,13 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     checkPairCode: (requestId, code) => desk.checkCode(requestId, code),
     respondPairing: (requestId, accept, code) =>
       desk.respond(requestId, accept, code),
-    securityCode: (id) => {
+    securityCode: async (id) => {
+      if (!devices.find(id)) return { ok: false, error: NOT_LINKED };
+      // With the server off the key may not be in memory yet.
+      if (!(await identity.load())) return { ok: false, error: KEY_ERROR };
       const device = devices.find(id);
       const devicePub = fromB64(devices.devicePub(id));
       if (!device || !devicePub) return { ok: false, error: NOT_LINKED };
-      if (!identity.available()) return { ok: false, error: KEY_ERROR };
       const serverPub = identity.publicKey();
       const base = origin();
       // `t`: a one-time token, so the phone's «verify.done» proves it
@@ -404,24 +438,26 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
         qr: url ? qrMatrix(url) : null,
       };
     },
-    renewIdentity: () => {
-      identity.renew();
-      devices.clearVerified();
-      verifyTokens.clear();
-      desk.clear();
-      // Every phone reconnects, sees the new key and stops until the user
-      // verifies it again.
-      live.close();
-      sessions.dropAll();
-      changed();
-      // A key that could not be read kept the server off until now.
-      if (keyError !== null && devices.settings().enabled) void start();
-      return { ok: true };
-    },
+    renewIdentity: () =>
+      serial(async () => {
+        await identity.renew();
+        devices.clearVerified();
+        verifyTokens.clear();
+        desk.clear();
+        // Every phone reconnects, sees the new key and stops until the user
+        // verifies it again.
+        live.close();
+        sessions.dropAll();
+        changed();
+        // A key that could not be read kept the server off until now.
+        if (keyError !== null && devices.settings().enabled) await start();
+        return { ok: true };
+      }),
     notice: (banner) => live.notice(banner),
-    startIfEnabled: async () => {
-      if (devices.settings().enabled) await start();
-    },
+    startIfEnabled: () =>
+      serial(async () => {
+        if (devices.settings().enabled) await start();
+      }),
     close: () => {
       shuttingDown = true;
       void stop();

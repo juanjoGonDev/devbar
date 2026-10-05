@@ -47,9 +47,10 @@ describe('src/main/remote/remote-wiring.ts', () => {
         rendererFile: (name) => path.join(dir, name),
         appVersion: () => '0.11.0',
         safeStorage: {
-          isEncryptionAvailable: () => false,
-          encryptString: () => Buffer.alloc(0),
-          decryptString: () => '',
+          isAsyncEncryptionAvailable: () => Promise.resolve(false),
+          encryptStringAsync: () => Promise.resolve(Buffer.alloc(0)),
+          decryptStringAsync: () =>
+            Promise.resolve({ shouldReEncrypt: false, result: '' }),
         },
       },
       configStore: {
@@ -90,7 +91,7 @@ describe('src/main/remote/remote-wiring.ts', () => {
     expect(deps.readState()).toEqual({ enabled: true });
   });
 
-  it('hands connection banners to the app notifications', () => {
+  it('hands connection banners to the app notifications, and the keychain over', async () => {
     const { deps, banners } = wiring();
     const options = {
       cta: { label: 'Ver dispositivos', action: 'open-remote' },
@@ -100,7 +101,9 @@ describe('src/main/remote/remote-wiring.ts', () => {
     deps.showBanner?.('DevBar — control remoto', 'hola', options);
 
     expect(banners).toEqual([['DevBar — control remoto', 'hola', options]]);
-    expect(deps.secretBox?.isEncryptionAvailable()).toBe(false);
+    await expect(deps.secretBox?.isAsyncEncryptionAvailable()).resolves.toBe(
+      false,
+    );
   });
 
   it('names the host without its local domain', () => {

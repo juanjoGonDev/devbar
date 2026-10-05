@@ -1,7 +1,6 @@
 import os from 'node:os';
 import type { RemoteControlRuntime } from '../../src/main/remote/runtime.js';
 import type { RemoteControlState } from '../../src/main/remote/device-store.js';
-import type { SecretBox } from '../../src/main/remote/identity.js';
 import {
   createRemoteControl,
   type RemoteControlDeps,
@@ -19,6 +18,7 @@ import {
   sign,
   toB64,
 } from '../../renderer/remote/rc-protocol.js';
+import { fakeKeychain } from './fake-keychain.js';
 import { bridge } from './rc-bridge.js';
 
 /**
@@ -122,12 +122,6 @@ export function harness(
   const lifecycle: string[] = [];
   /** Desktop banners «Control remoto» asked for. */
   const banners: { title: string; body: string; options: unknown }[] = [];
-  /** A reversible stand-in for safeStorage. */
-  const keychain: SecretBox = {
-    isEncryptionAvailable: () => true,
-    encryptString: (plain) => Buffer.from(`box:${plain}`),
-    decryptString: (sealed) => sealed.toString().slice(4),
-  };
   const server: RemoteServer = {
     start: () => {
       lifecycle.push(`start:${serverDeps?.port ?? '?'}`);
@@ -179,7 +173,7 @@ export function harness(
       return server;
     },
     runtime: fakeRuntime(),
-    secretBox: keychain,
+    secretBox: fakeKeychain(),
     showBanner: (title, body, options) =>
       banners.push({ title, body, options }),
     ...overrides,

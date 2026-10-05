@@ -116,7 +116,10 @@ export interface MenubarSetupDeps {
   invalidateTrayIconCache: () => void;
   repaintWindows: () => void;
   onThemeUpdated: (listener: () => void) => void;
-  /** Boot auto-start, the schedule loop and the update check, once the tray is up. */
+  /**
+   * Boot auto-start, the schedule loop, the update check and «Control
+   * remoto», once the tray is up and its popover loaded.
+   */
   scheduleBootWork: () => void;
   /** The popover's pinned mode, fed menubar's window and show events. */
   pinnedPopover: {

@@ -47,6 +47,12 @@ export interface RemoteStatus {
    * keychain), so the server stays off: «Reintentar» tries again.
    */
   keyError: string | null;
+  /**
+   * The server is waiting on the OS keychain for the identity key (on macOS
+   * the user may have a permission prompt open): not an error, it is just
+   * not listening yet. The next status push says how it went.
+   */
+  keyPending: boolean;
   /** The identity key is stored without the OS keychain (none was there). */
   keyUnsealed: boolean;
   /** This machine's private LAN IPv4 addresses. */

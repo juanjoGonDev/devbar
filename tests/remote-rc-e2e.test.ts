@@ -47,8 +47,8 @@ async function codeOf(error: Promise<unknown>): Promise<string> {
 }
 
 /** The fragment of the device's verification link, as the phone reads it. */
-function verifyLink(h: Harness, phone: LinkedPhone) {
-  const result = h.remote.securityCode(phone.deviceId);
+async function verifyLink(h: Harness, phone: LinkedPhone) {
+  const result = await h.remote.securityCode(phone.deviceId);
   if (!result.ok || !result.url) throw new Error('no verification link');
   const fragment = new URLSearchParams(new URL(result.url).hash.slice(1));
   return {
@@ -96,7 +96,7 @@ describe('devbar-rc/1 end to end', () => {
       const pairing = h.remote.startPairing();
       if (!pairing.ok) throw new Error(pairing.error);
       const { key } = pairingLink(pairing.url);
-      h.remote.renewIdentity();
+      await h.remote.renewIdentity();
 
       const channel = createChannel(h.net.fetch);
       expect(await codeOf(channel.open(key))).toBe('changed');
@@ -333,7 +333,7 @@ describe('devbar-rc/1 end to end', () => {
     it('is the same six groups on both ends, with a link the phone can verify', async () => {
       const { h, phone } = await linked();
 
-      const { result, k, d, p } = verifyLink(h, phone);
+      const { result, k, d, p } = await verifyLink(h, phone);
 
       expect(result.code).toEqual(
         safetyCode(phone.serverKey, phone.device.publicKey),
@@ -350,22 +350,24 @@ describe('devbar-rc/1 end to end', () => {
     it('carries a one-time token in the link, new each time it is shown', async () => {
       const { h, phone } = await linked();
 
-      const { t } = verifyLink(h, phone);
+      const { t } = await verifyLink(h, phone);
 
       expect(t).toMatch(/^[A-Za-z0-9_-]{22}$/);
-      expect(verifyLink(h, phone).t).not.toBe(t);
+      expect((await verifyLink(h, phone)).t).not.toBe(t);
     });
 
     it('still shows the code, without a link, while the server is off', async () => {
       const { h, phone } = await linked();
       await h.remote.setEnabled(false);
 
-      expect(h.remote.securityCode(phone.deviceId)).toMatchObject({
+      await expect(
+        h.remote.securityCode(phone.deviceId),
+      ).resolves.toMatchObject({
         ok: true,
         url: null,
         qr: null,
       });
-      expect(h.remote.securityCode('ghost')).toEqual({
+      await expect(h.remote.securityCode('ghost')).resolves.toEqual({
         ok: false,
         error: 'Ese dispositivo ya no está vinculado.',
       });
@@ -373,20 +375,20 @@ describe('devbar-rc/1 end to end', () => {
 
     it('turns the device verified once the phone hands back the token it scanned', async () => {
       const { h, phone } = await linked();
-      const { t } = verifyLink(h, phone);
+      const { t } = await verifyLink(h, phone);
 
       await phone.channel.send('verify.done', { t });
 
       expect(h.remote.status().devices[0]?.verifiedAt).toEqual(
         expect.any(Number),
       );
-      expect(verifyLink(h, phone).result.verified).toBe(true);
+      expect((await verifyLink(h, phone)).result.verified).toBe(true);
     });
 
     it("does not take the phone's word for it: no token, no verification", async () => {
       const { h, phone } = await linked();
-      const { t } = verifyLink(h, phone);
-      verifyLink(h, phone);
+      const { t } = await verifyLink(h, phone);
+      await verifyLink(h, phone);
 
       for (const args of [{}, { t }])
         await expect(
@@ -399,7 +401,9 @@ describe('devbar-rc/1 end to end', () => {
   describe('renewing keys', () => {
     it('from the phone: a new device key, unverified, and the old one no longer opens a session', async () => {
       const { h, phone } = await linked();
-      await phone.channel.send('verify.done', { t: verifyLink(h, phone).t });
+      await phone.channel.send('verify.done', {
+        t: (await verifyLink(h, phone)).t,
+      });
       const stream = openEvents(h, phone.channel);
       const { next, args } = rotation(phone.channel);
 
@@ -416,18 +420,20 @@ describe('devbar-rc/1 end to end', () => {
       });
       const renewed = await reconnect(h, { ...phone, device: next });
       expect(renewed.auth).toBe(200);
-      expect(verifyLink(h, { ...phone, device: next }).result.code).toEqual(
-        safetyCode(phone.serverKey, next.publicKey),
-      );
+      expect(
+        (await verifyLink(h, { ...phone, device: next })).result.code,
+      ).toEqual(safetyCode(phone.serverKey, next.publicKey));
     });
 
     it('from the computer: a new identity the phone refuses until it scans the new code', async () => {
       const { h, phone } = await linked();
-      await phone.channel.send('verify.done', { t: verifyLink(h, phone).t });
+      await phone.channel.send('verify.done', {
+        t: (await verifyLink(h, phone)).t,
+      });
       const stream = openEvents(h, phone.channel);
       const { requestId } = await scanAndRequest(h, 'Pendiente');
 
-      expect(h.remote.renewIdentity()).toEqual({ ok: true });
+      await expect(h.remote.renewIdentity()).resolves.toEqual({ ok: true });
 
       expect(stream.ended()).toBe(true);
       expect(h.lastOn('remote:pairRequestClosed')).toEqual({
@@ -440,14 +446,14 @@ describe('devbar-rc/1 end to end', () => {
       // The pinned key is the old one: the phone notices and stops there.
       expect(await codeOf(reconnect(h, phone))).toBe('changed');
       // Scanning the device's new security code hands it the new key.
-      const { k, t } = verifyLink(h, phone);
+      const { k, t } = await verifyLink(h, phone);
       if (!k) throw new Error('no key');
       const repinned = await reconnect(h, { ...phone, serverKey: k });
       expect(repinned.auth).toBe(200);
       await expect(
         repinned.channel.send('verify.done', { t }),
       ).resolves.toMatchObject({ status: 200 });
-      expect(verifyLink(h, phone).result.verified).toBe(true);
+      expect((await verifyLink(h, phone)).result.verified).toBe(true);
     });
 
     it('keeps the identity across a restart, sealed by the keychain', async () => {

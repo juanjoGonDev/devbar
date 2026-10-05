@@ -14,6 +14,8 @@ export interface RemoteElements {
   state: HTMLElement;
   address: HTMLElement;
   error: HTMLElement;
+  /** Waiting on the keychain for this computer's key: a note, not an error. */
+  keyPending: HTMLElement;
   /** This computer's key could not be read: why, and «Reintentar». */
   keyError: HTMLElement;
   keyErrorText: HTMLElement;
@@ -65,6 +67,7 @@ export function remoteElements(): RemoteElements {
     state: byId<HTMLElement>('remote-state', HTMLElement),
     address: byId<HTMLElement>('remote-address', HTMLElement),
     error: byId<HTMLElement>('remote-error', HTMLElement),
+    keyPending: byId<HTMLElement>('remote-key-pending', HTMLElement),
     keyError: byId<HTMLElement>('remote-key-error', HTMLElement),
     keyErrorText: byId<HTMLElement>('remote-key-error-text', HTMLElement),
     keyRetry: byId<HTMLButtonElement>('remote-key-retry', HTMLButtonElement),

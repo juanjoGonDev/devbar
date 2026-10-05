@@ -36,6 +36,7 @@ function status(extra: Partial<RemoteStatus> = {}): RemoteStatus {
     listening: true,
     error: null,
     keyError: null,
+    keyPending: false,
     keyUnsealed: false,
     addresses: ['192.168.1.20'],
     devices: [],
@@ -265,6 +266,37 @@ describe('«Control remoto» security (renderer/config/remote-pane.ts)', () => {
       win = await openWith(status());
 
       expect(el('remote-key-error').hidden).toBe(true);
+      expect(el('remote-key-pending').hidden).toBe(true);
+    });
+
+    it('says it is waiting on the keychain, as a note and not an error, until main answers', async () => {
+      win = await openWith(status({ listening: false, keyPending: true }));
+
+      expect(el('remote-key-pending').hidden).toBe(false);
+      expect(text('remote-key-pending')).toBe(
+        'Esperando acceso al llavero del sistema…',
+      );
+      expect(el('remote-key-pending').classList).not.toContain('remote-error');
+      expect(el('remote-key-error').hidden).toBe(true);
+      expect(el('remote-error').hidden).toBe(true);
+      expect(text('remote-state')).toBe('Desactivado');
+
+      await win.push('onRemoteChanged', status());
+
+      expect(el('remote-key-pending').hidden).toBe(true);
+      expect(text('remote-state')).toBe('Activo');
+    });
+
+    it('turns the wait into the key error when the keychain refuses', async () => {
+      win = await openWith(status({ listening: false, keyPending: true }));
+
+      await win.push(
+        'onRemoteChanged',
+        status({ listening: false, keyError: KEY_ERROR }),
+      );
+
+      expect(el('remote-key-pending').hidden).toBe(true);
+      expect(el('remote-key-error').hidden).toBe(false);
     });
 
     it('notes, discreetly, a key kept without the keychain', async () => {

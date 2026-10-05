@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiResponse, RpcCall } from '../src/main/remote/api.js';
 import type { EventSink } from '../src/main/remote/events.js';
-import { createIdentityKeys } from '../src/main/remote/identity.js';
 import { createRateLimiter } from '../src/main/remote/rate-limit.js';
 import {
   ephemeralKeyPair,
@@ -10,10 +9,10 @@ import {
 } from '../src/main/remote/rc-protocol.js';
 import { createSecureApi } from '../src/main/remote/secure-api.js';
 import { createSessionTable } from '../src/main/remote/sessions.js';
-import type { StoredIdentity } from '../src/main/remote/device-store.js';
 import type { RemoteDeviceView } from '../src/ipc-contract/remote-api.js';
 import { createChannel, RemoteError } from '../renderer/remote/channel.js';
 import { fromB64 } from '../renderer/remote/rc-protocol.js';
+import { memoryIdentity } from './helpers/memory-identity.js';
 import { bridge } from './helpers/rc-bridge.js';
 
 /**
@@ -36,14 +35,7 @@ const DEVICE: RemoteDeviceView = {
 
 function harness(options: { perIp?: number; helloLimit?: number } = {}) {
   let clock = 1_000_000;
-  let stored: StoredIdentity | null = null;
-  const identity = createIdentityKeys({
-    read: () => stored,
-    write: (record) => {
-      stored = record;
-    },
-    secretBox: null,
-  });
+  const identity = memoryIdentity();
   const sessions = createSessionTable({
     now: () => clock,
     ...(options.perIp ? { perIp: options.perIp } : {}),

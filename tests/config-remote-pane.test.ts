@@ -30,6 +30,7 @@ function status(extra: Partial<RemoteStatus> = {}): RemoteStatus {
     listening: false,
     error: null,
     keyError: null,
+    keyPending: false,
     keyUnsealed: false,
     addresses: ['192.168.1.20'],
     devices: [],
