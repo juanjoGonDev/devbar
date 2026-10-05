@@ -98,9 +98,10 @@ const schema = {
   // No default either: absent IS "anchored to the tray icon".
   trayPopover: { type: 'object' },
   // Its own key, never part of globalSettings: those reach every window and
-  // every export/backup, and this holds the linked devices' token hashes.
-  // Absent means "never configured" — src/main/remote/device-store.ts reads
-  // that as the defaults (off).
+  // every export/backup, and this holds the linked devices' public keys and
+  // this computer's identity key (sealed by the OS keychain where there is
+  // one). Absent means "never configured" — src/main/remote/device-store.ts
+  // reads that as the defaults (off).
   remoteControl: { type: 'object' },
 } as const;
 

@@ -1,7 +1,7 @@
 import type os from 'node:os';
 import type {
+  RemotePairCodeResult,
   RemotePairingResult,
-  RemotePairRequestClosed,
   RemotePortResult,
   RemoteSecurityCodeResult,
   RemoteStatus,
@@ -10,12 +10,17 @@ import type { SimpleResult } from '../../ipc-contract/simple-result.js';
 import { remotePortError } from '../../remote-port.js';
 import { createSessionApi } from './api.js';
 import { createArrivals } from './arrivals.js';
+import {
+  createConnectionAlerts,
+  type ConnectionAlertsDeps,
+} from './connection-alerts.js';
 import { createControlApi } from './control-api.js';
 import { createDeviceStore, type RemoteControlState } from './device-store.js';
 import { createIdentityKeys, type SecretBox } from './identity.js';
 import { lanAddresses } from './lan.js';
 import { createLive } from './live.js';
 import { createPairing } from './pairing.js';
+import { createPairingDesk } from './pairing-desk.js';
 import { qrMatrix } from './qr.js';
 import { createRateLimiter } from './rate-limit.js';
 import { fromB64, safetyCode, toB64 } from './rc-protocol.js';
@@ -29,14 +34,21 @@ import {
   type RemoteServerDeps,
 } from './server.js';
 import { NODE_TIMERS, type TimerHandle, type Timers } from './timers.js';
+import { createVerifyTokens } from './verify-tokens.js';
 
 /**
  * «Control remoto», assembled: the device store, this computer's identity
- * key, the pairing handshake, the LAN server, the encrypted transport
- * (devbar-rc/1: secure-api.ts, sessions.ts, rpc.ts), the control API and the
- * live event streams, behind the handful of operations the config window and
- * the app lifecycle need. `main.ts` builds it with `remoteControlFor`
+ * key, the pairing handshake (pairing.ts, and pairing-desk.ts for the
+ * desktop's dialog), the LAN server, the encrypted transport (devbar-rc/1:
+ * secure-api.ts, sessions.ts, rpc.ts), the control API, the live event
+ * streams and what is said when a device connects (connection-alerts.ts),
+ * behind the handful of operations the config window and the app lifecycle
+ * need. `main.ts` builds it with `remoteControlFor`
  * (src/main/remote/remote-wiring.ts) and does nothing else with the pieces.
+ *
+ * The server never starts behind an identity key it cannot read (a locked
+ * or denied keychain): the status says why (`keyError`) until a retry reads
+ * it or the user renews the key.
  *
  * Pushes to the windows: `remote:changed` (the whole status, after anything
  * that changes it — a phone connecting included), `remote:pairRequest` (a
@@ -46,8 +58,8 @@ import { NODE_TIMERS, type TimerHandle, type Timers } from './timers.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOT_LINKED = 'Ese dispositivo ya no está vinculado.';
-const CONNECTED_TITLE = 'DevBar — control remoto';
-const SEE_DEVICES = { label: 'Ver dispositivos', action: 'open-remote' };
+const KEY_ERROR =
+  'No se pudo leer la clave de seguridad del llavero del sistema. Desbloquéalo y pulsa Reintentar.';
 
 export interface RemoteControlDeps {
   readState: () => unknown;
@@ -62,11 +74,7 @@ export interface RemoteControlDeps {
   /** Electron's safeStorage, which seals the identity key when it can. */
   secretBox?: SecretBox | null;
   /** The desktop banner (src/main/notification-banner.ts). */
-  showBanner?: (
-    title: string,
-    body: string,
-    options: { cta: { label: string; action: string }; record: false },
-  ) => void;
+  showBanner?: ConnectionAlertsDeps['showBanner'];
   now?: () => number;
   timers?: Timers;
   createServer?: (deps: RemoteServerDeps) => RemoteServer;
@@ -88,10 +96,20 @@ export interface RemoteControl {
   unlinkDevice(id: string): SimpleResult;
   startPairing(): RemotePairingResult;
   cancelPairing(): void;
-  respondPairing(requestId: string, accept: boolean): SimpleResult;
+  /** The digits typed in «¿Vincular este dispositivo?» against the phone's. */
+  checkPairCode(requestId: string, code: string): RemotePairCodeResult;
+  /** Accepting re-checks the digits; rejecting needs none. */
+  respondPairing(
+    requestId: string,
+    accept: boolean,
+    code: string,
+  ): SimpleResult;
   /** The device's security code, and the QR its phone verifies it with. */
   securityCode(id: string): RemoteSecurityCodeResult;
-  /** A new identity key: sessions, streams and pairing end; all unverified. */
+  /**
+   * A new identity key: sessions, streams and pairing end; all unverified.
+   * The only way an unreadable key is ever replaced.
+   */
   renewIdentity(): SimpleResult;
   /** A banner or completion the user was shown, for the phones' «Avisos». */
   notice(banner: { title: string; body: string; action: string | null }): void;
@@ -117,11 +135,10 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     secretBox: deps.secretBox ?? null,
   });
   const sessions = createSessionTable({ now });
-  const arrivals = createArrivals({ now });
-  /** Where each device last proved itself from, for the notice. */
-  const lastIp = new Map<string, string>();
-  const expiries = new Map<string, TimerHandle>();
+  const verifyTokens = createVerifyTokens({ now });
   let pruneTimer: TimerHandle = null;
+  /** Set while the stored identity cannot be read: the server stays off. */
+  let keyError: string | null = null;
   const hostInfo = () => ({
     name: deps.hostName(),
     version: deps.appVersion(),
@@ -135,6 +152,8 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
       port: server.port(),
       listening: server.listening(),
       error: settings.enabled ? server.error() : null,
+      keyError: settings.enabled ? keyError : null,
+      keyUnsealed: identity.unsealed(),
       addresses: addresses(),
       devices: devices.list().map((device) => ({
         ...device,
@@ -159,67 +178,43 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     // is also the moment «Última conexión» starts counting from.
     onPresenceChange: (deviceId) => {
       devices.touch(deviceId);
-      if (!live.isConnected(deviceId)) arrivals.left(deviceId);
-      else if (arrivals.arrived(deviceId, false)) announce(deviceId);
+      alerts.presence(deviceId);
       changed();
     },
   });
-
-  /** «… se ha conectado»: a banner here, a notice for the other phones. */
-  function announce(deviceId: string): void {
-    const device = devices.find(deviceId);
-    if (!device) return;
-    const body = `«${device.name}» se ha conectado desde ${lastIp.get(deviceId) ?? 'la red local'}.`;
-    live.announce({ kind: 'info', title: 'Control remoto', body }, deviceId);
-    if (devices.settings().notifyConnections)
-      deps.showBanner?.(CONNECTED_TITLE, body, {
-        cta: SEE_DEVICES,
-        record: false,
-      });
-  }
-
-  const closeRequest = (
-    requestId: string,
-    outcome: RemotePairRequestClosed['outcome'],
-  ): void => {
-    const timer = expiries.get(requestId);
-    if (timer !== undefined) timers.clearTimeout(timer);
-    expiries.delete(requestId);
-    const closed: RemotePairRequestClosed = { requestId, outcome };
-    send('remote:pairRequestClosed', closed);
-  };
+  const alerts = createConnectionAlerts({
+    devices,
+    arrivals: createArrivals({ now }),
+    isConnected: (deviceId) => live.isConnected(deviceId),
+    announce: (notice, aboutDevice) => live.announce(notice, aboutDevice),
+    showBanner: (title, body, options) =>
+      deps.showBanner?.(title, body, options),
+  });
+  const desk = createPairingDesk({ pairing, now, timers, send });
 
   /** Ends a device's sessions and their streams; the phone reconnects. */
-  const dropSessions = (deviceId: string): void =>
+  const dropSessions = (deviceId: string): void => {
+    verifyTokens.revoke(deviceId);
     live.closeSessions(sessions.dropDevice(deviceId));
+  };
+  const forget = (deviceId: string): void => {
+    live.drop(deviceId);
+    dropSessions(deviceId);
+  };
 
   const sessionApi = createSessionApi({
     devices,
     pairing,
+    verifyTokens,
     limiter: createRateLimiter({ limit: 5, windowMs: 60_000, now }),
     hostInfo,
     devicesChanged: changed,
-    pairRequested: (request) => {
-      send('remote:pairRequest', request);
-      const expire = (): void => {
-        if (pairing.expire(request.requestId))
-          closeRequest(request.requestId, 'expired');
-      };
-      expiries.set(
-        request.requestId,
-        timers.setTimeout(expire, Math.max(0, request.expiresAt - now())),
-      );
-    },
-    pairWithdrawn: (requestId) => closeRequest(requestId, 'cancelled'),
-    deviceUnlinked: (id) => {
-      live.drop(id);
-      dropSessions(id);
-    },
+    pairRequested: (request) => desk.requested(request),
+    pairWithdrawn: (requestId) => desk.withdrawn(requestId),
+    deviceUnlinked: forget,
     deviceRotated: dropSessions,
     deviceAuthenticated: (deviceId, ip) => {
-      lastIp.set(deviceId, ip);
-      if (arrivals.arrived(deviceId, live.isConnected(deviceId)))
-        announce(deviceId);
+      if (alerts.signedIn(deviceId, ip)) changed();
     },
   });
 
@@ -296,6 +291,12 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
   };
 
   const start = async (): Promise<void> => {
+    // Fail closed: never a server behind a key the phones did not pin.
+    keyError = identity.available() ? null : KEY_ERROR;
+    if (keyError !== null) {
+      changed();
+      return;
+    }
     await server.start();
     if (!server.listening()) return;
     prune();
@@ -303,8 +304,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
   };
 
   const stop = async (): Promise<void> => {
-    for (const requestId of pairing.clear())
-      closeRequest(requestId, 'cancelled');
+    desk.clear();
     if (pruneTimer !== null) timers.clearInterval(pruneTimer);
     pruneTimer = null;
     live.close();
@@ -357,8 +357,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     },
     unlinkDevice: (id) => {
       if (!devices.remove(id)) return { ok: false, error: NOT_LINKED };
-      live.drop(id);
-      dropSessions(id);
+      forget(id);
       changed();
       return { ok: true };
     },
@@ -374,28 +373,26 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
           ok: false,
           error: 'Este equipo no tiene una dirección en la red local.',
         };
-      const { code, expiresAt } = pairing.startPairing();
-      // The identity key rides in the fragment, which the browser never
-      // sends anywhere: the phone pins it before it trusts a single answer.
-      const key = toB64(identity.publicKey());
-      const url = `http://${address}:${server.port()}/pair?c=${code}#k=${key}`;
-      return { ok: true, url, expiresAt, qr: qrMatrix(url) };
+      return desk.start(
+        `http://${address}:${server.port()}`,
+        identity.publicKey(),
+      );
     },
     cancelPairing: () => pairing.cancelPairing(),
-    respondPairing: (requestId, accept) => {
-      if (!pairing.respond(requestId, accept))
-        return { ok: false, error: 'La solicitud ya no está pendiente.' };
-      closeRequest(requestId, accept ? 'accepted' : 'rejected');
-      return { ok: true };
-    },
+    checkPairCode: (requestId, code) => desk.checkCode(requestId, code),
+    respondPairing: (requestId, accept, code) =>
+      desk.respond(requestId, accept, code),
     securityCode: (id) => {
       const device = devices.find(id);
       const devicePub = fromB64(devices.devicePub(id));
       if (!device || !devicePub) return { ok: false, error: NOT_LINKED };
+      if (!identity.available()) return { ok: false, error: KEY_ERROR };
       const serverPub = identity.publicKey();
       const base = origin();
+      // `t`: a one-time token, so the phone's «verify.done» proves it
+      // scanned this very screen (src/main/remote/verify-tokens.ts).
       const url = base
-        ? `${base}/verify#k=${toB64(serverPub)}&d=${encodeURIComponent(id)}&p=${toB64(devicePub)}`
+        ? `${base}/verify#k=${toB64(serverPub)}&d=${encodeURIComponent(id)}&p=${toB64(devicePub)}&t=${verifyTokens.issue(id)}`
         : null;
       return {
         ok: true,
@@ -408,13 +405,15 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     renewIdentity: () => {
       identity.renew();
       devices.clearVerified();
-      for (const requestId of pairing.clear())
-        closeRequest(requestId, 'cancelled');
+      verifyTokens.clear();
+      desk.clear();
       // Every phone reconnects, sees the new key and stops until the user
       // verifies it again.
       live.close();
       sessions.dropAll();
       changed();
+      // A key that could not be read kept the server off until now.
+      if (keyError !== null && devices.settings().enabled) void start();
       return { ok: true };
     },
     notice: (banner) => live.notice(banner),

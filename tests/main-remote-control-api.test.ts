@@ -21,6 +21,7 @@ const DEVICE: RemoteDeviceView = {
   createdAt: 1,
   lastSeenAt: 1,
   verifiedAt: null,
+  lastIp: null,
 };
 
 const GROUPS: Group[] = [

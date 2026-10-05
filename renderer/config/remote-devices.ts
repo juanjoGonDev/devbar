@@ -7,9 +7,11 @@ import { errorMessage, type ShowToast } from './toast.js';
 /**
  * The «Dispositivos vinculados» rows: name (renamed inline — Enter or leaving
  * the field saves, Escape cancels) with «Verificado» / «Sin verificar»,
- * client and link date, presence («Conectado ahora» while the phone holds an
- * event stream open), «Código de seguridad» and «Desvincular». While a name is being edited the list is not repainted, so
- * a push from main cannot wipe what the user is typing.
+ * client and link date, the IP it last signed in from (a new one raises an
+ * alert), presence («Conectado ahora» while the phone holds an event stream
+ * open), «Código de seguridad» and «Desvincular». While a name is being
+ * edited the list is not repainted, so a push from main cannot wipe what the
+ * user is typing.
  */
 
 export interface DeviceList {
@@ -121,6 +123,10 @@ export function createDeviceList(
         `${device.client} · vinculado el ${formatDate(device.createdAt)}`,
       ),
     );
+    if (device.lastIp)
+      main.append(
+        element('span', 'remote-device-ip', `Última IP ${device.lastIp}`),
+      );
 
     const presence = device.connected
       ? element('span', 'remote-seen is-online', 'Conectado ahora')

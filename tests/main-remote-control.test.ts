@@ -6,11 +6,17 @@ import {
   scanAndRequest,
 } from './helpers/remote-control-harness.js';
 import { createChannel } from '../renderer/remote/channel.js';
-import { generateSigningKey, toB64 } from '../renderer/remote/rc-protocol.js';
+import {
+  generateSigningKey,
+  pairMessage,
+  sign,
+  toB64,
+} from '../renderer/remote/rc-protocol.js';
 import type {
   RemotePairRequest,
   RemoteStatus,
 } from '../src/ipc-contract/remote-api.js';
+import type { SecretBox } from '../src/main/remote/identity.js';
 
 /**
  * «Control remoto» assembled: the switch, the port, pairing and the device
@@ -23,12 +29,35 @@ async function redeem(h: ReturnType<typeof harness>, url: string) {
   const { code, key } = pairingLink(url);
   const channel = createChannel(h.net.fetch);
   await channel.open(key);
+  const device = generateSigningKey();
   const answer = await channel.send('pair.request', {
     code,
     name: 'x',
-    devicePub: toB64(generateSigningKey().publicKey),
+    devicePub: toB64(device.publicKey),
+    sig: toB64(
+      sign(
+        device.secretKey,
+        pairMessage(channel.handshake() ?? new Uint8Array()),
+      ),
+    ),
   });
   return answer.status;
+}
+
+/** A keychain that can be switched off, like a locked or denied one. */
+function switchableKeychain(): SecretBox & { setAvailable(on: boolean): void } {
+  let available = true;
+  return {
+    setAvailable: (on) => {
+      available = on;
+    },
+    isEncryptionAvailable: () => available,
+    encryptString: (plain) => Buffer.from(`box:${plain}`),
+    decryptString: (sealed) => {
+      if (!available) throw new Error('keychain locked');
+      return sealed.toString().slice(4);
+    },
+  };
 }
 
 describe('src/main/remote/remote-control.ts', () => {
@@ -43,6 +72,8 @@ describe('src/main/remote/remote-control.ts', () => {
         port: 47821,
         listening: false,
         error: null,
+        keyError: null,
+        keyUnsealed: false,
         addresses: ['192.168.1.20'],
         devices: [],
       });
@@ -172,7 +203,7 @@ describe('src/main/remote/remote-control.ts', () => {
       const pairing = h.remote.startPairing();
 
       if (!pairing.ok) throw new Error(pairing.error);
-      expect(pairing.url).toMatch(/^http:\/\/192\.168\.1\.20:50123\/pair\?c=/);
+      expect(pairing.url).toMatch(/^http:\/\/192\.168\.1\.20:50123\/pair#c=/);
     });
 
     it('retires the pairing code issued on the old port', async () => {
@@ -262,8 +293,10 @@ describe('src/main/remote/remote-control.ts', () => {
       const pairing = h.remote.startPairing();
 
       if (!pairing.ok) throw new Error(pairing.error);
+      // The code rides in the fragment, with the key: neither ever crosses
+      // the network, so no one listening can race the phone to it.
       expect(pairing.url).toMatch(
-        /^http:\/\/192\.168\.1\.20:47821\/pair\?c=[A-Za-z0-9_-]{24}#k=[A-Za-z0-9_-]{43}$/,
+        /^http:\/\/192\.168\.1\.20:47821\/pair#c=[A-Za-z0-9_-]{24}&k=[A-Za-z0-9_-]{43}$/,
       );
       expect(pairing.qr.modules).toHaveLength(pairing.qr.size ** 2);
       expect(pairing.expiresAt).toBeGreaterThan(0);
@@ -274,16 +307,19 @@ describe('src/main/remote/remote-control.ts', () => {
     it('tells the desktop, then links the phone once it is accepted', async () => {
       const h = harness();
       await h.remote.setEnabled(true);
-      const { requestId, channel, device } = await scanAndRequest(h);
+      const { requestId, digits, channel, device } = await scanAndRequest(h);
 
-      expect(h.lastOn('remote:pairRequest')).toMatchObject({
+      expect(h.lastOn('remote:pairRequest')).toEqual({
         requestId,
         name: 'iPhone de Ana',
         client: 'Safari · iOS',
         ip: '192.168.1.40',
-      } satisfies Partial<RemotePairRequest>);
+        expiresAt: expect.any(Number) as number,
+      } satisfies RemotePairRequest);
 
-      expect(h.remote.respondPairing(requestId, true)).toEqual({ ok: true });
+      expect(h.remote.respondPairing(requestId, true, digits)).toEqual({
+        ok: true,
+      });
       expect(h.lastOn('remote:pairRequestClosed')).toEqual({
         requestId,
         outcome: 'accepted',
@@ -303,15 +339,15 @@ describe('src/main/remote/remote-control.ts', () => {
     it('closes a rejected request and creates nothing', async () => {
       const h = harness();
       await h.remote.setEnabled(true);
-      const { requestId } = await scanAndRequest(h);
+      const { requestId, digits } = await scanAndRequest(h);
 
-      h.remote.respondPairing(requestId, false);
+      h.remote.respondPairing(requestId, false, '');
 
       expect(h.lastOn('remote:pairRequestClosed')).toEqual({
         requestId,
         outcome: 'rejected',
       });
-      expect(h.remote.respondPairing(requestId, true)).toEqual({
+      expect(h.remote.respondPairing(requestId, true, digits)).toEqual({
         ok: false,
         error: 'La solicitud ya no está pendiente.',
       });
@@ -336,11 +372,65 @@ describe('src/main/remote/remote-control.ts', () => {
     it('clears the expiry timer of a request that was answered', async () => {
       const h = harness();
       await h.remote.setEnabled(true);
-      const { requestId } = await scanAndRequest(h);
+      const { requestId, digits } = await scanAndRequest(h);
 
-      h.remote.respondPairing(requestId, true);
+      h.remote.respondPairing(requestId, true, digits);
 
       expect(h.timers.find((t) => t.ms === 60_000)?.cleared).toBe(true);
+    });
+
+    it('links only with the digits the phone shows typed on the desktop', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const { requestId, digits } = await scanAndRequest(h);
+      const wrong = digits === '000000' ? '111111' : '000000';
+
+      expect(h.remote.checkPairCode(requestId, wrong)).toEqual({
+        ok: true,
+        match: false,
+        attemptsLeft: 2,
+      });
+      expect(h.remote.checkPairCode(requestId, digits)).toEqual({
+        ok: true,
+        match: true,
+        attemptsLeft: 2,
+      });
+      // «Vincular» is re-checked here, whatever the window let through.
+      expect(h.remote.respondPairing(requestId, true, wrong)).toEqual({
+        ok: false,
+        error: 'El código no coincide con el del móvil.',
+      });
+      expect(h.channels()).not.toContain('remote:pairRequestClosed');
+      expect(h.remote.respondPairing(requestId, true, digits)).toEqual({
+        ok: true,
+      });
+    });
+
+    it('rejects the request at the third wrong code, and closes the dialog', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const { requestId, digits, channel } = await scanAndRequest(h);
+      const wrong = digits === '000000' ? '111111' : '000000';
+
+      h.remote.checkPairCode(requestId, wrong);
+      h.remote.checkPairCode(requestId, wrong);
+      expect(h.remote.checkPairCode(requestId, wrong)).toEqual({
+        ok: true,
+        match: false,
+        attemptsLeft: 0,
+      });
+
+      expect(h.lastOn('remote:pairRequestClosed')).toEqual({
+        requestId,
+        outcome: 'rejected',
+      });
+      expect(h.remote.checkPairCode(requestId, digits)).toEqual({
+        ok: false,
+        error: 'La solicitud ya no está pendiente.',
+      });
+      await expect(
+        channel.send('pair.status', { requestId }),
+      ).resolves.toMatchObject({ body: { status: 'rejected' } });
     });
 
     it('cancels the active code', async () => {
@@ -352,6 +442,74 @@ describe('src/main/remote/remote-control.ts', () => {
       h.remote.cancelPairing();
 
       expect(await redeem(h, pairing.url)).toBe(410);
+    });
+  });
+
+  describe('the identity key', () => {
+    /** A run that sealed its identity, then a keychain that will not open. */
+    async function lockedOut() {
+      const keychain = switchableKeychain();
+      const first = harness(undefined, { secretBox: keychain });
+      await first.remote.setEnabled(true);
+      first.remote.close();
+      keychain.setAvailable(false);
+      const h = harness(structuredClone(first.stored()), {
+        secretBox: keychain,
+      });
+      return { h, keychain, first };
+    }
+
+    it('keeps the server off when the key cannot be read, and says why', async () => {
+      const { h, first } = await lockedOut();
+
+      await h.remote.startIfEnabled();
+
+      expect(h.lifecycle).toEqual([]);
+      expect(h.remote.status()).toMatchObject({
+        enabled: true,
+        listening: false,
+        keyError:
+          'No se pudo leer la clave de seguridad del llavero del sistema. Desbloquéalo y pulsa Reintentar.',
+      });
+      // Nothing was replaced: the phones' pinned key is still the one stored.
+      expect(h.stored()?.identity).toEqual(first.stored()?.identity);
+      expect(h.remote.startPairing()).toMatchObject({ ok: false });
+    });
+
+    it('starts with the same key once the keychain answers again (Reintentar)', async () => {
+      const { h, keychain, first } = await lockedOut();
+      await h.remote.startIfEnabled();
+      keychain.setAvailable(true);
+
+      const status = await h.remote.setEnabled(true);
+
+      expect(status).toMatchObject({ listening: true, keyError: null });
+      expect(h.stored()?.identity).toEqual(first.stored()?.identity);
+    });
+
+    it('replaces an unreadable key only when renewed, then starts', async () => {
+      const { h, first } = await lockedOut();
+      await h.remote.startIfEnabled();
+
+      expect(h.remote.renewIdentity()).toEqual({ ok: true });
+      await Promise.resolve();
+
+      expect(h.stored()?.identity?.publicKey).not.toBe(
+        first.stored()?.identity?.publicKey,
+      );
+      expect(h.remote.status()).toMatchObject({ keyError: null });
+      expect(h.lifecycle).toContain('start:47821');
+    });
+
+    it('notes a key stored without the keychain, where there was none', async () => {
+      const h = harness(undefined, { secretBox: null });
+
+      await h.remote.setEnabled(true);
+
+      expect(h.remote.status()).toMatchObject({
+        listening: true,
+        keyUnsealed: true,
+      });
     });
   });
 

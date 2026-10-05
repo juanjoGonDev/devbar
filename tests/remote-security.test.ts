@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { fromB64, safetyCode } from '../renderer/remote/rc-protocol.js';
+import {
+  fromB64,
+  rotateMessage,
+  safetyCode,
+  verifySignature,
+} from '../renderer/remote/rc-protocol.js';
 import {
   LINKED,
   loadPage,
@@ -94,10 +99,19 @@ describe('renderer/remote/security-section.ts', () => {
     tapId('rotate-keys');
     await settle();
 
-    const sent = h.callsTo('device.rotate')[0]?.body as { devicePub: string };
+    const [call] = h.callsTo('device.rotate');
+    const sent = call?.body as { devicePub: string; sig: string };
     expect(h.confirms.at(-1)).toMatch(/Renovar las claves/);
     expect(sent.devicePub).toMatch(/^[\w-]{43}$/);
     expect(sent.devicePub).not.toBe(before?.devicePub);
+    // The new key proves it is held, over this session's handshake.
+    expect(
+      verifySignature(
+        fromB64(sent.devicePub, 32) ?? new Uint8Array(),
+        rotateMessage(call?.transcript ?? new Uint8Array()),
+        fromB64(sent.sig, 64) ?? new Uint8Array(),
+      ),
+    ).toBe(true);
     expect(h.keys()).toMatchObject({
       devicePub: sent.devicePub,
       verified: false,
@@ -144,5 +158,18 @@ describe('renderer/remote/security-section.ts', () => {
     expect(again.keys()).toEqual(keys);
     expect(text('toast')).toBe('No se pudieron renovar las claves.');
     expect(before).not.toBeNull();
+  });
+
+  it('keeps every key on a 401 that a fresh sign-in does not confirm', async () => {
+    const h = await openSecurity();
+    const before = h.keys();
+    h.answer('device.rotate', { status: 401, body: { error: 'unlinked' } });
+
+    tapId('rotate-keys');
+    await settle();
+
+    expect(h.keys()).toEqual(before);
+    expect(document.body.dataset.screen).toBe('linked');
+    expect(text('toast')).toBe('Conexión perdida, inténtalo de nuevo.');
   });
 });

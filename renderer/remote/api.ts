@@ -10,6 +10,7 @@ import {
   type EventReader,
   type Fetcher,
 } from './channel.js';
+import { pairMessage, rotateMessage, sign, toB64 } from './rc-protocol.js';
 import { logBatch, noticesView, settingsView, stateView } from './wire.js';
 
 export type { Answer, Fetcher } from './channel.js';
@@ -18,15 +19,30 @@ export type { Answer, Fetcher } from './channel.js';
  * The phone page's side of the «Control remoto» API, over devbar-rc/1
  * (renderer/remote/channel.ts). It knows whom to trust — the identity key
  * from the pairing QR, or the one this device pinned — and, for a linked
- * device, signs in (`auth`) after every handshake. A session the desktop
- * forgot is replaced transparently: the call is retried once on a fresh one.
+ * device, signs in (`auth`) as part of every handshake: a call made while
+ * one is under way waits for it, so nothing goes out half signed in.
+ *
+ * A session the desktop forgot (a plaintext 401 `session`, which anyone on
+ * the network could also send) is replaced on the next call. Only a read is
+ * retried on the fresh one at once: a command whose reply was lost may
+ * already have run, so it rejects with `session` and the user decides.
  *
  * Every answer is read as `unknown` and narrowed (here or in wire.ts). Calls
  * DevBar never answered reject; any answer resolves, whatever its status,
  * and the caller decides what it means. Losing trust — another identity key,
- * or a device the desktop no longer knows — is reported once through
- * `onLost`, and the call rejects.
+ * or a sign-in refused because the desktop does not know this device — is
+ * reported once through `onLost`, and the call rejects.
  */
+
+/** Reads, safe to send twice: the only calls retried on a fresh session. */
+const RETRIED = new Set([
+  'state',
+  'logs',
+  'notices',
+  'branches',
+  'settings.get',
+  'me',
+]);
 
 export interface Me {
   linked: boolean;
@@ -68,16 +84,7 @@ export function createRemoteClient(fetcher: Fetcher, hooks: ClientHooks) {
 
   async function handshake(): Promise<void> {
     if (!trust) throw new RemoteError('session');
-    const { serverKey, device } = trust;
-    await channel.open(serverKey);
-    if (!device) return;
-    const answer = await channel.send('auth', {
-      deviceId: device.id,
-      sig: channel.proof(device.secretKey),
-    });
-    if (answer.status === 200) return;
-    channel.close();
-    throw new RemoteError(answer.status === 401 ? 'unlinked' : 'http');
+    await channel.open(trust.serverKey, trust.device);
   }
 
   /** One handshake at a time, however many calls are waiting for it. */
@@ -93,16 +100,41 @@ export function createRemoteClient(fetcher: Fetcher, hooks: ClientHooks) {
     return connecting;
   };
 
+  /** A ready session: the handshake under way, or a new one. */
+  const session = (): Promise<void> =>
+    connecting ?? (channel.ready() ? Promise.resolve() : connect());
+
   async function call(op: string, args: unknown = {}): Promise<Answer> {
-    if (!channel.ready()) await connect();
+    await session();
     try {
       return await channel.send(op, args);
     } catch (error) {
-      if (!(error instanceof RemoteError) || error.code !== 'session')
+      if (
+        !(error instanceof RemoteError) ||
+        error.code !== 'session' ||
+        !RETRIED.has(op)
+      )
         throw error;
       await connect();
       return channel.send(op, args);
     }
+  }
+
+  /** A call whose new key signs this very session's handshake. */
+  async function provenCall(
+    op: string,
+    key: { secretKey: Uint8Array; publicKey: Uint8Array },
+    message: (handshake: Uint8Array) => Uint8Array,
+    args: Record<string, unknown>,
+  ): Promise<Answer> {
+    await session();
+    const handshake = channel.handshake();
+    if (!handshake) throw new RemoteError('session');
+    return channel.send(op, {
+      ...args,
+      devicePub: toB64(key.publicKey),
+      sig: toB64(sign(key.secretKey, message(handshake))),
+    });
   }
 
   /** A read whose answer is only usable as a 200. */
@@ -123,6 +155,21 @@ export function createRemoteClient(fetcher: Fetcher, hooks: ClientHooks) {
       channel.close();
       return connect();
     },
+    /**
+     * Whether the desktop still knows this device: a sign-in on a session
+     * of its own, so the one in use (and its stream) is left alone. Refused
+     * for an unknown device, it is reported through `onLost` like any other.
+     */
+    confirmLinked: async (): Promise<boolean> => {
+      if (!trust?.device) return false;
+      try {
+        await createChannel(fetcher).open(trust.serverKey, trust.device);
+        return true;
+      } catch (error) {
+        if (isLost(error)) hooks.onLost(error.code as 'changed' | 'unlinked');
+        return false;
+      }
+    },
     call,
     /** The reader for a stream on the current session, if there is one. */
     events: (): EventReader | null => channel.events(),
@@ -142,8 +189,15 @@ export function createRemoteClient(fetcher: Fetcher, hooks: ClientHooks) {
         suggestedName: text(answer.body.suggestedName),
       };
     },
-    requestPairing: (code: string, name: string, devicePub: string) =>
-      call('pair.request', { code, name, devicePub }),
+    /** Asks to be paired with `device`, proving it holds the key. */
+    requestPairing: (
+      code: string,
+      name: string,
+      device: { secretKey: Uint8Array; publicKey: Uint8Array },
+    ) => provenCall('pair.request', device, pairMessage, { code, name }),
+    /** Replaces this device's key with `next`, proving it holds it. */
+    rotateKey: (next: { secretKey: Uint8Array; publicKey: Uint8Array }) =>
+      provenCall('device.rotate', next, rotateMessage, {}),
     pairStatus: (requestId: string) => call('pair.status', { requestId }),
     cancelPairing: (requestId: string) => call('pair.cancel', { requestId }),
     state: async (): Promise<RemoteStateView> =>

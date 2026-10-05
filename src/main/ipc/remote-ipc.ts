@@ -10,8 +10,9 @@ import {
 
 /**
  * «Control remoto» from the config window: the switches, the device list,
- * the desktop half of the pairing handshake, each device's security code and
- * renewing this computer's key. Every payload is narrowed before
+ * the desktop half of the pairing handshake (the digits typed there are
+ * checked in main), each device's security code and renewing this
+ * computer's key. Every payload is narrowed before
  * it reaches src/main/remote; the device-name rule itself lives there, so the
  * phone's pairing form and a rename here are held to the same one.
  */
@@ -28,6 +29,7 @@ export interface RemoteIpcDeps {
     | 'unlinkDevice'
     | 'startPairing'
     | 'cancelPairing'
+    | 'checkPairCode'
     | 'respondPairing'
     | 'securityCode'
     | 'renewIdentity'
@@ -83,12 +85,23 @@ export function registerRemoteIpc(
       remote.securityCode(ipcStringField(payload, 'id')),
   );
   ipc.handle('remote:renewIdentity', () => remote.renewIdentity());
+  // The digits are compared in main, in constant time: the window only
+  // learns whether they matched.
+  ipc.handle(
+    'remote:checkPairCode',
+    (_e: IpcMainInvokeEvent, payload: unknown) =>
+      remote.checkPairCode(
+        ipcStringField(payload, 'requestId'),
+        ipcStringField(payload, 'code'),
+      ),
+  );
   ipc.handle(
     'remote:respondPairing',
     (_e: IpcMainInvokeEvent, payload: unknown) =>
       remote.respondPairing(
         ipcStringField(payload, 'requestId'),
         ipcBooleanField(payload, 'accept'),
+        ipcStringField(payload, 'code'),
       ),
   );
 }

@@ -1,17 +1,18 @@
 import type { Me, RemoteClient } from './api.js';
 import { RemoteError } from './channel.js';
+import { LOST } from './context.js';
 import type { RemoteEnv } from './env.js';
 import { storageWorks, type DeviceKeys } from './keys.js';
 import { generateSigningKey, toB64 } from './rc-protocol.js';
 import { showView } from './view.js';
 
 /**
- * Pairing from the QR (`/pair?c=<code>#k=<identity key>`): the page trusts
+ * Pairing from the QR (`/pair#c=<code>&k=<identity key>`): the page trusts
  * the key that came in the fragment — straight from the computer's screen —
  * and shakes hands only with a DevBar that proves it holds it. Then the form
- * (this device's name), a fresh Ed25519 key pair for the device, the 6-digit
- * code both screens show while the computer decides, and — once accepted —
- * the keys to keep.
+ * (this device's name), a fresh Ed25519 key pair for the device (which signs
+ * the handshake to prove it is held), the 6-digit code the user types on the
+ * computer to accept it, and — once accepted — the keys to keep.
  */
 
 const POLL_MS = 1000;
@@ -130,11 +131,7 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
     els.pairError.hidden = true;
     const device = generateSigningKey();
     try {
-      const answer = await client.requestPairing(
-        pairing.code,
-        name,
-        toB64(device.publicKey),
-      );
+      const answer = await client.requestPairing(pairing.code, name, device);
       if (answer.status === 200) {
         env.replaceUrl('/');
         const digits = String(answer.body.verificationCode ?? '');
@@ -150,8 +147,9 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
         formError('Demasiados intentos. Espera un minuto y vuelve a probar.');
       else if (answer.status === 400) formError(NAME_HINT);
       else formError(UNREACHABLE);
-    } catch {
-      formError(UNREACHABLE);
+    } catch (error) {
+      const lost = error instanceof RemoteError && error.code === 'session';
+      formError(lost ? LOST : UNREACHABLE);
     } finally {
       els.pairSubmit.disabled = false;
     }

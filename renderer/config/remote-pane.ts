@@ -13,6 +13,10 @@ import { errorMessage, type ShowToast } from './toast.js';
  * notice and renewing this computer's key.
  * Main owns the state; this paints whatever `RemoteStatus` it last reported
  * (answers and `remote:changed` pushes alike) and forwards the clicks.
+ *
+ * When this computer's key cannot be read (a locked keychain), main keeps
+ * the server off and says why: «Reintentar» asks it to start again, and
+ * «Renovar clave del equipo» is the only way to replace the key.
  */
 
 /** Repaint cadence, so «Última conexión hace …» keeps counting. */
@@ -54,6 +58,9 @@ export function createRemotePane(
       : 'Sin red local';
     els.error.hidden = !status.error;
     els.error.textContent = status.error ?? '';
+    els.keyError.hidden = !status.keyError;
+    els.keyErrorText.textContent = status.keyError ?? '';
+    els.keyUnsealed.hidden = !status.keyUnsealed;
     // A failed listen is almost always the port: show where to change it.
     if (status.error) els.portSettings.open = true;
     portField.render(status.port);
@@ -113,6 +120,17 @@ export function createRemotePane(
       showToast(`Error: ${errorMessage(err)}`, 'error');
     } finally {
       els.renewIdentity.disabled = false;
+    }
+  });
+
+  els.keyRetry.addEventListener('click', async () => {
+    els.keyRetry.disabled = true;
+    try {
+      apply(await window.api.setRemoteEnabled(true));
+    } catch (err) {
+      showToast(`Error: ${errorMessage(err)}`, 'error');
+    } finally {
+      els.keyRetry.disabled = false;
     }
   });
 

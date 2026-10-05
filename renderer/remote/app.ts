@@ -21,22 +21,25 @@ export type { RemoteEnv } from './env.js';
  * The phone page's flow. Everything travels over devbar-rc/1; what the page
  * shows depends on where it was opened and on the keys this device keeps:
  *
- *   /pair?c=…#k=…    → pairing, trusting the identity key of the QR
+ *   /pair#c=…&k=…    → pairing, trusting the identity key of the QR
  *                      (renderer/remote/pair-flow.ts);
- *   /verify#k=…&d=…&p=…
+ *   /verify#k=…&d=…&p=…&t=…
  *                    → comparing a security code (verify-flow.ts);
  *   anything else    → with keys, a handshake against the pinned key, the
  *                      sign-in and the control panel; without, how to link.
  *
- * A pinned key the desktop no longer presents stops everything at «La
- * clave de seguridad ha cambiado» until the user scans the new code. The
- * browser's globals arrive as `RemoteEnv` (renderer/remote.ts), so every
- * step can be driven from a test.
+ * Both QR links carry everything in the fragment, read once and wiped from
+ * the address bar at once. A pinned key the desktop no longer presents stops
+ * everything at «La clave de seguridad ha cambiado» until the user scans the
+ * new code. The keys are forgotten only when a sign-in is refused because
+ * the desktop does not know this device (onLost). The browser's globals
+ * arrive as `RemoteEnv` (renderer/remote.ts), so every step can be driven
+ * from a test.
  */
 
 type Route =
   | { kind: 'home' }
-  | { kind: 'pair'; code: string; key: Uint8Array | null }
+  | { kind: 'pair'; code: string | null; key: Uint8Array | null }
   | ({ kind: 'verify' } & VerifyFragment);
 
 function elements() {
@@ -67,18 +70,22 @@ function elements() {
 /** Where the page was opened; the fragment is cleared from the URL at once. */
 function takeRoute(env: RemoteEnv): Route {
   const fragment = new URLSearchParams(env.hash.replace(/^#/, ''));
-  const verify = env.pathname === '/verify';
-  if (env.hash) env.replaceUrl(verify ? '/' : `${env.pathname}${env.search}`);
-  if (verify)
+  const qr = env.pathname === '/verify' || env.pathname === '/pair';
+  if (env.hash) env.replaceUrl(qr ? '/' : `${env.pathname}${env.search}`);
+  if (env.pathname === '/verify')
     return {
       kind: 'verify',
       k: fragment.get('k'),
       d: fragment.get('d'),
       p: fragment.get('p'),
+      t: fragment.get('t'),
     };
-  const code = new URLSearchParams(env.search).get('c');
-  if (code)
-    return { kind: 'pair', code, key: fromB64(fragment.get('k'), KEY_BYTES) };
+  if (env.pathname === '/pair')
+    return {
+      kind: 'pair',
+      code: fragment.get('c'),
+      key: fromB64(fragment.get('k'), KEY_BYTES),
+    };
   return { kind: 'home' };
 }
 
@@ -154,13 +161,7 @@ export async function startRemoteApp(env: RemoteEnv): Promise<void> {
       return;
     }
     showView('linked');
-    panel = startPanel({
-      env,
-      client,
-      me,
-      identity,
-      onUnlinked: () => showUnlinked(false, true),
-    });
+    panel = startPanel({ env, client, me, identity });
   };
 
   const pairing = createPairFlow({
@@ -194,21 +195,27 @@ export async function startRemoteApp(env: RemoteEnv): Promise<void> {
     try {
       await client.reconnect();
       me = await client.me();
-    } catch (error) {
+    } catch {
       // A lost trust already switched the view (onLost).
       if (document.body.dataset.screen === 'loading') showView('error');
       return;
     }
-    if (!me.linked) showUnlinked(false, true);
-    else showLinked(me);
+    if (me.linked) {
+      showLinked(me);
+      return;
+    }
+    // Signed in, yet not linked: a sign-in decides (onLost forgets).
+    await client.confirmLinked();
+    if (document.body.dataset.screen === 'loading') showView('error');
   }
 
   async function run(route: Route): Promise<void> {
     if (route.kind === 'home') return boot();
     mode = 'flow';
     if (route.kind === 'pair') {
-      if (route.key) return pairing.start(route.code, route.key);
-      // A link without its key (an old QR, a typed address): not trusted.
+      if (route.code && route.key) return pairing.start(route.code, route.key);
+      // A link without its code or key (an old QR, a typed address): not
+      // trusted.
       env.replaceUrl('/');
       showUnlinked(true);
       return;

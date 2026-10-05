@@ -3570,6 +3570,25 @@ button.remote-rename-btn:hover {
 .remote-device-meta {
   margin-top: 2px;
 }
+.remote-device-ip {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* This computer's key could not be read: why, and «Reintentar». */
+.remote-key-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.remote-key-error[hidden] {
+  display: none;
+}
+.remote-key-error .remote-error {
+  margin: 0;
+}
 .remote-device-side {
   display: flex;
   flex-shrink: 0;
@@ -3714,4 +3733,17 @@ button.remote-rename-btn:hover {
   font-weight: 600;
   letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
+}
+/* «¿Vincular este dispositivo?»: the user types the phone's six digits. */
+.remote-code-label {
+  display: block;
+  margin-top: 14px;
+  font-size: 12px;
+}
+.remote-code-input {
+  box-sizing: border-box;
+  width: 9ch;
+  margin-top: 6px;
+  padding: 2px 8px;
+  text-align: center;
 }

@@ -73,6 +73,8 @@ export interface DeviceStore {
     name: string;
     client: string;
     devicePub: string;
+    /** Where it paired from: the first address its sign-ins are held to. */
+    ip?: string;
   }): RemoteDeviceView;
   rename(id: string, name: string): RenameOutcome;
   remove(id: string): boolean;
@@ -88,6 +90,8 @@ export interface DeviceStore {
   saveIdentity(identity: StoredIdentity): void;
   /** Marks the device as seen now; true when that reached the disk. */
   touch(id: string): boolean;
+  /** The device signed in from `ip`: keeps it; the address it had before. */
+  recordIp(id: string, ip: string): string | null;
   /** Removes devices unseen for 30 days (auto-unlink only); the count. */
   pruneStale(): number;
 }
@@ -110,6 +114,7 @@ function normalizeDevice(value: unknown): RemoteDevice | null {
   if (!isRecord(value)) return null;
   const { id, name, devicePub, client, createdAt, lastSeenAt } = value;
   const verifiedAt = value.verifiedAt ?? null;
+  const lastIp = typeof value.lastIp === 'string' ? value.lastIp : null;
   if (
     typeof id !== 'string' ||
     typeof name !== 'string' ||
@@ -121,7 +126,16 @@ function normalizeDevice(value: unknown): RemoteDevice | null {
     (verifiedAt !== null && typeof verifiedAt !== 'number')
   )
     return null;
-  return { id, name, devicePub, client, createdAt, lastSeenAt, verifiedAt };
+  return {
+    id,
+    name,
+    devicePub,
+    client,
+    createdAt,
+    lastSeenAt,
+    verifiedAt,
+    lastIp,
+  };
 }
 
 function normalizeIdentity(value: unknown): StoredIdentity | null {
@@ -202,7 +216,7 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
       persist();
     },
     list: () => state.devices.map(view),
-    add: ({ name, client, devicePub }) => {
+    add: ({ name, client, devicePub, ip }) => {
       const now = deps.now();
       const device: RemoteDevice = {
         id: randomUUID(),
@@ -212,6 +226,7 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
         createdAt: now,
         lastSeenAt: now,
         verifiedAt: null,
+        lastIp: ip ?? null,
       };
       state.devices.push(device);
       persist();
@@ -271,6 +286,16 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
       if (device.lastSeenAt - onDisk < LAST_SEEN_PERSIST_MS) return false;
       persist();
       return true;
+    },
+    recordIp: (id, ip) => {
+      const device = byId(id);
+      if (!device) return null;
+      const previous = device.lastIp;
+      if (previous !== ip) {
+        device.lastIp = ip;
+        persist();
+      }
+      return previous;
     },
     pruneStale: () => {
       if (!state.autoUnlink) return 0;

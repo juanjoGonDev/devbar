@@ -6,13 +6,14 @@ import type { RemotePairRequest } from '../../ipc-contract/remote-api.js';
  * injected):
  *
  *   1. The desktop issues THE pairing code — one at a time, single use,
- *      5 minutes. It travels in the QR, so it proves the phone saw this
- *      screen.
+ *      5 minutes. It travels in the QR's fragment, so it proves the phone saw
+ *      this screen and never crosses the network in clear.
  *   2. The phone redeems it for a request: a 60 s window and a 6-digit
- *      verification number both screens show. Seeing the code is not enough —
- *      someone on the desk must accept, and the matching digits tell them
- *      they are accepting THEIR phone and not a neighbour who photographed
- *      the screen first.
+ *      verification number that only the phone shows. Seeing the code is not
+ *      enough — someone at the desk must type those digits (`checkCode`,
+ *      compared in constant time), which is what tells them they accept THEIR
+ *      phone and not a neighbour who photographed the screen first. Three
+ *      wrong codes reject the request; accepting re-checks the digits.
  *   3. The phone polls the request; the server hands an accepted one over
  *      exactly once (`takeAccepted`), which is when the device is created
  *      with the public key the phone sent along (devbar-rc/1: the phone
@@ -27,6 +28,9 @@ const REQUEST_TTL_MS = 60_000;
 const SETTLED_RETENTION_MS = 60_000;
 /** Recently retired codes, remembered only to explain a refusal. */
 const RETIRED_MEMORY = 8;
+/** Wrong codes typed on the desktop before the request is rejected. */
+const CODE_ATTEMPTS = 3;
+const SIX_DIGITS = /^\d{6}$/;
 
 type PairRequestStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
 type PairCodeRefusal = 'invalid' | 'expired' | 'used';
@@ -50,12 +54,24 @@ export interface Pairing {
     /** The phone's Ed25519 public key, base64url. */
     devicePub: string;
   }):
-    | { ok: true; request: RemotePairRequest }
+    | { ok: true; request: RemotePairRequest; verificationCode: string }
     | { ok: false; reason: PairCodeRefusal };
   /** Null once the request is unknown, handed over or forgotten. */
   status(requestId: string): PairRequestStatus | null;
-  /** False when the request is not pending (answered, expired, unknown). */
-  respond(requestId: string, accept: boolean): boolean;
+  /**
+   * The digits typed on the desktop against the phone's; the third wrong
+   * six-digit code rejects the request. Null when it is not pending.
+   */
+  checkCode(
+    requestId: string,
+    typed: string,
+  ): { match: boolean; attemptsLeft: number } | null;
+  /** Accepting needs the phone's digits; rejecting needs nothing. */
+  respond(
+    requestId: string,
+    accept: boolean,
+    typed: string,
+  ): 'ok' | 'not-pending' | 'mismatch';
   takeAccepted(requestId: string): AcceptedRequest | null;
   /** The phone gave up on a pending request; true when it was pending. */
   withdraw(requestId: string): boolean;
@@ -70,10 +86,15 @@ type AcceptedRequest = RemotePairRequest & { devicePub: string };
 
 interface Entry {
   request: RemotePairRequest;
+  verificationCode: string;
   devicePub: string;
   status: PairRequestStatus;
   settledAt: number | null;
+  attemptsLeft: number;
 }
+
+/** What was typed, without the space the digits are shown with. */
+const digitsOf = (typed: string): string => typed.replace(/\s/g, '');
 
 function sameSecret(a: string, b: string): boolean {
   const left = Buffer.from(a);
@@ -113,6 +134,11 @@ export function createPairing(deps: PairingDeps): Pairing {
     return entry;
   };
 
+  const settleAs = (entry: Entry, status: PairRequestStatus): void => {
+    entry.status = status;
+    entry.settledAt = deps.now();
+  };
+
   const refusal = (code: string): PairCodeRefusal => {
     if (active && sameSecret(active.code, code)) return 'expired';
     return (
@@ -142,27 +168,41 @@ export function createPairing(deps: PairingDeps): Pairing {
       active = null;
       const request: RemotePairRequest = {
         requestId: randomBytes(16).toString('base64url'),
-        verificationCode: String(randomInt(0, 1_000_000)).padStart(6, '0'),
         name,
         client,
         ip,
         expiresAt: now + REQUEST_TTL_MS,
       };
+      const verificationCode = String(randomInt(0, 1_000_000)).padStart(6, '0');
       entries.set(request.requestId, {
         request,
+        verificationCode,
         devicePub,
         status: 'pending',
         settledAt: null,
+        attemptsLeft: CODE_ATTEMPTS,
       });
-      return { ok: true, request: { ...request } };
+      return { ok: true, request: { ...request }, verificationCode };
     },
     status: (requestId) => settle(requestId)?.status ?? null,
-    respond: (requestId, accept) => {
+    checkCode: (requestId, typed) => {
       const entry = settle(requestId);
-      if (entry?.status !== 'pending') return false;
-      entry.status = accept ? 'accepted' : 'rejected';
-      entry.settledAt = deps.now();
-      return true;
+      if (entry?.status !== 'pending') return null;
+      const digits = digitsOf(typed);
+      const match = sameSecret(digits, entry.verificationCode);
+      if (!match && SIX_DIGITS.test(digits)) {
+        entry.attemptsLeft -= 1;
+        if (entry.attemptsLeft === 0) settleAs(entry, 'rejected');
+      }
+      return { match, attemptsLeft: entry.attemptsLeft };
+    },
+    respond: (requestId, accept, typed) => {
+      const entry = settle(requestId);
+      if (entry?.status !== 'pending') return 'not-pending';
+      if (accept && !sameSecret(digitsOf(typed), entry.verificationCode))
+        return 'mismatch';
+      settleAs(entry, accept ? 'accepted' : 'rejected');
+      return 'ok';
     },
     takeAccepted: (requestId) => {
       const entry = settle(requestId);

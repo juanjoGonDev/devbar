@@ -6,21 +6,25 @@ import { fromB64, KEY_BYTES, sameBytes, toB64 } from './rc-protocol.js';
 import { showView } from './view.js';
 
 /**
- * `/verify#k=<identity key>&d=<device id>&p=<device key>`: the QR of a
- * device's «Código de seguridad» on the computer, opened by the phone's own
- * camera. The phone compares all three with what it holds:
+ * `/verify#k=<identity key>&d=<device id>&p=<device key>&t=<token>`: the QR
+ * of a device's «Código de seguridad» on the computer, opened by the phone's
+ * own camera. The phone compares the first three with what it holds:
  *
  *   all match       → verified here, `verify.done` tells the computer;
  *   d and p match, k is new
  *                   → the computer renewed its key: the phone re-pins it,
  *                     but only once a DevBar proves it holds the new key;
  *   anything else   → «El código no coincide», and nothing is marked.
+ *
+ * `verify.done` carries `t`, the one-time token only that screen showed:
+ * without it the computer does not take the phone's word for it.
  */
 
 export interface VerifyFragment {
   k: string | null;
   d: string | null;
   p: string | null;
+  t: string | null;
 }
 
 export interface VerifyDeps {
@@ -88,7 +92,8 @@ export async function verifyDevice(
     }
     deps.kept(verified);
   }
-  const told = await client.call('verify.done').then(
+  const proof = fragment.t ? { t: fragment.t } : {};
+  const told = await client.call('verify.done', proof).then(
     (answer) => answer.status === 200,
     () => false,
   );

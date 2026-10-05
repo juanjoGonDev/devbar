@@ -1,8 +1,7 @@
 /**
- * The words and numbers of the «Control remoto» section: countdowns, the
- * verification code and how long ago a device was last seen. Whether one is
- * connected right now is not guessed from that: main reports it (an open
- * event stream).
+ * The words and numbers of the «Control remoto» section: countdowns and how
+ * long ago a device was last seen. Whether one is connected right now is not
+ * guessed from that: main reports it (an open event stream).
  */
 
 const MINUTE = 60_000;
@@ -14,11 +13,6 @@ const DATE = new Intl.DateTimeFormat('es-ES', {
   month: 'short',
   year: 'numeric',
 });
-
-/** "482913" → "482 913": easier to compare at a glance with the phone. */
-export function formatVerificationCode(code: string): string {
-  return `${code.slice(0, 3)} ${code.slice(3)}`;
-}
 
 /** Milliseconds left → "m:ss", rounded up so 0:00 means really over. */
 export function formatCountdown(ms: number): string {

@@ -12,11 +12,15 @@ import {
 } from './helpers/remote-page.js';
 
 /**
- * `/verify#k=…&d=…&p=…`, the QR of a device's «Código de seguridad» opened
- * with the phone's camera: the phone compares the computer's key, its own
- * device id and its own key with what it holds — verifying the connection,
- * re-pinning a renewed computer key, or saying the code does not match.
+ * `/verify#k=…&d=…&p=…&t=…`, the QR of a device's «Código de seguridad»
+ * opened with the phone's camera: the phone compares the computer's key, its
+ * own device id and its own key with what it holds — verifying the
+ * connection, re-pinning a renewed computer key, or saying the code does not
+ * match — and hands the one-time token `t` back so the computer can tell it
+ * was scanned.
  */
+
+const TOKEN = 'dG9rZW4tb2YtdGhlLXFyLTE';
 
 function verifyPage(fragment: (keys: { k: string; p: string }) => string) {
   const h = pageHarness('/verify');
@@ -33,16 +37,30 @@ describe('renderer/remote/verify-flow.ts', () => {
   });
 
   it('verifies a matching code, tells the computer and leaves the URL clean', async () => {
-    const h = verifyPage(({ k, p }) => `k=${k}&d=d1&p=${p}`);
+    const h = verifyPage(({ k, p }) => `k=${k}&d=d1&p=${p}&t=${TOKEN}`);
     h.answer('verify.done', { status: 200, body: { ok: true } });
 
     await start(h);
 
     expect(visibleView()).toBe('verified');
     expect(h.keys()?.verified).toBe(true);
-    expect(h.callsTo('verify.done')).toHaveLength(1);
+    // The token of the QR goes back inside the sealed channel.
+    expect(h.callsTo('verify.done').map((call) => call.body)).toEqual([
+      { t: TOKEN },
+    ]);
     expect(document.getElementById('verified-note')?.hidden).toBe(true);
     expect(h.urls[0]).toBe('/');
+  });
+
+  it('says the computer could not be told when it refuses the token', async () => {
+    const h = verifyPage(({ k, p }) => `k=${k}&d=d1&p=${p}`);
+    h.answer('verify.done', { status: 403, body: { error: 'invalid-token' } });
+
+    await start(h);
+
+    expect(visibleView()).toBe('verified');
+    expect(h.callsTo('verify.done').map((call) => call.body)).toEqual([{}]);
+    expect(document.getElementById('verified-note')?.hidden).toBe(false);
   });
 
   it('keeps it verified here even when the computer cannot be told', async () => {

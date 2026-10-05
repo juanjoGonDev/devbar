@@ -4,7 +4,7 @@ import type {
 } from '../../src/ipc-contract/remote-wire.js';
 import type { Me } from './api.js';
 import type { PanelContext } from './context.js';
-import { UNREACHABLE } from './context.js';
+import { attempt, LOST, signedOut } from './context.js';
 import type { PanelElements } from './elements.js';
 import { shortDate } from './format.js';
 import { createSecuritySection } from './security-section.js';
@@ -87,29 +87,30 @@ export function createSettingsTab(
     )
       return;
     els.updateApply.disabled = true;
-    const answer = await ctx.client.call('update.apply', {}).catch(() => null);
+    const { answer, failure } = await attempt(
+      ctx.client.call('update.apply', {}),
+    );
     els.updateApply.disabled = false;
     if (answer?.status === 202) {
       restarting = true;
       if (lastUpdate) renderUpdate(lastUpdate);
     } else if (answer?.status === 409)
       ctx.toast('La actualización ya no está lista.');
-    else
-      ctx.toast(answer ? 'No se pudo instalar la actualización.' : UNREACHABLE);
+    else ctx.toast(answer ? 'No se pudo instalar la actualización.' : failure);
   }
 
   async function save(key: (typeof SWITCHES)[number]): Promise<void> {
     const input = els[key];
     const wanted = input.checked;
     input.disabled = true;
-    const answer = await ctx.client
-      .call('settings.set', { [key]: wanted })
-      .catch(() => null);
+    const { answer, failure } = await attempt(
+      ctx.client.call('settings.set', { [key]: wanted }),
+    );
     input.disabled = false;
     if (answer?.status === 200) paintSwitches(settingsView(answer.body));
     else {
       input.checked = !wanted;
-      ctx.toast('No se pudo guardar el ajuste.');
+      ctx.toast(failure === LOST ? LOST : 'No se pudo guardar el ajuste.');
     }
   }
 
@@ -124,15 +125,16 @@ export function createSettingsTab(
 
   async function rename(): Promise<void> {
     const name = els.renameInput.value.trim();
-    const answer = await ctx.client
-      .call('device.rename', { name })
-      .catch(() => null);
+    const { answer, failure } = await attempt(
+      ctx.client.call('device.rename', { name }),
+    );
     if (answer?.status === 200) {
       device = { ...device, name };
       paintDevice();
       closeRename();
-    } else if (answer?.status === 401) ctx.unlinked();
-    else renameError(answer ? NAME_HINT : UNREACHABLE);
+    } else if (signedOut(answer)) {
+      if (await ctx.recheck()) renameError(LOST);
+    } else renameError(answer ? NAME_HINT : failure);
   }
 
   async function unlink(): Promise<void> {
@@ -143,10 +145,12 @@ export function createSettingsTab(
     )
       return;
     els.unlink.disabled = true;
-    const answer = await ctx.client.call('unlink').catch(() => null);
+    const { answer, failure } = await attempt(ctx.client.call('unlink'));
     els.unlink.disabled = false;
-    if (answer?.status === 200 || answer?.status === 401) ctx.unlinked();
-    else ctx.toast(answer ? 'No se pudo desvincular.' : UNREACHABLE);
+    // Even after a 200, the keys go only once a sign-in is refused.
+    if (answer?.status === 200 || signedOut(answer)) {
+      if (await ctx.recheck()) ctx.toast('No se pudo desvincular.');
+    } else ctx.toast(answer ? 'No se pudo desvincular.' : failure);
   }
 
   for (const key of SWITCHES)

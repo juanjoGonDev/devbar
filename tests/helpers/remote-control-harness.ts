@@ -12,8 +12,11 @@ import type {
 } from '../../src/main/remote/server.js';
 import { createChannel, type Channel } from '../../renderer/remote/channel.js';
 import {
+  authMessage,
   fromB64,
   generateSigningKey,
+  pairMessage,
+  sign,
   toB64,
 } from '../../renderer/remote/rc-protocol.js';
 import { bridge } from './rc-bridge.js';
@@ -181,19 +184,23 @@ export function harness(
       banners.push({ title, body, options }),
     ...overrides,
   });
-  const net = bridge(() => {
+  const target = () => {
     const deps = serverDeps;
     if (!deps) throw new Error('no server was created');
     return {
-      api: (request) => deps.api(request),
-      stream: (request) =>
+      api: (request: Parameters<RemoteServerDeps['api']>[0]) =>
+        deps.api(request),
+      stream: (request: Parameters<RemoteServerDeps['api']>[0]) =>
         deps.stream?.(request) ?? { status: 404, body: { error: 'none' } },
     };
-  });
-  const codeOf = (url: string) => new URL(url).searchParams.get('c') ?? '';
+  };
+  const net = bridge(target);
+  const codeOf = (url: string) => pairingLink(url).code;
   return {
     remote,
     net,
+    /** The same server, reached by a phone at another address. */
+    netFrom: (ip: string) => bridge(target, { ip }),
     banners,
     sent,
     timers,
@@ -218,29 +225,52 @@ export function harness(
 
 export type Harness = ReturnType<typeof harness>;
 
-/** The identity key and the code a pairing URL carries. */
+/** The identity key and the code a pairing URL carries in its fragment. */
 export function pairingLink(url: string): { code: string; key: Uint8Array } {
-  const parsed = new URL(url);
-  const key = fromB64(new URLSearchParams(parsed.hash.slice(1)).get('k'), 32);
+  const fragment = new URLSearchParams(new URL(url).hash.slice(1));
+  const key = fromB64(fragment.get('k'), 32);
   if (!key) throw new Error(`no key in ${url}`);
-  return { code: parsed.searchParams.get('c') ?? '', key };
+  return { code: fragment.get('c') ?? '', key };
+}
+
+/** The handshake of a ready channel, for a proof bound to it. */
+function transcriptOf(channel: Channel): Uint8Array {
+  const t = channel.handshake();
+  if (!t) throw new Error('no session');
+  return t;
+}
+
+/** Signs in on the channel's current session; the desktop's answer. */
+function signIn(channel: Channel, deviceId: string, secretKey: Uint8Array) {
+  const t = transcriptOf(channel);
+  return channel.send('auth', {
+    deviceId,
+    sig: toB64(sign(secretKey, authMessage(deviceId, t))),
+  });
 }
 
 /** A phone that scanned the QR and asked to be linked. */
-export async function scanAndRequest(h: Harness, name = 'iPhone de Ana') {
+export async function scanAndRequest(
+  h: Harness,
+  name = 'iPhone de Ana',
+  net = h.net,
+) {
   const pairing = h.remote.startPairing();
   if (!pairing.ok) throw new Error(pairing.error);
   const { code, key } = pairingLink(pairing.url);
-  const channel = createChannel(h.net.fetch);
+  const channel = createChannel(net.fetch);
   await channel.open(key);
   const device = generateSigningKey();
   const answer = await channel.send('pair.request', {
     code,
     name,
     devicePub: toB64(device.publicKey),
+    sig: toB64(sign(device.secretKey, pairMessage(transcriptOf(channel)))),
   });
   const requestId = String(answer.body.requestId);
-  return { requestId, channel, device, serverKey: key, code };
+  /** The six digits the phone shows, to type on the desktop. */
+  const digits = String(answer.body.verificationCode);
+  return { requestId, digits, channel, device, serverKey: key, code };
 }
 
 export interface LinkedPhone {
@@ -251,17 +281,14 @@ export interface LinkedPhone {
 }
 
 /** The whole pairing, accepted on the desktop; an authenticated channel. */
-export async function linkPhone(h: Harness): Promise<LinkedPhone> {
-  const scanned = await scanAndRequest(h);
-  h.remote.respondPairing(scanned.requestId, true);
+export async function linkPhone(h: Harness, net = h.net): Promise<LinkedPhone> {
+  const scanned = await scanAndRequest(h, 'iPhone de Ana', net);
+  h.remote.respondPairing(scanned.requestId, true, scanned.digits);
   const status = await scanned.channel.send('pair.status', {
     requestId: scanned.requestId,
   });
   const deviceId = String(status.body.deviceId);
-  await scanned.channel.send('auth', {
-    deviceId,
-    sig: scanned.channel.proof(scanned.device.secretKey),
-  });
+  await signIn(scanned.channel, deviceId, scanned.device.secretKey);
   return { ...scanned, deviceId };
 }
 
@@ -269,14 +296,12 @@ export async function linkPhone(h: Harness): Promise<LinkedPhone> {
 export async function reconnect(
   h: Harness,
   phone: LinkedPhone,
-): Promise<{ channel: Channel; auth: number }> {
-  const channel = createChannel(h.net.fetch);
+  net = h.net,
+): Promise<{ channel: Channel; auth: number; error: unknown }> {
+  const channel = createChannel(net.fetch);
   await channel.open(phone.serverKey);
-  const answer = await channel.send('auth', {
-    deviceId: phone.deviceId,
-    sig: channel.proof(phone.device.secretKey),
-  });
-  return { channel, auth: answer.status };
+  const answer = await signIn(channel, phone.deviceId, phone.device.secretKey);
+  return { channel, auth: answer.status, error: answer.body.error };
 }
 
 /** Opens the event stream of an authenticated channel, reading it back. */

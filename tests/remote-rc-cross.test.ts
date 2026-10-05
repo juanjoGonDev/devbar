@@ -16,7 +16,10 @@ const SHARED_CONSTANTS = [
   'PROTOCOL_VERSION',
   'KEYS_LABEL',
   'AUTH_LABEL',
+  'PAIR_LABEL',
+  'ROTATE_LABEL',
   'SAFETY_LABEL',
+  'EVENTS_PROOF',
   'KEY_BYTES',
   'SID_BYTES',
   'SIGNATURE_BYTES',
@@ -31,7 +34,12 @@ function handshake() {
   const server = desk.ephemeralKeyPair();
   const sidBytes = crypto.randomBytes(desk.SID_BYTES);
   const sid = desk.toB64(sidBytes);
-  const serverT = desk.transcript(client.publicKey, server.publicKey, sidBytes);
+  const serverT = desk.transcript(
+    identity.publicKey,
+    client.publicKey,
+    server.publicKey,
+    sidBytes,
+  );
   const signature = signer.sign(serverT);
   const serverShared = server.agree(client.publicKey);
   if (!serverShared) throw new Error('server agreement failed');
@@ -39,6 +47,7 @@ function handshake() {
 
   // The phone rebuilds T from what crossed the wire.
   const phoneT = phone.transcript(
+    identity.publicKey,
     client.publicKey,
     server.publicKey,
     phone.fromB64(sid) ?? new Uint8Array(),
@@ -65,6 +74,15 @@ describe('devbar-rc/1 across implementations', () => {
     expect(phone[name]).toBe(desk[name]);
   });
 
+  it('labels the associated data of each purpose the same way', () => {
+    expect(phone.AAD_LABELS).toEqual(desk.AAD_LABELS);
+    expect(new Set(desk.AAD_LABELS).size).toBe(4);
+    for (const label of desk.AAD_LABELS)
+      expect(Buffer.from(phone.aad(label, 'sid'))).toEqual(
+        desk.aad(label, 'sid'),
+      );
+  });
+
   describe('the handshake', () => {
     it('derives the same transcript and the same keys on both sides', () => {
       const h = handshake();
@@ -89,6 +107,16 @@ describe('devbar-rc/1 across implementations', () => {
       ).toBe(false);
     });
 
+    it('binds the identity key into the transcript the desktop signs', () => {
+      const h = handshake();
+      const other = desk.generateIdentity().publicKey;
+      const swapped = Uint8Array.from(h.phoneT);
+      swapped.set(other, desk.PROTOCOL.length);
+      expect(
+        phone.verifySignature(h.identity.publicKey, swapped, h.signature),
+      ).toBe(false);
+    });
+
     it('rejects a signature over a different session id', () => {
       const h = handshake();
       const tampered = Uint8Array.from(h.phoneT);
@@ -101,22 +129,67 @@ describe('devbar-rc/1 across implementations', () => {
     it("lets the desktop verify the device's auth proof", () => {
       const h = handshake();
       const device = phone.generateSigningKey();
-      const proof = phone.sign(device.secretKey, phone.authMessage(h.phoneT));
+      const proof = phone.sign(
+        device.secretKey,
+        phone.authMessage('d1', h.phoneT),
+      );
+      const key = Buffer.from(device.publicKey);
       expect(
         desk.verifySignature(
-          Buffer.from(device.publicKey),
-          desk.authMessage(h.serverT),
+          key,
+          desk.authMessage('d1', h.serverT),
           Buffer.from(proof),
         ),
       ).toBe(true);
-      // The proof is bound to this handshake: replaying it elsewhere fails.
+      // Bound to this handshake and this device id: anywhere else it fails.
       expect(
         desk.verifySignature(
-          Buffer.from(device.publicKey),
-          desk.authMessage(handshake().serverT),
+          key,
+          desk.authMessage('d1', handshake().serverT),
           Buffer.from(proof),
         ),
       ).toBe(false);
+      expect(
+        desk.verifySignature(
+          key,
+          desk.authMessage('d2', h.serverT),
+          Buffer.from(proof),
+        ),
+      ).toBe(false);
+    });
+
+    it("lets the desktop check a new key's pairing and rotation proofs", () => {
+      const h = handshake();
+      const device = phone.generateSigningKey();
+      const key = Buffer.from(device.publicKey);
+      const pair = phone.sign(device.secretKey, phone.pairMessage(h.phoneT));
+      const rotate = phone.sign(
+        device.secretKey,
+        phone.rotateMessage(h.phoneT),
+      );
+      expect(
+        desk.verifySignature(
+          key,
+          desk.pairMessage(h.serverT),
+          Buffer.from(pair),
+        ),
+      ).toBe(true);
+      expect(
+        desk.verifySignature(
+          key,
+          desk.rotateMessage(h.serverT),
+          Buffer.from(rotate),
+        ),
+      ).toBe(true);
+      // Neither proof stands in for the other, or for an auth.
+      expect(
+        desk.verifySignature(
+          key,
+          desk.rotateMessage(h.serverT),
+          Buffer.from(pair),
+        ),
+      ).toBe(false);
+      expect(desk.isStrongPublicKey(key)).toBe(true);
     });
   });
 
@@ -126,13 +199,13 @@ describe('devbar-rc/1 across implementations', () => {
       const request = phone.seal(
         h.phoneKeys.c2s,
         1,
-        phone.aad('c2s', h.sid),
+        phone.aad('c2s-rpc', h.sid),
         phone.utf8('{"op":"state","args":{}}'),
       );
       const opened = desk.open(
         h.serverKeys.c2s,
         1,
-        desk.aad('c2s', h.sid),
+        desk.aad('c2s-rpc', h.sid),
         Buffer.from(request),
       );
       expect(text(opened)).toBe('{"op":"state","args":{}}');
@@ -140,12 +213,33 @@ describe('devbar-rc/1 across implementations', () => {
       const response = desk.seal(
         h.serverKeys.s2c,
         1,
-        desk.aad('s2c', h.sid),
-        Buffer.from('{"status":200,"body":{}}'),
+        desk.aad('s2c-rpc', h.sid),
+        Buffer.from('{"re":1,"status":200,"body":{}}'),
       );
       expect(
-        text(phone.open(h.phoneKeys.s2c, 1, phone.aad('s2c', h.sid), response)),
-      ).toBe('{"status":200,"body":{}}');
+        text(
+          phone.open(h.phoneKeys.s2c, 1, phone.aad('s2c-rpc', h.sid), response),
+        ),
+      ).toBe('{"re":1,"status":200,"body":{}}');
+    });
+
+    it("opens the phone's event-stream proof on the desktop, and only as one", () => {
+      const h = handshake();
+      const proof = phone.seal(
+        h.phoneKeys.c2s,
+        4,
+        phone.aad('c2s-events', h.sid),
+        phone.utf8(phone.EVENTS_PROOF),
+      );
+      const key = h.serverKeys.c2s;
+      expect(
+        text(
+          desk.open(key, 4, desk.aad('c2s-events', h.sid), Buffer.from(proof)),
+        ),
+      ).toBe(desk.EVENTS_PROOF);
+      expect(
+        desk.open(key, 4, desk.aad('c2s-rpc', h.sid), Buffer.from(proof)),
+      ).toBeNull();
     });
 
     it('opens an SSE frame sealed by the desktop', () => {
@@ -153,16 +247,20 @@ describe('devbar-rc/1 across implementations', () => {
       const frame = desk.sealEvent(
         h.serverKeys.s2c,
         7,
-        desk.aad('s2c', h.sid),
+        desk.aad('s2c-evt', h.sid),
         Buffer.from('{"type":"state","data":{}}'),
       );
       const event = phone.openEvent(
         h.phoneKeys.s2c,
-        phone.aad('s2c', h.sid),
+        phone.aad('s2c-evt', h.sid),
         frame,
       );
       expect(event?.counter).toBe(7);
       expect(text(event?.plaintext ?? null)).toBe('{"type":"state","data":{}}');
+      // A frame never reads as an RPC reply.
+      expect(
+        phone.openEvent(h.phoneKeys.s2c, phone.aad('s2c-rpc', h.sid), frame),
+      ).toBeNull();
     });
 
     it('refuses tampered ciphertext, a different AAD and a different sid', () => {
@@ -171,22 +269,23 @@ describe('devbar-rc/1 across implementations', () => {
         phone.seal(
           h.phoneKeys.c2s,
           2,
-          phone.aad('c2s', h.sid),
+          phone.aad('c2s-rpc', h.sid),
           phone.utf8('x'),
         ),
       );
       const flipped = Buffer.from(sealed);
       flipped[0] = (flipped[0] ?? 0) ^ 0x80;
       const key = h.serverKeys.c2s;
-      expect(desk.open(key, 2, desk.aad('c2s', h.sid), flipped)).toBeNull();
-      expect(desk.open(key, 2, desk.aad('s2c', h.sid), sealed)).toBeNull();
-      expect(desk.open(key, 2, desk.aad('c2s', 'other'), sealed)).toBeNull();
-      expect(desk.open(key, 3, desk.aad('c2s', h.sid), sealed)).toBeNull();
+      const rpc = desk.aad('c2s-rpc', h.sid);
+      expect(desk.open(key, 2, rpc, flipped)).toBeNull();
+      expect(desk.open(key, 2, desk.aad('s2c-rpc', h.sid), sealed)).toBeNull();
+      expect(
+        desk.open(key, 2, desk.aad('c2s-rpc', 'other'), sealed),
+      ).toBeNull();
+      expect(desk.open(key, 3, rpc, sealed)).toBeNull();
       // And the keys of another session open nothing.
       const other = handshake();
-      expect(
-        desk.open(other.serverKeys.c2s, 2, desk.aad('c2s', h.sid), sealed),
-      ).toBeNull();
+      expect(desk.open(other.serverKeys.c2s, 2, rpc, sealed)).toBeNull();
     });
 
     it('applies the same replay window on both sides', () => {

@@ -136,8 +136,10 @@ const api: DevBarApi = {
   unlinkRemoteDevice: (id) => ipcRenderer.invoke('remote:unlinkDevice', { id }),
   startRemotePairing: () => ipcRenderer.invoke('remote:startPairing'),
   cancelRemotePairing: () => ipcRenderer.invoke('remote:cancelPairing'),
-  respondRemotePairing: (requestId, accept) =>
-    ipcRenderer.invoke('remote:respondPairing', { requestId, accept }),
+  checkRemotePairCode: (requestId, code) =>
+    ipcRenderer.invoke('remote:checkPairCode', { requestId, code }),
+  respondRemotePairing: (requestId, accept, code) =>
+    ipcRenderer.invoke('remote:respondPairing', { requestId, accept, code }),
   getRemoteSecurityCode: (id) =>
     ipcRenderer.invoke('remote:securityCode', { id }),
   renewRemoteIdentity: () => ipcRenderer.invoke('remote:renewIdentity'),

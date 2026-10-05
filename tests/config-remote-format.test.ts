@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   formatCountdown,
   formatDate,
-  formatVerificationCode,
   lastSeen,
 } from '../renderer/config/remote-format.js';
 
@@ -12,12 +11,6 @@ const DAY = 24 * HOUR;
 const NOW = Date.UTC(2026, 9, 1, 12, 0, 0);
 
 describe('renderer/config/remote-format.ts', () => {
-  describe('formatVerificationCode', () => {
-    it('splits the six digits in two groups, like the phone shows them', () => {
-      expect(formatVerificationCode('482913')).toBe('482 913');
-    });
-  });
-
   describe('formatCountdown', () => {
     it('shows minutes and zero-padded seconds, rounding up', () => {
       expect(formatCountdown(5 * MINUTE)).toBe('5:00');

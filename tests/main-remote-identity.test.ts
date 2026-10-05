@@ -15,14 +15,20 @@ import {
  * This computer's long-term Ed25519 identity for devbar-rc/1: created the
  * first time something needs it, kept in the `remoteControl` store record,
  * its seed sealed by Electron's safeStorage (the OS keychain) whenever that
- * is available — and readable as-is only where it is not.
+ * is available — and readable as-is only where it is not. One that cannot be
+ * read back is never silently replaced: every phone pinned it.
  */
 
 /** A reversible stand-in for safeStorage: base64 of the reversed text. */
-function fakeBox(available = true): SecretBox & { calls: string[] } {
+function fakeBox(
+  available = true,
+): SecretBox & { calls: string[]; setAvailable(on: boolean): void } {
   const calls: string[] = [];
   return {
     calls,
+    setAvailable: (on) => {
+      available = on;
+    },
     isEncryptionAvailable: () => available,
     encryptString: (plain) => {
       calls.push('encrypt');
@@ -133,23 +139,59 @@ describe('src/main/remote/identity.ts', () => {
     });
   });
 
-  it('starts a new identity when the stored one cannot be read', () => {
-    const { publicKey } = generateIdentity();
-    const h = harness({
-      publicKey: toB64(publicKey),
-      secret: Buffer.from('someone else').toString('base64'),
-      sealed: true,
-    });
+  /** A sealed identity from an earlier run, and the box that sealed it. */
+  function sealedEarlier() {
+    const box = fakeBox();
+    const first = harness(null, box);
+    const publicKey = first.keys.publicKey();
+    const record = first.record();
+    if (!record) throw new Error('nothing stored');
+    return { box, publicKey, record };
+  }
 
-    const fresh = h.keys.publicKey();
+  it('fails closed when the keychain cannot unseal it: nothing replaced, nothing written', () => {
+    const { box, record } = sealedEarlier();
+    box.setAvailable(false);
+    const h = harness(record, box);
 
-    expect(fresh).not.toEqual(publicKey);
-    expect(h.record()?.publicKey).toBe(toB64(fresh));
+    expect(h.keys.available()).toBe(false);
+    expect(() => h.keys.publicKey()).toThrow();
+    expect(() => h.keys.sign(Buffer.from('T'))).toThrow();
+    expect(h.writes).toHaveLength(0);
+    expect(h.record()).toEqual(record);
     expect(h.warnings).toHaveLength(1);
-    expect(h.warnings[0]).not.toContain(h.record()?.secret ?? '-');
+    expect(h.warnings[0]).not.toContain(record.secret);
   });
 
-  it('starts a new identity when the seed does not match its public key', () => {
+  it('fails closed when the keychain refuses (denied, a locked keyring)', () => {
+    const { record } = sealedEarlier();
+    const denied: SecretBox = {
+      isEncryptionAvailable: () => true,
+      encryptString: () => Buffer.from('x'),
+      decryptString: () => {
+        throw new Error('user denied access');
+      },
+    };
+    const h = harness(record, denied);
+
+    expect(h.keys.available()).toBe(false);
+    expect(h.writes).toHaveLength(0);
+  });
+
+  it('loads the same identity once the keychain is back (Reintentar)', () => {
+    const { box, publicKey, record } = sealedEarlier();
+    box.setAvailable(false);
+    const h = harness(record, box);
+    expect(h.keys.available()).toBe(false);
+
+    box.setAvailable(true);
+
+    expect(h.keys.available()).toBe(true);
+    expect(h.keys.publicKey()).toEqual(publicKey);
+    expect(h.writes).toHaveLength(0);
+  });
+
+  it('fails closed when the seed does not match its public key', () => {
     const one = generateIdentity();
     const other = generateIdentity();
     const h = harness({
@@ -158,8 +200,33 @@ describe('src/main/remote/identity.ts', () => {
       sealed: false,
     });
 
-    expect(h.keys.publicKey()).not.toEqual(one.publicKey);
-    expect(h.warnings).toHaveLength(1);
+    expect(h.keys.available()).toBe(false);
+    expect(h.writes).toHaveLength(0);
+  });
+
+  it('replaces an unreadable identity only when asked to renew it', () => {
+    const { box, publicKey, record } = sealedEarlier();
+    box.setAvailable(false);
+    const h = harness(record, box);
+
+    const fresh = h.keys.renew();
+
+    expect(fresh).not.toEqual(publicKey);
+    expect(h.keys.available()).toBe(true);
+    expect(h.keys.publicKey()).toEqual(fresh);
+    expect(h.record()?.publicKey).toBe(toB64(fresh));
+  });
+
+  it('says when the identity is kept outside the keychain', () => {
+    const plain = harness(null, fakeBox(false));
+    const sealed = harness();
+    expect(plain.keys.unsealed()).toBe(false);
+
+    plain.keys.publicKey();
+    sealed.keys.publicKey();
+
+    expect(plain.keys.unsealed()).toBe(true);
+    expect(sealed.keys.unsealed()).toBe(false);
   });
 
   it('renews: a new key pair replaces the old one for good', () => {

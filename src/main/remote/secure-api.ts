@@ -8,6 +8,7 @@ import type { LiveStream } from './live.js';
 import type { RateLimiter } from './rate-limit.js';
 import {
   ephemeralKeyPair,
+  EVENTS_PROOF,
   fromB64,
   KEY_BYTES,
   PROTOCOL_VERSION,
@@ -28,18 +29,27 @@ import { record } from './validate.js';
  *   POST /api/hello   {v, c} → {s, sid, id, sig}: a handshake, a session;
  *   POST /api/rpc     X-DevBar-Session + {n, ct}: one sealed call, opened,
  *                     handed to src/main/remote/rpc.ts, its answer sealed
- *                     with this session's own counter;
- *   GET  /api/events  ?sid=…: the live stream of an authenticated session,
- *                     every event sealed (`event: m`), so not even its type
+ *                     with this session's own counter and naming the call it
+ *                     answers (`re`: the call's counter);
+ *   GET  /api/events  ?sid=…&n=…&ct=…: the live stream of an authenticated
+ *                     session. The sid is in clear, so it is no credential:
+ *                     `ct` seals "events" under the session's phone→desktop
+ *                     key, through the same replay window as the calls. Every
+ *                     event is sealed (`event: m`), so not even its type
  *                     shows; heartbeats stay plain SSE comments.
  *
- * Refusals say as little as possible: a message that does not open is a
- * bare 400, and an unknown or expired session is 401 `session`, which tells
- * the phone to shake hands again.
+ * A session answers only to the address that shook hands, and only a message
+ * that opened counts as its activity. Refusals say as little as possible: a
+ * message that does not open is a bare 400, and an unknown, expired or
+ * foreign session is 401 `session`, which tells the phone to shake hands
+ * again.
  */
 
 const HELLO = '/api/hello';
 const RPC = '/api/rpc';
+const EVENTS_QUERY = ['ct', 'n', 'sid'];
+/** A counter as the query carries it: a positive decimal, no padding. */
+const COUNTER = /^[1-9]\d{0,15}$/;
 
 export interface SecureApiDeps {
   identity: Pick<IdentityKeys, 'publicKey' | 'sign'>;
@@ -91,7 +101,13 @@ export function createSecureApi(deps: SecureApiDeps): SecureApi {
     const shared = mine.agree(clientPub);
     if (!shared) return badRequest();
     const sidBytes = randomBytes(SID_BYTES);
-    const handshake = transcript(clientPub, mine.publicKey, sidBytes);
+    const identityPub = deps.identity.publicKey();
+    const handshake = transcript(
+      identityPub,
+      clientPub,
+      mine.publicKey,
+      sidBytes,
+    );
     const sid = toB64(sidBytes);
     const session = deps.sessions.create(request.ip, {
       sid,
@@ -102,39 +118,49 @@ export function createSecureApi(deps: SecureApiDeps): SecureApi {
     return json(200, {
       s: toB64(mine.publicKey),
       sid,
-      id: toB64(deps.identity.publicKey()),
+      id: toB64(identityPub),
       sig: toB64(deps.identity.sign(handshake)),
     });
   }
 
-  /** The decrypted `{op, args}` of a sealed call, or null. */
+  /** The decrypted `{op, args}` of a sealed call, and its counter; or null. */
   function openCall(
     session: Session,
     body: unknown,
-  ): { op: string; args: unknown } | null {
+  ): { op: string; args: unknown; n: number } | null {
     const message = record(body);
     const counter = message?.n;
     const sealed = fromB64(message?.ct);
     if (typeof counter !== 'number' || !sealed) return null;
-    const plaintext = session.open(counter, sealed);
+    const plaintext = session.open('rpc', counter, sealed);
     if (!plaintext) return null;
     try {
       const call = record(JSON.parse(plaintext.toString('utf8')));
       return typeof call?.op === 'string'
-        ? { op: call.op, args: call.args }
+        ? { op: call.op, args: call.args, n: counter }
         : null;
     } catch {
       return null;
     }
   }
 
+  /** Whether the stream's query proves it comes from the session's phone. */
+  function provesEvents(session: Session, query: URLSearchParams): boolean {
+    const counter = query.get('n') ?? '';
+    const sealed = fromB64(query.get('ct'));
+    if (!COUNTER.test(counter) || !sealed) return false;
+    const plaintext = session.open('events', Number(counter), sealed);
+    return plaintext?.toString('utf8') === EVENTS_PROOF;
+  }
+
   async function rpc(request: ApiRequest): Promise<ApiResponse> {
     const session = request.sessionId
-      ? deps.sessions.get(request.sessionId)
+      ? deps.sessions.get(request.sessionId, request.ip)
       : null;
     if (!session) return lostSession();
     const call = openCall(session, request.body);
     if (!call) return badRequest();
+    deps.sessions.touch(session);
     const answer = await deps.dispatch(call.op, call.args, {
       session,
       ip: request.ip,
@@ -143,7 +169,7 @@ export function createSecureApi(deps: SecureApiDeps): SecureApi {
     // Sealed with the session in hand: an answer that just dropped this
     // very session (an unlink, a new device key) still reaches the phone.
     const plaintext = Buffer.from(
-      JSON.stringify({ status: answer.status, body: answer.body }),
+      JSON.stringify({ re: call.n, status: answer.status, body: answer.body }),
     );
     return json(200, session.seal(plaintext));
   }
@@ -158,12 +184,13 @@ export function createSecureApi(deps: SecureApiDeps): SecureApi {
     },
 
     events: (request) => {
-      const keys = [...request.query.keys()];
+      const keys = [...request.query.keys()].sort();
+      if (keys.join() !== EVENTS_QUERY.join()) return badRequest();
       const sid = readSessionId(request.query.get('sid') ?? undefined);
-      if (keys.length > 1 || (keys.length === 1 && keys[0] !== 'sid'))
-        return badRequest();
-      const session = sid ? deps.sessions.get(sid) : null;
+      const session = sid ? deps.sessions.get(sid, request.ip) : null;
       if (!session) return lostSession();
+      if (!provesEvents(session, request.query)) return badRequest();
+      deps.sessions.touch(session);
       const device = session.deviceId ? deps.device(session.deviceId) : null;
       if (!device) return json(403, { error: 'forbidden' });
       const answer = deps.stream(session, device);

@@ -18,6 +18,11 @@ export interface RemoteDeviceView {
    * side renews its keys.
    */
   verifiedAt: number | null;
+  /**
+   * The address it last signed in from (where it paired, until then). A
+   * sign-in from another one raises the «IP nueva» alert on the desktop.
+   */
+  lastIp: string | null;
 }
 
 /** A linked device in the «Control remoto» list, with its live presence. */
@@ -37,6 +42,13 @@ export interface RemoteStatus {
   listening: boolean;
   /** Why the server could not listen (port in use…), in Spanish. */
   error: string | null;
+  /**
+   * The stored identity key could not be read (a locked or denied
+   * keychain), so the server stays off: «Reintentar» tries again.
+   */
+  keyError: string | null;
+  /** The identity key is stored without the OS keychain (none was there). */
+  keyUnsealed: boolean;
   /** This machine's private LAN IPv4 addresses. */
   addresses: string[];
   devices: RemoteDeviceRow[];
@@ -71,16 +83,26 @@ export type RemotePairingResult =
   | { ok: true; url: string; expiresAt: number; qr: RemoteQrMatrix }
   | { ok: false; error: string };
 
-/** A phone that scanned the code and is waiting for the desktop's answer. */
+/**
+ * A phone that scanned the code and is waiting for the desktop's answer.
+ * Its six digits are not here: only the phone shows them, and the user
+ * types them on the desktop (`checkRemotePairCode`) to accept.
+ */
 export interface RemotePairRequest {
   requestId: string;
   name: string;
   client: string;
   ip: string;
-  /** Six digits, also shown on the phone. */
-  verificationCode: string;
   expiresAt: number;
 }
+
+/**
+ * The digits typed on the desktop against the phone's. The third wrong code
+ * rejects the request (`attemptsLeft` 0), which main then closes.
+ */
+export type RemotePairCodeResult =
+  | { ok: true; match: boolean; attemptsLeft: number }
+  | { ok: false; error: string };
 
 export interface RemotePairRequestClosed {
   requestId: string;
@@ -104,9 +126,15 @@ export interface RemoteApi {
   /** Issues THE single-use pairing code (replacing any previous one). */
   startRemotePairing(): Promise<RemotePairingResult>;
   cancelRemotePairing(): Promise<SimpleResult>;
+  checkRemotePairCode(
+    requestId: string,
+    code: string,
+  ): Promise<RemotePairCodeResult>;
+  /** Accepting needs the digits the phone shows; rejecting, none. */
   respondRemotePairing(
     requestId: string,
     accept: boolean,
+    code: string,
   ): Promise<SimpleResult>;
   getRemoteSecurityCode(id: string): Promise<RemoteSecurityCodeResult>;
   /**

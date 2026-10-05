@@ -253,6 +253,7 @@ describe('renderer/remote/settings-tab.ts', () => {
 
     it('lands on the unlinked view if the computer already removed it', async () => {
       const h = await openSettings();
+      h.forgetDevice();
       h.answer('unlink', {
         status: 401,
         body: { error: 'unlinked' },
@@ -262,6 +263,25 @@ describe('renderer/remote/settings-tab.ts', () => {
       await settle();
 
       expect(visibleView()).toBe('unlinked');
+      expect(h.keys()).toBeNull();
+    });
+
+    it('keeps its keys on a 401 a fresh sign-in does not confirm', async () => {
+      const h = await openSettings();
+      const keys = h.keys();
+      h.answer('device.rename', { status: 401, body: { error: 'unlinked' } });
+
+      tapId('rename');
+      byId('rename-form').dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+      await settle();
+
+      expect(visibleView()).toBe('linked');
+      expect(h.keys()).toEqual(keys);
+      expect(text('rename-error')).toBe(
+        'Conexión perdida, inténtalo de nuevo.',
+      );
     });
 
     it('says so when the unlink cannot reach DevBar', async () => {

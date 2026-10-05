@@ -409,8 +409,10 @@ describe('renderer/remote/groups-tab.ts', () => {
 
     it('lands on the unlinked view when the computer unlinks it', async () => {
       const h = await startLinked();
+      h.forgetDevice();
 
       h.source().emit('unlinked', {});
+      await settle();
 
       expect(visibleView()).toBe('unlinked');
     });

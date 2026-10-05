@@ -528,10 +528,16 @@ const FORWARDS: readonly Forward[] = [
     [],
   ],
   [
+    'checkRemotePairCode',
+    (api) => api.checkRemotePairCode('r1', '482913'),
+    'remote:checkPairCode',
+    [{ requestId: 'r1', code: '482913' }],
+  ],
+  [
     'respondRemotePairing',
-    (api) => api.respondRemotePairing('r1', true),
+    (api) => api.respondRemotePairing('r1', true, '482913'),
     'remote:respondPairing',
-    [{ requestId: 'r1', accept: true }],
+    [{ requestId: 'r1', accept: true, code: '482913' }],
   ],
   [
     'setRemoteNotifyConnections',

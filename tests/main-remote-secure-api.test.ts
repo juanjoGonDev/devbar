@@ -31,6 +31,7 @@ const DEVICE: RemoteDeviceView = {
   createdAt: 1,
   lastSeenAt: 1,
   verifiedAt: null,
+  lastIp: null,
 };
 
 function harness(options: { perIp?: number; helloLimit?: number } = {}) {
@@ -73,10 +74,14 @@ function harness(options: { perIp?: number; helloLimit?: number } = {}) {
     }),
     device: (id) => (id === 'd1' ? DEVICE : null),
   });
-  const net = bridge(() => ({
-    api: (request) => secure.route(request),
-    stream: (request) => secure.events(request),
-  }));
+  const target = () => ({
+    api: (request: Parameters<typeof secure.route>[0]) => secure.route(request),
+    stream: (request: Parameters<typeof secure.events>[0]) =>
+      secure.events(request),
+  });
+  const net = bridge(target);
+  /** The same desktop, reached from another address on the LAN. */
+  const elsewhere = bridge(target, { ip: '192.168.1.66' });
   const channel = createChannel(net.fetch);
   /** A channel shaken hands with this desktop's real key. */
   const connected = async () => {
@@ -102,6 +107,7 @@ function harness(options: { perIp?: number; helloLimit?: number } = {}) {
     sessions,
     identity,
     net,
+    elsewhere,
     channel,
     connected,
     calls,
@@ -201,6 +207,63 @@ describe('src/main/remote/secure-api.ts', () => {
       expect(JSON.stringify(h.net.log)).not.toContain('phone');
     });
 
+    it('names the call each reply answers, so swapped replies are refused', async () => {
+      const h = harness();
+      await h.connected();
+      // Hold both replies, then hand each to the other call.
+      type Reply = Awaited<ReturnType<typeof h.net.fetch>>;
+      const held: { reply: Reply; resolve: (value: Reply) => void }[] = [];
+      const swapping: typeof h.net.fetch = async (url, init) => {
+        const reply = await h.net.fetch(url, init);
+        if (url !== '/api/rpc') return reply;
+        return new Promise<Reply>((resolve) => {
+          held.push({ reply, resolve });
+          const [one, two] = held;
+          if (!one || !two) return;
+          one.resolve(two.reply);
+          two.resolve(one.reply);
+        });
+      };
+      const phone = createChannel(swapping);
+      await phone.open(h.identity.publicKey());
+
+      const answers = await Promise.allSettled([
+        phone.send('me'),
+        phone.send('state'),
+      ]);
+
+      expect(answers.map((a) => a.status)).toEqual(['rejected', 'rejected']);
+      expect(
+        answers.map((a) =>
+          a.status === 'rejected' && a.reason instanceof RemoteError
+            ? a.reason.code
+            : '?',
+        ),
+      ).toEqual(['protocol', 'protocol']);
+    });
+
+    it('answers a session only at the address that shook hands', async () => {
+      const h = harness();
+      const channel = await h.connected();
+      await channel.send('me');
+      const sent = h.net.log.at(-1);
+      const captured = h.net.sent.at(-1);
+      if (!sent?.sessionId || !captured) throw new Error('nothing captured');
+
+      const reply = await h.elsewhere.fetch('/api/rpc', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-DevBar-Request': '1',
+          'X-DevBar-Session': sent.sessionId,
+        },
+        body: JSON.stringify({ ...captured, n: captured.n + 1 }),
+      });
+
+      expect(reply.status).toBe(401);
+      expect(h.calls).toHaveLength(1);
+    });
+
     it('answers 401 session for an unknown or expired session', async () => {
       const h = harness();
       const channel = await h.connected();
@@ -252,7 +315,8 @@ describe('src/main/remote/secure-api.ts', () => {
     it('refuses a body that is not a counter and a ciphertext', async () => {
       const h = harness();
       const channel = await h.connected();
-      const sid = channel.events()?.url.split('=')[1] ?? '';
+      const url = channel.events()?.url ?? '';
+      const sid = new URL(url, 'http://x').searchParams.get('sid') ?? '';
       const session = { 'X-DevBar-Session': sid };
 
       for (const body of [
@@ -273,6 +337,43 @@ describe('src/main/remote/secure-api.ts', () => {
   });
 
   describe('GET /api/events', () => {
+    it('opens only with a sealed proof of the session keys, used once', async () => {
+      const h = harness();
+      const channel = await h.connected();
+      await channel.send('auth', {});
+      const url = channel.events()?.url ?? '';
+      const query = new URL(url, 'http://x').searchParams;
+      const sid = query.get('sid') ?? '';
+
+      // The sid alone, or with a made-up proof, opens nothing.
+      for (const forged of [
+        `/api/events?sid=${sid}`,
+        `/api/events?sid=${sid}&n=99&ct=${query.get('ct') ?? ''}`,
+        `/api/events?sid=${sid}&n=${query.get('n') ?? ''}&ct=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`,
+      ])
+        expect(h.net.openStream(forged).refused, forged).toMatchObject({
+          status: 400,
+        });
+      expect(h.net.openStream(url).refused).toBeNull();
+      // The same proof again is a replay.
+      expect(h.net.openStream(url).refused).toMatchObject({ status: 400 });
+      expect(h.sinks).toHaveLength(1);
+    });
+
+    it('opens no stream for the session from another address', async () => {
+      const h = harness();
+      const channel = await h.connected();
+      await channel.send('auth', {});
+
+      const stream = h.elsewhere.openStream(channel.events()?.url ?? '');
+
+      expect(stream.refused).toEqual({
+        status: 401,
+        body: { error: 'session' },
+      });
+      expect(h.sinks).toHaveLength(0);
+    });
+
     it('streams sealed events the phone can open, sharing the reply counter', async () => {
       const h = harness();
       const channel = await h.connected();
@@ -288,11 +389,9 @@ describe('src/main/remote/secure-api.ts', () => {
 
       expect(stream.refused).toBeNull();
       expect(stream.chunks).toContain(': heartbeat\n\n');
+      const sid = new URL(reader.url, 'http://x').searchParams.get('sid');
       expect(stream.frames.map((frame) => reader.read(frame))).toEqual([
-        {
-          type: 'state',
-          data: { for: 'd1', session: reader.url.split('=')[1] },
-        },
+        { type: 'state', data: { for: 'd1', session: sid } },
         { type: 'notice', data: { title: 'Hola' } },
         { type: 'log', data: { id: 'x' } },
       ]);
@@ -317,20 +416,22 @@ describe('src/main/remote/secure-api.ts', () => {
       const h = harness();
       const channel = await h.connected();
       const url = channel.events()?.url ?? '';
+      const proof = url.slice(url.indexOf('&'));
 
       expect(h.net.openStream(url).refused).toEqual({
         status: 403,
         body: { error: 'forbidden' },
       });
       expect(
-        h.net.openStream('/api/events?sid=AAAAAAAAAAAAAAAAAAAAAA').refused,
+        h.net.openStream(`/api/events?sid=AAAAAAAAAAAAAAAAAAAAAA${proof}`)
+          .refused,
       ).toEqual({ status: 401, body: { error: 'session' } });
       await channel.send('auth', {});
-      expect(h.net.openStream(`${url}&logs=x`).refused).toMatchObject({
-        status: 400,
-      });
+      expect(
+        h.net.openStream(`${channel.events()?.url ?? ''}&logs=x`).refused,
+      ).toMatchObject({ status: 400 });
       expect(h.net.openStream('/api/events').refused).toMatchObject({
-        status: 401,
+        status: 400,
       });
     });
   });

@@ -10,9 +10,14 @@ import {
 /**
  * The devbar-rc/1 sessions, in memory only: one per handshake, each with its
  * own pair of keys, a counter for what the desktop sends and a replay window
- * over what the phone sends. A restart, a port change, an unlinked device or
- * a renewed identity drops them, and the phone simply shakes hands again —
- * which is also what gives every connection fresh keys.
+ * over what the phone sends (calls and event-stream proofs share it). A
+ * restart, a port change, an unlinked device or a renewed identity drops
+ * them, and the phone simply shakes hands again — which is also what gives
+ * every connection fresh keys.
+ *
+ * The sid travels in clear, so it names a session without being a key to it:
+ * a session answers only to the address that shook hands, and only a message
+ * that authenticated counts as activity (`touch`) — a lookup does not.
  *
  * A session that has carried no traffic for ten minutes, and holds no open
  * event stream, is forgotten. A few per address and a ceiling overall keep a
@@ -31,6 +36,9 @@ interface SessionMaterial {
   keys: { c2s: Buffer; s2c: Buffer };
 }
 
+/** What a phone→desktop message is: a call, or the proof opening a stream. */
+type InboundKind = 'rpc' | 'events';
+
 export interface Session {
   readonly id: string;
   readonly ip: string;
@@ -41,7 +49,7 @@ export interface Session {
   /** The process whose log lines this session's stream carries. */
   logsId: string | null;
   /** One phone→desktop message; null when forged, tampered or replayed. */
-  open(counter: number, sealed: Uint8Array): Buffer | null;
+  open(kind: InboundKind, counter: number, sealed: Uint8Array): Buffer | null;
   /** One desktop→phone reply, with the next counter. */
   seal(plaintext: Uint8Array): { n: number; ct: string };
   /** One desktop→phone event (an SSE `data:` payload). */
@@ -63,8 +71,10 @@ export interface SessionTableDeps {
 export interface SessionTable {
   /** Null when a cap is full of sessions that are all streaming. */
   create(ip: string, material: SessionMaterial): Session | null;
-  /** The live session (its use counts as activity), or null. */
-  get(id: string): Session | null;
+  /** The live session that `ip` shook hands from, or null. Not activity. */
+  get(id: string, ip: string): Session | null;
+  /** The session just carried a message that authenticated. */
+  touch(session: Session): void;
   streamOpened(session: Session): void;
   streamClosed(session: Session): void;
   /** Drops that device's sessions; their ids. */
@@ -77,8 +87,12 @@ export interface SessionTable {
 function createSession(ip: string, material: SessionMaterial): Session {
   const { sid, keys } = material;
   const replay = createReplayWindow();
-  const inbound = aad('c2s', sid);
-  const outbound = aad('s2c', sid);
+  const inbound: Record<InboundKind, Buffer> = {
+    rpc: aad('c2s-rpc', sid),
+    events: aad('c2s-events', sid),
+  };
+  const replies = aad('s2c-rpc', sid);
+  const events = aad('s2c-evt', sid);
   let sent = 0;
   return {
     id: sid,
@@ -86,21 +100,21 @@ function createSession(ip: string, material: SessionMaterial): Session {
     transcript: material.transcript,
     deviceId: null,
     logsId: null,
-    open: (counter, sealed) => {
+    open: (kind, counter, sealed) => {
       // The window is checked first and only moves once the message
       // authenticated: a forged counter cannot push genuine ones out.
       if (!replay.fresh(counter)) return null;
-      const plaintext = open(keys.c2s, counter, inbound, sealed);
+      const plaintext = open(keys.c2s, counter, inbound[kind], sealed);
       if (plaintext) replay.mark(counter);
       return plaintext;
     },
     seal: (plaintext) => {
       sent += 1;
-      return { n: sent, ct: toB64(seal(keys.s2c, sent, outbound, plaintext)) };
+      return { n: sent, ct: toB64(seal(keys.s2c, sent, replies, plaintext)) };
     },
     sealEvent: (plaintext) => {
       sent += 1;
-      return sealEvent(keys.s2c, sent, outbound, plaintext);
+      return sealEvent(keys.s2c, sent, events, plaintext);
     },
   };
 }
@@ -157,16 +171,18 @@ export function createSessionTable(deps: SessionTableDeps): SessionTable {
       });
       return session;
     },
-    get: (id) => {
+    get: (id, ip) => {
       const entry = entries.get(id);
       if (!entry) return null;
-      const now = deps.now();
-      if (expired(entry, now)) {
+      if (expired(entry, deps.now())) {
         entries.delete(id);
         return null;
       }
-      entry.lastActivity = now;
-      return entry.session;
+      return entry.session.ip === ip ? entry.session : null;
+    },
+    touch: (session) => {
+      const entry = entryOf(session);
+      if (entry) entry.lastActivity = deps.now();
     },
     streamOpened: (session) => {
       const entry = entryOf(session);

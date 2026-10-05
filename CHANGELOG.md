@@ -40,7 +40,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
   192.168.1.40) con un botón «Ver dispositivos», y los demás móviles lo ven en
   «Avisos». Avisa la primera vez y después de diez minutos sin conexión, no en
   cada recarga; puedes apagarlo en Seguridad con «Avisar cuando un
-  dispositivo se conecte».
+  dispositivo se conecte». Si un dispositivo se conecta desde una IP que no
+  había usado antes, DevBar te lo dice siempre, con ese interruptor apagado
+  y aunque acabara de conectarse: «iPhone de Ana» se ha conectado desde una
+  IP nueva (192.168.1.57). Si no has sido tú, desvincúlalo.
 
 - **Tus grupos, en el bolsillo.** Con el móvil vinculado abres la dirección en
   el navegador y ves lo mismo que en la barra: cada grupo con su rama y sus
@@ -85,16 +88,18 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - **Vincular un móvil es escanear un QR y aceptarlo en el ordenador.**
   «Añadir dispositivo» muestra un código QR de un solo uso que caduca a los
   5 minutos y se renueva solo mientras la ventana está abierta; al cerrarla,
-  el código deja de valer. El móvil lo escanea, le pones nombre y DevBar te
-  pregunta en el ordenador si quieres vincularlo, con un código de 6 cifras
-  que debe coincidir con el que ve el móvil. Sin tu «Vincular» no se vincula
-  nada: si no respondes en un minuto, la solicitud se rechaza sola, y si el
-  móvil cancela, el diálogo del ordenador se cierra al momento. Cualquier
-  otro equipo de la red que abra la dirección solo ve que no está vinculado.
+  el código deja de valer. El móvil lo escanea, le pones nombre y te muestra
+  un código de 6 cifras: escríbelo en el ordenador, en «¿Vincular este
+  dispositivo?», y solo entonces se activa «Vincular». Con tres códigos
+  equivocados la solicitud se rechaza. Sin tu «Vincular» no se vincula nada:
+  si no respondes en un minuto, la solicitud se rechaza sola, y si el móvil
+  cancela, el diálogo del ordenador se cierra al momento. Cualquier otro
+  equipo de la red que abra la dirección solo ve que no está vinculado.
 
 - **Lista de dispositivos vinculados.** Cada uno muestra su nombre (que
   puedes cambiar desde el ordenador o desde el propio móvil), si está
-  verificado, el navegador y sistema desde el que se vinculó, la fecha, y
+  verificado, el navegador y sistema desde el que se vinculó, la fecha, la
+  última IP desde la que se conectó (por ejemplo «Última IP 192.168.1.57»), y
   «Conectado ahora» mientras tiene la página abierta o cuándo se conectó por
   última vez. «Desvincular»
   le quita el acceso al momento —el móvil se entera y deja de mostrar nada—,

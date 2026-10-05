@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateSigningKey, toB64 } from '../renderer/remote/rc-protocol.js';
+import {
+  fromB64,
+  generateSigningKey,
+  pairMessage,
+  toB64,
+  verifySignature,
+} from '../renderer/remote/rc-protocol.js';
 import {
   LINKED,
   loadPage,
@@ -75,7 +81,10 @@ describe('renderer/remote/app.ts', () => {
       expect(text('host-name')).toBe('Mac-de-Ana');
       expect(h.hellos()).toBe(1);
       expect(h.calls.map((c) => c.op).slice(0, 2)).toEqual(['auth', 'me']);
-      expect(h.source().url).toMatch(/^\/api\/events\?sid=[\w-]{22}$/);
+      // The sid names the session; `n` and `ct` prove the phone holds its keys.
+      expect(h.source().url).toMatch(
+        /^\/api\/events\?sid=[\w-]{22}&n=\d+&ct=[\w-]+$/,
+      );
     });
 
     it('never hides the page itself while it switches views', async () => {
@@ -168,19 +177,81 @@ describe('renderer/remote/app.ts', () => {
     });
   });
 
-  it('shakes hands again, transparently, when DevBar forgot the session', async () => {
-    const h = await startLinked();
-    h.answer('process.stop', { status: 200, body: { ok: true } });
-    h.dropSessions();
+  describe('a session DevBar forgot', () => {
+    const stop = async (): Promise<void> => {
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="Detener API"]')
+        ?.click();
+      await settle();
+    };
 
-    document
-      .querySelector<HTMLButtonElement>('[aria-label="Detener API"]')
-      ?.click();
-    await settle();
+    it('never resends a command on its own: it may have run already', async () => {
+      const h = await startLinked();
+      h.answer('process.stop', { status: 200, body: { ok: true } });
+      h.dropSessions();
 
-    expect(h.callsTo('process.stop')).toHaveLength(1);
-    expect(h.hellos()).toBe(2);
-    expect(visibleView()).toBe('linked');
+      await stop();
+
+      expect(h.callsTo('process.stop')).toHaveLength(0);
+      expect(text('toast')).toBe('Conexión perdida, inténtalo de nuevo.');
+      expect(visibleView()).toBe('linked');
+      // Trying again goes out on a fresh session.
+      await stop();
+      expect(h.callsTo('process.stop')).toHaveLength(1);
+      expect(h.hellos()).toBe(2);
+    });
+
+    it('re-reads the state on a fresh session, transparently', async () => {
+      const h = await startLinked();
+      h.dropSessions();
+      const before = h.callsTo('state').length;
+
+      h.source().emit('error');
+      await h.tick();
+
+      expect(h.callsTo('state').length).toBeGreaterThanOrEqual(before);
+      expect(visibleView()).toBe('linked');
+    });
+  });
+
+  describe('being told it is unlinked', () => {
+    it('keeps its keys while a fresh sign-in still works (a stray answer)', async () => {
+      const h = await startLinked();
+      const keys = h.keys();
+
+      h.source().emit('unlinked');
+      await settle();
+
+      expect(h.keys()).toEqual(keys);
+      expect(h.callsTo('auth')).toHaveLength(2);
+      expect(h.reloads()).toBe(1);
+    });
+
+    it('forgets them once a fresh sign-in says the device is unknown', async () => {
+      const h = await startLinked();
+      h.forgetDevice();
+
+      h.source().emit('unlinked');
+      await settle();
+
+      expect(visibleView()).toBe('unlinked');
+      expect(h.keys()).toBeNull();
+    });
+
+    it('keeps them when a command answers 401 but the sign-in still works', async () => {
+      const h = await startLinked();
+      const keys = h.keys();
+      h.answer('process.stop', { status: 401, body: { error: 'unlinked' } });
+
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="Detener API"]')
+        ?.click();
+      await settle();
+
+      expect(visibleView()).toBe('linked');
+      expect(h.keys()).toEqual(keys);
+      expect(text('toast')).toBe('Conexión perdida, inténtalo de nuevo.');
+    });
   });
 
   describe('pairing', () => {
@@ -193,10 +264,10 @@ describe('renderer/remote/app.ts', () => {
       return h;
     }
 
-    it('takes the key out of the address bar at once', async () => {
+    it('takes the code and the key out of the address bar at once', async () => {
       const h = await pairing();
 
-      expect(h.urls[0]).toBe('/pair?c=CODE123');
+      expect(h.urls[0]).toBe('/');
     });
 
     it('asks for a name, prefilled from the device', async () => {
@@ -218,15 +289,42 @@ describe('renderer/remote/app.ts', () => {
       submit();
       await settle();
 
-      expect(h.callsTo('pair.request')[0]?.body).toEqual({
+      const sent = h.callsTo('pair.request')[0]?.body as Record<string, string>;
+      expect(sent).toEqual({
         code: 'CODE123',
         name: 'iPhone de Ana',
         devicePub: expect.stringMatching(/^[\w-]{43}$/) as unknown,
+        sig: expect.stringMatching(/^[\w-]{86}$/) as unknown,
       });
       expect(visibleView()).toBe('waiting');
       expect(text('verification-code')).toBe('482 913');
+      expect(
+        document.querySelector('[data-view="waiting"]')?.textContent,
+      ).toContain('Escribe este código en el ordenador');
       // The spent code leaves the address bar: a reload must not reuse it.
       expect(h.urls.at(-1)).toBe('/');
+    });
+
+    it('proves it holds the key it asks to be paired with', async () => {
+      const h = await pairing();
+      h.answer('pair.request', {
+        status: 200,
+        body: { requestId: 'r1', verificationCode: '482913', expiresAt: 1 },
+      });
+
+      submit();
+      await settle();
+
+      const [call] = h.callsTo('pair.request');
+      const sent = call?.body as Record<string, string>;
+      const key = fromB64(sent.devicePub, 32) ?? new Uint8Array();
+      const sig = fromB64(sent.sig, 64) ?? new Uint8Array();
+      const t = call?.transcript ?? new Uint8Array();
+      // Signed by the new key over this very session's handshake.
+      expect(verifySignature(key, pairMessage(t), sig)).toBe(true);
+      expect(
+        verifySignature(key, pairMessage(new Uint8Array(t.length)), sig),
+      ).toBe(false);
     });
 
     it('refuses an empty name without asking the server', async () => {
@@ -251,8 +349,8 @@ describe('renderer/remote/app.ts', () => {
     });
 
     it('refuses to pair with a DevBar that does not hold the key of the QR', async () => {
-      const h = pageHarness('/pair?c=CODE123');
-      h.env.hash = `#k=${toB64(generateSigningKey().publicKey)}`;
+      const h = pageHarness('/pair');
+      h.env.hash = `#c=CODE123&k=${toB64(generateSigningKey().publicKey)}`;
 
       await start(h);
 
@@ -261,8 +359,13 @@ describe('renderer/remote/app.ts', () => {
       expect(h.calls).toEqual([]);
     });
 
-    it('trusts no QR without its key (an old code, a typed address)', async () => {
-      const h = pageHarness('/pair?c=CODE123');
+    it.each([
+      ['an old link, the code in the query', '/pair?c=CODE123', ''],
+      ['a code without its key', '/pair', '#c=CODE123'],
+      ['a key without its code', '/pair', '#k=AAAA'],
+    ])('trusts no QR link with %s', async (_name, url, hash) => {
+      const h = pageHarness(url);
+      h.env.hash = hash;
 
       await start(h);
 
@@ -455,12 +558,12 @@ describe('renderer/remote.ts', () => {
     FakeEventSource.opened = [];
   });
 
-  it('boots against the browser globals and clears the key from the URL', async () => {
-    const h = await boot('/pair?c=CODE', (fake) => {
+  it('boots against the browser globals and clears the code and key from the URL', async () => {
+    const h = await boot('/pair', (fake) => {
       window.history.replaceState(
         null,
         '',
-        `/pair?c=CODE#k=${fake.serverKey()}`,
+        `/pair#c=CODE&k=${fake.serverKey()}`,
       );
       fake.answer('me', UNLINKED);
       fake.answer('pair.request', {
@@ -471,6 +574,7 @@ describe('renderer/remote.ts', () => {
     const clearTimer = vi.spyOn(window, 'clearTimeout');
 
     expect(window.location.hash).toBe('');
+    expect(window.location.pathname).toBe('/');
     expect(visibleView()).toBe('pair');
     submit();
     await settle();

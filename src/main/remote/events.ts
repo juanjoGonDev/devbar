@@ -7,9 +7,10 @@ import type { TimerHandle, Timers } from './timers.js';
  * open one, what goes in each event and how it is sealed for its session
  * (src/main/remote/secure-api.ts) is decided by its caller.
  *
- * Limits keep a misbehaving page from holding the process hostage: a few
- * streams per device, a ceiling overall, and a client whose socket buffer
- * stops draining is dropped (it reconnects and starts from a fresh state).
+ * Limits keep a misbehaving page from holding the process hostage: one
+ * stream per session (a new one replaces the old, quietly), a few per
+ * device, a ceiling overall, and a client whose socket buffer stops
+ * draining is dropped (it reconnects and starts from a fresh state).
  * Log lines are batched every 100 ms per process, so a chatty build does
  * not turn into one write per line per phone.
  */
@@ -49,8 +50,12 @@ export interface EventHubDeps {
 }
 
 export interface EventHub {
-  canAttach(deviceId: string): boolean;
-  /** Null when a limit is reached (check `canAttach` first). */
+  /** Room for this stream, counting the one of its session it replaces. */
+  canAttach(owner: StreamOwner): boolean;
+  /**
+   * Null when a limit is reached (check `canAttach` first). An earlier
+   * stream of the same session ends: one per session.
+   */
   attach(owner: StreamOwner, sink: EventSink): EventClient | null;
   /** Points one session's streams at another process's lines, or none. */
   subscribe(sessionId: string, logsId: string | null): void;
@@ -105,8 +110,16 @@ export function createEventHub(deps: EventHubDeps): EventHub {
     client.sink.end();
   }
 
-  const canAttach = (deviceId: string): boolean =>
-    clients.size < total && countFor(deviceId) < perDevice;
+  const canAttach = (owner: StreamOwner): boolean => {
+    const others = [...clients].filter(
+      (client) => client.sessionId !== owner.sessionId,
+    );
+    return (
+      others.length < total &&
+      others.filter((client) => client.deviceId === owner.deviceId).length <
+        perDevice
+    );
+  };
   const watches = (processId: string): boolean =>
     [...clients].some((client) => client.logsId === processId);
 
@@ -124,9 +137,19 @@ export function createEventHub(deps: EventHubDeps): EventHub {
 
     attach: (owner, sink) => {
       const { deviceId } = owner;
-      if (!canAttach(deviceId)) return null;
+      if (!canAttach(owner)) return null;
       const client: Client = { ...owner, sink };
       const first = countFor(deviceId) === 0;
+      const replaced = [...clients].find(
+        (each) => each.sessionId === owner.sessionId,
+      );
+      if (replaced) {
+        // Its own device keeps a stream throughout: no presence change.
+        clients.delete(replaced);
+        replaced.sink.end();
+        if (replaced.deviceId !== deviceId && countFor(replaced.deviceId) === 0)
+          deps.onPresenceChange(replaced.deviceId);
+      }
       clients.add(client);
       heartbeat ??= timers.setInterval(() => {
         for (const each of [...clients]) write(each, (s) => s.heartbeat());

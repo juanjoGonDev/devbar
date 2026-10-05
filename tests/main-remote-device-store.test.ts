@@ -81,9 +81,32 @@ describe('src/main/remote/device-store.ts', () => {
         autoUnlink: false,
         notifyConnections: false,
         port: 50000,
-        devices: [good],
+        devices: [{ ...good, lastIp: null }],
         identity: IDENTITY,
       });
+    });
+
+    it('keeps where a device last signed in from, and reads garbage as unknown', () => {
+      const base = {
+        id: 'a',
+        name: 'iPhone',
+        devicePub: PUB_A,
+        client: 'c',
+        createdAt: 1,
+        lastSeenAt: 2,
+        verifiedAt: null,
+      };
+      const state = normalizeRemoteState({
+        devices: [
+          { ...base, lastIp: '192.168.1.57' },
+          { ...base, id: 'b', lastIp: 42 },
+        ],
+      });
+
+      expect(state.devices.map((device) => device.lastIp)).toEqual([
+        '192.168.1.57',
+        null,
+      ]);
     });
 
     it('reads a missing verification as unverified, a bad one as a bad device', () => {
@@ -99,7 +122,9 @@ describe('src/main/remote/device-store.ts', () => {
         devices: [base, { ...base, id: 'b', verifiedAt: 'yesterday' }],
       });
 
-      expect(state.devices).toEqual([{ ...base, verifiedAt: null }]);
+      expect(state.devices).toEqual([
+        { ...base, verifiedAt: null, lastIp: null },
+      ]);
     });
 
     it('drops an identity that is not a well-formed record', () => {
@@ -140,6 +165,7 @@ describe('src/main/remote/device-store.ts', () => {
         name: 'iPhone',
         client: 'Safari · iOS',
         devicePub: PUB_A,
+        ip: '192.168.1.40',
       });
 
       expect(device).toEqual({
@@ -149,6 +175,7 @@ describe('src/main/remote/device-store.ts', () => {
         createdAt: h.now(),
         lastSeenAt: h.now(),
         verifiedAt: null,
+        lastIp: '192.168.1.40',
       });
       expect(h.last()?.devices[0]?.devicePub).toBe(PUB_A);
     });
@@ -161,6 +188,34 @@ describe('src/main/remote/device-store.ts', () => {
       expect(h.store.find(h.store.list()[0]?.id ?? '')).not.toHaveProperty(
         'devicePub',
       );
+    });
+  });
+
+  describe('recordIp', () => {
+    it('answers the address a device used before, and keeps the new one', () => {
+      const h = harness();
+      const device = h.store.add({
+        name: 'A',
+        client: 'c',
+        devicePub: PUB_A,
+        ip: '192.168.1.40',
+      });
+      const writes = h.writes.length;
+
+      expect(h.store.recordIp(device.id, '192.168.1.40')).toBe('192.168.1.40');
+      expect(h.writes).toHaveLength(writes);
+      expect(h.store.recordIp(device.id, '192.168.1.57')).toBe('192.168.1.40');
+      expect(h.store.find(device.id)?.lastIp).toBe('192.168.1.57');
+      expect(h.last()?.devices[0]?.lastIp).toBe('192.168.1.57');
+    });
+
+    it('answers null for a device with no address yet, or no device', () => {
+      const h = harness();
+      const device = h.store.add({ name: 'A', client: 'c', devicePub: PUB_A });
+
+      expect(h.store.recordIp(device.id, '10.0.0.2')).toBeNull();
+      expect(h.store.find(device.id)?.lastIp).toBe('10.0.0.2');
+      expect(h.store.recordIp('ghost', '10.0.0.2')).toBeNull();
     });
   });
 

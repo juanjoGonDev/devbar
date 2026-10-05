@@ -16,9 +16,14 @@ import {
  * It is created the first time something needs it and kept in the
  * `remoteControl` store record. The 32-byte seed is sealed with Electron's
  * safeStorage (the OS keychain) whenever that is available, and stored as-is
- * only where it is not. A record that cannot be read back — a reset keychain,
- * a hand-edited file — is replaced by a new identity: linked phones then see
- * a changed key and refuse to connect until the user re-verifies them.
+ * only where it is not (`unsealed()` says so, for the Seguridad card).
+ *
+ * A record that cannot be read back — a keychain that is locked, denies
+ * access or is missing for now, a hand-edited file — FAILS CLOSED: nothing is
+ * replaced or rewritten, `available()` answers false and the server does not
+ * start, until a retry reads it or the user renews the key on purpose
+ * («Renovar clave del equipo»). Replacing it silently would make every
+ * linked phone see a changed key.
  */
 
 /** The slice of Electron's `safeStorage` used here. */
@@ -37,16 +42,22 @@ export interface IdentityKeysDeps {
 }
 
 export interface IdentityKeys {
-  /** The raw 32-byte public key; creates the identity when first needed. */
+  /** Loads the identity (creating the first one); false when unreadable. */
+  available(): boolean;
+  /** The raw 32-byte public key; throws while the identity is unreadable. */
   publicKey(): Buffer;
   sign(data: Uint8Array): Buffer;
   /** A brand-new identity, replacing the old one for good; its public key. */
   renew(): Buffer;
+  /** The stored identity is kept without the OS keychain. */
+  unsealed(): boolean;
 }
 
 export function createIdentityKeys(deps: IdentityKeysDeps): IdentityKeys {
   const warn = deps.warn ?? ((message) => console.warn(message));
   let current: Identity | null = null;
+  /** Said once: a locked keychain is retried, not reported on every read. */
+  let warned = false;
 
   const canSeal = (): boolean => {
     try {
@@ -99,7 +110,8 @@ export function createIdentityKeys(deps: IdentityKeysDeps): IdentityKeys {
     }
   }
 
-  function load(): Identity {
+  /** The identity, or null when the stored one cannot be read right now. */
+  function load(): Identity | null {
     if (current) return current;
     const record = deps.read();
     if (!record) return (current = create());
@@ -112,21 +124,31 @@ export function createIdentityKeys(deps: IdentityKeysDeps): IdentityKeys {
       !expected ||
       !sameBytes(identity.publicKey, expected)
     ) {
-      warn(
-        '[remote] the stored identity key could not be read; a new one was created',
-      );
-      return (current = create());
+      if (!warned)
+        warn(
+          '[remote] the stored identity key could not be read; the server stays off until it can',
+        );
+      warned = true;
+      return null;
     }
     if (!record.sealed && canSeal()) store(seed, identity.publicKey);
     return (current = identity);
   }
 
+  const loaded = (): Identity => {
+    const identity = load();
+    if (!identity) throw new Error('the remote-control identity is unreadable');
+    return identity;
+  };
+
   return {
-    publicKey: () => load().publicKey,
-    sign: (data) => load().sign(data),
+    available: () => load() !== null,
+    publicKey: () => loaded().publicKey,
+    sign: (data) => loaded().sign(data),
     renew: () => {
       current = create();
       return current.publicKey;
     },
+    unsealed: () => deps.read()?.sealed === false,
   };
 }

@@ -351,7 +351,8 @@ export function createElectronHost(options: ElectronHostOptions) {
     appVersion: (): string => app.getVersion(),
     /**
      * The OS keychain, through Electron: it seals the identity key of
-     * «Control remoto» (src/main/remote/identity.ts) where there is one.
+     * «Control remoto» (src/main/remote/identity.ts) where there is one. A
+     * sealed key it cannot open (locked, denied) keeps that server off.
      */
     safeStorage: {
       isEncryptionAvailable: (): boolean => safeStorage.isEncryptionAvailable(),

@@ -144,39 +144,58 @@ describe('src/main/remote/events.ts', () => {
   });
 
   describe('limits', () => {
+    const owner = (deviceId: string, sessionId: string) => ({
+      deviceId,
+      sessionId,
+      logsId: null,
+    });
+
     it('caps the streams one device may hold open', () => {
       const h = harness({ perDevice: 2 });
-      h.hub.attach({ deviceId: 'd1', sessionId: 's-d1', logsId: null }, sink());
-      h.hub.attach({ deviceId: 'd1', sessionId: 's-d1', logsId: null }, sink());
+      h.hub.attach(owner('d1', 's1'), sink());
+      h.hub.attach(owner('d1', 's2'), sink());
 
-      expect(h.hub.canAttach('d1')).toBe(false);
-      expect(
-        h.hub.attach(
-          { deviceId: 'd1', sessionId: 's-d1', logsId: null },
-          sink(),
-        ),
-      ).toBeNull();
-      expect(h.hub.canAttach('d2')).toBe(true);
+      expect(h.hub.canAttach(owner('d1', 's3'))).toBe(false);
+      expect(h.hub.attach(owner('d1', 's3'), sink())).toBeNull();
+      expect(h.hub.canAttach(owner('d2', 's4'))).toBe(true);
+    });
+
+    it('keeps one stream per session: a new one replaces the old, quietly', () => {
+      const h = harness({ perDevice: 2 });
+      const old = sink();
+      const other = sink();
+      h.hub.attach(owner('d1', 's1'), old);
+      h.hub.attach(owner('d1', 's2'), other);
+
+      // At the device's cap, the session's own stream still makes room.
+      expect(h.hub.canAttach(owner('d1', 's1'))).toBe(true);
+      const fresh = sink();
+      h.hub.attach(owner('d1', 's1'), fresh);
+      h.hub.broadcast('notice', {});
+
+      expect(old.ended).toBe(true);
+      expect(events(old)).toEqual([]);
+      expect(events(fresh)).toEqual([{ event: 'notice', data: {} }]);
+      expect(other.ended).toBe(false);
+      // Still connected throughout: no presence flicker.
+      expect(h.presenceChanges()).toBe(1);
     });
 
     it('caps the streams of every device together', () => {
       const h = harness({ total: 2 });
-      h.hub.attach({ deviceId: 'd1', sessionId: 's-d1', logsId: null }, sink());
-      h.hub.attach({ deviceId: 'd2', sessionId: 's-d2', logsId: null }, sink());
+      h.hub.attach(owner('d1', 's1'), sink());
+      h.hub.attach(owner('d2', 's2'), sink());
 
-      expect(h.hub.canAttach('d3')).toBe(false);
+      expect(h.hub.canAttach(owner('d3', 's3'))).toBe(false);
     });
 
     it('frees the slot of a stream that closed', () => {
       const h = harness({ perDevice: 1 });
-      const client = h.hub.attach(
-        { deviceId: 'd1', sessionId: 's-d1', logsId: null },
-        sink(),
-      );
+      const client = h.hub.attach(owner('d1', 's1'), sink());
 
       client?.detach();
 
-      expect(h.hub.canAttach('d1')).toBe(true);
+      expect(h.hub.canAttach(owner('d1', 's2'))).toBe(true);
     });
 
     it('drops a client that cannot keep up', () => {

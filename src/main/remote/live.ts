@@ -188,7 +188,7 @@ export function createLive(deps: LiveDeps): Live {
     },
 
     stream: (owner) => {
-      if (!hub.canAttach(owner.deviceId))
+      if (!hub.canAttach(owner))
         return { status: 429, body: { error: 'too-many-streams' } };
       return {
         open: (sink) => {

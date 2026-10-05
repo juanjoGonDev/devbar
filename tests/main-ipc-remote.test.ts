@@ -13,6 +13,8 @@ const STATUS: RemoteStatus = {
   port: 47821,
   listening: true,
   error: null,
+  keyError: null,
+  keyUnsealed: false,
   addresses: ['192.168.1.20'],
   devices: [],
 };
@@ -41,6 +43,11 @@ function harness() {
       error: 'off',
     }),
     cancelPairing: record('cancelPairing', undefined),
+    checkPairCode: record('checkPairCode', {
+      ok: true as const,
+      match: false,
+      attemptsLeft: 2,
+    }),
     respondPairing: record('respondPairing', { ok: true as const }),
     securityCode: record('securityCode', {
       ok: false as const,
@@ -76,9 +83,14 @@ describe('src/main/ipc/remote-ipc.ts', () => {
     ],
     ['remote:unlinkDevice', { id: 'd1' }, ['unlinkDevice', 'd1']],
     [
+      'remote:checkPairCode',
+      { requestId: 'r1', code: '482913' },
+      ['checkPairCode', 'r1', '482913'],
+    ],
+    [
       'remote:respondPairing',
-      { requestId: 'r1', accept: true },
-      ['respondPairing', 'r1', true],
+      { requestId: 'r1', accept: true, code: '482913' },
+      ['respondPairing', 'r1', true, '482913'],
     ],
     ['remote:securityCode', { id: 'd1' }, ['securityCode', 'd1']],
     ['remote:renewIdentity', undefined, ['renewIdentity']],
@@ -109,7 +121,9 @@ describe('src/main/ipc/remote-ipc.ts', () => {
     ['remote:setPort', { port: Number.NaN }],
     ['remote:renameDevice', { id: 'd1', name: 7 }],
     ['remote:unlinkDevice', { id: ['d1'] }],
-    ['remote:respondPairing', { requestId: 'r1', accept: 'true' }],
+    ['remote:respondPairing', { requestId: 'r1', accept: 'true', code: '' }],
+    ['remote:respondPairing', { requestId: 'r1', accept: true }],
+    ['remote:checkPairCode', { requestId: 'r1', code: 482913 }],
     ['remote:securityCode', { id: 3 }],
   ])(
     '%s refuses a malformed payload before touching anything',

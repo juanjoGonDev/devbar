@@ -18,6 +18,7 @@ const DEVICE: RemoteDeviceView = {
   createdAt: 1,
   lastSeenAt: 1,
   verifiedAt: null,
+  lastIp: null,
 };
 
 function session(deviceId: string | null): Session {
@@ -97,13 +98,25 @@ describe('src/main/remote/rpc.ts', () => {
     expect(h.sessionCalls).toEqual(['me']);
   });
 
-  it('refuses every control operation to a session that is no device', async () => {
+  it('asks a session that has not signed in to sign in, never calling it unlinked', async () => {
     const h = harness();
 
-    for (const deviceId of [null, 'gone'])
-      await expect(
-        h.rpc('state', {}, h.call(session(deviceId))),
-      ).resolves.toEqual({ status: 401, body: { error: 'unlinked' } });
+    // A call that races ahead of the sign-in must not read as "unlinked":
+    // the phone would forget its keys over it.
+    await expect(h.rpc('state', {}, h.call(session(null)))).resolves.toEqual({
+      status: 403,
+      body: { error: 'auth-required' },
+    });
+    expect(h.routed).toEqual([]);
+  });
+
+  it('answers 401 unlinked to a session whose device was removed', async () => {
+    const h = harness();
+
+    await expect(h.rpc('state', {}, h.call(session('gone')))).resolves.toEqual({
+      status: 401,
+      body: { error: 'unlinked' },
+    });
     expect(h.routed).toEqual([]);
   });
 
@@ -196,7 +209,7 @@ describe('src/main/remote/rpc.ts', () => {
       ).resolves.toEqual({ status: 400, body: { error: 'invalid-request' } });
       await expect(
         h.rpc('logs.subscribe', { id: 'x' }, h.call(session(null))),
-      ).resolves.toMatchObject({ status: 401 });
+      ).resolves.toMatchObject({ status: 403 });
       expect(h.subscriptions).toEqual([]);
     });
   });

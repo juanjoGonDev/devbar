@@ -267,6 +267,12 @@
               <code id="remote-address" class="remote-address"></code>
             </div>
             <p id="remote-error" class="remote-error" hidden></p>
+            <div id="remote-key-error" class="remote-key-error" hidden>
+              <p id="remote-key-error-text" class="remote-error"></p>
+              <button type="button" id="remote-key-retry" class="small-btn">
+                Reintentar
+              </button>
+            </div>
             <details id="remote-port-settings" class="remote-port-settings">
               <summary
                 aria-label="Ajustes del servicio"
@@ -342,6 +348,10 @@
                 <small class="muted"
                   >Genera una clave nueva. Cada móvil tendrá que escanear otra
                   vez su código de seguridad para volver a conectarse.</small
+                >
+                <small id="remote-key-unsealed" class="muted" hidden
+                  >La clave del equipo se guarda sin el llavero del
+                  sistema.</small
                 >
               </div>
               <button
@@ -723,9 +733,7 @@
           <li>
             Escanea el código con la cámara y ponle nombre al dispositivo.
           </li>
-          <li>
-            Acéptalo aquí comprobando que los dos muestran el mismo código.
-          </li>
+          <li>Acéptalo aquí escribiendo el código que muestra el móvil.</li>
         </ol>
       </div>
       <div class="modal-actions remote-pair-actions">
@@ -787,13 +795,30 @@
         </p>
         <p id="remote-request-name" class="remote-request-name"></p>
         <p id="remote-request-meta" class="muted small"></p>
-        <p id="remote-request-code" class="remote-verification"></p>
-        <p class="muted small">Debe coincidir con el que muestra el móvil.</p>
+        <label for="remote-request-code" class="remote-code-label"
+          >Escribe el código que muestra el móvil</label
+        >
+        <input
+          type="text"
+          id="remote-request-code"
+          class="remote-verification remote-code-input"
+          inputmode="numeric"
+          autocomplete="off"
+          maxlength="7"
+          placeholder="000 000"
+          aria-describedby="remote-request-code-error"
+        />
+        <p id="remote-request-code-error" class="remote-error" hidden></p>
         <p id="remote-request-countdown" class="muted small"></p>
       </div>
       <div class="modal-actions">
         <button type="button" id="remote-request-reject">Rechazar</button>
-        <button type="button" id="remote-request-accept" class="primary">
+        <button
+          type="button"
+          id="remote-request-accept"
+          class="primary"
+          disabled
+        >
           Vincular
         </button>
       </div>

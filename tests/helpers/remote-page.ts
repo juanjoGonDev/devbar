@@ -55,6 +55,8 @@ export {
 interface Call {
   op: string;
   body: unknown;
+  /** The handshake transcript T of the session it came over. */
+  transcript: Uint8Array;
 }
 
 type Answer = { status: number; body: unknown } | Error;
@@ -152,13 +154,14 @@ export function pageHarness(
   /** `auth` checks the proof for real against the devices it knows. */
   const authAnswer = (args: unknown, transcript: Buffer): Answer => {
     const { deviceId, sig } = (args ?? {}) as Record<string, unknown>;
-    const key = fromB64(devices.get(String(deviceId)), 32);
+    const id = String(deviceId);
+    const key = fromB64(devices.get(id), 32);
+    if (!key) return { status: 401, body: { error: 'unknown-device' } };
     const signature = fromB64(sig, 64);
-    return key &&
-      signature &&
-      verifySignature(key, authMessage(transcript), signature)
+    return signature &&
+      verifySignature(key, authMessage(id, transcript), signature)
       ? { status: 200, body: { ok: true } }
-      : { status: 401, body: { error: 'unlinked' } };
+      : { status: 401, body: { error: 'auth-failed' } };
   };
 
   const secure = createSecureApi({
@@ -170,7 +173,7 @@ export function pageHarness(
       now: () => clock,
     }),
     dispatch: (op, args, call) => {
-      calls.push({ op, body: args });
+      calls.push({ op, body: args, transcript: call.session.transcript });
       const reply =
         answers.get(op)?.shift() ??
         sticky.get(op) ??
@@ -182,13 +185,13 @@ export function pageHarness(
       const given = (args ?? {}) as Record<string, unknown>;
       if (op === 'auth' && reply.status === 200)
         call.session.deviceId = String(given.deviceId);
-      // Like the real DevBar: from now on only the new key signs in.
-      if (
-        op === 'device.rotate' &&
-        reply.status === 200 &&
-        call.session.deviceId
-      )
-        devices.set(call.session.deviceId, String(given.devicePub));
+      // Like the real DevBar: from now on only the new key signs in, and
+      // a device that unlinked itself is unknown.
+      const signedIn = call.session.deviceId;
+      if (op === 'device.rotate' && reply.status === 200 && signedIn)
+        devices.set(signedIn, String(given.devicePub));
+      if (op === 'unlink' && reply.status === 200 && signedIn)
+        devices.delete(signedIn);
       return Promise.resolve(reply);
     },
     stream: () => ({
@@ -206,6 +209,7 @@ export function pageHarness(
             createdAt: 1,
             lastSeenAt: 1,
             verifiedAt: null,
+            lastIp: null,
           }
         : null,
   });
@@ -402,13 +406,13 @@ export async function start(h: PageHarness): Promise<void> {
   await settle();
 }
 
-/** A pairing page opened from the QR: the code, and this DevBar's key. */
+/** A pairing page opened from the QR: the code and this DevBar's key. */
 export function pairingHarness(
   code = 'CODE',
   options: Parameters<typeof pageHarness>[1] = {},
 ) {
-  const h = pageHarness(`/pair?c=${code}`, options);
-  h.env.hash = `#k=${h.serverKey()}`;
+  const h = pageHarness('/pair', options);
+  h.env.hash = `#c=${code}&k=${h.serverKey()}`;
   return h;
 }
 

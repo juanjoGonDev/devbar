@@ -9,13 +9,17 @@ import type { RateLimiter } from './rate-limit.js';
 import {
   authMessage,
   fromB64,
+  isStrongPublicKey,
   KEY_BYTES,
+  pairMessage,
+  rotateMessage,
   SIGNATURE_BYTES,
   verifySignature,
 } from './rc-protocol.js';
 import type { Session } from './sessions.js';
 import { clientLabel, suggestedDeviceName } from './user-agent.js';
 import { idField, record } from './validate.js';
+import type { VerifyTokens } from './verify-tokens.js';
 
 /**
  * The session-level operations of devbar-rc/1, as plain functions of an
@@ -24,11 +28,19 @@ import { idField, record } from './validate.js';
  *   me            who this is talking to — the host name for anyone, the
  *                 device and the DevBar version once the session proved it;
  *   pair.*        the pairing handshake, open to an unauthenticated session;
- *   auth          the device signs "devbar-rc/1 auth" ‖ T of THIS handshake
- *                 with its key, and the session becomes that device's;
+ *                 the new key signs "devbar-rc/1 pair" ‖ T to show it is held;
+ *   auth          the device signs "devbar-rc/1 auth" ‖ id ‖ T of THIS
+ *                 handshake with its key, and the session becomes that
+ *                 device's. Refused as `unknown-device` — the one answer
+ *                 after which a phone forgets its keys — or `auth-failed`;
  *   unlink, verify.done, device.rotate
- *                 what only a proven device may do to itself.
+ *                 what only a proven device may do to itself: a session that
+ *                 has not signed in is told so (403 `auth-required`), and one
+ *                 whose device is gone is 401 `unlinked`. `verify.done` needs
+ *                 the one-time token of the QR (src/main/remote/verify-tokens.ts);
+ *                 a new key signs "devbar-rc/1 rotate" ‖ T.
  *
+ * Small-order and non-canonical keys are refused wherever a key is stored.
  * Answers are plain data, so every rule is testable without a socket.
  */
 
@@ -67,6 +79,7 @@ export interface SessionApiDeps {
     | 'touch'
   >;
   pairing: Pick<Pairing, 'request' | 'status' | 'takeAccepted' | 'withdraw'>;
+  verifyTokens: Pick<VerifyTokens, 'consume'>;
   limiter: RateLimiter;
   hostInfo(): { name: string; version: string };
   devicesChanged(): void;
@@ -100,7 +113,24 @@ const json = (status: number, body: unknown): ApiResponse => ({
 const invalidRequest = (): ApiResponse =>
   json(400, { error: 'invalid-request' });
 const unlinked = (): ApiResponse => json(401, { error: 'unlinked' });
+const authRequired = (): ApiResponse => json(403, { error: 'auth-required' });
 const ok = (): ApiResponse => json(200, { ok: true });
+
+/**
+ * The new key of `args`, when it is a strong one and its `sig` over
+ * `message` proves it is held; else null.
+ */
+function provenKey(
+  args: Record<string, unknown> | null,
+  message: Buffer,
+): string | null {
+  const devicePub = fromB64(args?.devicePub, KEY_BYTES);
+  const signature = fromB64(args?.sig, SIGNATURE_BYTES);
+  if (!devicePub || !signature || !isStrongPublicKey(devicePub)) return null;
+  return verifySignature(devicePub, message, signature)
+    ? (args?.devicePub as string)
+    : null;
+}
 
 export function createSessionApi(deps: SessionApiDeps): SessionApi {
   const { devices, pairing } = deps;
@@ -111,6 +141,7 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
   const asDevice =
     (handler: DeviceHandler): Handler =>
     (args, call) => {
+      if (!call.session.deviceId) return authRequired();
       const device = deviceOf(call);
       return device ? handler(args, call, device) : unlinked();
     };
@@ -144,18 +175,20 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
     if (!body || typeof body.code !== 'string') return invalidRequest();
     const name = normalizeDeviceName(body.name);
     if (name === null) return json(400, { error: 'invalid-name' });
-    const devicePub = fromB64(body.devicePub, KEY_BYTES);
+    // Checked before the code is spent: a bad proof leaves it usable.
+    const devicePub = provenKey(body, pairMessage(call.session.transcript));
     if (!devicePub) return invalidRequest();
     const result = pairing.request({
       code: body.code,
       name,
       client: clientLabel(call.userAgent),
       ip: call.ip,
-      devicePub: body.devicePub as string,
+      devicePub,
     });
     if (!result.ok) return json(410, { error: result.reason });
     deps.pairRequested(result.request);
-    const { requestId, verificationCode, expiresAt } = result.request;
+    const { requestId, expiresAt } = result.request;
+    const { verificationCode } = result;
     return json(200, { requestId, verificationCode, expiresAt });
   };
 
@@ -173,6 +206,7 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
       name: accepted.name,
       client: accepted.client,
       devicePub: accepted.devicePub,
+      ip: accepted.ip,
     });
     deps.devicesChanged();
     return json(200, { status: 'accepted', deviceId: device.id });
@@ -190,17 +224,14 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
   const auth: Handler = (args, call) => {
     const deviceId = idField(args, 'deviceId');
     const stored = deviceId ? devices.devicePub(deviceId) : null;
+    // The only refusal that tells a phone to forget its keys.
+    if (!deviceId || stored === null)
+      return json(401, { error: 'unknown-device' });
     const key = fromB64(stored, KEY_BYTES);
     const signature = fromB64(record(args)?.sig, SIGNATURE_BYTES);
-    // One answer for every failure: an unknown device, another key and a
-    // proof for another handshake all read the same from outside.
-    if (
-      !deviceId ||
-      !key ||
-      !signature ||
-      !verifySignature(key, authMessage(call.session.transcript), signature)
-    )
-      return unlinked();
+    const message = authMessage(deviceId, call.session.transcript);
+    if (!key || !signature || !verifySignature(key, message, signature))
+      return json(401, { error: 'auth-failed' });
     call.session.deviceId = deviceId;
     if (devices.touch(deviceId)) deps.devicesChanged();
     deps.deviceAuthenticated(deviceId, call.ip);
@@ -214,16 +245,21 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
     return ok();
   };
 
-  const verifyDone: DeviceHandler = (_args, _call, device) => {
+  const verifyDone: DeviceHandler = (args, _call, device) => {
+    if (!deps.verifyTokens.consume(device.id, record(args)?.t))
+      return json(403, { error: 'invalid-token' });
     devices.markVerified(device.id);
     deps.devicesChanged();
     return ok();
   };
 
-  const rotate: DeviceHandler = (args, _call, device) => {
-    const devicePub = record(args)?.devicePub;
-    if (!fromB64(devicePub, KEY_BYTES)) return invalidRequest();
-    devices.setDevicePub(device.id, devicePub as string);
+  const rotate: DeviceHandler = (args, call, device) => {
+    const devicePub = provenKey(
+      record(args),
+      rotateMessage(call.session.transcript),
+    );
+    if (!devicePub) return invalidRequest();
+    devices.setDevicePub(device.id, devicePub);
     deps.deviceRotated(device.id);
     deps.devicesChanged();
     return ok();

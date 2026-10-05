@@ -10,6 +10,16 @@ import { sha256 } from '@noble/hashes/sha2.js';
  * context, so the browser hides `crypto.subtle` — only
  * `crypto.getRandomValues`, which @noble draws its randomness from, is left.
  *
+ * Threat model, plainly: this protects what crosses the network, not this
+ * page. Its JavaScript is fetched over plain HTTP on every load and the
+ * device's private key sits in localStorage, readable by any script of this
+ * origin. Whoever answers on the computer's IP:port while it is away (asleep,
+ * off, its DHCP lease reassigned, an ARP spoof) serves that script, takes
+ * the key and can sign in as this phone later. The desktop can only notice —
+ * it raises an alert when a device signs in from an IP it has not used — and
+ * the user unlinks the device there. A secure context (HTTPS with a trusted
+ * certificate) is what would close it, and a LAN address cannot get one.
+ *
  * The constants are duplicated on purpose (this page imports nothing from
  * src/); tests/remote-rc-cross.test.ts fails the moment the two drift.
  */
@@ -18,13 +28,23 @@ export const PROTOCOL = 'devbar-rc/1';
 export const PROTOCOL_VERSION = 1;
 export const KEYS_LABEL = 'devbar-rc/1 keys';
 export const AUTH_LABEL = 'devbar-rc/1 auth';
+export const PAIR_LABEL = 'devbar-rc/1 pair';
+export const ROTATE_LABEL = 'devbar-rc/1 rotate';
 export const SAFETY_LABEL = 'devbar-rc/1 safety';
+export const EVENTS_PROOF = 'events';
+export const AAD_LABELS = [
+  'c2s-rpc',
+  'c2s-events',
+  's2c-rpc',
+  's2c-evt',
+] as const;
 export const KEY_BYTES = 32;
 export const SID_BYTES = 16;
 export const SIGNATURE_BYTES = 64;
 export const REPLAY_WINDOW = 1024;
 
 type Bytes = Uint8Array;
+export type AadLabel = (typeof AAD_LABELS)[number];
 const B64URL = /^[A-Za-z0-9_-]*$/;
 const COUNTER_BYTES = 8;
 
@@ -73,11 +93,12 @@ export function sameBytes(a: Bytes, b: Bytes): boolean {
 }
 
 export function transcript(
+  identityPub: Bytes,
   clientPub: Bytes,
   serverPub: Bytes,
   sid: Bytes,
 ): Bytes {
-  return concat(utf8(PROTOCOL), clientPub, serverPub, sid);
+  return concat(utf8(PROTOCOL), identityPub, clientPub, serverPub, sid);
 }
 
 export function sessionKeys(
@@ -133,11 +154,17 @@ export function verifySignature(
   }
 }
 
-export const authMessage = (handshake: Bytes): Bytes =>
-  concat(utf8(AUTH_LABEL), handshake);
+export const authMessage = (deviceId: string, handshake: Bytes): Bytes =>
+  concat(utf8(AUTH_LABEL), utf8(deviceId), handshake);
 
-export const aad = (direction: 'c2s' | 's2c', sid: string): Bytes =>
-  utf8(`${direction} ${sid}`);
+export const pairMessage = (handshake: Bytes): Bytes =>
+  concat(utf8(PAIR_LABEL), handshake);
+
+export const rotateMessage = (handshake: Bytes): Bytes =>
+  concat(utf8(ROTATE_LABEL), handshake);
+
+export const aad = (label: AadLabel, sid: string): Bytes =>
+  utf8(`${label} ${sid}`);
 
 export function nonce(counter: number): Bytes {
   const value = new Uint8Array(12);

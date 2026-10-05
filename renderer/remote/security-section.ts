@@ -1,5 +1,5 @@
 import type { PanelContext } from './context.js';
-import { UNREACHABLE } from './context.js';
+import { attempt, LOST, signedOut } from './context.js';
 import type { PanelElements } from './elements.js';
 import { keyMaterial } from './keys.js';
 import { generateSigningKey, safetyCode, toB64 } from './rc-protocol.js';
@@ -50,9 +50,8 @@ export function createSecuritySection(
     }
     els.rotateKeys.disabled = true;
     const next = generateSigningKey();
-    const answer = await ctx.client
-      .call('device.rotate', { devicePub: toB64(next.publicKey) })
-      .catch(() => null);
+    // The new key signs this session's handshake: it proves it is held.
+    const { answer, failure } = await attempt(ctx.client.rotateKey(next));
     els.rotateKeys.disabled = false;
     if (answer?.status === 200) {
       ctx.identity.replace({
@@ -63,8 +62,9 @@ export function createSecuritySection(
       });
       paint();
       ctx.toast('Claves renovadas. Vuelve a verificar este dispositivo.');
-    } else if (answer?.status === 401) ctx.unlinked();
-    else ctx.toast(answer ? 'No se pudieron renovar las claves.' : UNREACHABLE);
+    } else if (signedOut(answer)) {
+      if (await ctx.recheck()) ctx.toast(LOST);
+    } else ctx.toast(answer ? 'No se pudieron renovar las claves.' : failure);
   }
 
   els.rotateKeys.addEventListener('click', () => void rotate());

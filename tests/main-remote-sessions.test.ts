@@ -46,11 +46,43 @@ describe('src/main/remote/sessions.ts', () => {
       const { table } = harness();
       const session = table.create('10.0.0.2', material());
       if (!session) throw new Error('no session');
-      const sealed = seal(C2S, 1, aad('c2s', session.id), Buffer.from('{}'));
+      const sealed = seal(
+        C2S,
+        1,
+        aad('c2s-rpc', session.id),
+        Buffer.from('{}'),
+      );
 
-      expect(session.open(1, sealed)?.toString()).toBe('{}');
+      expect(session.open('rpc', 1, sealed)?.toString()).toBe('{}');
       // The very same message again is a replay.
-      expect(session.open(1, sealed)).toBeNull();
+      expect(session.open('rpc', 1, sealed)).toBeNull();
+    });
+
+    it('opens an event-stream proof through the same replay window as calls', () => {
+      const { table } = harness();
+      const session = table.create('10.0.0.2', material());
+      if (!session) throw new Error('no session');
+      const proof = seal(
+        C2S,
+        1,
+        aad('c2s-events', session.id),
+        Buffer.from('events'),
+      );
+      const call = seal(C2S, 2, aad('c2s-rpc', session.id), Buffer.from('{}'));
+
+      // A message never opens as the other kind…
+      expect(session.open('rpc', 1, proof)).toBeNull();
+      expect(session.open('events', 2, call)).toBeNull();
+      expect(session.open('events', 1, proof)?.toString()).toBe('events');
+      // …and one counter, once, whatever it carried.
+      const reused = seal(
+        C2S,
+        1,
+        aad('c2s-rpc', session.id),
+        Buffer.from('{}'),
+      );
+      expect(session.open('rpc', 1, reused)).toBeNull();
+      expect(session.open('rpc', 2, call)?.toString()).toBe('{}');
     });
 
     it('refuses a forged message without burning its counter', () => {
@@ -60,13 +92,18 @@ describe('src/main/remote/sessions.ts', () => {
       const forged = seal(
         Buffer.alloc(32, 9),
         1,
-        aad('c2s', session.id),
+        aad('c2s-rpc', session.id),
         Buffer.from('{}'),
       );
-      const genuine = seal(C2S, 1, aad('c2s', session.id), Buffer.from('{}'));
+      const genuine = seal(
+        C2S,
+        1,
+        aad('c2s-rpc', session.id),
+        Buffer.from('{}'),
+      );
 
-      expect(session.open(1, forged)).toBeNull();
-      expect(session.open(1, genuine)?.toString()).toBe('{}');
+      expect(session.open('rpc', 1, forged)).toBeNull();
+      expect(session.open('rpc', 1, genuine)?.toString()).toBe('{}');
     });
 
     it('refuses a message sealed for another session', () => {
@@ -74,12 +111,12 @@ describe('src/main/remote/sessions.ts', () => {
       const one = table.create('10.0.0.2', material());
       const two = table.create('10.0.0.2', material());
       if (!one || !two) throw new Error('no session');
-      const sealed = seal(C2S, 1, aad('c2s', one.id), Buffer.from('{}'));
+      const sealed = seal(C2S, 1, aad('c2s-rpc', one.id), Buffer.from('{}'));
 
-      expect(two.open(1, sealed)).toBeNull();
+      expect(two.open('rpc', 1, sealed)).toBeNull();
     });
 
-    it('seals replies with a counter of their own, starting at 1', () => {
+    it('seals replies and events apart, on one counter of their own from 1', () => {
       const { table } = harness();
       const session = table.create('10.0.0.2', material());
       if (!session) throw new Error('no session');
@@ -90,12 +127,17 @@ describe('src/main/remote/sessions.ts', () => {
 
       expect([first.n, second.n]).toEqual([1, 3]);
       const ct = Buffer.from(first.ct, 'base64url');
-      expect(open(S2C, 1, aad('s2c', session.id), ct)?.toString()).toBe('a');
+      expect(open(S2C, 1, aad('s2c-rpc', session.id), ct)?.toString()).toBe(
+        'a',
+      );
+      expect(open(S2C, 1, aad('s2c-evt', session.id), ct)).toBeNull();
       const frame = Buffer.from(event, 'base64url');
       expect(frame.subarray(0, 8)).toEqual(nonce(2).subarray(4));
-      expect(
-        open(S2C, 2, aad('s2c', session.id), frame.subarray(8))?.toString(),
-      ).toBe('b');
+      const body = frame.subarray(8);
+      expect(open(S2C, 2, aad('s2c-evt', session.id), body)?.toString()).toBe(
+        'b',
+      );
+      expect(open(S2C, 2, aad('s2c-rpc', session.id), body)).toBeNull();
     });
   });
 
@@ -106,11 +148,33 @@ describe('src/main/remote/sessions.ts', () => {
       if (!session) throw new Error('no session');
 
       h.advance(9 * MINUTE);
-      expect(h.table.get(session.id)).toBe(session);
+      expect(h.table.get(session.id, '10.0.0.2')).toBe(session);
+      h.table.touch(session);
       h.advance(9 * MINUTE);
-      expect(h.table.get(session.id)).toBe(session);
+      expect(h.table.get(session.id, '10.0.0.2')).toBe(session);
       h.advance(10 * MINUTE);
-      expect(h.table.get(session.id)).toBeNull();
+      expect(h.table.get(session.id, '10.0.0.2')).toBeNull();
+    });
+
+    it('counts only what the caller vouches for as activity, not a lookup', () => {
+      const h = harness();
+      const session = h.table.create('10.0.0.2', material());
+      if (!session) throw new Error('no session');
+
+      // Anyone who saw the sid can look it up; that keeps nothing alive.
+      h.advance(9 * MINUTE);
+      h.table.get(session.id, '10.0.0.2');
+      h.advance(2 * MINUTE);
+      expect(h.table.get(session.id, '10.0.0.2')).toBeNull();
+    });
+
+    it('binds a session to the address that shook hands', () => {
+      const h = harness();
+      const session = h.table.create('10.0.0.2', material());
+      if (!session) throw new Error('no session');
+
+      expect(h.table.get(session.id, '10.0.0.9')).toBeNull();
+      expect(h.table.get(session.id, '10.0.0.2')).toBe(session);
     });
 
     it('keeps a session alive while it holds an open stream', () => {
@@ -120,10 +184,10 @@ describe('src/main/remote/sessions.ts', () => {
 
       h.table.streamOpened(session);
       h.advance(60 * MINUTE);
-      expect(h.table.get(session.id)).toBe(session);
+      expect(h.table.get(session.id, '10.0.0.2')).toBe(session);
       h.table.streamClosed(session);
       h.advance(10 * MINUTE);
-      expect(h.table.get(session.id)).toBeNull();
+      expect(h.table.get(session.id, '10.0.0.2')).toBeNull();
     });
 
     it('drops the sessions of one device, or every session', () => {
@@ -137,10 +201,10 @@ describe('src/main/remote/sessions.ts', () => {
       c.deviceId = 'd2';
 
       expect(table.dropDevice('d1').sort()).toEqual([a.id, b.id].sort());
-      expect(table.get(a.id)).toBeNull();
-      expect(table.get(c.id)).toBe(c);
+      expect(table.get(a.id, '10.0.0.2')).toBeNull();
+      expect(table.get(c.id, '10.0.0.4')).toBe(c);
       expect(table.dropAll()).toEqual([c.id]);
-      expect(table.get(c.id)).toBeNull();
+      expect(table.get(c.id, '10.0.0.4')).toBeNull();
     });
   });
 
@@ -152,13 +216,13 @@ describe('src/main/remote/sessions.ts', () => {
       const recent = h.table.create('10.0.0.2', material());
       h.advance(1000);
       if (!old || !recent) throw new Error('no session');
-      h.table.get(old.id);
+      h.table.touch(old);
 
       const third = h.table.create('10.0.0.2', material());
 
       expect(third).not.toBeNull();
-      expect(h.table.get(recent.id)).toBeNull();
-      expect(h.table.get(old.id)).toBe(old);
+      expect(h.table.get(recent.id, '10.0.0.2')).toBeNull();
+      expect(h.table.get(old.id, '10.0.0.2')).toBe(old);
     });
 
     it('refuses a new session when every one at the cap is streaming', () => {
@@ -180,7 +244,7 @@ describe('src/main/remote/sessions.ts', () => {
       h.advance(1000);
 
       expect(h.table.create('10.0.0.4', material())).not.toBeNull();
-      expect(h.table.get(first?.id ?? '')).toBeNull();
+      expect(h.table.get(first?.id ?? '', '10.0.0.2')).toBeNull();
       expect(h.table.size()).toBe(2);
     });
   });

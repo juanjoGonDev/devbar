@@ -1,9 +1,15 @@
 import crypto from 'node:crypto';
+import { ED25519_TORSION_SUBGROUP } from '@noble/curves/ed25519.js';
 import { describe, expect, it } from 'vitest';
 import {
   AUTH_LABEL,
   aad,
   authMessage,
+  isStrongPublicKey,
+  PAIR_LABEL,
+  pairMessage,
+  ROTATE_LABEL,
+  rotateMessage,
   createReplayWindow,
   ephemeralKeyPair,
   fromB64,
@@ -51,12 +57,13 @@ describe('src/main/remote/rc-protocol.ts', () => {
   });
 
   describe('the handshake', () => {
-    it('builds the transcript as label ‖ C ‖ S ‖ sid', () => {
-      const t = transcript(bytes(0), bytes(32), bytes(64, 16));
+    it('builds the transcript as label ‖ identity ‖ C ‖ S ‖ sid', () => {
+      const t = transcript(bytes(200), bytes(0), bytes(32), bytes(64, 16));
       expect(t.subarray(0, 11).toString('utf8')).toBe('devbar-rc/1');
-      expect(t.subarray(11, 43)).toEqual(bytes(0));
-      expect(t.subarray(43, 75)).toEqual(bytes(32));
-      expect(t.subarray(75)).toEqual(bytes(64, 16));
+      expect(t.subarray(11, 43)).toEqual(bytes(200));
+      expect(t.subarray(43, 75)).toEqual(bytes(0));
+      expect(t.subarray(75, 107)).toEqual(bytes(32));
+      expect(t.subarray(107)).toEqual(bytes(64, 16));
     });
 
     it('agrees on the same secret from both ends of an X25519 exchange', () => {
@@ -74,7 +81,7 @@ describe('src/main/remote/rc-protocol.ts', () => {
     });
 
     it('derives two different 32-byte keys, one per direction', () => {
-      const t = transcript(bytes(0), bytes(32), bytes(64, 16));
+      const t = transcript(bytes(200), bytes(0), bytes(32), bytes(64, 16));
       const keys = sessionKeys(bytes(100), t);
       const okm = Buffer.from(
         crypto.hkdfSync(
@@ -115,9 +122,69 @@ describe('src/main/remote/rc-protocol.ts', () => {
       );
     });
 
-    it('prefixes the auth proof with its own label', () => {
+    it('binds the auth proof to the device id and the handshake', () => {
       const t = Buffer.from('T');
-      expect(authMessage(t).toString('utf8')).toBe(`${AUTH_LABEL}T`);
+      expect(authMessage('d1', t).toString('utf8')).toBe(`${AUTH_LABEL}d1T`);
+    });
+
+    it('gives pairing and key rotation proofs labels of their own', () => {
+      const t = Buffer.from('T');
+      expect(pairMessage(t).toString('utf8')).toBe(`${PAIR_LABEL}T`);
+      expect(rotateMessage(t).toString('utf8')).toBe(`${ROTATE_LABEL}T`);
+      expect(new Set([AUTH_LABEL, PAIR_LABEL, ROTATE_LABEL]).size).toBe(3);
+    });
+  });
+
+  describe('isStrongPublicKey', () => {
+    const P = 2n ** 255n - 19n;
+    /** 32 bytes little-endian, like an Ed25519 point encoding. */
+    const encode = (value: bigint): Buffer => {
+      const out = Buffer.alloc(32);
+      for (let i = 0; i < 32; i++)
+        out[i] = Number((value >> BigInt(8 * i)) & 0xffn);
+      return out;
+    };
+    const withSign = (key: Buffer): Buffer => {
+      const out = Buffer.from(key);
+      out[31] = (out[31] ?? 0) ^ 0x80;
+      return out;
+    };
+
+    it('accepts real keys', () => {
+      for (let i = 0; i < 5; i++)
+        expect(isStrongPublicKey(generateIdentity().publicKey)).toBe(true);
+    });
+
+    it('refuses every point of small order, either sign bit', () => {
+      for (const hex of ED25519_TORSION_SUBGROUP) {
+        const key = Buffer.from(hex, 'hex');
+        expect(isStrongPublicKey(key), hex).toBe(false);
+        expect(isStrongPublicKey(withSign(key)), `${hex} signed`).toBe(false);
+      }
+    });
+
+    it('refuses a non-canonical encoding (y ≥ p) and a wrong length', () => {
+      for (const y of [P, P + 1n, P + 2n, 2n ** 255n - 1n])
+        expect(isStrongPublicKey(encode(y)), String(y)).toBe(false);
+      expect(isStrongPublicKey(bytes(9, 31))).toBe(false);
+    });
+
+    it('closes the forgery node:crypto alone lets through for the identity point', () => {
+      // R = identity, S = 0 "signs" anything under the identity point.
+      const identityPoint = encode(1n);
+      const forged = Buffer.concat([encode(1n), Buffer.alloc(32)]);
+      const raw = crypto.createPublicKey({
+        key: Buffer.concat([
+          Buffer.from('302a300506032b6570032100', 'hex'),
+          identityPoint,
+        ]),
+        format: 'der',
+        type: 'spki',
+      });
+      expect(crypto.verify(null, Buffer.from('any'), raw, forged)).toBe(true);
+      expect(verifySignature(identityPoint, Buffer.from('any'), forged)).toBe(
+        false,
+      );
     });
   });
 
@@ -131,37 +198,41 @@ describe('src/main/remote/rc-protocol.ts', () => {
       );
     });
 
-    it('binds the direction and the session id as associated data', () => {
-      expect(aad('c2s', 'abc').toString('utf8')).toBe('c2s abc');
-      expect(aad('s2c', 'abc').toString('utf8')).toBe('s2c abc');
+    it('binds the purpose and the session id as associated data', () => {
+      expect(aad('c2s-rpc', 'abc').toString('utf8')).toBe('c2s-rpc abc');
+      expect(aad('c2s-events', 'abc').toString('utf8')).toBe('c2s-events abc');
+      expect(aad('s2c-rpc', 'abc').toString('utf8')).toBe('s2c-rpc abc');
+      expect(aad('s2c-evt', 'abc').toString('utf8')).toBe('s2c-evt abc');
     });
 
     it('opens what it sealed, and nothing that was touched', () => {
-      const sealed = seal(key, 3, aad('c2s', 's'), Buffer.from('{"op":1}'));
+      const sealed = seal(key, 3, aad('c2s-rpc', 's'), Buffer.from('{"op":1}'));
       expect(sealed).toHaveLength(8 + 16);
-      expect(open(key, 3, aad('c2s', 's'), sealed)?.toString()).toBe(
+      expect(open(key, 3, aad('c2s-rpc', 's'), sealed)?.toString()).toBe(
         '{"op":1}',
       );
-      expect(open(key, 4, aad('c2s', 's'), sealed)).toBeNull();
-      expect(open(key, 3, aad('s2c', 's'), sealed)).toBeNull();
-      expect(open(key, 3, aad('c2s', 't'), sealed)).toBeNull();
-      expect(open(bytes(8), 3, aad('c2s', 's'), sealed)).toBeNull();
+      expect(open(key, 4, aad('c2s-rpc', 's'), sealed)).toBeNull();
+      expect(open(key, 3, aad('s2c-rpc', 's'), sealed)).toBeNull();
+      expect(open(key, 3, aad('c2s-rpc', 't'), sealed)).toBeNull();
+      expect(open(bytes(8), 3, aad('c2s-rpc', 's'), sealed)).toBeNull();
       const flipped = Buffer.from(sealed);
       flipped[0] = (flipped[0] ?? 0) ^ 1;
-      expect(open(key, 3, aad('c2s', 's'), flipped)).toBeNull();
-      expect(open(key, 3, aad('c2s', 's'), sealed.subarray(0, 10))).toBeNull();
+      expect(open(key, 3, aad('c2s-rpc', 's'), flipped)).toBeNull();
+      expect(
+        open(key, 3, aad('c2s-rpc', 's'), sealed.subarray(0, 10)),
+      ).toBeNull();
     });
 
     it('frames an event as base64url of counter ‖ ciphertext', () => {
       const frame = Buffer.from(
-        sealEvent(key, 9, aad('s2c', 's'), Buffer.from('ev')),
+        sealEvent(key, 9, aad('s2c-evt', 's'), Buffer.from('ev')),
         'base64url',
       );
       expect(frame.readUInt32BE(0)).toBe(0);
       expect(frame.readUInt32BE(4)).toBe(9);
-      expect(open(key, 9, aad('s2c', 's'), frame.subarray(8))?.toString()).toBe(
-        'ev',
-      );
+      expect(
+        open(key, 9, aad('s2c-evt', 's'), frame.subarray(8))?.toString(),
+      ).toBe('ev');
     });
   });
 

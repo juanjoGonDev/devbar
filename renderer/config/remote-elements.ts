@@ -14,6 +14,12 @@ export interface RemoteElements {
   state: HTMLElement;
   address: HTMLElement;
   error: HTMLElement;
+  /** This computer's key could not be read: why, and «Reintentar». */
+  keyError: HTMLElement;
+  keyErrorText: HTMLElement;
+  keyRetry: HTMLButtonElement;
+  /** The Seguridad card's note on a key kept without the keychain. */
+  keyUnsealed: HTMLElement;
   /** The collapsed gear section that holds the port field. */
   portSettings: HTMLDetailsElement;
   port: PortElements;
@@ -43,7 +49,9 @@ export interface RemoteElements {
     dialog: HTMLDialogElement;
     name: HTMLElement;
     meta: HTMLElement;
-    code: HTMLElement;
+    /** Where the user types the six digits the phone shows. */
+    code: HTMLInputElement;
+    codeError: HTMLElement;
     countdown: HTMLElement;
     reject: HTMLButtonElement;
     accept: HTMLButtonElement;
@@ -57,6 +65,10 @@ export function remoteElements(): RemoteElements {
     state: byId<HTMLElement>('remote-state', HTMLElement),
     address: byId<HTMLElement>('remote-address', HTMLElement),
     error: byId<HTMLElement>('remote-error', HTMLElement),
+    keyError: byId<HTMLElement>('remote-key-error', HTMLElement),
+    keyErrorText: byId<HTMLElement>('remote-key-error-text', HTMLElement),
+    keyRetry: byId<HTMLButtonElement>('remote-key-retry', HTMLButtonElement),
+    keyUnsealed: byId<HTMLElement>('remote-key-unsealed', HTMLElement),
     portSettings: byId<HTMLDetailsElement>(
       'remote-port-settings',
       HTMLDetailsElement,
@@ -104,7 +116,8 @@ export function remoteElements(): RemoteElements {
       ),
       name: byId<HTMLElement>('remote-request-name', HTMLElement),
       meta: byId<HTMLElement>('remote-request-meta', HTMLElement),
-      code: byId<HTMLElement>('remote-request-code', HTMLElement),
+      code: byId<HTMLInputElement>('remote-request-code', HTMLInputElement),
+      codeError: byId<HTMLElement>('remote-request-code-error', HTMLElement),
       countdown: byId<HTMLElement>('remote-request-countdown', HTMLElement),
       reject: byId<HTMLButtonElement>(
         'remote-request-reject',

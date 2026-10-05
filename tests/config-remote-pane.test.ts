@@ -5,7 +5,6 @@ import { flush, openConfigWindow } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
 import type {
   RemoteDeviceRow,
-  RemotePairRequest,
   RemoteStatus,
 } from '../src/ipc-contract/remote-api.js';
 
@@ -13,6 +12,7 @@ import type {
  * The «Control remoto» section of the config window, driven through the real
  * window (config.html + config.ts) with a hand-driven `window.api`: what the
  * user sees for each status main reports, and what each control asks main.
+ * A phone asking to be linked is tests/config-remote-request.test.ts.
  */
 
 const HOUR = 60 * 60_000;
@@ -29,6 +29,8 @@ function status(extra: Partial<RemoteStatus> = {}): RemoteStatus {
     port: 47821,
     listening: false,
     error: null,
+    keyError: null,
+    keyUnsealed: false,
     addresses: ['192.168.1.20'],
     devices: [],
     ...extra,
@@ -43,6 +45,7 @@ function device(extra: Partial<RemoteDeviceRow> = {}): RemoteDeviceRow {
     createdAt: Date.UTC(2026, 9, 1, 10),
     lastSeenAt: Date.now(),
     verifiedAt: null,
+    lastIp: null,
     connected: false,
     ...extra,
   };
@@ -68,20 +71,6 @@ async function openWith(initial: RemoteStatus): Promise<RendererWindow> {
   const win = await openConfigWindow();
   await win.settle('getRemoteStatus', initial);
   return win;
-}
-
-function pairRequest(
-  extra: Partial<RemotePairRequest> = {},
-): RemotePairRequest {
-  return {
-    requestId: 'r1',
-    name: 'iPhone de Ana',
-    client: 'Safari · iOS',
-    ip: '192.168.1.40',
-    verificationCode: '482913',
-    expiresAt: Date.now() + 60_000,
-    ...extra,
-  };
 }
 
 describe('renderer/config/remote-pane.ts', () => {
@@ -409,6 +398,21 @@ describe('renderer/config/remote-pane.ts', () => {
       );
     });
 
+    it('shows the IP each device last signed in from', async () => {
+      win = await openWith(
+        status({
+          ...ON,
+          devices: [device({ lastIp: '192.168.1.57' }), device({ id: 'd2' })],
+        }),
+      );
+
+      const [first, second] = rows();
+      expect(first?.querySelector('.remote-device-ip')?.textContent).toBe(
+        'Última IP 192.168.1.57',
+      );
+      expect(second?.querySelector('.remote-device-ip')).toBeNull();
+    });
+
     it('counts as connected only a device with an open stream', async () => {
       win = await openWith(status({ ...ON, devices: [device()] }));
 
@@ -536,7 +540,7 @@ describe('renderer/config/remote-pane.ts', () => {
 
       await win.settle('startRemotePairing', {
         ok: true,
-        url: 'http://192.168.1.20:47821/pair?c=abc',
+        url: 'http://192.168.1.20:47821/pair#c=abc&k=K',
         expiresAt: Date.now() + 5 * 60_000,
         qr: QR,
       });
@@ -646,107 +650,6 @@ describe('renderer/config/remote-pane.ts', () => {
       window.dispatchEvent(new Event('pagehide'));
 
       expect(win.callCount('cancelRemotePairing')).toBe(0);
-    });
-  });
-
-  describe('a pairing request', () => {
-    async function withRequest(): Promise<RendererWindow> {
-      const opened = await openWith(status(ON));
-      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
-      click(el('remote-add-device'));
-      await opened.settle('startRemotePairing', {
-        ok: true,
-        url: 'u',
-        expiresAt: Date.now() + 5 * 60_000,
-        qr: QR,
-      });
-      await opened.push('onRemotePairRequest', pairRequest());
-      return opened;
-    }
-
-    it('asks for confirmation with the matching code', async () => {
-      win = await withRequest();
-
-      expect(dialogOpen('remote-request-dialog')).toBe(true);
-      expect(text('remote-request-name')).toBe('iPhone de Ana');
-      expect(text('remote-request-meta')).toBe('Safari · iOS · 192.168.1.40');
-      expect(text('remote-request-code')).toBe('482 913');
-      expect(text('remote-request-countdown')).toBe(
-        'Se rechazará automáticamente en 1:00',
-      );
-      expect(el('remote-qr').classList.contains('is-used')).toBe(true);
-    });
-
-    it('links on «Vincular» and closes both dialogs once main confirms', async () => {
-      win = await withRequest();
-
-      click(el('remote-request-accept'));
-      await win.settle('respondRemotePairing', { ok: true });
-      await win.push('onRemotePairRequestClosed', {
-        requestId: 'r1',
-        outcome: 'accepted',
-      });
-
-      expect(win.argsFor('respondRemotePairing')).toEqual([['r1', true]]);
-      expect(dialogOpen('remote-request-dialog')).toBe(false);
-      expect(dialogOpen('remote-pair-dialog')).toBe(false);
-    });
-
-    it('rejects on «Rechazar» and shows a fresh code', async () => {
-      win = await withRequest();
-
-      click(el('remote-request-reject'));
-      await win.settle('respondRemotePairing', { ok: true });
-      await win.push('onRemotePairRequestClosed', {
-        requestId: 'r1',
-        outcome: 'rejected',
-      });
-
-      expect(win.argsFor('respondRemotePairing')).toEqual([['r1', false]]);
-      expect(dialogOpen('remote-request-dialog')).toBe(false);
-      expect(dialogOpen('remote-pair-dialog')).toBe(true);
-      expect(win.callCount('startRemotePairing')).toBe(2);
-    });
-
-    it('treats Escape as a rejection', async () => {
-      win = await withRequest();
-
-      el('remote-request-dialog').dispatchEvent(
-        new Event('cancel', { cancelable: true }),
-      );
-      await win.settle('respondRemotePairing', { ok: true });
-
-      expect(win.argsFor('respondRemotePairing')).toEqual([['r1', false]]);
-      expect(dialogOpen('remote-request-dialog')).toBe(false);
-    });
-
-    it('closes by itself when the request expires, without answering', async () => {
-      win = await withRequest();
-
-      vi.advanceTimersByTime(30_000);
-      expect(text('remote-request-countdown')).toBe(
-        'Se rechazará automáticamente en 0:30',
-      );
-      await win.push('onRemotePairRequestClosed', {
-        requestId: 'r1',
-        outcome: 'expired',
-      });
-
-      expect(dialogOpen('remote-request-dialog')).toBe(false);
-      expect(win.callCount('respondRemotePairing')).toBe(0);
-    });
-
-    it('reports an answer main could not deliver', async () => {
-      win = await withRequest();
-
-      click(el('remote-request-accept'));
-      await win.settle('respondRemotePairing', {
-        ok: false,
-        error: 'La solicitud ya no está pendiente.',
-      });
-
-      expect(text('toast')).toBe('La solicitud ya no está pendiente.');
-      expect(dialogOpen('remote-request-dialog')).toBe(false);
     });
   });
 });

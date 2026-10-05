@@ -13,8 +13,13 @@ import type {
  * The security side of «Control remoto» in the config window: the note that
  * the connection is end-to-end encrypted, each device's «Verificado» state
  * and its «Código de seguridad» (six groups and the QR its phone scans), the
- * connection-notice switch and «Renovar clave del equipo».
+ * connection-notice switch, «Renovar clave del equipo», and what the section
+ * says when this computer's key cannot be read or is kept outside the
+ * keychain.
  */
+
+const KEY_ERROR =
+  'No se pudo leer la clave de seguridad del llavero del sistema. Desbloquéalo y pulsa Reintentar.';
 
 const QR = {
   size: 3,
@@ -30,6 +35,8 @@ function status(extra: Partial<RemoteStatus> = {}): RemoteStatus {
     port: 47821,
     listening: true,
     error: null,
+    keyError: null,
+    keyUnsealed: false,
     addresses: ['192.168.1.20'],
     devices: [],
     ...extra,
@@ -44,6 +51,7 @@ function device(extra: Partial<RemoteDeviceRow> = {}): RemoteDeviceRow {
     createdAt: Date.UTC(2026, 9, 1, 10),
     lastSeenAt: Date.now(),
     verifiedAt: null,
+    lastIp: null,
     connected: false,
     ...extra,
   };
@@ -235,6 +243,43 @@ describe('«Control remoto» security (renderer/config/remote-pane.ts)', () => {
       expect(el<HTMLButtonElement>('remote-renew-identity').disabled).toBe(
         false,
       );
+    });
+  });
+
+  describe("this computer's key", () => {
+    it('says it could not be read, with «Reintentar», while the server stays off', async () => {
+      win = await openWith(status({ listening: false, keyError: KEY_ERROR }));
+
+      expect(el('remote-key-error').hidden).toBe(false);
+      expect(text('remote-key-error-text')).toBe(KEY_ERROR);
+      expect(text('remote-state')).toBe('Desactivado');
+
+      click(el('remote-key-retry'));
+      await win.settle('setRemoteEnabled', status());
+
+      expect(win.argsFor('setRemoteEnabled')).toEqual([[true]]);
+      expect(el('remote-key-error').hidden).toBe(true);
+    });
+
+    it('shows no key error while the key reads fine', async () => {
+      win = await openWith(status());
+
+      expect(el('remote-key-error').hidden).toBe(true);
+    });
+
+    it('notes, discreetly, a key kept without the keychain', async () => {
+      win = await openWith(status({ keyUnsealed: true }));
+
+      expect(el('remote-key-unsealed').hidden).toBe(false);
+      expect(text('remote-key-unsealed')).toBe(
+        'La clave del equipo se guarda sin el llavero del sistema.',
+      );
+    });
+
+    it('says nothing about it when the keychain keeps it', async () => {
+      win = await openWith(status());
+
+      expect(el('remote-key-unsealed').hidden).toBe(true);
     });
   });
 });

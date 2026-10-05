@@ -98,6 +98,9 @@ export function createRpc(deps: RpcDeps): Rpc {
     const route = CONTROL_OPS.get(op);
     if (!route && op !== LOGS_SUBSCRIBE)
       return json(404, { error: 'unknown-op' });
+    // Not signed in yet (a call racing the sign-in) is not "unlinked": only
+    // a session whose device is gone hears that.
+    if (!call.session.deviceId) return json(403, { error: 'auth-required' });
     const device = deviceOf(call);
     if (!device) return json(401, { error: 'unlinked' });
     // Every call of a device is a sign of life («Última conexión»).

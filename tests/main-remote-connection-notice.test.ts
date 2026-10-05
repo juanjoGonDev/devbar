@@ -11,9 +11,14 @@ import {
  * — the first time since DevBar started, or after ten minutes away — with a
  * shortcut to the device list, and the same news in «Avisos» for the other
  * phones. Reloads, tab switches and reconnects say nothing.
+ *
+ * A sign-in from an IP the device has not used is another matter: a stolen
+ * device key would show up exactly like that, so it is always said, loudly.
  */
 
 const MINUTE = 60_000;
+const NEW_IP_ALERT =
+  '«iPhone de Ana» se ha conectado desde una IP nueva (192.168.1.57). Si no has sido tú, desvincúlalo.';
 
 describe('connection notices', () => {
   it('tells the desktop who connected, from where, with a way to the device list', async () => {
@@ -103,5 +108,69 @@ describe('connection notices', () => {
 
     expect(h.banners).toEqual([]);
     expect(stream.events().at(-1)?.type).toBe('notice');
+  });
+
+  describe('a sign-in from a new IP', () => {
+    it('always warns the desktop: whatever the switch, however recent', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      h.remote.setNotifyConnections(false);
+      const phone = await linkPhone(h);
+
+      await reconnect(h, phone, h.netFrom('192.168.1.57'));
+
+      expect(h.banners).toEqual([
+        {
+          title: 'DevBar — control remoto',
+          body: NEW_IP_ALERT,
+          options: {
+            cta: { label: 'Ver dispositivos', action: 'open-remote' },
+            record: false,
+          },
+        },
+      ]);
+    });
+
+    it('keeps the new IP as the one the device last used', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const phone = await linkPhone(h);
+      expect(h.remote.status().devices[0]?.lastIp).toBe('192.168.1.40');
+
+      await reconnect(h, phone, h.netFrom('192.168.1.57'));
+
+      expect(h.remote.status().devices[0]?.lastIp).toBe('192.168.1.57');
+      expect(h.stored()?.devices[0]?.lastIp).toBe('192.168.1.57');
+    });
+
+    it('says nothing for the IP it paired from, nor twice for the same new one', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const phone = await linkPhone(h);
+      const there = h.netFrom('192.168.1.57');
+
+      await reconnect(h, phone, there);
+      await reconnect(h, phone, there);
+
+      expect(h.banners.map((banner) => banner.body)).toEqual([
+        '«iPhone de Ana» se ha conectado desde 192.168.1.40.',
+        NEW_IP_ALERT,
+      ]);
+    });
+
+    it('logs it in «Avisos» for the other phones', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const watcher = await linkPhone(h);
+      const stream = openEvents(h, watcher.channel);
+      const phone = await linkPhone(h);
+
+      await reconnect(h, phone, h.netFrom('192.168.1.57'));
+
+      expect(stream.events().at(-1)).toMatchObject({
+        type: 'notice',
+        data: { kind: 'error', title: 'Control remoto', body: NEW_IP_ALERT },
+      });
+    });
   });
 });

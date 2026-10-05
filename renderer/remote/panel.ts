@@ -9,7 +9,7 @@ import type {
   PanelContext,
   TabName,
 } from './context.js';
-import { UNREACHABLE } from './context.js';
+import { attempt, LOST, signedOut } from './context.js';
 import { panelElements } from './elements.js';
 import type { RemoteEnv } from './env.js';
 import { createGroupsTab } from './groups-tab.js';
@@ -30,6 +30,10 @@ import {
  * computer's (countdowns and uptimes are counted on main's clock), runs the
  * 1 s clock the countdowns tick on, and routes each event of the stream to
  * the part of the page it changes.
+ *
+ * Nothing here decides the device is unlinked: an answer or an event that
+ * says so only triggers a fresh sign-in (`recheck`), and the app forgets the
+ * keys when — and only when — that sign-in is refused for an unknown device.
  */
 
 const TOAST_MS = 4000;
@@ -40,8 +44,6 @@ export interface PanelDeps {
   client: RemoteClient;
   me: Me;
   identity: DeviceIdentity;
-  /** This device is no longer linked (from here, the stream or the server). */
-  onUnlinked(): void;
 }
 
 export interface Panel {
@@ -71,9 +73,18 @@ export function startPanel(deps: PanelDeps): Panel {
     }, TOAST_MS);
   };
 
-  const unlinked = (): void => {
-    stop();
-    deps.onUnlinked();
+  /**
+   * A fresh sign-in, beside the session in use: refused for an unknown
+   * device, the app takes over (onLost) and stops this panel. True while
+   * the device is still linked.
+   */
+  const recheck = (): Promise<boolean> => client.confirmLinked();
+
+  /** The stream or `me` said unlinked: confirm it, or start over. */
+  const toldUnlinked = (): void => {
+    void recheck().then(() => {
+      if (!stopped) env.reload();
+    });
   };
 
   /** A fresh handshake, then who we are now. */
@@ -109,10 +120,11 @@ export function startPanel(deps: PanelDeps): Panel {
     },
     openConfirm: (token) => confirm.open(token),
     run: async (op, body = {}, options = {}) => {
-      const answer = await client.call(op, body).catch(() => null);
-      if (!answer) toast(UNREACHABLE);
-      else if (answer.status === 401) unlinked();
-      else if (answer.status === 202) {
+      const { answer, failure } = await attempt(client.call(op, body));
+      if (!answer) toast(failure);
+      else if (signedOut(answer)) {
+        if (await recheck()) toast(LOST);
+      } else if (answer.status === 202) {
         if (options.pending) toast(options.pending);
       } else if (answer.status === 404) toast('Ya no existe en DevBar.');
       else if (answer.status !== 200) toast('DevBar no pudo hacerlo.');
@@ -127,17 +139,18 @@ export function startPanel(deps: PanelDeps): Panel {
       return answer;
     },
     answerConfirm: async (token, decision): Promise<ConfirmAnswer> => {
-      const answer = await client
-        .call('confirm', { token, decision })
-        .catch(() => null);
+      const { answer, failure } = await attempt(
+        client.call('confirm', { token, decision }),
+      );
       if (answer?.status === 200) return 'ok';
       if (answer?.status === 409) return 'gone';
-      if (answer?.status === 401) unlinked();
-      else toast(answer ? 'No se pudo responder.' : UNREACHABLE);
+      if (signedOut(answer)) {
+        if (await recheck()) toast(LOST);
+      } else toast(answer ? 'No se pudo responder.' : failure);
       return 'error';
     },
     onTick: (owner, fns) => tickers.set(owner, fns),
-    unlinked,
+    recheck,
   };
 
   const groups = createGroupsTab(els.groups, els.branches, ctx, me.version);
@@ -221,7 +234,7 @@ export function startPanel(deps: PanelDeps): Panel {
         if (tab === 'logs') logs.show();
       }
     },
-    onUnlinked: unlinked,
+    onUnlinked: toldUnlinked,
     reload: () => env.reload(),
   });
 

@@ -3,6 +3,8 @@ import { createPairing } from '../src/main/remote/pairing.js';
 
 const MINUTE = 60_000;
 const DEVICE_PUB = 'P'.repeat(42) + 'A';
+/** The six digits the fixed `randomInt` below draws. */
+const DIGITS = '482913';
 
 function harness() {
   let clock = 5_000_000;
@@ -67,8 +69,8 @@ describe('src/main/remote/pairing.ts', () => {
       if (!result.ok) throw new Error(`refused: ${result.reason}`);
       const { requestId, ...rest } = result.request;
       expect(requestId).toMatch(/^[A-Za-z0-9_-]{22}$/);
+      expect(result.verificationCode).toBe(DIGITS);
       expect(rest).toEqual({
-        verificationCode: '482913',
         name: 'iPhone',
         client: 'Safari · iOS',
         ip: '192.168.1.40',
@@ -77,10 +79,14 @@ describe('src/main/remote/pairing.ts', () => {
       expect(h.ask(code)).toEqual({ ok: false, reason: 'used' });
     });
 
-    it("keeps the phone's public key out of what the desktop is shown", () => {
+    it("keeps the phone's key and its six digits out of what the desktop is shown", () => {
       const h = harness();
       const result = h.ask(h.pairing.startPairing().code);
 
+      if (!result.ok) throw new Error('refused');
+      // The digits are what the user types on the desktop: showing them
+      // there would let anyone accept anyone.
+      expect(JSON.stringify(result.request)).not.toContain(DIGITS);
       expect(JSON.stringify(result)).not.toContain(DEVICE_PUB);
     });
 
@@ -99,7 +105,7 @@ describe('src/main/remote/pairing.ts', () => {
         devicePub: DEVICE_PUB,
       });
 
-      expect(result.ok && result.request.verificationCode).toBe('000042');
+      expect(result.ok && result.verificationCode).toBe('000042');
     });
 
     it('refuses an expired code', () => {
@@ -127,14 +133,32 @@ describe('src/main/remote/pairing.ts', () => {
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
 
       expect(h.pairing.status(id)).toBe('pending');
-      expect(h.pairing.respond(id, true)).toBe(true);
+      expect(h.pairing.respond(id, true, DIGITS)).toBe('ok');
       expect(h.pairing.status(id)).toBe('accepted');
+    });
+
+    it('accepts only with the digits the phone shows, spaces allowed', () => {
+      const h = harness();
+      const id = requestIdOf(h.ask(h.pairing.startPairing().code));
+
+      for (const typed of ['', '482914', '48291', 'abcdef'])
+        expect(h.pairing.respond(id, true, typed), typed).toBe('mismatch');
+      expect(h.pairing.status(id)).toBe('pending');
+      expect(h.pairing.respond(id, true, '482 913')).toBe('ok');
+    });
+
+    it('rejects without any digits', () => {
+      const h = harness();
+      const id = requestIdOf(h.ask(h.pairing.startPairing().code));
+
+      expect(h.pairing.respond(id, false, '')).toBe('ok');
+      expect(h.pairing.status(id)).toBe('rejected');
     });
 
     it('hands an accepted request over exactly once', () => {
       const h = harness();
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
-      h.pairing.respond(id, true);
+      h.pairing.respond(id, true, DIGITS);
 
       expect(h.pairing.takeAccepted(id)).toMatchObject({
         name: 'iPhone',
@@ -150,7 +174,7 @@ describe('src/main/remote/pairing.ts', () => {
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
 
       expect(h.pairing.takeAccepted(id)).toBeNull();
-      h.pairing.respond(id, false);
+      h.pairing.respond(id, false, '');
       expect(h.pairing.status(id)).toBe('rejected');
       expect(h.pairing.takeAccepted(id)).toBeNull();
     });
@@ -158,11 +182,11 @@ describe('src/main/remote/pairing.ts', () => {
     it('cannot answer twice, nor answer an unknown request', () => {
       const h = harness();
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
-      h.pairing.respond(id, false);
+      h.pairing.respond(id, false, '');
 
-      expect(h.pairing.respond(id, true)).toBe(false);
+      expect(h.pairing.respond(id, true, DIGITS)).toBe('not-pending');
       expect(h.pairing.status(id)).toBe('rejected');
-      expect(h.pairing.respond('ghost', true)).toBe(false);
+      expect(h.pairing.respond('ghost', true, DIGITS)).toBe('not-pending');
     });
 
     it('auto-rejects an unanswered request when it expires', () => {
@@ -171,7 +195,7 @@ describe('src/main/remote/pairing.ts', () => {
       h.advance(MINUTE);
 
       expect(h.pairing.status(id)).toBe('expired');
-      expect(h.pairing.respond(id, true)).toBe(false);
+      expect(h.pairing.respond(id, true, DIGITS)).toBe('not-pending');
     });
 
     it('reports the expiry once, for the timer that notifies the desktop', () => {
@@ -187,7 +211,7 @@ describe('src/main/remote/pairing.ts', () => {
     it('forgets a settled request a minute after it settled', () => {
       const h = harness();
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
-      h.pairing.respond(id, false);
+      h.pairing.respond(id, false, '');
       h.advance(MINUTE);
 
       expect(h.pairing.status(id)).toBeNull();
@@ -197,10 +221,54 @@ describe('src/main/remote/pairing.ts', () => {
       const h = harness();
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
       h.advance(MINUTE - 1);
-      h.pairing.respond(id, true);
+      h.pairing.respond(id, true, DIGITS);
       h.advance(30_000);
 
       expect(h.pairing.status(id)).toBe('accepted');
+    });
+  });
+
+  describe('checkCode', () => {
+    it('says whether the typed digits match, without settling anything', () => {
+      const h = harness();
+      const id = requestIdOf(h.ask(h.pairing.startPairing().code));
+
+      expect(h.pairing.checkCode(id, DIGITS)).toEqual({
+        match: true,
+        attemptsLeft: 3,
+      });
+      expect(h.pairing.checkCode(id, '000000')).toEqual({
+        match: false,
+        attemptsLeft: 2,
+      });
+      expect(h.pairing.status(id)).toBe('pending');
+    });
+
+    it('rejects the request at the third wrong code', () => {
+      const h = harness();
+      const id = requestIdOf(h.ask(h.pairing.startPairing().code));
+
+      h.pairing.checkCode(id, '000000');
+      h.pairing.checkCode(id, '111111');
+      expect(h.pairing.checkCode(id, '222222')).toEqual({
+        match: false,
+        attemptsLeft: 0,
+      });
+      expect(h.pairing.status(id)).toBe('rejected');
+      expect(h.pairing.checkCode(id, DIGITS)).toBeNull();
+      expect(h.pairing.respond(id, true, DIGITS)).toBe('not-pending');
+    });
+
+    it('does not count what is not six digits', () => {
+      const h = harness();
+      const id = requestIdOf(h.ask(h.pairing.startPairing().code));
+
+      for (const typed of ['', '12345', '1234567', 'abcdef'])
+        expect(h.pairing.checkCode(id, typed), typed).toEqual({
+          match: false,
+          attemptsLeft: 3,
+        });
+      expect(h.pairing.checkCode('ghost', DIGITS)).toBeNull();
     });
   });
 
@@ -211,13 +279,13 @@ describe('src/main/remote/pairing.ts', () => {
 
       expect(h.pairing.withdraw(id)).toBe(true);
       expect(h.pairing.status(id)).toBeNull();
-      expect(h.pairing.respond(id, true)).toBe(false);
+      expect(h.pairing.respond(id, true, DIGITS)).toBe('not-pending');
     });
 
     it('cannot withdraw a request that is no longer pending', () => {
       const h = harness();
       const id = requestIdOf(h.ask(h.pairing.startPairing().code));
-      h.pairing.respond(id, true);
+      h.pairing.respond(id, true, DIGITS);
 
       expect(h.pairing.withdraw(id)).toBe(false);
       expect(h.pairing.withdraw('ghost')).toBe(false);

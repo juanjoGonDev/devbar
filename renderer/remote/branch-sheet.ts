@@ -1,5 +1,5 @@
 import type { PanelContext } from './context.js';
-import { UNREACHABLE } from './context.js';
+import { attempt, LOST, signedOut, UNREACHABLE } from './context.js';
 import type { PanelElements } from './elements.js';
 import { glyph } from './glyphs.js';
 import { closeDialog, el, openDialog } from './view.js';
@@ -34,12 +34,12 @@ export function createBranchSheet(
   ): Promise<void> {
     for (const each of buttons) each.disabled = true;
     status(`Cambiando a ${branch}…`);
-    const answer = await ctx.client
-      .call('branch', { groupId, branch })
-      .catch(() => null);
+    const { answer, failure } = await attempt(
+      ctx.client.call('branch', { groupId, branch }),
+    );
     for (const each of buttons) each.disabled = false;
-    if (answer?.status === 401) {
-      ctx.unlinked();
+    if (signedOut(answer)) {
+      if (await ctx.recheck()) status(LOST);
       return;
     }
     if (answer?.status === 200 && answer.body.ok === true) {
@@ -48,7 +48,7 @@ export function createBranchSheet(
       return;
     }
     const error = answer?.body.error;
-    if (!answer) status(UNREACHABLE);
+    if (!answer) status(failure);
     else
       status(
         typeof error === 'string' && error

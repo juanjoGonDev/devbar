@@ -46,6 +46,7 @@ const STATE = {
       createdAt: 1,
       lastSeenAt: 2,
       verifiedAt: null,
+      lastIp: null,
     },
   ],
   identity: {

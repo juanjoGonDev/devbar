@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   aad,
   authMessage,
+  AUTH_LABEL,
   concat,
   createReplayWindow,
   ephemeralKeyPair,
@@ -10,7 +11,11 @@ import {
   nonce,
   open,
   openEvent,
+  PAIR_LABEL,
+  pairMessage,
   REPLAY_WINDOW,
+  ROTATE_LABEL,
+  rotateMessage,
   safetyCode,
   sameBytes,
   seal,
@@ -56,10 +61,12 @@ describe('renderer/remote/rc-protocol.ts', () => {
     );
   });
 
-  it('builds the transcript as label ‖ C ‖ S ‖ sid', () => {
-    const t = transcript(bytes(0), bytes(32), bytes(64, 16));
+  it('builds the transcript as label ‖ identity ‖ C ‖ S ‖ sid', () => {
+    const t = transcript(bytes(200), bytes(0), bytes(32), bytes(64, 16));
     expect(new TextDecoder().decode(t.subarray(0, 11))).toBe('devbar-rc/1');
-    expect(t).toHaveLength(11 + 32 + 32 + 16);
+    expect(t.subarray(11, 43)).toEqual(bytes(200));
+    expect(t.subarray(43, 75)).toEqual(bytes(0));
+    expect(t).toHaveLength(11 + 32 + 32 + 32 + 16);
   });
 
   it('refuses a low-order or malformed peer key', () => {
@@ -82,10 +89,17 @@ describe('renderer/remote/rc-protocol.ts', () => {
     );
   });
 
-  it('prefixes the auth proof with its own label', () => {
-    expect(new TextDecoder().decode(authMessage(utf8('T')))).toBe(
-      'devbar-rc/1 authT',
+  it('binds the auth proof to the device id and the handshake', () => {
+    expect(new TextDecoder().decode(authMessage('d1', utf8('T')))).toBe(
+      'devbar-rc/1 authd1T',
     );
+  });
+
+  it('gives pairing and key rotation proofs labels of their own', () => {
+    const decode = (value: Uint8Array) => new TextDecoder().decode(value);
+    expect(decode(pairMessage(utf8('T')))).toBe(`${PAIR_LABEL}T`);
+    expect(decode(rotateMessage(utf8('T')))).toBe(`${ROTATE_LABEL}T`);
+    expect(new Set([AUTH_LABEL, PAIR_LABEL, ROTATE_LABEL]).size).toBe(3);
   });
 
   it('puts the counter big-endian after four zero bytes', () => {
@@ -101,27 +115,34 @@ describe('renderer/remote/rc-protocol.ts', () => {
     const key = bytes(7);
 
     it('opens what it sealed, and nothing that was touched', () => {
-      const sealed = seal(key, 3, aad('c2s', 's'), utf8('{"op":1}'));
+      const sealed = seal(key, 3, aad('c2s-rpc', 's'), utf8('{"op":1}'));
       expect(
         new TextDecoder().decode(
-          open(key, 3, aad('c2s', 's'), sealed) ?? undefined,
+          open(key, 3, aad('c2s-rpc', 's'), sealed) ?? undefined,
         ),
       ).toBe('{"op":1}');
-      expect(open(key, 4, aad('c2s', 's'), sealed)).toBeNull();
-      expect(open(key, 3, aad('s2c', 's'), sealed)).toBeNull();
-      expect(open(key, 3, aad('c2s', 's'), sealed.subarray(0, 5))).toBeNull();
+      expect(open(key, 4, aad('c2s-rpc', 's'), sealed)).toBeNull();
+      expect(open(key, 3, aad('c2s-events', 's'), sealed)).toBeNull();
+      expect(open(key, 3, aad('s2c-rpc', 's'), sealed)).toBeNull();
+      expect(
+        open(key, 3, aad('c2s-rpc', 's'), sealed.subarray(0, 5)),
+      ).toBeNull();
     });
 
     it('reads an event frame back into its counter and plaintext', () => {
       const frame = toB64(
-        concat(nonce(9).subarray(4), seal(key, 9, aad('s2c', 's'), utf8('ev'))),
+        concat(
+          nonce(9).subarray(4),
+          seal(key, 9, aad('s2c-evt', 's'), utf8('ev')),
+        ),
       );
-      const event = openEvent(key, aad('s2c', 's'), frame);
+      const event = openEvent(key, aad('s2c-evt', 's'), frame);
       expect(event?.counter).toBe(9);
       expect(new TextDecoder().decode(event?.plaintext)).toBe('ev');
-      expect(openEvent(key, aad('s2c', 't'), frame)).toBeNull();
-      expect(openEvent(key, aad('s2c', 's'), 'AAAA')).toBeNull();
-      expect(openEvent(key, aad('s2c', 's'), '%%%')).toBeNull();
+      expect(openEvent(key, aad('s2c-rpc', 's'), frame)).toBeNull();
+      expect(openEvent(key, aad('s2c-evt', 't'), frame)).toBeNull();
+      expect(openEvent(key, aad('s2c-evt', 's'), 'AAAA')).toBeNull();
+      expect(openEvent(key, aad('s2c-evt', 's'), '%%%')).toBeNull();
     });
   });
 
