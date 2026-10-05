@@ -3371,23 +3371,6 @@ body.prescript-confirm {
 
 /* ── Control remoto (renderer/config/remote-pane.ts) ──────────────────
    The switch card, the linked-device list and the two pairing dialogs. */
-.remote-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(255, 159, 10, 0.12);
-  font-size: 12px;
-}
-.remote-warning .icon {
-  margin-top: 1px;
-  color: #c76a00;
-}
-:root[data-theme='dark'] .remote-warning .icon {
-  color: #ff9f0a;
-}
 .remote-endpoint {
   display: flex;
   align-items: center;
