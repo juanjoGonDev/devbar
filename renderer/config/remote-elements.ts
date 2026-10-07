@@ -2,7 +2,7 @@ import { byId } from '../dom.js';
 import type { PortElements } from './remote-port.js';
 
 /**
- * Every element of the «Control remoto» section and its three dialogs, resolved
+ * Every element of the «Control remoto» section and its four dialogs, resolved
  * in one place: config.ts calls this once, and
  * tests/renderer-dom-contract.test.ts checks each assertion against
  * config.html.
@@ -39,6 +39,13 @@ export interface RemoteElements {
     countdown: HTMLElement;
     progress: HTMLDivElement;
     error: HTMLElement;
+  };
+  unlink: {
+    dialog: HTMLDialogElement;
+    /** The card that tells the device apart. */
+    device: HTMLElement;
+    cancel: HTMLButtonElement;
+    confirm: HTMLButtonElement;
   };
   request: {
     dialog: HTMLDialogElement;
@@ -98,6 +105,21 @@ export function remoteElements(): RemoteElements {
       countdown: byId<HTMLElement>('remote-pair-countdown', HTMLElement),
       progress: byId<HTMLDivElement>('remote-pair-progress', HTMLDivElement),
       error: byId<HTMLElement>('remote-pair-error', HTMLElement),
+    },
+    unlink: {
+      dialog: byId<HTMLDialogElement>(
+        'remote-unlink-dialog',
+        HTMLDialogElement,
+      ),
+      device: byId<HTMLElement>('remote-unlink-device', HTMLElement),
+      cancel: byId<HTMLButtonElement>(
+        'remote-unlink-cancel',
+        HTMLButtonElement,
+      ),
+      confirm: byId<HTMLButtonElement>(
+        'remote-unlink-confirm',
+        HTMLButtonElement,
+      ),
     },
     request: {
       dialog: byId<HTMLDialogElement>(

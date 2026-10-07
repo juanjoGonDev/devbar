@@ -93,17 +93,24 @@ Todas las novedades relevantes de DevBar. El formato sigue
   y te muestra un código de 6 cifras: escríbelo en el ordenador, en
   «¿Vincular este dispositivo?», y solo entonces se activa «Vincular». Con
   tres códigos equivocados la solicitud se rechaza. Sin tu «Vincular» no se
-  vincula nada: si no respondes en un minuto, la solicitud se rechaza sola, y
-  si el móvil cancela, el diálogo del ordenador se cierra al momento.
-  Cualquier otro equipo de la red que abra la dirección solo ve que no está
-  vinculado.
+  vincula nada: si no respondes en un minuto, la solicitud se rechaza sola
+  —el móvil te muestra cuánto le queda, «Caduca en 0:42»—, y si el móvil
+  cancela, el diálogo del ordenador se cierra al momento. Cualquier otro
+  equipo de la red que abra la dirección solo ve que no está vinculado.
+
+- **Un móvil, una sola entrada en la lista.** Si escaneas el QR con un móvil
+  que ya está vinculado, no se vincula otra vez: entra directamente al panel
+  y te dice que ya lo estaba. Y si vuelves a vincularlo después de renovar la
+  clave del ordenador, ocupa el sitio del que ya tenías en vez de añadir otro
+  igual.
 
 - **Lista de dispositivos vinculados.** Cada uno muestra su nombre, un
   escudo verde si está verificado, el navegador y sistema desde el que se
   vinculó con la última IP desde la que se conectó, y «Conectado» mientras
   tiene la página abierta o cuándo se conectó por última vez. Desde su menú
   «⋯» puedes ver el código de seguridad, renombrarlo (también desde el propio
-  móvil) o desvincularlo: pierde el acceso al momento, el móvil se entera y
+  móvil) o desvincularlo, tras confirmarlo en un diálogo que te enseña de qué
+  dispositivo se trata: pierde el acceso al momento, el móvil se entera y
   deja de mostrar nada. El propio móvil también puede desvincularse. Por
   defecto, un dispositivo que lleva 30 días sin conectarse se desvincula solo;
   puedes desactivarlo en «Seguridad».

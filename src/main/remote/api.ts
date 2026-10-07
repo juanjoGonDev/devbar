@@ -12,6 +12,7 @@ import {
   isStrongPublicKey,
   KEY_BYTES,
   pairMessage,
+  replaceMessage,
   rotateMessage,
   SIGNATURE_BYTES,
   verifySignature,
@@ -30,7 +31,11 @@ import type { VerifyTokens } from './verify-tokens.js';
  *   pair.*        the pairing handshake, open to an unauthenticated session:
  *                 `pair.claim` spends the QR's code for this session (once
  *                 per session), whose `pair.request` then redeems the claim;
- *                 the new key signs "devbar-rc/1 pair" ‖ T to show it is held;
+ *                 the new key signs "devbar-rc/1 pair" ‖ T to show it is held.
+ *                 A phone pairing again may name its `previous` device, its
+ *                 OLD key signing "devbar-rc/1 replace" ‖ T: once accepted,
+ *                 the new device takes its place. Without that proof
+ *                 `previous` is ignored — it never blocks a pairing;
  *   auth          the device signs "devbar-rc/1 auth" ‖ id ‖ T of THIS
  *                 handshake with its key, and the session becomes that
  *                 device's. Refused as `unknown-device` — the one answer
@@ -93,7 +98,10 @@ export interface SessionApiDeps {
   pairRequested(request: RemotePairRequest): void;
   /** The phone cancelled a pending request: the desktop closes its dialog. */
   pairWithdrawn(requestId: string): void;
-  /** A device unlinked itself: its sessions and live streams have to go. */
+  /**
+   * A device is gone — it unlinked itself, or a re-pairing replaced it: its
+   * sessions and live streams have to go.
+   */
   deviceUnlinked(deviceId: string): void;
   /** A device replaced its key: every session it had is dropped. */
   deviceRotated(deviceId: string): void;
@@ -153,6 +161,24 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
       return device ? handler(args, call, device) : unlinked();
     };
 
+  /**
+   * The linked device a re-pairing replaces: only when its stored key — a
+   * strong one — signed "devbar-rc/1 replace" ‖ T of this session. Else null.
+   */
+  const replaced = (
+    previous: unknown,
+    handshake: Buffer,
+  ): { deviceId: string; devicePub: string } | null => {
+    const deviceId = idField(previous, 'deviceId');
+    const stored = deviceId ? devices.devicePub(deviceId) : null;
+    const key = fromB64(stored, KEY_BYTES);
+    const proof = fromB64(record(previous)?.proof, SIGNATURE_BYTES);
+    if (!deviceId || stored === null || !key || !proof) return null;
+    return verifySignature(key, replaceMessage(handshake), proof)
+      ? { deviceId, devicePub: stored }
+      : null;
+  };
+
   const me: Handler = (_args, call) => {
     const host = deps.hostInfo();
     const device = deviceOf(call);
@@ -205,12 +231,13 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
       client: clientLabel(call.userAgent),
       ip: call.ip,
       devicePub,
+      replaces: replaced(body.previous, call.session.transcript),
     });
     if (!result.ok) return json(410, { error: result.reason });
     deps.pairRequested(result.request);
-    const { requestId, expiresAt } = result.request;
-    const { verificationCode } = result;
-    return json(200, { requestId, verificationCode, expiresAt });
+    const { requestId } = result.request;
+    const { verificationCode, expiresInMs } = result;
+    return json(200, { requestId, verificationCode, expiresInMs });
   };
 
   const pairStatus: Handler = (args) => {
@@ -229,6 +256,13 @@ export function createSessionApi(deps: SessionApiDeps): SessionApi {
       devicePub: accepted.devicePub,
       ip: accepted.ip,
     });
+    // The same phone, paired again: it takes its old device's place — as
+    // long as that device still has the key that proved it.
+    const old = accepted.replaces;
+    if (old && devices.devicePub(old.deviceId) === old.devicePub) {
+      devices.remove(old.deviceId);
+      deps.deviceUnlinked(old.deviceId);
+    }
     deps.devicesChanged();
     return json(200, { status: 'accepted', deviceId: device.id });
   };

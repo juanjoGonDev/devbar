@@ -4,6 +4,7 @@ import {
   fromB64,
   generateSigningKey,
   pairMessage,
+  replaceMessage,
   rotateMessage,
   safetyCode,
   sign,
@@ -147,6 +148,169 @@ describe('devbar-rc/1 end to end', () => {
         outcome: 'cancelled',
       });
       expect(h.timers.find((t) => t.ms === 60_000)?.cleared).toBe(true);
+    });
+  });
+
+  describe('pairing the same phone again', () => {
+    it('replaces its old device, whose key signed for it: one device, not two', async () => {
+      const { h, phone } = await linked();
+      // The computer's new key: the phone's pinned one no longer opens.
+      await h.remote.renewIdentity();
+      const pairing = h.remote.startPairing();
+      if (!pairing.ok) throw new Error(pairing.error);
+      const { code, key } = pairingLink(pairing.url);
+      const channel = createChannel(h.net.fetch);
+      await channel.open(key);
+      await channel.send('pair.claim', { code });
+      const t = channel.handshake() ?? new Uint8Array();
+      const device = generateSigningKey();
+      const asked = await channel.send('pair.request', {
+        name: 'iPhone de Ana',
+        devicePub: toB64(device.publicKey),
+        sig: toB64(sign(device.secretKey, pairMessage(t))),
+        previous: {
+          deviceId: phone.deviceId,
+          proof: toB64(sign(phone.device.secretKey, replaceMessage(t))),
+        },
+      });
+      const requestId = String(asked.body.requestId);
+      h.remote.respondPairing(
+        requestId,
+        true,
+        String(asked.body.verificationCode),
+      );
+
+      const status = await channel.send('pair.status', { requestId });
+
+      const devices = h.remote.status().devices;
+      expect(devices.map((d) => d.id)).toEqual([status.body.deviceId]);
+      expect(devices.map((d) => d.name)).toEqual(['iPhone de Ana']);
+      expect(await reconnect(h, { ...phone, serverKey: key })).toMatchObject({
+        auth: 401,
+        error: 'unknown-device',
+      });
+    });
+
+    it('keeps the old device when the proof is not its key', async () => {
+      const { h, phone } = await linked();
+      const pairing = h.remote.startPairing();
+      if (!pairing.ok) throw new Error(pairing.error);
+      const { code, key } = pairingLink(pairing.url);
+      const channel = createChannel(h.net.fetch);
+      await channel.open(key);
+      await channel.send('pair.claim', { code });
+      const t = channel.handshake() ?? new Uint8Array();
+      const device = generateSigningKey();
+      const asked = await channel.send('pair.request', {
+        name: 'Otro',
+        devicePub: toB64(device.publicKey),
+        sig: toB64(sign(device.secretKey, pairMessage(t))),
+        previous: {
+          deviceId: phone.deviceId,
+          proof: toB64(sign(device.secretKey, replaceMessage(t))),
+        },
+      });
+      const requestId = String(asked.body.requestId);
+      h.remote.respondPairing(
+        requestId,
+        true,
+        String(asked.body.verificationCode),
+      );
+
+      await channel.send('pair.status', { requestId });
+
+      expect(h.remote.status().devices.map((d) => d.name)).toEqual([
+        'iPhone de Ana',
+        'Otro',
+      ]);
+      expect((await reconnect(h, phone)).auth).toBe(200);
+    });
+  });
+
+  describe('an accept the phone never collects', () => {
+    /** Accepted on the desktop; the phone's poll never comes. */
+    async function acceptedOnly(h: Harness) {
+      const scanned = await scanAndRequest(h);
+      const answer = h.remote.respondPairing(
+        scanned.requestId,
+        true,
+        scanned.digits,
+      );
+      if (!answer.ok) throw new Error(answer.error);
+      return scanned;
+    }
+
+    it('shows no device: one exists only once the phone collects it', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+
+      await acceptedOnly(h);
+
+      expect(h.remote.status().devices).toEqual([]);
+      expect(
+        h.sent
+          .filter((entry) => entry.channel === 'remote:changed')
+          .map((entry) => (entry.payload as RemoteStatus).devices.length),
+      ).not.toContain(1);
+    });
+
+    it('can still be collected for a minute, well past the phone giving up', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const { channel, requestId } = await acceptedOnly(h);
+      h.advance(59_000);
+
+      const late = await channel.send('pair.status', { requestId });
+
+      expect(late.body).toMatchObject({ status: 'accepted' });
+      expect(h.remote.status().devices).toHaveLength(1);
+    });
+
+    it('is forgotten after that minute: a late poll creates nothing', async () => {
+      const h = harness();
+      await h.remote.setEnabled(true);
+      const { channel, requestId } = await acceptedOnly(h);
+      h.advance(60_000);
+
+      const late = await channel.send('pair.status', { requestId });
+
+      expect(late).toEqual({ status: 404, body: { error: 'unknown-request' } });
+      expect(h.remote.status().devices).toEqual([]);
+    });
+
+    it('never removes the device it would have replaced', async () => {
+      const { h, phone } = await linked();
+      const pairing = h.remote.startPairing();
+      if (!pairing.ok) throw new Error(pairing.error);
+      const { code, key } = pairingLink(pairing.url);
+      const channel = createChannel(h.net.fetch);
+      await channel.open(key);
+      await channel.send('pair.claim', { code });
+      const t = channel.handshake() ?? new Uint8Array();
+      const device = generateSigningKey();
+      const asked = await channel.send('pair.request', {
+        name: 'iPhone de Ana',
+        devicePub: toB64(device.publicKey),
+        sig: toB64(sign(device.secretKey, pairMessage(t))),
+        previous: {
+          deviceId: phone.deviceId,
+          proof: toB64(sign(phone.device.secretKey, replaceMessage(t))),
+        },
+      });
+      const requestId = String(asked.body.requestId);
+      h.remote.respondPairing(
+        requestId,
+        true,
+        String(asked.body.verificationCode),
+      );
+      h.advance(60_000);
+
+      await channel.send('pair.status', { requestId });
+
+      expect(h.remote.status().devices.map((d) => d.id)).toEqual([
+        phone.deviceId,
+      ]);
+      expect((await reconnect(h, phone)).auth).toBe(200);
     });
   });
 

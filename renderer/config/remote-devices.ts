@@ -1,6 +1,7 @@
 import type { RemoteDeviceRow } from '../../src/ipc-contract/remote-api.js';
-import { icon, iconButton } from '../icon.js';
+import { iconButton } from '../icon.js';
 import { createDeviceMenu, type MenuEntry } from './remote-device-menu.js';
+import { deviceAvatar, deviceNameRow, element } from './remote-device-parts.js';
 import { formatDate, lastSeen } from './remote-format.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
@@ -9,34 +10,19 @@ import { errorMessage, type ShowToast } from './toast.js';
  * connected), the name with a shield when it is verified, «<client> · <last
  * IP>» on one line, «Conectado» or how long ago it was last seen, and a «⋯»
  * menu with «Código de seguridad» (or «Verificar con código»), «Renombrar»
- * and «Desvincular». Renaming happens in the row — Enter or leaving the field
- * saves, Escape cancels — and while a name is being edited the list is not
- * repainted, so a push from main cannot wipe what the user is typing.
+ * and «Desvincular» — which only asks (`onUnlink`: the pane opens
+ * «¿Desvincular este dispositivo?»); `unlink` is what its confirmation runs.
+ * Renaming happens in the row — Enter or leaving the field saves, Escape
+ * cancels — and while a name is being edited the list is not repainted, so a
+ * push from main cannot wipe what the user is typing.
  */
 
 export interface DeviceList {
   render(devices: readonly RemoteDeviceRow[], now: number): void;
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-/** The shield after a verified name: an image to assistive tech. */
-function verifiedMark(): HTMLElement {
-  const mark = element('span', 'remote-verified-mark');
-  mark.setAttribute('role', 'img');
-  mark.setAttribute('aria-label', 'Verificado');
-  mark.title = 'Verificado';
-  mark.append(icon('shield-check'));
-  return mark;
+  /** Unlinks through main, reporting how it went in a toast. */
+  unlink(device: RemoteDeviceRow): Promise<void>;
+  /** Focus on the device's «⋯», as the list holds it now (if still there). */
+  focusMenuButton(deviceId: string): void;
 }
 
 /** «Conectado», or «hace 3 h» read out as «Última conexión hace 3 h». */
@@ -57,6 +43,7 @@ export function createDeviceList(
     showToast: ShowToast;
     onIdle(): void;
     onSecurityCode(device: RemoteDeviceRow): void;
+    onUnlink(device: RemoteDeviceRow): void;
   },
 ): DeviceList {
   let editing = false;
@@ -109,11 +96,15 @@ export function createDeviceList(
     input.addEventListener('blur', () => void finish(true));
   }
 
-  async function unlink(
-    device: RemoteDeviceRow,
-    button: HTMLButtonElement,
-  ): Promise<void> {
-    button.disabled = true;
+  /** The device's «⋯», as the list holds it now (repaints replace it). */
+  const menuButton = (deviceId: string): HTMLButtonElement | undefined =>
+    [...list.querySelectorAll<HTMLButtonElement>('.remote-menu-btn')].find(
+      (each) => each.dataset.deviceId === deviceId,
+    );
+
+  async function unlink(device: RemoteDeviceRow): Promise<void> {
+    const button = menuButton(device.id);
+    if (button) button.disabled = true;
     try {
       const result = await window.api.unlinkRemoteDevice(device.id);
       if (report(result, 'No se pudo desvincular.'))
@@ -121,15 +112,11 @@ export function createDeviceList(
     } catch (err) {
       deps.showToast(`Error: ${errorMessage(err)}`, 'error');
     } finally {
-      button.disabled = false;
+      if (button) button.disabled = false;
     }
   }
 
-  const actions = (
-    row: HTMLElement,
-    device: RemoteDeviceRow,
-    trigger: HTMLButtonElement,
-  ): MenuEntry[] => [
+  const actions = (row: HTMLElement, device: RemoteDeviceRow): MenuEntry[] => [
     {
       label:
         device.verifiedAt === null
@@ -148,20 +135,13 @@ export function createDeviceList(
       label: 'Desvincular',
       icon: 'unlink',
       danger: true,
-      run: () => void unlink(device, trigger),
+      run: () => deps.onUnlink(device),
     },
   ];
 
   function row(device: RemoteDeviceRow, now: number): HTMLLIElement {
     const item = element('li', 'remote-device');
-
-    const avatar = element('span', 'remote-avatar');
-    avatar.append(icon('smartphone'));
-    if (device.connected) avatar.append(element('span', 'remote-presence'));
-
-    const nameRow = element('div', 'remote-device-name-row');
-    nameRow.append(element('strong', 'remote-device-name', device.name));
-    if (device.verifiedAt !== null) nameRow.append(verifiedMark());
+    const nameRow = deviceNameRow(device);
     const where = device.lastIp
       ? `${device.client} · ${device.lastIp}`
       : device.client;
@@ -179,10 +159,10 @@ export function createDeviceList(
     trigger.setAttribute('aria-haspopup', 'menu');
     trigger.setAttribute('aria-expanded', 'false');
     trigger.addEventListener('click', () =>
-      menu.toggle(trigger, actions(item, device, trigger)),
+      menu.toggle(trigger, actions(item, device)),
     );
 
-    item.append(avatar, main, presence(device, now), trigger);
+    item.append(deviceAvatar(device), main, presence(device, now), trigger);
     return item;
   }
 
@@ -191,10 +171,9 @@ export function createDeviceList(
       if (editing) return;
       const focused = menu.close()?.dataset.deviceId;
       list.replaceChildren(...devices.map((device) => row(device, now)));
-      if (focused === undefined) return;
-      const triggers =
-        list.querySelectorAll<HTMLButtonElement>('.remote-menu-btn');
-      [...triggers].find((each) => each.dataset.deviceId === focused)?.focus();
+      if (focused !== undefined) menuButton(focused)?.focus();
     },
+    unlink,
+    focusMenuButton: (deviceId) => menuButton(deviceId)?.focus(),
   };
 }

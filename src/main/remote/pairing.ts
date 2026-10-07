@@ -21,7 +21,9 @@ import type { RemotePairRequest } from '../../ipc-contract/remote-api.js';
  *   4. The phone polls the request; the server hands an accepted one over
  *      exactly once (`takeAccepted`), which is when the device is created
  *      with the public key the phone sent along (devbar-rc/1: the phone
- *      proves it holds the matching private key on every connection).
+ *      proves it holds the matching private key on every connection) — and
+ *      when the device it replaces, if its old key proved it is the same
+ *      phone pairing again, is removed (src/main/remote/api.ts).
  *
  * Nothing here is persisted: a restart drops every code, claim and request.
  */
@@ -67,8 +69,16 @@ export interface Pairing {
     ip: string;
     /** The phone's Ed25519 public key, base64url. */
     devicePub: string;
+    /** The device this pairing replaces, its old key already proven. */
+    replaces?: Replaced | null;
   }):
-    | { ok: true; request: RemotePairRequest; verificationCode: string }
+    | {
+        ok: true;
+        request: RemotePairRequest;
+        verificationCode: string;
+        /** Time left, for a phone whose clock may not agree with this one. */
+        expiresInMs: number;
+      }
     | { ok: false; reason: PairClaimRefusal };
   /** Null once the request is unknown, handed over or forgotten. */
   status(requestId: string): PairRequestStatus | null;
@@ -95,13 +105,26 @@ export interface Pairing {
   clear(): string[];
 }
 
-/** An accepted request, with the key the new device will be known by. */
-type AcceptedRequest = RemotePairRequest & { devicePub: string };
+/** A linked device, and the key it proved to hold when it was named. */
+interface Replaced {
+  deviceId: string;
+  devicePub: string;
+}
+
+/**
+ * An accepted request, with the key the new device will be known by and the
+ * device it replaces, if any.
+ */
+type AcceptedRequest = RemotePairRequest & {
+  devicePub: string;
+  replaces: Replaced | null;
+};
 
 interface Entry {
   request: RemotePairRequest;
   verificationCode: string;
   devicePub: string;
+  replaces: Replaced | null;
   status: PairRequestStatus;
   settledAt: number | null;
   attemptsLeft: number;
@@ -188,7 +211,7 @@ export function createPairing(deps: PairingDeps): Pairing {
       claims.set(sid, expiresAt);
       return { ok: true, expiresAt };
     },
-    request: ({ sid, name, client, ip, devicePub }) => {
+    request: ({ sid, name, client, ip, devicePub, replaces = null }) => {
       const now = deps.now();
       const lapsesAt = claims.get(sid);
       claims.delete(sid);
@@ -206,11 +229,17 @@ export function createPairing(deps: PairingDeps): Pairing {
         request,
         verificationCode,
         devicePub,
+        replaces,
         status: 'pending',
         settledAt: null,
         attemptsLeft: CODE_ATTEMPTS,
       });
-      return { ok: true, request: { ...request }, verificationCode };
+      return {
+        ok: true,
+        request: { ...request },
+        verificationCode,
+        expiresInMs: request.expiresAt - now,
+      };
     },
     status: (requestId) => settle(requestId)?.status ?? null,
     checkCode: (requestId, typed) => {
@@ -236,7 +265,11 @@ export function createPairing(deps: PairingDeps): Pairing {
       const entry = settle(requestId);
       if (entry?.status !== 'accepted') return null;
       entries.delete(requestId);
-      return { ...entry.request, devicePub: entry.devicePub };
+      return {
+        ...entry.request,
+        devicePub: entry.devicePub,
+        replaces: entry.replaces,
+      };
     },
     withdraw: (requestId) => {
       if (settle(requestId)?.status !== 'pending') return false;

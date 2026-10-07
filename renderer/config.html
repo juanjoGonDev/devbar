@@ -830,6 +830,33 @@
       </div>
     </dialog>
 
+    <!-- «Control remoto»: confirming «Desvincular» (remote-unlink-dialog.ts) -->
+    <dialog
+      id="remote-unlink-dialog"
+      class="modal remote-modal"
+      aria-labelledby="remote-unlink-title"
+      aria-describedby="remote-unlink-note"
+    >
+      <header class="modal-header">
+        <h2 id="remote-unlink-title">¿Desvincular este dispositivo?</h2>
+      </header>
+      <div class="modal-body">
+        <div id="remote-unlink-device" class="remote-unlink-device"></div>
+        <p id="remote-unlink-note" class="remote-unlink-note">
+          Perderá el acceso al momento. Para volver a usarlo tendrás que
+          vincularlo otra vez.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="remote-unlink-cancel" data-close>
+          Cancelar
+        </button>
+        <button type="button" id="remote-unlink-confirm" class="danger">
+          Desvincular
+        </button>
+      </div>
+    </dialog>
+
     <!-- «Control remoto»: a phone asking to be linked (remote-request-dialog.ts) -->
     <dialog id="remote-request-dialog" class="modal remote-modal">
       <header class="modal-header">

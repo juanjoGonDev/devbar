@@ -18,6 +18,7 @@ const SHARED_CONSTANTS = [
   'AUTH_LABEL',
   'PAIR_LABEL',
   'ROTATE_LABEL',
+  'REPLACE_LABEL',
   'SAFETY_LABEL',
   'EVENTS_PROOF',
   'KEY_BYTES',
@@ -190,6 +191,35 @@ describe('devbar-rc/1 across implementations', () => {
         ),
       ).toBe(false);
       expect(desk.isStrongPublicKey(key)).toBe(true);
+    });
+
+    it("lets the desktop check an old key's proof that a re-pairing replaces it", () => {
+      const h = handshake();
+      const old = phone.generateSigningKey();
+      const key = Buffer.from(old.publicKey);
+      const replace = phone.sign(old.secretKey, phone.replaceMessage(h.phoneT));
+      expect(
+        desk.verifySignature(
+          key,
+          desk.replaceMessage(h.serverT),
+          Buffer.from(replace),
+        ),
+      ).toBe(true);
+      // Bound to this handshake, and no stand-in for a pairing proof.
+      expect(
+        desk.verifySignature(
+          key,
+          desk.replaceMessage(handshake().serverT),
+          Buffer.from(replace),
+        ),
+      ).toBe(false);
+      expect(
+        desk.verifySignature(
+          key,
+          desk.pairMessage(h.serverT),
+          Buffer.from(replace),
+        ),
+      ).toBe(false);
     });
   });
 

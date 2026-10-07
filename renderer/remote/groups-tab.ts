@@ -7,7 +7,7 @@ import type {
 import { createBranchSheet } from './branch-sheet.js';
 import type { PanelContext } from './context.js';
 import type { PanelElements } from './elements.js';
-import { countdown, plural, uptime } from './format.js';
+import { countdown, mmss, plural, uptime } from './format.js';
 import { glyph } from './glyphs.js';
 import { button, el } from './view.js';
 
@@ -29,10 +29,6 @@ export interface GroupsTab {
 
 const isUp = (status: string): boolean =>
   status === 'running' || status === 'starting';
-
-function mmss(seconds: number): string {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
 
 export function createGroupsTab(
   els: PanelElements['groups'],

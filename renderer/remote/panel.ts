@@ -47,6 +47,8 @@ export interface PanelDeps {
 }
 
 export interface Panel {
+  /** A brief line at the bottom of the panel. */
+  toast(message: string): void;
   stop(): void;
 }
 
@@ -276,5 +278,5 @@ export function startPanel(deps: PanelDeps): Panel {
   paintStatus();
   refresh();
 
-  return { stop };
+  return { toast, stop };
 }

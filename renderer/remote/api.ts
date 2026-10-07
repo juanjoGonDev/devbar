@@ -10,7 +10,13 @@ import {
   type EventReader,
   type Fetcher,
 } from './channel.js';
-import { pairMessage, rotateMessage, sign, toB64 } from './rc-protocol.js';
+import {
+  pairMessage,
+  replaceMessage,
+  rotateMessage,
+  sign,
+  toB64,
+} from './rc-protocol.js';
 import { logBatch, noticesView, settingsView, stateView } from './wire.js';
 
 export type { Answer, Fetcher } from './channel.js';
@@ -52,6 +58,12 @@ export interface Me {
   hostName: string;
   version: string;
   suggestedName: string;
+}
+
+/** A device this phone was linked as, whose key it still holds. */
+export interface PreviousDevice {
+  id: string;
+  secretKey: Uint8Array;
 }
 
 /** Who to trust: a desktop identity key, and this device's own key once linked. */
@@ -120,18 +132,21 @@ export function createRemoteClient(fetcher: Fetcher, hooks: ClientHooks) {
     }
   }
 
-  /** A call whose new key signs this very session's handshake. */
+  /**
+   * A call whose new key signs this very session's handshake; `args` may
+   * carry proofs of their own over it.
+   */
   async function provenCall(
     op: string,
     key: { secretKey: Uint8Array; publicKey: Uint8Array },
     message: (handshake: Uint8Array) => Uint8Array,
-    args: Record<string, unknown>,
+    args: (handshake: Uint8Array) => Record<string, unknown>,
   ): Promise<Answer> {
     await session();
     const handshake = channel.handshake();
     if (!handshake) throw new RemoteError('session');
     return channel.send(op, {
-      ...args,
+      ...args(handshake),
       devicePub: toB64(key.publicKey),
       sig: toB64(sign(key.secretKey, message(handshake))),
     });
@@ -191,14 +206,32 @@ export function createRemoteClient(fetcher: Fetcher, hooks: ClientHooks) {
     },
     /** Spends the QR's code for this session, before the name is asked. */
     claimPairing: (code: string) => call('pair.claim', { code }),
-    /** Asks this session's claim to pair `device`, proving it holds the key. */
+    /**
+     * Asks this session's claim to pair `device`, proving it holds the key.
+     * `previous`, the device this phone was linked as, signs that the new
+     * one replaces it.
+     */
     requestPairing: (
       name: string,
       device: { secretKey: Uint8Array; publicKey: Uint8Array },
-    ) => provenCall('pair.request', device, pairMessage, { name }),
+      previous: PreviousDevice | null = null,
+    ) =>
+      provenCall('pair.request', device, pairMessage, (handshake) =>
+        previous
+          ? {
+              name,
+              previous: {
+                deviceId: previous.id,
+                proof: toB64(
+                  sign(previous.secretKey, replaceMessage(handshake)),
+                ),
+              },
+            }
+          : { name },
+      ),
     /** Replaces this device's key with `next`, proving it holds it. */
     rotateKey: (next: { secretKey: Uint8Array; publicKey: Uint8Array }) =>
-      provenCall('device.rotate', next, rotateMessage, {}),
+      provenCall('device.rotate', next, rotateMessage, () => ({})),
     pairStatus: (requestId: string) => call('pair.status', { requestId }),
     cancelPairing: (requestId: string) => call('pair.cancel', { requestId }),
     state: async (): Promise<RemoteStateView> =>

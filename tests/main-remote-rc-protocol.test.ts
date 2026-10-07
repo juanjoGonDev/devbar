@@ -17,6 +17,8 @@ import {
   identityFromSeed,
   nonce,
   open,
+  REPLACE_LABEL,
+  replaceMessage,
   REPLAY_WINDOW,
   safetyCode,
   seal,
@@ -132,6 +134,15 @@ describe('src/main/remote/rc-protocol.ts', () => {
       expect(pairMessage(t).toString('utf8')).toBe(`${PAIR_LABEL}T`);
       expect(rotateMessage(t).toString('utf8')).toBe(`${ROTATE_LABEL}T`);
       expect(new Set([AUTH_LABEL, PAIR_LABEL, ROTATE_LABEL]).size).toBe(3);
+    });
+
+    it('gives the proof that a re-pairing replaces an old device a label of its own', () => {
+      const t = Buffer.from('T');
+      expect(REPLACE_LABEL).toBe('devbar-rc/1 replace');
+      expect(replaceMessage(t).toString('utf8')).toBe(`${REPLACE_LABEL}T`);
+      expect(
+        new Set([AUTH_LABEL, PAIR_LABEL, ROTATE_LABEL, REPLACE_LABEL]).size,
+      ).toBe(4);
     });
   });
 

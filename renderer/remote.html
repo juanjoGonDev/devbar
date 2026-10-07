@@ -97,6 +97,16 @@
           <p>
             Escribe este código en el ordenador para aceptar la vinculación.
           </p>
+          <!--
+            Not a live region: the number changes every second. The bar is
+            decoration; renderer/remote/pair-countdown.ts fills both.
+          -->
+          <div id="pair-expiry" class="expiry" hidden>
+            <div class="expiry-track" aria-hidden="true">
+              <div id="pair-expiry-bar" class="expiry-bar"></div>
+            </div>
+            <p id="pair-expiry-text" class="expiry-text"></p>
+          </div>
           <p class="waiting muted">
             <span class="spinner" aria-hidden="true"></span>
             Esperando a que lo aceptes en el ordenador…

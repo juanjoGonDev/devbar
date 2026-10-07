@@ -13,6 +13,8 @@ import {
   openEvent,
   PAIR_LABEL,
   pairMessage,
+  REPLACE_LABEL,
+  replaceMessage,
   REPLAY_WINDOW,
   ROTATE_LABEL,
   rotateMessage,
@@ -100,6 +102,14 @@ describe('renderer/remote/rc-protocol.ts', () => {
     expect(decode(pairMessage(utf8('T')))).toBe(`${PAIR_LABEL}T`);
     expect(decode(rotateMessage(utf8('T')))).toBe(`${ROTATE_LABEL}T`);
     expect(new Set([AUTH_LABEL, PAIR_LABEL, ROTATE_LABEL]).size).toBe(3);
+  });
+
+  it('gives the proof that a re-pairing replaces an old device a label of its own', () => {
+    const decode = (value: Uint8Array) => new TextDecoder().decode(value);
+    expect(decode(replaceMessage(utf8('T')))).toBe(`${REPLACE_LABEL}T`);
+    expect(
+      new Set([AUTH_LABEL, PAIR_LABEL, ROTATE_LABEL, REPLACE_LABEL]).size,
+    ).toBe(4);
   });
 
   it('puts the counter big-endian after four zero bytes', () => {

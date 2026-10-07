@@ -161,6 +161,8 @@ describe('src/main/remote/pairing.ts', () => {
       const { requestId, ...rest } = result.request;
       expect(requestId).toMatch(/^[A-Za-z0-9_-]{22}$/);
       expect(result.verificationCode).toBe(DIGITS);
+      // Relative, for the phone: its clock may not agree with this one.
+      expect(result.expiresInMs).toBe(MINUTE);
       expect(rest).toEqual({
         name: 'iPhone',
         client: 'Safari · iOS',
@@ -261,6 +263,30 @@ describe('src/main/remote/pairing.ts', () => {
       });
       expect(h.pairing.takeAccepted(id)).toBeNull();
       expect(h.pairing.status(id)).toBeNull();
+    });
+
+    it('hands over the device a re-pairing replaces, and none otherwise', () => {
+      const h = harness();
+      const sid = h.nextSid();
+      h.pairing.claim({ code: h.pairing.startPairing().code, sid });
+      const replaces = { deviceId: 'old', devicePub: 'O'.repeat(42) + 'A' };
+      const result = h.pairing.request({
+        sid,
+        name: 'iPhone',
+        client: 'Safari · iOS',
+        ip: '192.168.1.40',
+        devicePub: DEVICE_PUB,
+        replaces,
+      });
+      const id = requestIdOf(result);
+      const plain = requestIdOf(h.ask(h.pairing.startPairing().code));
+      h.pairing.respond(id, true, DIGITS);
+      h.pairing.respond(plain, true, DIGITS);
+
+      // Never part of what the desktop's dialog is shown.
+      expect(JSON.stringify(result)).not.toContain('old');
+      expect(h.pairing.takeAccepted(id)).toMatchObject({ replaces });
+      expect(h.pairing.takeAccepted(plain)).toMatchObject({ replaces: null });
     });
 
     it('never hands over a request that was not accepted', () => {

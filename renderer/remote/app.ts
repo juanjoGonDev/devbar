@@ -29,13 +29,16 @@ export type { RemoteEnv } from './env.js';
  *                      sign-in and the control panel; without, how to link.
  *
  * Both QR links carry everything in the fragment, read once and wiped from
- * the address bar at once. A pinned key the desktop no longer presents stops
+ * the address bar at once. A pairing QR scanned by a phone this computer
+ * already knows lands on the panel, saying so. A pinned key the desktop no longer presents stops
  * everything at «La clave de seguridad ha cambiado» until the user scans the
  * new code. The keys are forgotten only when a sign-in is refused because
  * the desktop does not know this device (onLost). The browser's globals
  * arrive as `RemoteEnv` (renderer/remote.ts), so every step can be driven
  * from a test.
  */
+
+const ALREADY_LINKED = 'Este dispositivo ya está vinculado';
 
 type Route =
   | { kind: 'home' }
@@ -51,6 +54,9 @@ function elements() {
     pairError: byId<HTMLElement>('pair-error', HTMLElement),
     pairSubmit: byId<HTMLButtonElement>('pair-submit', HTMLButtonElement),
     verificationCode: byId<HTMLElement>('verification-code', HTMLElement),
+    expiry: byId<HTMLElement>('pair-expiry', HTMLElement),
+    expiryText: byId<HTMLElement>('pair-expiry-text', HTMLElement),
+    expiryBar: byId<HTMLElement>('pair-expiry-bar', HTMLElement),
     pairCancel: byId<HTMLButtonElement>('pair-cancel', HTMLButtonElement),
     resultTitle: byId<HTMLElement>('result-title', HTMLElement),
     resultText: byId<HTMLElement>('result-text', HTMLElement),
@@ -153,7 +159,8 @@ export async function startRemoteApp(env: RemoteEnv): Promise<void> {
     showView('keychanged');
   }
 
-  const showLinked = (me: Me): void => {
+  /** `notice`: a line to show once the panel is up. */
+  const showLinked = (me: Me, notice?: string): void => {
     // The panel wires listeners on the page itself: one per page load. Any
     // later "linked" (a retry) starts from a fresh page instead.
     if (panel) {
@@ -162,6 +169,7 @@ export async function startRemoteApp(env: RemoteEnv): Promise<void> {
     }
     showView('linked');
     panel = startPanel({ env, client, me, identity });
+    if (notice) panel.toast(notice);
   };
 
   const pairing = createPairFlow({
@@ -178,11 +186,12 @@ export async function startRemoteApp(env: RemoteEnv): Promise<void> {
       }
       void boot();
     },
+    alreadyLinked: () => void boot(ALREADY_LINKED),
     showUnlinked: (stale) => showUnlinked(stale),
     showResult,
   });
 
-  async function boot(): Promise<void> {
+  async function boot(notice?: string): Promise<void> {
     mode = 'device';
     pairing.stop();
     showView('loading');
@@ -201,7 +210,7 @@ export async function startRemoteApp(env: RemoteEnv): Promise<void> {
       return;
     }
     if (me.linked) {
-      showLinked(me);
+      showLinked(me, notice);
       return;
     }
     // Signed in, yet not linked: a sign-in decides (onLost forgets).

@@ -382,6 +382,8 @@ export function pageHarness(
       for (const timer of intervals.filter((t) => !t.cleared)) timer.fn();
     },
     pending: () => timeouts.filter((t) => !t.cleared).length,
+    /** Intervals still running (the pairing countdown, the panel's clock). */
+    running: () => intervals.filter((t) => !t.cleared).length,
     advance: (ms: number) => {
       clock += ms;
     },

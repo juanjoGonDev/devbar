@@ -3916,6 +3916,26 @@ label.remote-row {
 .remote-pair-actions .spacer {
   flex: 1;
 }
+/* «¿Desvincular este dispositivo?»: the device, as its row shows it. */
+.remote-unlink-device {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--remote-surface);
+}
+.remote-unlink-line {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.remote-unlink-note {
+  margin: 14px 0 0;
+  font-size: 13px;
+}
 .remote-request-name {
   margin: 12px 0 2px;
   font-size: 15px;

@@ -4,6 +4,7 @@ import {
   countdown,
   dayLabel,
   hourMinute,
+  mmss,
   plural,
   shortDate,
   uptime,
@@ -31,6 +32,17 @@ describe('renderer/remote/format.ts', () => {
     it('rounds up to whole seconds and never goes below zero', () => {
       expect(countdown(41_200)).toBe(42);
       expect(countdown(-5)).toBe(0);
+    });
+  });
+
+  describe('mmss', () => {
+    it.each([
+      [0, '0:00'],
+      [42, '0:42'],
+      [60, '1:00'],
+      [125, '2:05'],
+    ])('writes %i seconds as "%s"', (seconds, label) => {
+      expect(mmss(seconds)).toBe(label);
     });
   });
 

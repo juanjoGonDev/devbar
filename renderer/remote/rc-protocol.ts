@@ -35,6 +35,7 @@ export const KEYS_LABEL = 'devbar-rc/1 keys';
 export const AUTH_LABEL = 'devbar-rc/1 auth';
 export const PAIR_LABEL = 'devbar-rc/1 pair';
 export const ROTATE_LABEL = 'devbar-rc/1 rotate';
+export const REPLACE_LABEL = 'devbar-rc/1 replace';
 export const SAFETY_LABEL = 'devbar-rc/1 safety';
 export const EVENTS_PROOF = 'events';
 export const AAD_LABELS = [
@@ -167,6 +168,9 @@ export const pairMessage = (handshake: Bytes): Bytes =>
 
 export const rotateMessage = (handshake: Bytes): Bytes =>
   concat(utf8(ROTATE_LABEL), handshake);
+
+export const replaceMessage = (handshake: Bytes): Bytes =>
+  concat(utf8(REPLACE_LABEL), handshake);
 
 export const aad = (label: AadLabel, sid: string): Bytes =>
   utf8(`${label} ${sid}`);

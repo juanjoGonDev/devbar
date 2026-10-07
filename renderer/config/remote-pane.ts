@@ -5,11 +5,13 @@ import { createPairDialog } from './remote-pair-dialog.js';
 import { createPortField } from './remote-port.js';
 import { createRequestDialog } from './remote-request-dialog.js';
 import { createSafetyDialog } from './remote-safety-dialog.js';
+import { createUnlinkDialog } from './remote-unlink-dialog.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
  * «Control remoto»: the switch card (state, address, the port behind the
- * gear), the linked devices (with their security codes) and the Seguridad
+ * gear), the linked devices (with their security codes, and a confirmation
+ * before one is unlinked) and the Seguridad
  * card — auto-unlink, the connection notice and renewing this computer's key.
  * Main owns the state; this paints whatever `RemoteStatus` it last reported
  * (answers and `remote:changed` pushes alike) and forwards the clicks.
@@ -33,6 +35,11 @@ export function createRemotePane(
     showToast,
     onIdle: () => render(),
     onSecurityCode: (device) => void safety.open(device),
+    onUnlink: (device) => unlink.open(device, Date.now()),
+  });
+  const unlink = createUnlinkDialog(els.unlink, {
+    unlink: (device) => void devices.unlink(device),
+    focusMenuButton: (deviceId) => devices.focusMenuButton(deviceId),
   });
   const pair = createPairDialog(els.pair);
   const request = createRequestDialog(els.request, showToast);
@@ -69,8 +76,10 @@ export function createRemotePane(
     if (!status.listening) pair.close();
     els.deviceCount.textContent = String(status.devices.length);
     els.devicesEmpty.hidden = status.devices.length > 0;
-    devices.render(status.devices, Date.now());
+    const now = Date.now();
+    devices.render(status.devices, now);
     safety.update(status.devices);
+    unlink.update(status.devices, now);
   }
 
   const apply = (next: RemoteStatus): void => {

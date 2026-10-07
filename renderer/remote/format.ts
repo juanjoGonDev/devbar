@@ -28,6 +28,11 @@ export function countdown(ms: number): number {
   return Math.max(0, Math.ceil(ms / 1000));
 }
 
+/** Whole seconds as "m:ss": 42 → "0:42", 125 → "2:05". */
+export function mmss(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${pad(seconds % 60)}`;
+}
+
 export function clockTime(ts: number): string {
   const date = new Date(ts);
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;

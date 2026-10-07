@@ -1,9 +1,19 @@
-import type { Answer, Me, RemoteClient } from './api.js';
+import type { Answer, Me, PreviousDevice, RemoteClient } from './api.js';
 import { RemoteError } from './channel.js';
 import { LOST } from './context.js';
 import type { RemoteEnv } from './env.js';
-import { storageWorks, type DeviceKeys } from './keys.js';
-import { generateSigningKey, toB64 } from './rc-protocol.js';
+import {
+  clearKeys,
+  keyMaterial,
+  readKeys,
+  storageWorks,
+  type DeviceKeys,
+} from './keys.js';
+import {
+  createExpiryCountdown,
+  type ExpiryElements,
+} from './pair-countdown.js';
+import { generateSigningKey, sameBytes, toB64 } from './rc-protocol.js';
 import { showView } from './view.js';
 
 /**
@@ -13,8 +23,15 @@ import { showView } from './view.js';
  * code at once (it only lasts 30 seconds; the claim leaves this session two
  * minutes), then the form (this device's name), a fresh Ed25519 key pair for
  * the device (which signs the handshake to prove it is held), the 6-digit
- * code the user types on the computer to accept it, and — once accepted —
- * the keys to keep.
+ * code the user types on the computer to accept it — counting down the
+ * minute the computer gives it (renderer/remote/pair-countdown.ts) — and,
+ * once accepted, the keys to keep.
+ *
+ * A phone never pairs twice with the same computer. Still holding keys
+ * pinned to the QR's key, it signs in with them instead, and the code is
+ * not spent; refused as an unknown device, it forgets them and pairs as
+ * new. Holding keys pinned to ANOTHER key (the computer renewed its own),
+ * it pairs again and its old key signs which device the new one replaces.
  */
 
 const POLL_MS = 1000;
@@ -26,7 +43,7 @@ const CLAIM_EXPIRED = 'El código ha caducado, escanea uno nuevo.';
 const NO_STORAGE =
   'Este navegador no deja guardar datos de esta página. Ábrela fuera del modo privado.';
 
-interface PairElements {
+interface PairElements extends ExpiryElements {
   pairTitle: HTMLElement;
   pairForm: HTMLFormElement;
   deviceName: HTMLInputElement;
@@ -42,6 +59,8 @@ export interface PairFlowDeps {
   els: PairElements;
   /** Accepted on the computer: the keys this device keeps from now on. */
   linked(keys: DeviceKeys): void;
+  /** The QR was scanned by a phone this computer already knows. */
+  alreadyLinked(): void;
   showUnlinked(fromStaleCode: boolean): void;
   showResult(title: string, body: string): void;
 }
@@ -54,18 +73,26 @@ export interface PairFlow {
 
 export function createPairFlow(deps: PairFlowDeps): PairFlow {
   const { env, client, els } = deps;
-  let pairing: { serverKey: Uint8Array; me: Me } | null = null;
+  let pairing: {
+    serverKey: Uint8Array;
+    me: Me;
+    /** The device this phone was linked as, which the new one replaces. */
+    previous: PreviousDevice | null;
+  } | null = null;
   /** Bumped to abandon a poll loop (cancel, a new view). */
   let pollRound = 0;
   let pollTimer: unknown = null;
   /** The request the phone is waiting on, to withdraw on «Cancelar». */
   let waitingOn: string | null = null;
 
+  const expiry = createExpiryCountdown(env, els);
+
   const stop = (): void => {
     pollRound += 1;
     if (pollTimer !== null) env.clearTimeout(pollTimer);
     pollTimer = null;
     waitingOn = null;
+    expiry.stop();
   };
 
   const formError = (message: string): void => {
@@ -134,7 +161,11 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
     els.pairError.hidden = true;
     const device = generateSigningKey();
     try {
-      const answer = await client.requestPairing(name, device);
+      const answer = await client.requestPairing(
+        name,
+        device,
+        pairing.previous,
+      );
       if (answer.status === 200) {
         env.replaceUrl('/');
         const digits = String(answer.body.verificationCode ?? '');
@@ -142,6 +173,7 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
         showView('waiting');
         stop();
         waitingOn = String(answer.body.requestId ?? '');
+        expiry.start(answer.body.expiresInMs, () => settled('expired'));
         poll(waitingOn, device, pollRound, 0);
       } else if (answer.status === 410) formError(CLAIM_EXPIRED);
       else if (answer.status === 429)
@@ -169,14 +201,53 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
     if (requestId) void client.cancelPairing(requestId).catch(() => undefined);
   });
 
+  /**
+   * Signs in as `device` over a fresh handshake; false when the computer no
+   * longer knows it — its keys are forgotten then. Throws on anything else.
+   */
+  async function signsIn(
+    serverKey: Uint8Array,
+    device: PreviousDevice,
+  ): Promise<boolean> {
+    client.trust({ serverKey, device });
+    try {
+      await client.reconnect();
+      return true;
+    } catch (error) {
+      if (!(error instanceof RemoteError) || error.code !== 'unlinked')
+        throw error;
+      clearKeys(env);
+      return false;
+    }
+  }
+
+  /** The device this phone kept the keys of, and the key it pinned. */
+  function keptDevice(): {
+    pinned: Uint8Array;
+    device: PreviousDevice;
+  } | null {
+    const keys = readKeys(env);
+    const material = keys ? keyMaterial(keys) : null;
+    if (!keys || !material) return null;
+    return {
+      pinned: material.serverKey,
+      device: { id: keys.deviceId, secretKey: material.secretKey },
+    };
+  }
+
   return {
     start: async (code, serverKey) => {
       stop();
       showView('loading');
-      client.trust({ serverKey, device: null });
+      const kept = keptDevice();
+      const samePin = kept !== null && sameBytes(kept.pinned, serverKey);
       let me: Me;
       let claim: Answer;
       try {
+        // Linked to this very computer already: sign in, keep the code.
+        if (kept && samePin && (await signsIn(serverKey, kept.device)))
+          return deps.alreadyLinked();
+        client.trust({ serverKey, device: null });
         await client.reconnect();
         me = await client.me();
         claim = await client.claimPairing(code);
@@ -196,7 +267,11 @@ export function createPairFlow(deps: PairFlowDeps): PairFlow {
           'Espera un minuto y vuelve a escanear el código.',
         );
       if (claim.status !== 200) return showView('error');
-      pairing = { serverKey, me };
+      pairing = {
+        serverKey,
+        me,
+        previous: kept && !samePin ? kept.device : null,
+      };
       els.pairTitle.textContent = `Vincular con ${me.hostName}`;
       els.deviceName.value = me.suggestedName;
       els.pairError.hidden = true;

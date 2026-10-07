@@ -13,7 +13,8 @@ import type {
  * window with a hand-driven `window.api`: what each row says, the empty
  * state, and the «⋯» menu that holds a device's actions (security code,
  * rename, unlink). The security-code dialog itself is
- * tests/config-remote-security.test.ts.
+ * tests/config-remote-security.test.ts; the one that confirms an unlink,
+ * tests/config-remote-unlink.test.ts.
  */
 
 const HOUR = 60 * 60_000;
@@ -313,31 +314,6 @@ describe('renderer/config/remote-devices.ts', () => {
 
       expect(menus()).toEqual([]);
       expect(document.activeElement).toBe(trigger());
-    });
-
-    it('unlinks with «Desvincular»', async () => {
-      win = await openWith(status({ devices: [device()] }));
-
-      choose('Desvincular');
-      expect(menus()).toEqual([]);
-      expect(trigger().disabled).toBe(true);
-      await win.settle('unlinkRemoteDevice', { ok: true });
-
-      expect(win.argsFor('unlinkRemoteDevice')).toEqual([['d1']]);
-      expect(squash(el('toast'))).toContain('iPhone de Ana');
-      expect(trigger().disabled).toBe(false);
-    });
-
-    it('reports an unlink main refused', async () => {
-      win = await openWith(status({ devices: [device()] }));
-
-      choose('Desvincular');
-      await win.settle('unlinkRemoteDevice', {
-        ok: false,
-        error: 'Ese dispositivo ya no está vinculado.',
-      });
-
-      expect(squash(el('toast'))).toBe('Ese dispositivo ya no está vinculado.');
     });
   });
 

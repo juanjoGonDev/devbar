@@ -219,6 +219,37 @@ p:last-child {
   margin-top: 16px;
   font-size: 15px;
 }
+/* «Caduca en 0:42»: the minute the computer gives a pairing request. */
+.expiry {
+  margin: 16px 0 0;
+}
+.expiry-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--separator);
+}
+.expiry-bar {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 1s linear;
+}
+.expiry.is-ending .expiry-bar {
+  background: var(--danger);
+}
+.expiry-text {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .expiry-bar {
+    transition: none;
+  }
+}
 .view.center {
   padding: 48px 0;
 }

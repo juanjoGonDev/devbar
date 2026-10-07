@@ -8,6 +8,7 @@ import {
   generateIdentity,
   identityFromSeed,
   pairMessage,
+  replaceMessage,
   rotateMessage,
   toB64,
 } from '../src/main/remote/rc-protocol.js';
@@ -54,12 +55,21 @@ function deviceKey() {
     /** Proof that this new key is held, replacing a device's key. */
     rotateProof: (on: Session) =>
       toB64(signer.sign(rotateMessage(on.transcript))),
+    /** Proof by this (old) key that a new pairing replaces its device. */
+    replaceProof: (on: Session) =>
+      toB64(signer.sign(replaceMessage(on.transcript))),
   };
 }
 
 /** The identity point: OpenSSL takes R = identity, S = 0 as its signature. */
 const WEAK_KEY = toB64(Buffer.from([1, ...new Array<number>(31).fill(0)]));
 const FORGED_SIG = toB64(Buffer.from([1, ...new Array<number>(63).fill(0)]));
+
+/** A linked device: its key and its id. */
+interface Linked {
+  key: ReturnType<typeof deviceKey>;
+  deviceId: string;
+}
 
 function harness() {
   let clock = 10_000_000;
@@ -283,9 +293,11 @@ describe('src/main/remote/api.ts', () => {
       const answer = ask(h, on, '  iPhone de Ana ');
 
       expect(answer.status).toBe(200);
-      expect(answer.body).toMatchObject({
+      // The time left, not a deadline: the phone's clock may disagree.
+      expect(answer.body).toEqual({
         requestId: expect.any(String) as unknown,
         verificationCode: expect.stringMatching(/^\d{6}$/) as unknown,
+        expiresInMs: 60_000,
       });
       expect(h.requests[0]).toMatchObject({
         name: 'iPhone de Ana',
@@ -433,6 +445,20 @@ describe('src/main/remote/api.ts', () => {
       expect(h.devices.list()).toHaveLength(1);
     });
 
+    it("keeps a name that repeats an existing device's as it is", () => {
+      const h = harness();
+      h.link();
+      const pending = h.request();
+      h.accept(pending);
+
+      h.call('pair.status', { requestId: pending.requestId });
+
+      expect(h.devices.list().map((device) => device.name)).toEqual([
+        'iPhone de Ana',
+        'iPhone de Ana',
+      ]);
+    });
+
     it('reports a rejection without creating anything', () => {
       const h = harness();
       const { requestId } = h.request();
@@ -450,6 +476,163 @@ describe('src/main/remote/api.ts', () => {
         status: 400,
         body: { error: 'invalid-request' },
       });
+    });
+  });
+
+  describe('pair.request replacing a previous device', () => {
+    /**
+     * The same phone pairing again, `previous` built from the linked device
+     * on the session that asks; accepted, and the new device read back.
+     */
+    const repair = (
+      h: ReturnType<typeof harness>,
+      previous: (on: Session) => unknown,
+    ) => {
+      const on = session();
+      h.claimOn(on);
+      const key = deviceKey();
+      const answer = h.callOn(on, 'pair.request', {
+        name: 'iPhone de Ana',
+        devicePub: key.pub,
+        sig: key.pairProof(on),
+        previous: previous(on),
+      });
+      const pending = answer.body as {
+        requestId: string;
+        verificationCode: string;
+      };
+      h.accept(pending);
+      const status = h.call('pair.status', { requestId: pending.requestId });
+      return {
+        answer,
+        deviceId: (status.body as { deviceId: string }).deviceId,
+      };
+    };
+
+    it('removes the old device once the new one is accepted, when its key proves it', () => {
+      const h = harness();
+      const old = h.link();
+      h.events.length = 0;
+
+      const { answer, deviceId } = repair(h, (on) => ({
+        deviceId: old.deviceId,
+        proof: old.key.replaceProof(on),
+      }));
+
+      expect(answer.status).toBe(200);
+      expect(h.devices.list().map((device) => device.id)).toEqual([deviceId]);
+      // Its sessions and live streams end like an unlinked device's.
+      expect(h.events).toEqual([
+        'pairClaimed',
+        'pairRequested',
+        `unlinked:${old.deviceId}`,
+        'changed',
+      ]);
+    });
+
+    it('removes nothing before the desktop accepts', () => {
+      const h = harness();
+      const old = h.link();
+      const on = session();
+      h.claimOn(on);
+      const key = deviceKey();
+      const { requestId } = h.callOn(on, 'pair.request', {
+        name: 'x',
+        devicePub: key.pub,
+        sig: key.pairProof(on),
+        previous: { deviceId: old.deviceId, proof: old.key.replaceProof(on) },
+      }).body as { requestId: string };
+      h.pairing.respond(requestId, false, '');
+
+      h.call('pair.status', { requestId });
+
+      expect(h.devices.list().map((device) => device.id)).toEqual([
+        old.deviceId,
+      ]);
+    });
+
+    it.each([
+      ['no proof', (_on: Session, old: Linked) => ({ deviceId: old.deviceId })],
+      [
+        'a proof by another key',
+        (on: Session, old: Linked) => ({
+          deviceId: old.deviceId,
+          proof: deviceKey().replaceProof(on),
+        }),
+      ],
+      [
+        'a proof made for another handshake',
+        (_on: Session, old: Linked) => ({
+          deviceId: old.deviceId,
+          proof: old.key.replaceProof(session()),
+        }),
+      ],
+      [
+        'a proof that says something else',
+        (on: Session, old: Linked) => ({
+          deviceId: old.deviceId,
+          proof: old.key.pairProof(on),
+        }),
+      ],
+      [
+        'an unknown device id',
+        (on: Session, old: Linked) => ({
+          deviceId: 'ghost',
+          proof: old.key.replaceProof(on),
+        }),
+      ],
+      ['no previous at all, just garbage', () => 'd1'],
+    ])('ignores a previous with %s, and still pairs', (_name, previous) => {
+      const h = harness();
+      const old = h.link();
+
+      const { answer, deviceId } = repair(h, (on) => previous(on, old));
+
+      expect(answer.status).toBe(200);
+      expect(h.devices.list().map((device) => device.id)).toEqual([
+        old.deviceId,
+        deviceId,
+      ]);
+    });
+
+    it("never takes a small-order key's word for it", () => {
+      const h = harness();
+      // Only a hand-edited store could hold one: nothing stores it.
+      const weak = h.devices.add({
+        name: 'x',
+        client: 'y',
+        devicePub: WEAK_KEY,
+      });
+
+      const { deviceId } = repair(h, () => ({
+        deviceId: weak.id,
+        proof: FORGED_SIG,
+      }));
+
+      expect(h.devices.list().map((device) => device.id)).toEqual([
+        weak.id,
+        deviceId,
+      ]);
+    });
+
+    it('keeps an old device whose key changed after the proof', () => {
+      const h = harness();
+      const old = h.link();
+      const on = session();
+      h.claimOn(on);
+      const key = deviceKey();
+      const pending = h.callOn(on, 'pair.request', {
+        name: 'x',
+        devicePub: key.pub,
+        sig: key.pairProof(on),
+        previous: { deviceId: old.deviceId, proof: old.key.replaceProof(on) },
+      }).body as { requestId: string; verificationCode: string };
+      h.devices.setDevicePub(old.deviceId, deviceKey().pub);
+      h.accept(pending);
+
+      h.call('pair.status', { requestId: pending.requestId });
+
+      expect(h.devices.list()).toHaveLength(2);
     });
   });
 

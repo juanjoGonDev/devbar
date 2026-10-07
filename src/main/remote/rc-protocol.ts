@@ -19,7 +19,9 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
  *   Devices    an Ed25519 key per phone. It signs "devbar-rc/1 auth" ‖ id ‖ T
  *              to sign in, and a NEW key signs "devbar-rc/1 pair" ‖ T or
  *              "devbar-rc/1 rotate" ‖ T to prove it is held before the desktop
- *              stores it; small-order and non-canonical keys are refused.
+ *              stores it; small-order and non-canonical keys are refused. A
+ *              phone pairing again signs "devbar-rc/1 replace" ‖ T with its
+ *              OLD key, so the new device takes the old one's place.
  *              T has a fixed length, so each concatenation reads one way only.
  *   Messages   ChaCha20-Poly1305, nonce = 4 zero bytes ‖ uint64-BE(counter),
  *              one counter per direction, AAD = "<purpose> <sid>": c2s-rpc
@@ -61,6 +63,7 @@ export const KEYS_LABEL = 'devbar-rc/1 keys';
 export const AUTH_LABEL = 'devbar-rc/1 auth';
 export const PAIR_LABEL = 'devbar-rc/1 pair';
 export const ROTATE_LABEL = 'devbar-rc/1 rotate';
+export const REPLACE_LABEL = 'devbar-rc/1 replace';
 export const SAFETY_LABEL = 'devbar-rc/1 safety';
 /** The plaintext of the sealed proof that opens an event stream. */
 export const EVENTS_PROOF = 'events';
@@ -258,6 +261,11 @@ export function pairMessage(handshake: Uint8Array): Buffer {
 /** What a device's new key signs when it replaces the old one. */
 export function rotateMessage(handshake: Uint8Array): Buffer {
   return Buffer.concat([Buffer.from(ROTATE_LABEL), handshake]);
+}
+
+/** What a device's old key signs when a new pairing replaces it. */
+export function replaceMessage(handshake: Uint8Array): Buffer {
+  return Buffer.concat([Buffer.from(REPLACE_LABEL), handshake]);
 }
 
 export function aad(label: AadLabel, sid: string): Buffer {
