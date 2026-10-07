@@ -78,6 +78,11 @@ const click = (target: Element | null): void => {
 };
 const row = (): HTMLElement | null =>
   document.querySelector<HTMLElement>('#remote-devices > li');
+/** Opens the row's «⋯» menu and picks its first item, the security code. */
+const openSecurityCode = (): void => {
+  click(row()?.querySelector('button[aria-haspopup="menu"]') ?? null);
+  click(row()?.querySelector('[role="menuitem"]') ?? null);
+};
 
 async function openWith(initial: RemoteStatus): Promise<RendererWindow> {
   const win = await openConfigWindow();
@@ -100,7 +105,7 @@ describe('«Control remoto» security (renderer/config/remote-pane.ts)', () => {
     const note = document.querySelector('.remote-secure-note');
     const copy = note?.querySelector('span:not(.icon)')?.textContent;
     expect(copy?.replace(/\s+/g, ' ').trim()).toBe(
-      'Cifrado de extremo a extremo: lo que viaja entre DevBar y tus dispositivos va cifrado, con una clave nueva en cada conexión.',
+      'Cifrado de extremo a extremo · clave nueva en cada conexión',
     );
     expect(note?.querySelector('[data-icon="lock"]')).not.toBeNull();
     expect(document.querySelector('.remote-warning')).toBeNull();
@@ -108,31 +113,10 @@ describe('«Control remoto» security (renderer/config/remote-pane.ts)', () => {
   });
 
   describe('each device', () => {
-    it('says whether it is verified', async () => {
-      win = await openWith(
-        status({
-          devices: [
-            device(),
-            device({ id: 'd2', name: 'iPad', verifiedAt: Date.now() }),
-          ],
-        }),
-      );
-
-      const badges = [
-        ...document.querySelectorAll('#remote-devices .remote-verified'),
-      ].map((badge) => badge.textContent?.trim());
-      expect(badges).toEqual(['Sin verificar', 'Verificado']);
-      expect(
-        document
-          .querySelectorAll('#remote-devices .remote-verified')[1]
-          ?.classList.contains('is-verified'),
-      ).toBe(true);
-    });
-
     it('opens its security code: the six groups and the QR to scan', async () => {
       win = await openWith(status({ devices: [device()] }));
 
-      click(row()?.querySelector('.remote-safety-btn') ?? null);
+      openSecurityCode();
       await win.settle('getRemoteSecurityCode', safety());
 
       expect(win.argsFor('getRemoteSecurityCode')).toEqual([['d1']]);
@@ -149,10 +133,27 @@ describe('«Control remoto» security (renderer/config/remote-pane.ts)', () => {
       expect(text('remote-safety-status')).toBe('Sin verificar');
     });
 
+    it('opens the same dialog from «Código de seguridad» once verified', async () => {
+      win = await openWith(
+        status({ devices: [device({ verifiedAt: Date.now() })] }),
+      );
+      click(row()?.querySelector('button[aria-haspopup="menu"]') ?? null);
+      const first = row()?.querySelector('[role="menuitem"]');
+      expect(first?.querySelector('span:not(.icon)')?.textContent).toBe(
+        'Código de seguridad',
+      );
+
+      click(first ?? null);
+      await win.settle('getRemoteSecurityCode', safety({ verified: true }));
+
+      expect(el<HTMLDialogElement>('remote-safety-dialog').open).toBe(true);
+      expect(text('remote-safety-status')).toBe('Verificado');
+    });
+
     it('shows the code without a QR while the server is off', async () => {
       win = await openWith(status({ devices: [device()] }));
 
-      click(row()?.querySelector('.remote-safety-btn') ?? null);
+      openSecurityCode();
       await win.settle(
         'getRemoteSecurityCode',
         safety({ url: null, qr: null }),
@@ -167,7 +168,7 @@ describe('«Control remoto» security (renderer/config/remote-pane.ts)', () => {
 
     it('turns «Verificado» the moment the phone confirms the scan', async () => {
       win = await openWith(status({ devices: [device()] }));
-      click(row()?.querySelector('.remote-safety-btn') ?? null);
+      openSecurityCode();
       await win.settle('getRemoteSecurityCode', safety());
 
       await win.push(
@@ -184,7 +185,7 @@ describe('«Control remoto» security (renderer/config/remote-pane.ts)', () => {
     it('reports a device that is gone instead of opening', async () => {
       win = await openWith(status({ devices: [device()] }));
 
-      click(row()?.querySelector('.remote-safety-btn') ?? null);
+      openSecurityCode();
       await win.settle('getRemoteSecurityCode', {
         ok: false,
         error: 'Ese dispositivo ya no está vinculado.',
@@ -196,6 +197,44 @@ describe('«Control remoto» security (renderer/config/remote-pane.ts)', () => {
   });
 
   describe('the Seguridad card', () => {
+    /** The text an element's aria-labelledby / aria-describedby points at. */
+    const referenced = (node: Element, attribute: string): string =>
+      (node.getAttribute(attribute) ?? '')
+        .split(' ')
+        .map((id) => text(id))
+        .join(' ');
+
+    it.each([
+      [
+        'remote-auto-unlink',
+        'Desvincular tras 30 días sin conexión',
+        'Un móvil perdido u olvidado deja de tener acceso solo.',
+      ],
+      [
+        'remote-notify-connections',
+        'Avisar cuando un dispositivo se conecte',
+        'Si entra desde una IP nueva, avisa siempre.',
+      ],
+    ])('names #%s «%s» and explains it', async (id, label, hint) => {
+      win = await openWith(status());
+      const toggle = el<HTMLInputElement>(id);
+
+      expect(toggle.type).toBe('checkbox');
+      expect(referenced(toggle, 'aria-labelledby')).toBe(label);
+      expect(referenced(toggle, 'aria-describedby')).toBe(hint);
+    });
+
+    it('offers «Renovar» on the «Clave del equipo» row', async () => {
+      win = await openWith(status());
+      const renew = el<HTMLButtonElement>('remote-renew-identity');
+
+      expect(renew.textContent?.trim()).toBe('Renovar');
+      expect(renew.getAttribute('aria-label')).toBe('Renovar clave del equipo');
+      expect(text('remote-renew-hint')).toBe(
+        'Renuévala si crees que alguien la conoce. Los móviles tendrán que verificarse otra vez.',
+      );
+    });
+
     it('saves the connection-notice switch, on by default', async () => {
       win = await openWith(status());
       const toggle = el<HTMLInputElement>('remote-notify-connections');

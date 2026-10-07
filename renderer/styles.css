@@ -1004,7 +1004,8 @@ body.config {
   cursor: pointer;
   user-select: none;
 }
-.toggle input[type='checkbox'] {
+.toggle input[type='checkbox'],
+input.remote-switch {
   appearance: none;
   -webkit-appearance: none;
   width: 32px;
@@ -1017,7 +1018,8 @@ body.config {
   cursor: pointer;
   transition: background 0.18s ease;
 }
-.toggle input[type='checkbox']::before {
+.toggle input[type='checkbox']::before,
+input.remote-switch::before {
   content: '';
   position: absolute;
   top: 2px;
@@ -1029,10 +1031,12 @@ body.config {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   transition: transform 0.18s ease;
 }
-.toggle input[type='checkbox']:checked {
+.toggle input[type='checkbox']:checked,
+input.remote-switch:checked {
   background: var(--running);
 }
-.toggle input[type='checkbox']:checked::before {
+.toggle input[type='checkbox']:checked::before,
+input.remote-switch:checked::before {
   transform: translateX(12px);
 }
 .toggle span {
@@ -3370,161 +3374,273 @@ body.prescript-confirm {
 }
 
 /* ── Control remoto (renderer/config/remote-pane.ts) ──────────────────
-   The switch card, the linked-device list and the two pairing dialogs. */
-/* A feature, not a warning: the lock and the plain text colour. */
-.remote-secure-note {
+   The switch card, the «Dispositivos» list with its «⋯» menus and the
+   «Seguridad» card; the pairing, security-code and request dialogs follow.
+   Every line that could be long is one line that ellipsises, never a wrap:
+   the window is narrow (~550 px of content) and grows from there. */
+.config-section[data-section='remote'] {
+  /* Section-local colours, so the two themes differ in one place. */
+  --remote-ok: #1f8f3a;
+  --remote-danger: #d70015;
+  --remote-strong: #1d1d1f;
+  /* Solid, unlike the translucent cards: the menu, and the ring that
+     separates the presence dot from its avatar. */
+  --remote-surface: #ffffff;
+  --remote-tint: rgba(142, 142, 147, 0.16);
+}
+:root[data-theme='dark'] .config-section[data-section='remote'] {
+  --remote-ok: var(--running);
+  --remote-danger: var(--error);
+  --remote-strong: #f5f5f7;
+  --remote-surface: #2c2c2e;
+}
+.config-section[data-section='remote'].active {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--bg-row-hover);
-  font-size: 12px;
+  flex-direction: column;
+  gap: 22px;
 }
-.remote-secure-note .icon {
-  margin-top: 1px;
-  color: #1f8f3a;
+/* «Añadir» stays off without a listening server, «Aplicar» without a new
+   port: say so, instead of looking clickable. */
+.config-section[data-section='remote'] button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
 }
-:root[data-theme='dark'] .remote-secure-note .icon {
-  color: var(--running);
-}
-.remote-endpoint {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-}
-.remote-endpoint[hidden] {
-  display: none;
-}
-.remote-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--bg-row-hover);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-}
-.remote-pill::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.remote-pill.is-on,
-.remote-seen.is-online {
-  color: #1f8f3a;
-}
-.remote-pill.is-on {
-  background: rgba(48, 209, 88, 0.14);
-}
-:root[data-theme='dark'] .remote-pill.is-on,
-:root[data-theme='dark'] .remote-seen.is-online {
-  color: var(--running);
-}
-.remote-address {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  user-select: text;
+.remote-card {
+  background: var(--bg-card-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .remote-error {
   margin: 10px 0 0;
   color: var(--error);
   font-size: 12px;
 }
-/* The port is rarely touched, so it hides behind a gear in the card's
-   corner; the summary is lifted out of the flow and the field opens below. */
-.remote-main-card {
-  position: relative;
-  padding-right: 52px;
-}
-.remote-port-settings > summary {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 28px;
-  height: 28px;
+
+/* The switch card: tile, title over the status line, gear, switch. */
+.remote-status-head {
   display: flex;
   align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.remote-tile {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--remote-tint);
   color: var(--muted);
-  cursor: pointer;
-  list-style: none;
+  font-size: 18px;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
-.remote-port-settings > summary::-webkit-details-marker {
-  display: none;
-}
-.remote-port-settings > summary:hover,
-.remote-port-settings[open] > summary {
-  background: var(--bg-row-hover);
+.remote-status-card:has(.remote-state.is-on) .remote-tile {
+  background: rgba(0, 122, 255, 0.12);
   color: var(--accent);
 }
-.remote-port-settings > summary:focus-visible {
+.remote-status-text {
+  flex: 1;
+  min-width: 0;
+}
+.remote-title {
+  display: block;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.remote-status-line {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-state::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  vertical-align: 1px;
+}
+.remote-state.is-on::before {
+  background: var(--running);
+}
+.remote-address {
+  color: var(--remote-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  user-select: text;
+}
+.remote-address.is-none {
+  color: inherit;
+  font-family: inherit;
+}
+/* Icon-only chrome: the gear and each device's «⋯». */
+button.remote-icon-btn,
+button.remote-menu-btn {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 16px;
+}
+button.remote-icon-btn:hover,
+button.remote-menu-btn:hover,
+button.remote-icon-btn[aria-expanded='true'],
+button.remote-menu-btn[aria-expanded='true'] {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+button.remote-icon-btn[aria-expanded='true'] {
+  color: var(--accent);
+}
+button.remote-icon-btn:focus-visible,
+button.remote-menu-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.remote-port {
-  margin: 14px 0 0;
+.remote-status-card > .remote-error {
+  margin: -4px 16px 12px 64px;
+}
+/* The port, behind the gear: one strip under the header, not a popover. */
+.remote-port-strip {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-row-hover);
 }
 .remote-port-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
-.remote-port input {
-  width: 110px;
+.remote-port-row label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+.remote-port-row input {
+  flex-shrink: 0;
+  width: 92px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-card-strong);
+  color: inherit;
   font-family: var(--font-mono);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .remote-port-hint {
-  display: block;
-  margin-top: 6px;
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
 }
-.remote-port .remote-error {
-  margin-top: 6px;
+.remote-port-strip .remote-error {
+  margin: 6px 0 0;
 }
-.remote-card-head {
+/* A feature, not a warning: one quiet line, the lock in green. */
+.remote-secure-note {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.remote-card-head h2 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
 }
-.remote-card-head .spacer {
+.remote-secure-note .icon {
+  color: var(--remote-ok);
+  font-size: 14px;
+}
+.remote-secure-note span:not(.icon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* «Dispositivos» and «Seguridad»: a heading row over one card. */
+.remote-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin: 0 4px 8px;
+}
+.remote-group-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.remote-group-head .spacer {
   flex: 1;
 }
 .remote-count {
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--bg-row-hover);
+  color: var(--muted);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
 }
 .remote-devices {
   margin: 0;
   padding: 0;
   list-style: none;
 }
+/* Positioned so its «⋯» menu can hang below it, over the next rows. */
 .remote-device {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 0;
+  padding: 12px 12px 12px 16px;
   border-top: 1px solid var(--border);
 }
 .remote-device:first-child {
   border-top: none;
+}
+.remote-avatar {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--remote-tint);
+  font-size: 17px;
+}
+.remote-presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--running);
+  box-shadow: 0 0 0 2px var(--remote-surface);
 }
 .remote-device-main {
   flex: 1;
@@ -3533,57 +3649,154 @@ body.prescript-confirm {
 .remote-device-name-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 24px;
+  gap: 5px;
+  min-width: 0;
+  min-height: 20px;
 }
 .remote-device-name {
   overflow: hidden;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-button.remote-rename-btn {
-  padding: 2px 5px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--muted);
-  font-size: 13px;
-  cursor: pointer;
-}
-button.remote-rename-btn:hover {
-  background: var(--bg-row-hover);
-  color: inherit;
+.remote-verified-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--remote-ok);
+  font-size: 14px;
 }
 .remote-rename {
   width: 100%;
   max-width: 280px;
-  padding: 2px 6px;
+  padding: 1px 6px;
   font: inherit;
   font-weight: 600;
 }
-.remote-device-meta,
-.remote-seen {
-  color: var(--muted);
-  font-size: 11px;
-}
 .remote-device-meta {
   margin-top: 2px;
-}
-.remote-device-ip {
-  display: block;
+  overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.remote-device-side {
-  display: flex;
+.remote-seen {
   flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.remote-seen.is-online {
+  color: var(--remote-ok);
+}
+.remote-menu {
+  position: absolute;
+  top: calc(100% - 8px);
+  right: 12px;
+  z-index: 5;
+  width: 210px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--remote-surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+}
+:root[data-theme='dark'] .remote-menu {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+button.remote-menu-item {
+  display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+}
+button.remote-menu-item .icon {
+  color: var(--muted);
+  font-size: 15px;
+}
+button.remote-menu-item:hover,
+button.remote-menu-item:focus-visible {
+  outline: none;
+  background: rgba(0, 122, 255, 0.12);
+  filter: none;
+}
+button.remote-menu-item.is-danger,
+button.remote-menu-item.is-danger .icon {
+  color: var(--remote-danger);
+}
+.remote-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 .remote-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 26px 24px;
+  text-align: center;
+}
+.remote-empty[hidden] {
+  display: none;
+}
+.remote-empty-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--remote-tint);
+  color: var(--muted);
+  font-size: 18px;
+}
+.remote-empty-title {
   margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.remote-empty-hint {
+  max-width: 320px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+/* «Seguridad»: label over hint on the left, its control on the right. */
+.remote-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.remote-row:first-child {
+  border-top: none;
+}
+label.remote-row {
+  cursor: pointer;
+  user-select: none;
+}
+.remote-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.remote-row-hint {
+  color: var(--muted);
+  font-size: 12px;
 }
 .modal.remote-modal {
   width: 440px;
@@ -3671,9 +3884,6 @@ button.remote-rename-btn:hover {
 :root[data-theme='dark'] .remote-verified.is-verified {
   color: var(--running);
 }
-.remote-device-name-row .remote-verified {
-  margin-left: 6px;
-}
 #remote-safety-status {
   margin-bottom: 12px;
 }
@@ -3695,23 +3905,6 @@ button.remote-rename-btn:hover {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.06em;
   user-select: text;
-}
-.remote-renew {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.remote-renew > div {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-}
-.remote-renew button {
-  flex-shrink: 0;
 }
 .remote-verification {
   margin: 14px 0 4px;

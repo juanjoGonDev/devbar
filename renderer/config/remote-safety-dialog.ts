@@ -22,7 +22,7 @@ export interface SafetyDialog {
   update(devices: readonly RemoteDeviceRow[]): void;
 }
 
-export function paintVerified(element: HTMLElement, verified: boolean): void {
+function paintVerified(element: HTMLElement, verified: boolean): void {
   element.textContent = verified ? 'Verificado' : 'Sin verificar';
   element.classList.toggle('is-verified', verified);
 }

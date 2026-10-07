@@ -3,19 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { flush, openConfigWindow } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
-import type {
-  RemoteDeviceRow,
-  RemoteStatus,
-} from '../src/ipc-contract/remote-api.js';
+import type { RemoteStatus } from '../src/ipc-contract/remote-api.js';
 
 /**
  * The «Control remoto» section of the config window, driven through the real
  * window (config.html + config.ts) with a hand-driven `window.api`: what the
  * user sees for each status main reports, and what each control asks main.
- * A phone asking to be linked is tests/config-remote-request.test.ts.
+ * The device rows and their menu are tests/config-remote-devices.test.ts; a
+ * phone asking to be linked is tests/config-remote-request.test.ts.
  */
 
-const HOUR = 60 * 60_000;
 const QR = {
   size: 3,
   modules: [true, false, true, false, true, false, true, false, true],
@@ -36,20 +33,6 @@ function status(extra: Partial<RemoteStatus> = {}): RemoteStatus {
   };
 }
 
-function device(extra: Partial<RemoteDeviceRow> = {}): RemoteDeviceRow {
-  return {
-    id: 'd1',
-    name: 'iPhone de Ana',
-    client: 'Safari · iOS',
-    createdAt: Date.UTC(2026, 9, 1, 10),
-    lastSeenAt: Date.now(),
-    verifiedAt: null,
-    lastIp: null,
-    connected: false,
-    ...extra,
-  };
-}
-
 const ON = { enabled: true, listening: true };
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -58,13 +41,22 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
   return found as T;
 }
 const text = (id: string): string => el(id).textContent?.trim() ?? '';
+/**
+ * What a sighted user reads: the text minus hidden parts and icon glyphs,
+ * with the markup's line breaks folded.
+ */
+function visible(node: Element | null): string {
+  if (!node) return '';
+  const copy = node.cloneNode(true) as Element;
+  copy.querySelectorAll('[hidden], .icon').forEach((part) => part.remove());
+  return copy.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+}
+const statusLine = (): string =>
+  visible(document.querySelector('.remote-status-line'));
 const dialogOpen = (id: string): boolean => el<HTMLDialogElement>(id).open;
 const click = (target: Element | null): void => {
   target?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 };
-const rows = (): HTMLElement[] => [
-  ...document.querySelectorAll<HTMLElement>('#remote-devices > li'),
-];
 
 async function openWith(initial: RemoteStatus): Promise<RendererWindow> {
   const win = await openConfigWindow();
@@ -82,12 +74,24 @@ describe('renderer/config/remote-pane.ts', () => {
   });
 
   describe('the switch card', () => {
+    it('names the switch after what it allows', async () => {
+      win = await openWith(status());
+      const toggle = el<HTMLInputElement>('remote-enabled');
+
+      expect(toggle.type).toBe('checkbox');
+      expect(visible(toggle.labels?.[0] ?? null)).toBe(
+        'Permitir control remoto',
+      );
+    });
+
     it('shows the switch off, with no address and adding disabled', async () => {
       win = await openWith(status());
 
       expect(el<HTMLInputElement>('remote-enabled').checked).toBe(false);
       expect(el<HTMLInputElement>('remote-enabled').disabled).toBe(false);
+      expect(statusLine()).toBe('Desactivado');
       expect(el('remote-endpoint').hidden).toBe(true);
+      expect(el('remote-state').classList.contains('is-on')).toBe(false);
       expect(el<HTMLButtonElement>('remote-add-device').disabled).toBe(true);
     });
 
@@ -95,8 +99,11 @@ describe('renderer/config/remote-pane.ts', () => {
       win = await openWith(status(ON));
 
       expect(el<HTMLInputElement>('remote-enabled').checked).toBe(true);
+      expect(statusLine()).toBe('Activo · 192.168.1.20:47821');
       expect(el('remote-endpoint').hidden).toBe(false);
       expect(text('remote-state')).toBe('Activo');
+      expect(el('remote-state').classList.contains('is-on')).toBe(true);
+      expect(el('remote-address').tagName).toBe('CODE');
       expect(text('remote-address')).toBe('192.168.1.20:47821');
       expect(el<HTMLButtonElement>('remote-add-device').disabled).toBe(false);
     });
@@ -104,42 +111,81 @@ describe('renderer/config/remote-pane.ts', () => {
     it('says when there is no local network, and cannot add then', async () => {
       win = await openWith(status({ ...ON, addresses: [] }));
 
+      expect(statusLine()).toBe('Activo · Sin red local');
       expect(text('remote-address')).toBe('Sin red local');
+      expect(el('remote-address').classList.contains('is-none')).toBe(true);
       expect(el<HTMLButtonElement>('remote-add-device').disabled).toBe(true);
     });
 
-    it('shows a listen error inline', async () => {
+    it('shows a listen error inline, under the header', async () => {
       win = await openWith(
         status({ enabled: true, error: 'El puerto 47821 ya está en uso.' }),
       );
 
-      expect(text('remote-state')).toBe('Desactivado');
+      expect(statusLine()).toBe('Desactivado');
       expect(el('remote-error').hidden).toBe(false);
       expect(text('remote-error')).toBe('El puerto 47821 ya está en uso.');
-    });
-
-    it('keeps the port behind a collapsed gear section', async () => {
-      win = await openWith(status(ON));
-      const settings = el<HTMLDetailsElement>('remote-port-settings');
-
-      expect(settings.open).toBe(false);
-      expect(settings.contains(el('remote-port'))).toBe(true);
       expect(
-        settings.querySelector('summary')?.getAttribute('aria-label'),
-      ).toBe('Ajustes del servicio');
-      expect(text('remote-port-hint').replace(/\s+/g, ' ')).toBe(
-        'Si lo cambias, tendrás que volver a añadir el acceso directo en el móvil.',
-      );
+        el('remote-error').closest('.remote-status-card'),
+        'the error belongs to the switch card',
+      ).not.toBeNull();
     });
 
-    it('opens the gear section when the server could not listen', async () => {
+    it('closes with the encryption footnote', async () => {
+      win = await openWith(status());
+      const note = document.querySelector(
+        '.remote-status-card .remote-secure-note',
+      );
+
+      expect(visible(note)).toBe(
+        'Cifrado de extremo a extremo · clave nueva en cada conexión',
+      );
+      expect(note?.querySelector('[data-icon="lock"]')).not.toBeNull();
+    });
+  });
+
+  describe('the gear strip', () => {
+    const gear = () => el<HTMLButtonElement>('remote-port-toggle');
+    const strip = () => el('remote-port-settings');
+
+    it('keeps the port hidden behind the gear', async () => {
+      win = await openWith(status(ON));
+
+      expect(gear().getAttribute('aria-label')).toBe('Ajustes del servicio');
+      expect(gear().getAttribute('aria-controls')).toBe('remote-port-settings');
+      expect(gear().getAttribute('aria-expanded')).toBe('false');
+      expect(strip().hidden).toBe(true);
+      expect(strip().contains(el('remote-port'))).toBe(true);
+      expect(strip().contains(el('remote-port-apply'))).toBe(true);
+    });
+
+    it('opens inline under the header, focusing the port, and closes again', async () => {
+      win = await openWith(status(ON));
+
+      click(gear());
+      expect(strip().hidden).toBe(false);
+      expect(gear().getAttribute('aria-expanded')).toBe('true');
+      expect(document.activeElement).toBe(el('remote-port'));
+      expect(visible(el('remote-port-hint'))).toBe(
+        'El acceso directo del móvil tendrá que volver a añadirse.',
+      );
+
+      click(gear());
+      expect(strip().hidden).toBe(true);
+      expect(gear().getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('opens by itself when the server could not listen', async () => {
       win = await openWith(
         status({ enabled: true, error: 'El puerto 47821 ya está en uso.' }),
       );
 
-      expect(el<HTMLDetailsElement>('remote-port-settings').open).toBe(true);
+      expect(strip().hidden).toBe(false);
+      expect(gear().getAttribute('aria-expanded')).toBe('true');
     });
+  });
 
+  describe('the switch card, talking to main', () => {
     it('asks main to start the server and paints what it answers', async () => {
       win = await openWith(status());
       const toggle = el<HTMLInputElement>('remote-enabled');
@@ -353,175 +399,6 @@ describe('renderer/config/remote-pane.ts', () => {
 
       expect(win.argsFor('setRemoteAutoUnlink')).toEqual([[false]]);
       expect(toggle.checked).toBe(false);
-    });
-  });
-
-  describe('the device list', () => {
-    it('shows the empty state when nothing is linked', async () => {
-      win = await openWith(status(ON));
-
-      expect(text('remote-device-count')).toBe('0');
-      expect(el('remote-devices-empty').hidden).toBe(false);
-      expect(rows()).toEqual([]);
-    });
-
-    it('lists each device with its client, link date and presence', async () => {
-      win = await openWith(
-        status({
-          ...ON,
-          devices: [
-            device({ connected: true }),
-            device({
-              id: 'd2',
-              name: 'iPad',
-              lastSeenAt: Date.now() - 3 * HOUR,
-            }),
-          ],
-        }),
-      );
-
-      expect(text('remote-device-count')).toBe('2');
-      expect(el('remote-devices-empty').hidden).toBe(true);
-      const [first, second] = rows();
-      expect(first?.querySelector('.remote-device-name')?.textContent).toBe(
-        'iPhone de Ana',
-      );
-      expect(first?.querySelector('.remote-device-meta')?.textContent).toMatch(
-        /^Safari · iOS · vinculado el 1 oct\.? 2026$/,
-      );
-      expect(first?.querySelector('.remote-seen')?.textContent).toBe(
-        'Conectado ahora',
-      );
-      expect(second?.querySelector('.remote-seen')?.textContent).toBe(
-        'Última conexión hace 3 h',
-      );
-    });
-
-    it('shows the IP each device last signed in from', async () => {
-      win = await openWith(
-        status({
-          ...ON,
-          devices: [device({ lastIp: '192.168.1.57' }), device({ id: 'd2' })],
-        }),
-      );
-
-      const [first, second] = rows();
-      expect(first?.querySelector('.remote-device-ip')?.textContent).toBe(
-        'Última IP 192.168.1.57',
-      );
-      expect(second?.querySelector('.remote-device-ip')).toBeNull();
-    });
-
-    it('counts as connected only a device with an open stream', async () => {
-      win = await openWith(status({ ...ON, devices: [device()] }));
-
-      expect(rows()[0]?.querySelector('.remote-seen')?.textContent).toBe(
-        'Última conexión hace un momento',
-      );
-      expect(
-        rows()[0]
-          ?.querySelector('.remote-seen')
-          ?.classList.contains('is-online'),
-      ).toBe(false);
-    });
-
-    it('unlinks a device', async () => {
-      win = await openWith(status({ ...ON, devices: [device()] }));
-
-      click(rows()[0]?.querySelector('.remote-unlink') ?? null);
-      await win.settle('unlinkRemoteDevice', { ok: true });
-
-      expect(win.argsFor('unlinkRemoteDevice')).toEqual([['d1']]);
-      expect(text('toast')).toContain('iPhone de Ana');
-    });
-
-    it('reports an unlink main refused', async () => {
-      win = await openWith(status({ ...ON, devices: [device()] }));
-
-      click(rows()[0]?.querySelector('.remote-unlink') ?? null);
-      await win.settle('unlinkRemoteDevice', {
-        ok: false,
-        error: 'Ese dispositivo ya no está vinculado.',
-      });
-
-      expect(text('toast')).toBe('Ese dispositivo ya no está vinculado.');
-    });
-
-    describe('rename', () => {
-      const startRename = (): HTMLInputElement => {
-        click(rows()[0]?.querySelector('.remote-rename-btn') ?? null);
-        const input = rows()[0]?.querySelector('input');
-        if (!input) throw new Error('no rename input');
-        return input;
-      };
-      const key = (input: HTMLInputElement, name: string) =>
-        input.dispatchEvent(
-          new KeyboardEvent('keydown', { key: name, bubbles: true }),
-        );
-
-      it('saves the new name on Enter', async () => {
-        win = await openWith(status({ ...ON, devices: [device()] }));
-        const input = startRename();
-        expect(input.value).toBe('iPhone de Ana');
-
-        input.value = '  Tablet  ';
-        key(input, 'Enter');
-        await win.push(
-          'onRemoteChanged',
-          status({ ...ON, devices: [device({ name: 'Tablet' })] }),
-        );
-        // Still editing until main answers: the push must not wipe the input.
-        expect(rows()[0]?.querySelector('input')).not.toBeNull();
-        await win.settle('renameRemoteDevice', { ok: true });
-
-        expect(win.argsFor('renameRemoteDevice')).toEqual([['d1', 'Tablet']]);
-        expect(
-          rows()[0]?.querySelector('.remote-device-name')?.textContent,
-        ).toBe('Tablet');
-      });
-
-      it('cancels on Escape without asking main', async () => {
-        win = await openWith(status({ ...ON, devices: [device()] }));
-        const input = startRename();
-
-        input.value = 'Otro';
-        key(input, 'Escape');
-        await flush();
-
-        expect(win.callCount('renameRemoteDevice')).toBe(0);
-        expect(
-          rows()[0]?.querySelector('.remote-device-name')?.textContent,
-        ).toBe('iPhone de Ana');
-      });
-
-      it('saves once when the field loses focus after Enter', async () => {
-        win = await openWith(status({ ...ON, devices: [device()] }));
-        const input = startRename();
-
-        input.value = 'Tablet';
-        key(input, 'Enter');
-        input.dispatchEvent(new Event('blur'));
-        await win.settle('renameRemoteDevice', {
-          ok: false,
-          error: 'El nombre debe tener entre 1 y 40 caracteres.',
-        });
-
-        expect(win.callCount('renameRemoteDevice')).toBe(1);
-        expect(text('toast')).toBe(
-          'El nombre debe tener entre 1 y 40 caracteres.',
-        );
-      });
-
-      it('does not ask main when the name did not change', async () => {
-        win = await openWith(status({ ...ON, devices: [device()] }));
-        const input = startRename();
-
-        input.dispatchEvent(new Event('blur'));
-        await flush();
-
-        expect(win.callCount('renameRemoteDevice')).toBe(0);
-        expect(rows()[0]?.querySelector('input')).toBeNull();
-      });
     });
   });
 

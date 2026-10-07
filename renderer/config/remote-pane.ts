@@ -8,9 +8,9 @@ import { createSafetyDialog } from './remote-safety-dialog.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
- * «Control remoto»: the switch, the port, the linked devices (with their
- * security codes) and the Seguridad card — auto-unlink, the connection
- * notice and renewing this computer's key.
+ * «Control remoto»: the switch card (state, address, the port behind the
+ * gear), the linked devices (with their security codes) and the Seguridad
+ * card — auto-unlink, the connection notice and renewing this computer's key.
  * Main owns the state; this paints whatever `RemoteStatus` it last reported
  * (answers and `remote:changed` pushes alike) and forwards the clicks.
  *
@@ -50,18 +50,20 @@ export function createRemotePane(
     els.autoUnlink.disabled = false;
     els.notifyConnections.checked = status.notifyConnections;
     els.notifyConnections.disabled = false;
-    els.endpoint.hidden = !status.enabled;
+    // «Activo · 192.168.1.20:47821», or just «Desactivado».
     els.state.textContent = status.listening ? 'Activo' : 'Desactivado';
     els.state.classList.toggle('is-on', status.listening);
+    els.endpoint.hidden = !status.listening;
     els.address.textContent = address
       ? `${address}:${status.port}`
       : 'Sin red local';
+    els.address.classList.toggle('is-none', !address);
     els.error.hidden = !status.error;
     els.error.textContent = status.error ?? '';
     els.keyError.hidden = !status.keyError;
     els.keyError.textContent = status.keyError ?? '';
     // A failed listen is almost always the port: show where to change it.
-    if (status.error) els.portSettings.open = true;
+    if (status.error) portField.reveal();
     portField.render(status.port);
     els.addDevice.disabled = !status.listening || !address;
     if (!status.listening) pair.close();

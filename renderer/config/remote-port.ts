@@ -3,14 +3,19 @@ import { isRemotePort, remotePortError } from '../../src/remote-port.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
- * The «Puerto» field of the switch card, editable whether the server is on or
- * off: «Aplicar» or Enter sends it, and «Aplicar» stays off while the value
- * is the current port or out of range. An out-of-range value is explained
- * under the field when it is committed; a port another app holds is a listen
- * failure, reported by the status like any other.
+ * The «Puerto» field of the switch card. It is rarely touched, so it lives in
+ * a strip under the card's header that the gear shows and hides. Editable
+ * whether the server is on or off: «Aplicar» or Enter sends it, and «Aplicar»
+ * stays off while the value is the current port or out of range. An
+ * out-of-range value is explained under the field when it is committed; a
+ * port another app holds is a listen failure, reported by the status like any
+ * other.
  */
 
 export interface PortElements {
+  /** The gear in the card's header: shows and hides `strip`. */
+  toggle: HTMLButtonElement;
+  strip: HTMLElement;
   input: HTMLInputElement;
   apply: HTMLButtonElement;
   error: HTMLElement;
@@ -19,6 +24,8 @@ export interface PortElements {
 export interface PortField {
   /** Paints main's port, unless the user typed a different one. */
   render(port: number): void;
+  /** Shows the strip: a failed listen is almost always the port. */
+  reveal(): void;
 }
 
 export function createPortField(
@@ -82,6 +89,16 @@ export function createPortField(
   });
   els.apply.addEventListener('click', () => void apply());
 
+  const setOpen = (open: boolean): void => {
+    els.strip.hidden = !open;
+    els.toggle.setAttribute('aria-expanded', String(open));
+  };
+  els.toggle.addEventListener('click', () => {
+    const opening = els.strip.hidden !== false;
+    setOpen(opening);
+    if (opening) els.input.focus();
+  });
+
   return {
     render: (port) => {
       const untouched = current === null || els.input.value === String(current);
@@ -90,5 +107,6 @@ export function createPortField(
       els.input.disabled = false;
       refresh();
     },
+    reveal: () => setOpen(true),
   };
 }

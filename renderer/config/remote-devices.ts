@@ -1,17 +1,17 @@
 import type { RemoteDeviceRow } from '../../src/ipc-contract/remote-api.js';
-import { iconButton } from '../icon.js';
+import { icon, iconButton } from '../icon.js';
+import { createDeviceMenu, type MenuEntry } from './remote-device-menu.js';
 import { formatDate, lastSeen } from './remote-format.js';
-import { paintVerified } from './remote-safety-dialog.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
- * The «Dispositivos vinculados» rows: name (renamed inline — Enter or leaving
- * the field saves, Escape cancels) with «Verificado» / «Sin verificar»,
- * client and link date, the IP it last signed in from (a new one raises an
- * alert), presence («Conectado ahora» while the phone holds an event stream
- * open), «Código de seguridad» and «Desvincular». While a name is being
- * edited the list is not repainted, so a push from main cannot wipe what the
- * user is typing.
+ * The «Dispositivos» rows: an avatar (with a green dot while the device is
+ * connected), the name with a shield when it is verified, «<client> · <last
+ * IP>» on one line, «Conectado» or how long ago it was last seen, and a «⋯»
+ * menu with «Código de seguridad» (or «Verificar con código»), «Renombrar»
+ * and «Desvincular». Renaming happens in the row — Enter or leaving the field
+ * saves, Escape cancels — and while a name is being edited the list is not
+ * repainted, so a push from main cannot wipe what the user is typing.
  */
 
 export interface DeviceList {
@@ -29,6 +29,28 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** The shield after a verified name: an image to assistive tech. */
+function verifiedMark(): HTMLElement {
+  const mark = element('span', 'remote-verified-mark');
+  mark.setAttribute('role', 'img');
+  mark.setAttribute('aria-label', 'Verificado');
+  mark.title = 'Verificado';
+  mark.append(icon('shield-check'));
+  return mark;
+}
+
+/** «Conectado», or «hace 3 h» read out as «Última conexión hace 3 h». */
+function presence(device: RemoteDeviceRow, now: number): HTMLElement {
+  if (device.connected)
+    return element('span', 'remote-seen is-online', 'Conectado');
+  const seen = element('span', 'remote-seen');
+  seen.append(
+    element('span', 'sr-only', 'Última conexión '),
+    lastSeen(device.lastSeenAt, now),
+  );
+  return seen;
+}
+
 export function createDeviceList(
   list: HTMLUListElement,
   deps: {
@@ -38,6 +60,7 @@ export function createDeviceList(
   },
 ): DeviceList {
   let editing = false;
+  const menu = createDeviceMenu();
 
   const report = (
     result: { ok: boolean; error?: string | undefined },
@@ -102,63 +125,76 @@ export function createDeviceList(
     }
   }
 
+  const actions = (
+    row: HTMLElement,
+    device: RemoteDeviceRow,
+    trigger: HTMLButtonElement,
+  ): MenuEntry[] => [
+    {
+      label:
+        device.verifiedAt === null
+          ? 'Verificar con código'
+          : 'Código de seguridad',
+      icon: 'shield',
+      run: () => deps.onSecurityCode(device),
+    },
+    {
+      label: 'Renombrar',
+      icon: 'pencil',
+      run: () => startRename(row, device),
+    },
+    null,
+    {
+      label: 'Desvincular',
+      icon: 'unlink',
+      danger: true,
+      run: () => void unlink(device, trigger),
+    },
+  ];
+
   function row(device: RemoteDeviceRow, now: number): HTMLLIElement {
     const item = element('li', 'remote-device');
-    const main = element('div', 'remote-device-main');
+
+    const avatar = element('span', 'remote-avatar');
+    avatar.append(icon('smartphone'));
+    if (device.connected) avatar.append(element('span', 'remote-presence'));
+
     const nameRow = element('div', 'remote-device-name-row');
-    const rename = iconButton('pencil', 'Renombrar', 'remote-rename-btn');
-    rename.addEventListener('click', () => startRename(item, device));
-    const verified = element('span', 'remote-verified');
-    paintVerified(verified, device.verifiedAt !== null);
-    nameRow.append(
-      element('strong', 'remote-device-name', device.name),
-      rename,
-      verified,
-    );
-    main.append(
-      nameRow,
-      element(
-        'div',
-        'remote-device-meta',
-        `${device.client} · vinculado el ${formatDate(device.createdAt)}`,
-      ),
-    );
-    if (device.lastIp)
-      main.append(
-        element('span', 'remote-device-ip', `Última IP ${device.lastIp}`),
-      );
+    nameRow.append(element('strong', 'remote-device-name', device.name));
+    if (device.verifiedAt !== null) nameRow.append(verifiedMark());
+    const where = device.lastIp
+      ? `${device.client} · ${device.lastIp}`
+      : device.client;
+    const meta = element('div', 'remote-device-meta', where);
+    meta.title = `${where}\nVinculado el ${formatDate(device.createdAt)}`;
+    const main = element('div', 'remote-device-main');
+    main.append(nameRow, meta);
 
-    const presence = device.connected
-      ? element('span', 'remote-seen is-online', 'Conectado ahora')
-      : element(
-          'span',
-          'remote-seen',
-          `Última conexión ${lastSeen(device.lastSeenAt, now)}`,
-        );
-    const unlinkBtn = element(
-      'button',
-      'small-btn danger remote-unlink',
-      'Desvincular',
+    const trigger = iconButton(
+      'ellipsis',
+      `Acciones de ${device.name}`,
+      'remote-menu-btn',
     );
-    unlinkBtn.type = 'button';
-    unlinkBtn.addEventListener('click', () => void unlink(device, unlinkBtn));
-    const safetyBtn = iconButton(
-      'shield-check',
-      'Código de seguridad',
-      'remote-safety-btn',
+    trigger.dataset.deviceId = device.id;
+    trigger.setAttribute('aria-haspopup', 'menu');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.addEventListener('click', () =>
+      menu.toggle(trigger, actions(item, device, trigger)),
     );
-    safetyBtn.addEventListener('click', () => deps.onSecurityCode(device));
-    const side = element('div', 'remote-device-side');
-    side.append(presence, safetyBtn, unlinkBtn);
 
-    item.append(main, side);
+    item.append(avatar, main, presence(device, now), trigger);
     return item;
   }
 
   return {
     render: (devices, now) => {
       if (editing) return;
+      const focused = menu.close()?.dataset.deviceId;
       list.replaceChildren(...devices.map((device) => row(device, now)));
+      if (focused === undefined) return;
+      const triggers =
+        list.querySelectorAll<HTMLButtonElement>('.remote-menu-btn');
+      [...triggers].find((each) => each.dataset.deviceId === focused)?.focus();
     },
   };
 }

@@ -16,8 +16,7 @@ export interface RemoteElements {
   error: HTMLElement;
   /** This computer's key could not be read: renewing it is the way out. */
   keyError: HTMLElement;
-  /** The collapsed gear section that holds the port field. */
-  portSettings: HTMLDetailsElement;
+  /** The gear, and the strip under the header that holds the port field. */
   port: PortElements;
   deviceCount: HTMLElement;
   addDevice: HTMLButtonElement;
@@ -62,11 +61,9 @@ export function remoteElements(): RemoteElements {
     address: byId<HTMLElement>('remote-address', HTMLElement),
     error: byId<HTMLElement>('remote-error', HTMLElement),
     keyError: byId<HTMLElement>('remote-key-error', HTMLElement),
-    portSettings: byId<HTMLDetailsElement>(
-      'remote-port-settings',
-      HTMLDetailsElement,
-    ),
     port: {
+      toggle: byId<HTMLButtonElement>('remote-port-toggle', HTMLButtonElement),
+      strip: byId<HTMLElement>('remote-port-settings', HTMLElement),
       input: byId<HTMLInputElement>('remote-port', HTMLInputElement),
       apply: byId<HTMLButtonElement>('remote-port-apply', HTMLButtonElement),
       error: byId<HTMLElement>('remote-port-error', HTMLElement),
