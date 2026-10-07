@@ -3,6 +3,26 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.11.0] - 2026-10-07
+
+### Cambiado
+
+- **La cabecera de la barra deja sitio y el progreso va debajo.** Mientras
+  corre el pipeline, en la fila de la cabecera queda solo su botón ⏩ (que
+  sigue parpadeando); el paso en curso, el tiempo que lleva, cancelar y sus
+  logs pasan a una franja fina justo debajo, con una barra de progreso en
+  el borde. Al acabar, la franja muestra «Pipeline completado» unos
+  segundos o, si falla, qué paso falló, con «Ver logs» a mano y una ✕ para
+  quitar el aviso. Con el pipeline parado, la franja no aparece.
+- **El estado de la actualización también va en su propia franja.**
+  «Descargando» con su porcentaje y barra de progreso, «Verificando…» o
+  «Instalando…» se muestran ahora debajo de la cabecera en lugar de
+  apretujarse junto a la versión. Si la actualización falla, la franja dice
+  por qué sin tener que pasar el ratón por encima, y ofrece «Reintentar» y
+  una ✕ para descartar el aviso.
+- **El selector de rama lleva el icono de Git.** Así se distingue de un
+  vistazo; ocupa el mismo hueco que antes.
+
 ## [0.10.0] - 2026-09-30
 
 ### Añadido

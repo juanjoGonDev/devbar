@@ -1,11 +1,21 @@
 import { latestWins } from '../latest-wins.js';
 import type { UpdatePhase, UpdateStatus } from '../../src/ipc-contract.js';
+import { showToast } from './host.js';
+import {
+  paintStrip,
+  stripIcon,
+  stripIconButton,
+  stripProgress,
+  stripSpan,
+  stripTextButton,
+} from './strip.js';
 
 /**
  * The popover's update cues: the red dot on the version chip while an update
- * is pending (same cue as the menubar mark and config), and a short label
- * beside it while the update downloads, installs or has failed — the popover
- * is often the only surface open when the user clicked "update" in it.
+ * is pending (same cue as the menubar mark and config), and a slim strip
+ * under the header row while the update downloads, installs or has failed —
+ * the popover is often the only surface open when the user clicked "update"
+ * in it.
  */
 
 function markVersionUpdate(status: UpdateStatus): void {
@@ -18,38 +28,109 @@ function markVersionUpdate(status: UpdateStatus): void {
     : 'Ver changelog';
 }
 
-function phaseLabel(
-  phase: UpdatePhase,
-): { text: string; title: string } | null {
+/** Identifies one phase, so a dismissed one stays dismissed when re-pushed. */
+function phaseKey(phase: UpdatePhase): string {
+  return JSON.stringify([
+    phase.state,
+    'version' in phase ? phase.version : null,
+    'reason' in phase ? phase.reason : null,
+  ]);
+}
+
+/** The same calls config's "Reintentar" uses: check again, or apply again. */
+async function retry(phase: UpdatePhase): Promise<void> {
+  if (phase.state === 'check-failed') {
+    await window.api.checkForUpdates();
+    return;
+  }
+  const res = await window.api.applyUpdate();
+  // Progress and outcome arrive as phase pushes; only an error nobody else
+  // shows gets a toast (same rule as the config window's updates pane).
+  if (res && !res.ok && !res.cancelled && !res.busy)
+    showToast(
+      `No se pudo actualizar: ${typeof res.error === 'string' && res.error ? res.error : 'desconocido'}`,
+      'error',
+    );
+}
+
+let dismissedKey: string | null = null;
+
+function stripContent(phase: UpdatePhase): {
+  children: Node[];
+  title: string;
+} | null {
   switch (phase.state) {
-    case 'downloading':
+    case 'downloading': {
+      const percent = phase.total
+        ? Math.floor((phase.received / phase.total) * 100)
+        : null;
       return {
-        text: phase.total
-          ? `Descargando ${Math.floor((phase.received / phase.total) * 100)} %`
-          : 'Descargando…',
         title: `Descargando v${phase.version}`,
+        children:
+          percent === null
+            ? [
+                stripIcon('download', 'strip-muted'),
+                stripSpan('strip-title', 'Descargando…'),
+                stripProgress(null),
+              ]
+            : [
+                stripIcon('download', 'strip-muted'),
+                stripSpan('strip-title', 'Descargando'),
+                stripSpan('strip-spacer'),
+                stripSpan('strip-muted', `${percent} %`),
+                stripProgress(percent),
+              ],
       };
+    }
     case 'verifying':
-      return { text: 'Verificando…', title: `Verificando v${phase.version}` };
+      return {
+        title: `Verificando v${phase.version}`,
+        children: [
+          stripIcon('shield-check', 'strip-muted'),
+          stripSpan('strip-title', 'Verificando…'),
+          stripProgress(null),
+        ],
+      };
     case 'installing':
-      return { text: 'Instalando…', title: `Instalando v${phase.version}` };
+      return {
+        title: `Instalando v${phase.version}`,
+        children: [
+          stripIcon('package', 'strip-muted'),
+          stripSpan('strip-title', 'Instalando…'),
+          stripProgress(null),
+        ],
+      };
     case 'check-failed':
     case 'download-failed':
     case 'verify-failed':
     case 'install-failed':
-      return { text: 'Actualización fallida', title: phase.reason };
+      return {
+        title: '',
+        children: [
+          stripIcon('triangle-alert', 'strip-warn'),
+          stripSpan('strip-title', 'Actualización fallida'),
+          stripSpan('strip-detail', phase.reason, phase.reason),
+          stripTextButton('Reintentar', () => void retry(phase)),
+          stripIconButton('prestep-cancel', 'x', 'Descartar', () => {
+            dismissedKey = phaseKey(phase);
+            showPhase(phase);
+          }),
+        ],
+      };
     default:
       return null;
   }
 }
 
 function showPhase(phase: UpdatePhase): void {
-  const el = document.getElementById('update-progress-label');
+  const el = document.getElementById('update-strip');
   if (!el) return;
-  const label = phaseLabel(phase);
-  el.hidden = label === null;
-  el.textContent = label?.text ?? '';
-  el.title = label?.title ?? '';
+  const key = phaseKey(phase);
+  // A dismissal holds only for the phase it dismissed.
+  if (dismissedKey !== key) dismissedKey = null;
+  const content = dismissedKey === null ? stripContent(phase) : null;
+  el.title = content?.title ?? '';
+  paintStrip(el, content?.children ?? null);
 }
 
 export function wireUpdateChip(): void {

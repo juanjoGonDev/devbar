@@ -269,64 +269,6 @@ describe('renderer/tray.ts', () => {
     });
   });
 
-  describe('update progress', () => {
-    const label = () => byId('update-progress-label');
-
-    it('shows the download percentage next to the version chip', async () => {
-      const win = await openTray();
-      await win.push('onUpdatePhase', {
-        state: 'downloading',
-        version: '9.9.9',
-        received: 42,
-        total: 100,
-      });
-      expect(label().hidden).toBe(false);
-      expect(label().textContent).toBe('Descargando 42 %');
-    });
-
-    it('shows a download of unknown size without a number', async () => {
-      const win = await openTray();
-      await win.push('onUpdatePhase', {
-        state: 'downloading',
-        version: '9.9.9',
-        received: 42,
-        total: null,
-      });
-      expect(label().textContent).toBe('Descargando…');
-    });
-
-    it('flags a failure with its reason on hover', async () => {
-      const win = await openTray();
-      await win.push('onUpdatePhase', {
-        state: 'install-failed',
-        version: '9.9.9',
-        reason: 'autenticación cancelada',
-        path: '/tmp/a.deb',
-        command: null,
-      });
-      expect(label().textContent).toBe('Actualización fallida');
-      expect(label().title).toBe('autenticación cancelada');
-    });
-
-    it('names the step that is running', async () => {
-      const win = await openTray();
-      await win.push('onUpdatePhase', {
-        state: 'installing',
-        version: '9.9.9',
-      });
-      expect(label().textContent).toBe('Instalando…');
-      await win.push('onUpdatePhase', { state: 'verifying', version: '9.9.9' });
-      expect(label().textContent).toBe('Verificando…');
-    });
-
-    it('hides once nothing is happening', async () => {
-      const win = await openTray();
-      await win.push('onUpdatePhase', { state: 'verifying', version: '9.9.9' });
-      await win.push('onUpdatePhase', { state: 'idle' });
-      expect(label().hidden).toBe(true);
-    });
-  });
-
   describe('the version chip', () => {
     it('shows the running version', async () => {
       const win = await openTray();
@@ -481,105 +423,35 @@ describe('renderer/tray.ts', () => {
       expect(byId('toast').textContent).toBe('Ya hay un pipeline corriendo');
     });
 
-    it('shows the step and the elapsed time while it runs', async () => {
+    it('pulses while a run is in flight', async () => {
       const win = await openTray();
       await win.push(
         'onPipelineUpdate',
+        pipelineState({ status: 'running', totalSteps: 2, currentStep: 1 }),
+      );
+      const trigger = host().querySelector<HTMLElement>('.prescripts-trigger');
+      expect(trigger?.dataset.prestepStatus).toBe('running');
+    });
+
+    it('keeps only the trigger in the header row, whatever the run does', async () => {
+      const win = await openTray();
+      for (const state of [
         pipelineState({
           status: 'running',
-          currentStep: 2,
-          totalSteps: 3,
-          startedAt: Date.now() - 5000,
-        }),
-      );
-      expect(host().querySelector('.prestep-step')?.textContent).toBe('2/3');
-      expect(host().querySelector('.prestep-elapsed')).not.toBeNull();
-      expect(
-        (host().querySelector('.prestep-badge') as HTMLElement).title,
-      ).toBe('Pipeline: paso 2/3');
-    });
-
-    it('drops the step counter for a single-step pipeline', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'running', currentStep: 1, totalSteps: 1 }),
-      );
-      expect(host().querySelector('.prestep-step')).toBeNull();
-    });
-
-    it('offers to cancel a run in flight', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'running', currentStep: 1, totalSteps: 2 }),
-      );
-      const cancel = host().querySelector('.prestep-cancel');
-      expect(iconText(cancel)).toBe('[x]');
-      expect(cancel?.getAttribute('aria-label')).toBe('Cancelar pipeline');
-      click(cancel ?? host());
-      expect(win.callCount('cancelPreScripts')).toBe(1);
-    });
-
-    it('ticks a finished run', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'done', totalSteps: 2 }),
-      );
-      expect(iconText(host().querySelector('.prestep-badge.ok'))).toBe(
-        '[check]',
-      );
-    });
-
-    it('shows the failure and what it said', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({
-          status: 'error',
+          currentStep: 1,
           totalSteps: 2,
-          lastError: 'migración falló',
+          lastRunId: 'run-1',
+          startedAt: Date.now(),
         }),
-      );
-      const badge = host().querySelector('.prestep-badge.err') as HTMLElement;
-      expect(iconText(badge)).toBe('[x]');
-      expect(badge.title).toBe('migración falló');
-    });
-
-    it('keeps a finished run reviewable through its log', async () => {
-      const openLogs = vi.fn();
-      const win = await openTray({ openLogs });
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'done', totalSteps: 1, lastRunId: 'run-7' }),
-      );
-      const logs = host().querySelector('.prestep-logs-btn');
-      expect(iconText(logs)).toBe('[scroll-text]');
-      click(logs ?? host());
-      expect(openLogs).toHaveBeenCalledWith('pre-pipeline:run-7');
-    });
-
-    it('renders the initial read when no push has landed', async () => {
-      const win = await openTray();
-      await win.settle(
-        'getPipelineState',
-        pipelineState({ status: 'done', totalSteps: 1 }),
-      );
-      expect(host().querySelector('.prestep-badge.ok')).not.toBeNull();
-    });
-
-    it('keeps a pushed state that landed before that read resolved', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'error', totalSteps: 1 }),
-      );
-      await win.settle(
-        'getPipelineState',
-        pipelineState({ status: 'done', totalSteps: 1 }),
-      );
-      expect(host().querySelector('.prestep-badge.err')).not.toBeNull();
+        pipelineState({ status: 'done', totalSteps: 2, lastRunId: 'run-1' }),
+        pipelineState({ status: 'error', totalSteps: 2, lastRunId: 'run-1' }),
+      ]) {
+        await win.push('onPipelineUpdate', state);
+        expect(
+          Array.from(host().children, (el) => el.className),
+          state.status,
+        ).toEqual(['ghost prescripts-trigger']);
+      }
     });
   });
 
@@ -772,7 +644,19 @@ describe('renderer/tray.ts', () => {
     it('keeps every control in the header clickable', async () => {
       const win = await openTray();
       await win.settle('getTrayPinned', { pinned: true });
-      await win.settle('getPipelineState', pipelineState({ lastRunId: '3' }));
+      await win.settle(
+        'getPipelineState',
+        pipelineState({
+          status: 'running',
+          currentStep: 1,
+          totalSteps: 1,
+          lastRunId: '3',
+        }),
+      );
+      await win.push('onUpdatePhase', {
+        state: 'check-failed',
+        reason: 'sin red',
+      });
       await win.settle('getGroupStates', [
         groupState('api', {
           commands: [commandState({ warnCount: 2, errorCount: 1 })],

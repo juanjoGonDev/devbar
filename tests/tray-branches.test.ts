@@ -158,6 +158,15 @@ describe('renderer/tray/branches.ts', () => {
     });
   });
 
+  describe('the branch icon', () => {
+    it('marks the selector with a git-branch glyph', () => {
+      const el = mount();
+      expect(
+        el.querySelector('.combobox-leading-icon')?.getAttribute('data-icon'),
+      ).toBe('git-branch');
+    });
+  });
+
   describe('loading the branches', () => {
     it('starts on a loading placeholder and queries once', () => {
       const el = mount();
