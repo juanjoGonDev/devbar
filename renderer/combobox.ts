@@ -1,4 +1,4 @@
-import { icon } from './icon.js';
+import { icon, type IconName } from './icon.js';
 
 export interface ComboboxOption {
   value: string;
@@ -15,6 +15,8 @@ interface ComboboxOptions {
   options: ComboboxOption[];
   placeholder?: string;
   onSelect?: (value: string) => unknown;
+  /** A muted glyph drawn inside the input, left of the text. */
+  leadingIcon?: IconName;
 }
 interface HostHooks {
   flushPendingRender?: () => void;
@@ -61,6 +63,7 @@ export function createCombobox({
   options,
   placeholder = '',
   onSelect,
+  leadingIcon,
 }: ComboboxOptions): ComboboxControl {
   let currentValue = value;
   let currentOptions = options;
@@ -99,6 +102,14 @@ export function createCombobox({
   input.setAttribute('aria-expanded', 'false');
   input.setAttribute('aria-controls', `${instanceId}-list`);
   root.appendChild(input);
+  if (leadingIcon) {
+    // Decorative and click-through: the input stays the whole hit target,
+    // and the slot keeps its fixed width — only the text moves right.
+    const glyph = icon(leadingIcon);
+    glyph.classList.add('combobox-leading-icon');
+    root.appendChild(glyph);
+    input.style.paddingLeft = '19px';
+  }
   const list = document.createElement('div');
   list.id = `${instanceId}-list`;
   list.className = 'combobox-list';

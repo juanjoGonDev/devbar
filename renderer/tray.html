@@ -21,11 +21,6 @@
           type="button"
           title="Ver changelog"
         ></button>
-        <span
-          id="update-progress-label"
-          class="update-progress-label"
-          hidden
-        ></span>
         <span id="alerts-summary" class="alerts-summary"></span>
         <span id="pipeline-trigger" class="pipeline-trigger-host"></span>
         <span class="spacer"></span>
@@ -64,6 +59,12 @@
         >
           <span class="icon" data-icon="power"></span>
         </button>
+      </div>
+      <!-- Slim status strips under the header row; the area collapses when
+           neither is showing (renderer/tray/strip.ts). -->
+      <div id="tray-strips" class="tray-strips" hidden>
+        <div id="update-strip" class="tray-strip" hidden></div>
+        <div id="pipeline-strip" class="tray-strip" hidden></div>
       </div>
     </div>
     <div id="groups" class="groups-list"></div>
