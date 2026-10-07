@@ -31,7 +31,7 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 - **Renueva las claves cuando quieras.** Desde el móvil, «Renovar claves de
   este dispositivo»; desde el ordenador, «Renovar clave del equipo» en
-  Seguridad. Después de renovar, el dispositivo vuelve a «Sin verificar».
+  Seguridad. Después de renovar, el dispositivo deja de estar verificado.
   Si cambias la clave del ordenador, cada móvil se detiene y te avisa de que
   la clave ha cambiado hasta que escanees su nuevo código de seguridad.
 
@@ -86,7 +86,7 @@ Todas las novedades relevantes de DevBar. El formato sigue
   que instalarse a mano, el móvil te indica que lo hagas desde el ordenador.
 
 - **Vincular un móvil es escanear un QR y aceptarlo en el ordenador.**
-  «Añadir dispositivo» muestra un código QR de un solo uso que se renueva cada
+  «Añadir» muestra un código QR de un solo uso que se renueva cada
   30 segundos mientras la ventana está abierta, y al momento en cuanto un
   móvil lo escanea; al cerrarla, el código deja de valer. El móvil lo
   escanea, le pones nombre (tienes dos minutos, aunque el QR ya haya cambiado)
@@ -98,16 +98,35 @@ Todas las novedades relevantes de DevBar. El formato sigue
   Cualquier otro equipo de la red que abra la dirección solo ve que no está
   vinculado.
 
-- **Lista de dispositivos vinculados.** Cada uno muestra su nombre (que
-  puedes cambiar desde el ordenador o desde el propio móvil), si está
-  verificado, el navegador y sistema desde el que se vinculó, la fecha, la
-  última IP desde la que se conectó (por ejemplo «Última IP 192.168.1.57»), y
-  «Conectado ahora» mientras tiene la página abierta o cuándo se conectó por
-  última vez. «Desvincular»
-  le quita el acceso al momento —el móvil se entera y deja de mostrar nada—,
-  y el propio móvil también puede desvincularse. Por defecto, un dispositivo
-  que lleva 30 días sin conectarse se desvincula solo; puedes desactivarlo en
-  «Seguridad».
+- **Lista de dispositivos vinculados.** Cada uno muestra su nombre, un
+  escudo verde si está verificado, el navegador y sistema desde el que se
+  vinculó con la última IP desde la que se conectó, y «Conectado» mientras
+  tiene la página abierta o cuándo se conectó por última vez. Desde su menú
+  «⋯» puedes ver el código de seguridad, renombrarlo (también desde el propio
+  móvil) o desvincularlo: pierde el acceso al momento, el móvil se entera y
+  deja de mostrar nada. El propio móvil también puede desvincularse. Por
+  defecto, un dispositivo que lleva 30 días sin conectarse se desvincula solo;
+  puedes desactivarlo en «Seguridad».
+
+## [0.10.1] - 2026-10-07
+
+### Cambiado
+
+- **La cabecera de la barra deja sitio y el progreso va debajo.** Mientras
+  corre el pipeline, en la fila de la cabecera queda solo su botón ⏩ (que
+  sigue parpadeando); el paso en curso, el tiempo que lleva, cancelar y sus
+  logs pasan a una franja fina justo debajo, con una barra de progreso en
+  el borde. Al acabar, la franja muestra «Pipeline completado» unos
+  segundos o, si falla, qué paso falló, con «Ver logs» a mano y una ✕ para
+  quitar el aviso. Con el pipeline parado, la franja no aparece.
+- **El estado de la actualización también va en su propia franja.**
+  «Descargando» con su porcentaje y barra de progreso, «Verificando…» o
+  «Instalando…» se muestran ahora debajo de la cabecera en lugar de
+  apretujarse junto a la versión. Si la actualización falla, la franja dice
+  por qué sin tener que pasar el ratón por encima, y ofrece «Reintentar» y
+  una ✕ para descartar el aviso.
+- **El selector de rama lleva el icono de Git.** Así se distingue de un
+  vistazo; ocupa el mismo hueco que antes.
 
 ## [0.10.0] - 2026-09-30
 

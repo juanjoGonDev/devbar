@@ -99,6 +99,7 @@ export function buildBranchSelector(gs: GroupState): HTMLElement {
     value: initValue,
     options: initOptions,
     placeholder: cached ? 'Rama…' : 'Cargando…',
+    leadingIcon: 'git-branch',
     onSelect: async (branch) => {
       if (!branch) return;
       // The combobox commits the choice to its input before calling this, so

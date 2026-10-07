@@ -7,6 +7,7 @@ import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
 import { setTrayHost, showToast } from './tray/host.js';
 import { wireUpdateChip } from './tray/update-chip.js';
+import { renderPipelineStrip } from './tray/pipeline-strip.js';
 import { installAutoHeight } from './tray/auto-height.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
@@ -106,14 +107,16 @@ function alertButton(
 
 // ─────────────────────── Global pipeline trigger ──────────────────────
 //
-// One global run-pipeline trigger/badge/cancel-chip/logs-button, replacing the
-// per-group ones (there is one pipeline now, not one per group). Rendered
-// once in the sticky header, not per group row.
+// One global run-pipeline trigger in the sticky header row (there is one
+// pipeline now, not one per group). Everything about a run — step, elapsed
+// time, cancel, logs, the ✓/✕ result — lives in the pipeline strip under the
+// row (renderer/tray/pipeline-strip.ts).
 
 let lastPipelineState: PipelineState | null = null;
 
 function renderPipelineTrigger(state: PipelineState | null): void {
   lastPipelineState = state;
+  renderPipelineStrip(state);
   const host = document.getElementById('pipeline-trigger');
   if (!host) return;
   host.innerHTML = '';
@@ -140,75 +143,6 @@ function renderPipelineTrigger(state: PipelineState | null): void {
     }
   });
   host.appendChild(triggerBtn);
-
-  // Status badge — compact, responsive: hide "paso N/M" when redundant
-  // (single-step pipelines) and drop the word "paso" for multi-step. Full
-  // info lives in the tooltip so the header never gets squeezed by the
-  // badge regardless of how long the pipeline runs.
-  if (state.status === 'running') {
-    const badge = document.createElement('span');
-    badge.className = 'prestep-badge';
-    const total = state.totalSteps || 1;
-    const current = state.currentStep || 1;
-    const showStep = total > 1;
-    badge.title = `Pipeline: paso ${current}/${total}`;
-
-    if (showStep) {
-      const stepSpan = document.createElement('span');
-      stepSpan.className = 'prestep-step';
-      stepSpan.textContent = `${current}/${total}`;
-      badge.appendChild(stepSpan);
-    }
-
-    if (state.startedAt) {
-      if (showStep) badge.appendChild(document.createTextNode(' · '));
-      const elapsedSpan = document.createElement('span');
-      elapsedSpan.className = 'uptime prestep-elapsed';
-      elapsedSpan.dataset.startedAt = String(state.startedAt);
-      elapsedSpan.textContent = formatUptime(Date.now() - state.startedAt);
-      badge.appendChild(elapsedSpan);
-    }
-
-    host.appendChild(badge);
-
-    const cancelChip = document.createElement('button');
-    cancelChip.className = 'ghost prestep-cancel';
-    cancelChip.title = 'Cancelar pipeline';
-    cancelChip.setAttribute('aria-label', cancelChip.title);
-    cancelChip.append(icon('x'));
-    cancelChip.addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.api.cancelPreScripts();
-    });
-    host.appendChild(cancelChip);
-  } else if (state.status === 'done') {
-    const badge = document.createElement('span');
-    badge.className = 'prestep-badge ok';
-    badge.title = 'Pipeline completado';
-    badge.append(icon('check'));
-    host.appendChild(badge);
-  } else if (state.status === 'error') {
-    const badge = document.createElement('span');
-    badge.className = 'prestep-badge err';
-    badge.title = state.lastError || 'Error en el pipeline';
-    badge.append(icon('x'));
-    host.appendChild(badge);
-  }
-
-  // Log opener — shown whenever a run's log exists (it persists after the
-  // transient status badge clears), so a finished pipeline stays reviewable.
-  if (state.lastRunId) {
-    const logsBtn = document.createElement('button');
-    logsBtn.className = 'ghost prestep-logs-btn';
-    logsBtn.title = 'Ver logs del pipeline';
-    logsBtn.setAttribute('aria-label', logsBtn.title);
-    logsBtn.append(icon('scroll-text'));
-    logsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.api.openLogs(`pre-pipeline:${state.lastRunId}`);
-    });
-    host.appendChild(logsBtn);
-  }
 }
 
 // ─────────────────────── Main render ─────────────────────────────────
