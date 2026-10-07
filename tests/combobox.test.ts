@@ -129,6 +129,22 @@ describe('renderer/combobox.ts', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  describe('the leading icon', () => {
+    it('draws none unless asked', () => {
+      const { root, input } = build();
+      expect(root.querySelector('.combobox-leading-icon')).toBeNull();
+      expect(input.style.paddingLeft).not.toBe('19px');
+    });
+
+    it('draws the icon inside the input and keeps the text clear of it', () => {
+      const { root, input } = build({ leadingIcon: 'git-branch' });
+      const glyph = root.querySelector('.combobox-leading-icon');
+      expect(glyph?.getAttribute('data-icon')).toBe('git-branch');
+      expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+      expect(input.style.paddingLeft).toBe('19px');
+    });
+  });
+
   describe('opening and closing', () => {
     it('starts closed, with no list and no open dropdown registered', () => {
       build();

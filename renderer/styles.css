@@ -2494,6 +2494,17 @@ fieldset.schedule-group legend {
   padding: 3px 8px;
   font-size: 11px;
 }
+/* Muted glyph inside the input (the branch icon); click-through, so the
+   input stays the whole hit target. The input's left padding makes room. */
+.combobox .combobox-leading-icon {
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--muted);
+  pointer-events: none;
+}
 
 /* The option list is attached to <body> with position:fixed (see
    combobox.js positionList) so its width/position is set dynamically.
@@ -2774,16 +2785,6 @@ dialog form {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
-.update-progress-label {
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.update-progress-label[hidden] {
-  display: none;
-}
-
 /* ── Counter buttons (tray command sub-row) ───────────────────────────── */
 .counter-btn {
   font-size: 10px;
@@ -2851,7 +2852,7 @@ dialog form {
   min-width: 0;
 }
 
-/* ── Pre-scripts: tray row trigger + badge ───────────────────────────── */
+/* ── Pre-scripts: tray header trigger + strip controls ───────────────── */
 
 /* Run-pipeline trigger button */
 .prescripts-trigger {
@@ -2875,47 +2876,6 @@ dialog form {
   50% {
     opacity: 0.4;
   }
-}
-
-/* Status badge (paso N/M, check, x).
- * Responsive: shrinks before the branch selector but never below ~36px
- * (enough to show a short uptime like "9s"). Full info lives in the
- * `title` attribute so the user can hover for context. */
-.prestep-badge {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
-  color: var(--muted);
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 110px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.prestep-badge .prestep-step,
-.prestep-badge .prestep-elapsed {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.prestep-badge .prestep-elapsed {
-  font-variant-numeric: tabular-nums;
-  opacity: 0.85;
-}
-[data-theme='dark'] .prestep-badge {
-  background: rgba(255, 255, 255, 0.1);
-}
-.prestep-badge.ok {
-  background: var(--running);
-  color: #fff;
-}
-.prestep-badge.err {
-  background: var(--error);
-  color: #fff;
 }
 
 /* Cancel chip */
@@ -3233,17 +3193,112 @@ dialog form {
 
 /* Global pipeline trigger — lives in the tray header now, one for the whole
  * app instead of one per group row. */
-/* The popover is a fixed 410px non-resizable window, so this host must give
- * way rather than widen the header: the elapsed time inside the badge grows
- * as the pipeline runs, and without `min-width: 0` a flex item keeps its
- * min-content width, so the badge's own ellipsis never gets a chance and the
- * tray gains a horizontal scrollbar. */
+/* This host must give way rather than widen the header row: without
+ * `min-width: 0` a flex item keeps its min-content width and the tray gains a
+ * horizontal scrollbar. The run's status (step, elapsed time) used to grow
+ * here; it now lives in the pipeline strip under the row. */
 .pipeline-trigger-host {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
   flex: 0 1 auto;
+}
+
+/* ── Status strips under the tray header row (update, pipeline) ───────
+ * Full-bleed rows inside the sticky header: the negative margins reach the
+ * header's own side and bottom padding, so the last strip sits on the
+ * header's bottom border with its progress bar along that edge. */
+.tray-strips {
+  margin: 8px -14px -10px;
+}
+.tray-strips[hidden],
+.tray-strip[hidden] {
+  display: none;
+}
+.tray-strip {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  min-width: 0;
+  padding: 3px 10px 3px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tray-strip > .icon {
+  font-size: 12px;
+}
+.tray-strip .strip-muted {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.tray-strip .strip-title {
+  font-weight: 500;
+  flex: 0 0 auto;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tray-strip .strip-detail {
+  color: var(--muted);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tray-strip .strip-spacer {
+  flex: 1 1 auto;
+  min-width: 4px;
+}
+.tray-strip .uptime {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.tray-header .tray-strip button.ghost.strip-text-btn {
+  font-size: 11px;
+  padding: 2px 7px;
+  font-weight: 500;
+  flex-shrink: 0;
+  box-shadow: none;
+}
+.tray-strip .strip-ok {
+  color: var(--running);
+}
+.tray-strip .strip-err {
+  color: var(--error);
+}
+.tray-strip .strip-warn {
+  color: #b58105;
+}
+[data-theme='dark'] .tray-strip .strip-warn {
+  color: var(--warn);
+}
+.strip-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  transition: width 0.25s linear;
+  pointer-events: none;
+}
+.strip-progress.indeterminate {
+  width: 30%;
+  animation: strip-indeterminate 1.3s ease-in-out infinite;
+  transition: none;
+}
+@keyframes strip-indeterminate {
+  0% {
+    left: -30%;
+  }
+  100% {
+    left: 100%;
+  }
 }
 
 /* ================================================================
