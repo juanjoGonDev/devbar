@@ -1,6 +1,6 @@
 {
   "name": "devbar",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "Menu bar service launcher for macOS, Windows and Linux",
   "main": "build/src/main.js",
   "packageManager": "pnpm@10.32.1",
@@ -43,6 +43,8 @@
   "devDependencies": {
     "@electron/packager": "20.3.0",
     "@fontsource/noto-color-emoji": "5.3.2",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "@types/debug": "4.1.13",
     "@types/electron-positioner": "4.1.4",
     "@types/js-yaml": "4.0.9",
@@ -67,8 +69,10 @@
     "vitest": "5.0.2"
   },
   "dependencies": {
+    "@noble/ciphers": "2.4.0",
     "electron-store": "11.0.2",
     "menubar": "9.5.3",
+    "qrcode-generator": "2.0.4",
     "uuid": "14.0.2"
   },
   "pnpm": {

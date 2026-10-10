@@ -14,7 +14,13 @@
  * chdir'd into it: the relative `-p tsconfig.*.json` resolves the same way,
  * without a build script mutating the cwd of whatever started it.
  *
- * The two expensive steps (tsc, esbuild) are injected so the copy/clean
+ * The phone page of «Control remoto» is the one renderer that is not run
+ * from tsc's per-module emit: it is served to LAN browsers as ONE esbuild
+ * bundle (its @noble crypto included), built over tsc's remote.js, and the
+ * per-module copies tsc left beside it are removed — the server never hands
+ * them out, so they would only be dead weight in every package.
+ *
+ * The expensive steps (tsc, esbuild) are injected so the copy/clean
  * choreography around them — what is wiped, what order the projects compile
  * in, which renderer files ship — is testable without a real compile.
  */
@@ -32,6 +38,8 @@ export interface BuildDeps {
   compile: (project: string) => void;
   /** Bundle the preload entry point into a single CommonJS file. */
   bundlePreload: (entry: string, outfile: string) => Promise<void>;
+  /** Bundle the phone page into a single browser ES module. */
+  bundleRemote: (entry: string, outfile: string) => Promise<void>;
 }
 
 /** The real toolchain: the repo's own tsc and esbuild. */
@@ -56,6 +64,20 @@ export function defaultBuildDeps(root: string): BuildDeps {
         outfile,
       });
     },
+    bundleRemote: async (entry, outfile) => {
+      await esbuild.build({
+        entryPoints: [entry],
+        bundle: true,
+        platform: 'browser',
+        format: 'esm',
+        // Phones a few years old: iOS 14.5 Safari, Chrome/Firefox 90. (Not
+        // Safari 14.0: esbuild cannot lower a destructuring bug it has.)
+        target: ['safari14.1', 'chrome90', 'firefox90'],
+        // The @noble licence headers travel with the code they cover.
+        legalComments: 'inline',
+        outfile,
+      });
+    },
   };
 }
 
@@ -75,10 +97,19 @@ export async function buildApp(
 
   const rendererOut = path.join(root, 'build', 'renderer');
   fs.mkdirSync(rendererOut, { recursive: true });
+  await deps.bundleRemote(
+    path.join(root, 'renderer', 'remote.ts'),
+    path.join(rendererOut, 'remote.js'),
+  );
+  fs.rmSync(path.join(rendererOut, 'remote'), { recursive: true, force: true });
+  fs.rmSync(path.join(rendererOut, 'remote.js.map'), { force: true });
+
+  fs.mkdirSync(rendererOut, { recursive: true });
   for (const name of fs.readdirSync(path.join(root, 'renderer'))) {
     // Only the assets the window loads as-is: the renderer's .ts sources are
     // the tsc emit's job, and copying them would ship source into the build.
-    if (name.endsWith('.html') || name.endsWith('.css')) {
+    // The phone page also needs its web manifest and home-screen icons.
+    if (/\.(html|css|webmanifest|png)$/.test(name)) {
       fs.copyFileSync(
         path.join(root, 'renderer', name),
         path.join(rendererOut, name),

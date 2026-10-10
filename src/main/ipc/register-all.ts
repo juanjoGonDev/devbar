@@ -8,6 +8,7 @@ import {
   type CustomIconUploadDeps,
 } from '../custom-icon-upload.js';
 import { registerLogsIpc, type LogsIpcDeps } from './logs-ipc.js';
+import { registerRemoteIpc, type RemoteIpcDeps } from './remote-ipc.js';
 import { registerRuntimeIpc, type RuntimeIpcDeps } from './runtime-ipc.js';
 import { registerWindowIpc, type WindowIpcDeps } from './window-ipc.js';
 
@@ -80,6 +81,7 @@ export interface RegisterAllDeps {
   releasesUrl: string;
   iconBattery: unknown;
   customIconsChanged: IconsIpcDeps['customIconsChanged'];
+  remote: RemoteIpcDeps['remote'];
 }
 
 export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
@@ -107,6 +109,7 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
     confirm: host.messageBox,
     customIconsChanged: deps.customIconsChanged,
   });
+  registerRemoteIpc(ipc, deps);
   registerAppIpc(ipc, {
     ...deps,
     files: host.files,

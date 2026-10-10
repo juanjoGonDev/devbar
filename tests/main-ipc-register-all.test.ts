@@ -164,6 +164,12 @@ function harness(
     releasesUrl: 'https://github.test/releases',
     iconBattery: {},
     customIconsChanged: () => calls.push('customIconsChanged'),
+    remote: {
+      status: () => {
+        calls.push('remoteStatus');
+        return {};
+      },
+    },
     ...overrides,
   } as unknown as RegisterAllDeps;
   const ipc = recordingIpc();
@@ -183,6 +189,7 @@ describe('src/main/ipc/register-all.ts', () => {
           'logs:list',
           'window:openConfig',
           'updates:status',
+          'remote:getStatus',
         ]),
       );
       expect(h.ipc.channels().length).toBeGreaterThan(50);
@@ -207,6 +214,12 @@ describe('src/main/ipc/register-all.ts', () => {
       expect(h.calls.some((call) => call.startsWith('externalAsync:'))).toBe(
         true,
       );
+    });
+
+    it("hands the remote-control channels the app's remote control", () => {
+      const h = harness();
+      h.ipc.invoke('remote:getStatus');
+      expect(h.calls).toContain('remoteStatus');
     });
 
     it('passes the dev-panel flag from the host through', () => {

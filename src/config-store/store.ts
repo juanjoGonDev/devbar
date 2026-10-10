@@ -10,6 +10,7 @@ import type {
   PreStep,
 } from '../domain-types.js';
 import { normalizeCustomIcons } from '../custom-icons.js';
+import { OWNER_ONLY, restrictToOwner } from './owner-only.js';
 import {
   normalizeGroup,
   normalizePreStep,
@@ -21,6 +22,7 @@ import {
   normalizePinnedPopover,
   type PinnedPopover,
 } from '../main/pinned-popover-geometry.js';
+import type { RemoteControlState } from '../main/remote/device-store.js';
 import {
   legacyLinuxConfigFile,
   migrateLegacyLinuxStore,
@@ -60,6 +62,8 @@ type StoreState = {
   customIcons: CustomIcon[];
   /** Where the user pinned the tray popover; absent while it is anchored. */
   trayPopover?: PinnedPopover;
+  /** «Control remoto»: switches and linked devices (token hashes only). */
+  remoteControl?: RemoteControlState;
   /** Absent until a v1/v2 store is actually converted — see the schema. */
   _services_pre_v3_backup?: unknown[];
   /** Original emoji of every icon the Lucide migration replaced, keyed
@@ -94,6 +98,13 @@ const schema = {
   _icons_pre_lucide_backup: { type: 'object' },
   // No default either: absent IS "anchored to the tray icon".
   trayPopover: { type: 'object' },
+  // Its own key, never part of globalSettings: those reach every window and
+  // every export/backup, and this holds the linked devices' public keys and
+  // this computer's identity seed, as it is — which is why the whole file is
+  // readable by its user only (see `configFileMode` below). Absent means
+  // "never configured" — src/main/remote/device-store.ts reads that as the
+  // defaults (off).
+  remoteControl: { type: 'object' },
 } as const;
 
 /**
@@ -105,8 +116,14 @@ const schema = {
 const storeOptions: {
   name: string;
   schema: typeof schema;
+  configFileMode: number;
   cwd?: string;
-} = { name: 'config', schema };
+} = {
+  name: 'config',
+  schema,
+  // It holds «Control remoto»'s identity seed: user-only, like ~/.ssh keys.
+  configFileMode: OWNER_ONLY,
+};
 const storeDir = packagedAppHome();
 if (storeDir !== undefined) {
   storeOptions.cwd = storeDir;
@@ -138,6 +155,9 @@ if (storeDir !== undefined) {
   }
 }
 const store = new Store<StoreState>(storeOptions);
+// conf applies `configFileMode` only when it writes: a file an earlier
+// version left readable by others is tightened here, on the next start.
+restrictToOwner(store.path);
 
 function runMigration(): void {
   // The whole decision — pipeline hoisting (seeing the PRISTINE raw group
@@ -271,6 +291,14 @@ export function getTrayPopover(): PinnedPopover | null {
 export function saveTrayPopover(value: PinnedPopover | null): void {
   if (value) store.set('trayPopover', value);
   else store.delete('trayPopover');
+}
+
+/** Raw: src/main/remote/device-store.ts normalizes what it reads. */
+export function getRemoteControl(): unknown {
+  return store.get('remoteControl');
+}
+export function saveRemoteControl(value: RemoteControlState): void {
+  store.set('remoteControl', value);
 }
 
 /** The schema version currently on disk — what an export/backup is labelled. */

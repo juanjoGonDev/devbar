@@ -33,6 +33,15 @@ interface BannerCta {
   action: string;
 }
 
+interface BannerOptions {
+  cta?: BannerCta;
+  /**
+   * False when the caller keeps its own record of this notice (a connected
+   * phone, which «Control remoto» logs for every phone but that one).
+   */
+  record?: boolean;
+}
+
 export interface NotificationDeps {
   createWindow: (options: BrowserWindowConstructorOptions) => BrowserWindow;
   createNotification: (options: NotificationConstructorOptions) => Notification;
@@ -48,13 +57,19 @@ export interface NotificationDeps {
   platform: NodeJS.Platform;
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
   clearTimer?: (timer: NodeJS.Timeout) => void;
+  /** Every notice that reaches the user, for «Control remoto»'s log. */
+  onNotice?: (notice: {
+    title: string;
+    body: string;
+    action: string | null;
+  }) => void;
 }
 
 export interface Notifications {
   showBannerNotification: (
     title: string,
     body: string,
-    options?: { cta?: BannerCta },
+    options?: BannerOptions,
   ) => void;
   showCustomBanner: (
     title: string,
@@ -142,14 +157,17 @@ export function createNotifications(deps: NotificationDeps): Notifications {
     if (action === 'open-about') deps.openConfig('about');
     else if (action === 'open-changelog') deps.openConfig('about-changelog');
     else if (action === 'install-update') deps.applyUpdate();
+    else if (action === 'open-remote') deps.openConfig('remote');
   }
 
   /** Prefer the real macOS notification, fall back to our own banner. */
   function showBannerNotification(
     title: string,
     body: string,
-    options: { cta?: BannerCta } = {},
+    options: BannerOptions = {},
   ): void {
+    if (options.record !== false)
+      deps.onNotice?.({ title, body, action: options.cta?.action ?? null });
     if (!deps.notificationsSupported()) {
       console.log('[notify] sistema no soportado → banner propio');
       showCustomBanner(title, body, options);

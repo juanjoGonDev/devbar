@@ -451,6 +451,15 @@ describe('src/main/electron-host.ts', () => {
       expect(h.nativeWayland).toBe(false);
     });
   });
+  describe('the keychain', () => {
+    // Ad-hoc signed builds are a new app to macOS on every update, so the
+    // keychain item one sealed with is not one the next can open: «Control
+    // remoto» keeps its key in the user-only config file instead.
+    it('offers no safeStorage to seal secrets with', () => {
+      expect(host()).not.toHaveProperty('safeStorage');
+    });
+  });
+
   describe('bug report and crash hooks', () => {
     it('previews the report with its problem counts, copying nothing', () => {
       const preview = host().reportPreview();

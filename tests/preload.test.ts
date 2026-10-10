@@ -484,6 +484,79 @@ const FORWARDS: readonly Forward[] = [
     'window:confirmCloseConfig',
     [],
   ],
+  ['getRemoteStatus', (api) => api.getRemoteStatus(), 'remote:getStatus', []],
+  [
+    'setRemoteEnabled',
+    (api) => api.setRemoteEnabled(true),
+    'remote:setEnabled',
+    [{ enabled: true }],
+  ],
+  [
+    'setRemoteAutoUnlink',
+    (api) => api.setRemoteAutoUnlink(false),
+    'remote:setAutoUnlink',
+    [{ enabled: false }],
+  ],
+  [
+    'setRemotePort',
+    (api) => api.setRemotePort(50123),
+    'remote:setPort',
+    [{ port: 50123 }],
+  ],
+  [
+    'renameRemoteDevice',
+    (api) => api.renameRemoteDevice('d1', 'Tablet'),
+    'remote:renameDevice',
+    [{ id: 'd1', name: 'Tablet' }],
+  ],
+  [
+    'unlinkRemoteDevice',
+    (api) => api.unlinkRemoteDevice('d1'),
+    'remote:unlinkDevice',
+    [{ id: 'd1' }],
+  ],
+  [
+    'startRemotePairing',
+    (api) => api.startRemotePairing(),
+    'remote:startPairing',
+    [],
+  ],
+  [
+    'cancelRemotePairing',
+    (api) => api.cancelRemotePairing(),
+    'remote:cancelPairing',
+    [],
+  ],
+  [
+    'checkRemotePairCode',
+    (api) => api.checkRemotePairCode('r1', '482913'),
+    'remote:checkPairCode',
+    [{ requestId: 'r1', code: '482913' }],
+  ],
+  [
+    'respondRemotePairing',
+    (api) => api.respondRemotePairing('r1', true, '482913'),
+    'remote:respondPairing',
+    [{ requestId: 'r1', accept: true, code: '482913' }],
+  ],
+  [
+    'setRemoteNotifyConnections',
+    (api) => api.setRemoteNotifyConnections(false),
+    'remote:setNotifyConnections',
+    [{ enabled: false }],
+  ],
+  [
+    'getRemoteSecurityCode',
+    (api) => api.getRemoteSecurityCode('d1'),
+    'remote:securityCode',
+    [{ id: 'd1' }],
+  ],
+  [
+    'renewRemoteIdentity',
+    (api) => api.renewRemoteIdentity(),
+    'remote:renewIdentity',
+    [],
+  ],
 ];
 
 type SubscriptionCase = readonly [
@@ -517,6 +590,17 @@ const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
     'onCustomIconsChanged',
     (api, cb) => api.onCustomIconsChanged(cb),
     'customIcons:changed',
+  ],
+  ['onRemoteChanged', (api, cb) => api.onRemoteChanged(cb), 'remote:changed'],
+  [
+    'onRemotePairRequest',
+    (api, cb) => api.onRemotePairRequest(cb),
+    'remote:pairRequest',
+  ],
+  [
+    'onRemotePairRequestClosed',
+    (api, cb) => api.onRemotePairRequestClosed(cb),
+    'remote:pairRequestClosed',
   ],
 ];
 
@@ -593,6 +677,26 @@ describe('src/preload.ts', () => {
         expect(ipc.removed).toEqual([{ channel, handler: registered.handler }]);
       },
     );
+
+    it('registers onRemotePairCodeClaimed with a payload-free callback', () => {
+      let calls = 0;
+      const dispose = exposedApi().onRemotePairCodeClaimed(() => {
+        calls += 1;
+      });
+
+      expect(ipc.on.map((entry) => entry.channel)).toEqual([
+        'remote:pairCodeClaimed',
+      ]);
+      const registered = ipc.on[0];
+      if (!registered) throw new Error('nothing was registered');
+      registered.handler({ sender: 'main' }, null);
+      expect(calls).toBe(1);
+
+      dispose();
+      expect(ipc.removed).toEqual([
+        { channel: 'remote:pairCodeClaimed', handler: registered.handler },
+      ]);
+    });
 
     it('registers onConfigCloseRequested with a payload-free callback', () => {
       let calls = 0;

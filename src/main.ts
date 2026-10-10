@@ -40,11 +40,12 @@ import { createNotifications } from './main/notification-banner.js';
 import {
   anyAppWindowOpen,
   applyDockVisibility,
+  broadcastTheme,
   createWindowRegistry,
   refreshWindowBackgrounds,
   sendToRenderers,
-  themeTargets,
 } from './main/renderer-bus.js';
+import { remoteControlFor } from './main/remote/remote-wiring.js';
 import { createScheduleRunner } from './main/schedule-runner.js';
 import { createShutdownController } from './main/shutdown.js';
 import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
@@ -55,7 +56,7 @@ import { buildTrayContextMenu } from './main/tray-view.js';
 import { createTrayHost } from './main/tray-host.js';
 import { createUpdater } from './main/updater.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
-import type { Group } from './domain-types.js';
+import type { Group, ThemePreference } from './domain-types.js';
 
 /**
  * Wiring only. Every decision this process makes lives under `src/main/`; what
@@ -205,6 +206,7 @@ const appWindows = createAppWindows({
   onConfirmWindowClosed: (token) => {
     if (confirms.hasPending(token)) confirms.resolveConfirm(token, 'cancel');
   },
+  onConfigClosed: () => remote.cancelPairing(),
 });
 
 const notifications = createNotifications({
@@ -218,6 +220,7 @@ const notifications = createNotifications({
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
   applyUpdate: () => void updater.applyUpdateAndReport(),
   platform: process.platform,
+  onNotice: (notice) => remote.notice(notice),
 });
 
 const updater = createUpdater({
@@ -264,10 +267,32 @@ function runningCommandIds(): string[] {
     .map((entry) => entry.id);
 }
 
+/** What both the IPC handlers and «Control remoto» drive. */
+const wiring = {
+  host,
+  configStore,
+  processManager,
+  gitManager,
+  branchesChanged,
+  preScriptRunner,
+  snapshots,
+  confirms,
+  updater,
+  groupErrors,
+  broadcast,
+  repaintWindows,
+  registry,
+  sendTheme: (theme: ThemePreference) => broadcastTheme(registry, theme),
+};
+
+// «Control remoto»: the LAN server for linked phones, off unless enabled.
+const remote = remoteControlFor({ ...wiring, notifications });
+
 const shutdown = createShutdownController({
   isPrimary,
   smokeMode: SMOKE_MODE,
   repoWatcher,
+  remoteServer: remote,
   preScriptRunner,
   processManager,
   sessionResume: () => sessionResume,
@@ -327,34 +352,21 @@ const devHooks = {
 function registerIpc(): void {
   registerAllIpc(ipcMain, {
     ...host,
-    host,
-    configStore,
-    processManager,
+    ...wiring,
     configIo,
-    gitManager,
-    branchesChanged,
-    preScriptRunner,
-    snapshots,
-    confirms,
     logWindows,
     appWindows,
     notifications,
     trayHost,
-    updater,
-    groupErrors,
-    broadcast,
     syncRepoWatchers,
     expandTilde,
-    repaintWindows,
-    sendTheme: (theme) => {
-      for (const wc of themeTargets(registry)) wc.send('settings:theme', theme);
-    },
     fetchReleases: (limit) =>
       updateCheck.fetchReleases({ ...UPDATE_REPO, limit }),
     releasesUrl: `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}/releases`,
     iconBattery: withSpanishSearch(ICON_BATTERY),
     customIconsChanged: (icons) =>
       sendToRenderers(registry, 'customIcons:changed', icons),
+    remote,
   });
   registerDevPanel(
     host.devPanelAvailable,
@@ -367,9 +379,12 @@ function registerIpc(): void {
  * Work that only makes sense once the tray exists: the 300 ms delay lets the
  * renderer paint its initial empty state before boot auto-start floods it, and
  * the schedule loop is aligned to the wall-clock minute so a 13:02 schedule
- * fires at ~13:02:00 rather than up to 59 s late.
+ * fires at ~13:02:00 rather than up to 59 s late. «Control remoto» starts
+ * here too, never awaited: opening its LAN server must not hold back the
+ * tray popover.
  */
 function scheduleBootWork(): void {
+  void remote.startIfEnabled();
   setTimeout(() => void startup.autoStartAllMarkedCommands(), 300);
   setTimeout(() => void schedules.checkSchedules(new Date()), 1000);
   schedules.startScheduleLoop();

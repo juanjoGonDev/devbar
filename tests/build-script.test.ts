@@ -72,25 +72,45 @@ interface BuildRun {
   root: string;
   events: string[];
   bundles: { entry: string; outfile: string }[];
+  remoteBundles: { entry: string; outfile: string }[];
   staleAtFirstCompile: boolean | null;
 }
 
 async function build(root: string): Promise<BuildRun> {
   const events: string[] = [];
   const bundles: { entry: string; outfile: string }[] = [];
+  const remoteBundles: { entry: string; outfile: string }[] = [];
   let staleAtFirstCompile: boolean | null = null;
   await buildApp(root, {
     compile: (project) => {
       staleAtFirstCompile ??= existsSync(join(root, 'build', 'stale.txt'));
       events.push(`compile:${project}`);
+      if (project === 'tsconfig.renderer.json') {
+        // What tsc emits for the phone page: one module per source file.
+        mkdirSync(join(root, 'build', 'renderer', 'remote'), {
+          recursive: true,
+        });
+        writeFileSync(join(root, 'build', 'renderer', 'remote.js'), 'tsc');
+        writeFileSync(join(root, 'build', 'renderer', 'remote.js.map'), '{}');
+        writeFileSync(
+          join(root, 'build', 'renderer', 'remote', 'app.js'),
+          'tsc',
+        );
+      }
     },
     bundlePreload: (entry, outfile) => {
       events.push('bundle');
       bundles.push({ entry, outfile });
       return Promise.resolve();
     },
+    bundleRemote: (entry, outfile) => {
+      events.push('bundle-remote');
+      remoteBundles.push({ entry, outfile });
+      writeFileSync(outfile, 'bundle');
+      return Promise.resolve();
+    },
   });
-  return { root, events, bundles, staleAtFirstCompile };
+  return { root, events, bundles, remoteBundles, staleAtFirstCompile };
 }
 
 describe('scripts/build.ts', () => {
@@ -100,7 +120,7 @@ describe('scripts/build.ts', () => {
   });
 
   describe('buildApp', () => {
-    it('compiles renderer first and node last, then bundles the preload', async () => {
+    it('compiles renderer first and node last, then bundles the preload and the phone page', async () => {
       // Both projects emit src/ipc-contract and src/domain-types into
       // build/src and the main process must load the NodeNext emit, so the
       // node compile has to be the one that wins.
@@ -109,7 +129,31 @@ describe('scripts/build.ts', () => {
         'compile:tsconfig.renderer.json',
         'compile:tsconfig.node.json',
         'bundle',
+        'bundle-remote',
       ]);
+    });
+
+    it("bundles the phone page into build/renderer/remote.js, over tsc's emit", async () => {
+      const run = await build(makeRoot());
+      const out = join(run.root, 'build', 'renderer');
+
+      expect(run.remoteBundles).toEqual([
+        {
+          entry: join(run.root, 'renderer', 'remote.ts'),
+          outfile: join(out, 'remote.js'),
+        },
+      ]);
+      expect(readFileSync(join(out, 'remote.js'), 'utf8')).toBe('bundle');
+    });
+
+    it('ships no per-module copy of the phone page next to its bundle', async () => {
+      // The server only serves the bundle: modules left beside it would be
+      // dead weight in every package, and a stale source map would lie.
+      const run = await build(makeRoot());
+      const out = join(run.root, 'build', 'renderer');
+
+      expect(existsSync(join(out, 'remote'))).toBe(false);
+      expect(existsSync(join(out, 'remote.js.map'))).toBe(false);
     });
 
     it('wipes the previous build BEFORE the first compile', async () => {
@@ -143,6 +187,18 @@ describe('scripts/build.ts', () => {
       expect(
         readFileSync(join(run.root, 'build', 'renderer', 'tray.css'), 'utf8'),
       ).toBe('body{margin:0}');
+    });
+
+    it("copies the phone page's web manifest and PNG icons", async () => {
+      const root = makeRoot();
+      writeFileSync(join(root, 'renderer', 'remote.webmanifest'), '{}');
+      writeFileSync(join(root, 'renderer', 'remote-icon-192.png'), 'png');
+      const run = await build(root);
+      const out = join(run.root, 'build', 'renderer');
+      expect(readFileSync(join(out, 'remote.webmanifest'), 'utf8')).toBe('{}');
+      expect(readFileSync(join(out, 'remote-icon-192.png'), 'utf8')).toBe(
+        'png',
+      );
     });
 
     it('does NOT copy renderer sources into the build', async () => {
@@ -230,7 +286,7 @@ describe('scripts/build.ts', () => {
       const root = makeRoot();
       rmSync(join(root, 'build'), { recursive: true, force: true });
       const run = await build(root);
-      expect(run.events).toHaveLength(3);
+      expect(run.events).toHaveLength(4);
       expect(existsSync(join(run.root, 'build', 'renderer', 'tray.html'))).toBe(
         true,
       );
@@ -292,5 +348,24 @@ describe('scripts/build.ts', () => {
       expect(emitted).toContain('module.exports');
       expect(emitted).not.toMatch(/^import /m);
     });
+
+    it('bundles the real phone page into one self-contained ES module', async () => {
+      // The page is served over plain HTTP from a whitelist of one script:
+      // every import — the @noble crypto above all — must be inside it.
+      const root = makeRoot();
+      const outfile = join(root, 'build', 'renderer', 'remote.js');
+      const repo = join(import.meta.dirname, '..');
+
+      await defaultBuildDeps(repo).bundleRemote(
+        join(repo, 'renderer', 'remote.ts'),
+        outfile,
+      );
+
+      const emitted = readFileSync(outfile, 'utf8');
+      expect(emitted).toContain('devbar-rc/1');
+      expect(emitted).not.toMatch(/^\s*import\b/m);
+      expect(emitted).not.toMatch(/from\s*["']@noble/);
+      expect(emitted).not.toMatch(/require\(/);
+    }, 30_000);
   });
 });

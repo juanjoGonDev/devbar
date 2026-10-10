@@ -14,6 +14,7 @@ import {
 } from '../ipc-validators.js';
 import type { GroupState } from '../../ipc-contract.js';
 import type { ThemePreference } from '../../domain-types.js';
+import { saveSettings } from '../settings-save.js';
 
 /**
  * Everything the configuration surfaces write: groups, commands, actions, the
@@ -379,21 +380,7 @@ export function registerConfigIpc(
 
   // ── Settings ──────────────────────────────────────────────────────────
   ipc.handle('settings:get', () => configStore.getGlobalSettings());
-  ipc.handle('settings:save', (_e: IpcMainInvokeEvent, rawPatch: unknown) => {
-    const next = configStore.saveGlobalSettings(
-      ipcGlobalSettingsPatch(rawPatch),
-    );
-    deps.applyAutostart(next.autostart);
-    if (next.theme !== undefined) {
-      deps.refreshWindowBackgrounds();
-      // Push the resolved preference on its OWN channel. Renderers used to
-      // re-read the settings off the `groups:update` broadcast, which fires
-      // once per non-silenced warn/error line, in every open window — a
-      // synchronous full config read + schema validation per line on the main
-      // thread.
-      deps.sendTheme(next.theme);
-    }
-    broadcast();
-    return next;
-  });
+  ipc.handle('settings:save', (_e: IpcMainInvokeEvent, rawPatch: unknown) =>
+    saveSettings(deps, ipcGlobalSettingsPatch(rawPatch)),
+  );
 }

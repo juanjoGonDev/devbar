@@ -322,6 +322,54 @@ describe('src/main/updater.ts', () => {
     });
   });
 
+  describe('installStagedHeadless', () => {
+    it('installs a staged update without asking, for a surface with no dialog', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const messageBox = vi.fn(() => Promise.resolve({ response: 0 }));
+      const h = harness({ messageBox });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+
+      expect(h.updater.canInstallStaged()).toBe(true);
+      await expect(h.updater.installStagedHeadless()).resolves.toEqual({
+        ok: true,
+        quitting: true,
+        inPlace: true,
+      });
+      expect(messageBox).not.toHaveBeenCalled();
+      expect(h.calls).toContain('spawnSwap');
+      expect(h.updater.status().phase).toEqual({
+        state: 'restarting',
+        version: '1.3.0',
+      });
+      log.mockRestore();
+    });
+
+    it('refuses while nothing is staged', async () => {
+      const h = harness({ stageableAsset: () => null });
+      await h.updater.runUpdateCheck();
+
+      expect(h.updater.canInstallStaged()).toBe(false);
+      await expect(h.updater.installStagedHeadless()).resolves.toEqual({
+        ok: false,
+        error: 'not_staged',
+      });
+      expect(h.calls).not.toContain('spawnSwap');
+    });
+
+    it('refuses when this install cannot be swapped in place', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const h = harness({
+        canInstallInPlace: (_installed): _installed is string => false,
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+
+      expect(h.updater.canInstallStaged()).toBe(false);
+      log.mockRestore();
+    });
+  });
+
   describe('installedBundleId', () => {
     it('reads the identifier back from the running bundle', () => {
       const h = harness();

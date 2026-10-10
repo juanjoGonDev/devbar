@@ -133,9 +133,11 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
     }
   }
 
-  // Deep-link from the tray version chip: jump to "Acerca de" + open changelog.
+  // Deep links: the tray version chip jumps to "Acerca de" (+ changelog);
+  // a «se ha conectado» notice jumps to «Control remoto».
   if (window.api.onConfigGoto) {
     window.api.onConfigGoto((target) => {
+      if (target === 'remote') showSection('remote');
       if (target === 'about' || target === 'about-changelog')
         showSection('about');
       if (target === 'about-changelog') {

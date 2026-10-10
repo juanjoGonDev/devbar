@@ -262,6 +262,23 @@ describe('src/main/lifecycle.ts', () => {
       expect(h.calls).toContain('scheduleBootWork');
     });
 
+    // Boot work includes «Control remoto», which opens a LAN server: none of
+    // it may run before the popover is up and painted.
+    it('holds the boot work until the tray and its popover are ready, then runs it after the first paint', () => {
+      const h = harness();
+      h.events.get('after-create-window')?.();
+      expect(h.calls).not.toContain('scheduleBootWork');
+
+      h.events.get('ready')?.();
+
+      expect(h.calls.slice(-4)).toEqual([
+        'setImage',
+        'setTitle:',
+        'broadcast',
+        'scheduleBootWork',
+      ]);
+    });
+
     it('leaves the tray title alone off macOS', () => {
       const h = harness({ isMac: false });
       h.events.get('ready')?.();

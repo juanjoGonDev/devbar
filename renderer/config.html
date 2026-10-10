@@ -82,6 +82,16 @@
         <button
           type="button"
           class="nav-item"
+          data-target="remote"
+          aria-label="Control remoto"
+        >
+          <span class="nav-ico"
+            ><span class="icon" data-icon="monitor-smartphone"></span></span
+          ><span class="nav-label">Control remoto</span>
+        </button>
+        <button
+          type="button"
+          class="nav-item"
           data-target="backup"
           aria-label="Copias de seguridad"
         >
@@ -228,6 +238,179 @@
         <!-- ── Pipeline de pre-scripts ────────────────────────────── -->
         <section class="config-section" data-section="prescripts">
           <div id="prescripts-pipeline-root"></div>
+        </section>
+
+        <!-- ── Control remoto ─────────────────────────────────────── -->
+        <!-- Wired by renderer/config/remote-pane.ts; every id below is
+             resolved in renderer/config/remote-elements.ts. -->
+        <section class="config-section" data-section="remote">
+          <section class="remote-card remote-status-card" aria-label="Estado">
+            <div class="remote-status-head">
+              <span class="remote-tile"
+                ><span class="icon" data-icon="monitor-smartphone"></span
+              ></span>
+              <div class="remote-status-text">
+                <label for="remote-enabled" class="remote-title"
+                  >Permitir control remoto</label
+                >
+                <p id="remote-status-line" class="remote-status-line">
+                  <span id="remote-state" class="remote-state">Desactivado</span
+                  ><span id="remote-endpoint" class="remote-endpoint" hidden>
+                    ·
+                    <code id="remote-address" class="remote-address"></code
+                  ></span>
+                </p>
+              </div>
+              <button
+                type="button"
+                id="remote-port-toggle"
+                class="remote-icon-btn"
+                aria-controls="remote-port-settings"
+                aria-expanded="false"
+                aria-label="Ajustes del servicio"
+                title="Ajustes del servicio"
+              >
+                <span class="icon" data-icon="settings"></span>
+              </button>
+              <input
+                type="checkbox"
+                id="remote-enabled"
+                class="remote-switch"
+                aria-describedby="remote-status-line"
+                disabled
+              />
+            </div>
+            <p id="remote-error" class="remote-error" hidden></p>
+            <p id="remote-key-error" class="remote-error" hidden></p>
+            <div id="remote-port-settings" class="remote-port-strip" hidden>
+              <div class="remote-port-row">
+                <label for="remote-port">Puerto</label>
+                <input
+                  type="number"
+                  id="remote-port"
+                  min="1024"
+                  max="65535"
+                  step="1"
+                  inputmode="numeric"
+                  aria-describedby="remote-port-hint remote-port-error"
+                  disabled
+                />
+                <button
+                  type="button"
+                  id="remote-port-apply"
+                  class="small-btn"
+                  disabled
+                >
+                  Aplicar
+                </button>
+                <small id="remote-port-hint" class="remote-port-hint"
+                  >El acceso directo del móvil tendrá que volver a
+                  añadirse.</small
+                >
+              </div>
+              <p id="remote-port-error" class="remote-error" hidden></p>
+            </div>
+            <p class="remote-secure-note">
+              <span class="icon" data-icon="lock"></span>
+              <span
+                >Cifrado de extremo a extremo · clave nueva en cada
+                conexión</span
+              >
+            </p>
+          </section>
+
+          <section class="remote-group" aria-labelledby="remote-devices-title">
+            <div class="remote-group-head">
+              <h2 id="remote-devices-title">Dispositivos</h2>
+              <span id="remote-device-count" class="remote-count">0</span>
+              <span class="spacer"></span>
+              <button
+                type="button"
+                id="remote-add-device"
+                class="small-btn primary with-icon"
+                aria-label="Añadir dispositivo"
+                title="Añadir dispositivo"
+                disabled
+              >
+                <span class="icon" data-icon="plus"></span> Añadir
+              </button>
+            </div>
+            <div class="remote-card">
+              <ul id="remote-devices" class="remote-devices"></ul>
+              <div id="remote-devices-empty" class="remote-empty">
+                <span class="remote-empty-glyph"
+                  ><span class="icon" data-icon="qr-code"></span
+                ></span>
+                <p class="remote-empty-title">Ningún dispositivo vinculado</p>
+                <p class="remote-empty-hint">
+                  Pulsa Añadir y escanea el código con la cámara del móvil.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section class="remote-group" aria-labelledby="remote-security-title">
+            <div class="remote-group-head">
+              <h2 id="remote-security-title">Seguridad</h2>
+            </div>
+            <div class="remote-card">
+              <label class="remote-row">
+                <span class="remote-row-text">
+                  <span id="remote-auto-unlink-label" class="remote-row-label"
+                    >Desvincular tras 30 días sin conexión</span
+                  >
+                  <span id="remote-auto-unlink-hint" class="remote-row-hint"
+                    >Un móvil perdido u olvidado deja de tener acceso
+                    solo.</span
+                  >
+                </span>
+                <input
+                  type="checkbox"
+                  id="remote-auto-unlink"
+                  class="remote-switch"
+                  aria-labelledby="remote-auto-unlink-label"
+                  aria-describedby="remote-auto-unlink-hint"
+                  disabled
+                />
+              </label>
+              <label class="remote-row">
+                <span class="remote-row-text">
+                  <span id="remote-notify-label" class="remote-row-label"
+                    >Avisar cuando un dispositivo se conecte</span
+                  >
+                  <span id="remote-notify-hint" class="remote-row-hint"
+                    >Si entra desde una IP nueva, avisa siempre.</span
+                  >
+                </span>
+                <input
+                  type="checkbox"
+                  id="remote-notify-connections"
+                  class="remote-switch"
+                  aria-labelledby="remote-notify-label"
+                  aria-describedby="remote-notify-hint"
+                  disabled
+                />
+              </label>
+              <div class="remote-row">
+                <span class="remote-row-text">
+                  <span class="remote-row-label">Clave del equipo</span>
+                  <span id="remote-renew-hint" class="remote-row-hint"
+                    >Renuévala si crees que alguien la conoce. Los móviles
+                    tendrán que verificarse otra vez.</span
+                  >
+                </span>
+                <button
+                  type="button"
+                  id="remote-renew-identity"
+                  class="small-btn"
+                  aria-label="Renovar clave del equipo"
+                  aria-describedby="remote-renew-hint"
+                >
+                  Renovar
+                </button>
+              </div>
+            </div>
+          </section>
         </section>
 
         <!-- ── Copias de seguridad ────────────────────────────────── -->
@@ -562,6 +745,157 @@
           <button type="submit" class="primary">Guardar</button>
         </div>
       </form>
+    </dialog>
+
+    <!-- «Control remoto»: the pairing QR (renderer/config/remote-pair-dialog.ts) -->
+    <dialog id="remote-pair-dialog" class="modal remote-modal">
+      <header class="modal-header">
+        <h2>Vincular dispositivo</h2>
+        <span class="spacer"></span>
+        <button
+          type="button"
+          class="modal-close"
+          data-close
+          aria-label="Cerrar"
+        >
+          <span class="icon" data-icon="x"></span>
+        </button>
+      </header>
+      <div class="modal-body remote-pair-body">
+        <div
+          id="remote-qr"
+          class="remote-qr"
+          role="img"
+          aria-label="Código QR para vincular un dispositivo"
+        ></div>
+        <p id="remote-pair-countdown" class="remote-countdown">
+          Generando código…
+        </p>
+        <div class="remote-progress">
+          <div id="remote-pair-progress" class="remote-progress-bar"></div>
+        </div>
+        <p id="remote-pair-error" class="remote-error" hidden></p>
+        <ol class="remote-steps">
+          <li>Conecta el móvil a la misma red que este equipo.</li>
+          <li>
+            Escanea el código con la cámara y ponle nombre al dispositivo.
+          </li>
+          <li>Acéptalo aquí escribiendo el código que muestra el móvil.</li>
+        </ol>
+      </div>
+      <div class="modal-actions remote-pair-actions">
+        <small class="muted">Un solo uso, se renueva cada 30 segundos.</small>
+        <span class="spacer"></span>
+        <button type="button" data-close>Cancelar</button>
+      </div>
+    </dialog>
+
+    <!-- «Control remoto»: a device's security code (remote-safety-dialog.ts) -->
+    <dialog id="remote-safety-dialog" class="modal remote-modal">
+      <header class="modal-header">
+        <h2>Código de seguridad</h2>
+        <span class="spacer"></span>
+        <button
+          type="button"
+          class="modal-close"
+          data-close
+          aria-label="Cerrar"
+        >
+          <span class="icon" data-icon="x"></span>
+        </button>
+      </header>
+      <div class="modal-body remote-pair-body">
+        <p id="remote-safety-device" class="remote-request-name"></p>
+        <p id="remote-safety-status" class="remote-verified"></p>
+        <div
+          id="remote-safety-qr"
+          class="remote-qr"
+          role="img"
+          aria-label="Código QR para verificar este dispositivo"
+        ></div>
+        <p id="remote-safety-hint" class="muted small remote-safety-hint"></p>
+        <div
+          id="remote-safety-code"
+          class="remote-safety-code"
+          aria-label="Código de seguridad"
+        ></div>
+        <p class="muted small">
+          Si el móvil muestra el mismo código en Ajustes › Seguridad, la
+          conexión entre los dos está cifrada con estas claves.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button type="button" data-close>Cerrar</button>
+      </div>
+    </dialog>
+
+    <!-- «Control remoto»: confirming «Desvincular» (remote-unlink-dialog.ts) -->
+    <dialog
+      id="remote-unlink-dialog"
+      class="modal remote-modal"
+      aria-labelledby="remote-unlink-title"
+      aria-describedby="remote-unlink-note"
+    >
+      <header class="modal-header">
+        <h2 id="remote-unlink-title">¿Desvincular este dispositivo?</h2>
+      </header>
+      <div class="modal-body">
+        <div id="remote-unlink-device" class="remote-unlink-device"></div>
+        <p id="remote-unlink-note" class="remote-unlink-note">
+          Perderá el acceso al momento. Para volver a usarlo tendrás que
+          vincularlo otra vez.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="remote-unlink-cancel" data-close>
+          Cancelar
+        </button>
+        <button type="button" id="remote-unlink-confirm" class="danger">
+          Desvincular
+        </button>
+      </div>
+    </dialog>
+
+    <!-- «Control remoto»: a phone asking to be linked (remote-request-dialog.ts) -->
+    <dialog id="remote-request-dialog" class="modal remote-modal">
+      <header class="modal-header">
+        <h2>¿Vincular este dispositivo?</h2>
+      </header>
+      <div class="modal-body remote-request-body">
+        <p class="muted small">
+          Alguien ha escaneado tu código desde la red local. Acéptalo solo si
+          eres tú.
+        </p>
+        <p id="remote-request-name" class="remote-request-name"></p>
+        <p id="remote-request-meta" class="muted small"></p>
+        <label for="remote-request-code" class="remote-code-label"
+          >Escribe el código que muestra el móvil</label
+        >
+        <input
+          type="text"
+          id="remote-request-code"
+          class="remote-verification remote-code-input"
+          inputmode="numeric"
+          autocomplete="off"
+          maxlength="7"
+          placeholder="000 000"
+          aria-describedby="remote-request-code-error"
+        />
+        <p id="remote-request-code-error" class="remote-error" hidden></p>
+        <p id="remote-request-countdown" class="muted small"></p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="remote-request-reject">Rechazar</button>
+        <button
+          type="button"
+          id="remote-request-accept"
+          class="primary"
+          disabled
+        >
+          Vincular
+        </button>
+      </div>
     </dialog>
 
     <div id="toast" style="display: none" class="toast"></div>

@@ -62,8 +62,10 @@ describe('renderer/icons.css', () => {
   });
 
   it('is linked by every window, before the emoji fallback face', () => {
-    for (const html of readdirSync(rendererDir).filter((n) =>
-      n.endsWith('.html'),
+    // remote.html is not a window: it is the «Control remoto» page phones
+    // load over HTTP, which serves no font and draws no Lucide glyph.
+    for (const html of readdirSync(rendererDir).filter(
+      (n) => n.endsWith('.html') && n !== 'remote.html',
     )) {
       const source = readFileSync(path.join(rendererDir, html), 'utf8');
       const iconsLink = source.indexOf(
@@ -78,6 +80,12 @@ describe('renderer/icons.css', () => {
 });
 
 describe('renderer glyphs', () => {
+  it('keeps Lucide glyphs off the phone page, which has no icon font', () => {
+    const page = readFileSync(path.join(rendererDir, 'remote.html'), 'utf8');
+    expect(page).not.toMatch(/class="[^"]*\bicon\b/);
+    expect(page).not.toContain('icons.css');
+  });
+
   it('types no emoji or symbol glyph into code or markup', () => {
     const offenders = rendererSources().flatMap((file) =>
       stripComments(readFileSync(file, 'utf8'))

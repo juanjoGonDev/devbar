@@ -14,6 +14,7 @@ import type {
 import type { SimpleResult } from './ipc-contract/simple-result.js';
 import type { UpdatesApi } from './ipc-contract/updates-api.js';
 import type { CustomIconsApi } from './ipc-contract/custom-icons-api.js';
+import type { RemoteApi } from './ipc-contract/remote-api.js';
 
 export type { UpdatePhase } from './update-phase-types.js';
 export type { UpdateStatus } from './ipc-contract/updates-api.js';
@@ -236,7 +237,7 @@ interface FixtureGroupsStatus {
   repeat: number;
 }
 
-export interface DevBarApi extends UpdatesApi, CustomIconsApi {
+export interface DevBarApi extends UpdatesApi, CustomIconsApi, RemoteApi {
   listGroups(): Promise<Group[]>;
   getGroupStates(): Promise<GroupState[]>;
   saveGroup(

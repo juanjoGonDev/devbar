@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="no-referrer" />
+    <!--
+      The phone page of «Control remoto», served by src/main/remote/server.ts
+      to browsers on the LAN — never loaded in an app window. The server also
+      sends this policy as a header, plus frame-ancestors (header-only).
+      No inline script or style anywhere: every view is static markup that
+      renderer/remote/app.ts shows or hides. Server strings only ever reach
+      the page as textContent; icons are built with DOM calls
+      (renderer/remote/glyphs.ts) into the [data-glyph] placeholders.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self'; img-src 'self' data:"
+    />
+    <link rel="manifest" href="remote.webmanifest" />
+    <link rel="apple-touch-icon" href="remote-icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="DevBar" />
+    <meta
+      name="theme-color"
+      content="#f2f2f7"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#000000"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link rel="stylesheet" href="emoji.css" />
+    <link rel="stylesheet" href="remote.css" />
+    <title>DevBar — Control remoto</title>
+  </head>
+  <body>
+    <main class="app">
+      <header class="app-header">
+        <p class="eyebrow">DevBar</p>
+        <h1>Control remoto</h1>
+      </header>
+
+      <section data-view="loading" class="view center">
+        <span class="spinner" aria-hidden="true"></span>
+        <p class="muted">Conectando con DevBar…</p>
+      </section>
+
+      <section data-view="unlinked" class="view" hidden>
+        <div class="card">
+          <h2 id="unlinked-title">Este dispositivo no está vinculado</h2>
+          <p>
+            DevBar solo acepta dispositivos que hayas vinculado tú desde el
+            ordenador.
+          </p>
+        </div>
+        <ol class="card steps">
+          <li>Abre DevBar › Configuración › Control remoto.</li>
+          <li>Pulsa <strong>Añadir dispositivo</strong>.</li>
+          <li>Escanea el código QR con la cámara de este dispositivo.</li>
+        </ol>
+        <p id="expired-note" class="note">
+          ¿Venías de un QR? Cada código dura 30 segundos y solo sirve una vez:
+          genera uno nuevo en el ordenador y vuelve a escanearlo.
+        </p>
+      </section>
+
+      <section data-view="pair" class="view" hidden>
+        <h2 id="pair-title">Vincular</h2>
+        <form id="pair-form" class="card form" novalidate>
+          <label for="device-name">Nombre de este dispositivo</label>
+          <input
+            id="device-name"
+            name="name"
+            maxlength="40"
+            autocomplete="off"
+            autocapitalize="sentences"
+            enterkeyhint="go"
+          />
+          <p id="pair-error" class="error" role="alert" hidden></p>
+          <button type="submit" id="pair-submit" class="button primary">
+            Vincular
+          </button>
+        </form>
+      </section>
+
+      <section data-view="waiting" class="view" hidden>
+        <div class="card center">
+          <p class="label">Código de verificación</p>
+          <p id="verification-code" class="code"></p>
+          <p>
+            Escribe este código en el ordenador para aceptar la vinculación.
+          </p>
+          <!--
+            Not a live region: the number changes every second. The bar is
+            decoration; renderer/remote/pair-countdown.ts fills both.
+          -->
+          <div id="pair-expiry" class="expiry" hidden>
+            <div class="expiry-track" aria-hidden="true">
+              <div id="pair-expiry-bar" class="expiry-bar"></div>
+            </div>
+            <p id="pair-expiry-text" class="expiry-text"></p>
+          </div>
+          <p class="waiting muted">
+            <span class="spinner" aria-hidden="true"></span>
+            Esperando a que lo aceptes en el ordenador…
+          </p>
+        </div>
+        <button type="button" id="pair-cancel" class="button">Cancelar</button>
+      </section>
+
+      <section data-view="result" class="view" hidden>
+        <div class="card">
+          <h2 id="result-title"></h2>
+          <p id="result-text"></p>
+        </div>
+        <button type="button" id="result-done" class="button">Entendido</button>
+      </section>
+
+      <section data-view="linked" class="view panel" hidden>
+        <p id="reconnecting" class="reconnecting" role="status" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          Reconectando…
+        </p>
+
+        <div id="tab-groups" class="tab" data-tab="groups">
+          <header class="host-header">
+            <div class="host-text">
+              <h2 id="host-name" class="host-name"></h2>
+              <p class="host-status">
+                <span class="dot is-running" aria-hidden="true"></span>
+                <span id="host-status"></span>
+              </p>
+            </div>
+            <button
+              type="button"
+              id="stop-all"
+              class="square-button is-danger"
+              aria-label="Detener todo"
+              title="Detener todo"
+            >
+              <span data-glyph="stop"></span>
+            </button>
+          </header>
+          <div class="chips-row">
+            <span id="error-chip" class="chip is-error" hidden></span>
+            <span id="warn-chip" class="chip is-warn" hidden></span>
+            <span class="spacer"></span>
+            <button type="button" id="run-pipeline" class="pill-button">
+              <span data-glyph="play"></span>
+              <span id="pipeline-label">Ejecutar pipeline</span>
+            </button>
+          </div>
+          <button
+            type="button"
+            id="confirm-banner"
+            class="banner is-confirm"
+            hidden
+          >
+            <span class="banner-mark" data-glyph="help"></span>
+            <span class="banner-text">
+              <span id="confirm-banner-title" class="banner-title"></span>
+              <span id="confirm-banner-sub" class="banner-sub"></span>
+            </span>
+            <span data-glyph="chevron"></span>
+          </button>
+          <button
+            type="button"
+            id="update-banner"
+            class="banner is-update"
+            hidden
+          >
+            <span class="banner-mark" data-glyph="download"></span>
+            <span class="banner-text">
+              <span id="update-banner-title" class="banner-title"></span>
+              <span class="banner-sub">Toca para actualizar desde aquí</span>
+            </span>
+            <span data-glyph="chevron"></span>
+          </button>
+          <h3 class="section-title">Grupos</h3>
+          <p id="groups-empty" class="muted" hidden>
+            No hay grupos configurados en DevBar.
+          </p>
+          <div id="groups" class="groups"></div>
+        </div>
+
+        <div id="tab-logs" class="tab" data-tab="logs" hidden>
+          <h2 class="tab-title">Logs</h2>
+          <label class="select-row" for="log-process">
+            <span class="visually-hidden">Proceso</span>
+            <select id="log-process"></select>
+          </label>
+          <div class="segmented" role="group" aria-label="Filtrar por nivel">
+            <button type="button" data-filter="all" aria-pressed="true">
+              Todo <span id="count-all" class="count"></span>
+            </button>
+            <button type="button" data-filter="warn" aria-pressed="false">
+              Warnings <span id="count-warn" class="count"></span>
+            </button>
+            <button type="button" data-filter="error" aria-pressed="false">
+              Errors <span id="count-error" class="count"></span>
+            </button>
+          </div>
+          <div id="log-panel" class="log-panel" role="log"></div>
+          <p id="log-empty" class="log-empty" hidden></p>
+          <button type="button" id="log-follow" class="follow-button" hidden>
+            Ir al final
+          </button>
+          <div class="log-actions">
+            <button type="button" id="log-restart" class="button">
+              <span data-glyph="restart"></span>Reiniciar
+            </button>
+            <button type="button" id="log-toggle" class="button"></button>
+          </div>
+        </div>
+
+        <div id="tab-notices" class="tab" data-tab="notices" hidden>
+          <div class="tab-head">
+            <h2 class="tab-title">Avisos</h2>
+            <button type="button" id="mark-read" class="link-button">
+              Marcar leídos
+            </button>
+          </div>
+          <section
+            id="confirm-card"
+            class="card confirm-card"
+            aria-label="Confirmación pendiente"
+            hidden
+          >
+            <p id="confirm-card-group" class="eyebrow"></p>
+            <p id="confirm-card-title" class="confirm-title"></p>
+            <code id="confirm-card-command" class="command"></code>
+            <div class="confirm-buttons">
+              <button
+                type="button"
+                id="confirm-card-cancel"
+                class="button"
+              ></button>
+              <button
+                type="button"
+                id="confirm-card-run"
+                class="button primary"
+              ></button>
+            </div>
+            <p id="confirm-card-note" class="note"></p>
+          </section>
+          <p id="notices-empty" class="muted" hidden>Todavía no hay avisos.</p>
+          <div id="notices"></div>
+        </div>
+
+        <div id="tab-settings" class="tab" data-tab="settings" hidden>
+          <h2 class="tab-title">Ajustes</h2>
+          <section class="card update-card">
+            <p id="update-title" class="update-title"></p>
+            <p id="update-text" class="muted"></p>
+            <progress id="update-progress" hidden></progress>
+            <button
+              type="button"
+              id="update-apply"
+              class="button primary"
+              hidden
+            >
+              Actualizar
+            </button>
+          </section>
+          <h3 class="section-title">General</h3>
+          <div class="card list">
+            <label class="toggle-row">
+              <span>Iniciar al arrancar el sistema</span>
+              <input type="checkbox" role="switch" id="set-autostart" />
+            </label>
+            <label class="toggle-row">
+              <span>Notificar al terminar acciones</span>
+              <input type="checkbox" role="switch" id="set-notifySuccess" />
+            </label>
+            <label class="toggle-row">
+              <span>Silenciar warnings</span>
+              <input type="checkbox" role="switch" id="set-silenceWarnings" />
+            </label>
+            <label class="toggle-row">
+              <span>Silenciar errors</span>
+              <input type="checkbox" role="switch" id="set-silenceErrors" />
+            </label>
+          </div>
+          <h3 class="section-title">Seguridad</h3>
+          <div class="card list security-card">
+            <div class="row">
+              <span class="row-label">
+                <span data-glyph="lock" class="is-secure"></span>
+                Cifrado de extremo a extremo
+              </span>
+              <span class="value">Activo</span>
+            </div>
+            <div class="row">
+              <span class="row-label">
+                <span data-glyph="key"></span>
+                Clave nueva en cada conexión
+              </span>
+              <span class="value">Sí</span>
+            </div>
+            <div class="row security-code-row">
+              <span>Código de seguridad</span>
+              <span
+                id="security-code"
+                class="security-code"
+                aria-label="Código de seguridad"
+              ></span>
+            </div>
+            <div class="row">
+              <span>Estado</span>
+              <span id="security-status" class="verified-badge"></span>
+            </div>
+            <button type="button" id="rotate-keys" class="row-button">
+              Renovar claves de este dispositivo
+            </button>
+          </div>
+          <p class="footer-note">
+            Para verificarlo, abre en el ordenador DevBar › Configuración ›
+            Control remoto › Código de seguridad y escanéalo con la cámara.
+          </p>
+          <h3 class="section-title">Este dispositivo</h3>
+          <div class="card list">
+            <button type="button" id="rename" class="row-button">
+              <span>Nombre</span>
+              <span id="device-name-value" class="value"></span>
+            </button>
+            <form id="rename-form" class="rename-form" novalidate hidden>
+              <label for="rename-input" class="visually-hidden">Nombre</label>
+              <input id="rename-input" maxlength="40" autocomplete="off" />
+              <p id="rename-error" class="error" role="alert" hidden></p>
+              <div class="confirm-buttons">
+                <button type="button" id="rename-cancel" class="button">
+                  Cancelar
+                </button>
+                <button type="submit" id="rename-save" class="button primary">
+                  Guardar
+                </button>
+              </div>
+            </form>
+            <div class="row">
+              <span>Vinculado</span>
+              <span id="device-linked" class="value"></span>
+            </div>
+            <button type="button" id="unlink" class="row-button is-destructive">
+              Desvincular este dispositivo
+            </button>
+          </div>
+          <p id="connected-footer" class="footer-note"></p>
+        </div>
+
+        <nav class="tabbar" aria-label="Secciones">
+          <button type="button" data-tab-button="groups" aria-current="page">
+            <span data-glyph="groups"></span>Grupos
+          </button>
+          <button type="button" data-tab-button="logs">
+            <span data-glyph="logs"></span>Logs
+          </button>
+          <button type="button" data-tab-button="notices" id="notices-tab">
+            <span class="badge-host">
+              <span data-glyph="bell"></span>
+              <span
+                id="unread-badge"
+                class="tab-badge"
+                aria-hidden="true"
+                hidden
+              ></span>
+            </span>
+            Avisos
+          </button>
+          <button type="button" data-tab-button="settings">
+            <span data-glyph="settings"></span>Ajustes
+          </button>
+        </nav>
+
+        <dialog
+          id="confirm-dialog"
+          class="sheet"
+          aria-labelledby="confirm-title"
+        >
+          <p id="confirm-group" class="eyebrow"></p>
+          <h2 id="confirm-title" class="confirm-title"></h2>
+          <code id="confirm-command" class="command"></code>
+          <div class="confirm-buttons is-stacked">
+            <button
+              type="button"
+              id="confirm-run"
+              class="button primary"
+            ></button>
+            <button type="button" id="confirm-cancel" class="button"></button>
+          </div>
+          <p id="confirm-footer" class="note"></p>
+          <p
+            id="confirm-closed"
+            class="note is-emphasised"
+            role="status"
+            hidden
+          ></p>
+        </dialog>
+
+        <dialog id="branch-sheet" class="sheet" aria-labelledby="branch-title">
+          <h2 id="branch-title">Cambiar de rama</h2>
+          <p id="branch-status" class="muted" role="status"></p>
+          <ul id="branch-list" class="branch-list"></ul>
+          <button type="button" id="branch-close" class="button">
+            Cancelar
+          </button>
+        </dialog>
+
+        <p id="toast" class="toast" role="status" hidden></p>
+      </section>
+
+      <section data-view="keychanged" class="view" hidden>
+        <div class="card is-alert">
+          <p class="view-glyph"><span data-glyph="shieldAlert"></span></p>
+          <h2 id="keychanged-title">La clave de seguridad ha cambiado</h2>
+          <p>
+            Puede que hayas renovado la clave en el ordenador. Por seguridad,
+            este dispositivo no se conectará hasta que la verifiques.
+          </p>
+        </div>
+        <ol class="card steps">
+          <li>
+            En el ordenador, abre DevBar › Configuración › Control remoto.
+          </li>
+          <li>
+            Pulsa <strong>Código de seguridad</strong> en este dispositivo.
+          </li>
+          <li>Escanéalo con la cámara de este móvil.</li>
+        </ol>
+        <button type="button" id="keychanged-retry" class="button">
+          Reintentar
+        </button>
+      </section>
+
+      <section data-view="verified" class="view" hidden>
+        <div class="card is-success">
+          <p class="view-glyph"><span data-glyph="shieldCheck"></span></p>
+          <h2>Conexión verificada</h2>
+          <p id="verified-text">
+            El código coincide: lo que viaja entre este dispositivo y el
+            ordenador va cifrado con estas claves.
+          </p>
+          <p id="verified-note" class="note" hidden>
+            No se pudo avisar al ordenador. Vuelve a escanear el código cuando
+            estés en la misma red.
+          </p>
+        </div>
+        <button type="button" id="verified-done" class="button primary">
+          Continuar
+        </button>
+      </section>
+
+      <section data-view="mismatch" class="view" hidden>
+        <div class="card is-danger">
+          <p class="view-glyph"><span data-glyph="shieldAlert"></span></p>
+          <h2>El código no coincide</h2>
+          <p>
+            El código no coincide con el de este dispositivo, así que no se ha
+            verificado nada. Comprueba que escaneas el código de seguridad de
+            este dispositivo en DevBar › Configuración › Control remoto.
+          </p>
+        </div>
+        <button type="button" id="mismatch-done" class="button">Volver</button>
+      </section>
+
+      <section data-view="error" class="view" hidden>
+        <div class="card">
+          <h2>No se pudo conectar con DevBar</h2>
+          <p>
+            Comprueba que sigues en la misma red que el ordenador y que el
+            control remoto está activado.
+          </p>
+        </div>
+        <button type="button" id="retry" class="button">Reintentar</button>
+      </section>
+    </main>
+    <script type="module" src="remote.js"></script>
+  </body>
+</html>

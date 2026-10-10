@@ -12,6 +12,7 @@ import {
 } from './assisted-update.js';
 import { createLinuxUpdateFlow, type LinuxUpdateDeps } from './linux-update.js';
 import { downloadVerified } from './update-download.js';
+import { installStagedUpdate } from './install-staged-update.js';
 import {
   applyReport,
   copyPhaseCommand,
@@ -115,6 +116,10 @@ export interface Updater {
   stageFromZip: (zipPath: string, version: string) => Promise<void>;
   pruneStagedUpdates: (keep: string) => void;
   installedBundleId: () => string | null;
+  /** A staged update matching the release can be swapped in right now. */
+  canInstallStaged: () => boolean;
+  /** applyUpdate without the restart dialog, staged updates only. */
+  installStagedHeadless: () => Promise<ApplyUpdateResult>;
   available: () => AvailableUpdate | null;
   staged: () => StagedUpdate | null;
   setSimulatedUpdate: (update: AvailableUpdate | null) => void;
@@ -268,59 +273,6 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   }
 
   /**
-   * Install the already-downloaded update: confirm → hand the swap to a
-   * detached process → quit. The user never touches the Finder/Explorer; only
-   * the confirmation is asked of them, once.
-   */
-  async function installStagedUpdate(
-    staged: StagedUpdate,
-    target: string,
-  ): Promise<ApplyUpdateResult> {
-    // Linux asks nothing more: the click WAS the confirmation, and a modal
-    // can open behind every window on some window managers / Wayland.
-    let res = { response: 1 };
-    if (deps.platform !== 'linux')
-      try {
-        res = await deps.messageBox({
-          type: 'question',
-          buttons: ['Ahora no', 'Reiniciar e instalar'],
-          defaultId: 1,
-          cancelId: 0,
-          message: `DevBar v${staged.version} está lista`,
-          detail:
-            'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
-        });
-      } catch (err) {
-        return { ok: false, error: errorMessage(err) };
-      }
-    if (res.response !== 1) return { ok: false, cancelled: true };
-    try {
-      deps.spawnSwap({
-        staged,
-        target,
-        scriptDir: deps.updatesDir(),
-        pid: deps.pid,
-      });
-    } catch (err) {
-      phase.set({
-        state: 'install-failed',
-        version: staged.version,
-        reason: errorMessage(err),
-        path: staged.appPath,
-        command: null,
-      });
-      deps.toast('error', `No se pudo instalar: ${errorMessage(err)}`);
-      return { ok: false, error: errorMessage(err) };
-    }
-    phase.set({ state: 'restarting', version: staged.version });
-    // The script polls for our exit, so a short delay is enough to let this IPC
-    // reply reach the renderer before we go.
-    deps.markUpdateExit();
-    deps.quitAfter(200);
-    return { ok: true, quitting: true, inPlace: true };
-  }
-
-  /**
    * Linux, where the Updates pane drives each step: install a verified .deb,
    * keep pointing at a manual download, retry a failed in-place staging, or
    * download what this install shape wants.
@@ -366,7 +318,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       staged.version === update.version &&
       deps.canInstallInPlace(target)
     )
-      res = await installStagedUpdate(staged, target);
+      res = await installStagedUpdate(deps, phase, staged, target, {
+        ask: true,
+      });
     else if (deps.platform === 'linux')
       res = await applyLinuxUpdate(update, current, target);
     else res = await runAssistedUpdate(deps, update, phase);
@@ -378,11 +332,33 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     return res;
   }
 
+  /** The staged update and where it goes, when a swap could start now. */
+  const swappable = (): { staged: StagedUpdate; target: string } | null => {
+    const staged = stagedUpdate;
+    const target = deps.installedAppPath();
+    if (
+      !staged ||
+      staged.version !== availableUpdate?.version ||
+      isBusyPhase(phase.get()) ||
+      !deps.canInstallInPlace(target)
+    )
+      return null;
+    return { staged, target };
+  };
+
   return {
     status,
     broadcastStatus,
     pruneStagedUpdates,
     applyUpdate,
+    canInstallStaged: () => swappable() !== null,
+    installStagedHeadless: async () => {
+      const ready = swappable();
+      if (!ready) return { ok: false, error: 'not_staged' };
+      return installStagedUpdate(deps, phase, ready.staged, ready.target, {
+        ask: false,
+      });
+    },
     available: () => availableUpdate,
     staged: () => stagedUpdate,
 

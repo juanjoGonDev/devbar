@@ -17,6 +17,7 @@ function harness() {
   }[] = [];
   const timers: Timer[] = [];
   let seq = 0;
+  const clock = { now: 1_000_000 };
   const queue = createConfirmQueue({
     openWindow: (token) => {
       const win = {
@@ -39,8 +40,9 @@ function harness() {
     clearTimer: (timer) => {
       (timer as unknown as Timer).cleared = true;
     },
+    now: () => clock.now,
   });
-  return { queue, windows, timers };
+  return { queue, windows, timers, clock };
 }
 
 const script = makePreScript({
@@ -229,6 +231,93 @@ describe('src/main/confirm-queue.ts', () => {
         command: 'rm -rf build',
         groupName: 'API',
       });
+    });
+  });
+
+  describe('pending / onChange', () => {
+    it('lists the open confirmation without the logo, with its deadline', () => {
+      const { queue } = harness();
+      void queue.showConfirmModal(
+        makePreScript({
+          name: 'migrate',
+          command: 'pnpm',
+          args: ['db:migrate'],
+          confirmSecs: 42,
+          confirmOnTimeout: 'cancel',
+        }),
+        'interactive',
+        'Backend',
+      );
+
+      expect(queue.pending()).toEqual([
+        {
+          token: 't1',
+          name: 'migrate',
+          command: 'pnpm db:migrate',
+          groupName: 'Backend',
+          secs: 42,
+          onTimeout: 'cancel',
+          deadline: 1_000_000 + 42_000,
+        },
+      ]);
+    });
+
+    it('has no deadline for a confirmation that waits indefinitely', () => {
+      const { queue } = harness();
+      void queue.showConfirmModal(
+        makePreScript({ confirmSecs: null }),
+        'pipeline',
+        null,
+      );
+
+      expect(queue.pending()[0]?.deadline).toBeNull();
+    });
+
+    it('is empty again once the confirmation is answered', () => {
+      const { queue } = harness();
+      void queue.showConfirmModal(script, 'pipeline', null);
+
+      queue.resolveConfirm('t1', 'confirm');
+
+      expect(queue.pending()).toEqual([]);
+    });
+
+    it('tells subscribers when a confirmation opens and when it closes', async () => {
+      const { queue, timers } = harness();
+      const changes: number[] = [];
+      queue.onChange(() => changes.push(queue.pending().length));
+
+      void queue.confirmIfNeeded(
+        makeCommand({ confirm: true, confirmSecs: 5 }),
+        makeGroup(),
+      );
+      await tick();
+      timers[0]?.fire();
+
+      expect(changes).toEqual([1, 0]);
+    });
+
+    it('says nothing for an answer to a confirmation that is already gone', () => {
+      const { queue } = harness();
+      void queue.showConfirmModal(script, 'pipeline', null);
+      const changes = vi.fn();
+      queue.onChange(changes);
+
+      queue.resolveConfirm('t1', 'confirm');
+      queue.resolveConfirm('t1', 'cancel');
+
+      expect(changes).toHaveBeenCalledOnce();
+    });
+
+    it('stops telling a subscriber that unsubscribed', () => {
+      const { queue } = harness();
+      const changes = vi.fn();
+      const unsubscribe = queue.onChange(changes);
+
+      unsubscribe();
+      void queue.showConfirmModal(script, 'pipeline', null);
+
+      expect(changes).not.toHaveBeenCalled();
     });
   });
 

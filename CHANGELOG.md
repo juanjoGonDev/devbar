@@ -3,6 +3,118 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.11.0] - 2026-10-10
+
+### Añadido
+
+- **Control remoto: maneja DevBar desde el móvil en tu red local.** En
+  Configuración hay una sección nueva, «Control remoto», con un interruptor
+  «Permitir control remoto» que viene **desactivado**: hasta que lo enciendes,
+  DevBar no abre nada en la red. Al activarlo se ve la dirección del equipo
+  (por ejemplo `192.168.1.20:47821`) y si el servicio está activo; si el
+  puerto ya lo usa otra aplicación, lo dice ahí mismo y puedes cambiarlo desde
+  ahí.
+
+- **Cifrado de extremo a extremo, con una clave nueva en cada conexión.** Lo
+  que viaja entre DevBar y tus dispositivos —el estado, los logs, las órdenes,
+  los avisos— va cifrado de extremo a extremo, y cada conexión estrena sus
+  propias claves: lo que alguien pudiera grabar hoy en la red no le sirve
+  mañana. Al escanear el QR de vinculación, el móvil se queda con la clave de
+  tu ordenador y en cada conexión comprueba que sigue hablando con él.
+
+- **Verifica la conexión como en WhatsApp.** Cada dispositivo vinculado tiene
+  su «Código de seguridad»: seis grupos de cifras y un QR en Configuración ›
+  Control remoto, y los mismos seis grupos en el móvil, en Ajustes ›
+  Seguridad. Escanea el QR con la cámara del móvil y, si todo coincide, el
+  dispositivo pasa a «Verificado» en los dos lados; si no coincide, el móvil
+  lo dice bien claro y no marca nada.
+
+- **Renueva las claves cuando quieras.** Desde el móvil, «Renovar claves de
+  este dispositivo»; desde el ordenador, «Renovar clave del equipo» en
+  Seguridad. Después de renovar, el dispositivo deja de estar verificado.
+  Si cambias la clave del ordenador, cada móvil se detiene y te avisa de que
+  la clave ha cambiado hasta que escanees su nuevo código de seguridad.
+
+- **Sabes quién se conecta.** Cuando un dispositivo vinculado se conecta,
+  DevBar te avisa en el ordenador («iPhone de Ana» se ha conectado desde
+  192.168.1.40) con un botón «Ver dispositivos», y los demás móviles lo ven en
+  «Avisos». Avisa la primera vez y después de diez minutos sin conexión, no en
+  cada recarga; puedes apagarlo en Seguridad con «Avisar cuando un
+  dispositivo se conecte». Si un dispositivo se conecta desde una IP que no
+  había usado antes, DevBar te lo dice siempre, con ese interruptor apagado
+  y aunque acabara de conectarse: «iPhone de Ana» se ha conectado desde una
+  IP nueva (192.168.1.57). Si no has sido tú, desvincúlalo.
+
+- **Tus grupos, en el bolsillo.** Con el móvil vinculado abres la dirección en
+  el navegador y ves lo mismo que en la barra: cada grupo con su rama y sus
+  servicios, cuánto llevan en marcha, cuántos warnings y errores acumulan y el
+  total de todo el equipo. Desde ahí arrancas y paras cada servicio, lanzas
+  sus acciones, ejecutas el pipeline, cambias de rama (DevBar para y vuelve a
+  arrancar los servicios del grupo, como en la barra) o, con «Detener todo»,
+  paras todo lo que esté en marcha. Todo se actualiza solo al momento, sin
+  recargar; si se corta la red, la página dice «Reconectando…» y vuelve en
+  cuanto puede.
+
+- **Añádela a la pantalla de inicio.** Desde el navegador del móvil, «Añadir
+  a pantalla de inicio» deja un icono de DevBar que abre el panel
+  directamente. Necesita estar en la misma red que el ordenador: sin conexión
+  con él no hay nada que mostrar.
+
+- **Los logs, también desde el móvil.** La pestaña «Logs» muestra las últimas
+  líneas de cualquier comando o acción y sigue añadiendo las nuevas en
+  directo, con filtros para ver solo los warnings o los errores y botones para
+  reiniciar, detener o iniciar el proceso. Mientras lees más arriba no te
+  arrastra al final; «Ir al final» te devuelve.
+
+- **Responde desde el móvil a los scripts que piden confirmación.** Cuando un
+  comando, una acción o un paso del pipeline pregunta «¿Ejecutar…?», el móvil
+  pregunta lo mismo, con su cuenta atrás en el botón que gana si nadie
+  contesta. Vale la primera respuesta: si contestas en el móvil, el diálogo
+  del ordenador se cierra solo, y si contestas en el ordenador, el móvil te
+  lo dice y cierra el suyo.
+
+- **Avisos en el móvil.** La pestaña «Avisos» recoge lo que DevBar te va
+  contando —acciones que terminan o fallan, el pipeline, las acciones
+  programadas, las actualizaciones—, agrupado por día y con un contador de
+  los que aún no has leído en ese dispositivo.
+
+- **Ajustes y actualizaciones desde el móvil.** En «Ajustes» puedes cambiar
+  si DevBar se inicia al arrancar el sistema, si avisa al terminar las
+  acciones y si silencia los warnings o los errores. Si hay una versión nueva
+  ya descargada, «Actualizar» la instala desde el móvil: DevBar se reinicia
+  en el ordenador y la página se reconecta sola. Si la actualización tiene
+  que instalarse a mano, el móvil te indica que lo hagas desde el ordenador.
+
+- **Vincular un móvil es escanear un QR y aceptarlo en el ordenador.**
+  «Añadir» muestra un código QR de un solo uso que se renueva cada
+  30 segundos mientras la ventana está abierta, y al momento en cuanto un
+  móvil lo escanea; al cerrarla, el código deja de valer. El móvil lo
+  escanea, le pones nombre (tienes dos minutos, aunque el QR ya haya cambiado)
+  y te muestra un código de 6 cifras: escríbelo en el ordenador, en
+  «¿Vincular este dispositivo?», y solo entonces se activa «Vincular». Con
+  tres códigos equivocados la solicitud se rechaza. Sin tu «Vincular» no se
+  vincula nada: si no respondes en un minuto, la solicitud se rechaza sola
+  —el móvil te muestra cuánto le queda, «Caduca en 0:42»—, y si el móvil
+  cancela, el diálogo del ordenador se cierra al momento. Cualquier otro
+  equipo de la red que abra la dirección solo ve que no está vinculado.
+
+- **Un móvil, una sola entrada en la lista.** Si escaneas el QR con un móvil
+  que ya está vinculado, no se vincula otra vez: entra directamente al panel
+  y te dice que ya lo estaba. Y si vuelves a vincularlo después de renovar la
+  clave del ordenador, ocupa el sitio del que ya tenías en vez de añadir otro
+  igual.
+
+- **Lista de dispositivos vinculados.** Cada uno muestra su nombre, un
+  escudo verde si está verificado, el navegador y sistema desde el que se
+  vinculó con la última IP desde la que se conectó, y «Conectado» mientras
+  tiene la página abierta o cuándo se conectó por última vez. Desde su menú
+  «⋯» puedes ver el código de seguridad, renombrarlo (también desde el propio
+  móvil) o desvincularlo, tras confirmarlo en un diálogo que te enseña de qué
+  dispositivo se trata: pierde el acceso al momento, el móvil se entera y
+  deja de mostrar nada. El propio móvil también puede desvincularse. Por
+  defecto, un dispositivo que lleva 30 días sin conectarse se desvincula solo;
+  puedes desactivarlo en «Seguridad».
+
 ## [0.10.1] - 2026-10-07
 
 ### Cambiado
