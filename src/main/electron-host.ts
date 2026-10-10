@@ -21,12 +21,33 @@ import {
   type WebContents,
 } from 'electron';
 import { setLinuxAutostart, wasOpenedAtLoginFromArgv } from '../autostart.js';
-import { installedAppPath } from '../self-update.js';
+import {
+  appImagePathFromExecutable,
+  installedAppPath,
+} from '../self-update.js';
+import {
+  detectLinuxInstallShape,
+  runProcess,
+  type LinuxInstallShape,
+} from './linux-package.js';
 import { isLinux, isMac, isWin } from '../platform.js';
+import {
+  describeLinuxDisplayBackend,
+  runsNativeWayland,
+  settleLinuxDisplayBackend,
+} from './linux-display-backend.js';
+import { linuxWorkAreaNote, safeLinuxWorkArea } from './window-geometry.js';
 import { appHome } from '../app-paths.js';
 import { resolvedThemeIsDark, themeWindowBackground } from './theme.js';
 import { prepareIssueReport } from '../report-issue.js';
-import { readTail, REPORT_TAIL_BYTES } from '../logger.js';
+import { countProblems } from '../report-problems.js';
+import {
+  currentSession,
+  previousLogPath,
+  readTail,
+  recentProblems,
+  REPORT_TAIL_BYTES,
+} from '../logger.js';
 import {
   applyAutostart as applyAutostartTo,
   wasOpenedAtLogin as resolveWasOpenedAtLogin,
@@ -60,6 +81,18 @@ function logFilePath(): string {
   );
 }
 
+/**
+ * The Electron side of settleLinuxDisplayBackend: main.ts calls it first thing,
+ * before the single-instance lock, and skips the lock when it is relaunching.
+ */
+export function settleDisplay(): boolean {
+  return settleLinuxDisplayBackend(process, {
+    relaunch: (relaunchOptions) => app.relaunch(relaunchOptions),
+    exit: () => app.exit(0),
+    appImagePath: () => appImagePathFromExecutable(process.execPath),
+  });
+}
+
 export function createElectronHost(options: ElectronHostOptions) {
   const { dirname } = options;
   const rendererFile = (name: string): string =>
@@ -81,18 +114,30 @@ export function createElectronHost(options: ElectronHostOptions) {
   };
 
   let confirmLogo: string | null = null;
+  let installShape: Promise<LinuxInstallShape> | null = null;
 
-  /** Assembles the report body the two report actions share. */
-  const buildReport = (): {
-    clipboardText: string;
-    url: string;
-    bodyIncluded: boolean;
-  } => {
-    // Bounded read from the end: the report only ever uses the last
+  /**
+   * The dialog parent, only while it is on screen: a dialog owned by a hidden
+   * window (the tray popover after it closed) can open invisible on some
+   * Linux window managers, and the click then seems to do nothing.
+   */
+  const shownOwner = (): BrowserWindow | null => {
+    const shown = (win: BrowserWindow | null): win is BrowserWindow =>
+      Boolean(win && !win.isDestroyed() && win.isVisible());
+    const owner = options.dialogOwner();
+    if (shown(owner)) return owner;
+    const focused = BrowserWindow.getFocusedWindow();
+    return shown(focused) ? focused : null;
+  };
+
+  /** Assembles the report body the report actions share. */
+  const buildReport = () => {
+    // Bounded reads from the end: the report only ever uses the last
     // few thousand chars, and one oversized entry must not make the
     // click slurp the whole file.
-    const tail = readTail(logFilePath(), REPORT_TAIL_BYTES);
-    return prepareIssueReport(
+    const file = logFilePath();
+    const problems = recentProblems();
+    const report = prepareIssueReport(
       {
         version: app.getVersion(),
         platform: process.platform,
@@ -101,8 +146,14 @@ export function createElectronHost(options: ElectronHostOptions) {
         node: process.versions.node ?? '',
         osRelease: os.release(),
       },
-      tail,
+      readTail(file, REPORT_TAIL_BYTES),
+      {
+        problems,
+        session: currentSession(),
+        previousLog: readTail(previousLogPath(file), REPORT_TAIL_BYTES),
+      },
     );
+    return { ...report, ...countProblems(problems) };
   };
 
   return {
@@ -126,9 +177,17 @@ export function createElectronHost(options: ElectronHostOptions) {
       new BrowserWindow(opts),
     activeDisplay,
     workArea: (): Rectangle => activeDisplay().workArea,
-    workAreaHeight: (bounds: Rectangle): number =>
-      screen.getDisplayMatching(bounds).workAreaSize.height,
+    // Sizes the tray popover. A Linux WM that publishes no reserved area
+    // (native Wayland, X11 without struts) reports the whole display, so the
+    // height is capped there to stay clear of the panel.
+    workAreaFor: (bounds: Rectangle): Rectangle => {
+      const display = screen.getDisplayMatching(bounds);
+      return isLinux ? safeLinuxWorkArea(display, bounds) : display.workArea;
+    },
     displayMatching: (rect: Rectangle) => screen.getDisplayMatching(rect),
+    /** Every connected display, for restoring a pinned tray popover. */
+    displays: (): { id: number; workArea: Rectangle }[] =>
+      screen.getAllDisplays().map((d) => ({ id: d.id, workArea: d.workArea })),
 
     /**
      * Window icon for dev mode: `electron .` runs on the Electron shell, so the
@@ -171,7 +230,7 @@ export function createElectronHost(options: ElectronHostOptions) {
     },
 
     messageBox: (opts: MessageBoxOptions) => {
-      const owner = options.dialogOwner();
+      const owner = shownOwner();
       return owner
         ? dialog.showMessageBox(owner, opts)
         : dialog.showMessageBox(opts);
@@ -183,13 +242,13 @@ export function createElectronHost(options: ElectronHostOptions) {
         : dialog.showMessageBox(opts);
     },
     openDialog: (opts: OpenDialogOptions) => {
-      const owner = options.dialogOwner();
+      const owner = shownOwner();
       return owner
         ? dialog.showOpenDialog(owner, opts)
         : dialog.showOpenDialog(opts);
     },
     saveDialog: (opts: SaveDialogOptions) => {
-      const owner = options.dialogOwner();
+      const owner = shownOwner();
       return owner
         ? dialog.showSaveDialog(owner, opts)
         : dialog.showSaveDialog(opts);
@@ -203,7 +262,24 @@ export function createElectronHost(options: ElectronHostOptions) {
       writeText: (filePath: string, contents: string): void =>
         fs.writeFileSync(filePath, contents, 'utf8'),
     },
+    fileSize: (filePath: string): number => fs.statSync(filePath).size,
+    readFile: (filePath: string): Buffer => fs.readFileSync(filePath),
+    decodeImage: (bytes: Buffer): NativeImage =>
+      nativeImage.createFromBuffer(bytes),
     removeFile: (target: string): void => fs.rmSync(target, { force: true }),
+    pathExists: (target: string): boolean => fs.existsSync(target),
+    makeExecutable: (target: string): void => fs.chmodSync(target, 0o755),
+    runProcess,
+    /** AppImage, .deb or neither — asked of dpkg once per launch. */
+    linuxInstallShape: (): Promise<LinuxInstallShape> =>
+      (installShape ??= detectLinuxInstallShape({
+        appImage: installedAppPath(),
+        execPath: process.execPath,
+        run: runProcess,
+      })),
+    relaunch: (): void => app.relaunch(),
+    copyText: (text: string): void => clipboard.writeText(text),
+    showItemInFolder: (target: string): void => shell.showItemInFolder(target),
     writeFile: (target: string, contents: string): void =>
       fs.writeFileSync(target, contents),
     updaterFs: {
@@ -261,6 +337,16 @@ export function createElectronHost(options: ElectronHostOptions) {
     /** XDG_CURRENT_DESKTOP, which names the Linux settings tool to launch. */
     desktop: process.env.XDG_CURRENT_DESKTOP ?? '',
     sessionType: process.env.XDG_SESSION_TYPE ?? 'desconocida',
+    /**
+     * Native Wayland: the compositor ignores programmatic window positions,
+     * so a pinned popover gets its size back there, never its spot.
+     */
+    nativeWayland: runsNativeWayland(process),
+    displayLine: (): string | null => {
+      const backend = describeLinuxDisplayBackend(process);
+      if (!backend) return null;
+      return `${backend}, ${linuxWorkAreaNote(screen.getPrimaryDisplay())}`;
+    },
     appVersion: (): string => app.getVersion(),
     /**
      * One-click bug report: markdown (version, platform, app.log tail) to
@@ -285,6 +371,22 @@ export function createElectronHost(options: ElectronHostOptions) {
           error: error instanceof Error ? error.message : String(error),
         };
       }
+    },
+    /** What the report would carry, for the dialog to show before any
+     *  action: the full clipboard text and how many problems it lists. */
+    reportPreview: (): { text: string; errors: number; warnings: number } => {
+      const { clipboardText, errors, warnings } = buildReport();
+      return { text: clipboardText, errors, warnings };
+    },
+    /** Process- and app-level events, for the crash hooks. */
+    onProcess: (event: string, listener: (...args: never[]) => void): void => {
+      process.on(event, listener as (...args: unknown[]) => void);
+    },
+    onApp: (event: string, listener: (...args: never[]) => void): void => {
+      app.on(
+        event as 'child-process-gone',
+        listener as (...args: unknown[]) => void,
+      );
     },
     appQuit: (): void => app.quit(),
     appExit: (code: number): void => app.exit(code),

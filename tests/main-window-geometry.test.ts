@@ -4,7 +4,10 @@ import {
   bannerBounds,
   clampXToWorkArea,
   hasTrayBounds,
+  linuxWorkAreaNote,
+  safeLinuxWorkArea,
   taskbarSideOf,
+  trayPopoverBounds,
   trayPopoverHeight,
   trayPositionForTaskbarSide,
 } from '../src/main/window-geometry.js';
@@ -88,6 +91,69 @@ describe('src/main/window-geometry.ts', () => {
     });
   });
 
+  describe('trayPopoverBounds', () => {
+    /** Windows 1080p with the taskbar along the bottom edge. */
+    const winWorkArea = { x: 0, y: 0, width: 1920, height: 1040 };
+    /** macOS: the menubar takes the top 25px. */
+    const macWorkArea = { x: 0, y: 25, width: 1440, height: 875 };
+
+    it('grows upward from a bottom taskbar, keeping the bottom edge on it', () => {
+      const current = { x: 1500, y: 540, width: 410, height: 500 };
+      expect(trayPopoverBounds(current, 696, winWorkArea)).toEqual({
+        x: 1500,
+        y: 340,
+        width: 410,
+        height: 700,
+      });
+    });
+
+    it('shrinks toward a bottom taskbar instead of floating above it', () => {
+      const current = { x: 1500, y: 340, width: 410, height: 700 };
+      const next = trayPopoverBounds(current, 196, winWorkArea);
+      expect(next.height).toBe(200);
+      expect(next.y + next.height).toBe(1040);
+    });
+
+    it('grows downward from the macOS menubar, keeping the top edge', () => {
+      const current = { x: 900, y: 25, width: 410, height: 300 };
+      expect(trayPopoverBounds(current, 596, macWorkArea)).toEqual({
+        x: 900,
+        y: 25,
+        width: 410,
+        height: 600,
+      });
+    });
+
+    it('caps the height to the work area of the display it is on', () => {
+      const current = { x: 1500, y: 540, width: 410, height: 500 };
+      const next = trayPopoverBounds(current, 5000, winWorkArea);
+      expect(next.height).toBe(960);
+      expect(next.y).toBeGreaterThanOrEqual(winWorkArea.y);
+      expect(next.y + next.height).toBeLessThanOrEqual(1040);
+    });
+
+    it('places relative to a secondary display, not the primary one', () => {
+      const second = { x: 1920, y: 0, width: 1920, height: 1040 };
+      const current = { x: 3400, y: 840, width: 410, height: 200 };
+      const next = trayPopoverBounds(current, 496, second);
+      expect(next).toEqual({ x: 3400, y: 540, width: 410, height: 500 });
+    });
+
+    it('pulls a popover that would cross the bottom edge back on screen', () => {
+      // A side taskbar with the icon low on it: the popover hangs from the
+      // icon, so growing in place would run past the bottom of the screen.
+      const current = { x: 60, y: 300, width: 410, height: 300 };
+      const next = trayPopoverBounds(current, 896, winWorkArea);
+      expect(next.y + next.height).toBeLessThanOrEqual(1040);
+      expect(next.height).toBe(900);
+    });
+
+    it('keeps the popover inside the work area horizontally', () => {
+      const current = { x: 1700, y: 540, width: 410, height: 500 };
+      expect(trayPopoverBounds(current, 496, winWorkArea).x).toBe(1510);
+    });
+  });
+
   describe('taskbarSideOf', () => {
     it('reads a left panel from the x offset', () => {
       expect(
@@ -157,6 +223,105 @@ describe('src/main/window-geometry.ts', () => {
     it('rejects the empty Wayland rectangle and a missing one', () => {
       expect(hasTrayBounds({ x: 0, y: 0, width: 0, height: 0 })).toBe(false);
       expect(hasTrayBounds(undefined)).toBe(false);
+    });
+  });
+  describe('safeLinuxWorkArea', () => {
+    /** The reported Fedora/KDE case: 1280x800, workArea = the whole display. */
+    const unreported = {
+      bounds: { x: 0, y: 0, width: 1280, height: 800 },
+      workArea: { x: 0, y: 0, width: 1280, height: 800 },
+    };
+    const nearTop = { x: 1200, y: 0, width: 24, height: 24 };
+    const nearBottom = { x: 1200, y: 776, width: 24, height: 24 };
+
+    it('uses a work area the WM reported, untouched (X11 with a panel)', () => {
+      const display = {
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        workArea: { x: 0, y: 0, width: 1920, height: 1036 },
+      };
+      expect(safeLinuxWorkArea(display, nearBottom)).toEqual(display.workArea);
+    });
+
+    it('keeps a reported panel on any side as it is', () => {
+      const bounds = { x: 0, y: 0, width: 1920, height: 1080 };
+      for (const workArea of [
+        { x: 0, y: 36, width: 1920, height: 1044 },
+        { x: 48, y: 0, width: 1872, height: 1080 },
+        { x: 0, y: 0, width: 1872, height: 1080 },
+      ]) {
+        expect(
+          safeLinuxWorkArea({ bounds, workArea }, nearTop),
+          JSON.stringify(workArea),
+        ).toEqual(workArea);
+      }
+    });
+
+    it('caps the height at 75 % of the display when no area is reported', () => {
+      // 800 - 2 * 56 = 688 vs 0.75 * 800 = 600: the smaller one wins. Same
+      // rule on native Wayland and on an X11 WM without _NET_WORKAREA.
+      expect(safeLinuxWorkArea(unreported, nearTop)).toEqual({
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 600,
+      });
+    });
+
+    it('sits the capped area at the display end the tray is on', () => {
+      // A bottom panel without struts: the popover stays next to the icon
+      // instead of being pulled up into the top 75 % of the screen.
+      expect(safeLinuxWorkArea(unreported, nearBottom)).toEqual({
+        x: 0,
+        y: 200,
+        width: 1280,
+        height: 600,
+      });
+    });
+
+    it('stays inside a display that does not start at the origin', () => {
+      const display = {
+        bounds: { x: 1280, y: -200, width: 1920, height: 1080 },
+        workArea: { x: 1280, y: -200, width: 1920, height: 1080 },
+      };
+      const area = safeLinuxWorkArea(display, {
+        x: 3000,
+        y: 850,
+        width: 24,
+        height: 24,
+      });
+      expect(area).toEqual({ x: 1280, y: 70, width: 1920, height: 810 });
+      expect(area.y + area.height).toBe(display.bounds.y + 1080);
+    });
+
+    it('uses the two-panel margin when it is tighter than 75 %', () => {
+      const display = {
+        bounds: { x: 0, y: 0, width: 800, height: 400 },
+        workArea: { x: 0, y: 0, width: 800, height: 400 },
+      };
+      // 400 - 112 = 288 < 0.75 * 400 = 300.
+      expect(safeLinuxWorkArea(display, nearTop).height).toBe(288);
+    });
+
+    it('keeps a popover under the cap even at the tallest content', () => {
+      const capped = safeLinuxWorkArea(unreported, nearTop);
+      const bounds = trayPopoverBounds(
+        { x: 435, y: 150, width: 410, height: 500 },
+        5000,
+        capped,
+      );
+      expect(bounds.height).toBeLessThanOrEqual(600);
+    });
+  });
+
+  describe('linuxWorkAreaNote', () => {
+    it('says whether the work area was reported or capped', () => {
+      const bounds = { x: 0, y: 0, width: 1280, height: 800 };
+      expect(linuxWorkAreaNote({ bounds, workArea: { ...bounds } })).toBe(
+        'workArea unreported → capped',
+      );
+      expect(
+        linuxWorkAreaNote({ bounds, workArea: { ...bounds, height: 756 } }),
+      ).toBe('workArea reported');
     });
   });
 });

@@ -31,6 +31,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
   let folderResult = { canceled: false, filePaths: ['/chosen'] };
   let messageResponse = 1;
   let stopAll = { ok: true, failed: [] as string[] };
+  let overlayActive = false;
   let validation: ReturnType<AppIpcDeps['configIo']['validateImportedConfig']> =
     {
       ok: true,
@@ -43,8 +44,14 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
       replaceConfig: () => calls.push('replaceConfig'),
       writeImportBackup: () => '/backup.json',
       getGlobalSettings: () => makeSettings({ autostart: true }),
+      groupsOverlayActive: () => overlayActive,
     },
-    processManager: { stopAll: () => Promise.resolve(stopAll) },
+    processManager: {
+      stopAll: () => {
+        calls.push('stopAll');
+        return Promise.resolve(stopAll);
+      },
+    },
     configIo: {
       validateImportedConfig: () => validation,
       summarizeImport: () => preview,
@@ -72,6 +79,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
         staged: null,
         lastCheckAt: null,
         currentVersion: '1.2.0',
+        phase: { state: 'idle' },
       }),
       runUpdateCheck: (options) => {
         calls.push(`check:${options?.manual === true}`);
@@ -80,6 +88,14 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
       applyUpdate: () => {
         calls.push('apply');
         return Promise.resolve({ ok: true });
+      },
+      copyInstallCommand: () => {
+        calls.push('copyCommand');
+        return { ok: true };
+      },
+      showDownloadedFile: () => {
+        calls.push('showDownload');
+        return { ok: false, error: 'no_file' };
       },
     },
     snapshots: { forgetPipelineRunId: () => calls.push('forgetRunId') },
@@ -108,6 +124,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
       calls.push('copyReport');
       return { ok: true };
     },
+    reportPreview: () => ({ text: 'REPORT', errors: 2, warnings: 1 }),
     setTimer: (fn) => timers.push(fn),
     newImportToken: () => 'tok',
     ...overrides,
@@ -115,6 +132,9 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
   return {
     ipc,
     calls,
+    setOverlayActive: (value: boolean) => {
+      overlayActive = value;
+    },
     written,
     timers,
     setSave: (value: typeof saveResult) => {
@@ -148,6 +168,8 @@ describe('src/main/ipc/app-ipc.ts', () => {
         'updates:status',
         'updates:check',
         'updates:apply',
+        'updates:copyCommand',
+        'updates:showDownload',
         'updates:changelog',
         'config:export',
         'config:import',
@@ -161,6 +183,7 @@ describe('src/main/ipc/app-ipc.ts', () => {
         'app:openNotificationSettings',
         'app:reportIssue',
         'app:copyReport',
+        'app:reportPreview',
         'app:openExternal',
       ]);
     });
@@ -187,6 +210,29 @@ describe('src/main/ipc/app-ipc.ts', () => {
       );
     });
 
+    it('previews the report and its problem counts without copying', async () => {
+      const h = harness();
+      expect(await h.ipc.invoke('app:reportPreview')).toEqual({
+        ok: true,
+        text: 'REPORT',
+        errors: 2,
+        warnings: 1,
+      });
+      expect(h.calls).not.toContain('copyReport');
+    });
+
+    it('answers a failed preview instead of rejecting', async () => {
+      const h = harness({
+        reportPreview: () => {
+          throw new Error('disk gone');
+        },
+      });
+      expect(await h.ipc.invoke('app:reportPreview')).toEqual({
+        ok: false,
+        error: 'disk gone',
+      });
+    });
+
     it('reports failure when the browser refuses to open', async () => {
       const h = harness({
         openExternalAsync: () => Promise.reject(new Error('no browser')),
@@ -208,6 +254,16 @@ describe('src/main/ipc/app-ipc.ts', () => {
       await h.ipc.invoke('updates:check');
       await h.ipc.invoke('updates:apply');
       expect(h.calls).toEqual(['check:true', 'apply']);
+    });
+
+    it('copies the install command and reveals the download through the updater', () => {
+      const h = harness();
+      expect(h.ipc.invoke('updates:copyCommand')).toEqual({ ok: true });
+      expect(h.ipc.invoke('updates:showDownload')).toEqual({
+        ok: false,
+        error: 'no_file',
+      });
+      expect(h.calls).toEqual(['copyCommand', 'showDownload']);
     });
 
     it('serves the last five releases with the repo link', async () => {
@@ -377,6 +433,7 @@ describe('src/main/ipc/app-ipc.ts', () => {
         h.ipc.invoke('config:applyImport', { token: 'tok' }),
       ).resolves.toEqual({ ok: true, backupPath: '/backup.json' });
       expect(h.calls).toEqual([
+        'stopAll',
         'forgetRunId',
         'replaceConfig',
         'syncRepoWatchers',
@@ -392,6 +449,21 @@ describe('src/main/ipc/app-ipc.ts', () => {
       await expect(
         h.ipc.invoke('config:applyImport', { token: 'tok' }),
       ).resolves.toMatchObject({ ok: false });
+      expect(h.calls).not.toContain('replaceConfig');
+    });
+
+    it('refuses while the dev test groups are shown, before stopping anything', async () => {
+      // The user's real services keep running underneath the test groups;
+      // an import would stop every one of them and then be refused anyway.
+      const h = harness();
+      h.setOverlayActive(true);
+      await h.ipc.invoke('config:import');
+      const result = (await h.ipc.invoke('config:applyImport', {
+        token: 'tok',
+      })) as { ok: boolean; error?: string };
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('Modo grupos de prueba activo');
+      expect(h.calls).not.toContain('stopAll');
       expect(h.calls).not.toContain('replaceConfig');
     });
 
@@ -422,6 +494,7 @@ describe('src/main/ipc/app-ipc.ts', () => {
           },
           writeImportBackup: () => '/backup.json',
           getGlobalSettings: () => makeSettings(),
+          groupsOverlayActive: () => false,
         },
       });
       await h.ipc.invoke('config:import');

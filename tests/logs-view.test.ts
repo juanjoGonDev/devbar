@@ -15,6 +15,7 @@ function item(id: string): LogListItem {
     type: 'command',
     name: id,
     icon: null,
+    iconColor: null,
     lineCount: 0,
     status: 'stopped',
     warnCount: 0,
@@ -31,7 +32,8 @@ describe('renderer/logs/view.ts', () => {
       {
         groupId: 'g1',
         groupName: 'Back',
-        groupIcon: '📁',
+        groupIcon: 'folder',
+        groupIconColor: null,
         items: [item('g1:web'), item('g1:api')],
       },
     ];

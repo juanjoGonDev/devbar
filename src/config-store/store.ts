@@ -3,11 +3,13 @@ import { app } from 'electron';
 import Store from 'electron-store';
 import { DEFAULT_MAX_LOG_LINES } from '../domain-types.js';
 import type {
+  CustomIcon,
   GlobalSettings,
   Group,
   LegacyService,
   PreStep,
 } from '../domain-types.js';
+import { normalizeCustomIcons } from '../custom-icons.js';
 import {
   normalizeGroup,
   normalizePreStep,
@@ -15,6 +17,10 @@ import {
   prunePipelineRefs,
   regenerateLegacyServices,
 } from '../groups-model.js';
+import {
+  normalizePinnedPopover,
+  type PinnedPopover,
+} from '../main/pinned-popover-geometry.js';
 import {
   legacyLinuxConfigFile,
   migrateLegacyLinuxStore,
@@ -50,8 +56,16 @@ type StoreState = {
   preSteps: PreStep[];
   globalSettings: GlobalSettings;
   scheduleState: Record<string, string>;
+  /** Uploaded images usable as icons (see src/custom-icons.ts). */
+  customIcons: CustomIcon[];
+  /** Where the user pinned the tray popover; absent while it is anchored. */
+  trayPopover?: PinnedPopover;
   /** Absent until a v1/v2 store is actually converted — see the schema. */
   _services_pre_v3_backup?: unknown[];
+  /** Original emoji of every icon the Lucide migration replaced, keyed
+   *  `group:<id>` / `command:<groupId>/<id>` / `action:<groupId>/<id>`.
+   *  Absent until a conversion actually happens. */
+  _icons_pre_lucide_backup?: Record<string, string>;
 };
 
 function clampMaxLogLines(value: unknown): number {
@@ -68,6 +82,7 @@ const schema = {
   preSteps: { type: 'array', default: [] },
   globalSettings: { type: 'object', default: DEFAULT_GLOBAL_SETTINGS },
   scheduleState: { type: 'object', default: {} },
+  customIcons: { type: 'array', default: [] },
   // Deliberately NO default: conf fills schema defaults into `store.store`
   // before anything reads it, and `migrateServicesToGroups` treats ANY array
   // here as "a backup already exists" (so a real one is never overwritten).
@@ -75,6 +90,10 @@ const schema = {
   // original `services` had already been backed up, and the only copy of them
   // was dropped. Absent is the honest state until a conversion writes one.
   _services_pre_v3_backup: { type: 'array' },
+  // Same reasoning: no default, so absent means "nothing was converted".
+  _icons_pre_lucide_backup: { type: 'object' },
+  // No default either: absent IS "anchored to the tray icon".
+  trayPopover: { type: 'object' },
 } as const;
 
 /**
@@ -142,14 +161,43 @@ function runMigration(): void {
   if (plan.servicesBackup !== null) {
     store.set('_services_pre_v3_backup', plan.servicesBackup);
   }
+  if (plan.iconsBackup !== null) {
+    store.set('_icons_pre_lucide_backup', plan.iconsBackup);
+  }
 }
 runMigration();
 
-export function readGroups(): Group[] {
+/**
+ * The dev panel's "Grupos de prueba": while set, every group (and pipeline)
+ * read and write in the app goes to this in-memory copy instead of the store,
+ * so the user's configuration is hidden but never read-modify-written. Never
+ * persisted: a restart always comes back on the real groups.
+ */
+let overlay: { groups: Group[]; preSteps: PreStep[] } | null = null;
+
+export function setGroupsOverlay(groups: readonly Group[] | null): void {
+  overlay = groups
+    ? { groups: structuredClone([...groups]), preSteps: [] }
+    : null;
+}
+export function groupsOverlayActive(): boolean {
+  return overlay !== null;
+}
+
+/** The groups the user stored, whatever the overlay says (export, backup). */
+export function readStoredGroups(): Group[] {
   return store.get('groups', []).map(normalizeGroup);
 }
-export function readPreSteps(): PreStep[] {
+export function readStoredPreSteps(): PreStep[] {
   return store.get('preSteps', []).map(normalizePreStep);
+}
+// Copies, both ways: every caller mutates what it read before persisting it,
+// and that must not reach the overlay until it actually does persist.
+export function readGroups(): Group[] {
+  return overlay ? structuredClone(overlay.groups) : readStoredGroups();
+}
+export function readPreSteps(): PreStep[] {
+  return overlay ? structuredClone(overlay.preSteps) : readStoredPreSteps();
 }
 /**
  * Successor to the old `persistGroups`: writes `groups`, regenerates
@@ -164,9 +212,22 @@ export function persistState(
   steps?: readonly PreStep[],
 ): void {
   const prunedSteps = prunePipelineRefs(steps ?? readPreSteps(), groups);
+  if (overlay) {
+    overlay = { groups: structuredClone(groups), preSteps: prunedSteps };
+    return;
+  }
   store.set('groups', groups);
   store.set('services', regenerateLegacyServices(groups));
   store.set('preSteps', prunedSteps);
+}
+
+/** Read through normalizeCustomIcons: a hand-edited entry that is not an
+ *  inline PNG never reaches a renderer. */
+export function readCustomIcons(): CustomIcon[] {
+  return normalizeCustomIcons(store.get('customIcons', []));
+}
+export function writeCustomIcons(icons: readonly CustomIcon[]): void {
+  store.set('customIcons', normalizeCustomIcons(icons));
 }
 
 export function getGlobalSettings(): GlobalSettings {
@@ -197,6 +258,19 @@ export function setScheduleLastRun(processId: string, iso: string): void {
   const state = { ...store.get('scheduleState', {}) };
   state[processId] = iso;
   store.set('scheduleState', state);
+}
+
+/**
+ * The pinned tray popover (see src/main/pinned-popover.ts), read through
+ * normalizePinnedPopover so a hand-edited record means "not pinned" rather
+ * than a popover restored to NaN. Null deletes the key: anchored again.
+ */
+export function getTrayPopover(): PinnedPopover | null {
+  return normalizePinnedPopover(store.get('trayPopover'));
+}
+export function saveTrayPopover(value: PinnedPopover | null): void {
+  if (value) store.set('trayPopover', value);
+  else store.delete('trayPopover');
 }
 
 /** The schema version currently on disk — what an export/backup is labelled. */

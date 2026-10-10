@@ -238,6 +238,18 @@ const FORWARDS: readonly Forward[] = [
     'dev:simulateToast',
     [{ kind: 'error' }],
   ],
+  [
+    'dev.fixtureGroupsStatus',
+    (api) => api.dev.fixtureGroupsStatus(),
+    'dev:fixtureGroupsStatus',
+    [],
+  ],
+  [
+    'dev.setFixtureGroups',
+    (api) => api.dev.setFixtureGroups(true, 3),
+    'dev:setFixtureGroups',
+    [{ on: true, repeat: 3 }],
+  ],
   ['openConfig', (api) => api.openConfig(), 'window:openConfig', []],
   [
     'openConfigChangelog',
@@ -265,6 +277,13 @@ const FORWARDS: readonly Forward[] = [
     [{ groupId: 'g1', commandId: 'c1' }],
   ],
   ['setTrayHeight', (api) => api.setTrayHeight(420), 'tray:setHeight', [420]],
+  ['getTrayPinned', (api) => api.getTrayPinned(), 'tray:pinnedState', []],
+  [
+    'resetTrayPosition',
+    (api) => api.resetTrayPosition(),
+    'tray:resetPosition',
+    [],
+  ],
   ['getSettings', (api) => api.getSettings(), 'settings:get', []],
   [
     'saveSettings',
@@ -293,7 +312,38 @@ const FORWARDS: readonly Forward[] = [
   ['getUpdateStatus', (api) => api.getUpdateStatus(), 'updates:status', []],
   ['checkForUpdates', (api) => api.checkForUpdates(), 'updates:check', []],
   ['applyUpdate', (api) => api.applyUpdate(), 'updates:apply', []],
+  [
+    'copyUpdateCommand',
+    (api) => api.copyUpdateCommand(),
+    'updates:copyCommand',
+    [],
+  ],
+  [
+    'showUpdateDownload',
+    (api) => api.showUpdateDownload(),
+    'updates:showDownload',
+    [],
+  ],
   ['getIconBattery', (api) => api.getIconBattery(), 'icons:get', []],
+  ['listCustomIcons', (api) => api.listCustomIcons(), 'customIcons:list', []],
+  [
+    'uploadCustomIcon',
+    (api) => api.uploadCustomIcon(),
+    'customIcons:upload',
+    [],
+  ],
+  [
+    'addRasterizedCustomIcon',
+    (api) => api.addRasterizedCustomIcon({ name: 'mark', dataUrl: 'data:x' }),
+    'customIcons:addRasterized',
+    [{ name: 'mark', dataUrl: 'data:x' }],
+  ],
+  [
+    'deleteCustomIcon',
+    (api) => api.deleteCustomIcon('abc123'),
+    'customIcons:delete',
+    [{ id: 'abc123' }],
+  ],
   ['exportConfig', (api) => api.exportConfig(), 'config:export', []],
   ['importConfig', (api) => api.importConfig(), 'config:import', []],
   [
@@ -415,6 +465,7 @@ const FORWARDS: readonly Forward[] = [
   ],
   ['reportIssue', (api) => api.reportIssue(), 'app:reportIssue', []],
   ['copyReport', (api) => api.copyReport(), 'app:copyReport', []],
+  ['reportPreview', (api) => api.reportPreview(), 'app:reportPreview', []],
   [
     'openNotificationSettings',
     (api) => api.openNotificationSettings(),
@@ -444,6 +495,7 @@ type SubscriptionCase = readonly [
 const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ['onConfigGoto', (api, cb) => api.onConfigGoto(cb), 'config:goto'],
   ['onUpdateStatus', (api, cb) => api.onUpdateStatus(cb), 'updates:status'],
+  ['onUpdatePhase', (api, cb) => api.onUpdatePhase(cb), 'updates:phase'],
   [
     'onPipelineUpdate',
     (api, cb) => api.onPipelineUpdate(cb),
@@ -460,6 +512,12 @@ const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ],
   ['onActionDone', (api, cb) => api.onActionDone(cb), 'action:done'],
   ['onToast', (api, cb) => api.onToast(cb), 'groups:toast'],
+  ['onTrayPinned', (api, cb) => api.onTrayPinned(cb), 'tray:pinned'],
+  [
+    'onCustomIconsChanged',
+    (api, cb) => api.onCustomIconsChanged(cb),
+    'customIcons:changed',
+  ],
 ];
 
 describe('src/preload.ts', () => {

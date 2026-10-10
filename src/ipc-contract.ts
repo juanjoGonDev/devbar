@@ -1,6 +1,5 @@
 import type {
   Action,
-  AvailableUpdate,
   Command,
   GlobalSettings,
   Group,
@@ -10,20 +9,20 @@ import type {
   ProcessStatus,
   ReleaseSummary,
   SilencedPatterns,
-  StagedUpdate,
   ThemePreference,
 } from './domain-types.js';
+import type { SimpleResult } from './ipc-contract/simple-result.js';
+import type { UpdatesApi } from './ipc-contract/updates-api.js';
+import type { CustomIconsApi } from './ipc-contract/custom-icons-api.js';
 
+export type { UpdatePhase } from './update-phase-types.js';
+export type { UpdateStatus } from './ipc-contract/updates-api.js';
+export type {
+  CustomIconAddResult,
+  CustomIconUploadResult,
+} from './ipc-contract/custom-icons-api.js';
 export type SilenceLevel = 'warn' | 'error';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
-type SimpleResult =
-  | { ok: true }
-  | {
-      ok: false;
-      error?: string | undefined;
-      canceled?: boolean;
-      cancelled?: boolean;
-    };
 export interface CommandRuntimeState {
   commandId: string;
   processId: string;
@@ -103,6 +102,7 @@ export interface LogListItem {
   type: 'command' | 'action' | 'prescript' | 'pipeline';
   name: string;
   icon: string | null;
+  iconColor: string | null;
   lineCount: number;
   status: ProcessStatus;
   warnCount: number;
@@ -116,20 +116,18 @@ export interface LogListGroup {
   groupId: string;
   groupName: string;
   groupIcon: string;
+  groupIconColor: string | null;
   items: LogListItem[];
 }
+/** One pickable icon: a Lucide name (what Group/Command/Action.icon store)
+ *  and the search tags it is found by. */
 export interface IconBatteryItem {
-  emoji: string;
-  label: string;
-  group: string;
-  keywords?: readonly string[];
-}
-export interface UpdateStatus {
-  available: AvailableUpdate | null;
-  /** Downloaded and unpacked — applying it is just a restart. */
-  staged: StagedUpdate | null;
-  lastCheckAt: string | null;
-  currentVersion: string;
+  name: string;
+  tags: readonly string[];
+  /** Spanish search terms, added by main from src/icon-search-es.ts. */
+  es?: readonly string[];
+  /** The name, translated word by word — the picker's tooltip. */
+  esName?: string;
 }
 export interface ImportPreview {
   groupsCount: number;
@@ -200,7 +198,6 @@ interface ApplyImportResult {
   backupPath?: string | undefined;
   error?: string | undefined;
 }
-type NotificationAction = string;
 
 /**
  * Simulation hooks for events that are painful to reproduce by hand. The
@@ -224,9 +221,22 @@ interface DevSimulationApi {
   simulateSuccess(): Promise<SimpleResult>;
   simulatePrescriptConfirm(): Promise<SimpleResult>;
   simulateToast(kind: 'ok' | 'error'): Promise<SimpleResult>;
+  /** Whether the "Grupos de prueba" are shown, and how many copies. */
+  fixtureGroupsStatus(): Promise<FixtureGroupsStatus>;
+  /** Shows `repeat` copies of the test groups instead of the real ones, or
+   *  (off) stops their processes and brings the real groups back. */
+  setFixtureGroups(
+    on: boolean,
+    repeat: number,
+  ): Promise<FixtureGroupsStatus & { ok: boolean; error?: string }>;
 }
 
-export interface DevBarApi {
+interface FixtureGroupsStatus {
+  active: boolean;
+  repeat: number;
+}
+
+export interface DevBarApi extends UpdatesApi, CustomIconsApi {
   listGroups(): Promise<Group[]>;
   getGroupStates(): Promise<GroupState[]>;
   saveGroup(
@@ -304,15 +314,16 @@ export interface DevBarApi {
   setTrayHeight(
     height: number,
   ): Promise<{ ok: boolean; applied?: number | undefined }>;
+  /** Whether the user pinned the popover away from the tray icon. */
+  getTrayPinned(): Promise<{ pinned: boolean }>;
+  /** Forgets the pinned spot and puts the popover back by the tray icon. */
+  resetTrayPosition(): Promise<SimpleResult>;
+  onTrayPinned(callback: (pinned: boolean) => void): () => void;
   getSettings(): Promise<GlobalSettings>;
   saveSettings(patch: Partial<GlobalSettings>): Promise<GlobalSettings>;
   testNotification(): Promise<SimpleResult>;
   dismissNotification(): Promise<SimpleResult>;
-  notificationAction(action: NotificationAction): Promise<SimpleResult>;
-  getUpdateStatus(): Promise<UpdateStatus>;
-  checkForUpdates(): Promise<UpdateStatus>;
-  applyUpdate(): Promise<Record<string, unknown>>;
-  onUpdateStatus(callback: (payload: UpdateStatus) => void): () => void;
+  notificationAction(action: string): Promise<SimpleResult>;
   getIconBattery(): Promise<readonly IconBatteryItem[]>;
   exportConfig(): Promise<ExportResult>;
   importConfig(): Promise<ImportResult>;
@@ -398,6 +409,15 @@ export interface DevBarApi {
   /** Same report to the clipboard, but nothing opens: for the user who
    *  prefers pasting it wherever they like. */
   copyReport(): Promise<{ ok: boolean; error?: string }>;
+  /** The report text as it would be copied, plus how many recent errors
+   *  and warnings it lists — for the dialog, before any action. */
+  reportPreview(): Promise<{
+    ok: boolean;
+    text?: string;
+    errors?: number;
+    warnings?: number;
+    error?: string;
+  }>;
   /**
    * Open the OS notification settings: macOS deep-links to this app's own
    * row, Windows to the notifications page, Linux to the detected desktop's

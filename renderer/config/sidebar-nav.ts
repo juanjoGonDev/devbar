@@ -1,3 +1,4 @@
+import { icon } from '../icon.js';
 import { openChangelog } from '../changelog.js';
 import { openReportModal } from '../report-modal.js';
 
@@ -66,7 +67,9 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
 
   function setNavCollapsed(on: boolean): void {
     els.nav.classList.toggle('collapsed', on);
-    els.navCollapse.textContent = on ? '▨' : '◧';
+    els.navCollapse.replaceChildren(
+      icon(on ? 'panel-left-open' : 'panel-left-close'),
+    );
     try {
       localStorage.setItem('config-nav-collapsed', on ? '1' : '0');
     } catch {
@@ -105,9 +108,10 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
   // Collapsible groups list (focus the editor by hiding the list).
   function setGroupsListCollapsed(on: boolean): void {
     els.groupsTwoPane.classList.toggle('list-collapsed', on);
-    // Same glyph and same semantics as the logs window's sidebar toggle: it
-    // shows which side is folded rather than which way you are travelling.
-    els.groupsCollapse.textContent = on ? '▨' : '◧';
+    // Same icon and same semantics as the logs window's sidebar toggle.
+    els.groupsCollapse.replaceChildren(
+      icon(on ? 'panel-left-open' : 'panel-left-close'),
+    );
     try {
       localStorage.setItem('groups-list-collapsed', on ? '1' : '0');
     } catch {

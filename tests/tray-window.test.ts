@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   loadRendererWindow,
   type RendererWindow,
 } from './helpers/renderer-dom.js';
+import { iconText } from './helpers/icon-text.js';
 import type {
   CommandRuntimeState,
   GroupState,
@@ -21,7 +25,8 @@ function groupState(
     group: {
       id: `group-${name}`,
       name,
-      icon: '📦',
+      icon: 'package',
+      iconColor: null,
       path: '',
       mode: 'single',
       order: 0,
@@ -88,6 +93,7 @@ function updateStatus(version: string | null): UpdateStatus {
     staged: null,
     lastCheckAt: null,
     currentVersion: '0.0.0',
+    phase: { state: 'idle' },
   };
 }
 
@@ -111,6 +117,39 @@ function click(el: Element): void {
 /** Lets the one-frame resize debounce actually run. */
 async function nextFrame(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 40));
+}
+
+/**
+ * Every `selector { … -webkit-app-region: … }` rule in the shipped CSS. jsdom
+ * neither lays out nor understands app regions, so the contract is checked
+ * against the real stylesheet: which rule each element MATCHES.
+ */
+function appRegionRules(): { selector: string; region: string }[] {
+  const css = fs
+    .readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        '../renderer/styles.css',
+      ),
+      'utf8',
+    )
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(
+    ([, selectors = '', body = '']) => {
+      const region = /-webkit-app-region:\s*([a-z-]+)/.exec(body)?.[1];
+      if (!region) return [];
+      return selectors
+        .split(',')
+        .map((selector) => ({ selector: selector.trim(), region }));
+    },
+  );
+}
+
+/** The app regions `el` falls under, from the rules it matches. */
+function regionsOf(el: Element): string[] {
+  return appRegionRules()
+    .filter(({ selector }) => el.matches(selector))
+    .map(({ region }) => region);
 }
 
 describe('renderer/tray.ts', () => {
@@ -164,6 +203,26 @@ describe('renderer/tray.ts', () => {
       await win.settle('getGroupStates', [groupState('api')]);
       await nextFrame();
       expect(win.callCount('setTrayHeight')).toBeGreaterThan(0);
+    });
+
+    it('follows the content while open, without waiting for the next show', async () => {
+      const win = await openTray();
+      await win.settle('getGroupStates', [groupState('api')]);
+      await nextFrame();
+      // jsdom has no layout: stand in for the list growing once a banner
+      // appears outside any state render.
+      Object.defineProperty(byId('groups'), 'scrollHeight', {
+        configurable: true,
+        get: () => 480,
+      });
+      await win.push('onUpdatePhase', {
+        state: 'downloading',
+        version: '9.9.9',
+        received: 42,
+        total: 100,
+      });
+      await nextFrame();
+      expect(win.argsFor('setTrayHeight').at(-1)).toEqual([480]);
     });
   });
 
@@ -247,6 +306,15 @@ describe('renderer/tray.ts', () => {
       expect(openConfig).toHaveBeenCalledTimes(1);
     });
 
+    it('paints the header buttons with bundled icons', async () => {
+      await openTray();
+      expect(iconText(byId('open-telemetry')).trim()).toBe('[scroll-text]');
+      expect(iconText(byId('open-config')).trim()).toBe('[settings]');
+      expect(iconText(byId('quit-app')).trim()).toBe('[power]');
+      // Hydrated: the placeholder now holds the glyph itself.
+      expect(byId('quit-app').querySelector('.icon')?.textContent).not.toBe('');
+    });
+
     it('quits the app', async () => {
       const quit = vi.fn();
       await openTray({ quit });
@@ -265,7 +333,9 @@ describe('renderer/tray.ts', () => {
     it('adds up the warnings and errors across every group', async () => {
       const win = await openTray();
       await win.settle('getGroupStates', [noisy(2, 1), noisy(3, 0)]);
-      expect(byId('alerts-summary').textContent).toBe('⚠ 5✕ 1');
+      expect(iconText(byId('alerts-summary'))).toBe(
+        '[triangle-alert] 5[circle-x] 1',
+      );
     });
 
     it('stays hidden when nothing is wrong', async () => {
@@ -293,7 +363,7 @@ describe('renderer/tray.ts', () => {
           ],
         }),
       ]);
-      expect(byId('alerts-summary').textContent).toBe('✕ 2');
+      expect(iconText(byId('alerts-summary'))).toBe('[circle-x] 2');
     });
 
     it('opens the telemetry view already filtered to that level', async () => {
@@ -320,7 +390,7 @@ describe('renderer/tray.ts', () => {
       const win = await openTray();
       await win.push('onPipelineUpdate', pipelineState({ totalSteps: 2 }));
       const trigger = host().querySelector('.prescripts-trigger');
-      expect(trigger?.textContent).toBe('▶▶');
+      expect(iconText(trigger)).toBe('[fast-forward]');
       expect((trigger as HTMLElement).title).toBe('Ejecutar pipeline');
     });
 
@@ -353,98 +423,35 @@ describe('renderer/tray.ts', () => {
       expect(byId('toast').textContent).toBe('Ya hay un pipeline corriendo');
     });
 
-    it('shows the step and the elapsed time while it runs', async () => {
+    it('pulses while a run is in flight', async () => {
       const win = await openTray();
       await win.push(
         'onPipelineUpdate',
+        pipelineState({ status: 'running', totalSteps: 2, currentStep: 1 }),
+      );
+      const trigger = host().querySelector<HTMLElement>('.prescripts-trigger');
+      expect(trigger?.dataset.prestepStatus).toBe('running');
+    });
+
+    it('keeps only the trigger in the header row, whatever the run does', async () => {
+      const win = await openTray();
+      for (const state of [
         pipelineState({
           status: 'running',
-          currentStep: 2,
-          totalSteps: 3,
-          startedAt: Date.now() - 5000,
-        }),
-      );
-      expect(host().querySelector('.prestep-step')?.textContent).toBe('2/3');
-      expect(host().querySelector('.prestep-elapsed')).not.toBeNull();
-      expect(
-        (host().querySelector('.prestep-badge') as HTMLElement).title,
-      ).toBe('Pipeline: paso 2/3');
-    });
-
-    it('drops the step counter for a single-step pipeline', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'running', currentStep: 1, totalSteps: 1 }),
-      );
-      expect(host().querySelector('.prestep-step')).toBeNull();
-    });
-
-    it('offers to cancel a run in flight', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'running', currentStep: 1, totalSteps: 2 }),
-      );
-      click(host().querySelector('.prestep-cancel') ?? host());
-      expect(win.callCount('cancelPreScripts')).toBe(1);
-    });
-
-    it('ticks a finished run', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'done', totalSteps: 2 }),
-      );
-      expect(host().querySelector('.prestep-badge.ok')?.textContent).toBe('✓');
-    });
-
-    it('shows the failure and what it said', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({
-          status: 'error',
+          currentStep: 1,
           totalSteps: 2,
-          lastError: 'migración falló',
+          lastRunId: 'run-1',
+          startedAt: Date.now(),
         }),
-      );
-      const badge = host().querySelector('.prestep-badge.err') as HTMLElement;
-      expect(badge.textContent).toBe('✕');
-      expect(badge.title).toBe('migración falló');
-    });
-
-    it('keeps a finished run reviewable through its log', async () => {
-      const openLogs = vi.fn();
-      const win = await openTray({ openLogs });
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'done', totalSteps: 1, lastRunId: 'run-7' }),
-      );
-      click(host().querySelector('.prestep-logs-btn') ?? host());
-      expect(openLogs).toHaveBeenCalledWith('pre-pipeline:run-7');
-    });
-
-    it('renders the initial read when no push has landed', async () => {
-      const win = await openTray();
-      await win.settle(
-        'getPipelineState',
-        pipelineState({ status: 'done', totalSteps: 1 }),
-      );
-      expect(host().querySelector('.prestep-badge.ok')).not.toBeNull();
-    });
-
-    it('keeps a pushed state that landed before that read resolved', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'error', totalSteps: 1 }),
-      );
-      await win.settle(
-        'getPipelineState',
-        pipelineState({ status: 'done', totalSteps: 1 }),
-      );
-      expect(host().querySelector('.prestep-badge.err')).not.toBeNull();
+        pipelineState({ status: 'done', totalSteps: 2, lastRunId: 'run-1' }),
+        pipelineState({ status: 'error', totalSteps: 2, lastRunId: 'run-1' }),
+      ]) {
+        await win.push('onPipelineUpdate', state);
+        expect(
+          Array.from(host().children, (el) => el.className),
+          state.status,
+        ).toEqual(['ghost prescripts-trigger']);
+      }
     });
   });
 
@@ -582,6 +589,98 @@ describe('renderer/tray.ts', () => {
       byId('groups').appendChild(stray);
       vi.advanceTimersByTime(1000);
       expect(stray.textContent).toBe('sin datos');
+    });
+  });
+
+  describe('the pinned popover', () => {
+    function resetButton(): HTMLButtonElement {
+      const el = document.getElementById('reset-tray-position');
+      if (!(el instanceof HTMLButtonElement))
+        throw new Error('no #reset-tray-position');
+      return el;
+    }
+
+    it('hides "Volver junto al icono" while the popover hangs from the icon', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: false });
+      expect(resetButton().hidden).toBe(true);
+    });
+
+    it('shows it once the popover is pinned, with an accessible label', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: true });
+      const button = resetButton();
+      expect(button.hidden).toBe(false);
+      expect(button.getAttribute('aria-label')).toBe('Volver junto al icono');
+      expect(button.title).toBe('Volver junto al icono');
+      expect(iconText(button)).toBe('[pin-off]');
+    });
+
+    it('follows the pinned state main pushes', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: false });
+      await win.push('onTrayPinned', true);
+      expect(resetButton().hidden).toBe(false);
+      await win.push('onTrayPinned', false);
+      expect(resetButton().hidden).toBe(true);
+    });
+
+    it('asks main to re-anchor the popover', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: true });
+      click(resetButton());
+      expect(win.callCount('resetTrayPosition')).toBe(1);
+    });
+  });
+
+  describe('dragging the popover by its header', () => {
+    it('makes the header a drag region', async () => {
+      await openTray();
+      const header = document.querySelector('.tray-header');
+      if (!header) throw new Error('no header');
+      expect(regionsOf(header)).toEqual(['drag']);
+    });
+
+    it('keeps every control in the header clickable', async () => {
+      const win = await openTray();
+      await win.settle('getTrayPinned', { pinned: true });
+      await win.settle(
+        'getPipelineState',
+        pipelineState({
+          status: 'running',
+          currentStep: 1,
+          totalSteps: 1,
+          lastRunId: '3',
+        }),
+      );
+      await win.push('onUpdatePhase', {
+        state: 'check-failed',
+        reason: 'sin red',
+      });
+      await win.settle('getGroupStates', [
+        groupState('api', {
+          commands: [commandState({ warnCount: 2, errorCount: 1 })],
+        }),
+      ]);
+      const controls = document.querySelectorAll(
+        '.tray-header button, .tray-header input, .tray-header select, .tray-header a',
+      );
+      expect(controls.length).toBeGreaterThan(5);
+      for (const control of controls)
+        expect(regionsOf(control), control.outerHTML).toContain('no-drag');
+    });
+
+    it('leaves the group rows and the branch dropdown out of the drag region', async () => {
+      const win = await openTray();
+      await win.settle('getGroupStates', [groupState('api')]);
+      const list = document.createElement('div');
+      list.className = 'combobox-list';
+      document.body.appendChild(list);
+      expect(regionsOf(list)).toEqual(['no-drag']);
+      const rows = document.querySelectorAll('#groups *');
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows)
+        expect(regionsOf(row), row.outerHTML).not.toContain('drag');
     });
   });
 });

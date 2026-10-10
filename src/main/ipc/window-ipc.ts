@@ -6,7 +6,8 @@ import {
   ipcStringField,
   type IpcRegistrar,
 } from '../ipc-validators.js';
-import { trayPopoverHeight, type Rect } from '../window-geometry.js';
+import { trayPopoverBounds, type Rect } from '../window-geometry.js';
+import type { PinnedPopoverController } from '../pinned-popover.js';
 import type { Group } from '../../domain-types.js';
 
 /**
@@ -21,7 +22,7 @@ import type { Group } from '../../domain-types.js';
 interface PopoverLike {
   isDestroyed: () => boolean;
   getBounds: () => Rect;
-  setSize: (width: number, height: number, animate?: boolean) => void;
+  setBounds: (bounds: Rect, animate?: boolean) => void;
 }
 
 export interface WindowIpcDeps {
@@ -57,8 +58,15 @@ export interface WindowIpcDeps {
     /** Hides the tray popover unconditionally (the renderer asked for it). */
     hide: () => void;
     popover: () => PopoverLike | null;
-    /** Work-area height of the display the popover sits on. */
-    workAreaHeight: (bounds: Rect) => number;
+    /** Work area of the display a rectangle sits on. */
+    workAreaFor: (bounds: Rect) => Rect;
+    /** The tray icon's bounds, or null where the platform reports none. */
+    trayIconBounds: () => Rect | null;
+    /** The popover's pinned mode (see src/main/pinned-popover.ts). */
+    pinned: Pick<
+      PinnedPopoverController,
+      'autoHeightBounds' | 'programmatic' | 'isPinned' | 'reset'
+    >;
   };
   showMessageBoxForSender: (
     sender: unknown,
@@ -100,8 +108,9 @@ export function registerWindowIpc(
     return { ok: true };
   });
 
-  // The renderer measures its natural scrollHeight after every render and sends
-  // it here so the popover grows / shrinks to fit.
+  // The renderer measures its natural content height whenever the DOM changes
+  // and sends it here, so the popover grows / shrinks to fit while it is open.
+  // Size AND position move together: the edge next to the tray stays put.
   ipc.handle(
     'tray:setHeight',
     (_e: IpcMainInvokeEvent, rawContentHeight: unknown) => {
@@ -111,16 +120,38 @@ export function registerWindowIpc(
       // and every call on that throws — so a destroyed popover is no popover.
       if (!popover || popover.isDestroyed()) return { ok: false };
       const bounds = popover.getBounds();
-      const desired = trayPopoverHeight(
-        contentHeight,
-        deps.trayHost.workAreaHeight(bounds),
-      );
-      if (desired !== bounds.height) {
-        popover.setSize(bounds.width, desired, false);
+      // A pinned popover fits under the user's own frame instead.
+      const next =
+        deps.trayHost.pinned.autoHeightBounds(bounds, contentHeight) ??
+        trayPopoverBounds(
+          bounds,
+          contentHeight,
+          // The display the tray icon is on, so the cap matches the screen the
+          // user clicked; without icon bounds (Wayland), the popover's own.
+          deps.trayHost.workAreaFor(deps.trayHost.trayIconBounds() ?? bounds),
+        );
+      if (
+        next.height !== bounds.height ||
+        next.width !== bounds.width ||
+        next.y !== bounds.y ||
+        next.x !== bounds.x
+      ) {
+        // DevBar's own resize: it must never read as the user pinning it.
+        deps.trayHost.pinned.programmatic(() => popover.setBounds(next, false));
       }
-      return { ok: true, applied: desired };
+      return { ok: true, applied: next.height };
     },
   );
+
+  // The header's "Volver junto al icono" button only shows while pinned.
+  ipc.handle('tray:pinnedState', () => ({
+    pinned: deps.trayHost.pinned.isPinned(),
+  }));
+  // Same action from the header button and from Config → General.
+  ipc.handle('tray:resetPosition', () => {
+    deps.trayHost.pinned.reset();
+    return { ok: true };
+  });
 
   ipc.handle('window:openLogs', (_e: IpcMainInvokeEvent, payload: unknown) => {
     // Scope form: open the shared window on a merged view instead of one
@@ -197,7 +228,7 @@ export function registerWindowIpc(
   ipc.handle('notifications:test', () => {
     deps.notifications.showBannerNotification(
       'DevBar',
-      'Notificación de prueba ✅',
+      'Notificación de prueba',
     );
     return { ok: true };
   });

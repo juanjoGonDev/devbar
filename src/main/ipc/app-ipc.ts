@@ -8,7 +8,11 @@ import {
   type IpcRegistrar,
 } from '../ipc-validators.js';
 import type { ImportPayload } from '../../config-io.js';
-import type { GlobalSettings, ReleaseSummary } from '../../domain-types.js';
+import type {
+  CustomIcon,
+  GlobalSettings,
+  ReleaseSummary,
+} from '../../domain-types.js';
 import type { ImportPreview, UpdateStatus } from '../../ipc-contract.js';
 import type { ApplyUpdateResult } from '../assisted-update.js';
 
@@ -31,9 +35,12 @@ export interface AppIpcDeps {
       groups: unknown[];
       preSteps?: unknown[];
       globalSettings: Partial<GlobalSettings>;
+      customIcons?: readonly CustomIcon[];
     }) => void;
     writeImportBackup: () => string;
     getGlobalSettings: () => GlobalSettings;
+    /** The dev panel's test groups are shown instead of the stored ones. */
+    groupsOverlayActive: () => boolean;
   };
   processManager: { stopAll(): Promise<{ ok: boolean; failed: string[] }> };
   configIo: {
@@ -75,6 +82,8 @@ export interface AppIpcDeps {
     status: () => UpdateStatus;
     runUpdateCheck: (options?: { manual?: boolean }) => Promise<unknown>;
     applyUpdate: () => Promise<ApplyUpdateResult>;
+    copyInstallCommand: () => { ok: boolean; error?: string };
+    showDownloadedFile: () => { ok: boolean; error?: string };
   };
   /** stopAll wiped every log buffer, so a stale run id must not linger. */
   snapshots: { forgetPipelineRunId(): void };
@@ -98,6 +107,7 @@ export interface AppIpcDeps {
    *  answers the URL to open (host-provided; see src/report-issue.ts). */
   reportIssue: () => { url: string; bodyIncluded: boolean };
   copyReport: () => { ok: boolean; error?: string };
+  reportPreview: () => { text: string; errors: number; warnings: number };
   setTimer?: (fn: () => void, ms: number) => unknown;
   newImportToken?: () => string;
 }
@@ -118,6 +128,10 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
     deps.updater.runUpdateCheck({ manual: true }),
   );
   ipc.handle('updates:apply', () => deps.updater.applyUpdate());
+  // No arguments on purpose: the command and the file come from main's own
+  // update state, never from the renderer.
+  ipc.handle('updates:copyCommand', () => deps.updater.copyInstallCommand());
+  ipc.handle('updates:showDownload', () => deps.updater.showDownloadedFile());
   // Last 5 releases for the changelog modal, plus the repo's releases page.
   ipc.handle('updates:changelog', async () => ({
     releases: await deps.fetchReleases(5),
@@ -231,6 +245,14 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
         };
       }
       pendingImports.delete(token);
+      // Checked before anything is stopped: the user's real services keep
+      // running underneath the dev panel's test groups.
+      if (deps.configStore.groupsOverlayActive())
+        return {
+          ok: false,
+          error:
+            'Modo grupos de prueba activo: quita los grupos de prueba en el panel Dev antes de importar.',
+        };
       try {
         const backupPath = deps.configStore.writeImportBackup();
         const stopped = await deps.processManager.stopAll();
@@ -318,6 +340,14 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
   });
   // Copy-only report: the same clipboard content, nothing opens.
   ipc.handle('app:copyReport', () => deps.copyReport());
+  // What the report would carry, shown in the dialog before any action.
+  ipc.handle('app:reportPreview', () => {
+    try {
+      return { ok: true, ...deps.reportPreview() };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  });
 
   // Open an external https URL in the default browser. https-only guard so a
   // renderer bug can't fire arbitrary schemes (file:, javascript:, …).

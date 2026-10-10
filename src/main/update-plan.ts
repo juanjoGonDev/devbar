@@ -1,5 +1,6 @@
 import { normalizeArch } from '../update-check.js';
 import type { AvailableUpdate } from '../domain-types.js';
+import type { LinuxInstallShape } from './linux-package.js';
 
 /**
  * Every decision the update flow makes before it touches the disk or the
@@ -65,37 +66,30 @@ export interface AssistedUpdatePlan {
    *  - `open-and-quit` (Windows): run the installer; a failure to open is
    *    reported without opening the page, since the installer is the only
    *    supported route.
-   *  - `hand-off` (Linux): tell the user where the file is and keep running.
    */
-  postDownload:
-    'open-and-quit-with-page-fallback' | 'open-and-quit' | 'hand-off';
+  postDownload: 'open-and-quit-with-page-fallback' | 'open-and-quit';
 }
 
 /**
- * Assisted update — reached when an in-place update is not possible for this
- * install shape (or before a staged download exists).
+ * Assisted update for macOS and Windows — reached when an in-place update is
+ * not possible for this install shape (or before a staged download exists).
  *
  * - macOS:  the .dmg, then the Finder volume, then QUIT so the drag into
  *           Applications isn't blocked by the running app.
  * - Windows: the NSIS installer, which upgrades the install and relaunches;
  *           QUIT so the locked exe can be replaced.
- * - Linux:  the .deb (or AppImage) into Downloads, and the user takes it from
- *           there — system installs need the package manager.
+ *
+ * Linux has its own flow (`linuxUpdateArtifact` + linux-update.ts): which
+ * artifact it wants depends on how it was installed, not only on the release.
  */
 export function assistedUpdatePlan(input: {
   version: string;
-  update: Pick<
-    AvailableUpdate,
-    'dmgUrl' | 'setupUrl' | 'debUrl' | 'appImageUrl'
-  >;
+  update: Pick<AvailableUpdate, 'dmgUrl' | 'setupUrl'>;
   platform: NodeJS.Platform;
   arch: string;
 }): AssistedUpdatePlan {
   const { version, update, platform, arch } = input;
-  const isMac = platform === 'darwin';
-  const isWin = platform === 'win32';
-  const isLinux = platform === 'linux';
-  if (isMac && update.dmgUrl)
+  if (platform === 'darwin' && update.dmgUrl)
     return {
       downloadUrl: update.dmgUrl,
       destName: `DevBar-${version}-macos-${arch}.dmg`,
@@ -104,10 +98,9 @@ export function assistedUpdatePlan(input: {
         'Se descargará el instalador y DevBar se CERRARÁ para que puedas sustituirla (macOS no deja reemplazar la app mientras está abierta).\n\nSe abrirá una ventana del Finder: arrastra DevBar a Aplicaciones y vuelve a abrirla.',
       postDownload: 'open-and-quit-with-page-fallback',
     };
-  // The NSIS installer is Windows-only: a `!isMac` guard would make LINUX
-  // download the .exe (it is published for every platform) and quit instead of
-  // reaching the deb/AppImage branches below.
-  if (isWin && update.setupUrl)
+  // The NSIS installer is Windows-only: it is published for every platform,
+  // and handing it to anything else would download an .exe and quit.
+  if (platform === 'win32' && update.setupUrl)
     return {
       downloadUrl: update.setupUrl,
       destName: `DevBar-${version}-win-${arch}-setup.exe`,
@@ -116,37 +109,53 @@ export function assistedUpdatePlan(input: {
         'Se descargará el instalador, DevBar se CERRARÁ y el instalador actualizará la aplicación en su sitio.',
       postDownload: 'open-and-quit',
     };
-  const defaults = {
-    buttons: ['Cancelar', 'Descargar'],
-    postDownload: 'hand-off' as const,
-  };
-  // `isLinux`, not `!isMac`: the .deb and the AppImage are Linux-only, exactly
-  // as the setup.exe is Windows-only above. With `!isMac`, a release that
-  // published no setup.exe handed a WINDOWS user a Debian package and told
-  // them to install it.
-  if (isLinux && update.debUrl)
-    return {
-      ...defaults,
-      downloadUrl: update.debUrl,
-      // Must match the release asset naming (linux-armv7.*), otherwise the
-      // SHA256 manifest lookup for this file name would miss on 32-bit ARM.
-      destName: `DevBar-${version}-linux-${normalizeArch(platform, arch)}.deb`,
-      detail:
-        'Se abrirá la página de la release para descargar la nueva versión.',
-    };
-  if (isLinux && update.appImageUrl)
-    return {
-      ...defaults,
-      downloadUrl: update.appImageUrl,
-      destName: `DevBar-${version}-linux-${normalizeArch(platform, arch)}.AppImage`,
-      detail:
-        'Se descargará la AppImage a Descargas. Cierra DevBar y ejecútala desde ahí (o cópiala a ~/Applications).',
-    };
   return {
-    ...defaults,
     downloadUrl: null,
     destName: '',
+    buttons: ['Cancelar', 'Descargar'],
     detail:
       'Se abrirá la página de la release para descargar la nueva versión.',
+    postDownload: 'open-and-quit',
   };
+}
+
+export interface LinuxUpdateArtifact {
+  url: string;
+  /** Must match the release asset name: the SHA256 lookup keys on it. */
+  fileName: string;
+  kind: 'deb' | 'appImage';
+}
+
+/**
+ * The artifact a Linux install downloads when it cannot swap in place. The
+ * install shape decides: an AppImage user is NEVER handed the .deb (it would
+ * install a second, system-wide copy next to the one they run), a .deb
+ * install gets the package its package manager can upgrade, and anything
+ * unrecognised gets the package first.
+ */
+export function linuxUpdateArtifact(input: {
+  version: string;
+  update: Pick<AvailableUpdate, 'debUrl' | 'appImageUrl'>;
+  shape: LinuxInstallShape;
+  arch: string;
+}): LinuxUpdateArtifact | null {
+  const { version, update, shape } = input;
+  // linux-armv7.* — Node reports 32-bit ARM as `arm`.
+  const arch = normalizeArch('linux', input.arch);
+  const deb = update.debUrl
+    ? {
+        url: update.debUrl,
+        fileName: `DevBar-${version}-linux-${arch}.deb`,
+        kind: 'deb' as const,
+      }
+    : null;
+  const appImage = update.appImageUrl
+    ? {
+        url: update.appImageUrl,
+        fileName: `DevBar-${version}-linux-${arch}.AppImage`,
+        kind: 'appImage' as const,
+      }
+    : null;
+  if (shape === 'appImage') return appImage;
+  return deb ?? appImage;
 }

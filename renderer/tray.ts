@@ -1,19 +1,21 @@
 import './report-uncaught.js';
 import { formatUptime } from './format-uptime.js';
 import { isComboboxOpen, setComboboxHostHooks } from './combobox.js';
-import type {
-  GroupState,
-  PipelineState,
-  UpdateStatus,
-} from '../src/ipc-contract.js';
+import type { GroupState, PipelineState } from '../src/ipc-contract.js';
 import { byId } from './dom.js';
 import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
 import { setTrayHost, showToast } from './tray/host.js';
+import { wireUpdateChip } from './tray/update-chip.js';
+import { renderPipelineStrip } from './tray/pipeline-strip.js';
+import { installAutoHeight } from './tray/auto-height.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
+import { hydrateIcons, icon } from './icon.js';
+import { watchCustomIcons } from './custom-icons.js';
 initTheme();
+hydrateIcons(document);
 const groupsEl = byId('groups', HTMLElement);
 const toastEl = byId('toast', HTMLElement);
 
@@ -76,23 +78,26 @@ function renderAlertsSummary(groupStates: GroupState[]): void {
   // view already pinned to that level.
   if (warns > 0)
     summary.appendChild(
-      alertButton('warn', `⚠ ${warns}`, `Ver los ${warns} warning(s) de todo`),
+      alertButton('warn', warns, `Ver los ${warns} warning(s) de todo`),
     );
   if (errs > 0)
     summary.appendChild(
-      alertButton('error', `✕ ${errs}`, `Ver los ${errs} error(es) de todo`),
+      alertButton('error', errs, `Ver los ${errs} error(es) de todo`),
     );
 }
 
 function alertButton(
   level: 'warn' | 'error',
-  label: string,
+  count: number,
   title: string,
 ): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = level === 'warn' ? 'warn-count' : 'error-count';
-  btn.textContent = label;
+  btn.append(
+    icon(level === 'warn' ? 'triangle-alert' : 'circle-x'),
+    ` ${count}`,
+  );
   btn.title = title;
   btn.addEventListener('click', () => {
     void window.api.openLogs({ scope: 'all', level });
@@ -102,14 +107,16 @@ function alertButton(
 
 // ─────────────────────── Global pipeline trigger ──────────────────────
 //
-// One global `▶▶` trigger/badge/cancel-chip/logs-button, replacing the
-// per-group ones (there is one pipeline now, not one per group). Rendered
-// once in the sticky header, not per group row.
+// One global run-pipeline trigger in the sticky header row (there is one
+// pipeline now, not one per group). Everything about a run — step, elapsed
+// time, cancel, logs, the ✓/✕ result — lives in the pipeline strip under the
+// row (renderer/tray/pipeline-strip.ts).
 
 let lastPipelineState: PipelineState | null = null;
 
 function renderPipelineTrigger(state: PipelineState | null): void {
   lastPipelineState = state;
+  renderPipelineStrip(state);
   const host = document.getElementById('pipeline-trigger');
   if (!host) return;
   host.innerHTML = '';
@@ -121,8 +128,9 @@ function renderPipelineTrigger(state: PipelineState | null): void {
   triggerBtn.className = 'ghost prescripts-trigger';
   triggerBtn.title =
     state.status === 'running' ? 'Pipeline corriendo…' : 'Ejecutar pipeline';
+  triggerBtn.setAttribute('aria-label', triggerBtn.title);
   triggerBtn.dataset.prestepStatus = state.status;
-  triggerBtn.textContent = '▶▶';
+  triggerBtn.append(icon('fast-forward'));
   triggerBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (state.status === 'running') {
@@ -135,72 +143,6 @@ function renderPipelineTrigger(state: PipelineState | null): void {
     }
   });
   host.appendChild(triggerBtn);
-
-  // Status badge — compact, responsive: hide "paso N/M" when redundant
-  // (single-step pipelines) and drop the word "paso" for multi-step. Full
-  // info lives in the tooltip so the header never gets squeezed by the
-  // badge regardless of how long the pipeline runs.
-  if (state.status === 'running') {
-    const badge = document.createElement('span');
-    badge.className = 'prestep-badge';
-    const total = state.totalSteps || 1;
-    const current = state.currentStep || 1;
-    const showStep = total > 1;
-    badge.title = `Pipeline: paso ${current}/${total}`;
-
-    if (showStep) {
-      const stepSpan = document.createElement('span');
-      stepSpan.className = 'prestep-step';
-      stepSpan.textContent = `${current}/${total}`;
-      badge.appendChild(stepSpan);
-    }
-
-    if (state.startedAt) {
-      if (showStep) badge.appendChild(document.createTextNode(' · '));
-      const elapsedSpan = document.createElement('span');
-      elapsedSpan.className = 'uptime prestep-elapsed';
-      elapsedSpan.dataset.startedAt = String(state.startedAt);
-      elapsedSpan.textContent = formatUptime(Date.now() - state.startedAt);
-      badge.appendChild(elapsedSpan);
-    }
-
-    host.appendChild(badge);
-
-    const cancelChip = document.createElement('button');
-    cancelChip.className = 'ghost prestep-cancel';
-    cancelChip.title = 'Cancelar pipeline';
-    cancelChip.textContent = '×';
-    cancelChip.addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.api.cancelPreScripts();
-    });
-    host.appendChild(cancelChip);
-  } else if (state.status === 'done') {
-    const badge = document.createElement('span');
-    badge.className = 'prestep-badge ok';
-    badge.textContent = '✓';
-    host.appendChild(badge);
-  } else if (state.status === 'error') {
-    const badge = document.createElement('span');
-    badge.className = 'prestep-badge err';
-    badge.title = state.lastError || 'Error en el pipeline';
-    badge.textContent = '✕';
-    host.appendChild(badge);
-  }
-
-  // Log opener — shown whenever a run's log exists (it persists after the
-  // transient status badge clears), so a finished pipeline stays reviewable.
-  if (state.lastRunId) {
-    const logsBtn = document.createElement('button');
-    logsBtn.className = 'ghost prestep-logs-btn';
-    logsBtn.title = 'Ver logs del pipeline';
-    logsBtn.textContent = '📋';
-    logsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.api.openLogs(`pre-pipeline:${state.lastRunId}`);
-    });
-    host.appendChild(logsBtn);
-  }
 }
 
 // ─────────────────────── Main render ─────────────────────────────────
@@ -230,14 +172,14 @@ function render(groupStates: GroupState[]): void {
     empty.innerHTML =
       'No hay grupos configurados.<br/>Pulsa <strong>Configuración</strong> para añadir uno.';
     groupsEl.appendChild(empty);
-    scheduleTrayResize();
+    autoHeight.schedule();
     return;
   }
 
   for (const gs of groupStates) {
     groupsEl.appendChild(renderGroupRow(gs));
   }
-  scheduleTrayResize();
+  autoHeight.schedule();
 }
 
 // ─────────────────────── Dynamic popover height ──────────────────────
@@ -273,24 +215,25 @@ function measureContentHeight(): number {
   return Math.ceil(padTop + headerBlock + groups.scrollHeight + padBottom);
 }
 
-let _resizeRaf = 0;
-/**
- * Resize the tray window to its natural content height, debounced to one
- * animation frame. No-ops while a dropdown is open (the combobox owns the
- * height then); closeList() re-runs it once the dropdown count hits 0.
- */
+// Every DOM change in the popover — a state render, a row expanding, the
+// update chip, a banner — re-measures on the next frame, so the height
+// follows the content while the popover is open. While a dropdown is open the
+// combobox owns the height (requestHostHeight grows to fit it); closeList()
+// forces a resend once the count hits 0, which shrinks the window back.
+const autoHeight = installAutoHeight({
+  root: document.body,
+  measure: measureContentHeight,
+  send: (height) => {
+    if (window.api?.setTrayHeight) void window.api.setTrayHeight(height);
+  },
+  isSuspended: isComboboxOpen,
+});
+/** Re-measures on the next frame and resends even an unchanged height. */
 function scheduleTrayResize(): void {
-  if (_resizeRaf) cancelAnimationFrame(_resizeRaf);
-  _resizeRaf = requestAnimationFrame(() => {
-    _resizeRaf = 0;
-    // While a dropdown is open the combobox owns the height (requestHostHeight
-    // grows to fit it); shrinking here would clip it. closeList() re-runs this
-    // once the count hits 0.
-    if (isComboboxOpen()) return;
-    if (!window.api || !window.api.setTrayHeight) return;
-    window.api.setTrayHeight(measureContentHeight());
-  });
+  autoHeight.schedule(true);
 }
+// Shown again (possibly on another display, with another cap): resend.
+window.addEventListener('focus', scheduleTrayResize);
 /** Replay a state update that was deferred while a dropdown was open. */
 function flushPendingRender(): void {
   if (!_pendingStates) return;
@@ -319,6 +262,23 @@ byId('open-config', HTMLButtonElement).addEventListener('click', () => {
 byId('quit-app', HTMLButtonElement).addEventListener('click', () => {
   window.api.quit();
 });
+
+// "Volver junto al icono": only while the user has pinned the popover away
+// from the tray icon (dragged or resized it). Main pushes every change.
+const resetTrayPositionBtn = byId('reset-tray-position', HTMLButtonElement);
+function showPinned(pinned: boolean): void {
+  resetTrayPositionBtn.hidden = !pinned;
+}
+resetTrayPositionBtn.addEventListener('click', () => {
+  void window.api.resetTrayPosition();
+});
+window.api.onTrayPinned(showPinned);
+window.api
+  .getTrayPinned()
+  .then(({ pinned }) => showPinned(pinned))
+  .catch(() => {
+    /* stays hidden: the popover is anchored as far as this window knows */
+  });
 
 let lastPathSignature = '';
 const pushedGroupStates = latestWins();
@@ -386,34 +346,7 @@ if (window.api.getAppVersion) {
     });
 }
 
-// A pending update puts a small red dot on the version chip — same cue as the
-// menubar mark and the one in config, so the user knows where to click.
-function markVersionUpdate(status: UpdateStatus): void {
-  const el = document.getElementById('app-version');
-  if (!el) return;
-  const version = status && status.available ? status.available.version : null;
-  el.classList.toggle('has-update', !!version);
-  el.title = version
-    ? `v${version} disponible — ver changelog`
-    : 'Ver changelog';
-}
-
-if (window.api.getUpdateStatus) {
-  const pushedUpdateStatus = latestWins();
-  const initialUpdateStatus = pushedUpdateStatus.claim();
-  window.api
-    .getUpdateStatus()
-    .then((status) => {
-      // Same race as the group states: a pushed status that landed first
-      // would be undone here, dropping the dot from the version chip until
-      // the next check hours later.
-      if (initialUpdateStatus()) markVersionUpdate(status);
-    })
-    .catch(() => {});
-  window.api.onUpdateStatus((status) => {
-    pushedUpdateStatus.invalidate();
-    markVersionUpdate(status);
-  });
-}
+wireUpdateChip();
 
 installTooltips();
+watchCustomIcons();

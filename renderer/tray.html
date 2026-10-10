@@ -4,9 +4,10 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self' 'unsafe-inline'"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="icons.css" />
     <link rel="stylesheet" href="emoji.css" />
     <title>DevBar</title>
   </head>
@@ -23,13 +24,24 @@
         <span id="alerts-summary" class="alerts-summary"></span>
         <span id="pipeline-trigger" class="pipeline-trigger-host"></span>
         <span class="spacer"></span>
+        <!-- Only while the user has pinned the popover away from the icon. -->
+        <button
+          id="reset-tray-position"
+          class="ghost icon-only"
+          type="button"
+          title="Volver junto al icono"
+          aria-label="Volver junto al icono"
+          hidden
+        >
+          <span class="icon" data-icon="pin-off"></span>
+        </button>
         <button
           id="open-telemetry"
           class="ghost icon-only"
           title="Telemetría — todos los logs de todos los grupos"
           aria-label="Telemetría"
         >
-          📜
+          <span class="icon" data-icon="scroll-text"></span>
         </button>
         <button
           id="open-config"
@@ -37,7 +49,7 @@
           title="Configuración"
           aria-label="Configuración"
         >
-          ⚙️
+          <span class="icon" data-icon="settings"></span>
         </button>
         <button
           id="quit-app"
@@ -45,8 +57,14 @@
           title="Salir"
           aria-label="Salir"
         >
-          ⏹
+          <span class="icon" data-icon="power"></span>
         </button>
+      </div>
+      <!-- Slim status strips under the header row; the area collapses when
+           neither is showing (renderer/tray/strip.ts). -->
+      <div id="tray-strips" class="tray-strips" hidden>
+        <div id="update-strip" class="tray-strip" hidden></div>
+        <div id="pipeline-strip" class="tray-strip" hidden></div>
       </div>
     </div>
     <div id="groups" class="groups-list"></div>

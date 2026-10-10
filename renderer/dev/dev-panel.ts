@@ -1,3 +1,4 @@
+import { icon } from '../icon.js';
 import type { TrayColor } from '../../src/ipc-contract.js';
 
 /**
@@ -190,7 +191,91 @@ function buildSection(version: HTMLInputElement): HTMLElement {
     card.appendChild(row);
     section.appendChild(card);
   }
+  section.appendChild(buildFixtureCard());
   return section;
+}
+
+const FIXTURE_NOTE =
+  'Sustituye tus grupos por un juego de prueba: servicios que escriben cada segundo, avisos y errores, mucha salida, fallos al arrancar (código 1, comando inexistente, carpeta inexistente) y acciones correctas, fallidas y lentas, con iconos y colores distintos. Sirve para ver la barra y la configuración llenas. Tus grupos no se tocan: quedan ocultos y sin cambios, y sus procesos siguen corriendo. Lo que edites mientras tanto solo cambia los grupos de prueba y se pierde al quitarlos; exportar lleva siempre tus grupos reales e importar queda bloqueado. Al quitarlos se paran todos sus procesos.';
+
+/** "Repetir ×N" as the main process takes it: a whole number, 1 to 20. */
+function clampRepeat(raw: string): number {
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(20, Math.max(1, value));
+}
+
+/** The "Grupos de prueba" card: a load/remove toggle and the copy count. */
+function buildFixtureCard(api = window.api): HTMLElement {
+  const card = document.createElement('section');
+  card.className = 'settings-card';
+  const heading = document.createElement('h2');
+  heading.textContent = 'Grupos de prueba';
+  const note = document.createElement('p');
+  note.className = 'muted small';
+  note.textContent = FIXTURE_NOTE;
+
+  const row = document.createElement('div');
+  row.className = 'dev-actions';
+  const label = document.createElement('label');
+  label.className = 'dev-repeat-label';
+  label.textContent = 'Repetir ×';
+  const repeat = document.createElement('input');
+  repeat.type = 'number';
+  repeat.className = 'dev-repeat';
+  repeat.min = '1';
+  repeat.max = '20';
+  repeat.value = '1';
+  repeat.setAttribute('aria-label', 'Repetir ×N');
+  label.appendChild(repeat);
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  row.append(label, toggle);
+
+  const status = document.createElement('p');
+  status.className = 'muted small dev-fixture-status';
+  let active = false;
+
+  function show(next: { active: boolean; repeat: number }): void {
+    active = next.active;
+    repeat.value = String(next.repeat);
+    toggle.textContent = active
+      ? 'Quitar grupos de prueba'
+      : 'Cargar grupos de prueba';
+    status.textContent = active
+      ? `Activo: ${next.repeat} ${next.repeat === 1 ? 'copia' : 'copias'} del juego de prueba.`
+      : '';
+  }
+  show({ active: false, repeat: 1 });
+
+  toggle.addEventListener('click', () => {
+    const copies = clampRepeat(repeat.value);
+    toggle.disabled = true;
+    void api.dev
+      .setFixtureGroups(!active, copies)
+      .then((result) => {
+        show(result);
+        if (!result.ok && result.error) status.textContent = result.error;
+      })
+      .catch(() => {
+        /* handler missing (packaged) — nothing to surface here */
+      })
+      .finally(() => {
+        toggle.disabled = false;
+      });
+  });
+  // Config may open while the test groups are already on. Deferred so a
+  // bridge without the call (packaged) rejects here instead of throwing
+  // out of the mount.
+  void Promise.resolve()
+    .then(() => api.dev.fixtureGroupsStatus())
+    .then(show)
+    .catch(() => {
+      /* handler missing (packaged) */
+    });
+
+  card.append(heading, note, row, status);
+  return card;
 }
 
 function buildNavButton(): HTMLElement {
@@ -199,14 +284,14 @@ function buildNavButton(): HTMLElement {
   button.className = 'nav-item';
   button.dataset.target = 'dev';
   button.setAttribute('aria-label', 'Dev');
-  const icon = document.createElement('span');
-  icon.className = 'nav-ico';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '🧪';
+  const ico = document.createElement('span');
+  ico.className = 'nav-ico';
+  ico.setAttribute('aria-hidden', 'true');
+  ico.append(icon('flask-conical'));
   const label = document.createElement('span');
   label.className = 'nav-label';
   label.textContent = 'Dev';
-  button.append(icon, label);
+  button.append(ico, label);
   return button;
 }
 

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PIPELINE_LOG_GROUP_ID } from '../src/pipeline-labels.js';
@@ -263,7 +264,7 @@ describe('renderer/logs/rows.ts', () => {
     it('is offered on a warning', () => {
       const { row } = build(line('ojo', { originalLevel: 'warn' }));
       const btn = row.querySelector<HTMLElement>('.silence-btn');
-      expect(btn?.textContent).toBe('🔕');
+      expect(iconText(btn)).toBe('[bell-off]');
     });
 
     it('offers to UNDO it on a line a rule already swallowed', () => {
@@ -271,7 +272,7 @@ describe('renderer/logs/rows.ts', () => {
         line('ojo', { originalLevel: 'error', silenced: true }),
       );
       const btn = row.querySelector<HTMLElement>('.silence-btn');
-      expect(btn?.textContent).toBe('🔔');
+      expect(iconText(btn)).toBe('[bell]');
       expect(btn?.title).toContain('Quitar silencio');
     });
 

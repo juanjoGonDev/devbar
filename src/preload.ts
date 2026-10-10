@@ -86,6 +86,9 @@ const api: DevBarApi = {
     simulatePrescriptConfirm: () =>
       ipcRenderer.invoke('dev:simulatePrescriptConfirm'),
     simulateToast: (kind) => ipcRenderer.invoke('dev:simulateToast', { kind }),
+    fixtureGroupsStatus: () => ipcRenderer.invoke('dev:fixtureGroupsStatus'),
+    setFixtureGroups: (on, repeat) =>
+      ipcRenderer.invoke('dev:setFixtureGroups', { on, repeat }),
   },
   openConfig: () => ipcRenderer.invoke('window:openConfig'),
   openConfigChangelog: () => ipcRenderer.invoke('window:openConfigChangelog'),
@@ -97,6 +100,9 @@ const api: DevBarApi = {
   getSilencedForCommand: (groupId, commandId) =>
     ipcRenderer.invoke('silenced:getForCommand', { groupId, commandId }),
   setTrayHeight: (height) => ipcRenderer.invoke('tray:setHeight', height),
+  getTrayPinned: () => ipcRenderer.invoke('tray:pinnedState'),
+  resetTrayPosition: () => ipcRenderer.invoke('tray:resetPosition'),
+  onTrayPinned: (cb) => subscribe('tray:pinned', cb),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
   testNotification: () => ipcRenderer.invoke('notifications:test'),
@@ -107,7 +113,16 @@ const api: DevBarApi = {
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   applyUpdate: () => ipcRenderer.invoke('updates:apply'),
   onUpdateStatus: (cb) => subscribe('updates:status', cb),
+  onUpdatePhase: (cb) => subscribe('updates:phase', cb),
+  copyUpdateCommand: () => ipcRenderer.invoke('updates:copyCommand'),
+  showUpdateDownload: () => ipcRenderer.invoke('updates:showDownload'),
   getIconBattery: () => ipcRenderer.invoke('icons:get'),
+  listCustomIcons: () => ipcRenderer.invoke('customIcons:list'),
+  uploadCustomIcon: () => ipcRenderer.invoke('customIcons:upload'),
+  addRasterizedCustomIcon: (icon) =>
+    ipcRenderer.invoke('customIcons:addRasterized', icon),
+  deleteCustomIcon: (id) => ipcRenderer.invoke('customIcons:delete', { id }),
+  onCustomIconsChanged: (cb) => subscribe('customIcons:changed', cb),
   exportConfig: () => ipcRenderer.invoke('config:export'),
   importConfig: () => ipcRenderer.invoke('config:import'),
   confirmImport: (args) => ipcRenderer.invoke('config:confirmImport', args),
@@ -155,6 +170,7 @@ const api: DevBarApi = {
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   reportIssue: () => ipcRenderer.invoke('app:reportIssue'),
   copyReport: () => ipcRenderer.invoke('app:copyReport'),
+  reportPreview: () => ipcRenderer.invoke('app:reportPreview'),
   openNotificationSettings: () =>
     ipcRenderer.invoke('app:openNotificationSettings'),
   confirmDirty: (context) =>

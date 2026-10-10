@@ -4,9 +4,11 @@ import { openChangelog } from './changelog.js';
 import { initPipelineEditor } from './pipeline-editor.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
+import { hydrateIcons } from './icon.js';
 import { createToast, errorMessage } from './config/toast.js';
 import { createScheduleEditor } from './config/schedule-editor.js';
 import { createIconPicker } from './config/icon-picker.js';
+import { watchCustomIcons } from './custom-icons.js';
 import { createGroupStore } from './config/group-store.js';
 import { createGroupsList } from './config/groups-list.js';
 import { createGroupDetail } from './config/group-detail.js';
@@ -17,6 +19,7 @@ import { createSettingsPane } from './config/settings-pane.js';
 import { wireBackupButtons } from './config/backup-pane.js';
 import { wireUpdatesPane } from './config/updates-pane.js';
 initTheme();
+hydrateIcons(document);
 
 // ────────────────────── DOM references ────────────────────────────────
 // Every `byId` assertion in this window lives here: it runs at load time and
@@ -53,6 +56,10 @@ const setNotifySuccess = byId<HTMLInputElement>(
 );
 const testNotifyBtn = byId<HTMLButtonElement>(
   'test-notification',
+  HTMLButtonElement,
+);
+const resetTrayPositionBtn = byId<HTMLButtonElement>(
+  'reset-tray-position-config',
   HTMLButtonElement,
 );
 const autostartHint = byId<HTMLElement>('autostart-hint', HTMLElement);
@@ -169,8 +176,11 @@ const iconPicker = createIconPicker({
 });
 const openIconPicker = (
   anchorEl: HTMLElement,
-  onSelect: (emoji: string) => void,
+  onSelect: (value: string) => void,
 ): void => iconPicker.open(anchorEl, onSelect);
+// Uploaded icons: every `img:<id>` on screen repaints in place, and an open
+// picker re-lists the library.
+watchCustomIcons(() => iconPicker.refresh());
 
 const schedule = createScheduleEditor({
   group: sfScheduleGroup,
@@ -264,7 +274,7 @@ createSidebarNav({
 addGroupBtn.addEventListener('click', async () => {
   const newGroup = {
     name: 'Nuevo grupo',
-    icon: '📦',
+    icon: 'package',
     path: '',
     mode: 'multi',
     silenceWarnings: false,
@@ -293,6 +303,7 @@ const settings = createSettingsPane(
     notifHint,
     openNotifSettings: openNotifSettingsBtn,
     testNotify: testNotifyBtn,
+    resetTrayPosition: resetTrayPositionBtn,
   },
   showToast,
 );

@@ -27,11 +27,13 @@ import { loadShellPath, expandTilde } from './path-helper.js';
 import { RepoWatcher } from './repo-watcher.js';
 import { createPreScriptRunner } from './pre-script-runner.js';
 import { ICON_BATTERY } from './icon-battery.js';
+import { withSpanishSearch } from './icon-search.js';
 import { createAppWindows } from './main/app-windows.js';
 import { createConfirmQueue } from './main/confirm-queue.js';
-import { registerDevPanel } from './main/dev-panel.js';
+import { startMainDiagnostics } from './main/crash-reporting.js';
+import { createFixtureHost, registerDevPanel } from './main/dev-panel.js';
 import { downloadFile } from './main/download-file.js';
-import { createElectronHost } from './main/electron-host.js';
+import { createElectronHost, settleDisplay } from './main/electron-host.js';
 import { setupMenubar, wireProcessEvents } from './main/lifecycle.js';
 import { createLogWindows } from './main/log-windows.js';
 import { createNotifications } from './main/notification-banner.js';
@@ -50,6 +52,7 @@ import { createStartup } from './main/startup.js';
 import { createStateSnapshots } from './main/state-snapshot.js';
 import { createTrayController, linuxRebuildPieces } from './main/tray.js';
 import { buildTrayContextMenu } from './main/tray-view.js';
+import { createTrayHost } from './main/tray-host.js';
 import { createUpdater } from './main/updater.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
 import type { Group } from './domain-types.js';
@@ -70,9 +73,11 @@ const SMOKE_MARKER_PATH = path.join(os.tmpdir(), 'devbar-smoke-ok');
 // so the data locations are pinned explicitly in app-paths.ts instead.
 if (app.isPackaged) app.name = 'DevBar';
 
-loadShellPath();
-
-const isPrimary = app.requestSingleInstanceLock();
+// Wayland → XWayland relaunch first (see linux-display-backend.ts): the
+// short-lived process neither spawns the login shell nor takes the lock.
+const relaunching = settleDisplay();
+if (!relaunching) loadShellPath();
+const isPrimary = !relaunching && app.requestSingleInstanceLock();
 const processManager = new ProcessManager(configStore);
 const repoWatcher = new RepoWatcher();
 /** Group-level transient errors (not persisted). */
@@ -91,15 +96,9 @@ const host = createElectronHost({
     BrowserWindow.getFocusedWindow(),
 });
 
-// File logger, initialised before anything noisy so we capture early
-// `console.*` from the main process. The renderer side is hooked later, when
-// each BrowserWindow is created (we need its `webContents` to subscribe).
-try {
-  logger.init({ filePath: host.logFilePath() });
-  logger.attachMainConsole();
-} catch (e) {
-  console.error('logger init failed:', e); // never block startup
-}
+// File logger (main console now; each BrowserWindow's console is hooked
+// when it is created) plus the crash hooks that write through it.
+startMainDiagnostics(host);
 
 // Resource samples in app.log — fans-spin-up reports need numbers.
 attachProductionSampling(host, () => app.getAppMetrics());
@@ -134,11 +133,8 @@ const snapshots = createStateSnapshots({
 function broadcast(): void {
   const payload = snapshots.snapshotGroupStates();
   sendToRenderers(registry, 'groups:update', payload);
-  sendToRenderers(
-    registry,
-    'pipeline:update',
-    snapshots.snapshotPipelineState(),
-  );
+  const pipeline = snapshots.snapshotPipelineState();
+  sendToRenderers(registry, 'pipeline:update', pipeline);
   tray.updateTitle(payload);
 }
 const toast = (kind: string, message: string): void =>
@@ -158,7 +154,8 @@ const trayContextMenu = (): ReturnType<typeof Menu.buildFromTemplate> =>
     availableUpdate: () => updater.available(),
     stagedUpdate: () => updater.staged(),
     logWindows: () => [...registry.logs.entries()],
-    onApplyUpdate: () => void updater.applyUpdate(),
+    updatePhase: () => updater.status().phase,
+    onApplyUpdate: () => void updater.applyUpdateAndReport(),
     onOpenConfig: () => appWindows.ensureConfigWindow(),
   });
 
@@ -219,7 +216,7 @@ const notifications = createNotifications({
   workArea: host.workArea,
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
-  applyUpdate: () => void updater.applyUpdate(),
+  applyUpdate: () => void updater.applyUpdateAndReport(),
   platform: process.platform,
 });
 
@@ -229,8 +226,7 @@ const updater = createUpdater({
   ...host,
   downloadFile,
   repo: UPDATE_REPO,
-  sendUpdateStatus: (payload) =>
-    sendToRenderers(registry, 'updates:status', payload),
+  send: (channel, payload) => sendToRenderers(registry, channel, payload),
   refreshTrayIcon: tray.refreshIcon,
   showBannerNotification: notifications.showBannerNotification,
   toast,
@@ -288,14 +284,7 @@ function syncRepoWatchers(): void {
   ]);
 }
 
-const trayHost = {
-  hideIfVisible: () => {
-    if (menuBar?.window?.isVisible()) menuBar.hideWindow();
-  },
-  hide: () => menuBar?.hideWindow(),
-  popover: () => menuBar?.window ?? null,
-  workAreaHeight: host.workAreaHeight,
-};
+const trayHost = createTrayHost(() => menuBar, host, configStore);
 
 // Presence of the files IS the switch, rather than `!app.isPackaged`. A normal
 // build strips src/dev and renderer/dev, so this is off; a build made with
@@ -315,20 +304,7 @@ const devHooks = {
   showBanner: notifications.showBannerNotification,
   showFallbackBanner: notifications.showCustomBanner,
   showCompletionNotification: notifications.showCompletionNotification,
-  // Dev-only manual trigger, unrelated to the real pipeline: a pipeline cancel
-  // must never close this simulated dialog, and no real group backs it.
-  openPrescriptConfirm: (name: string, command: string) =>
-    void confirms.showConfirmModal(
-      {
-        name,
-        command,
-        args: [],
-        confirmSecs: null,
-        confirmOnTimeout: 'cancel',
-      },
-      'interactive',
-      null,
-    ),
+  showConfirmModal: confirms.showConfirmModal,
   toast,
   installedBundle: selfUpdate.installedAppPath,
   updatesDir: host.updatesDir,
@@ -336,6 +312,16 @@ const devHooks = {
   removeFile: host.removeFile,
   stagedVersion: () => updater.staged()?.version ?? null,
   pruneStagedUpdates: updater.pruneStagedUpdates,
+  fixtures: createFixtureHost({
+    app,
+    pathExists: host.pathExists,
+    setOverlay: configStore.setGroupsOverlay,
+    processManager,
+    refresh: () => {
+      syncRepoWatchers();
+      broadcast();
+    },
+  }),
 };
 
 function registerIpc(): void {
@@ -366,7 +352,9 @@ function registerIpc(): void {
     fetchReleases: (limit) =>
       updateCheck.fetchReleases({ ...UPDATE_REPO, limit }),
     releasesUrl: `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}/releases`,
-    iconBattery: ICON_BATTERY,
+    iconBattery: withSpanishSearch(ICON_BATTERY),
+    customIconsChanged: (icons) =>
+      sendToRenderers(registry, 'customIcons:changed', icons),
   });
   registerDevPanel(
     host.devPanelAvailable,
@@ -475,6 +463,7 @@ app.whenReady().then(() => {
     invalidateTrayIconCache: trayIcon.invalidateCache,
     repaintWindows,
     scheduleBootWork,
+    pinnedPopover: trayHost.pinned,
   });
 });
 

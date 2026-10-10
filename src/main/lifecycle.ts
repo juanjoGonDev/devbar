@@ -2,6 +2,12 @@ import type { BrowserWindow, Menu, NativeImage, Rectangle } from 'electron';
 import type { Menubar, menubar } from 'menubar';
 import { parseProcessId } from '../compound-id.js';
 import { patchLinuxTrayPositioning } from './tray.js';
+import { patchPinnedPositioning } from './pinned-popover.js';
+import {
+  TRAY_POPOVER_MIN_HEIGHT,
+  TRAY_POPOVER_MIN_WIDTH,
+  TRAY_POPOVER_WIDTH,
+} from './pinned-popover-geometry.js';
 import type { LogEntry } from '../domain-types.js';
 
 /**
@@ -93,6 +99,11 @@ export interface MenubarSetupDeps {
   isMac: boolean;
   isLinux: boolean;
   sessionType: string;
+  /**
+   * The `[display]` line for app.log (backend + work area), read once the
+   * tray is up because it needs the screen; null off Linux.
+   */
+  displayLine: () => string | null;
   attachTray: (bar: Menubar) => void;
   attachConsole: (win: BrowserWindow, label: string) => void;
   displayMatching: (rect: Rectangle) => {
@@ -107,6 +118,13 @@ export interface MenubarSetupDeps {
   onThemeUpdated: (listener: () => void) => void;
   /** Boot auto-start, the schedule loop and the update check, once the tray is up. */
   scheduleBootWork: () => void;
+  /** The popover's pinned mode, fed menubar's window and show events. */
+  pinnedPopover: {
+    attach: (win: BrowserWindow) => void;
+    beforeShow: () => void;
+    afterShow: () => void;
+    position: () => { x: number; y: number } | null;
+  };
 }
 
 export function setupMenubar(deps: MenubarSetupDeps): Menubar {
@@ -116,10 +134,18 @@ export function setupMenubar(deps: MenubarSetupDeps): Menubar {
     tooltip: 'DevBar',
     preloadWindow: true,
     browserWindow: {
-      width: 410,
+      width: TRAY_POPOVER_WIDTH,
       height: 500,
       transparent: false,
-      resizable: false,
+      // The user may resize the popover by its edges (and drag it by its
+      // header): the first time they do, it is pinned there.
+      resizable: true,
+      minWidth: TRAY_POPOVER_MIN_WIDTH,
+      minHeight: TRAY_POPOVER_MIN_HEIGHT,
+      // A double click on the header's drag region would otherwise zoom
+      // (macOS) or maximize (Windows) the popover.
+      maximizable: false,
+      fullscreenable: false,
       // The tray popover is a utility surface, not a window: it must not claim
       // a taskbar entry on win/linux. Real windows keep their entries.
       skipTaskbar: true,
@@ -137,6 +163,9 @@ export function setupMenubar(deps: MenubarSetupDeps): Menubar {
   bar.on('ready', () => {
     bar.tray.setImage(deps.defaultIcon());
     if (deps.isMac) bar.tray.setTitle('');
+    // Once per run, so bug reports carry the backend the popover runs on.
+    const displayLine = deps.displayLine();
+    if (displayLine) console.log(`[display] linux backend: ${displayLine}`);
     if (deps.isLinux)
       patchLinuxTrayPositioning({
         positioner: bar.positioner as unknown as {
@@ -149,6 +178,12 @@ export function setupMenubar(deps: MenubarSetupDeps): Menubar {
         displayMatching: deps.displayMatching,
         sessionType: deps.sessionType,
       });
+    // After the Linux patch, so a pinned spot is never re-clamped to the
+    // display the tray icon is on.
+    patchPinnedPositioning(
+      bar.positioner as unknown as Parameters<typeof patchPinnedPositioning>[0],
+      deps.pinnedPopover.position,
+    );
     bar.tray.on('right-click', () =>
       bar.tray.popUpContextMenu(deps.buildContextMenu()),
     );
@@ -166,8 +201,14 @@ export function setupMenubar(deps: MenubarSetupDeps): Menubar {
   });
 
   bar.on('after-create-window', () => {
-    if (bar.window) deps.attachConsole(bar.window, 'tray');
+    if (bar.window) {
+      deps.attachConsole(bar.window, 'tray');
+      deps.pinnedPopover.attach(bar.window);
+    }
     deps.broadcast();
   });
+  // menubar positions the popover between these two, synchronously.
+  bar.on('show', () => deps.pinnedPopover.beforeShow());
+  bar.on('after-show', () => deps.pinnedPopover.afterShow());
   return bar;
 }

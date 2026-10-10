@@ -250,7 +250,8 @@ export function registerLogsIpc(ipc: IpcRegistrar, deps: LogsIpcDeps): void {
         entry = {
           groupId,
           groupName: group ? group.name : '(grupo eliminado)',
-          groupIcon: group ? group.icon : '📁',
+          groupIcon: group ? group.icon : 'folder',
+          groupIconColor: group ? group.iconColor : null,
           items: [],
         };
         groups.set(groupId, entry);
@@ -265,7 +266,8 @@ export function registerLogsIpc(ipc: IpcRegistrar, deps: LogsIpcDeps): void {
         entry = {
           groupId: PIPELINE_LOG_GROUP_ID,
           groupName: PIPELINE_LOG_NAME,
-          groupIcon: '🧬',
+          groupIcon: 'dna',
+          groupIconColor: null,
           items: [],
         };
         groups.set(PIPELINE_LOG_GROUP_ID, entry);
@@ -277,6 +279,7 @@ export function registerLogsIpc(ipc: IpcRegistrar, deps: LogsIpcDeps): void {
       type: LogListItem['type'],
       name: string,
       icon: string | null,
+      iconColor: string | null = null,
     ): LogListItem => {
       const state = processManager.getState(id);
       return {
@@ -284,6 +287,7 @@ export function registerLogsIpc(ipc: IpcRegistrar, deps: LogsIpcDeps): void {
         type,
         name,
         icon,
+        iconColor,
         lineCount: lineCounts.get(id) ?? 0,
         status: state.status,
         warnCount: state.warnCount,
@@ -305,6 +309,7 @@ export function registerLogsIpc(ipc: IpcRegistrar, deps: LogsIpcDeps): void {
             'command',
             command.name,
             command.icon,
+            command.iconColor,
           ),
         );
       for (const action of group.actions)
@@ -314,6 +319,7 @@ export function registerLogsIpc(ipc: IpcRegistrar, deps: LogsIpcDeps): void {
             'action',
             action.name,
             action.icon,
+            action.iconColor,
           ),
         );
     }

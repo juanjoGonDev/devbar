@@ -11,24 +11,10 @@ import type { IconBatteryItem } from '../src/ipc-contract.js';
 const RECENTS_KEY = 'devbar.recentIcons';
 
 const BATTERY: IconBatteryItem[] = [
-  {
-    emoji: '😀',
-    label: 'grinning',
-    group: 'Smileys & Emotion',
-    keywords: ['smile'],
-  },
-  {
-    emoji: '🐶',
-    label: 'dog face',
-    group: 'Animals & Nature',
-    keywords: ['pet'],
-  },
-  {
-    emoji: '🍎',
-    label: 'red apple',
-    group: 'Food & Drink',
-    keywords: ['fruit'],
-  },
+  { name: 'smile', tags: ['emoji', 'happy'] },
+  { name: 'dog', tags: ['pet', 'animal'] },
+  { name: 'apple', tags: ['fruit', 'food'] },
+  { name: 'shopping-cart', tags: ['trolley'] },
 ];
 
 interface Harness {
@@ -75,6 +61,10 @@ function cells(h: Harness): HTMLButtonElement[] {
   return [...h.grid.querySelectorAll<HTMLButtonElement>('.icon-cell')];
 }
 
+function names(h: Harness): string[] {
+  return cells(h).map((c) => c.dataset.name ?? '');
+}
+
 function tabs(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>('#icon-tabs .icon-tab')];
 }
@@ -100,14 +90,10 @@ function manualScheduler(): {
   };
 }
 
-function batteryOf(
-  count: number,
-  group = 'Smileys & Emotion',
-): IconBatteryItem[] {
+function batteryOf(count: number): IconBatteryItem[] {
   return Array.from({ length: count }, (_, i) => ({
-    emoji: String.fromCodePoint(0x1f600 + i),
-    label: `face ${i}`,
-    group,
+    name: `icon-${i}`,
+    tags: [`tag ${i}`],
   }));
 }
 
@@ -125,7 +111,18 @@ describe('renderer/config/icon-picker.ts', () => {
     stubBattery(BATTERY);
     createIconPicker(h);
     await flush();
-    expect(cells(h)).toHaveLength(1); // the default group holds one icon
+    expect(names(h)).toEqual(['smile', 'dog', 'apple', 'shopping-cart']);
+  });
+
+  it('paints each cell with its icon and names it for the pointer and AT', async () => {
+    const h = elements();
+    stubBattery(BATTERY);
+    createIconPicker(h);
+    await flush();
+    const cell = cells(h)[1];
+    expect(cell?.title).toBe('dog');
+    expect(cell?.getAttribute('aria-label')).toBe('dog');
+    expect(cell?.querySelector<HTMLElement>('.icon')?.dataset.icon).toBe('dog');
   });
 
   it('survives a battery that never arrives', async () => {
@@ -135,7 +132,8 @@ describe('renderer/config/icon-picker.ts', () => {
     await flush();
     picker.open(h.anchor, () => undefined);
     expect(cells(h)).toHaveLength(0);
-    expect(tabs()).toHaveLength(0);
+    // Only the uploads tab is left: uploading needs no battery.
+    expect(tabs().map((t) => t.dataset.group)).toEqual(['custom']);
   });
 
   it('treats a null battery as an empty one', async () => {
@@ -146,7 +144,7 @@ describe('renderer/config/icon-picker.ts', () => {
     expect(cells(h)).toHaveLength(0);
   });
 
-  it('opens below its anchor, at body level, with one tab per stocked group', async () => {
+  it('opens below its anchor, at body level, on the full list', async () => {
     const h = elements();
     stubBattery(BATTERY);
     const picker = createIconPicker(h);
@@ -154,11 +152,9 @@ describe('renderer/config/icon-picker.ts', () => {
     picker.open(h.anchor, () => undefined);
     expect(h.picker.hasAttribute('hidden')).toBe(false);
     expect(h.picker.parentElement).toBe(document.body);
-    expect(tabs().map((t) => t.dataset.group)).toEqual([
-      'Smileys & Emotion',
-      'Animals & Nature',
-      'Food & Drink',
-    ]);
+    expect(tabs().map((t) => t.dataset.group)).toEqual(['all', 'custom']);
+    expect(tabs()[0]?.title).toBe('Todos');
+    expect(tabs()[1]?.title).toBe('Mis iconos');
   });
 
   it('reparents into the sub-dialog while that dialog is open', async () => {
@@ -177,40 +173,55 @@ describe('renderer/config/icon-picker.ts', () => {
     expect(h.picker.parentElement).toBe(document.body);
   });
 
-  it('reports the picked emoji, remembers it and closes', async () => {
+  it('reports the picked icon name, remembers it and closes', async () => {
     const h = elements();
     stubBattery(BATTERY);
     const picker = createIconPicker(h);
     await flush();
     const picked: string[] = [];
-    picker.open(h.anchor, (emoji) => picked.push(emoji));
+    picker.open(h.anchor, (name) => picked.push(name));
     cells(h)[0].click();
-    expect(picked).toEqual(['😀']);
+    expect(picked).toEqual(['smile']);
     expect(h.picker.hasAttribute('hidden')).toBe(true);
     expect(JSON.parse(localStorage.getItem(RECENTS_KEY) ?? '[]')).toEqual([
-      '😀',
+      'smile',
     ]);
   });
 
   it('opens on "Recientes" once something has been picked', async () => {
     const h = elements();
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(['🐶']));
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(['dog']));
     stubBattery(BATTERY);
     const picker = createIconPicker(h);
     await flush();
     picker.open(h.anchor, () => undefined);
-    expect(tabs()[0]?.dataset.group).toBe('Recientes');
-    expect(cells(h).map((c) => c.textContent)).toEqual(['🐶']);
+    expect(tabs().map((t) => t.dataset.group)).toEqual([
+      'recent',
+      'all',
+      'custom',
+    ]);
+    expect(tabs()[0]?.title).toBe('Recientes');
+    expect(names(h)).toEqual(['dog']);
   });
 
-  it('drops a remembered emoji the battery no longer ships', async () => {
+  it('drops remembered emoji from the old picker and names Lucide no longer ships', async () => {
     const h = elements();
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(['🐶', '👻']));
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(['🐶', 'dog', 'ghost']));
     stubBattery(BATTERY);
     const picker = createIconPicker(h);
     await flush();
     picker.open(h.anchor, () => undefined);
-    expect(cells(h).map((c) => c.textContent)).toEqual(['🐶']);
+    expect(names(h)).toEqual(['dog']);
+  });
+
+  it('skips the recents tab when none of the remembered values survive', async () => {
+    const h = elements();
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(['🐶', '📦']));
+    stubBattery(BATTERY);
+    const picker = createIconPicker(h);
+    await flush();
+    picker.open(h.anchor, () => undefined);
+    expect(tabs().map((t) => t.dataset.group)).toEqual(['all', 'custom']);
   });
 
   it('ignores recents that are not a list of strings', async () => {
@@ -220,7 +231,7 @@ describe('renderer/config/icon-picker.ts', () => {
     const picker = createIconPicker(h);
     await flush();
     picker.open(h.anchor, () => undefined);
-    expect(tabs()[0]?.dataset.group).toBe('Smileys & Emotion');
+    expect(tabs()[0]?.dataset.group).toBe('all');
   });
 
   it('ignores recents that are not valid JSON', async () => {
@@ -230,7 +241,7 @@ describe('renderer/config/icon-picker.ts', () => {
     const picker = createIconPicker(h);
     await flush();
     picker.open(h.anchor, () => undefined);
-    expect(tabs()[0]?.dataset.group).toBe('Smileys & Emotion');
+    expect(tabs()[0]?.dataset.group).toBe('all');
   });
 
   it('keeps working when recents cannot be written', async () => {
@@ -242,13 +253,14 @@ describe('renderer/config/icon-picker.ts', () => {
       throw new Error('quota');
     });
     const picked: string[] = [];
-    picker.open(h.anchor, (emoji) => picked.push(emoji));
+    picker.open(h.anchor, (name) => picked.push(name));
     cells(h)[0].click();
-    expect(picked).toEqual(['😀']);
+    expect(picked).toEqual(['smile']);
   });
 
   it('moves the grid to the clicked tab without rebuilding the tab bar', async () => {
     const h = elements();
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(['dog']));
     stubBattery(BATTERY);
     const picker = createIconPicker(h);
     await flush();
@@ -257,7 +269,7 @@ describe('renderer/config/icon-picker.ts', () => {
     before[1].click();
     expect(tabs()[1]).toBe(before[1]);
     expect(tabs()[1]?.classList.contains('is-active')).toBe(true);
-    expect(cells(h).map((c) => c.textContent)).toEqual(['🐶']);
+    expect(names(h)).toHaveLength(BATTERY.length);
   });
 
   it('does nothing when the window has no tab bar', async () => {
@@ -269,29 +281,44 @@ describe('renderer/config/icon-picker.ts', () => {
     picker.open(h.anchor, () => undefined);
     expect(tabs()).toHaveLength(0);
     expect(h.picker.hasAttribute('hidden')).toBe(false);
+    // Still usable: the grid shows every icon.
+    expect(names(h)).toHaveLength(BATTERY.length);
   });
 
-  it('searches across every category, by emoji, label and keyword', async () => {
+  it('searches by name and by tag', async () => {
     const h = elements();
     stubBattery(BATTERY);
     createIconPicker(h);
     await flush();
-    h.search.value = 'apple';
+    h.search.value = 'APPLE';
     h.search.dispatchEvent(new Event('input'));
-    expect(cells(h).map((c) => c.textContent)).toEqual(['🍎']);
+    expect(names(h)).toEqual(['apple']);
     h.search.value = 'pet';
     h.search.dispatchEvent(new Event('input'));
-    expect(cells(h).map((c) => c.textContent)).toEqual(['🐶']);
-    h.search.value = '🐶';
+    expect(names(h)).toEqual(['dog']);
+    // Spaces and dashes are interchangeable: "shopping cart" finds the
+    // dashed Lucide name.
+    h.search.value = 'shopping cart';
     h.search.dispatchEvent(new Event('input'));
-    expect(cells(h).map((c) => c.textContent)).toEqual(['🐶']);
+    expect(names(h)).toEqual(['shopping-cart']);
+  });
+
+  it('ranks name matches ahead of tag matches', async () => {
+    const h = elements();
+    stubBattery([
+      { name: 'box', tags: ['dog'] },
+      { name: 'dog', tags: [] },
+    ]);
+    createIconPicker(h);
+    await flush();
+    h.search.value = 'dog';
+    h.search.dispatchEvent(new Event('input'));
+    expect(names(h)).toEqual(['dog', 'box']);
   });
 
   it('matches nothing for a query no icon carries', async () => {
     const h = elements();
-    stubBattery([
-      { emoji: '🐶', label: 'dog face', group: 'Animals & Nature' },
-    ]);
+    stubBattery([{ name: 'dog', tags: ['pet'] }]);
     createIconPicker(h);
     await flush();
     h.search.value = 'zzz';
@@ -342,7 +369,7 @@ describe('renderer/config/icon-picker.ts', () => {
     });
 
     it('defaults the chunk to ' + ICON_CHUNK + ' cells', async () => {
-      // A real-sized battery: the first paint must not build ~1900 buttons.
+      // A real-sized battery: the first paint must not build ~1800 buttons.
       const h = elements();
       const tasks = manualScheduler();
       stubBattery(batteryOf(250));
@@ -359,14 +386,16 @@ describe('renderer/config/icon-picker.ts', () => {
       await flush();
       // Mid-render the user types a filter that matches fewer icons: the
       // pending chunks of the OLD render must not append into the new one.
-      h.search.value = 'face 9';
+      h.search.value = 'icon-9';
       h.search.dispatchEvent(new Event('input'));
       const grid = h.grid.querySelector('.icon-grid') as HTMLElement;
       expect(grid.children.length).toBe(1);
       await h.tasks.runAll();
       expect(grid.children.length).toBe(1);
-      const emojis = [...grid.children].map((c) => c.textContent);
-      expect(new Set(emojis).size).toBe(1);
+      const shown = [...grid.children].map(
+        (c) => (c as HTMLElement).dataset.name,
+      );
+      expect(shown).toEqual(['icon-9']);
     });
 
     it('falls back to the default chunk for a size that cannot stream', async () => {

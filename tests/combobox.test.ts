@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComboboxControl, ComboboxOption } from '../renderer/combobox.js';
+import { iconText } from './helpers/icon-text.js';
 
 /**
  * `renderer/combobox.ts` is the branch picker in the tray row: a text input
@@ -94,7 +95,7 @@ describe('renderer/combobox.ts', () => {
   }
 
   function labels(): string[] {
-    return items().map((item) => item.textContent?.replace('✓', '') ?? '');
+    return items().map((item) => iconText(item).replace('[check]', ''));
   }
 
   /**
@@ -106,7 +107,7 @@ describe('renderer/combobox.ts', () => {
   function highlighted(): string | null {
     const els = list().getElementsByClassName('is-highlighted');
     const el = els[0];
-    return el ? (el.textContent?.replace('✓', '') ?? '') : null;
+    return el ? iconText(el).replace('[check]', '') : null;
   }
 
   function highlightCount(): number {
@@ -127,6 +128,22 @@ describe('renderer/combobox.ts', () => {
     input.value = text;
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
+
+  describe('the leading icon', () => {
+    it('draws none unless asked', () => {
+      const { root, input } = build();
+      expect(root.querySelector('.combobox-leading-icon')).toBeNull();
+      expect(input.style.paddingLeft).not.toBe('19px');
+    });
+
+    it('draws the icon inside the input and keeps the text clear of it', () => {
+      const { root, input } = build({ leadingIcon: 'git-branch' });
+      const glyph = root.querySelector('.combobox-leading-icon');
+      expect(glyph?.getAttribute('data-icon')).toBe('git-branch');
+      expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+      expect(input.style.paddingLeft).toBe('19px');
+    });
+  });
 
   describe('opening and closing', () => {
     it('starts closed, with no list and no open dropdown registered', () => {
@@ -255,8 +272,8 @@ describe('renderer/combobox.ts', () => {
     it('marks it with a check and separates it from the rest', () => {
       const { input } = build({ value: 'main' });
       input.dispatchEvent(new FocusEvent('focus'));
-      expect(items()[0]?.querySelector('.combobox-check')?.textContent).toBe(
-        '✓',
+      expect(iconText(items()[0]?.querySelector('.combobox-check'))).toBe(
+        '[check]',
       );
       expect(list().querySelector('.combobox-separator')).not.toBeNull();
     });

@@ -3,6 +3,158 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.10.1] - 2026-10-07
+
+### Cambiado
+
+- **La cabecera de la barra deja sitio y el progreso va debajo.** Mientras
+  corre el pipeline, en la fila de la cabecera queda solo su botón ⏩ (que
+  sigue parpadeando); el paso en curso, el tiempo que lleva, cancelar y sus
+  logs pasan a una franja fina justo debajo, con una barra de progreso en
+  el borde. Al acabar, la franja muestra «Pipeline completado» unos
+  segundos o, si falla, qué paso falló, con «Ver logs» a mano y una ✕ para
+  quitar el aviso. Con el pipeline parado, la franja no aparece.
+- **El estado de la actualización también va en su propia franja.**
+  «Descargando» con su porcentaje y barra de progreso, «Verificando…» o
+  «Instalando…» se muestran ahora debajo de la cabecera en lugar de
+  apretujarse junto a la versión. Si la actualización falla, la franja dice
+  por qué sin tener que pasar el ratón por encima, y ofrece «Reintentar» y
+  una ✕ para descartar el aviso.
+- **El selector de rama lleva el icono de Git.** Así se distingue de un
+  vistazo; ocupa el mismo hueco que antes.
+
+## [0.10.0] - 2026-09-30
+
+### Añadido
+
+- **Iconos profesionales en toda la interfaz, iguales en cualquier sistema.**
+  Los emoji y símbolos sueltos (▶, ■, ✓, ✕, 📜, ⚙️…) que hacían de botones
+  dependían de las fuentes de cada equipo: en la Raspberry Pi salían como
+  cuadros vacíos y en Windows cada uno tenía un tamaño distinto. Ahora
+  todos los iconos salen de [Lucide](https://lucide.dev), una fuente de
+  iconos que va empaquetada dentro de DevBar en macOS, Windows y Linux
+  (x64, arm64 y armv7): no hay que instalar nada.
+
+- **El icono de cada grupo, comando y acción se elige ahora entre los
+  iconos de Lucide.** El selector busca por nombre y por etiquetas en
+  español y en inglés —«cohete» o `rocket`, «carrito» o `shopping cart`—,
+  sin importar mayúsculas ni tildes («contrasena» encuentra «contraseña»),
+  y recuerda los últimos que usaste. Al pasar el ratón por un icono ves
+  también su nombre en español. Tus iconos actuales se convierten solos al
+  abrir la nueva versión —📦 pasa a ser una caja, 🐳 un contenedor, 🚀 un
+  cohete…— y los emoji originales quedan guardados en la configuración por
+  si hicieran falta. Un emoji sin equivalente pasa al icono por defecto; y
+  si alguna configuración importada trae uno que no se reconoce, se sigue
+  mostrando tal cual en lugar de desaparecer.
+
+- **Cada icono puede tener su color.** Junto al botón del icono, en el
+  grupo y en cada comando o acción, hay una fila de colores listos para
+  usar (que se leen bien en tema claro y oscuro), un selector para
+  cualquier otro color y «Sin color» para volver al de siempre. El color se
+  ve en la barra, en la configuración y en la ventana de logs, y viaja con
+  la configuración al exportarla. Los emoji de color se convierten con el
+  suyo: 🟢 pasa a ser un círculo verde, 🟥 un cuadrado rojo, 💙 un corazón
+  azul…
+
+- **Puedes usar tus propias imágenes como icono.** En la pestaña «Mis
+  iconos» del selector, «Subir imagen…» acepta un PNG o JPEG de hasta 5 MB
+  o un SVG de hasta 1 MB. DevBar lo reduce a 64 px (un SVG se convierte a
+  PNG, nunca se guarda tal cual) y lo guarda dentro de la configuración,
+  así que se ve igual en la barra, la configuración y los logs, y viaja con la
+  exportación (solo las imágenes que se usan). Subir dos veces la misma
+  imagen no la duplica, y si borras una, lo que la usaba vuelve a su icono
+  por defecto.
+
+- **Puedes quitar la selección de líneas en los logs.** Si seleccionas una
+  o varias líneas sin querer, junto al contador «N seleccionada(s)» del pie
+  aparece una ✕ para quitar la selección; la tecla Esc hace lo mismo.
+
+- **«Reportar fallo» ahora incluye los errores y avisos recientes.** Hasta
+  ahora el informe solo llevaba el entorno y el final de `app.log`, y un
+  fallo de hace un rato —una descarga o instalación de actualización que
+  falló, un cierre inesperado— ya no cabía en ese final. DevBar guarda
+  aparte los últimos 50 errores y avisos (de la app y de sus ventanas),
+  los conserva entre reinicios en un pequeño `errors.json` junto al log y
+  los añade al informe en una sección «Errores y avisos recientes», del
+  más reciente al más antiguo y marcando si son de esta sesión o de la
+  anterior. Van antes del log y, si la URL de GitHub se queda corta,
+  ceden sitio el log primero; el portapapeles siempre lleva la lista
+  entera. Pasan por la misma limpieza de credenciales que el resto del
+  informe.
+- **Los cierres inesperados quedan registrados.** Las excepciones y
+  promesas rechazadas sin capturar del proceso principal, y las ventanas
+  o procesos auxiliares que mueren, dejan ahora una línea de error en el
+  log (motivo, código de salida y ventana). DevBar se comporta ante ellos
+  igual que antes: solo se registran.
+- **El diálogo de reporte dice qué se va a enviar.** Muestra cuántos
+  errores y avisos recientes incluirá y permite leer el informe completo
+  antes de copiarlo o abrir GitHub.
+
+- **El panel de la barra se puede mover y redimensionar.** Arrástralo por
+  su cabecera o tira de sus bordes y se queda donde lo dejes, con el tamaño
+  que le diste, cada vez que lo abras (también en otra pantalla). Sigue
+  ajustando su altura al contenido sin pasar nunca de la que elegiste. Si
+  esa pantalla ya no está conectada o el panel quedaría fuera de ella,
+  vuelve solo junto al icono. Para devolverlo a su sitio, pulsa «Volver
+  junto al icono» en la cabecera del panel o en Configuración → General.
+  En Linux con Wayland nativo el compositor decide la posición: ahí DevBar
+  recuerda solo el tamaño.
+
+### Corregido
+
+- **En Windows y Linux el texto vuelve a verse con la fuente del sistema.**
+  DevBar solo pedía las fuentes de macOS, así que Windows acababa dibujando
+  toda la interfaz con su fuente de emoji, y los logs salían borrosos. Ahora
+  usa Segoe UI y Cascadia Mono/Consolas en Windows, y las fuentes habituales
+  del escritorio en Linux.
+- **La barra se adapta a su contenido mientras está abierta.** Al añadir o
+  quitar grupos, desplegar uno, arrancar un script o aparecer un aviso, el
+  panel cambiaba de altura solo al cerrarlo y volver a pulsar el icono. En
+  Windows (y en Linux con el panel abajo) era peor: al crecer se metía por
+  debajo de la barra de tareas y salía de la pantalla. Ahora crece y encoge
+  al momento, hacia arriba si la barra de tareas está abajo, sin pasar del
+  alto de la pantalla en la que está el icono; a partir de ahí solo se
+  desplaza la lista de grupos, con la cabecera siempre visible y sin
+  barras de desplazamiento dobles.
+
+- **En Linux con Wayland (KDE, GNOME…) el panel vuelve a salir junto al
+  icono de la bandeja.** Antes se abría en mitad de la pantalla y su parte
+  de abajo quedaba por debajo de la barra de tareas, así que los últimos
+  grupos no se alcanzaban ni desplazando. Ahora DevBar detecta solo el
+  escritorio en cualquier distribución: si la sesión tiene XWayland, se
+  ejecuta a través de él, que sí permite colocarlo al lado del icono y
+  respetar la barra de tareas; si no lo tiene, sigue en Wayland nativo. Y
+  cuando el escritorio no informa de dónde está la barra de tareas (Wayland
+  nativo o algunos gestores de ventanas X11), el panel limita su altura
+  para no meterse debajo. Si prefieres Wayland nativo, define la variable
+  `DEVBAR_WAYLAND_NATIVE=1`, valga el lanzador que valga: el panel no podrá
+  ir junto al icono, pero tampoco crecerá hasta meterse bajo la barra de
+  tareas.
+
+- **Los iconos de la cabecera de la barra ya no salen en azul.** El botón
+  del pipeline, el de los logs y el de configuración usan ahora el mismo
+  color neutro que el resto de la interfaz (y que el de salir), en tema
+  claro y oscuro. El azul queda solo donde significa algo: botones
+  principales, enlaces y lo seleccionado.
+
+- **El changelog ya no muestra el comentario interno de GitHub** (`<!--
+Release notes generated… -->`) ni el título vacío «What's Changed» que
+  aparecía justo encima de «Changes».
+
+- **Los botones de la derecha de cada fila ya no bailan al arrancar un
+  script.** Al pasar de ▶ a ■, al aparecer el tiempo en marcha o el aviso
+  de error, los botones de logs, auto-arranque y arranque/parada se movían
+  unos píxeles (en Windows, bastante más). Ahora cada botón tiene un
+  tamaño fijo, el selector de rama ocupa siempre el mismo hueco y es el
+  nombre del grupo el que se recorta con «…» si falta sitio. El contador
+  de tiempo reserva su ancho para no empujar nada cada segundo.
+
+- **El log de la sesión anterior se perdía al reiniciar.** Cada arranque
+  vaciaba `app.log`, así que tras un cierre inesperado o el reinicio de
+  una actualización desaparecía justo lo que explicaba el fallo. Ahora se
+  conserva como `app.previous.log` (sustituyendo al anterior) y su final
+  viaja en el informe copiado al portapapeles.
+
 ## [0.9.8] - 2026-09-30
 
 ### Seguridad

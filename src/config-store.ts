@@ -11,11 +11,17 @@ import {
   reorderByIds,
 } from './groups-model.js';
 import { serializeConfig } from './config-io.js';
+import { mergeCustomIcons, referencedCustomIconIds } from './custom-icons.js';
+import type { CustomIcon } from './domain-types.js';
 import {
   getGlobalSettings,
+  readCustomIcons,
+  writeCustomIcons,
   persistState,
+  groupsOverlayActive,
+  readStoredGroups,
+  readStoredPreSteps,
   readGroups,
-  readPreSteps,
   readVersion,
   saveGlobalSettings,
   storeDirectory,
@@ -33,7 +39,11 @@ import {
 export {
   getGlobalSettings,
   getScheduleLastRun,
+  getTrayPopover,
+  groupsOverlayActive,
+  setGroupsOverlay,
   saveGlobalSettings,
+  saveTrayPopover,
   setScheduleLastRun,
 } from './config-store/store.js';
 export {
@@ -47,6 +57,15 @@ export {
   savePreStep,
   unassignScriptFromStep,
 } from './config-store/pipeline-store.js';
+export {
+  addCustomIcon,
+  deleteCustomIcon,
+  listCustomIcons,
+} from './config-store/custom-icons-store.js';
+
+/** Why an import is refused while the dev panel's test groups are shown. */
+const OVERLAY_IMPORT_REFUSAL =
+  'Modo grupos de prueba activo: quita los grupos de prueba en el panel Dev antes de importar.';
 
 export function listGroups(): Group[] {
   return readGroups();
@@ -223,12 +242,18 @@ export function setGroupSilence(
 }
 
 export function exportConfig(): ReturnType<typeof serializeConfig> {
+  // The stored groups even while the dev overlay is on: an export is the
+  // user's configuration, and test groups have no business in it.
+  const groups = readStoredGroups();
+  // Only the images the exported configuration uses travel with it.
+  const referenced = referencedCustomIconIds(groups);
   return serializeConfig(
     {
       version: readVersion(),
-      groups: readGroups(),
-      preSteps: readPreSteps(),
+      groups,
+      preSteps: readStoredPreSteps(),
       globalSettings: getGlobalSettings(),
+      customIcons: readCustomIcons().filter((icon) => referenced.has(icon.id)),
     },
     app.getVersion(),
   );
@@ -238,8 +263,14 @@ export function replaceConfig(payload: {
   groups: unknown[];
   preSteps?: unknown[];
   globalSettings: Partial<GlobalSettings>;
+  customIcons?: readonly CustomIcon[];
 }): void {
+  if (groupsOverlayActive()) throw new Error(OVERLAY_IMPORT_REFUSAL);
   writeVersion(payload.version);
+  // Added to the library, never replacing it: an import overwrites the
+  // configuration, but the uploads it does not use are still the user's.
+  if (payload.customIcons?.length)
+    writeCustomIcons(mergeCustomIcons(readCustomIcons(), payload.customIcons));
   saveGlobalSettings(payload.globalSettings);
   const safeGroups = payload.groups
     .map(normalizeGroup)
@@ -254,9 +285,10 @@ export function writeImportBackup(): string {
   const snapshot = {
     backedUpAt: new Date().toISOString(),
     version: readVersion(),
-    groups: readGroups(),
-    preSteps: readPreSteps(),
+    groups: readStoredGroups(),
+    preSteps: readStoredPreSteps(),
     globalSettings: getGlobalSettings(),
+    customIcons: readCustomIcons(),
   };
   fs.writeFileSync(backupPath, JSON.stringify(snapshot, null, 2), 'utf8');
   return backupPath;

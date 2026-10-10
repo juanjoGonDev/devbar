@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow, Menu, NativeImage } from 'electron';
 import type { Menubar } from 'menubar';
 import {
@@ -149,6 +149,7 @@ describe('src/main/lifecycle.ts', () => {
         on: (event: string, listener: () => void) =>
           events.set(event, listener),
       } as unknown as Menubar;
+      let pinnedSpot: { x: number; y: number } | null = null;
       let options: Record<string, unknown> = {};
       const deps: MenubarSetupDeps = {
         createMenubar: (given) => {
@@ -163,6 +164,7 @@ describe('src/main/lifecycle.ts', () => {
         isMac: true,
         isLinux: false,
         sessionType: 'x11',
+        displayLine: () => null,
         attachTray: () => calls.push('attachTray'),
         attachConsole: (_win, label) => calls.push(`console:${label}`),
         displayMatching: () => ({
@@ -176,9 +178,18 @@ describe('src/main/lifecycle.ts', () => {
         repaintWindows: () => calls.push('repaintWindows'),
         onThemeUpdated: (listener) => events.set('theme', listener),
         scheduleBootWork: () => calls.push('scheduleBootWork'),
+        pinnedPopover: {
+          attach: () => calls.push('pin:attach'),
+          beforeShow: () => calls.push('pin:beforeShow'),
+          afterShow: () => calls.push('pin:afterShow'),
+          position: () => pinnedSpot,
+        },
         ...overrides,
       };
       return {
+        pinAt: (spot: { x: number; y: number } | null) => {
+          pinnedSpot = spot;
+        },
         bar: setupMenubar(deps),
         events,
         trayEvents,
@@ -198,6 +209,49 @@ describe('src/main/lifecycle.ts', () => {
         backgroundColor: '#1e1e1e',
       });
       expect(h.calls).toEqual(['attachTray']);
+    });
+
+    it('lets the user resize the popover, but not collapse it', () => {
+      const h = harness();
+      expect(h.options().browserWindow).toMatchObject({
+        resizable: true,
+        minWidth: 320,
+        minHeight: 160,
+        maximizable: false,
+        fullscreenable: false,
+      });
+    });
+
+    it('watches the popover for user moves once its window exists', () => {
+      const h = harness();
+      h.events.get('after-create-window')?.();
+      expect(h.calls).toContain('pin:attach');
+    });
+
+    it('brackets menubar’s own show positioning for the pinned mode', () => {
+      const h = harness();
+      h.events.get('show')?.();
+      h.events.get('after-show')?.();
+      expect(h.calls).toEqual([
+        'attachTray',
+        'pin:beforeShow',
+        'pin:afterShow',
+      ]);
+    });
+
+    it('positions a pinned popover at its spot, on every OS', () => {
+      for (const isLinux of [false, true]) {
+        const h = harness({ isLinux });
+        h.events.get('ready')?.();
+        h.pinAt({ x: 40, y: 60 });
+        const positioner = h.bar.positioner as unknown as {
+          calculate: (position: string) => { x: number; y: number };
+        };
+        expect(positioner.calculate('trayCenter')).toEqual({
+          x: 40,
+          y: 60,
+        });
+      }
     });
 
     it('clears the macOS title and broadcasts once ready', () => {
@@ -236,6 +290,25 @@ describe('src/main/lifecycle.ts', () => {
       const linux = harness({ isLinux: true });
       linux.events.get('ready')?.();
       expect(linux.calls).toContain('broadcast');
+    });
+
+    it('logs the Linux display backend once the tray is up', () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        // Read at ready, not at setup: the work-area half needs the screen.
+        const displayLine = vi.fn(
+          () => 'x11 (forced from wayland), workArea unreported → capped',
+        );
+        const h = harness({ isLinux: true, displayLine });
+        expect(displayLine).not.toHaveBeenCalled();
+        h.events.get('ready')?.();
+        expect(displayLine).toHaveBeenCalledTimes(1);
+        expect(log).toHaveBeenCalledWith(
+          '[display] linux backend: x11 (forced from wayland), workArea unreported → capped',
+        );
+      } finally {
+        log.mockRestore();
+      }
     });
 
     it('captures the popover console once its window exists', () => {

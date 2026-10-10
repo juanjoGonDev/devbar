@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { iconText } from './helpers/icon-text.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupState } from '../src/ipc-contract.js';
 
@@ -57,7 +58,8 @@ function groupState(path: string | null): GroupState {
     group: {
       id: 'g1',
       name: 'api',
-      icon: '📦',
+      icon: 'package',
+      iconColor: null,
       path: path ?? '',
       mode: 'single',
       order: 0,
@@ -137,7 +139,7 @@ describe('renderer/tray/branches.ts', () => {
     if (!list) throw new Error('no combobox list');
     return Array.from(
       list.querySelectorAll<HTMLElement>('.combobox-item'),
-      (item) => item.textContent?.replace('✓', '') ?? '',
+      (item) => iconText(item).replace('[check]', ''),
     );
   }
 
@@ -153,6 +155,15 @@ describe('renderer/tray/branches.ts', () => {
     it('asks git nothing about them', () => {
       mount(groupState(null));
       expect(listBranches.calls()).toBe(0);
+    });
+  });
+
+  describe('the branch icon', () => {
+    it('marks the selector with a git-branch glyph', () => {
+      const el = mount();
+      expect(
+        el.querySelector('.combobox-leading-icon')?.getAttribute('data-icon'),
+      ).toBe('git-branch');
     });
   });
 

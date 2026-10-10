@@ -30,10 +30,12 @@ vi.mock('electron', () => {
       getPath: (name: string) => `/paths/${name}`,
       getVersion: () => '1.2.0',
       quit: () => electron.calls.push('quit'),
+      relaunch: () => electron.calls.push('relaunch'),
       exit: (code: number) => electron.calls.push(`exit:${code}`),
       setLoginItemSettings: (settings: unknown) =>
         electron.calls.push(`login:${JSON.stringify(settings)}`),
       getLoginItemSettings: () => electron.loginItem,
+      on: (event: string) => electron.calls.push(`app.on:${event}`),
     },
     BrowserWindow: class {
       static getFocusedWindow(): unknown {
@@ -53,6 +55,9 @@ vi.mock('electron', () => {
       getBounds(): unknown {
         return { x: 0, y: 0, width: 100, height: 100 };
       }
+    },
+    clipboard: {
+      writeText: (text: string) => electron.calls.push(`clipboard:${text}`),
     },
     dialog: {
       showMessageBox: (...args: unknown[]) => {
@@ -81,6 +86,10 @@ vi.mock('electron', () => {
     },
     screen: {
       getDisplayMatching: () => display(0),
+      getAllDisplays: () => [
+        { ...display(0), id: 1 },
+        { ...display(1440), id: 2 },
+      ],
       getDisplayNearestPoint: () => display(1440),
       getCursorScreenPoint: () => ({ x: 1500, y: 100 }),
     },
@@ -93,6 +102,8 @@ vi.mock('electron', () => {
         electron.calls.push(`openPath:${target}`);
         return Promise.resolve('');
       },
+      showItemInFolder: (target: string) =>
+        electron.calls.push(`showItem:${target}`),
     },
   };
 });
@@ -167,11 +178,22 @@ describe('src/main/electron-host.ts', () => {
       electron.focused = null;
     });
 
-    it('serves the work-area height of the display a rectangle sits on', () => {
+    it('serves the work area of the display a rectangle sits on', () => {
       const h = host();
       const rect = { x: 0, y: 0, width: 10, height: 10 };
-      expect(h.workAreaHeight(rect)).toBe(875);
+      expect(h.workAreaFor(rect).height).toBe(875);
       expect(h.displayMatching(rect).bounds.height).toBe(900);
+    });
+
+    it('lists every display by id and work area, for a pinned popover', () => {
+      expect(
+        host()
+          .displays()
+          .map((d) => [d.id, d.workArea.x]),
+      ).toEqual([
+        [1, 0],
+        [2, 1440],
+      ]);
     });
   });
 
@@ -229,9 +251,15 @@ describe('src/main/electron-host.ts', () => {
   });
 
   describe('dialogs', () => {
+    const shownWindow = {
+      isDestroyed: () => false,
+      isVisible: () => true,
+      getBounds: () => ({ x: 0, y: 0, width: 1, height: 1 }),
+    };
+
     it('parents a dialog on the owner window when there is one', async () => {
       electron.calls.length = 0;
-      const h = host({ dialogOwner: () => 'owner' as never });
+      const h = host({ dialogOwner: () => shownWindow as never });
       await h.messageBox({ message: 'x' });
       await h.openDialog({});
       await h.saveDialog({});
@@ -240,6 +268,27 @@ describe('src/main/electron-host.ts', () => {
         'openDialog:2',
         'saveDialog:2',
       ]);
+    });
+
+    it('never parents a dialog on a hidden window', async () => {
+      // A dialog owned by a hidden window (the tray popover once it closed)
+      // can open invisible on some Linux window managers: the click then
+      // looks like it did nothing.
+      electron.calls.length = 0;
+      const hidden = { ...shownWindow, isVisible: () => false };
+      const h = host({ dialogOwner: () => hidden as never });
+      await h.messageBox({ message: 'x' });
+      expect(electron.calls).toEqual(['messageBox:1']);
+    });
+
+    it('falls back to the focused window when the owner is hidden', async () => {
+      electron.calls.length = 0;
+      const hidden = { ...shownWindow, isVisible: () => false };
+      electron.focused = shownWindow;
+      const h = host({ dialogOwner: () => hidden as never });
+      await h.messageBox({ message: 'x' });
+      electron.focused = null;
+      expect(electron.calls).toEqual(['messageBox:2']);
     });
 
     it('opens ownerless when nothing can parent it', async () => {
@@ -360,6 +409,35 @@ describe('src/main/electron-host.ts', () => {
       ]);
     });
 
+    it('serves the update flow its OS actions', async () => {
+      electron.calls.length = 0;
+      const h = host();
+      h.relaunch();
+      h.copyText('sudo apt install /tmp/a.deb');
+      h.showItemInFolder('/tmp/a.deb');
+      expect(electron.calls).toEqual([
+        'relaunch',
+        'clipboard:sudo apt install /tmp/a.deb',
+        'showItem:/tmp/a.deb',
+      ]);
+      const file = path.join(dir, 'DevBar.AppImage');
+      fs.writeFileSync(file, '');
+      h.makeExecutable(file);
+      expect(fs.statSync(file).mode & 0o111).not.toBe(0);
+      expect(h.pathExists(file)).toBe(true);
+      expect(h.pathExists(path.join(dir, 'missing'))).toBe(false);
+      await expect(
+        h.runProcess(process.execPath, ['-e', 'process.exit(0)']),
+      ).resolves.toMatchObject({ code: 0 });
+    });
+
+    it('works out once how this copy was installed', async () => {
+      const h = host();
+      const shape = await h.linuxInstallShape();
+      expect(['appImage', 'deb', 'other']).toContain(shape);
+      await expect(h.linuxInstallShape()).resolves.toBe(shape);
+    });
+
     it('reports the process identity the modules branch on', () => {
       const h = host();
       expect(h.platform).toBe(process.platform);
@@ -369,6 +447,28 @@ describe('src/main/electron-host.ts', () => {
       expect(typeof h.isLinux).toBe('boolean');
       expect(typeof h.desktop).toBe('string');
       expect(typeof h.sessionType).toBe('string');
+      // Only a Linux Wayland session runs natively; this suite never is one.
+      expect(h.nativeWayland).toBe(false);
+    });
+  });
+  describe('bug report and crash hooks', () => {
+    it('previews the report with its problem counts, copying nothing', () => {
+      const preview = host().reportPreview();
+      expect(preview.text).toContain('### Entorno');
+      expect(preview.text).toContain('### Errores y avisos recientes');
+      expect(preview).toMatchObject({ errors: 0, warnings: 0 });
+    });
+
+    it('subscribes crash hooks to the process and the app', () => {
+      electron.calls.length = 0;
+      const h = host();
+      const listener = vi.fn();
+      h.onProcess('devbar-test-event', listener);
+      process.emit('devbar-test-event' as 'exit', 0);
+      process.removeListener('devbar-test-event', listener);
+      expect(listener).toHaveBeenCalledTimes(1);
+      h.onApp('child-process-gone', () => undefined);
+      expect(electron.calls).toEqual(['app.on:child-process-gone']);
     });
   });
 });

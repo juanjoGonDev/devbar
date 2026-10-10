@@ -17,8 +17,9 @@ const ALWAYS_IGNORED =
 /** The development-only simulation panel and its IPC handlers. */
 const DEV_PANEL = /^\/build\/(?:src|renderer)\/dev(?:$|\/)/;
 /** The bundled emoji webfont: Linux-only (renderer/emoji.css), and macOS
- *  already carries Apple Color Emoji. */
-const EMOJI_FONT = /^\/build\/assets\/fonts(?:$|\/)/;
+ *  already carries Apple Color Emoji. Only that file: the Lucide icon font
+ *  beside it ships on every platform. */
+const EMOJI_FONT = /^\/build\/assets\/fonts\/NotoColorEmoji\.woff2$/;
 
 export const PACKAGE_IGNORE: readonly RegExp[] = [
   ALWAYS_IGNORED,

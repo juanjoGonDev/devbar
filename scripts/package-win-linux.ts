@@ -135,16 +135,16 @@ export function baseConfig(): BuildConfiguration {
     // No autoUpdater feed: DevBar does its own release checks + swaps.
     publish: null,
     directories: { output: 'dist/electron-builder' },
-    // build/assets/fonts carries the bundled emoji webfont, which only the
-    // LINUX packages include (linux.files below re-adds it — per-platform
-    // file sets MERGE with this one, pinned by test); macOS has Apple Color
-    // Emoji and Windows has Segoe UI Emoji, so the 5.5 MB stay out of their
-    // artifacts.
+    // build/assets/fonts carries two faces. The Lucide icon font ships
+    // everywhere. The emoji webfont only goes into the LINUX packages
+    // (linux.files below re-adds it — per-platform file sets MERGE with this
+    // one, pinned by test); macOS has Apple Color Emoji and Windows has
+    // Segoe UI Emoji, so the 5.5 MB stay out of their artifacts.
     files: [
       'build/**/*',
       'assets/**/*',
       'package.json',
-      '!build/assets/fonts/**',
+      '!build/assets/fonts/NotoColorEmoji.woff2',
     ],
   };
 }
@@ -212,9 +212,9 @@ export function linuxBuildOptions({
       linux: {
         // The bundled emoji webfont: merged with the top-level file set
         // (verified against electron-builder 26: per-platform `files` are
-        // ADDITIVE), so Linux artifacts ship build/assets/fonts while the
-        // other platforms keep theirs lean. renderer/emoji.css consumes it.
-        files: ['build/assets/fonts/**/*'],
+        // ADDITIVE), so Linux artifacts ship the emoji face while the other
+        // platforms keep theirs lean. renderer/emoji.css consumes it.
+        files: ['build/assets/fonts/NotoColorEmoji.woff2'],
         // Directory of pre-sized PNGs (16–256). A single PNG source is
         // embedded as-is, which would leave the .deb without the 256px
         // hicolor icon the desktop expects; a directory yields the full
@@ -232,6 +232,9 @@ export function linuxBuildOptions({
                 { target: 'AppImage', arch: [arch] },
                 { target: 'deb', arch: [arch] },
               ],
+        // No executableArgs on purpose: the display backend is decided at
+        // runtime (src/main/linux-display-backend.ts), and leaving them unset
+        // keeps AppImage's default --no-sandbox Exec argument.
         artifactName: `DevBar-${version}-linux-${contractArchName(arch)}.${ext()}`,
       },
     },

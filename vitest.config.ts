@@ -37,10 +37,11 @@ export default defineConfig({
         'dist/**',
         '**/*.d.ts',
         '*.config.ts',
-        // A flat emoji table generated from unicode.org's emoji-test.txt. Its
-        // single statement is the array literal; "covering" it would assert
-        // that a data file parses.
+        // Flat icon tables generated from lucide-static by
+        // scripts/generate-icons.ts. Each single statement is a literal;
+        // "covering" it would assert that a data file parses.
         'src/icon-battery.ts',
+        'renderer/icon-codepoints.ts',
         // Pure type declarations and a re-export barrel: zero executable
         // statements, so v8 reports 0% forever no matter what the tests do.
         'src/ipc-contract.ts',

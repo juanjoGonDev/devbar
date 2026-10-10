@@ -174,7 +174,9 @@ describe('scripts/package-win-linux.ts', () => {
           'build/**/*',
           'assets/**/*',
           'package.json',
-          '!build/assets/fonts/**',
+          // Only the emoji face is Linux-only: the icon font next to it
+          // (build/assets/fonts/lucide.woff2) ships on every platform.
+          '!build/assets/fonts/NotoColorEmoji.woff2',
         ],
       });
     });
@@ -275,11 +277,14 @@ describe('scripts/package-win-linux.ts', () => {
             // The bundled emoji webfont ships ONLY here: the per-platform
             // file set is additive to baseConfig's (which excludes it), so
             // the linux artifacts carry it and win ones do not.
-            files: ['build/assets/fonts/**/*'],
+            files: ['build/assets/fonts/NotoColorEmoji.woff2'],
             target: [
               { target: 'AppImage', arch: ['x64'] },
               { target: 'deb', arch: ['x64'] },
             ],
+            // No executableArgs: the display backend is decided at runtime
+            // (src/main/linux-display-backend.ts), and leaving them unset
+            // keeps AppImage's default --no-sandbox Exec argument.
             artifactName: 'DevBar-9.9.9-linux-x64.${ext}',
           },
         },

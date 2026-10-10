@@ -79,6 +79,95 @@ export function trayPopoverHeight(
 }
 
 /**
+ * Where the popover goes when its content height changes while it is open.
+ *
+ * Electron's setSize keeps the top-left corner fixed, which is only right when
+ * the popover hangs from a top bar (macOS, a top Linux panel). Above a bottom
+ * taskbar (Windows' default, most bottom Linux panels) it grew DOWNWARD,
+ * behind the taskbar and off the screen, and shrank into a window floating
+ * above it — until the next show, when menubar recomputed the position from
+ * the new size. So the edge nearest the tray stays put: a popover sitting in
+ * the lower half of the work area keeps its bottom edge, any other keeps its
+ * top edge. The result is then pulled fully inside the work area, which also
+ * covers a side taskbar with the icon low on it.
+ */
+export function trayPopoverBounds(
+  current: Rect,
+  contentHeight: number,
+  workArea: Rect,
+): Rect {
+  const height = trayPopoverHeight(contentHeight, workArea.height);
+  const centre = current.y + current.height / 2;
+  const anchoredToBottom = centre > workArea.y + workArea.height / 2;
+  const wantedY = anchoredToBottom
+    ? current.y + current.height - height
+    : current.y;
+  const y = Math.max(
+    workArea.y,
+    Math.min(wantedY, workArea.y + workArea.height - height),
+  );
+  return {
+    x: clampXToWorkArea(current.x, current.width, workArea),
+    y,
+    width: current.width,
+    height,
+  };
+}
+
+/** Room for one panel at each end of the display: a 56px panel is generous. */
+const UNREPORTED_PANEL_ALLOWANCE = 56;
+/** Ceiling: never taller than three quarters of the display. */
+const UNREPORTED_MAX_DISPLAY_FRACTION = 0.75;
+
+type LinuxDisplay = { workArea: Rect; bounds: Rect };
+
+/**
+ * Whether the window manager published a reserved area (a panel): with none,
+ * Electron reports the whole display as the work area. That is what native
+ * Wayland always does, and X11 WMs/panels without _NET_WORKAREA or struts.
+ */
+function workAreaReported({ workArea, bounds }: LinuxDisplay): boolean {
+  return (
+    workArea.x !== bounds.x ||
+    workArea.y !== bounds.y ||
+    workArea.width !== bounds.width ||
+    workArea.height !== bounds.height
+  );
+}
+
+/**
+ * The work area to size the tray popover against on Linux. A reported work
+ * area is used as is. An unreported one is the whole display, so a popover
+ * sized to it slides under the panel: without the real panel geometry, the
+ * height is capped at the smallest of the work area, the display minus a 56px
+ * panel at each end, and 75 % of the display. The capped area sits at the
+ * display end `near` (the tray icon, else the popover) is on, so on X11 the
+ * popover stays next to the icon, and always inside the display. Native
+ * Wayland ignores the position anyway; only the height matters there.
+ */
+export function safeLinuxWorkArea(display: LinuxDisplay, near: Rect): Rect {
+  if (workAreaReported(display)) return display.workArea;
+  const { workArea, bounds } = display;
+  // ponytail: a fixed guess, not the real panel size; read the panel geometry
+  // (portal / layer-shell) if a desktop ever exposes it to Electron.
+  const height = Math.min(
+    workArea.height,
+    bounds.height - 2 * UNREPORTED_PANEL_ALLOWANCE,
+    Math.floor(bounds.height * UNREPORTED_MAX_DISPLAY_FRACTION),
+  );
+  const nearBottom = near.y + near.height / 2 > bounds.y + bounds.height / 2;
+  const y = nearBottom ? bounds.y + bounds.height - height : bounds.y;
+  return { ...workArea, y, height };
+}
+
+/** The work-area half of the startup `[display]` line. */
+export function linuxWorkAreaNote(display: LinuxDisplay): string {
+  return workAreaReported(display)
+    ? 'workArea reported'
+    : 'workArea unreported → capped';
+}
+
+/**
  * Which edge of the display the taskbar/panel sits on, from the tray icon's
  * bounds: the work area is the screen minus the taskbar, so the offset between
  * workArea and display bounds reveals the taskbar side. Same idea as menubar's
