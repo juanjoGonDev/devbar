@@ -55,7 +55,7 @@ describe('renderer/config/groups-list.ts', () => {
       await win.settle('listGroups', []);
       expect(
         document.querySelector('#groups-list .nav-empty')?.textContent,
-      ).toBe('Sin grupos. Pulsa + Añadir.');
+      ).toBe('Sin grupos. Pulsa Nuevo grupo.');
       expect(document.querySelector('.detail-empty')).not.toBeNull();
     });
 
@@ -73,6 +73,73 @@ describe('renderer/config/groups-list.ts', () => {
       expect(
         iconText(document.querySelector<HTMLElement>('#groups-list .nav-icon')),
       ).toBe('[package]');
+    });
+  });
+
+  describe('the "Nuevo grupo" button', () => {
+    function addButton(): HTMLButtonElement {
+      const el = document.getElementById('add-group');
+      if (!(el instanceof HTMLButtonElement)) throw new Error('no #add-group');
+      return el;
+    }
+
+    it('sits on top of the list instead of in a header of its own', async () => {
+      win = await openConfigWindow();
+      await win.settle('listGroups', [group('api')]);
+      const list = document.getElementById('groups-list');
+      expect(addButton().closest('.config-left-pane')).not.toBeNull();
+      expect(addButton().nextElementSibling).toBe(list);
+      expect(
+        document.querySelector('[data-section="groups"] .section-head'),
+      ).toBeNull();
+    });
+
+    it('stays out of the drag-and-drop reorder', async () => {
+      win = await openConfigWindow();
+      await win.settle('listGroups', [group('api')]);
+      expect(addButton().classList.contains('drag-row')).toBe(false);
+      expect(addButton().querySelector('[draggable="true"]')).toBeNull();
+      expect(
+        document.getElementById('groups-list')?.contains(addButton()),
+      ).toBe(false);
+    });
+
+    it('keeps a name for the icon-only form of a folded list', async () => {
+      win = await openConfigWindow();
+      expect(addButton().getAttribute('aria-label')).toBe('Nuevo grupo');
+      expect(addButton().textContent?.trim()).toContain('Nuevo grupo');
+      expect(iconText(addButton())).toContain('[plus]');
+    });
+  });
+
+  describe('resizing the list', () => {
+    afterEach(() => {
+      localStorage.clear();
+    });
+
+    function splitter(): HTMLElement {
+      const el = document.getElementById('groups-splitter');
+      if (!el) throw new Error('no #groups-splitter');
+      return el;
+    }
+
+    it('offers a vertical separator between the list and the editor', async () => {
+      win = await openConfigWindow();
+      expect(splitter().getAttribute('role')).toBe('separator');
+      expect(splitter().getAttribute('aria-orientation')).toBe('vertical');
+      expect(splitter().previousElementSibling?.classList).toContain(
+        'config-left-pane',
+      );
+      expect(splitter().nextElementSibling?.id).toBe('group-detail');
+    });
+
+    it('widens the list from the keyboard', async () => {
+      localStorage.setItem('groups-list-width', '200');
+      win = await openConfigWindow();
+      splitter().dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+      );
+      expect(splitter().getAttribute('aria-valuenow')).toBe('216');
     });
   });
 

@@ -1,571 +1,400 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { iconText } from './helpers/icon-text.js';
-
+import { tipOf } from './helpers/tip.js';
 import {
-  loadRendererWindow,
-  type RendererWindow,
-} from './helpers/renderer-dom.js';
-import {
-  initPipelineEditor,
-  type PipelineEditorHandle,
-} from '../renderer/pipeline-editor.js';
-import { normalizeGroup } from '../src/groups-model.js';
-import type { Group, PreStep, PreStepScriptRef } from '../src/domain-types.js';
-
-function step(id: string): PreStep {
-  return { id, mode: 'parallel', scripts: [] };
-}
-
-function ref(groupId: string, scriptId: string): PreStepScriptRef {
-  return { groupId, scriptId };
-}
-
-function filledStep(
-  id: string,
-  refs: PreStepScriptRef[],
-  mode: PreStep['mode'] = 'parallel',
-): PreStep {
-  return { id, mode, scripts: refs };
-}
-
-/** Two groups, so the picker and the badges have something to distinguish. */
-function groups(): Group[] {
-  return [
-    normalizeGroup({
-      id: 'back',
-      name: 'Back',
-      path: '/repos/back',
-      preScripts: [
-        { id: 'setup', name: 'Make setup', command: 'make', args: ['setup'] },
-        { id: 'seed', name: 'Seed', command: 'pnpm', timeoutMs: 90_000 },
-      ],
-    }),
-    normalizeGroup({
-      id: 'front',
-      name: 'Front',
-      path: '/repos/front',
-      preScripts: [{ id: 'deps', name: 'Install deps', command: 'pnpm i' }],
-    }),
-  ];
-}
-
-function pipelineHost(): HTMLElement {
-  const el = document.getElementById('prescripts-pipeline-root');
-  if (!el) throw new Error('config.html has no pipeline host');
-  return el;
-}
-
-function stepIds(): string[] {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>('.prestep-card'),
-    (card) => card.dataset.id ?? '',
-  );
-}
-
-function scriptRowIds(): string[] {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>('.prescript-row'),
-    (row) => row.dataset.id ?? '',
-  );
-}
-
-function autoRunToggle(): HTMLInputElement {
-  const el = document.querySelector<HTMLInputElement>(
-    '#prescripts-pipeline-root .toggle input[type="checkbox"]',
-  );
-  if (!el) throw new Error('the pipeline editor drew no auto-run toggle');
-  return el;
-}
-
-function addStepButton(): HTMLButtonElement {
-  const button = Array.from(
-    document.querySelectorAll<HTMLButtonElement>('.sub-list-header button'),
-  ).find((candidate) => candidate.textContent?.includes('Añadir paso'));
-  if (!button) throw new Error('the pipeline editor drew no "add step" button');
-  return button;
-}
-
-/** The `+ Añadir script` button of the nth step card. */
-function addScriptButton(index = 0): HTMLButtonElement {
-  const card = document.querySelectorAll<HTMLElement>('.prestep-card')[index];
-  const button = Array.from(
-    card?.querySelectorAll<HTMLButtonElement>('button') ?? [],
-  ).find((candidate) => candidate.textContent?.includes('Añadir script'));
-  if (!button) throw new Error(`step #${index} drew no "add script" button`);
-  return button;
-}
-
-function pickerItems(): HTMLButtonElement[] {
-  return Array.from(
-    document.querySelectorAll<HTMLButtonElement>('.script-picker-item'),
-  );
-}
-
-function pickerItem(name: string): HTMLButtonElement {
-  const item = pickerItems().find(
-    (candidate) => candidate.textContent === name,
-  );
-  if (!item) throw new Error(`the picker offers no "${name}"`);
-  return item;
-}
-
-/** The trailing close (x) button of an element (script row or step header). */
-function removeButton(scope: Element): HTMLButtonElement {
-  const button = Array.from(
-    scope.querySelectorAll<HTMLButtonElement>('button.danger'),
-  ).find((candidate) => iconText(candidate) === '[x]');
-  if (!button) throw new Error('no remove button in that scope');
-  return button;
-}
-
-function modeButton(cardIndex: number, label: string): HTMLButtonElement {
-  const card =
-    document.querySelectorAll<HTMLElement>('.prestep-card')[cardIndex];
-  const button = Array.from(
-    card?.querySelectorAll<HTMLButtonElement>('.mode-btn') ?? [],
-  ).find((candidate) => candidate.textContent?.startsWith(label));
-  if (!button) throw new Error(`step #${cardIndex} has no "${label}" button`);
-  return button;
-}
+  all,
+  blk,
+  blockEl,
+  button,
+  canvas,
+  chain,
+  click,
+  DEPS,
+  dragPointer,
+  edgesOf,
+  editorHarness,
+  graph,
+  groups,
+  node,
+  pipelineHost,
+  pointer,
+  press,
+  query,
+  ref,
+  SEED,
+  SETUP,
+  textOf,
+  tick,
+} from './helpers/pipeline-editor.js';
+import { loadRendererWindow } from './helpers/renderer-dom.js';
+import { initPipelineEditor } from '../renderer/pipeline-editor.js';
+import type { Pipeline } from '../src/domain-types.js';
+import { startupEntries } from './helpers/startup-workflow.js';
 
 describe('renderer/pipeline-editor.ts', () => {
-  let editorWindow: RendererWindow | null = null;
+  const { openWith, written, adopt } = editorHarness();
 
-  afterEach(() => {
-    editorWindow?.close();
-    editorWindow = null;
-    vi.restoreAllMocks();
-  });
-
-  async function openEditor(options: { groups?: Group[] } = {}): Promise<{
-    win: RendererWindow;
-    editor: PipelineEditorHandle;
-    toasts: Array<{ message: string; kind?: string | undefined }>;
-  }> {
-    const win = await loadRendererWindow({
-      html: 'config.html',
-      // The editor is a factory the config window mounts, not an entry point
-      // of its own, so there is nothing to evaluate on load.
-      load: () => Promise.resolve(),
-      values: { platform: 'macos' },
-    });
-    editorWindow = win;
-    const toasts: Array<{ message: string; kind?: string | undefined }> = [];
-    const known = options.groups ?? [];
-    const editor = initPipelineEditor(pipelineHost(), {
-      getGroups: () => known,
-      showToast: (message, kind) => toasts.push({ message, kind }),
-    });
-    // The auto-run setting is read once at mount; the first render waits for
-    // it either way.
-    await win.settle('getSettings', { preScriptsAutoRun: false });
-    return { win, editor, toasts };
-  }
-
-  /** Opens the editor and lands `steps` as the first pipeline read. */
-  async function openWith(steps: PreStep[]): Promise<{
-    win: RendererWindow;
-    editor: PipelineEditorHandle;
-    toasts: Array<{ message: string; kind?: string | undefined }>;
-  }> {
-    const opened = await openEditor({ groups: groups() });
-    void opened.editor.refresh();
-    await opened.win.settle('getPreSteps', steps);
-    return opened;
-  }
-
-  describe('pipeline steps', () => {
-    it('renders the read when nothing newer has landed', async () => {
-      const { win, editor } = await openEditor();
-      void editor.refresh();
-      await win.settle('getPreSteps', [step('uno')]);
-      expect(stepIds()).toEqual(['uno']);
+  describe('the canvas', () => {
+    it('draws the fixed trigger as "Al iniciar" with a bolt and a lock only', async () => {
+      await openWith(chain());
+      const trigger = query('.pipeline-trigger');
+      expect(trigger.textContent).toContain('Al iniciar');
+      expect(iconText(trigger)).toMatch(/^\[zap\].*\[lock\]$/);
+      // Not a node: nothing to select, drag or delete — it opens its settings.
+      expect(trigger.getAttribute('role')).toBe('button');
+      expect(trigger.getAttribute('aria-label')).toBe(
+        'Desencadenante: Al iniciar',
+      );
+      expect(trigger.classList.contains('pipeline-node')).toBe(false);
     });
 
-    it('keeps the newer pipeline when an older read resolves after it', async () => {
-      // Every mutation here is an instant write followed by a full re-read,
-      // and nothing serializes them: two quick clicks on «+ Añadir paso» put
-      // two reads in flight, and the older one landing last drops the step
-      // the second click just created.
-      const { win, editor } = await openEditor();
-      void editor.refresh();
-      await win.settle('getPreSteps', [step('uno')]);
+    it('draws every block at its stored position', async () => {
+      await openWith(chain());
+      expect(blockEl('a').style.left).toBe('300px');
+      expect(blockEl('a').style.top).toBe('40px');
+      expect(blockEl('b').style.left).toBe('600px');
+    });
 
-      const addStep = addStepButton();
-      addStep.click();
-      addStep.click();
-      await win.settle('savePreStep', { ok: true });
-      await win.settle('savePreStep', { ok: true });
-      expect(
-        win.callCount('getPreSteps'),
-        'both clicks must have issued their own re-read',
-      ).toBe(3);
-
-      await win.settleNewest('getPreSteps', [
-        step('uno'),
-        step('dos'),
-        step('tres'),
+    it('shows the group tile and the script name only — no command', async () => {
+      await openWith(chain());
+      const setup = node('Make setup');
+      expect(Array.from(setup.children, (child) => child.className)).toEqual([
+        'group-tile pipeline-node-tile',
+        'pipeline-node-name',
       ]);
-      await win.settle('getPreSteps', [step('uno'), step('dos')]);
-      expect(stepIds()).toEqual(['uno', 'dos', 'tres']);
+      expect(setup.textContent).not.toContain('make setup');
+      expect(iconText(setup.querySelector('.group-tile'))).toBe('[server]');
+      expect(
+        setup
+          .querySelector<HTMLElement>('.group-tile')
+          ?.style.getPropertyValue('--tile-color'),
+      ).toBe('#3b82f6');
+      expect(setup.getAttribute('aria-label')).toBe('Make setup, Back');
     });
 
-    it('invites the user to create the first step when the pipeline is empty', async () => {
-      await openWith([]);
-      expect(document.querySelector('.prestep-empty')?.textContent).toBe(
-        'Sin pasos. Pulsa «+ Añadir paso» para comenzar.',
+    it('frames a parallel block as "En paralelo"', async () => {
+      await openWith(graph([blk('p', [SETUP, DEPS], 300, 40)], ['trigger>p']));
+      const frame = blockEl('p');
+      expect(frame.classList.contains('is-frame')).toBe(true);
+      expect(textOf(frame.querySelector('.pipeline-frame-label'))).toBe(
+        'En paralelo',
       );
-      expect(stepIds()).toEqual([]);
+      expect(frame.querySelectorAll('.pipeline-node')).toHaveLength(2);
     });
 
-    it('offers an empty step as a drop target instead of a blank card', async () => {
-      await openWith([step('uno')]);
-      const list = document.querySelector('.prescript-list');
-      expect(list?.classList.contains('prestep-empty-dropzone')).toBe(true);
-      expect(list?.querySelector('.prestep-drop-hint')?.textContent).toBe(
-        'Suelta un script aquí',
-      );
-    });
-  });
-
-  describe('a step that holds scripts', () => {
-    it('draws one row per ref, keyed by group and script', async () => {
-      await openWith([
-        filledStep('uno', [ref('back', 'setup'), ref('front', 'deps')]),
+    it('draws each connection as a curve between the two pins', async () => {
+      await openWith(chain());
+      const edges = all('.pipeline-edge');
+      expect(edges.map((e) => `${e.dataset.from}>${e.dataset.to}`)).toEqual([
+        'trigger>a',
+        'a>b',
       ]);
-      expect(scriptRowIds()).toEqual(['back::setup', 'front::deps']);
-    });
-
-    it('names the script and the group that owns it', async () => {
-      await openWith([filledStep('uno', [ref('back', 'setup')])]);
-      const row = document.querySelector('.prescript-row');
-      expect(row?.querySelector('strong')?.textContent).toBe('Make setup');
-      expect(row?.querySelector('.pipeline-group-name')?.textContent).toBe(
-        'Back',
-      );
+      // Trigger out pin (172, 60) → setup's input pin (300, 60).
       expect(
-        row?.querySelector('.pipeline-group-badge')?.getAttribute('title'),
-      ).toBe('Back — /repos/back');
+        edges[0]?.querySelector('.pipeline-edge-line')?.getAttribute('d'),
+      ).toBe('M 172 60 C 236 60, 236 60, 300 60');
     });
 
-    it('prints the command with its arguments', async () => {
-      await openWith([filledStep('uno', [ref('back', 'setup')])]);
-      expect(document.querySelector('.prescript-row code')?.textContent).toBe(
-        'make setup',
+    it('dims a block that will not run and says why', async () => {
+      await openWith(
+        graph([blk('a', [SETUP], 300, 40), blk('b', [DEPS], 600, 40)], ['a>b']),
+      );
+      for (const id of ['a', 'b']) {
+        const block = blockEl(id);
+        expect(block.classList.contains('is-disconnected')).toBe(true);
+        expect(tipOf(block.querySelector('.pipeline-block-warning'))).toBe(
+          'Sin conectar: no se ejecutará',
+        );
+      }
+      expect(node('Install deps').getAttribute('aria-label')).toBe(
+        'Install deps, Front, sin conectar',
       );
     });
 
-    it('shows the timeout of a script that has one, in seconds', async () => {
-      await openWith([filledStep('uno', [ref('back', 'seed')])]);
-      const badges = Array.from(
-        document.querySelectorAll('.prescript-row .muted.small'),
-        (el) => iconText(el),
-      );
-      expect(badges).toContain('[timer] 90s');
-    });
-
-    it('renders a dangling ref instead of throwing on it', async () => {
-      // Referential integrity is enforced on every persist, but a
-      // hand-edited store file can still leave a ref pointing at nothing.
-      await openWith([filledStep('uno', [ref('back', 'deleted')])]);
-      expect(document.querySelector('.prescript-row')?.textContent).toContain(
-        'Referencia rota (script eliminado)',
-      );
-      expect(scriptRowIds()).toEqual(['back::deleted']);
-    });
-
-    it('marks which execution mode the step is in', async () => {
-      await openWith([filledStep('uno', [ref('back', 'setup')], 'serial')]);
-      expect(modeButton(0, 'Paralelo').getAttribute('aria-pressed')).toBe(
-        'false',
-      );
-      expect(modeButton(0, 'Serie').getAttribute('aria-pressed')).toBe('true');
-    });
-  });
-
-  describe('the summary strip', () => {
-    it('counts steps, scripts and the groups they come from', async () => {
-      await openWith([
-        filledStep('uno', [ref('back', 'setup'), ref('front', 'deps')]),
-        filledStep('dos', [ref('back', 'seed')]),
+    it('offers a "+" only where an output has no connection', async () => {
+      await openWith(chain());
+      expect(all('.pipeline-stub').map((stub) => stub.dataset.block)).toEqual([
+        'b',
       ]);
-      expect(
-        document.querySelector('.pipeline-summary-count')?.textContent,
-      ).toBe('2 pasos · 3 scripts · 2 grupos');
     });
 
-    it('uses singular wording for a one-of-everything pipeline', async () => {
-      await openWith([filledStep('uno', [ref('back', 'setup')])]);
-      expect(
-        document.querySelector('.pipeline-summary-count')?.textContent,
-      ).toBe('1 paso · 1 script · 1 grupo');
-    });
-
-    it('highlights a step that really runs in parallel', async () => {
-      // A single-script "parallel" step behaves exactly like a serial one,
-      // so only a step with more than one script earns the accent.
-      await openWith([
-        filledStep('uno', [ref('back', 'setup'), ref('front', 'deps')]),
-        filledStep('dos', [ref('back', 'seed')]),
+    it('offers a "+" on the trigger of an empty pipeline', async () => {
+      await openWith(graph([], []));
+      expect(all('.pipeline-stub').map((stub) => stub.dataset.block)).toEqual([
+        'trigger',
       ]);
-      const blocks = document.querySelectorAll('.pipeline-summary-step');
-      expect(blocks[0]?.classList.contains('is-parallel')).toBe(true);
-      expect(blocks[1]?.classList.contains('is-parallel')).toBe(false);
-      expect(
-        iconText(blocks[0]?.querySelector('.pipeline-summary-step-head')),
-      ).toBe('1 · [split]');
     });
 
-    it('marks an empty step as empty rather than drawing no lane', async () => {
-      await openWith([step('uno')]);
-      const block = document.querySelector('.pipeline-summary-step');
-      expect(block?.classList.contains('is-empty')).toBe(true);
-      expect(block?.querySelector('.pipeline-summary-lane')?.textContent).toBe(
-        'vacío',
+    it('draws a dangling ref as broken instead of throwing on it', async () => {
+      await openWith(
+        graph([blk('a', [ref('gone', 'x')], 300, 40)], ['trigger>a']),
+      );
+      expect(node('Referencia rota').classList.contains('is-broken')).toBe(
+        true,
       );
     });
 
-    it('shows a broken lane for a ref that no longer resolves', async () => {
-      await openWith([filledStep('uno', [ref('back', 'deleted')])]);
-      expect(
-        document.querySelector('.pipeline-summary-lane')?.textContent,
-      ).toBe('Referencia rota');
-    });
-
-    it('labels a serial step with an arrow instead of the parallel bars', async () => {
-      await openWith([
-        filledStep(
-          'uno',
-          [ref('back', 'setup'), ref('front', 'deps')],
-          'serial',
+    it('counts the placed scripts in the status pill', async () => {
+      await openWith(
+        graph(
+          [blk('p', [SETUP, DEPS], 300, 40), blk('s', [SEED], 600, 40)],
+          ['trigger>p', 'p>s'],
         ),
-      ]);
-      expect(
-        iconText(document.querySelector('.pipeline-summary-step-head')),
-      ).toBe('1 · [arrow-right]');
-    });
-  });
-
-  describe('the script picker', () => {
-    it('lists every group that defines a pre-script', async () => {
-      await openWith([step('uno')]);
-      addScriptButton().click();
-      expect(pickerItems().map((item) => item.textContent)).toEqual([
-        'Make setup',
-        'Seed',
-        'Install deps',
-      ]);
-    });
-
-    it('closes again on a second click of the same button', async () => {
-      await openWith([step('uno')]);
-      addScriptButton().click();
-      expect(pickerItems()).not.toHaveLength(0);
-      addScriptButton().click();
-      expect(pickerItems()).toHaveLength(0);
-    });
-
-    it('disables a script that is already somewhere in the pipeline', async () => {
-      // A ref placed twice shares one process id, so the second placement
-      // would never really run — the picker is where that is prevented.
-      await openWith([filledStep('uno', [ref('back', 'setup')]), step('dos')]);
-      addScriptButton(1).click();
-      expect(pickerItem('Make setup').disabled).toBe(true);
-      expect(pickerItem('Make setup').title).toBe('Ya está en el pipeline');
-      expect(pickerItem('Seed').disabled).toBe(false);
-    });
-
-    it('explains where to create scripts when no group defines any', async () => {
-      const { win, editor } = await openEditor({
-        groups: [normalizeGroup({ id: 'back', name: 'Back', path: '/b' })],
-      });
-      void editor.refresh();
-      await win.settle('getPreSteps', [step('uno')]);
-      addScriptButton().click();
-      expect(document.querySelector('.script-picker p')?.textContent).toBe(
-        'No hay pre-scripts definidos. Créalos primero en la ficha de cada grupo.',
       );
-      expect(pickerItems()).toHaveLength(0);
-    });
-
-    it('assigns the chosen script to that step and re-reads the pipeline', async () => {
-      const { win } = await openWith([step('uno')]);
-      addScriptButton().click();
-      pickerItem('Seed').click();
-      await win.settle('assignScriptToStep', { ok: true });
-      await win.settle('getPreSteps', [
-        filledStep('uno', [ref('back', 'seed')]),
-      ]);
-      expect(scriptRowIds()).toEqual(['back::seed']);
-      // The picker closes once the choice lands.
-      expect(pickerItems()).toHaveLength(0);
+      expect(query('.wf-run-count').textContent).toBe('3 scripts');
     });
   });
 
-  describe('mutating a step', () => {
-    it('removes a script from the step it was clicked in', async () => {
-      const { win } = await openWith([
-        filledStep('uno', [ref('back', 'setup'), ref('front', 'deps')]),
-      ]);
-      const row = document.querySelectorAll('.prescript-row')[0];
-      if (!row) throw new Error('no script row to remove');
-      removeButton(row).click();
-      await win.settle('unassignScriptFromStep', { ok: true });
-      await win.settle('getPreSteps', [
-        filledStep('uno', [ref('front', 'deps')]),
-      ]);
-      expect(scriptRowIds()).toEqual(['front::deps']);
+  describe('edges', () => {
+    it('deletes a connection from its ×', async () => {
+      const { win } = await openWith(chain());
+      click(query('.pipeline-edge-delete[data-from="a"]'));
+      expect(edgesOf(await written(win))).toEqual(['trigger>a']);
     });
 
-    it('switches the step to the mode that was clicked', async () => {
-      const { win } = await openWith([
-        filledStep('uno', [ref('back', 'setup')]),
-      ]);
-      modeButton(0, 'Serie').click();
-      await win.settle('savePreStep', { ok: true });
-      await win.settle('getPreSteps', [
-        filledStep('uno', [ref('back', 'setup')], 'serial'),
-      ]);
-      expect(modeButton(0, 'Serie').getAttribute('aria-pressed')).toBe('true');
-    });
-
-    it('asks before deleting a step, and does nothing when told no', async () => {
-      const { win } = await openWith([step('uno')]);
-      const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
-      const header = document.querySelector('.prestep-card-header');
-      if (!header) throw new Error('no step header');
-      removeButton(header).click();
-      expect(confirmed).toHaveBeenCalledWith('¿Eliminar el paso 1?');
-      expect(win.callCount('deletePreStep')).toBe(0);
-      expect(stepIds()).toEqual(['uno']);
-    });
-
-    it('deletes the step once the confirmation is accepted', async () => {
-      const { win } = await openWith([step('uno'), step('dos')]);
-      vi.spyOn(window, 'confirm').mockReturnValue(true);
-      const header = document.querySelector('.prestep-card-header');
-      if (!header) throw new Error('no step header');
-      removeButton(header).click();
-      expect(win.callCount('deletePreStep')).toBe(1);
-      await win.settle('deletePreStep', { ok: true });
-      await win.settle('getPreSteps', [step('dos')]);
-      expect(stepIds()).toEqual(['dos']);
+    it('names the connection its × removes, and takes Enter too', async () => {
+      const { win } = await openWith(chain());
+      const remove = query('.pipeline-edge-delete[data-from="a"]');
+      expect(remove.getAttribute('aria-label')).toBe(
+        'Quitar la conexión de Make setup a Install deps',
+      );
+      press(remove, 'Enter');
+      expect(edgesOf(await written(win))).toEqual(['trigger>a']);
     });
   });
 
-  describe('when a write fails', () => {
-    it('says so and repaints from what is actually stored', async () => {
-      // Without this the handlers left the screen showing a change that was
-      // never persisted, and the rejection surfaced as an unhandled promise.
-      const { win, toasts } = await openWith([step('uno')]);
-      addStepButton().click();
-      await win.fail('savePreStep', new Error('disco lleno'));
-      await win.settle('getPreSteps', [step('uno')]);
+  describe('connecting', () => {
+    const loose = (): Pipeline =>
+      graph(
+        [
+          blk('a', [SETUP], 300, 40),
+          blk('b', [DEPS], 600, 40),
+          blk('c', [SEED], 600, 200),
+        ],
+        ['trigger>a'],
+      );
+
+    it('connects an output pin to the node it is dropped on', async () => {
+      const { win } = await openWith(loose());
+      const pin = query('.pipeline-pin.is-out[data-block="a"]');
+      dragPointer(pin, [448, 60], [620, 60]);
+      expect(edgesOf(await written(win))).toEqual(['trigger>a', 'a>b']);
+    });
+
+    it('draws a dashed line while dragging', async () => {
+      await openWith(loose());
+      const pin = query('.pipeline-pin.is-out[data-block="a"]');
+      pointer(pin, 'pointerdown', 448, 60);
+      pointer(window, 'pointermove', 520, 120);
+      expect(query('.pipeline-edge-draft').getAttribute('d')).not.toBe('');
+      pointer(window, 'pointerup', 520, 120);
+      expect(query('.pipeline-edge-draft').getAttribute('d')).toBe('');
+    });
+
+    it('lets one output fan out into parallel branches', async () => {
+      const { win } = await openWith(loose());
+      dragPointer(
+        query('.pipeline-pin.is-out[data-block="a"]'),
+        [448, 60],
+        [620, 60],
+      );
+      await written(win);
+      dragPointer(
+        query('.pipeline-pin.is-out[data-block="a"]'),
+        [448, 60],
+        [620, 220],
+      );
+      expect(edgesOf(await written(win))).toEqual(['trigger>a', 'a>b', 'a>c']);
+    });
+
+    it('refuses a connection that would close a cycle, and says so', async () => {
+      const { win, toasts } = await openWith(chain());
+      dragPointer(
+        query('.pipeline-pin.is-out[data-block="b"]'),
+        [748, 60],
+        [320, 60],
+      );
+      expect(win.callCount('saveWorkflow')).toBe(0);
       expect(toasts).toEqual([
-        { message: 'No se pudo guardar el pipeline', kind: 'error' },
+        { message: 'Esa conexión cerraría un ciclo', kind: 'error' },
       ]);
-      expect(stepIds()).toEqual(['uno']);
+    });
+
+    it('refuses a connection that already exists', async () => {
+      const { toasts } = await openWith(chain());
+      dragPointer(
+        query('.pipeline-pin.is-out[data-block="a"]'),
+        [448, 60],
+        [620, 60],
+      );
+      expect(toasts.map((t) => t.message)).toEqual(['Esa conexión ya existe']);
+    });
+
+    it('drops a connection released over empty canvas', async () => {
+      const { win, toasts } = await openWith(loose());
+      dragPointer(
+        query('.pipeline-pin.is-out[data-block="a"]'),
+        [448, 60],
+        [1000, 900],
+      );
+      expect(win.callCount('saveWorkflow')).toBe(0);
+      expect(toasts).toEqual([]);
+    });
+  });
+
+  describe('moving nodes', () => {
+    it('moves a dragged node and writes its new position once', async () => {
+      const { win } = await openWith(chain());
+      dragPointer(node('Install deps'), [620, 60], [700, 160]);
+      expect(blockEl('b').style.left).toBe('680px');
+      await tick();
+      expect(win.callCount('saveWorkflow')).toBe(1);
+      const stored = await written(win);
+      expect(stored.blocks.find((b) => b.id === 'b')).toMatchObject({
+        x: 680,
+        y: 140,
+      });
+    });
+
+    it('treats a press without travel as a click, not a move', async () => {
+      const { win } = await openWith(chain());
+      dragPointer(node('Install deps'), [620, 60], [621, 60]);
+      await tick();
+      expect(win.callCount('saveWorkflow')).toBe(0);
+    });
+
+    it('joins a node dropped onto another one, in parallel', async () => {
+      const { win } = await openWith(chain());
+      dragPointer(node('Install deps'), [620, 60], [320, 60]);
+      const stored = await written(win);
+      expect(stored.blocks.map((b) => b.scripts)).toEqual([[SETUP, DEPS]]);
+    });
+  });
+
+  describe('a selected node', () => {
+    it('shows its toolbar: Editar and Quitar', async () => {
+      await openWith(chain(), { editScript: () => undefined });
+      click(node('Make setup'));
+      expect(node('Make setup').classList.contains('is-selected')).toBe(true);
+      const labels = all('.pipeline-node-toolbar button').map((b) =>
+        b.getAttribute('aria-label'),
+      );
+      expect(labels).toEqual(['Editar', 'Quitar']);
+    });
+
+    it('offers "Sacar del grupo" inside a frame only', async () => {
+      const { win } = await openWith(
+        graph([blk('p', [SETUP, DEPS], 300, 40)], ['trigger>p']),
+      );
+      click(node('Install deps'));
+      click(button('Sacar del grupo'));
+      const stored = await written(win);
+      expect(stored.blocks.map((b) => b.scripts)).toEqual([[SETUP], [DEPS]]);
+      expect(stored.edges).toHaveLength(2);
+    });
+
+    it('opens the pre-script editor from "Editar"', async () => {
+      const editScript = vi.fn();
+      await openWith(chain(), { editScript });
+      click(node('Make setup'));
+      click(button('Editar'));
+      expect(editScript).toHaveBeenCalledWith(
+        'back',
+        expect.objectContaining({ id: 'setup' }),
+      );
+    });
+
+    it('takes the script out of the pipeline from "Quitar"', async () => {
+      const { win } = await openWith(chain());
+      click(node('Make setup'));
+      click(button('Quitar'));
+      const stored = await written(win);
+      expect(stored.blocks.map((b) => b.id)).toEqual(['b']);
+    });
+
+    it('is deselected by Escape and by a click on empty canvas', async () => {
+      await openWith(chain());
+      click(node('Make setup'));
+      press(node('Make setup'), 'Escape');
+      expect(document.querySelector('.pipeline-node.is-selected')).toBeNull();
+      click(node('Make setup'));
+      click(canvas());
+      expect(document.querySelector('.pipeline-node.is-selected')).toBeNull();
+    });
+
+    it('removes the focused node with Delete or Backspace', async () => {
+      const { win } = await openWith(chain());
+      press(node('Install deps'), 'Delete');
+      expect((await written(win)).blocks.map((b) => b.id)).toEqual(['a']);
+      press(node('Make setup'), 'Backspace');
+      expect((await written(win)).blocks).toEqual([]);
+    });
+  });
+
+  describe('reads and writes', () => {
+    it('keeps the newer pipeline when an older read resolves after it', async () => {
+      const { win, editor } = await openWith(graph([], []));
+      void editor.refresh();
+      void editor.refresh();
+      await win.settleNewest('listWorkflows', startupEntries(chain()));
+      await win.settle('listWorkflows', startupEntries(graph([], [])));
+      expect(all('.pipeline-node')).toHaveLength(2);
+    });
+
+    it('says so and repaints from what is actually stored when a write fails', async () => {
+      const { win, toasts } = await openWith(chain());
+      press(node('Make setup'), 'Delete');
+      expect(all('.pipeline-node')).toHaveLength(1);
+      await tick();
+      await win.fail('saveWorkflow', new Error('disco lleno'));
+      await win.settle('listWorkflows', startupEntries(chain()));
+      // Main's own reason, as it rejected the write.
+      expect(toasts).toEqual([{ message: 'disco lleno', kind: 'error' }]);
+      expect(all('.pipeline-node')).toHaveLength(2);
     });
 
     it('still settles when the recovery read fails too', async () => {
-      const { win, toasts } = await openWith([step('uno')]);
-      addStepButton().click();
-      await win.fail('savePreStep', new Error('disco lleno'));
-      await win.fail('getPreSteps', new Error('tampoco se puede leer'));
+      const { win, toasts } = await openWith(chain());
+      press(node('Make setup'), 'Delete');
+      await tick();
+      await win.fail('saveWorkflow', new Error('disco lleno'));
+      await win.fail('listWorkflows', new Error('tampoco se puede leer'));
       expect(toasts.map((toast) => toast.message)).toEqual([
-        'No se pudo guardar el pipeline',
-        'No se pudo recargar el pipeline',
+        'disco lleno',
+        'No se pudo recargar el workflow',
       ]);
     });
-  });
 
-  describe('auto-run toggle', () => {
-    it('names no OS in its copy', async () => {
-      // It used to say «al arrancar el Mac» — the toggle is cross-platform,
-      // and naming one OS there is wrong on the other two. Pinned generic.
-      const { win } = await openEditor();
-      void win;
-      const label = document.querySelector(
-        '#prescripts-pipeline-root .toggle span',
-      );
-      expect(label?.textContent).toBe(
-        'Ejecutar automáticamente al arrancar el sistema',
-      );
+    it('writes edits one after another, in order', async () => {
+      const { win } = await openWith(chain());
+      press(node('Install deps'), 'Delete');
+      press(node('Make setup'), 'Delete');
+      await tick();
+      expect(win.callCount('saveWorkflow')).toBe(1);
+      await written(win);
+      expect(win.callCount('saveWorkflow')).toBe(2);
+      expect((await written(win)).blocks).toEqual([]);
     });
 
-    it('rolls the control back when its own save fails', async () => {
-      const { win, editor } = await openEditor();
-      void editor.refresh();
-      await win.settle('getPreSteps', []);
-      const toggle = autoRunToggle();
-      toggle.click();
-      await win.fail('saveSettings', new Error('no se pudo escribir'));
-      expect(toggle.checked).toBe(false);
-    });
-
-    it('leaves a newer toggle alone when an older save fails', async () => {
-      // The rollback is an async result written straight into the control:
-      // two quick clicks, and a rejection from the FIRST one flips a checkbox
-      // whose value the second one already persisted.
-      const { win, editor } = await openEditor();
-      void editor.refresh();
-      await win.settle('getPreSteps', []);
-      const toggle = autoRunToggle();
-      toggle.click();
-      toggle.click();
-      expect(
-        win.callCount('saveSettings'),
-        'both clicks must have issued their own save',
-      ).toBe(2);
-      await win.settleNewest('saveSettings', { ok: true });
-      await win.fail('saveSettings', new Error('no se pudo escribir'));
-      expect(toggle.checked).toBe(false);
-    });
-
-    it('confirms a save that landed', async () => {
-      const { win, editor, toasts } = await openEditor();
-      void editor.refresh();
-      await win.settle('getPreSteps', []);
-      autoRunToggle().click();
-      await win.settle('saveSettings', { ok: true });
-      expect(toasts).toEqual([{ message: 'Ajustes guardados', kind: 'ok' }]);
-      expect(autoRunToggle().checked).toBe(true);
-    });
-
-    it('paints the stored value once the setting has been read', async () => {
+    it('repaints from a refresh after the groups changed elsewhere', async () => {
+      const known = groups();
       const win = await loadRendererWindow({
         html: 'config.html',
         load: () => Promise.resolve(),
         values: { platform: 'macos' },
       });
-      editorWindow = win;
-      initPipelineEditor(pipelineHost(), {
-        getGroups: () => [],
+      adopt(win);
+      const editor = initPipelineEditor(pipelineHost(), {
+        getGroups: () => known,
         showToast: () => undefined,
       });
-      await win.settle('getSettings', { preScriptsAutoRun: true });
-      expect(autoRunToggle().checked).toBe(true);
-      expect(autoRunToggle().disabled).toBe(false);
-    });
-
-    it('says so and leaves the control usable when the setting cannot be read', async () => {
-      const win = await loadRendererWindow({
-        html: 'config.html',
-        load: () => Promise.resolve(),
-        values: { platform: 'macos' },
-      });
-      editorWindow = win;
-      const toasts: string[] = [];
-      initPipelineEditor(pipelineHost(), {
-        getGroups: () => [],
-        showToast: (message) => toasts.push(message),
-      });
-      await win.fail('getSettings', new Error('sin ajustes'));
-      expect(toasts).toEqual(['No se pudieron leer los ajustes']);
-      // Still enabled: the read is over, so a click is no longer racing it.
-      expect(autoRunToggle().disabled).toBe(false);
-      expect(autoRunToggle().checked).toBe(false);
+      void editor.refresh();
+      await win.settle('listWorkflows', startupEntries(chain()));
+      known[0].preScripts[0].name = 'Setup renombrado';
+      void editor.refresh();
+      await win.settle('listWorkflows', startupEntries(chain()));
+      expect(node('Setup renombrado')).toBeTruthy();
     });
   });
 });

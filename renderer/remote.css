@@ -543,6 +543,18 @@ svg.i {
 }
 
 /* Group cards */
+/* «Workflows»: one card, a row per workflow the phone may run. */
+.workflows:not(:empty) {
+  margin-bottom: 16px;
+  padding: 0 14px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.workflows .workflow-row:first-child {
+  border-top: none;
+}
 .group-card {
   margin-bottom: 8px;
   overflow: hidden;

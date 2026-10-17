@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   group,
   openConfigWindow,
+  recordApiCalls,
   updateStatus,
 } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
@@ -242,6 +243,15 @@ describe('renderer/config.ts', () => {
       await win.settle('getChangelog', { releases: [], repoUrl: null });
     });
 
+    it('names the version and the platform under the About hero', async () => {
+      config = await openConfigWindow('darwin');
+      const win = config;
+      await win.settle('getAppVersion', '1.2.3');
+      expect(document.getElementById('about-version')?.textContent).toMatch(
+        /^Versión 1\.2\.3 · macOS/,
+      );
+    });
+
     it('leaves the label empty when main reports no version', async () => {
       const win = await openConfig();
       await win.settle('getAppVersion', '');
@@ -252,6 +262,85 @@ describe('renderer/config.ts', () => {
       const win = await openConfig();
       await win.fail('getAppVersion', new Error('no app'));
       expect(document.getElementById('app-version')?.textContent).toBe('');
+    });
+  });
+  describe('about: release notes', () => {
+    const RELEASE_URL = 'https://github.com/o/r/releases/tag/v1.2.3';
+    const releases = {
+      releases: [
+        {
+          version: '1.2.4',
+          body: '* feat: something newer',
+          url: 'https://github.com/o/r/releases/tag/v1.2.4',
+        },
+        {
+          version: '1.2.3',
+          body: "## What's Changed\n* feat: phone control by @me in https://github.com/o/r/pull/1\n* fix: tray header",
+          url: RELEASE_URL,
+        },
+      ],
+      repoUrl: 'https://github.com/o/r/releases',
+    };
+
+    function notesCard(): HTMLElement {
+      const el = document.getElementById('about-notes');
+      if (!el) throw new Error('no #about-notes');
+      return el;
+    }
+
+    function releaseNotesLink(): HTMLButtonElement {
+      const el = document.getElementById('about-release-notes');
+      if (!(el instanceof HTMLButtonElement))
+        throw new Error('no #about-release-notes');
+      return el;
+    }
+
+    it("lists the running version's highlights", async () => {
+      const win = await openConfig();
+      await win.settle('getAppVersion', '1.2.3');
+      await win.settle('getChangelog', releases);
+      expect(notesCard().hidden).toBe(false);
+      expect(document.getElementById('about-notes-title')?.textContent).toBe(
+        'Novedades de 1.2.3',
+      );
+      expect(
+        Array.from(notesCard().querySelectorAll('li'), (li) => li.textContent),
+      ).toEqual(['feat: phone control', 'fix: tray header']);
+    });
+
+    it('opens the full history from the card', async () => {
+      const win = await openConfig();
+      await win.settle('getAppVersion', '1.2.3');
+      await win.settle('getChangelog', releases);
+      document.getElementById('about-notes-history')?.click();
+      expect(document.querySelector('.modal-changelog')).not.toBeNull();
+      await win.settle('getChangelog', releases);
+    });
+
+    it("opens the running version's release page", async () => {
+      const win = await openConfig();
+      await win.settle('getAppVersion', '1.2.3');
+      await win.settle('getChangelog', releases);
+      const opened = recordApiCalls('openExternal');
+      expect(releaseNotesLink().hidden).toBe(false);
+      releaseNotesLink().click();
+      expect(opened).toEqual([[RELEASE_URL]]);
+    });
+
+    it('hides the card and the link when the version has no entry', async () => {
+      const win = await openConfig();
+      await win.settle('getAppVersion', '9.9.9');
+      await win.settle('getChangelog', releases);
+      expect(notesCard().hidden).toBe(true);
+      expect(releaseNotesLink().hidden).toBe(true);
+    });
+
+    it('stays hidden when the releases cannot be read', async () => {
+      const win = await openConfig();
+      await win.settle('getAppVersion', '1.2.3');
+      await win.fail('getChangelog', new Error('offline'));
+      expect(notesCard().hidden).toBe(true);
+      expect(releaseNotesLink().hidden).toBe(true);
     });
   });
 });

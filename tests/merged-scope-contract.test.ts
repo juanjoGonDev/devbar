@@ -56,8 +56,10 @@ describe('boot auto-start adopts an in-flight run without a window', () => {
     // between, leaving the synthetic `already_running` result. No behavioural
     // test can pin that window shut, so this asserts the ORDER in the source.
     const bootSource = read('src/main/startup.ts');
-    const call = bootSource.indexOf('const attempt = preScriptRunner.run()');
-    const capture = bootSource.indexOf('preScriptRunner.current()');
+    const call = bootSource.indexOf(
+      "const attempt = workflowRunner.run(workflow.id, 'startup')",
+    );
+    const capture = bootSource.indexOf('workflowRunner.current(workflow.id)');
     const awaitAttempt = bootSource.indexOf('await attempt');
     expect(call).toBeGreaterThan(-1);
     expect(capture).toBeGreaterThan(call);

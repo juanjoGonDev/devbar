@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { group, openConfigWindow } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
+import { byTip } from './helpers/tip.js';
+import { startupEntries } from './helpers/startup-workflow.js';
 
 function detail(): HTMLElement {
   const el = document.getElementById('group-detail');
@@ -157,7 +159,7 @@ describe('renderer/config/group-detail.ts', () => {
     it('colours the icon from a swatch and marks the group dirty', async () => {
       await openWithGroup();
       click(detail().querySelector('.icon-color-trigger'));
-      click(detail().querySelector('.icon-color-swatch[title="Verde"]'));
+      click(detail().querySelector(`.icon-color-swatch:is(${byTip('Verde')})`));
       expect(
         detail().querySelector<HTMLElement>('.icon-btn .icon')?.style.color,
       ).toBe('rgb(34, 197, 94)');
@@ -166,7 +168,9 @@ describe('renderer/config/group-detail.ts', () => {
 
     it('shows the stored colour and clears it with "Sin color"', async () => {
       await openWithGroup({ iconColor: '#ef4444' });
-      const red = detail().querySelector('.icon-color-swatch[title="Rojo"]');
+      const red = detail().querySelector(
+        `.icon-color-swatch:is(${byTip('Rojo')})`,
+      );
       expect(red?.getAttribute('aria-pressed')).toBe('true');
       expect(
         detail().querySelector<HTMLElement>('.icon-color-dot')?.style
@@ -312,9 +316,12 @@ describe('renderer/config/group-detail.ts', () => {
       click(detail().querySelector('.detail-btn-row .danger'));
       await w.settle('deleteGroup', { ok: true });
       await w.settle('listGroups', []);
-      await w.settle('getPreSteps', []);
+      await w.settle(
+        'listWorkflows',
+        startupEntries({ blocks: [], edges: [] }),
+      );
       expect(detail().querySelector('.detail-empty')).not.toBeNull();
-      expect(w.callCount('getPreSteps')).toBeGreaterThan(0);
+      expect(w.callCount('listWorkflows')).toBeGreaterThan(0);
     });
   });
 });

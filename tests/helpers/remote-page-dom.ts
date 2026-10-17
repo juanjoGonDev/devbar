@@ -103,12 +103,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         actions: [],
       },
     ],
-    pipeline: {
-      status: 'idle',
-      currentStep: null,
-      totalSteps: 2,
-      lastError: null,
-    },
+    workflows: [],
     update: { currentVersion: '0.11.0', state: 'current', version: null },
     confirms: [],
     ...extra,

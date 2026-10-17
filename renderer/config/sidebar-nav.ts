@@ -8,6 +8,8 @@ export interface SidebarNavElements {
   navCollapse: HTMLButtonElement;
   groupsCollapse: HTMLButtonElement;
   groupsTwoPane: HTMLElement;
+  /** «Ver todos» in the tray: the Workflows section, on its list. */
+  onWorkflows?(): void;
 }
 
 export interface SidebarNav {
@@ -134,10 +136,15 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
   }
 
   // Deep links: the tray version chip jumps to "Acerca de" (+ changelog);
-  // a «se ha conectado» notice jumps to «Control remoto».
+  // a «se ha conectado» notice jumps to «Control remoto»; the tray's «Ver
+  // todos» jumps to the Workflows list.
   if (window.api.onConfigGoto) {
     window.api.onConfigGoto((target) => {
       if (target === 'remote') showSection('remote');
+      if (target === 'workflows') {
+        showSection('prescripts');
+        els.onWorkflows?.();
+      }
       if (target === 'about' || target === 'about-changelog')
         showSection('about');
       if (target === 'about-changelog') {

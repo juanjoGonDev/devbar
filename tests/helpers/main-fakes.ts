@@ -218,6 +218,7 @@ export function makeGroup(overrides: Partial<Group> = {}): Group {
     actions: [],
     preScripts: [],
     waitForPipeline: true,
+    hiddenInTray: false,
     ...overrides,
   };
 }
@@ -232,7 +233,6 @@ export function makeSettings(
     silenceErrors: false,
     maxLogLines: 10_000,
     notifySuccess: true,
-    preScriptsAutoRun: true,
     ...overrides,
   };
 }

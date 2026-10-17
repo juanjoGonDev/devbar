@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createStartup, type StartupDeps } from '../src/main/startup.js';
-import { makeCommand, makeGroup, makeSettings } from './helpers/main-fakes.js';
-import type { Group, LogEntry, PreStep } from '../src/domain-types.js';
+import { makeCommand, makeGroup } from './helpers/main-fakes.js';
+import type {
+  Group,
+  LogEntry,
+  Pipeline,
+  PreStep,
+  Workflow,
+} from '../src/domain-types.js';
+import { fromLegacySteps } from '../src/pipeline-graph.js';
 import type { RunResult } from '../src/pre-script-runner.js';
 
 function step(id: string, groupId: string, scriptId: string): PreStep {
@@ -14,7 +21,17 @@ function harness(overrides: Partial<StartupDeps> = {}) {
   const notices: string[] = [];
   const logs: { id: string; entry: LogEntry }[] = [];
   let groups: Group[] = [];
-  let preSteps: PreStep[] = [];
+  let pipeline: Pipeline = { blocks: [], edges: [] };
+  let startupEnabled = true;
+  const startupWorkflow = (): Workflow => ({
+    id: 'w-start',
+    name: 'Arranque',
+    enabled: startupEnabled,
+    showInTray: true,
+    showInRemote: false,
+    trigger: { kind: 'startup' },
+    graph: pipeline,
+  });
   let runResult: RunResult = { ok: true, runId: 1 };
   const resolvable: { resolve: (result: RunResult) => void }[] = [];
   const deps: StartupDeps = {
@@ -31,10 +48,9 @@ function harness(overrides: Partial<StartupDeps> = {}) {
     },
     configStore: {
       listGroups: () => groups,
-      getPreSteps: () => preSteps,
-      getGlobalSettings: () => makeSettings({ preScriptsAutoRun: true }),
+      listWorkflows: () => [startupWorkflow()],
     },
-    preScriptRunner: {
+    workflowRunner: {
       run: () => Promise.resolve(runResult),
       current: () => null,
     },
@@ -55,11 +71,18 @@ function harness(overrides: Partial<StartupDeps> = {}) {
     setGroups: (next: Group[]) => {
       groups = next;
     },
+    /** The old ordered steps, chained from the trigger. */
     setSteps: (next: PreStep[]) => {
-      preSteps = next;
+      pipeline = fromLegacySteps(next);
+    },
+    setPipeline: (next: Pipeline) => {
+      pipeline = next;
     },
     setRunResult: (next: RunResult) => {
       runResult = next;
+    },
+    setStartupEnabled: (next: boolean) => {
+      startupEnabled = next;
     },
   };
 }
@@ -226,19 +249,84 @@ describe('src/main/startup.ts', () => {
       expect(h.started).toContain('cmd:g2:web');
     });
 
-    it('releases a non-waiting group as its own last step clears', async () => {
+    it('releases a non-waiting group as its own block completes', async () => {
       const h = harness();
       h.setGroups([autoGroup('g1', { waitForPipeline: false })]);
       h.setSteps([step('s1', 'g1', 'vpn')]);
       const run = h.startup.autoStartAllMarkedCommands();
-      h.startup.onPipelineStepComplete(0);
+      h.startup.onWorkflowBlockComplete({
+        workflowId: 'w-start',
+        blockId: 's1',
+      });
       await run;
       expect(h.started).toEqual(['cmd:g1:web']);
     });
 
-    it('ignores step completions outside a boot run', () => {
+    it('waits for every block of a group on different branches, and starts it once', async () => {
       const h = harness();
-      h.startup.onPipelineStepComplete(0);
+      h.setGroups([autoGroup('g1', { waitForPipeline: false })]);
+      const ref = (scriptId: string) => ({ groupId: 'g1', scriptId });
+      h.setPipeline({
+        blocks: [
+          { id: 'a', scripts: [ref('vpn')], x: 0, y: 0, requireAll: true },
+          { id: 'b', scripts: [ref('db')], x: 0, y: 0, requireAll: true },
+          {
+            id: 'c',
+            scripts: [{ groupId: 'g9', scriptId: 'x' }],
+            x: 0,
+            y: 0,
+            requireAll: true,
+          },
+        ],
+        edges: [
+          { from: 'trigger', to: 'a' },
+          { from: 'trigger', to: 'b' },
+          { from: 'b', to: 'c' },
+        ],
+      });
+      const run = h.startup.autoStartAllMarkedCommands();
+      h.startup.onWorkflowBlockComplete({
+        workflowId: 'w-start',
+        blockId: 'a',
+      });
+      expect(h.started).toEqual([]);
+      h.startup.onWorkflowBlockComplete({
+        workflowId: 'w-start',
+        blockId: 'b',
+      });
+      h.startup.onWorkflowBlockComplete({
+        workflowId: 'w-start',
+        blockId: 'c',
+      });
+      await run;
+      expect(h.started).toEqual(['cmd:g1:web']);
+    });
+
+    it('starts every eligible group at once when the startup workflow is off', async () => {
+      const h = harness();
+      h.setStartupEnabled(false);
+      h.setGroups([autoGroup('g1')]);
+      h.setSteps([step('s1', 'g1', 'vpn')]);
+      await h.startup.autoStartAllMarkedCommands();
+      expect(h.started).toEqual(['cmd:g1:web']);
+    });
+
+    it('ignores block completions of any other workflow', async () => {
+      const h = harness();
+      h.setGroups([autoGroup('g1', { waitForPipeline: false })]);
+      h.setSteps([step('s1', 'g1', 'vpn')]);
+      const run = h.startup.autoStartAllMarkedCommands();
+      h.startup.onWorkflowBlockComplete({ workflowId: 'other', blockId: 's1' });
+      await run;
+      expect(h.started).toEqual([]);
+    });
+
+    it('ignores block completions outside a boot run', () => {
+      const h = harness();
+      h.startup.onWorkflowBlockComplete({
+        workflowId: 'w-start',
+        blockId: 's1',
+      });
       expect(h.started).toEqual([]);
     });
 
@@ -269,7 +357,7 @@ describe('src/main/startup.ts', () => {
 
     it('adopts the result of a manual run that was already in flight', async () => {
       const h = harness({
-        preScriptRunner: {
+        workflowRunner: {
           run: () => Promise.resolve({ ok: false, error: 'already_running' }),
           current: () =>
             Promise.resolve({

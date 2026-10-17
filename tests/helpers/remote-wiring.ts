@@ -37,7 +37,10 @@ export function fakeAppWiring() {
       getLogSeq: () => 4,
       on: (event, listener) => events.on(event, listener),
     },
-    preScriptRunner: { run: () => Promise.resolve(null) },
+    workflowRunner: {
+      run: () => Promise.resolve(null),
+      stop: () => ({ ok: true }),
+    },
     gitManager: {
       listBranches: () => Promise.resolve({ ok: true, branches: [] }),
       currentBranch: (repo) => Promise.resolve({ ok: true, branch: repo }),
@@ -53,14 +56,7 @@ export function fakeAppWiring() {
     branchesChanged: () => undefined,
     snapshots: {
       snapshotGroupStates: () => [],
-      snapshotPipelineState: () => ({
-        status: 'idle',
-        currentStep: null,
-        totalSteps: 0,
-        lastError: null,
-        lastRunId: null,
-        startedAt: null,
-      }),
+      workflowEntries: () => [],
     },
     updater: {
       status: () => ({

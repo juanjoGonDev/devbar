@@ -17,7 +17,7 @@ const preview = {
   groupsCount: 1,
   commandsCount: 2,
   actionsCount: 3,
-  preStepsCount: 4,
+  workflowsCount: 4,
   preScriptsCount: 5,
   hasGlobalSettings: true,
 };

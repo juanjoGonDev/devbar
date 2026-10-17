@@ -1,4 +1,4 @@
-import type { ProcessStatus } from '../domain-types.js';
+import type { ProcessStatus, WorkflowRunResult } from '../domain-types.js';
 
 /**
  * What the «Control remoto» server sends a linked phone, over /api/* and the
@@ -59,11 +59,21 @@ export interface RemoteGroupView {
   actions: RemoteActionView[];
 }
 
-export interface RemotePipelineView {
-  status: 'running' | 'done' | 'error' | 'idle';
-  currentStep: number | null;
-  totalSteps: number;
-  lastError: string | null;
+/**
+ * A workflow the phone may run and stop: the startup one, and every enabled
+ * manual one with «Mostrar en el móvil». Never its graph or its scripts.
+ */
+export interface RemoteWorkflowView {
+  id: string;
+  name: string;
+  startup: boolean;
+  running: boolean;
+  /** Settled scripts of the run in flight; null when it is not running. */
+  doneScripts: number | null;
+  /** The run's scripts, or the workflow's runnable ones when idle. */
+  totalScripts: number;
+  lastResult: WorkflowRunResult | null;
+  lastFinishedAt: number | null;
 }
 
 /**
@@ -82,7 +92,7 @@ export interface RemoteStateView {
   now: number;
   host: { name: string; version: string };
   groups: RemoteGroupView[];
-  pipeline: RemotePipelineView;
+  workflows: RemoteWorkflowView[];
   update: RemoteUpdateView;
   confirms: RemoteConfirmView[];
 }

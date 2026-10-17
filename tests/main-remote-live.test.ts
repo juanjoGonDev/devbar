@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLive, type RemoteRuntime } from '../src/main/remote/live.js';
 import type { EventSink } from '../src/main/remote/events.js';
-import type { GroupState, PipelineState } from '../src/ipc-contract.js';
+import type { GroupState } from '../src/ipc-contract.js';
 import type { RemoteConfirmView } from '../src/ipc-contract/remote-wire.js';
 import type { UpdateStatus } from '../src/ipc-contract/updates-api.js';
 import type { LogEntry } from '../src/domain-types.js';
@@ -13,15 +13,6 @@ interface FakeTimer {
   cleared: boolean;
   repeat: boolean;
 }
-
-const PIPELINE: PipelineState = {
-  status: 'idle',
-  currentStep: null,
-  totalSteps: 0,
-  lastError: null,
-  lastRunId: null,
-  startedAt: null,
-};
 
 function groupState(id: string): GroupState {
   return {
@@ -89,7 +80,7 @@ function harness() {
   };
   const runtime: RemoteRuntime = {
     groupStates: () => groups,
-    pipelineState: () => PIPELINE,
+    workflowEntries: () => [],
     currentBranch: (groupId) => {
       branchReads += 1;
       return Promise.resolve({ ok: true, branch: branches.get(groupId) });
@@ -193,7 +184,7 @@ describe('src/main/remote/live.ts', () => {
         now: 1_000,
         host: { name: 'mac-de-ana', version: '0.11.0' },
         groups: [{ id: 'g1', branch: 'main' }],
-        pipeline: { status: 'idle' },
+        workflows: [],
         update: { state: 'current' },
         confirms: [],
       });
@@ -256,7 +247,7 @@ describe('src/main/remote/live.ts', () => {
       const before = phone.events().length;
 
       h.emit('groups:update');
-      h.emit('pipeline:update');
+      h.emit('workflows:update');
       h.emit('groups:update');
       h.fire(250);
 

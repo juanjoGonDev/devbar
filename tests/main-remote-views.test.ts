@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   groupViews,
   logLine,
-  pipelineView,
+  remoteWorkflowVisible,
   settingsView,
   updateView,
+  workflowViews,
 } from '../src/main/remote/views.js';
-import type { GroupState, PipelineState } from '../src/ipc-contract.js';
+import type { GroupState, WorkflowEntry } from '../src/ipc-contract.js';
+import type { Workflow, WorkflowTrigger } from '../src/domain-types.js';
+import { graph } from './helpers/pipeline.js';
 import type { UpdateStatus } from '../src/ipc-contract/updates-api.js';
 import {
   makeAction,
@@ -151,22 +154,81 @@ describe('src/main/remote/views.ts', () => {
     });
   });
 
-  describe('pipelineView', () => {
-    it('drops the run id the phone has no log view for', () => {
-      const pipeline: PipelineState = {
-        status: 'running',
-        currentStep: 1,
-        totalSteps: 3,
-        lastError: null,
-        lastRunId: '7',
-        startedAt: 5,
-      };
+  describe('workflowViews', () => {
+    const MANUAL: WorkflowTrigger = { kind: 'manual', confirm: false };
+    const SCHEDULE: WorkflowTrigger = {
+      kind: 'schedule',
+      schedule: { rules: [], interval: null },
+    };
+    const workflow = (
+      id: string,
+      trigger: WorkflowTrigger,
+      showInRemote: boolean,
+      enabled = true,
+    ): Workflow => ({
+      id,
+      name: `Flujo ${id}`,
+      enabled,
+      showInTray: true,
+      showInRemote,
+      trigger,
+      graph: graph(['A'], ['trigger>A']),
+    });
+    const entry = (w: Workflow): WorkflowEntry => ({
+      workflow: w,
+      lastRun: null,
+      nextRunAt: null,
+      scriptCount: 1,
+      running: null,
+    });
 
-      expect(pipelineView(pipeline)).toEqual({
-        status: 'running',
-        currentStep: 1,
-        totalSteps: 3,
-        lastError: null,
+    it('shows the enabled workflows shown on the phone, whatever their trigger', () => {
+      const views = workflowViews([
+        entry(workflow('start', { kind: 'startup' }, true)),
+        entry(workflow('start-off', { kind: 'startup' }, true, false)),
+        entry(workflow('phone', MANUAL, true)),
+        entry(workflow('desk', MANUAL, false)),
+        entry(workflow('off', MANUAL, true, false)),
+        entry(workflow('cron', SCHEDULE, true)),
+        entry(workflow('cron-desk', SCHEDULE, false)),
+      ]);
+      expect(views.map((view) => view.id)).toEqual(['start', 'phone', 'cron']);
+      expect(
+        remoteWorkflowVisible(entry(workflow('desk', MANUAL, false))),
+      ).toBe(false);
+    });
+
+    it('shows a running workflow even when it is not shown on the phone', () => {
+      const running = {
+        ...entry(workflow('desk', MANUAL, false, false)),
+        running: { runId: 1, doneScripts: 0, totalScripts: 1, startedAt: 1 },
+      };
+      expect(remoteWorkflowVisible(running)).toBe(true);
+      expect(workflowViews([running]).map((view) => view.id)).toEqual(['desk']);
+    });
+
+    it('carries only the name, the progress and the last result — never the graph', () => {
+      const [view] = workflowViews([
+        {
+          ...entry(workflow('start', { kind: 'startup' }, true)),
+          lastRun: {
+            startedAt: 1,
+            finishedAt: 9,
+            durationMs: 8,
+            result: 'warning',
+          },
+          running: { runId: 4, doneScripts: 3, totalScripts: 8, startedAt: 2 },
+        },
+      ]);
+      expect(view).toEqual({
+        id: 'start',
+        name: 'Flujo start',
+        startup: true,
+        running: true,
+        doneScripts: 3,
+        totalScripts: 8,
+        lastResult: 'warning',
+        lastFinishedAt: 9,
       });
     });
   });

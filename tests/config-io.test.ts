@@ -146,6 +146,7 @@ describe('serializeConfig', () => {
         commands: [],
         actions: [],
         waitForPipeline: true,
+        hiddenInTray: false,
       },
     ];
     const result = serializeConfig(
@@ -322,7 +323,6 @@ describe('validateImportedConfig', () => {
       autostart: false,
       silenceWarnings: false,
       silenceErrors: false,
-      preScriptsAutoRun: false,
     });
   });
 
@@ -349,7 +349,7 @@ describe('summarizeImport', () => {
       groupsCount: 0,
       commandsCount: 0,
       actionsCount: 0,
-      preStepsCount: 0,
+      workflowsCount: 0,
       preScriptsCount: 0,
       hasGlobalSettings: true,
     });
@@ -371,7 +371,7 @@ describe('summarizeImport', () => {
     expect(summary.hasGlobalSettings).toBe(true);
   });
 
-  it('counts preSteps (global) and preScripts (flat, per-group) correctly', () => {
+  it('counts a legacy pipeline as the one startup workflow, and preScripts (flat, per-group)', () => {
     const payload = {
       version: 4,
       groups: [
@@ -393,7 +393,7 @@ describe('summarizeImport', () => {
       globalSettings: {},
     };
     const summary = summarizeImport(payload);
-    expect(summary.preStepsCount).toBe(2);
+    expect(summary.workflowsCount).toBe(1);
     expect(summary.preScriptsCount).toBe(3);
   });
 

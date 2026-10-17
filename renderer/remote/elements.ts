@@ -18,8 +18,8 @@ export function panelElements() {
       stopAll: byId<HTMLButtonElement>('stop-all', HTMLButtonElement),
       errorChip: byId<HTMLElement>('error-chip', HTMLElement),
       warnChip: byId<HTMLElement>('warn-chip', HTMLElement),
-      runPipeline: byId<HTMLButtonElement>('run-pipeline', HTMLButtonElement),
-      pipelineLabel: byId<HTMLElement>('pipeline-label', HTMLElement),
+      workflowsTitle: byId<HTMLElement>('workflows-title', HTMLElement),
+      workflows: byId<HTMLElement>('workflows', HTMLElement),
       confirmBanner: byId<HTMLButtonElement>(
         'confirm-banner',
         HTMLButtonElement,

@@ -44,12 +44,15 @@ export interface ControlApiDeps {
     | 'stopProcess'
     | 'runAction'
     | 'stopAll'
-    | 'runPipeline'
+    | 'runWorkflow'
+    | 'stopWorkflow'
     | 'listBranches'
     | 'switchBranch'
     | 'needsConfirm'
   >;
   state(): Promise<RemoteStateView>;
+  /** Whether the phone may run and stop this workflow (`remoteWorkflowVisible`). */
+  workflowVisible(workflowId: string): boolean;
   logs(processId: string): readonly LogEntry[];
   /** How far the process's log count has got: the snapshot/stream boundary. */
   logSeq(processId: string): number;
@@ -182,6 +185,27 @@ export function createControlApi(deps: ControlApiDeps): ControlApi {
     return json(200, { id, seq: deps.logSeq(id), lines });
   };
 
+  /** The workflow a body names, held to the ones the phone is shown. */
+  const workflowFrom = (body: unknown): string | ApiResponse => {
+    const workflowId = idField(body, 'workflowId');
+    if (!workflowId) return invalid();
+    return deps.workflowVisible(workflowId) ? workflowId : notFound('workflow');
+  };
+
+  // Never awaited: a run may take minutes (and may wait on its confirmation);
+  // its progress reaches the phone through the state stream.
+  const runWorkflow: Handler = ({ body }) => {
+    const id = workflowFrom(body);
+    if (typeof id !== 'string') return id;
+    return inBackground(Promise.resolve().then(() => runtime.runWorkflow(id)));
+  };
+
+  const stopWorkflow: Handler = ({ body }) => {
+    const id = workflowFrom(body);
+    if (typeof id !== 'string') return id;
+    return outcome(runtime.stopWorkflow(id));
+  };
+
   const confirm: Handler = ({ body }) => {
     const token = idField(body, 'token');
     const decision = decisionField(body);
@@ -225,10 +249,8 @@ export function createControlApi(deps: ControlApiDeps): ControlApi {
     ['POST /api/process/start', start],
     ['POST /api/process/stop', stop],
     ['POST /api/actions/run', runAction],
-    [
-      'POST /api/pipeline/run',
-      () => inBackground(Promise.resolve().then(() => runtime.runPipeline())),
-    ],
+    ['POST /api/workflows/run', runWorkflow],
+    ['POST /api/workflows/stop', stopWorkflow],
     ['POST /api/stop-all', async () => json(200, await runtime.stopAll())],
     ['GET /api/branches', listBranches],
     ['POST /api/branch', switchBranch],

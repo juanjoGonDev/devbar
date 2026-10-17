@@ -85,6 +85,7 @@ function groupState(overrides: Partial<GroupState> = {}): GroupState {
       actions: [],
       preScripts: [],
       waitForPipeline: true,
+      hiddenInTray: false,
     },
     currentBranch: null,
     color: 'stopped',

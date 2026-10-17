@@ -151,11 +151,6 @@
           <div class="chips-row">
             <span id="error-chip" class="chip is-error" hidden></span>
             <span id="warn-chip" class="chip is-warn" hidden></span>
-            <span class="spacer"></span>
-            <button type="button" id="run-pipeline" class="pill-button">
-              <span data-glyph="play"></span>
-              <span id="pipeline-label">Ejecutar pipeline</span>
-            </button>
           </div>
           <button
             type="button"
@@ -183,6 +178,8 @@
             </span>
             <span data-glyph="chevron"></span>
           </button>
+          <h3 id="workflows-title" class="section-title" hidden>Workflows</h3>
+          <div id="workflows" class="workflows"></div>
           <h3 class="section-title">Grupos</h3>
           <p id="groups-empty" class="muted" hidden>
             No hay grupos configurados en DevBar.

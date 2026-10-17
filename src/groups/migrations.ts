@@ -24,12 +24,16 @@ import {
   normalizePreStep,
 } from './normalize.js';
 import { DEFAULT_GROUP_ICON, migrateIcons } from './icon-migration.js';
+import { fromLegacySteps, normalizePipeline } from '../pipeline-graph.js';
+import { normalizeWorkflows, workflowsFromPipeline } from '../workflows.js';
 import type {
   Group,
   LegacyService,
+  Pipeline,
   PreScript,
   PreStep,
   PreStepScriptRef,
+  Workflow,
 } from '../domain-types.js';
 
 export function bucketKeyFor(value: unknown): string {
@@ -247,9 +251,9 @@ export function migratePreScriptPipeline(raw: {
 
   // Normalized FIRST — and its ids seeded into `usedStepIds` below — so a
   // migrated legacy step can never mint or reuse an id that collides with
-  // one an existing top-level step already has. `savePreStep`, `deletePreStep`
-  // and `reorderPreSteps` all address steps by id alone, so a collision would
-  // make them hit the wrong step.
+  // one an existing top-level step already has. Each step id becomes a block
+  // id (`fromLegacySteps`), and edges address blocks by id alone, so a
+  // collision would wire the wrong block.
   const existingSteps = Array.isArray(raw.preSteps)
     ? raw.preSteps.map(normalizePreStep)
     : [];
@@ -343,7 +347,11 @@ export interface StoreMigrationInput {
   version?: number;
   groups?: unknown[];
   services?: unknown[];
+  /** LEGACY ordered steps: present only in a store written before the graph. */
   preSteps?: unknown;
+  pipeline?: unknown;
+  /** Absent until the single pipeline was turned into workflows. */
+  workflows?: unknown;
   globalSettings?: unknown;
   _services_pre_v3_backup?: unknown[];
   _icons_pre_lucide_backup?: unknown;
@@ -355,9 +363,25 @@ export interface StoreMigrationPlan {
   version: number;
   groups: Group[];
   services: LegacyService[];
-  preSteps: PreStep[];
-  /** `null` means "leave `globalSettings.preScriptsAutoRun` untouched". */
+  pipeline: Pipeline;
+  /**
+   * The store still carried legacy steps (top-level `preSteps`, or v3
+   * per-group ones) and `pipeline` was rebuilt from them: `preSteps` must
+   * then be deleted, so the migration never runs twice.
+   */
+  legacyStepsMigrated: boolean;
+  /** The AND-folded legacy per-group auto-run, or `null` when no group
+   *  contributed one (then `globalSettings.preScriptsAutoRun` decides). */
   preScriptsAutoRun: boolean | null;
+  /** What the store's `workflows` key must hold. */
+  workflows: Workflow[];
+  /**
+   * The store had no `workflows` yet: they were just built from `pipeline`
+   * (the startup workflow «Arranque»), so `pipeline`, `preSteps` and
+   * `globalSettings.preScriptsAutoRun` must go — the migration never runs
+   * twice.
+   */
+  workflowsMigrated: boolean;
   /** `null` means "leave `_services_pre_v3_backup` untouched". */
   servicesBackup: unknown[] | null;
   /** The emoji the icon migration replaced, merged into any earlier backup
@@ -411,19 +435,40 @@ export function planStoreMigration(
   const icons = migrateIcons(
     idRepair.changed ? idRepair.state.groups : pipeline.groups,
   );
+  // Legacy steps, wherever they came from, are newer than any `pipeline`:
+  // this writer deletes `preSteps` as it converts them, so their presence
+  // means a store the graph-era app has not seen yet (or one an older build
+  // wrote to after a downgrade).
+  const legacyStepsMigrated =
+    Array.isArray(raw.preSteps) || pipeline.hoistedSteps.length > 0;
+  const workflowsMigrated = !Array.isArray(raw.workflows);
   const changed =
     pipeline.changed ||
     idRepair.changed ||
     icons.changed ||
+    legacyStepsMigrated ||
+    workflowsMigrated ||
     currentVersion !== 4;
   const groups = icons.groups;
   const services = regenerateLegacyServices(groups);
+  const graph = legacyStepsMigrated
+    ? fromLegacySteps(pipeline.preSteps)
+    : normalizePipeline(raw.pipeline);
+  const autoRun =
+    pipeline.preScriptsAutoRunContributors > 0
+      ? pipeline.preScriptsAutoRun
+      : record(raw.globalSettings).preScriptsAutoRun === true;
   return {
     changed,
     version: 4,
     groups,
     services,
-    preSteps: pipeline.preSteps,
+    pipeline: graph,
+    legacyStepsMigrated,
+    workflows: workflowsMigrated
+      ? workflowsFromPipeline(graph, autoRun)
+      : normalizeWorkflows(raw.workflows),
+    workflowsMigrated,
     // Gated on real contributors, NOT on `pipeline.changed`: a group can flip
     // `changed` to true (a stale `preScriptsAutoRun` key, or an empty legacy
     // `preSteps: []`) without ever contributing a script to the fold. Gating

@@ -43,12 +43,18 @@ const STATE = {
       ],
     },
   ],
-  pipeline: {
-    status: 'idle',
-    currentStep: null,
-    totalSteps: 2,
-    lastError: null,
-  },
+  workflows: [
+    {
+      id: 'w1',
+      name: 'Arranque',
+      startup: true,
+      running: true,
+      doneScripts: 3,
+      totalScripts: 8,
+      lastResult: 'warning',
+      lastFinishedAt: 9,
+    },
+  ],
   update: { currentVersion: '0.11.0', state: 'ready', version: '0.12.0' },
   confirms: [
     {
@@ -74,12 +80,7 @@ describe('renderer/remote/wire.ts', () => {
         now: 0,
         host: { name: '', version: '' },
         groups: [],
-        pipeline: {
-          status: 'idle',
-          currentStep: null,
-          totalSteps: 0,
-          lastError: null,
-        },
+        workflows: [],
         update: { currentVersion: '', state: 'current', version: null },
         confirms: [],
       });
@@ -166,5 +167,30 @@ describe('renderer/remote/wire.ts', () => {
         silenceErrors: false,
       });
     });
+  });
+});
+
+describe('renderer/remote/wire.ts workflows', () => {
+  it('narrows each workflow, dropping malformed entries', () => {
+    const state = stateView({
+      ...STATE,
+      workflows: [
+        null,
+        { id: 7 },
+        { id: 'w2', name: 'X', lastResult: 'weird', running: 'yes' },
+      ],
+    });
+    expect(state.workflows).toEqual([
+      {
+        id: 'w2',
+        name: 'X',
+        startup: false,
+        running: false,
+        doneScripts: null,
+        totalScripts: 0,
+        lastResult: 'error',
+        lastFinishedAt: null,
+      },
+    ]);
   });
 });

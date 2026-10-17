@@ -64,7 +64,7 @@ export function createSubLists(deps: SubListsDeps): SubLists {
     helpText.className = 'help-text muted';
     helpText.style.cssText = 'font-size:11px; margin:4px 0 8px;';
     helpText.textContent =
-      'Definiciones reutilizables de este grupo. Colócalas en el orden del pipeline global desde la sección «Pipeline».';
+      'Colócalos en un workflow desde la sección «Workflows».';
     section.appendChild(helpText);
 
     const scripts = group.preScripts || [];

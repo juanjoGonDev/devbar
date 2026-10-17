@@ -17,7 +17,7 @@ function settings(extra: Partial<GlobalSettings> = {}): GlobalSettings {
     maxLogLines: 1234,
     notifySuccess: false,
     ...extra,
-  } as GlobalSettings;
+  };
 }
 
 function input(id: string): HTMLInputElement {
@@ -46,6 +46,14 @@ function toastText(): string {
 
 function hintText(id: string): string {
   return document.getElementById(id)?.textContent ?? '';
+}
+
+/** The visible label of the button, without its trailing icon glyph. */
+function notifSettingsLabel(): string {
+  return (
+    document.querySelector('#open-notification-settings .btn-label')
+      ?.textContent ?? ''
+  );
 }
 
 describe('renderer/config/settings-pane.ts', () => {
@@ -250,26 +258,35 @@ describe('renderer/config/settings-pane.ts', () => {
       win = await openConfigWindow('darwin');
       expect(hintText('autostart-hint')).toContain('Login Items');
       expect(hintText('notif-hint')).toContain('macOS pide permiso');
-      expect(
-        document.getElementById('open-notification-settings')?.textContent,
-      ).toBe('Ajustes del sistema → Notificaciones');
+      expect(hintText('notif-hint')).toContain(
+        'Ajustes del sistema → Notificaciones',
+      );
+      expect(notifSettingsLabel()).toBe('Abrir ajustes');
     });
 
     it('names the Windows Run key and Settings app', async () => {
       win = await openConfigWindow('win32');
       expect(hintText('autostart-hint')).toContain('clave Run');
+      expect(hintText('notif-hint')).toContain(
+        'Configuración → Sistema → Notificaciones',
+      );
+      expect(notifSettingsLabel()).toBe('Abrir Configuración');
+    });
+
+    it('keeps the external-link icon on the settings button', async () => {
+      win = await openConfigWindow('win32');
       expect(
-        document.getElementById('open-notification-settings')?.textContent,
-      ).toBe('Configuración → Sistema → Notificaciones');
+        document.querySelector(
+          '#open-notification-settings [data-icon="external-link"]',
+        ),
+      ).not.toBeNull();
     });
 
     it('names the XDG autostart and leaves the desktop panel generic', async () => {
       win = await openConfigWindow('linux');
       expect(hintText('autostart-hint')).toContain('XDG');
       expect(hintText('notif-hint')).toContain('GNOME');
-      expect(
-        document.getElementById('open-notification-settings')?.textContent,
-      ).toBe('los ajustes del sistema');
+      expect(notifSettingsLabel()).toBe('Abrir ajustes');
     });
   });
 });

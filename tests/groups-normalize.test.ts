@@ -54,6 +54,18 @@ describe('normalizeGroup', () => {
   });
 });
 
+describe('normalizeGroup — hiddenInTray', () => {
+  it('is visible unless explicitly hidden (existing stores have no key)', () => {
+    expect(normalizeGroup({ path: '/p' }).hiddenInTray).toBe(false);
+    expect(
+      normalizeGroup({ path: '/p', hiddenInTray: 'yes' }).hiddenInTray,
+    ).toBe(false);
+    expect(
+      normalizeGroup({ path: '/p', hiddenInTray: true }).hiddenInTray,
+    ).toBe(true);
+  });
+});
+
 // ─── normalizeGroup — waitForPipeline ──────────────────────────────────
 
 describe('normalizeGroup — waitForPipeline', () => {

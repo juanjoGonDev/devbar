@@ -18,6 +18,8 @@ const WINDOWS: ReadonlyArray<[script: string, html: string]> = [
   ['pipeline-editor.ts', 'config.html'],
   // «Control remoto» resolves its section and dialogs in one module.
   ['config/remote-elements.ts', 'config.html'],
+  // The command / action / pre-script dialog, likewise.
+  ['config/sub-dialog-elements.ts', 'config.html'],
   ['tray.ts', 'tray.html'],
   // The logs window resolves every element it binds in one module, so that is
   // where its contract with `logs.html` is written down.
@@ -120,6 +122,32 @@ describe('theme picker a11y contract (config.html)', () => {
 
   it('declares the three theme options', () => {
     expect(themeButtons.length).toBe(3);
+  });
+
+  it('gives every option a preview, its icon and its label', () => {
+    // Each card shows what it does: a miniature window in that theme, then
+    // the icon and name of the option.
+    const expected: Record<string, [string, string]> = {
+      auto: ['monitor', 'Automático'],
+      light: ['sun', 'Claro'],
+      dark: ['moon', 'Oscuro'],
+    };
+    const cards = Array.from(
+      markup.matchAll(
+        /<button\b[^>]*data-theme-value="(\w+)"[^>]*>([\s\S]*?)<\/button>/g,
+      ),
+    );
+    expect(cards.map((card) => card[1])).toEqual(['auto', 'light', 'dark']);
+    for (const [, value, body] of cards) {
+      const [iconName, label] = expected[value ?? ''] ?? ['', ''];
+      expect(body, `${value} has no preview`).toMatch(
+        new RegExp(`class="theme-preview theme-preview-${value}"`),
+      );
+      expect(body, `${value} has no ${iconName} icon`).toContain(
+        `data-icon="${iconName}"`,
+      );
+      expect(body, `${value} is not labelled ${label}`).toContain(label);
+    }
   });
 
   it('every theme option starts with aria-pressed="false"', () => {

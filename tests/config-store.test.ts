@@ -226,7 +226,7 @@ describe('src/config-store/store.ts', () => {
       const seed = {
         version: 4,
         groups: [],
-        preSteps: [],
+        workflows: [],
         services: [],
         globalSettings: { theme: 'dark' },
         scheduleState: {},
@@ -256,9 +256,9 @@ describe('src/config-store/store.ts', () => {
         },
       });
 
-      const steps = store.getPreSteps();
-      expect(steps).toHaveLength(1);
-      expect(steps[0]?.scripts).toEqual([
+      const blocks = store.listWorkflows()[0]?.graph.blocks ?? [];
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]?.scripts).toEqual([
         { groupId: 'g-api', scriptId: 'sc1' },
       ]);
       expect(
@@ -266,7 +266,7 @@ describe('src/config-store/store.ts', () => {
       ).toEqual(['sc1']);
     });
 
-    it('carries a hoisted group’s preScriptsAutoRun into the global settings', async () => {
+    it('carries a hoisted group’s preScriptsAutoRun into the startup workflow', async () => {
       const store = await harness.open({
         seed: {
           version: 3,
@@ -286,21 +286,28 @@ describe('src/config-store/store.ts', () => {
         },
       });
 
-      expect(store.getGlobalSettings().preScriptsAutoRun).toBe(true);
+      expect(store.listWorkflows()[0]?.enabled).toBe(true);
     });
 
-    it('leaves preScriptsAutoRun alone when no group actually contributed a script', async () => {
+    it('keeps the global auto-run when no group actually contributed a script', async () => {
       const store = await harness.open({
         seed: {
           version: 4,
           groups: [{ ...legacyGroup('api'), preSteps: [] }],
+          pipeline: {
+            blocks: [
+              { id: 'b1', scripts: [{ groupId: 'g-api', scriptId: 'x' }] },
+            ],
+            edges: [{ from: 'trigger', to: 'b1' }],
+          },
           globalSettings: { preScriptsAutoRun: true },
         },
       });
 
-      // The AND-fold over zero contributors is `false`; writing it would
+      // The AND-fold over zero contributors is `false`; using it would
       // silently switch off an auto-run the user had enabled.
-      expect(store.getGlobalSettings().preScriptsAutoRun).toBe(true);
+      expect(store.listWorkflows()[0]?.enabled).toBe(true);
+      expect(store.getGlobalSettings()).not.toHaveProperty('preScriptsAutoRun');
     });
   });
 
@@ -315,7 +322,6 @@ describe('src/config-store/store.ts', () => {
         silenceErrors: false,
         maxLogLines: 10_000,
         notifySuccess: true,
-        preScriptsAutoRun: false,
       });
     });
 
@@ -360,7 +366,6 @@ describe('src/config-store/store.ts', () => {
         silenceWarnings: '' as unknown as boolean,
         silenceErrors: 'yes' as unknown as boolean,
         notifySuccess: 0 as unknown as boolean,
-        preScriptsAutoRun: null as unknown as boolean,
       });
 
       expect(saved).toMatchObject({
@@ -368,7 +373,6 @@ describe('src/config-store/store.ts', () => {
         silenceWarnings: false,
         silenceErrors: true,
         notifySuccess: false,
-        preScriptsAutoRun: false,
       });
     });
 

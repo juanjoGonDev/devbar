@@ -7,15 +7,15 @@ import type {
   GlobalSettings,
   Group,
   LegacyService,
-  PreStep,
+  Workflow,
+  WorkflowRunRecord,
 } from '../domain-types.js';
 import { normalizeCustomIcons } from '../custom-icons.js';
 import { OWNER_ONLY, restrictToOwner } from './owner-only.js';
+import { normalizeWorkflows, pruneWorkflowRefs } from '../workflows.js';
 import {
   normalizeGroup,
-  normalizePreStep,
   planStoreMigration,
-  prunePipelineRefs,
   regenerateLegacyServices,
 } from '../groups-model.js';
 import {
@@ -36,7 +36,7 @@ import {
  * (globalSettings, scheduleState, version).
  *
  * The collection CRUD lives next door — `config-store.ts` for groups and
- * their commands/actions, `config-store/pipeline-store.ts` for the pipeline —
+ * their commands/actions, `config-store/workflow-store.ts` for workflows —
  * so neither of them has to know the store exists as anything but the
  * read/persist pair below.
  */
@@ -48,14 +48,20 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   silenceErrors: false,
   maxLogLines: DEFAULT_MAX_LOG_LINES,
   notifySuccess: true,
-  preScriptsAutoRun: false,
 };
 
 type StoreState = {
   version: number;
   services: LegacyService[];
   groups: Group[];
-  preSteps: PreStep[];
+  /** Absent only until the migration turned the old pipeline into them. */
+  workflows?: Workflow[];
+  /** The last finished run of each workflow, keyed by workflow id. */
+  workflowRuns: Record<string, WorkflowRunRecord>;
+  /** LEGACY single pipeline: read once by the migration, then deleted. */
+  pipeline?: unknown;
+  /** LEGACY ordered steps: read once by the migration, then deleted. */
+  preSteps?: unknown[];
   globalSettings: GlobalSettings;
   scheduleState: Record<string, string>;
   /** Uploaded images usable as icons (see src/custom-icons.ts). */
@@ -83,7 +89,15 @@ const schema = {
   version: { type: 'number', default: 4 },
   services: { type: 'array', default: [] },
   groups: { type: 'array', default: [] },
-  preSteps: { type: 'array', default: [] },
+  // Deliberately NO default: its ABSENCE is what tells the migration that the
+  // store still holds the single pre-workflow pipeline (planStoreMigration).
+  workflows: { type: 'array' },
+  workflowRuns: { type: 'object', default: {} },
+  // Legacy keys, no defaults either: their presence is what tells the
+  // migration there is something to convert, and a default would make every
+  // store look like one.
+  pipeline: { type: 'object' },
+  preSteps: { type: 'array' },
   globalSettings: { type: 'object', default: DEFAULT_GLOBAL_SETTINGS },
   scheduleState: { type: 'object', default: {} },
   customIcons: { type: 'array', default: [] },
@@ -171,12 +185,16 @@ function runMigration(): void {
   store.set('version', plan.version);
   store.set('groups', plan.groups);
   store.set('services', plan.services);
-  store.set('preSteps', plan.preSteps);
-  if (plan.preScriptsAutoRun !== null) {
-    store.set('globalSettings', {
-      ...getGlobalSettings(),
-      preScriptsAutoRun: plan.preScriptsAutoRun,
-    });
+  store.set('workflows', plan.workflows);
+  if (plan.workflowsMigrated || plan.legacyStepsMigrated) {
+    store.delete('pipeline');
+    store.delete('preSteps');
+    // «Auto al arrancar» now lives in the startup workflow's `enabled`.
+    const settings: GlobalSettings & { preScriptsAutoRun?: unknown } = {
+      ...store.get('globalSettings', DEFAULT_GLOBAL_SETTINGS),
+    };
+    delete settings.preScriptsAutoRun;
+    store.set('globalSettings', settings);
   }
   if (plan.servicesBackup !== null) {
     store.set('_services_pre_v3_backup', plan.servicesBackup);
@@ -188,16 +206,16 @@ function runMigration(): void {
 runMigration();
 
 /**
- * The dev panel's "Grupos de prueba": while set, every group (and pipeline)
+ * The dev panel's "Grupos de prueba": while set, every group (and workflow)
  * read and write in the app goes to this in-memory copy instead of the store,
  * so the user's configuration is hidden but never read-modify-written. Never
  * persisted: a restart always comes back on the real groups.
  */
-let overlay: { groups: Group[]; preSteps: PreStep[] } | null = null;
+let overlay: { groups: Group[]; workflows: Workflow[] } | null = null;
 
 export function setGroupsOverlay(groups: readonly Group[] | null): void {
   overlay = groups
-    ? { groups: structuredClone([...groups]), preSteps: [] }
+    ? { groups: structuredClone([...groups]), workflows: [] }
     : null;
 }
 export function groupsOverlayActive(): boolean {
@@ -208,37 +226,50 @@ export function groupsOverlayActive(): boolean {
 export function readStoredGroups(): Group[] {
   return store.get('groups', []).map(normalizeGroup);
 }
-export function readStoredPreSteps(): PreStep[] {
-  return store.get('preSteps', []).map(normalizePreStep);
+export function readStoredWorkflows(): Workflow[] {
+  return normalizeWorkflows(store.get('workflows', []));
 }
 // Copies, both ways: every caller mutates what it read before persisting it,
 // and that must not reach the overlay until it actually does persist.
 export function readGroups(): Group[] {
   return overlay ? structuredClone(overlay.groups) : readStoredGroups();
 }
-export function readPreSteps(): PreStep[] {
-  return overlay ? structuredClone(overlay.preSteps) : readStoredPreSteps();
+export function readWorkflows(): Workflow[] {
+  return overlay ? structuredClone(overlay.workflows) : readStoredWorkflows();
 }
 /**
  * Successor to the old `persistGroups`: writes `groups`, regenerates
- * `services`, and re-derives `preSteps` through `prunePipelineRefs` against
- * the NEW `groups` on every write (D5) — the same "recompute a derived
- * artifact from groups[] on every persist" template as `services` itself,
- * so every current and future write path gets referential-integrity
+ * `services`, and re-derives every workflow graph through `pruneWorkflowRefs`
+ * against the NEW `groups` on every write (D5) — the same "recompute a
+ * derived artifact from groups[] on every persist" template as `services`
+ * itself, so every current and future write path gets referential-integrity
  * pruning for free instead of a bolt-on prune at each delete call site.
  */
 export function persistState(
   groups: Group[],
-  steps?: readonly PreStep[],
+  workflows?: readonly Workflow[],
 ): void {
-  const prunedSteps = prunePipelineRefs(steps ?? readPreSteps(), groups);
+  const pruned = pruneWorkflowRefs(workflows ?? readWorkflows(), groups);
   if (overlay) {
-    overlay = { groups: structuredClone(groups), preSteps: prunedSteps };
+    overlay = {
+      groups: structuredClone(groups),
+      workflows: structuredClone(pruned),
+    };
     return;
   }
   store.set('groups', groups);
   store.set('services', regenerateLegacyServices(groups));
-  store.set('preSteps', prunedSteps);
+  store.set('workflows', pruned);
+}
+
+/** Last runs are runtime history, never part of the overlay or a backup. */
+export function readWorkflowRuns(): Record<string, WorkflowRunRecord> {
+  return { ...store.get('workflowRuns', {}) };
+}
+export function writeWorkflowRuns(
+  runs: Record<string, WorkflowRunRecord>,
+): void {
+  store.set('workflowRuns', runs);
 }
 
 /** Read through normalizeCustomIcons: a hand-edited entry that is not an
@@ -267,7 +298,6 @@ export function saveGlobalSettings(
   next.silenceErrors = Boolean(next.silenceErrors);
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
   next.notifySuccess = Boolean(next.notifySuccess);
-  next.preScriptsAutoRun = Boolean(next.preScriptsAutoRun);
   store.set('globalSettings', next);
   return next;
 }

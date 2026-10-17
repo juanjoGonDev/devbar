@@ -49,7 +49,7 @@ export interface ShutdownDeps {
   repoWatcher: { closeAll(): void };
   /** «Control remoto»: stop listening on the LAN before anything else goes. */
   remoteServer: { close(): void };
-  preScriptRunner: { isRunning(): boolean; cancel(): unknown };
+  workflowRunner: { anyRunning(): boolean; cancelAll(): unknown };
   processManager: { stopAll(): Promise<{ ok: boolean; failed: string[] }> };
   /** Read late: the tracker only exists once the app-data dir is known. */
   sessionResume: () => ResumeTrackerLike | null;
@@ -96,10 +96,10 @@ export function createShutdownController(
       deps.releaseConfigCloseGuard();
       deps.repoWatcher.closeAll();
       deps.remoteServer.close();
-      // Cancel the pre-script pipeline run, if any — one global pipeline now.
-      if (deps.preScriptRunner.isRunning()) {
+      // Cancel every workflow run still in flight.
+      if (deps.workflowRunner.anyRunning()) {
         try {
-          deps.preScriptRunner.cancel();
+          deps.workflowRunner.cancelAll();
         } catch (_) {}
       }
       // Session resume: capture the running set BEFORE the services are
