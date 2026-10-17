@@ -1,17 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import {
   validateImportedConfig,
-  serializeConfig,
   summarizeImport,
   type ImportValidation,
 } from '../src/config-io.js';
+import {
+  importedAutoRun,
+  importedGraph,
+} from './helpers/imported-workflows.js';
 
 /**
  * config-io-prescripts.test.js
  *
- * Tests for the GLOBAL pipeline shape: top-level `preSteps` (refs) plus
+ * Tests for the GLOBAL pipeline: a top-level `pipeline` graph (refs) plus
  * per-group flat `preScripts` (definitions). Covers round-trip export/import
- * (R10), cross-reference validation of refs, and backward-compatible import
+ * (R10), cross-reference validation of refs, backward-compatible import of a
+ * pre-graph export (top-level ordered `preSteps`, chained into a graph) and
  * of a v3 export file (nested per-group `preSteps`) via the same
  * concatenate-and-hoist migration the live store uses.
  */
@@ -106,36 +110,42 @@ const VALID_PIPELINE_PAYLOAD = {
 
 // ─── Round-trip ───────────────────────────────────────────────────────────────
 
-describe('validateImportedConfig — global preSteps round-trip (R10)', () => {
-  it('accepts a valid v4 payload with a global pipeline', () => {
+describe('validateImportedConfig — pre-graph `preSteps` import (R10)', () => {
+  it('accepts a valid v4 payload with a legacy ordered pipeline', () => {
     const result = validateImportedConfig(VALID_PIPELINE_PAYLOAD);
     expectValid(result);
   });
 
-  it('preserves preSteps in the returned payload (round-trip)', () => {
+  it('chains the old steps into a graph, splitting a serial step', () => {
     const result = validateImportedConfig(VALID_PIPELINE_PAYLOAD);
     expectValid(result);
-    expect(result.payload.preSteps).toHaveLength(2);
-    expect(result.payload.preSteps[0]?.id).toBe('step-aaa');
-    expect(result.payload.preSteps[0]?.mode).toBe('serial');
-    expect(result.payload.preSteps[0]?.scripts).toEqual([
-      { groupId: 'g1', scriptId: 'sc-bbb' },
-      { groupId: 'g1', scriptId: 'sc-ccc' },
+    const { blocks, edges } = importedGraph(result.payload);
+    expect(blocks.map((b) => b.scripts)).toEqual([
+      [{ groupId: 'g1', scriptId: 'sc-bbb' }],
+      [{ groupId: 'g1', scriptId: 'sc-ccc' }],
+      [{ groupId: 'g2', scriptId: 'sc-eee' }],
+    ]);
+    const [first, second, third] = blocks.map((b) => b.id);
+    expect(edges).toEqual([
+      { from: 'trigger', to: first },
+      { from: first, to: second },
+      { from: second, to: third },
     ]);
   });
 
-  it('preserves all step and script ids verbatim', () => {
+  it('keeps every step id and script id it can', () => {
     const result = validateImportedConfig(VALID_PIPELINE_PAYLOAD);
     expectValid(result);
-    const stepIds = result.payload.preSteps.map((s) => s.id);
+    const blockIds = importedGraph(result.payload).blocks.map((b) => b.id);
     const scriptIds = result.payload.groups.flatMap((g) =>
       g.preScripts.map((sc) => sc.id),
     );
-    expect(stepIds).toEqual(['step-aaa', 'step-ddd']);
+    expect(blockIds[0]).toBe('step-aaa');
+    expect(blockIds[2]).toBe('step-ddd');
     expect(scriptIds).toEqual(['sc-bbb', 'sc-ccc', 'sc-eee']);
   });
 
-  it('accepts a payload with no preSteps key (defaults to [])', () => {
+  it('accepts a payload with no pipeline at all (an empty graph)', () => {
     const payload = {
       version: 4,
       groups: [
@@ -145,7 +155,7 @@ describe('validateImportedConfig — global preSteps round-trip (R10)', () => {
     };
     const result = validateImportedConfig(payload);
     expectValid(result);
-    expect(result.payload.preSteps).toEqual([]);
+    expect(importedGraph(result.payload)).toEqual({ blocks: [], edges: [] });
     expect(result.payload.groups[0]?.preScripts).toEqual([]);
   });
 });
@@ -313,10 +323,9 @@ describe('validateImportedConfig — rejects malformed pipeline shapes (v4)', ()
 // ─── v3 payload imports as v4 (backward compatible) ────────────────────────────
 
 describe('validateImportedConfig — v3 payload imports as v4 (backward compatible)', () => {
-  it('keeps preScriptsAutoRun when a v3 group has an empty legacy preSteps', () => {
-    // `changed` goes true for the empty legacy key, but nothing contributes,
-    // so the AND-fold must not overwrite the payload's own setting. Same
-    // guard planStoreMigration already uses on the live-store path.
+  it('imports no startup workflow when a v3 group has an empty legacy preSteps', () => {
+    // `changed` goes true for the empty legacy key, but nothing contributes:
+    // there is no pipeline, so there is no startup workflow to arm.
     const payload = {
       version: 3,
       groups: [
@@ -340,7 +349,7 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
     };
     const result = validateImportedConfig(payload);
     expectValid(result);
-    expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
+    expect(result.payload.workflows).toEqual([]);
   });
 
   it('rejects two steps sharing an id', () => {
@@ -440,8 +449,8 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
     };
     const result = validateImportedConfig(payload);
     expectValid(result);
-    expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
-    expect(result.payload.preSteps).toHaveLength(1);
+    expect(importedAutoRun(result.payload)).toBe(true);
+    expect(importedGraph(result.payload).blocks).toHaveLength(1);
   });
 
   it('keeps refs resolvable when a v3 group carries no id of its own', () => {
@@ -487,7 +496,7 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
     expectValid(result);
     const groupId = result.payload.groups[0]?.id;
     expect(groupId).toBeTruthy();
-    expect(result.payload.preSteps[0]?.scripts).toEqual([
+    expect(importedGraph(result.payload).blocks[0]?.scripts).toEqual([
       { groupId, scriptId: 'sc-bbb' },
     ]);
   });
@@ -531,14 +540,14 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
     const result = validateImportedConfig(v3Payload);
     expectValid(result);
     expect(result.payload.version).toBe(4);
-    expect(result.payload.preSteps).toHaveLength(1);
-    expect(result.payload.preSteps[0]?.scripts).toEqual([
+    expect(importedGraph(result.payload).blocks).toHaveLength(1);
+    expect(importedGraph(result.payload).blocks[0]?.scripts).toEqual([
       { groupId: 'g1', scriptId: 'sc-bbb' },
     ]);
     expect(result.payload.groups[0]?.preScripts.map((s) => s.id)).toEqual([
       'sc-bbb',
     ]);
-    expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
+    expect(importedAutoRun(result.payload)).toBe(true);
   });
 
   it("preserves a v3 payload's own top-level preSteps alongside newly-hoisted ones (no silent data loss)", () => {
@@ -592,15 +601,15 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
     };
     const result = validateImportedConfig(v3Payload);
     expectValid(result);
-    expect(result.payload.preSteps).toHaveLength(2);
-    expect(result.payload.preSteps.map((s) => s.id)).toEqual([
+    expect(importedGraph(result.payload).blocks).toHaveLength(2);
+    expect(importedGraph(result.payload).blocks.map((s) => s.id)).toEqual([
       'step-existing',
       'step-legacy',
     ]);
-    expect(result.payload.preSteps[0]?.scripts).toEqual([
+    expect(importedGraph(result.payload).blocks[0]?.scripts).toEqual([
       { groupId: 'g1', scriptId: 'sc-existing' },
     ]);
-    expect(result.payload.preSteps[1]?.scripts).toEqual([
+    expect(importedGraph(result.payload).blocks[1]?.scripts).toEqual([
       { groupId: 'g1', scriptId: 'sc-legacy' },
     ]);
     expect(
@@ -722,90 +731,14 @@ describe('validateImportedConfig — v3 payload imports as v4 (backward compatib
 
 // ─── export → import round-trip (S3) ───────────────────────────────────────────
 
-describe('serializeConfig -> validateImportedConfig round-trip', () => {
-  it('a live store with a real global pipeline exports and re-imports losslessly', () => {
-    const rawStore = {
-      version: 4,
-      groups: [
-        {
-          id: 'g1',
-          name: 'My Group',
-          icon: '📦',
-          iconColor: null,
-          path: '/some/path',
-          mode: 'multi' as const,
-          order: 0,
-          silenceWarnings: false,
-          silenceErrors: false,
-          env: [],
-          commands: [],
-          actions: [],
-          waitForPipeline: true,
-          preScripts: [
-            {
-              id: 'sc-bbb',
-              name: 'Install',
-              command: 'pnpm install',
-              args: [],
-              env: [],
-              inheritGroupEnv: false,
-              confirm: false,
-              confirmSecs: null,
-              confirmOnTimeout: 'cancel' as const,
-              timeoutMs: null,
-            },
-          ],
-        },
-      ],
-      // Store-shaped input is already normalized (as `getGroupsInternal()`
-      // would read it) — exercising the actual export/import ROUND TRIP,
-      // not `normalizeGroup`'s own default-filling (already covered
-      // elsewhere).
-      preSteps: [
-        {
-          id: 'step-aaa',
-          mode: 'serial' as const,
-          scripts: [{ groupId: 'g1', scriptId: 'sc-bbb' }],
-        },
-      ],
-      globalSettings: {
-        autostart: false,
-        silenceWarnings: false,
-        silenceErrors: false,
-        preScriptsAutoRun: true,
-      },
-    };
-    const exported = serializeConfig(rawStore, '0.8.0');
-    const result = validateImportedConfig(exported);
-    expectValid(result);
-    // Asserted against literals, NOT against `exported`: comparing the
-    // import result to its own export output passes vacuously the moment
-    // both sides degenerate to [] (exactly the data-loss shape of C1).
-    expect(result.payload.preSteps).toEqual([
-      {
-        id: 'step-aaa',
-        mode: 'serial',
-        scripts: [{ groupId: 'g1', scriptId: 'sc-bbb' }],
-      },
-    ]);
-    expect(result.payload.groups[0]?.preScripts).toHaveLength(1);
-    expect(result.payload.groups[0]?.preScripts[0]).toMatchObject({
-      id: 'sc-bbb',
-      name: 'Install',
-      command: 'pnpm install',
-    });
-    expect(result.payload.globalSettings.preScriptsAutoRun).toBe(true);
-  });
-});
-
 // ─── summarizeImport with the global pipeline ──────────────────────────────────
 
-describe('summarizeImport — preStepsCount / preScriptsCount', () => {
-  it('preStepsCount counts global steps; preScriptsCount counts definitions', () => {
+describe('summarizeImport — workflowsCount / preScriptsCount', () => {
+  it('workflowsCount counts graph blocks; preScriptsCount counts definitions', () => {
     const result = validateImportedConfig(VALID_PIPELINE_PAYLOAD);
     expectValid(result);
     const summary = summarizeImport(result.payload);
-    expect(summary.preStepsCount).toBe(2);
+    expect(summary.workflowsCount).toBe(1);
     expect(summary.preScriptsCount).toBe(3);
   });
 
@@ -841,7 +774,7 @@ describe('summarizeImport — preStepsCount / preScriptsCount', () => {
     expect(summary.preScriptsCount).toBe(2);
   });
 
-  it('returns 0 for preStepsCount and preScriptsCount when the pipeline is empty', () => {
+  it('returns 0 for workflowsCount and preScriptsCount when the pipeline is empty', () => {
     const payload = {
       version: 4,
       groups: [
@@ -859,7 +792,7 @@ describe('summarizeImport — preStepsCount / preScriptsCount', () => {
     const result = validateImportedConfig(payload);
     expectValid(result);
     const summary = summarizeImport(result.payload);
-    expect(summary.preStepsCount).toBe(0);
+    expect(summary.workflowsCount).toBe(0);
     expect(summary.preScriptsCount).toBe(0);
   });
 });

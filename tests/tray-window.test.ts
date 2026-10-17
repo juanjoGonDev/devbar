@@ -12,9 +12,9 @@ import { iconText } from './helpers/icon-text.js';
 import type {
   CommandRuntimeState,
   GroupState,
-  PipelineState,
   UpdateStatus,
 } from '../src/ipc-contract.js';
+import { tipOf } from './helpers/tip.js';
 
 function groupState(
   name: string,
@@ -37,6 +37,7 @@ function groupState(
       actions: [],
       preScripts: [],
       waitForPipeline: true,
+      hiddenInTray: false,
     },
     currentBranch: null,
     color: 'stopped',
@@ -61,18 +62,6 @@ function commandState(
     color: 'running',
     muteWarn: false,
     muteErr: false,
-    ...overrides,
-  };
-}
-
-function pipelineState(overrides: Partial<PipelineState> = {}): PipelineState {
-  return {
-    status: 'idle',
-    currentStep: null,
-    totalSteps: 0,
-    lastError: null,
-    lastRunId: null,
-    startedAt: null,
     ...overrides,
   };
 }
@@ -248,7 +237,7 @@ describe('renderer/tray.ts', () => {
     it('says which version is waiting', async () => {
       const win = await openTray();
       await win.push('onUpdateStatus', updateStatus('9.9.9'));
-      expect(byId('app-version').title).toBe(
+      expect(tipOf(byId('app-version'))).toBe(
         'v9.9.9 disponible — ver changelog',
       );
     });
@@ -259,7 +248,7 @@ describe('renderer/tray.ts', () => {
       await win.push('onUpdateStatus', updateStatus(null));
       const chip = byId('app-version');
       expect(chip.classList.contains('has-update')).toBe(false);
-      expect(chip.title).toBe('Ver changelog');
+      expect(tipOf(chip)).toBe('Ver changelog');
     });
 
     it('leaves the chip alone when the status read fails', async () => {
@@ -372,86 +361,6 @@ describe('renderer/tray.ts', () => {
       await win.settle('getGroupStates', [noisy(2, 1)]);
       click(byId('alerts-summary').children[0] ?? byId('alerts-summary'));
       expect(openLogs).toHaveBeenCalledWith({ scope: 'all', level: 'warn' });
-    });
-  });
-
-  describe('the pipeline trigger', () => {
-    function host(): HTMLElement {
-      return byId('pipeline-trigger');
-    }
-
-    it('stays out of the header when no pipeline is configured', async () => {
-      const win = await openTray();
-      await win.push('onPipelineUpdate', pipelineState());
-      expect(host().children).toHaveLength(0);
-    });
-
-    it('offers to run a configured pipeline', async () => {
-      const win = await openTray();
-      await win.push('onPipelineUpdate', pipelineState({ totalSteps: 2 }));
-      const trigger = host().querySelector('.prescripts-trigger');
-      expect(iconText(trigger)).toBe('[fast-forward]');
-      expect((trigger as HTMLElement).title).toBe('Ejecutar pipeline');
-    });
-
-    it('runs it when pressed', async () => {
-      const win = await openTray();
-      await win.push('onPipelineUpdate', pipelineState({ totalSteps: 2 }));
-      click(host().querySelector('.prescripts-trigger') ?? host());
-      expect(win.callCount('runPreScripts')).toBe(1);
-    });
-
-    it('refuses to start a second run and says why', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'running', totalSteps: 2, currentStep: 1 }),
-      );
-      click(host().querySelector('.prescripts-trigger') ?? host());
-      expect(win.callCount('runPreScripts')).toBe(0);
-      expect(byId('toast').textContent).toBe('Ya hay un pipeline corriendo');
-    });
-
-    it('reports a race the main process lost', async () => {
-      const win = await openTray();
-      await win.push('onPipelineUpdate', pipelineState({ totalSteps: 1 }));
-      click(host().querySelector('.prescripts-trigger') ?? host());
-      await win.settle('runPreScripts', {
-        ok: false,
-        error: 'already_running',
-      });
-      expect(byId('toast').textContent).toBe('Ya hay un pipeline corriendo');
-    });
-
-    it('pulses while a run is in flight', async () => {
-      const win = await openTray();
-      await win.push(
-        'onPipelineUpdate',
-        pipelineState({ status: 'running', totalSteps: 2, currentStep: 1 }),
-      );
-      const trigger = host().querySelector<HTMLElement>('.prescripts-trigger');
-      expect(trigger?.dataset.prestepStatus).toBe('running');
-    });
-
-    it('keeps only the trigger in the header row, whatever the run does', async () => {
-      const win = await openTray();
-      for (const state of [
-        pipelineState({
-          status: 'running',
-          currentStep: 1,
-          totalSteps: 2,
-          lastRunId: 'run-1',
-          startedAt: Date.now(),
-        }),
-        pipelineState({ status: 'done', totalSteps: 2, lastRunId: 'run-1' }),
-        pipelineState({ status: 'error', totalSteps: 2, lastRunId: 'run-1' }),
-      ]) {
-        await win.push('onPipelineUpdate', state);
-        expect(
-          Array.from(host().children, (el) => el.className),
-          state.status,
-        ).toEqual(['ghost prescripts-trigger']);
-      }
     });
   });
 
@@ -612,7 +521,7 @@ describe('renderer/tray.ts', () => {
       const button = resetButton();
       expect(button.hidden).toBe(false);
       expect(button.getAttribute('aria-label')).toBe('Volver junto al icono');
-      expect(button.title).toBe('Volver junto al icono');
+      expect(tipOf(button)).toBe('Volver junto al icono');
       expect(iconText(button)).toBe('[pin-off]');
     });
 
@@ -644,15 +553,6 @@ describe('renderer/tray.ts', () => {
     it('keeps every control in the header clickable', async () => {
       const win = await openTray();
       await win.settle('getTrayPinned', { pinned: true });
-      await win.settle(
-        'getPipelineState',
-        pipelineState({
-          status: 'running',
-          currentStep: 1,
-          totalSteps: 1,
-          lastRunId: '3',
-        }),
-      );
       await win.push('onUpdatePhase', {
         state: 'check-failed',
         reason: 'sin red',

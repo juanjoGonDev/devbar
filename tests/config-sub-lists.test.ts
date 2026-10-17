@@ -13,6 +13,8 @@ import {
 } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
 import type { Group } from '../src/domain-types.js';
+import { tipOf } from './helpers/tip.js';
+import { startupEntries } from './helpers/startup-workflow.js';
 
 function click(el: Element | null | undefined): void {
   el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -131,7 +133,10 @@ describe('renderer/config/sub-lists.ts', () => {
       click(prescriptRows()[0].querySelector('.danger'));
       await w.settle('deletePreScript', { ok: true });
       await w.settle('listGroups', [group('api')]);
-      await w.settle('getPreSteps', []);
+      await w.settle(
+        'listWorkflows',
+        startupEntries({ blocks: [], edges: [] }),
+      );
       expect(prescriptRows()).toHaveLength(0);
       expect(document.querySelector('.prestep-empty')).not.toBeNull();
     });
@@ -168,7 +173,7 @@ describe('renderer/config/sub-lists.ts', () => {
         ...itemRows('command')[0].querySelectorAll<HTMLButtonElement>(
           '.sub-actions .small-btn',
         ),
-      ].find((b) => b.title === 'Editar');
+      ].find((b) => tipOf(b) === 'Editar');
       click(edit);
       expect(document.getElementById('sub-dialog-title')?.textContent).toBe(
         'Editar comando: api',
@@ -191,7 +196,7 @@ describe('renderer/config/sub-lists.ts', () => {
       await open({ commands: [command('api', { autoStart: true })] });
       const toggle = itemRows('command')[0].querySelector('.autostart-toggle');
       expect(toggle?.classList.contains('is-on')).toBe(true);
-      expect(toggle?.getAttribute('title')).toContain('click para desactivar');
+      expect(tipOf(toggle)).toContain('click para desactivar');
     });
 
     it('flips the flag and repaints the list', async () => {
@@ -255,9 +260,9 @@ describe('renderer/config/sub-lists.ts', () => {
         ],
       });
       const [withBadge, without] = itemRows('command');
-      expect(
-        withBadge.querySelector('.schedule-badge')?.getAttribute('title'),
-      ).toContain('09:00 LV');
+      expect(tipOf(withBadge.querySelector('.schedule-badge'))).toContain(
+        '09:00 LV',
+      );
       expect(without.querySelector('.schedule-badge')).toBeNull();
     });
 

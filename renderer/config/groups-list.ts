@@ -1,6 +1,7 @@
 import { icon, userIcon } from '../icon.js';
 import { attachDragHandlers } from '../dnd-helper.js';
 import { latestWins } from '../latest-wins.js';
+import { setHiddenInTray } from './group-visibility.js';
 import type { Group } from '../../src/domain-types.js';
 import type { GroupStore } from './group-store.js';
 import { errorMessage, type ShowToast } from './toast.js';
@@ -12,6 +13,8 @@ export interface GroupsListDeps {
   showToast: ShowToast;
   /** Late-bound: the detail pane is wired to this list by the entry point. */
   renderGroupDetail(): void;
+  /** Runs after every repaint of the rows, e.g. to re-fit the list width. */
+  onRendered?(): void;
 }
 
 export interface GroupsList {
@@ -49,8 +52,9 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
     if (!groups.length) {
       const empty = document.createElement('div');
       empty.className = 'nav-empty muted';
-      empty.textContent = 'Sin grupos. Pulsa + Añadir.';
+      empty.textContent = 'Sin grupos. Pulsa Nuevo grupo.';
       deps.listEl.appendChild(empty);
+      deps.onRendered?.();
       return;
     }
 
@@ -73,6 +77,7 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
       await window.api.reorderGroups(orderedIds);
       await loadGroups();
     });
+    deps.onRendered?.();
 
     // Only re-render detail when clean — preserve in-progress edits
     if (store.getSelectedId() && !store.isDirty()) deps.renderGroupDetail();
@@ -99,9 +104,14 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
     nameEl.className = 'nav-name';
     nameEl.textContent = group.name || '(sin nombre)';
     card.appendChild(nameEl);
+    card.appendChild(buildEye(group));
+    if (group.hiddenInTray) card.classList.add('is-hidden-in-tray');
 
     card.addEventListener('click', async (e) => {
-      if (e.target instanceof HTMLElement && e.target.closest('.drag-handle'))
+      if (
+        e.target instanceof HTMLElement &&
+        e.target.closest('.drag-handle, .nav-eye')
+      )
         return;
       if (group.id === store.getSelectedId()) return;
       if (store.isDirty()) {
@@ -126,6 +136,42 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
     });
 
     return card;
+  }
+
+  /** Shown on hover — always while the group is hidden. Not draggable and
+   * outside the handle, so it never starts a reorder or selects the row. */
+  function buildEye(group: Group): HTMLButtonElement {
+    const name = group.name || '(sin nombre)';
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.className = 'nav-eye';
+    eye.draggable = false;
+    eye.title = group.hiddenInTray
+      ? 'Mostrar en la barra'
+      : 'Ocultar de la barra';
+    eye.setAttribute(
+      'aria-label',
+      group.hiddenInTray
+        ? `Mostrar ${name} en la barra`
+        : `Ocultar ${name} de la barra`,
+    );
+    eye.append(icon(group.hiddenInTray ? 'eye-off' : 'eye'));
+    eye.addEventListener('click', (event) => {
+      event.stopPropagation();
+      void setHiddenInTray(
+        {
+          store,
+          showToast: deps.showToast,
+          repaint: () => {
+            renderGroupsList();
+            deps.renderGroupDetail();
+          },
+        },
+        group,
+        !group.hiddenInTray,
+      );
+    });
+    return eye;
   }
 
   return { load: loadGroups, render: renderGroupsList };

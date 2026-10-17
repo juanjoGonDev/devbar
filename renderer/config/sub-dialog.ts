@@ -8,11 +8,13 @@ import type {
   Action,
   Command,
   EnvEntry,
+  Group,
   PreScript,
   Schedule,
 } from '../../src/domain-types.js';
 import type { GroupStore } from './group-store.js';
 import { errorMessage, type ShowToast } from './toast.js';
+import { fillGroupTile } from '../pipeline/group-tile.js';
 
 type EditableItem = Command | Action | PreScript;
 type SubKind = 'command' | 'action' | 'prescript';
@@ -39,7 +41,7 @@ interface SubFormData {
 }
 
 /** Every control the command/action/pre-script editor owns. */
-interface SubDialogElements {
+export interface SubDialogElements {
   dialog: HTMLDialogElement;
   form: HTMLFormElement;
   title: HTMLElement;
@@ -66,6 +68,14 @@ interface SubDialogElements {
   confirmDetails: HTMLElement;
   confirmOnTimeout: HTMLSelectElement;
   confirmSecs: HTMLInputElement;
+  /** The "Grupo" select, shown only when creating from the canvas. */
+  groupField: HTMLElement;
+  group: HTMLSelectElement;
+  groupTile: HTMLElement;
+  /** "Se colocará en el workflow después de …", from a canvas "+". */
+  pipelineNote: HTMLElement;
+  pipelineNoteName: HTMLElement;
+  submit: HTMLButtonElement;
 }
 
 export interface SubDialogDeps {
@@ -85,8 +95,21 @@ export interface SubDialogDeps {
 const DEFAULT_WARN = '\\bwarn(ing)?s?\\b';
 const DEFAULT_ERROR = '\\berror(s)?\\b';
 
+/** Creating a pre-script from the pipeline, which belongs to no group. */
+interface NewPreScriptRequest {
+  /** The groups offered by the "Grupo" select, in this order. */
+  groups: readonly Group[];
+  /** The one selected at first. */
+  groupId: string;
+  /** The node the new script will follow, for the placement note. */
+  after: string | null;
+  /** Runs once the script is saved and the groups are re-read. */
+  onCreated: (groupId: string, script: PreScript) => void | Promise<void>;
+}
+
 export interface SubDialog {
   open(item: EditableItem | null, kind: SubKind, groupId: string): void;
+  openNewPreScript(request: NewPreScriptRequest): void;
 }
 
 export function createSubDialog(deps: SubDialogDeps): SubDialog {
@@ -206,9 +229,9 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     item: EditableItem | null,
     kind: SubKind,
     groupId: string,
-  ): Promise<void> {
+  ): Promise<PreScript | null> {
     if (kind === 'prescript') {
-      await window.api.savePreScript(groupId, {
+      return window.api.savePreScript(groupId, {
         id: item ? item.id : undefined,
         name: data.name,
         command: data.command,
@@ -220,7 +243,6 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
         confirmSecs: data.confirmSecs,
         confirmOnTimeout: data.confirmOnTimeout,
       });
-      return;
     }
     if (kind === 'command') {
       await window.api.saveCommand(groupId, {
@@ -250,7 +272,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
             ? item.silencedPatterns
             : { warn: [], error: [] },
       });
-      return;
+      return null;
     }
     await window.api.saveAction(groupId, {
       id: item ? item.id : undefined,
@@ -266,18 +288,22 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
       confirmSecs: data.confirmSecs,
       confirmOnTimeout: data.confirmOnTimeout,
     });
+    return null;
   }
 
   function makeSubmitCallback(
     item: EditableItem | null,
     kind: SubKind,
-    groupId: string,
+    resolveGroupId: () => string,
+    onCreated?: NewPreScriptRequest['onCreated'],
   ): (data: SubFormData) => Promise<void> {
     const isCommand = kind === 'command';
     const isPreScript = kind === 'prescript';
     return async (data: SubFormData) => {
+      // Read before the save: the select is only shown for this one flow.
+      const groupId = resolveGroupId();
       try {
-        await persistItem(data, item, kind, groupId);
+        const saved = await persistItem(data, item, kind, groupId);
 
         // Refresh allGroups silently (no full re-render)
         await deps.loadGroups();
@@ -292,6 +318,8 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
         // Re-render from draftGroup (parent edits preserved); with no draft
         // active this is the same full reload the old code fell back to.
         deps.renderGroupDetail();
+
+        if (onCreated && saved) await onCreated(groupId, saved);
 
         // A rename/edit here changes what the pipeline's own script rows
         // display (name, command, timeout) — refresh it too.
@@ -311,19 +339,58 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     };
   }
 
+  /** The chrome only the create-from-pipeline flow shows, on or off. */
+  function showCreateChrome(request: NewPreScriptRequest | null): void {
+    els.groupField.hidden = request === null;
+    els.pipelineNote.hidden = request?.after == null;
+    els.pipelineNoteName.textContent = request?.after ?? '';
+    els.submit.textContent = request ? 'Crear' : 'Guardar';
+    if (!request) return;
+    els.group.replaceChildren(
+      ...request.groups.map((group) => {
+        const option = document.createElement('option');
+        option.value = group.id;
+        option.textContent = group.name;
+        return option;
+      }),
+    );
+    els.group.value = request.groupId;
+    const paintTile = (): void =>
+      fillGroupTile(
+        els.groupTile,
+        request.groups.find((group) => group.id === els.group.value) ?? null,
+      );
+    els.group.onchange = paintTile;
+    paintTile();
+  }
+
+  function fill(item: EditableItem | null, kind: SubKind): void {
+    fillCommonFields(item, kind);
+    fillGateFields(item, kind);
+    // Schedule editor — commands and actions, not pre-scripts.
+    deps.schedule.setup(item, kind === 'prescript');
+  }
+
   function openSubDialog(
     item: EditableItem | null,
     kind: SubKind,
     groupId: string,
   ): void {
-    fillCommonFields(item, kind);
-    fillGateFields(item, kind);
+    fill(item, kind);
+    showCreateChrome(null);
+    subDialogCallback = makeSubmitCallback(item, kind, () => groupId);
+    els.dialog.showModal();
+  }
 
-    // Schedule editor — commands and actions, not pre-scripts.
-    deps.schedule.setup(item, kind === 'prescript');
-
-    subDialogCallback = makeSubmitCallback(item, kind, groupId);
-
+  function openNewPreScript(request: NewPreScriptRequest): void {
+    fill(null, 'prescript');
+    showCreateChrome(request);
+    subDialogCallback = makeSubmitCallback(
+      null,
+      'prescript',
+      () => els.group.value || request.groupId,
+      request.onCreated,
+    );
     els.dialog.showModal();
   }
 
@@ -392,5 +459,5 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
   // Shared modal chrome (honest × / Esc / backdrop) for the command editor.
   wireModal(els.dialog);
 
-  return { open: openSubDialog };
+  return { open: openSubDialog, openNewPreScript };
 }

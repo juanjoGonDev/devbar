@@ -47,8 +47,22 @@ async function storeWithRealConfig() {
   const store = await harness.open();
   store.saveGroup(rawGroup('g-api', 'api'));
   store.saveGroup(rawGroup('g-web', 'web'));
-  const step = store.savePreStep({ id: 's1', mode: 'serial', scripts: [] });
-  store.assignScriptToStep(step.id, 'g-api', 'install');
+  store.saveWorkflow({
+    id: 'w-start',
+    name: 'Arranque',
+    trigger: { kind: 'startup' },
+    graph: {
+      blocks: [
+        {
+          id: 's1',
+          scripts: [{ groupId: 'g-api', scriptId: 'install' }],
+          x: 0,
+          y: 0,
+        },
+      ],
+      edges: [{ from: 'trigger', to: 's1' }],
+    },
+  });
   return store;
 }
 
@@ -77,7 +91,7 @@ describe('src/config-store.ts', () => {
         'fixture-1-services',
       ]);
       expect(store.getGroup('g-api')).toBeNull();
-      expect(store.getPreSteps()).toEqual([]);
+      expect(store.listWorkflows()).toEqual([]);
     });
 
     it('leaves the stored config untouched across on → edit → off', async () => {
@@ -93,7 +107,23 @@ describe('src/config-store.ts', () => {
       store.saveCommand('g-new', { id: 'x', name: 'x', command: 'echo x' });
       store.saveAction('g-new', { id: 'a', name: 'a', command: 'echo a' });
       store.savePreScript('g-new', { id: 'p', name: 'p', command: 'echo p' });
-      store.savePreStep({ id: 's2', mode: 'parallel', scripts: [] });
+      store.saveWorkflow({
+        id: 'w-test',
+        name: 'Prueba',
+        trigger: { kind: 'startup' },
+        graph: {
+          blocks: [
+            {
+              id: 's2',
+              scripts: [{ groupId: 'g-new', scriptId: 'p' }],
+              x: 0,
+              y: 0,
+            },
+          ],
+          edges: [],
+        },
+      });
+      store.setGroupHiddenInTray('g-new', true);
       store.setGroupSilence('g-new', 'warn', true);
 
       expect(harness.onDisk()).toEqual(before);
@@ -101,7 +131,9 @@ describe('src/config-store.ts', () => {
       expect(harness.onDisk()).toEqual(before);
       expect(store.groupsOverlayActive()).toBe(false);
       expect(store.listGroups().map((g) => g.name)).toEqual(['api', 'web']);
-      expect(store.getPreSteps().map((s) => s.id)).toEqual(['s1']);
+      expect(
+        store.getWorkflow('w-start')?.graph.blocks.map((b) => b.id),
+      ).toEqual(['s1']);
     });
 
     it('keeps edits made while on in memory, on the overlay groups', async () => {

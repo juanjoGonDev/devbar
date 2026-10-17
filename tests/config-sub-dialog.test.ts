@@ -7,11 +7,14 @@ import {
   command,
   group,
   openConfigWindow,
+  openStartupWorkflow,
   preScript,
   recordApiCalls,
 } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
 import type { Group } from '../src/domain-types.js';
+import { byTip, tipOf } from './helpers/tip.js';
+import { startupEntries } from './helpers/startup-workflow.js';
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -49,7 +52,7 @@ function editButtonIn(selector: string): HTMLButtonElement {
   const row = document.querySelector<HTMLElement>(selector);
   const found = [
     ...(row?.querySelectorAll<HTMLButtonElement>('button') ?? []),
-  ].find((b) => b.title === 'Editar');
+  ].find((b) => tipOf(b) === 'Editar');
   if (!found) throw new Error(`no edit button in ${selector}`);
   return found;
 }
@@ -247,7 +250,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('writes a pre-script in milliseconds and refreshes the pipeline', async () => {
       const w = await open({});
-      await w.settle('getPreSteps', []); // the pipeline read the window boots with
+      await openStartupWorkflow(w); // the workflow the editor shows
       click(addButton('+ Añadir pre-script'));
       input('sf-name').value = 'seed';
       input('sf-timeout-secs').value = '30';
@@ -256,7 +259,10 @@ describe('renderer/config/sub-dialog.ts', () => {
       expect(payload(saves).timeoutMs).toBe(30_000);
       await w.settle('savePreScript', preScript('seed'));
       await w.settle('listGroups', [group('api')]);
-      await w.settle('getPreSteps', []);
+      await w.settle(
+        'listWorkflows',
+        startupEntries({ blocks: [], edges: [] }),
+      );
       expect(toastText()).toBe('Pre-script guardado');
     });
 
@@ -306,6 +312,116 @@ describe('renderer/config/sub-dialog.ts', () => {
     });
   });
 
+  describe('creating a pre-script from the pipeline', () => {
+    async function openFromPanel(): Promise<RendererWindow> {
+      win = await openConfigWindow();
+      await win.settle('listGroups', [
+        group('api', { iconColor: '#22c55e' }),
+        group('web'),
+      ]);
+      await openStartupWorkflow(win);
+      click(document.querySelector('.pipeline-panel-new'));
+      return win;
+    }
+
+    it('asks for the group, with its tile, and offers "Crear"', async () => {
+      await openFromPanel();
+      expect(dialog().open).toBe(true);
+      expect(el('sub-dialog-title').textContent).toBe('Nuevo pre-script');
+      expect(el('sf-group-field').hidden).toBe(false);
+      const select = el<HTMLSelectElement>('sf-group');
+      expect([...select.options].map((o) => o.textContent)).toEqual([
+        'api',
+        'web',
+      ]);
+      expect(select.value).toBe('group-api');
+      expect(el('sf-group-tile').style.getPropertyValue('--tile-color')).toBe(
+        '#22c55e',
+      );
+      expect(el('sf-submit').textContent).toBe('Crear');
+      // Not opened from a "+": there is no node to follow.
+      expect(el('sf-pipeline-note').hidden).toBe(true);
+    });
+
+    it('repaints the tile when another group is chosen', async () => {
+      await openFromPanel();
+      const select = el<HTMLSelectElement>('sf-group');
+      select.value = 'group-web';
+      select.dispatchEvent(new Event('change'));
+      expect(el('sf-group-tile').style.getPropertyValue('--tile-color')).toBe(
+        '',
+      );
+    });
+
+    it('saves into the chosen group and places the script in the pipeline', async () => {
+      const w = await openFromPanel();
+      const select = el<HTMLSelectElement>('sf-group');
+      select.value = 'group-web';
+      input('sf-name').value = 'Limpiar caché';
+      input('sf-command').value = 'make clean';
+      const saves = recordApiCalls('savePreScript');
+      const writes = recordApiCalls('saveWorkflow');
+      submit();
+      expect(saves.at(-1)?.[0]).toBe('group-web');
+      const saved = preScript('Limpiar caché');
+      await w.settle('savePreScript', saved);
+      await w.settle('listGroups', [
+        group('api'),
+        group('web', { preScripts: [saved] }),
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const pipeline = (
+        writes.at(-1)?.[0] as {
+          graph: {
+            blocks: { id: string; scripts: unknown[] }[];
+            edges: { from: string; to: string }[];
+          };
+        }
+      ).graph;
+      expect(pipeline.blocks[0]?.scripts).toEqual([
+        { groupId: 'group-web', scriptId: saved.id },
+      ]);
+      expect(pipeline.edges).toEqual([
+        { from: 'trigger', to: pipeline.blocks[0]?.id },
+      ]);
+    });
+
+    it('says where the script will go when opened from a "+"', async () => {
+      win = await openConfigWindow();
+      const build = preScript('Build');
+      await win.settle('listGroups', [
+        group('api', { preScripts: [build, preScript('Lint')] }),
+      ]);
+      await openStartupWorkflow(win, {
+        blocks: [
+          {
+            id: 'b1',
+            scripts: [{ groupId: 'group-api', scriptId: build.id }],
+            x: 300,
+            y: 40,
+            requireAll: true,
+          },
+        ],
+        edges: [{ from: 'trigger', to: 'b1' }],
+      });
+      click(document.querySelector('.pipeline-stub'));
+      click(document.querySelector('.pipeline-picker-option.is-create'));
+      expect(dialog().open).toBe(true);
+      expect(el('sf-pipeline-note').hidden).toBe(false);
+      expect(
+        el('sf-pipeline-note').textContent?.replace(/\s+/g, ' '),
+      ).toContain('Se colocará en el workflow después de Build.');
+    });
+
+    it('hides the group again for an ordinary pre-script', async () => {
+      await openFromPanel();
+      click(el('sub-cancel'));
+      click(addButton('+ Añadir pre-script'));
+      expect(el('sf-group-field').hidden).toBe(true);
+      expect(el('sf-submit').textContent).toBe('Guardar');
+    });
+  });
+
   describe('dialog chrome', () => {
     it('closes on cancel without saving', async () => {
       const w = await open({});
@@ -336,7 +452,7 @@ describe('renderer/config/sub-dialog.ts', () => {
       await open({});
       click(addButton('+ Añadir comando'));
       click(dialog().querySelector('.icon-color-trigger'));
-      click(dialog().querySelector('.icon-color-swatch[title="Azul"]'));
+      click(dialog().querySelector(`.icon-color-swatch:is(${byTip('Azul')})`));
       expect(
         el('sf-icon-btn').querySelector<HTMLElement>('.icon')?.style.color,
       ).toBe('rgb(59, 130, 246)');
@@ -371,7 +487,7 @@ describe('renderer/config/sub-dialog.ts', () => {
       await open({});
       click(addButton('+ Añadir comando'));
       click(dialog().querySelector('.icon-color-trigger'));
-      click(dialog().querySelector('.icon-color-swatch[title="Azul"]'));
+      click(dialog().querySelector(`.icon-color-swatch:is(${byTip('Azul')})`));
       click(el('sub-cancel'));
       click(addButton('+ Añadir comando'));
       expect(

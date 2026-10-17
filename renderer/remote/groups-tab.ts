@@ -3,7 +3,9 @@ import type {
   RemoteCommandView,
   RemoteGroupView,
   RemoteStateView,
+  RemoteWorkflowView,
 } from '../../src/ipc-contract/remote-wire.js';
+import type { WorkflowRunResult } from '../../src/domain-types.js';
 import { createBranchSheet } from './branch-sheet.js';
 import type { PanelContext } from './context.js';
 import type { PanelElements } from './elements.js';
@@ -12,14 +14,28 @@ import { glyph } from './glyphs.js';
 import { button, el } from './view.js';
 
 /**
- * «Grupos»: the computer, the error and warning totals, the pipeline, the
- * banners (a confirmation waiting, an update ready) and one card per group —
+ * «Grupos»: the computer, the error and warning totals, the banners (a
+ * confirmation waiting, an update ready), the workflows the phone may run and
+ * stop, and one card per group —
  * an accordion with one card open — with its branch, its services and its
  * actions. Every push repaints the cards; which one is open and which
  * buttons are mid-request survive the repaint.
  */
 
 const PENDING = 'Pendiente de confirmación';
+
+const RESULT_TEXT: Record<WorkflowRunResult, string> = {
+  success: 'Último: correcto',
+  warning: 'Último: con avisos',
+  error: 'Último: falló',
+  cancelled: 'Último: cancelado',
+};
+const RESULT_DOT: Record<WorkflowRunResult, string> = {
+  success: 'running',
+  warning: 'warn',
+  error: 'error',
+  cancelled: 'stopped',
+};
 
 export interface GroupsTab {
   render(state: RemoteStateView): void;
@@ -38,7 +54,7 @@ export function createGroupsTab(
 ): GroupsTab {
   const sheet = createBranchSheet(sheetEls, ctx);
   let open: string | null | undefined;
-  /** Process ids (and `pipeline`) with a request in flight. */
+  /** Process ids (and `wf:<id>`) with a request in flight. */
   const busy = new Set<string>();
   let last: RemoteStateView | null = null;
   let live = false;
@@ -152,6 +168,47 @@ export function createGroupsTab(
     return chip;
   }
 
+  function workflowRow(workflow: RemoteWorkflowView): HTMLElement {
+    const row = el('div', 'command-row workflow-row');
+    const result = workflow.lastResult;
+    const dot = el(
+      'span',
+      `dot is-${workflow.running ? 'running' : result ? RESULT_DOT[result] : 'stopped'}`,
+    );
+    dot.setAttribute('aria-hidden', 'true');
+    const textBox = el('span', 'command-text');
+    const title = el('span', 'command-title');
+    title.append(el('span', 'command-name', workflow.name));
+    if (workflow.startup) title.append(el('span', 'badge', 'Arranque'));
+    const sub = el(
+      'span',
+      'command-sub',
+      workflow.running
+        ? `En curso · ${workflow.doneScripts ?? 0}/${workflow.totalScripts} scripts`
+        : result
+          ? RESULT_TEXT[result]
+          : 'Sin ejecutar',
+    );
+    textBox.append(title, sub);
+    const key = `wf:${workflow.id}`;
+    const toggle = button(
+      `square-button ${workflow.running ? 'is-danger' : 'is-go'}`,
+      `${workflow.running ? 'Detener' : 'Ejecutar'} ${workflow.name}`,
+      () =>
+        void send(
+          key,
+          workflow.running ? 'workflow.stop' : 'workflow.run',
+          { workflowId: workflow.id },
+          workflow.running ? undefined : PENDING,
+        ),
+    );
+    toggle.append(glyph(workflow.running ? 'stop' : 'play', 16));
+    toggle.disabled =
+      busy.has(key) || (!workflow.running && workflow.totalScripts === 0);
+    row.append(dot, textBox, toggle);
+    return row;
+  }
+
   function card(group: RemoteGroupView, ticks: (() => void)[]): HTMLElement {
     const box = el('div', 'group-card');
     const expanded = open === group.id;
@@ -214,14 +271,6 @@ export function createGroupsTab(
     els.errorChip.textContent = plural(errors, 'error', 'errores');
     els.warnChip.hidden = warnings === 0;
     els.warnChip.textContent = plural(warnings, 'warning', 'warnings');
-
-    const { pipeline } = state;
-    const running = pipeline.status === 'running';
-    els.runPipeline.hidden = pipeline.totalSteps === 0 && !running;
-    els.runPipeline.disabled = running || busy.has('pipeline');
-    els.pipelineLabel.textContent = running
-      ? `Pipeline en curso · paso ${pipeline.currentStep ?? 1} de ${pipeline.totalSteps}`
-      : 'Ejecutar pipeline';
   }
 
   function banners(state: RemoteStateView, ticks: (() => void)[]): void {
@@ -252,6 +301,8 @@ export function createGroupsTab(
     const ticks: (() => void)[] = [];
     header(state);
     banners(state, ticks);
+    els.workflowsTitle.hidden = state.workflows.length === 0;
+    els.workflows.replaceChildren(...state.workflows.map(workflowRow));
     els.empty.hidden = state.groups.length > 0;
     els.list.replaceChildren(
       ...state.groups.map((group) => card(group, ticks)),
@@ -274,10 +325,6 @@ export function createGroupsTab(
         );
     });
   });
-  els.runPipeline.addEventListener(
-    'click',
-    () => void send('pipeline', 'pipeline.run', {}),
-  );
   els.confirmBanner.addEventListener('click', () => {
     const token = last?.confirms[0]?.token;
     if (token) ctx.openConfirm(token);

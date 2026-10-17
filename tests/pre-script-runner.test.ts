@@ -4,7 +4,7 @@ import {
   createPreScriptRunner,
   type PreScriptProcessManager,
   type RunResult,
-  type StepCompleteEvent,
+  type BlockCompleteEvent,
 } from '../src/pre-script-runner.js';
 import {
   planAutoStartRelease,
@@ -21,9 +21,11 @@ import type {
   Group,
   LogEntry,
   PreScript,
+  Pipeline,
   PreStep,
   PreStepScriptRef,
 } from '../src/domain-types.js';
+import { fromLegacySteps } from '../src/pipeline-graph.js';
 
 // ─── Mock factory ───────────────────────────────────────────────────────────
 
@@ -129,7 +131,9 @@ function makeConfigStore(groups: Group[], steps: PreStep[] = []) {
   const state = { steps };
   return {
     getGroup: (id: string): Group | null => byId.get(id) ?? null,
-    getPreSteps: (): PreStep[] => state.steps,
+    // The old ordered steps, chained from the trigger: a chain runs exactly
+    // like the list did.
+    getPipeline: (): Pipeline => fromLegacySteps(state.steps),
     setSteps: (next: PreStep[]): void => {
       state.steps = next;
     },
@@ -326,7 +330,9 @@ describe('createPreScriptRunner — run()', () => {
 
     const res = await runner.run();
     expectFailed(res);
-    expect(res.error).toContain('step_2');
+    expect(res.error).toBe('scripts_failed:1');
+    // sc3 waited on the failed block, so it was skipped, never started.
+    expect(pm.getState('pre:g1:sc3').status).toBe('stopped');
   });
 
   it('parallel step partial failure surfaces as pipeline failure', async () => {
@@ -445,7 +451,7 @@ describe('createPreScriptRunner — run()', () => {
     expect(pm.getState('pre:g1:sc2').status).toBe('done');
   });
 
-  it('aggregator log contains step boundary lines for completed steps', async () => {
+  it('aggregator log contains block boundary lines for completed blocks', async () => {
     const steps = [
       makeStep('s1', 'parallel', [ref('g1', 'sc1')]),
       makeStep('s2', 'serial', [ref('g1', 'sc2')]),
@@ -472,9 +478,9 @@ describe('createPreScriptRunner — run()', () => {
     const res = await runner.run();
     expect(res.ok).toBe(true);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('Paso 1/2'))).toBe(true);
-    expect(lines.some((l) => l.includes('Paso 2/2'))).toBe(true);
-    expect(lines.some((l) => l.includes('Pipeline completado'))).toBe(true);
+    expect(lines.some((l) => l.includes('Bloque 1/2 iniciando'))).toBe(true);
+    expect(lines.some((l) => l.includes('Bloque 2/2 completado'))).toBe(true);
+    expect(lines.some((l) => l.includes('Workflow completado'))).toBe(true);
   });
 });
 
@@ -627,8 +633,8 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
   });
 });
 
-describe('createPreScriptRunner — onStepComplete hook', () => {
-  it('fires once per successfully-completed step, strictly ascending', async () => {
+describe('createPreScriptRunner — onBlockComplete hook', () => {
+  it('fires once per successfully-completed block, in chain order', async () => {
     const group = makeGroup({
       id: 'g1',
       path: '/tmp/g1',
@@ -645,28 +651,23 @@ describe('createPreScriptRunner — onStepComplete hook', () => {
       'pre:g1:sc1': { code: 0 },
       'pre:g1:sc2': { code: 0 },
     });
-    const events: StepCompleteEvent[] = [];
+    const events: BlockCompleteEvent[] = [];
     const runner = createPreScriptRunner({
       processManager: pm,
       configStore: makeConfigStore([group], steps),
       broadcastUpdate: vi.fn(),
       onError: vi.fn(),
-      onStepComplete: (event) => events.push(event),
+      onBlockComplete: (event) => events.push(event),
     });
 
     const res = await runner.run();
     expect(res.ok).toBe(true);
-    expect(events).toHaveLength(2);
-    expect(events[0]?.stepIndex).toBe(0);
-    expect(events[0]?.stepId).toBe('s1');
-    expect(events[1]?.stepIndex).toBe(1);
-    expect(events[1]?.stepId).toBe('s2');
-    expect(events[0]?.totalSteps).toBe(2);
+    expect(events.map((e) => e.blockId)).toEqual(['s1', 's2']);
     if (!res.ok) throw new Error('unreachable');
     expect(events[0]?.runId).toBe(res.runId);
   });
 
-  it('an empty step is a no-op barrier: the pipeline advances through it and still fires onStepComplete for it', async () => {
+  it('an empty legacy step leaves no block behind, and the chain still runs through it', async () => {
     const group = makeGroup({
       id: 'g1',
       path: '/tmp/g1',
@@ -684,24 +685,22 @@ describe('createPreScriptRunner — onStepComplete hook', () => {
       'pre:g1:sc1': { code: 0 },
       'pre:g1:sc2': { code: 0 },
     });
-    const events: StepCompleteEvent[] = [];
+    const events: BlockCompleteEvent[] = [];
     const runner = createPreScriptRunner({
       processManager: pm,
       configStore: makeConfigStore([group], steps),
       broadcastUpdate: vi.fn(),
       onError: vi.fn(),
-      onStepComplete: (event) => events.push(event),
+      onBlockComplete: (event) => events.push(event),
     });
 
     const res = await runner.run();
     expect(res.ok).toBe(true);
-    expect(events.map((e) => e.stepIndex)).toEqual([0, 1, 2]);
-    const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('Paso 2/3'))).toBe(true);
-    expect(lines.some((l) => l.includes('Paso 2 completado'))).toBe(true);
+    expect(events.map((e) => e.blockId)).toEqual(['s1', 's3']);
+    expect(pm.getState('pre:g1:sc2').status).toBe('done');
   });
 
-  it('does not fire for a step that fails, and never fires after run() resolves', async () => {
+  it('does not fire for a block that fails, and never fires after run() resolves', async () => {
     const group = makeGroup({
       id: 'g1',
       path: '/tmp/g1',
@@ -718,19 +717,18 @@ describe('createPreScriptRunner — onStepComplete hook', () => {
       'pre:g1:sc1': { code: 0 },
       'pre:g1:sc2': { code: 1 },
     });
-    const events: StepCompleteEvent[] = [];
+    const events: BlockCompleteEvent[] = [];
     const runner = createPreScriptRunner({
       processManager: pm,
       configStore: makeConfigStore([group], steps),
       broadcastUpdate: vi.fn(),
       onError: vi.fn(),
-      onStepComplete: (event) => events.push(event),
+      onBlockComplete: (event) => events.push(event),
     });
 
     const res = await runner.run();
     expect(res.ok).toBe(false);
-    expect(events).toHaveLength(1);
-    expect(events[0]?.stepIndex).toBe(0);
+    expect(events.map((e) => e.blockId)).toEqual(['s1']);
   });
 
   it('a throwing callback is caught and logged without aborting the run', async () => {
@@ -755,7 +753,7 @@ describe('createPreScriptRunner — onStepComplete hook', () => {
       configStore: makeConfigStore([group], steps),
       broadcastUpdate: vi.fn(),
       onError: vi.fn(),
-      onStepComplete: () => {
+      onBlockComplete: () => {
         throw new Error('boom');
       },
     });
@@ -763,7 +761,7 @@ describe('createPreScriptRunner — onStepComplete hook', () => {
     const res = await runner.run();
     expect(res.ok).toBe(true);
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('aviso de fin de paso: boom'))).toBe(
+    expect(lines.some((l) => l.includes('aviso de fin de bloque: boom'))).toBe(
       true,
     );
   });
@@ -771,8 +769,8 @@ describe('createPreScriptRunner — onStepComplete hook', () => {
 
 describe('createPreScriptRunner — staged auto-start release composition (mirrors main.ts wiring)', () => {
   // main.ts has no unit-test file in this repo (it is Electron-bound), so
-  // this reconstructs its ACTUAL onStepComplete wiring — an `activeAutoStartRelease`-
-  // style `fired` set plus the real, already-tested `planAutoStartRelease`/
+  // this reconstructs its ACTUAL onBlockComplete wiring — an `activeAutoStartRelease`-
+  // style `completed` set plus the real, already-tested `planAutoStartRelease`/
   // `withheldGroupIds` pure functions — around a REAL runner, at runtime.
   it('a parallel sibling failure withholds an otherwise-successful group in the same step', async () => {
     const groupA = makeGroup({
@@ -794,22 +792,22 @@ describe('createPreScriptRunner — staged auto-start release composition (mirro
     });
 
     const plan = planAutoStartRelease({
-      steps,
+      pipeline: fromLegacySteps(steps),
       eligibleGroupIds: ['gA', 'gB'],
     });
-    const fired = new Set<number>();
+    const fired = new Set<string>();
     const runner = createPreScriptRunner({
       processManager: pm,
       configStore: makeConfigStore([groupA, groupB], steps),
       broadcastUpdate: vi.fn(),
       onError: vi.fn(),
-      onStepComplete: ({ stepIndex }) => fired.add(stepIndex),
+      onBlockComplete: ({ blockId }) => fired.add(blockId),
     });
 
     const res = await runner.run();
     expectFailed(res);
     const withheld = withheldGroupIds(plan, fired);
-    // Neither group is released: onStepComplete never fires for a step that
+    // Neither group is released: onBlockComplete never fires for a block that
     // did not fully succeed, so gA — whose OWN script succeeded — is
     // withheld right alongside gB.
     expect(withheld).toEqual(['gA', 'gB']);
@@ -845,17 +843,17 @@ describe('createPreScriptRunner — staged auto-start release composition (mirro
     // b1/c1 are never actually started (declined before b1 starts).
     const pm = makeMockPM({ 'pre:gA:a1': { code: 0 } });
     const plan = planAutoStartRelease({
-      steps,
+      pipeline: fromLegacySteps(steps),
       eligibleGroupIds: ['gA', 'gB', 'gC'],
     });
-    const fired = new Set<number>();
+    const fired = new Set<string>();
     const confirmScript = vi.fn().mockResolvedValue(false); // decline
     const runner = createPreScriptRunner({
       processManager: pm,
       configStore: makeConfigStore([groupA, groupB, groupC], steps),
       broadcastUpdate: vi.fn(),
       onError: vi.fn(),
-      onStepComplete: ({ stepIndex }) => fired.add(stepIndex),
+      onBlockComplete: ({ blockId }) => fired.add(blockId),
       confirmScript,
       cancelConfirm: vi.fn(),
     });

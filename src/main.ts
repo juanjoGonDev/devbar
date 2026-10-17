@@ -25,7 +25,7 @@ import { SessionResumeTracker, consumeSnapshot } from './session-resume.js';
 import { isMac, platformLabel } from './platform.js';
 import { loadShellPath, expandTilde } from './path-helper.js';
 import { RepoWatcher } from './repo-watcher.js';
-import { createPreScriptRunner } from './pre-script-runner.js';
+import { createWorkflowRunner } from './workflow-runner.js';
 import { ICON_BATTERY } from './icon-battery.js';
 import { withSpanishSearch } from './icon-search.js';
 import { createAppWindows } from './main/app-windows.js';
@@ -55,6 +55,7 @@ import { createTrayController, linuxRebuildPieces } from './main/tray.js';
 import { buildTrayContextMenu } from './main/tray-view.js';
 import { createTrayHost } from './main/tray-host.js';
 import { createUpdater } from './main/updater.js';
+import { workflowFeedback } from './main/workflow-wiring.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
 import type { Group, ThemePreference } from './domain-types.js';
 
@@ -106,20 +107,21 @@ attachProductionSampling(host, () => app.getAppMetrics());
 
 // ─────────────────────── Composition root ────────────────────────────
 
-const preScriptRunner = createPreScriptRunner({
+const workflowRunner = createWorkflowRunner({
+  // The busy check (`getState`) needs the real instance, never a copy.
   processManager,
   configStore,
   broadcastUpdate: () => broadcast(),
-  onStepComplete: ({ stepIndex }) => startup.onPipelineStepComplete(stepIndex),
-  onError: (err: string) => {
-    if (startup.shouldShowGenericFailureToast())
-      toast('error', `Pre-scripts: ${err}`);
-  },
-  onSuccess: ({ stepCount }: { runId: number; stepCount: number }) =>
-    notifications.showCompletionNotification(
-      'DevBar — pre-scripts',
-      `Pipeline completado (${stepCount} paso${stepCount === 1 ? '' : 's'})`,
-    ),
+  onRunState: (state) => sendToRenderers(registry, 'workflows:runState', state),
+  onBlockComplete: (event) => startup.onWorkflowBlockComplete(event),
+  ...workflowFeedback({
+    toast: (kind, message) => toast(kind, message),
+    notify: (title, body) =>
+      notifications.showCompletionNotification(title, body),
+    confirm: (script) => confirms.showConfirmModal(script, 'interactive', null),
+    bootReportsStartupFailure: () => !startup.shouldShowGenericFailureToast(),
+    totalScripts: (id) => workflowRunner.runState(id)?.totalScripts ?? 0,
+  }),
   confirmScript: (script, group) => confirms.confirmScript(script, group),
   cancelConfirm: () => confirms.cancelConfirm(),
 });
@@ -127,15 +129,14 @@ const preScriptRunner = createPreScriptRunner({
 const snapshots = createStateSnapshots({
   configStore,
   processManager,
-  preScriptRunner,
+  workflowRunner,
   groupErrors,
 });
 
 function broadcast(): void {
   const payload = snapshots.snapshotGroupStates();
   sendToRenderers(registry, 'groups:update', payload);
-  const pipeline = snapshots.snapshotPipelineState();
-  sendToRenderers(registry, 'pipeline:update', pipeline);
+  sendToRenderers(registry, 'workflows:update', snapshots.workflowEntries());
   tray.updateTitle(payload);
 }
 const toast = (kind: string, message: string): void =>
@@ -242,7 +243,7 @@ const updater = createUpdater({
 const startup = createStartup({
   processManager,
   configStore,
-  preScriptRunner,
+  workflowRunner,
   consumeSnapshot: (canResume) => consumeSnapshot(appHome(), canResume),
   broadcastToast: toast,
   showCompletionNotification: notifications.showCompletionNotification,
@@ -257,6 +258,7 @@ const schedules = createScheduleRunner({
   processManager,
   confirmIfNeeded: (target, group) => confirms.confirmIfNeeded(target, group),
   broadcast,
+  workflowRunner,
 });
 
 /** The command services currently running (actions/pre-scripts are one-shots). */
@@ -274,7 +276,7 @@ const wiring = {
   processManager,
   gitManager,
   branchesChanged,
-  preScriptRunner,
+  workflowRunner,
   snapshots,
   confirms,
   updater,
@@ -293,7 +295,7 @@ const shutdown = createShutdownController({
   smokeMode: SMOKE_MODE,
   repoWatcher,
   remoteServer: remote,
-  preScriptRunner,
+  workflowRunner,
   processManager,
   sessionResume: () => sessionResume,
   runningCommandIds,

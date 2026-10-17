@@ -1,469 +1,445 @@
 import {
-  attachDragHandlers,
-  attachCrossContainerDragHandlers,
-} from './dnd-helper.js';
-import { latestWins } from './latest-wins.js';
-import { icon, iconButton } from './icon.js';
-import { buildAutoRunToggle } from './pipeline/auto-run-toggle.js';
+  attachEditorGestures,
+  type DragState,
+} from './pipeline/editor-gestures.js';
+import { buildCanvasControls } from './pipeline/controls.js';
+import { attachEditorEvents } from './pipeline/editor-events.js';
+import { contentBounds } from './pipeline/geometry.js';
+import { renderWorld, type ResolvedScript } from './pipeline/graph-view.js';
+import { createMinimap } from './pipeline/minimap.js';
+import { buildPaletteList } from './pipeline/palette.js';
+import { wirePanelAndZoom } from './pipeline/editor-wiring.js';
+import { createPipelinePanel } from './pipeline/panel.js';
+import { createPicker } from './pipeline/picker.js';
 import {
-  buildSummaryStrip,
-  dataIdToRef,
-  groupColor,
-  refToDataId,
-} from './pipeline/summary.js';
-import type { Group, PreScript, PreStep } from '../src/domain-types.js';
-
-export {
-  summarizePipeline,
-  type PipelineSummaryLane,
-  type PipelineSummaryStep,
-} from './pipeline/summary.js';
-
-const PIPELINE_DND_ZONE = 'pipeline-scripts';
+  createPlacement,
+  type CreateScriptRequest,
+} from './pipeline/placement.js';
+import { runView } from './pipeline/run-view.js';
+import { pipelineSummaryText } from './pipeline/summary.js';
+import { createPipelineSync } from './pipeline/sync.js';
+import { lockedSync } from './pipeline/locked-sync.js';
+import { createEditorOverlays } from './pipeline/editor-overlays.js';
+import {
+  centerOn,
+  fitView,
+  formatZoom,
+  type Viewport,
+} from './pipeline/viewport.js';
+import { TRIGGER_META } from './workflows/trigger-meta.js';
+import {
+  pipelineRefKey,
+  placedRefKeys,
+  runnableBlocks,
+} from '../src/pipeline-graph.js';
+import type {
+  Group,
+  Pipeline,
+  PreScript,
+  PreStepScriptRef,
+} from '../src/domain-types.js';
+import type { WorkflowEntry, WorkflowRunState } from '../src/ipc-contract.js';
 
 export interface PipelineEditorDeps {
   /** Read-only — the editor never reads `draftGroup` (one-way dependency,
-   * unsaved group edits must never leak into the pipeline view). */
+   * unsaved group edits must never leak into the workflow view). */
   getGroups(): readonly Group[];
   showToast(message: string, kind?: string): void;
+  /** Opens the existing pre-script edit dialog; "Editar" is offered only
+   * when this is wired. */
+  editScript?(groupId: string, script: PreScript): void;
+  /** Opens the new-pre-script dialog; "Nuevo pre-script" is offered only
+   * when this is wired. */
+  createScript?(request: CreateScriptRequest): void;
+  /** How long a dragged block waits before its position is written. */
+  moveDebounceMs?: number;
+  /** The section's workflow list (who holds the startup slot, last runs). */
+  getEntries?(): readonly WorkflowEntry[];
+  /** «Workflows» in the breadcrumb: back to the list. */
+  onBack?(): void;
+  now?: () => number;
 }
 
 export interface PipelineEditorHandle {
   refresh(): Promise<void>;
+  /** Edits workflow `id`; `rename` puts the cursor in its name. */
+  open(workflowId: string, options?: { rename?: boolean }): Promise<void>;
+  /** The workflow being edited, null until one is read. */
+  workflowId(): string | null;
+  /** The latest run of the workflow on screen (or null: none yet). */
+  setRun(state: WorkflowRunState | null): void;
+  /** The list changed: adopt the workflow's new name/trigger, repaint. */
+  entriesChanged(): void;
 }
 
+/** How far a "+" stub reaches right of its output pin. */
+const STUB_REACH = 40;
+/** Room the breadcrumb pill takes above the panel and the graph. */
+const CRUMB_HEIGHT = 46;
+
+function div(className: string): HTMLDivElement {
+  const node = document.createElement('div');
+  node.className = className;
+  return node;
+}
+
+/**
+ * The visual workflow editor: a canvas that fills the whole section, where
+ * every pre-script is a node at its own 2D position and an edge means "wait
+ * for". A dashed frame runs its scripts in parallel; several edges out of one
+ * node run their branches in parallel too. The workflow's latest run is
+ * painted over it, live.
+ *
+ * Every edit is computed by the pure `src/pipeline-graph.ts`, painted at once
+ * and persisted through `pipeline/sync.ts`. Dragging a block only previews it
+ * (`preview`) until the drop. While a run is in flight only layout edits go
+ * through.
+ */
 export function initPipelineEditor(
   host: HTMLElement,
   deps: PipelineEditorDeps,
 ): PipelineEditorHandle {
-  // Every pipeline mutation here (add/delete/reorder step, assign/unassign a
-  // script, mode toggle) is an instant IPC write immediately followed by a
-  // full refresh() — there is no local-only draft to save or discard, unlike
-  // the group pane's storedGroup/draftGroup. `draftSteps` is simply the last
-  // state fetched from main, kept as its own copy (not shared with
-  // findScript's group lookups) so re-renders never need to re-fetch it.
-  let draftSteps: PreStep[] = [];
-  let openPickerStepId: string | null = null;
+  let view: Viewport = { x: 0, y: 0, zoom: 1 };
+  let selectedKey: string | null = null;
+  const drag: DragState = { target: null, preview: null };
+  let query = '';
+  let minimapOn = true;
+  let fitted = false;
+  let run: WorkflowRunState | null = null;
+  let ticker: ReturnType<typeof setInterval> | null = null;
+  const now = deps.now ?? (() => Date.now());
+  const entries = (): readonly WorkflowEntry[] => deps.getEntries?.() ?? [];
 
-  // Global auto-run setting, read ONCE (loadAutoRunSetting, below) rather
-  // than on every render(): render() runs after every step mutation and
-  // every picker toggle, and a fresh getSettings() call each time left the
-  // checkbox disabled — dead to clicks — until that call resolved, even for
-  // renders that have nothing to do with this setting.
-  let autoRunEnabled = false;
-  let autoRunSettingLoaded = false;
-  /**
-   * Ticket for the in-flight auto-run save. The toggle writes on every change
-   * with nothing serializing the writes, so a rejected OLD save must not roll
-   * the control back over a NEWER value that already persisted — the same
-   * rule the theme picker in `config.ts` follows.
-   */
-  const autoRunSaves = latestWins();
+  const store = createPipelineSync({
+    onChange: () => render(),
+    showToast: (message, kind) => deps.showToast(message, kind),
+    debounceMs: deps.moveDebounceMs ?? 400,
+  });
+  const locked = (): boolean => run?.status === 'running';
+  const sync = lockedSync(store, locked, () => {
+    deps.showToast('No disponible durante la ejecución', 'error');
+    render();
+  });
+  const shown = (): Pipeline => drag.preview ?? sync.get();
+  const entry = (): WorkflowEntry | null =>
+    entries().find((e) => e.workflow.id === sync.workflow()?.id) ?? null;
+  const triggerKind = () => sync.workflow()?.trigger.kind ?? 'startup';
 
-  function findScript(
-    groupId: string,
-    scriptId: string,
-  ): { group: Group; script: PreScript } | null {
-    const group = deps.getGroups().find((g) => g.id === groupId);
-    const script = group?.preScripts.find((s) => s.id === scriptId);
+  // ── Skeleton, built once so the search box keeps its focus ─────────────
+  const root = div('pipeline-editor');
+  const canvas = div('pipeline-canvas');
+  canvas.setAttribute('aria-label', 'Lienzo del workflow');
+  const world = div('pipeline-world');
+  canvas.appendChild(world);
+  const panel = createPipelinePanel({
+    canCreate: deps.createScript !== undefined,
+    onLayoutChange: () => {
+      paintMinimap();
+      paintChrome();
+    },
+  });
+  const controls = buildCanvasControls();
+  const minimap = createMinimap((point) =>
+    setView(centerOn(view, point, canvasSize())),
+  );
+  const overlays = createEditorOverlays({
+    root,
+    world,
+    sync,
+    entries,
+    run: () => run,
+    nameOf: (ref) => findScript(ref)?.script.name ?? 'Referencia rota',
+    now,
+    showToast: (message, kind) => deps.showToast(message, kind),
+    onBack: () => deps.onBack?.(),
+    togglePanel: () => panel.toggle(),
+    repaint: () => render(),
+    fallbackAnchor: () => ({ x: view.x, y: view.y + CRUMB_HEIGHT }),
+  });
+  const { chrome, drawer, popover } = overlays;
+  root.append(
+    canvas,
+    chrome.breadcrumb,
+    panel.panel,
+    chrome.status,
+    chrome.legend,
+    minimap.element,
+    controls.zoom,
+  );
+  host.replaceChildren(root);
+  const picker = createPicker(root);
+
+  // ── Lookups ────────────────────────────────────────────────────────────
+  function findScript(ref: PreStepScriptRef): ResolvedScript | null {
+    const group = deps.getGroups().find((g) => g.id === ref.groupId);
+    const script = group?.preScripts.find((s) => s.id === ref.scriptId);
     return group && script ? { group, script } : null;
   }
 
-  function placedRefs(): Set<string> {
-    const placed = new Set<string>();
-    for (const step of draftSteps) {
-      for (const ref of step.scripts)
-        placed.add(refToDataId(ref.groupId, ref.scriptId));
-    }
-    return placed;
+  /** False only once every existing pre-script is already placed. */
+  function canAdd(): boolean {
+    const placed = placedRefKeys(sync.get());
+    const all = deps
+      .getGroups()
+      .flatMap((g) =>
+        g.preScripts.map((s) => ({ groupId: g.id, scriptId: s.id })),
+      );
+    return (
+      all.length === 0 || all.some((ref) => !placed.has(pipelineRefKey(ref)))
+    );
   }
 
-  /**
-   * Ticket for the in-flight steps read. Every mutation above is an instant
-   * write followed by a full re-read, and nothing serializes them: two quick
-   * clicks put two reads in flight, and the older answer landing last drops
-   * whatever the second click had just persisted.
-   */
-  const stepReads = latestWins();
-
-  async function reload(): Promise<void> {
-    // Issuing this read retires every older one still in flight.
-    stepReads.invalidate();
-    const current = stepReads.claim();
-    const steps = await window.api.getPreSteps();
-    if (!current()) return; // a newer read already answered
-    draftSteps = steps;
+  function canvasSize(): { width: number; height: number } {
+    return { width: canvas.clientWidth, height: canvas.clientHeight };
   }
 
-  async function refresh(): Promise<void> {
-    await reload();
+  // ── Painting ───────────────────────────────────────────────────────────
+  function paintMinimap(): void {
+    minimap.element.hidden = !minimapOn;
+    controls.minimap.setAttribute('aria-pressed', String(minimapOn));
+    if (minimapOn)
+      minimap.render({
+        pipeline: shown(),
+        view,
+        canvas: canvasSize(),
+        selectedKey,
+      });
+  }
+
+  function paintChrome(): void {
+    chrome.paint({
+      workflow: sync.workflow(),
+      entry: entry(),
+      run,
+      summary: pipelineSummaryText(sync.get()),
+      panelOpen: panel.isOpen(),
+      now: now(),
+    });
+  }
+
+  function applyView(): void {
+    world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`;
+    const grid = 20 * view.zoom;
+    canvas.style.backgroundSize = `${grid}px ${grid}px`;
+    canvas.style.backgroundPosition = `${view.x}px ${view.y}px`;
+    controls.zoomValue.textContent = formatZoom(view.zoom);
+    paintMinimap();
+  }
+
+  function setView(next: Viewport): void {
+    if (next === view) return;
+    view = next;
+    picker.close();
+    popover.close();
+    applyView();
     render();
   }
 
-  /** Reads the global auto-run setting exactly once (called from
-   * `initPipelineEditor` below), caching it so every subsequent render()
-   * paints from memory instead of racing a fresh IPC call. */
-  function loadAutoRunSetting(): void {
-    void window.api
-      .getSettings()
-      .then((settings) => {
-        autoRunEnabled = !!settings.preScriptsAutoRun;
-      })
-      .catch(() => {
-        deps.showToast('No se pudieron leer los ajustes', 'error');
-      })
-      .finally(() => {
-        autoRunSettingLoaded = true;
-        render();
-      });
-  }
-
-  /** The global auto-run control; `buildAutoRunToggle` owns its markup, this
-   *  only hands it the cached state and the save ticket. */
-  function autoRunToggle(): HTMLElement {
-    return buildAutoRunToggle({
-      enabled: autoRunEnabled,
-      loaded: autoRunSettingLoaded,
-      saves: autoRunSaves,
-      onSaved: (enabled) => {
-        autoRunEnabled = enabled;
-      },
-      showToast: (message, kind) => deps.showToast(message, kind),
-    });
-  }
-
-  /**
-   * Every pipeline mutation is an instant write, so a rejected IPC call must
-   * not fail silently: without this the handlers left the UI showing a change
-   * that was never persisted, and the rejection surfaced as an unhandled
-   * promise. On failure we re-read the persisted pipeline so the screen shows
-   * what is actually stored, never an optimistic guess.
-   */
-  async function write(action: () => Promise<unknown>): Promise<boolean> {
-    try {
-      await action();
-      return true;
-    } catch {
-      deps.showToast('No se pudo guardar el pipeline', 'error');
-      // The recovery read is best-effort: if it fails too, `write` must still
-      // settle, or every handler awaiting it produces an unhandled rejection.
-      try {
-        await refresh();
-      } catch {
-        deps.showToast('No se pudo recargar el pipeline', 'error');
-      }
-      return false;
-    }
-  }
-
-  /** The read-only strip above the step list; `buildSummaryStrip` owns its
-   *  markup, this only feeds it the current steps and a name resolver. */
-  function summaryStrip(): HTMLElement {
-    return buildSummaryStrip(draftSteps, (groupId, scriptId) => {
-      const resolved = findScript(groupId, scriptId);
-      return resolved
-        ? { groupName: resolved.group.name, scriptName: resolved.script.name }
-        : null;
-    });
-  }
-
-  // ── Script picker ("+ Añadir script") ───────────────────────────────────
-  function buildScriptPicker(stepId: string): HTMLElement {
-    const picker = document.createElement('div');
-    picker.className = 'script-picker';
-    const placed = placedRefs();
-    const groupsWithScripts = deps
-      .getGroups()
-      .filter((g) => g.preScripts.length > 0);
-    if (groupsWithScripts.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'muted small';
-      empty.textContent =
-        'No hay pre-scripts definidos. Créalos primero en la ficha de cada grupo.';
-      picker.appendChild(empty);
-      return picker;
-    }
-    for (const group of groupsWithScripts) {
-      const groupBlock = document.createElement('div');
-      groupBlock.className = 'script-picker-group';
-      const header = document.createElement('div');
-      header.className = 'script-picker-group-header';
-      const dot = document.createElement('span');
-      dot.className = 'pipeline-group-dot';
-      dot.style.setProperty('--group-color', groupColor(group.name));
-      header.append(dot, document.createTextNode(group.name));
-      groupBlock.appendChild(header);
-      for (const script of group.preScripts) {
-        const dataId = refToDataId(group.id, script.id);
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'script-picker-item';
-        item.textContent = script.name;
-        const alreadyPlaced = placed.has(dataId);
-        item.disabled = alreadyPlaced;
-        if (alreadyPlaced) item.title = 'Ya está en el pipeline';
-        item.addEventListener('click', async () => {
-          if (
-            !(await write(() =>
-              window.api.assignScriptToStep(stepId, group.id, script.id),
-            ))
-          )
-            return;
-          openPickerStepId = null;
-          await refresh();
-        });
-        groupBlock.appendChild(item);
-      }
-      picker.appendChild(groupBlock);
-    }
-    return picker;
-  }
-
-  // ── Script row ───────────────────────────────────────────────────────────
-  function buildScriptRow(
-    ref: { groupId: string; scriptId: string },
-    step: PreStep,
-  ): HTMLElement {
-    const li = document.createElement('li');
-    li.className = 'prescript-row drag-row';
-    li.dataset.id = refToDataId(ref.groupId, ref.scriptId);
-    const resolved = findScript(ref.groupId, ref.scriptId);
-
-    const dragHandle = document.createElement('span');
-    dragHandle.className = 'drag-handle';
-    dragHandle.draggable = true;
-    dragHandle.title = 'Arrastra para mover a otro paso';
-    dragHandle.append(icon('grip-vertical'));
-    li.appendChild(dragHandle);
-
-    if (!resolved) {
-      // Referential integrity is normally enforced server-side on every
-      // persist (prunePipelineRefs), but a hand-edited store file could
-      // still leave a dangling ref — render it, don't throw.
-      const broken = document.createElement('span');
-      broken.className = 'muted small';
-      broken.textContent = 'Referencia rota (script eliminado)';
-      li.appendChild(broken);
-    } else {
-      const { group, script } = resolved;
-      const badge = document.createElement('span');
-      badge.className = 'pipeline-group-badge';
-      badge.title = `${group.name} — ${group.path || 'sin path'}`;
-      const dot = document.createElement('span');
-      dot.className = 'pipeline-group-dot';
-      dot.style.setProperty('--group-color', groupColor(group.name));
-      const name = document.createElement('span');
-      name.className = 'pipeline-group-name';
-      name.textContent = group.name;
-      badge.append(dot, name);
-      li.appendChild(badge);
-
-      const nameEl = document.createElement('strong');
-      nameEl.textContent = script.name || 'Unnamed';
-      li.appendChild(nameEl);
-
-      const cmdEl = document.createElement('code');
-      cmdEl.textContent = [script.command, ...(script.args || [])].join(' ');
-      li.appendChild(cmdEl);
-
-      if (script.timeoutMs) {
-        const timeout = document.createElement('span');
-        timeout.className = 'muted small';
-        timeout.append(
-          icon('timer'),
-          ` ${Math.round(script.timeoutMs / 1000)}s`,
-        );
-        li.appendChild(timeout);
-      }
-    }
-
-    const spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    li.appendChild(spacer);
-
-    const removeBtn = iconButton('x', 'Quitar del paso', 'small-btn danger');
-    removeBtn.addEventListener('click', async () => {
-      if (
-        !(await write(() =>
-          window.api.unassignScriptFromStep(step.id, ref.groupId, ref.scriptId),
-        ))
-      )
-        return;
-      await refresh();
-    });
-    li.appendChild(removeBtn);
-
-    return li;
-  }
-
-  // ── Step card ────────────────────────────────────────────────────────────
-  function buildStepCard(step: PreStep, stepNumber: number): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'prestep-card drag-row';
-    card.dataset.id = step.id;
-
-    const header = document.createElement('div');
-    header.className = 'prestep-card-header';
-
-    const dragHandle = document.createElement('span');
-    dragHandle.className = 'drag-handle';
-    dragHandle.draggable = true;
-    dragHandle.title = 'Arrastra para reordenar';
-    dragHandle.append(icon('grip-vertical'));
-    header.appendChild(dragHandle);
-
-    const stepLabel = document.createElement('span');
-    stepLabel.className = 'step-label';
-    stepLabel.textContent = `Paso ${stepNumber}`;
-    header.appendChild(stepLabel);
-
-    const modeToggle = document.createElement('div');
-    modeToggle.className = 'prestep-mode-toggle';
-    modeToggle.setAttribute('role', 'group');
-    modeToggle.setAttribute('aria-label', 'Modo de ejecución');
-    for (const mode of ['parallel', 'serial'] as const) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'mode-btn with-icon';
-      btn.append(
-        mode === 'parallel' ? 'Paralelo' : 'Serie',
-        icon(mode === 'parallel' ? 'split' : 'arrow-right'),
-      );
-      btn.setAttribute('aria-pressed', String(step.mode === mode));
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!(await write(() => window.api.savePreStep({ ...step, mode }))))
-          return;
-        await refresh();
-      });
-      modeToggle.appendChild(btn);
-    }
-    header.appendChild(modeToggle);
-
-    const spacer = document.createElement('span');
-    spacer.style.flex = '1';
-    header.appendChild(spacer);
-
-    const delBtn = iconButton('x', 'Eliminar paso', 'small-btn danger');
-    delBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (!confirm(`¿Eliminar el paso ${stepNumber}?`)) return;
-      if (!(await write(() => window.api.deletePreStep(step.id)))) return;
-      await refresh();
-    });
-    header.appendChild(delBtn);
-    card.appendChild(header);
-
-    const scriptList = document.createElement('ul');
-    scriptList.className = 'prescript-list';
-    scriptList.dataset.containerId = step.id;
-    if (step.scripts.length === 0) {
-      scriptList.classList.add('prestep-empty-dropzone');
-      const hint = document.createElement('li');
-      hint.className = 'prestep-drop-hint';
-      hint.textContent = 'Suelta un script aquí';
-      scriptList.appendChild(hint);
-    } else {
-      for (const ref of step.scripts) {
-        scriptList.appendChild(buildScriptRow(ref, step));
-      }
-    }
-    card.appendChild(scriptList);
-
-    attachCrossContainerDragHandlers(
-      scriptList,
-      PIPELINE_DND_ZONE,
-      async (move) => {
-        const ref = dataIdToRef(move.itemId);
-        if (!ref) return;
-        if (
-          !(await write(() =>
-            window.api.assignScriptToStep(
-              move.targetContainerId,
-              ref.groupId,
-              ref.scriptId,
-              move.index,
-            ),
-          ))
-        )
-          return;
-        await refresh();
-      },
+  function renderPalette(): void {
+    panel.list.replaceChildren(
+      buildPaletteList(deps.getGroups(), placedRefKeys(sync.get()), query),
     );
+  }
 
-    const addScriptBtn = document.createElement('button');
-    addScriptBtn.type = 'button';
-    addScriptBtn.className = 'small-btn';
-    addScriptBtn.textContent = '+ Añadir script';
-    addScriptBtn.style.marginTop = '4px';
-    addScriptBtn.addEventListener('click', () => {
-      openPickerStepId = openPickerStepId === step.id ? null : step.id;
-      render();
-    });
-    card.appendChild(addScriptBtn);
-
-    if (openPickerStepId === step.id) {
-      card.appendChild(buildScriptPicker(step.id));
-    }
-
-    return card;
+  function focusNode(key: string): void {
+    Array.from(world.querySelectorAll<HTMLElement>('.pipeline-node'))
+      .find((candidate) => candidate.dataset.ref === key)
+      ?.focus({ preventScroll: true });
   }
 
   function render(): void {
-    host.innerHTML = '';
-    host.appendChild(autoRunToggle());
-
-    const helpText = document.createElement('p');
-    helpText.className = 'help-text muted';
-    helpText.style.cssText = 'font-size:11px; margin:4px 0 8px;';
-    helpText.textContent =
-      'Un único pipeline ordenado, compartido por todos los grupos. Cada paso puede correr en paralelo o en serie.';
-    host.appendChild(helpText);
-
-    host.appendChild(summaryStrip());
-
-    const headerRow = document.createElement('div');
-    headerRow.className = 'sub-list-header';
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'section-label';
-    titleSpan.textContent = 'Pasos del pipeline';
-    headerRow.appendChild(titleSpan);
-    const addStepBtn = document.createElement('button');
-    addStepBtn.className = 'small-btn';
-    addStepBtn.textContent = '+ Añadir paso';
-    addStepBtn.addEventListener('click', async () => {
-      if (
-        !(await write(() =>
-          window.api.savePreStep({ mode: 'parallel', scripts: [] }),
-        ))
-      )
-        return;
-      await refresh();
+    const active = document.activeElement;
+    const focusRef =
+      active instanceof HTMLElement && world.contains(active)
+        ? active.closest<HTMLElement>('.pipeline-node')?.dataset.ref
+        : undefined;
+    const pipeline = shown();
+    const kind = triggerKind();
+    renderWorld(world, {
+      pipeline,
+      resolve: findScript,
+      runnable: new Set(runnableBlocks(pipeline)),
+      selectedKey,
+      dropTarget: drag.target,
+      canAdd: canAdd(),
+      canEdit: deps.editScript !== undefined,
+      trigger: {
+        kind,
+        label: TRIGGER_META[kind].node,
+        icon: TRIGGER_META[kind].icon,
+      },
+      run: runView(run, now()),
+      locked: locked(),
     });
-    headerRow.appendChild(addStepBtn);
-    host.appendChild(headerRow);
+    root.classList.toggle('is-locked', locked());
+    root.classList.toggle('has-run', run !== null);
+    world
+      .querySelector('.pipeline-trigger')
+      ?.setAttribute('aria-expanded', String(popover.isOpen()));
+    renderPalette();
+    paintChrome();
+    popover.refresh();
+    drawer.update();
+    paintMinimap();
+    if (focusRef) focusNode(focusRef);
+  }
 
-    if (draftSteps.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'prestep-empty';
-      empty.textContent = 'Sin pasos. Pulsa «+ Añadir paso» para comenzar.';
-      host.appendChild(empty);
-    } else {
-      const stepsRoot = document.createElement('div');
-      stepsRoot.className = 'presteps-list';
-      draftSteps.forEach((step, index) => {
-        stepsRoot.appendChild(buildStepCard(step, index + 1));
-      });
-      host.appendChild(stepsRoot);
-      attachDragHandlers(stepsRoot, async (orderedIds) => {
-        if (!(await write(() => window.api.reorderPreSteps(orderedIds))))
-          return;
-        await refresh();
-      });
+  /** Fits the whole graph in the part of the canvas the chrome leaves free. */
+  function fit(): boolean {
+    const size = canvasSize();
+    const covered = panel.coveredWidth();
+    const bounds = contentBounds(sync.get());
+    // Room for the "+" stubs that stick out of the rightmost outputs.
+    bounds.width += STUB_REACH;
+    const next = fitView(bounds, {
+      x: covered,
+      y: CRUMB_HEIGHT,
+      width: size.width - covered,
+      height: size.height - CRUMB_HEIGHT,
+    });
+    if (next) setView(next);
+    return next !== null;
+  }
+
+  /** First open: fit as soon as the canvas has both a size and a graph. */
+  function fitOnce(): void {
+    if (!fitted && sync.loaded()) fitted = fit();
+  }
+
+  async function refresh(): Promise<void> {
+    await sync.refresh();
+    if (selectedKey && !placedRefKeys(sync.get()).has(selectedKey))
+      selectedKey = null;
+    render();
+    fitOnce();
+  }
+
+  function tick(): void {
+    const running = run?.status === 'running';
+    if (running && ticker === null) ticker = setInterval(render, 1000);
+    if (!running && ticker !== null) {
+      clearInterval(ticker);
+      ticker = null;
     }
   }
 
-  loadAutoRunSetting();
+  const placement = createPlacement({
+    root,
+    sync,
+    picker,
+    getGroups: () => deps.getGroups(),
+    resolve: findScript,
+    getView: () => view,
+    canvasSize,
+    coveredWidth: () => panel.coveredWidth(),
+    selectQuietly: (key) => {
+      selectedKey = key;
+    },
+    showToast: (message, kind) => deps.showToast(message, kind),
+    createScript: deps.createScript
+      ? (request) => deps.createScript?.(request)
+      : undefined,
+    triggerName: () => TRIGGER_META[triggerKind()].node,
+  });
 
-  return { refresh };
+  // ── Gestures ───────────────────────────────────────────────────────────
+  const input = attachEditorGestures({
+    canvas,
+    world,
+    sync,
+    drag,
+    locked,
+    getView: () => view,
+    setView,
+    shown,
+    render,
+    showToast: (message, kind) => deps.showToast(message, kind),
+  });
+
+  attachEditorEvents({
+    root,
+    canvas,
+    sync,
+    consumeDragClick: () => input.consumeDragClick(),
+    getSelected: () => selectedKey,
+    select: (key) => {
+      selectedKey = key;
+      render();
+      if (key) focusNode(key);
+    },
+    editScript: (ref) => {
+      const resolved = findScript(ref);
+      if (resolved) deps.editScript?.(resolved.group.id, resolved.script);
+    },
+    openPicker: (stub) => placement.openPicker(stub),
+    openTrigger: () => overlays.toggleTrigger(),
+    onAction: (action, button) => overlays.onAction(action, button),
+  });
+
+  wirePanelAndZoom({
+    panel,
+    canvas,
+    controls,
+    picker,
+    placement,
+    sync,
+    getView: () => view,
+    setView,
+    canvasSize,
+    fit,
+    onQuery: (next) => {
+      query = next;
+      renderPalette();
+    },
+    toggleMinimap: () => {
+      minimapOn = !minimapOn;
+      paintMinimap();
+    },
+  });
+
+  // The section starts hidden: fit once it first gets a size, and keep the
+  // minimap's view rectangle in step with the window.
+  if (typeof ResizeObserver === 'function')
+    // Next frame: repainting inside the callback can resize observed boxes and
+    // trip the "ResizeObserver loop" error.
+    new ResizeObserver(() =>
+      requestAnimationFrame(() => {
+        fitOnce();
+        paintMinimap();
+      }),
+    ).observe(canvas);
+
+  applyView();
+  // The toolbar exists from the start; the graph fills in on `refresh`.
+  render();
+
+  return {
+    refresh,
+    open: async (workflowId, options = {}) => {
+      const switching = sync.workflow()?.id !== workflowId;
+      sync.target(workflowId);
+      if (switching) {
+        selectedKey = null;
+        fitted = false;
+        run = null;
+        popover.close();
+        drawer.close();
+        tick();
+      }
+      render();
+      await refresh();
+      if (options.rename) chrome.focusName();
+    },
+    workflowId: () => sync.workflow()?.id ?? null,
+    setRun: (state) => {
+      run = state;
+      tick();
+      render();
+    },
+    entriesChanged: () => {
+      const mine = entry();
+      if (mine) sync.adopt(mine.workflow);
+      render();
+    },
+  };
 }

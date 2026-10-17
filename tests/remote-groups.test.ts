@@ -188,45 +188,64 @@ describe('renderer/remote/groups-tab.ts', () => {
       });
     });
 
-    it('runs the pipeline and shows it running', async () => {
-      const h = await startLinked();
-      h.answer('pipeline.run', {
-        status: 202,
-        body: { pending: true },
-      });
+    it('lists the workflows it may run, and runs one', async () => {
+      const workflow = {
+        id: 'w1',
+        name: 'Backup',
+        startup: false,
+        running: false,
+        doneScripts: null,
+        totalScripts: 2,
+        lastResult: 'warning' as const,
+        lastFinishedAt: 1,
+      };
+      const h = await startLinked(state({ workflows: [workflow] }));
+      h.answer('workflow.run', { status: 202, body: { pending: true } });
 
-      tapId('run-pipeline');
+      expect(byId('workflows-title').hidden).toBe(false);
+      expect(text('workflows')).toContain('Último: con avisos');
+      tap(buttonNamed('Ejecutar Backup'));
       await settle();
       h.source().emit(
         'state',
         state({
-          pipeline: {
-            status: 'running',
-            currentStep: 1,
-            totalSteps: 2,
-            lastError: null,
-          },
+          workflows: [{ ...workflow, running: true, doneScripts: 1 }],
         }),
       );
 
-      expect(h.callsTo('pipeline.run')).toHaveLength(1);
-      expect(text('pipeline-label')).toBe('Pipeline en curso · paso 1 de 2');
-      expect(byId<HTMLButtonElement>('run-pipeline').disabled).toBe(true);
+      expect(h.callsTo('workflow.run')[0]?.body).toEqual({ workflowId: 'w1' });
+      expect(text('workflows')).toContain('En curso · 1/2 scripts');
     });
 
-    it('hides the pipeline button when there is no pipeline', async () => {
-      await startLinked(
+    it('stops a running workflow', async () => {
+      const h = await startLinked(
         state({
-          pipeline: {
-            status: 'idle',
-            currentStep: null,
-            totalSteps: 0,
-            lastError: null,
-          },
+          workflows: [
+            {
+              id: 'w1',
+              name: 'Arranque',
+              startup: true,
+              running: true,
+              doneScripts: 3,
+              totalScripts: 8,
+              lastResult: null,
+              lastFinishedAt: null,
+            },
+          ],
         }),
       );
+      h.answer('workflow.stop', { status: 200, body: { ok: true } });
 
-      expect(byId('run-pipeline').hidden).toBe(true);
+      tap(buttonNamed('Detener Arranque'));
+      await settle();
+
+      expect(h.callsTo('workflow.stop')[0]?.body).toEqual({ workflowId: 'w1' });
+    });
+
+    it('hides the workflows section when there are none', async () => {
+      await startLinked(state({ workflows: [] }));
+
+      expect(byId('workflows-title').hidden).toBe(true);
     });
 
     it('asks before stopping everything', async () => {

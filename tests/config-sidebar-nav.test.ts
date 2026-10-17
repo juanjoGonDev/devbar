@@ -145,7 +145,7 @@ describe('renderer/config/sidebar-nav.ts', () => {
     it('reports through the dialog: template copied, GitHub opened', async () => {
       win = await openConfigWindow();
       const btn = document.getElementById('report-issue') as HTMLButtonElement;
-      expect(btn?.textContent).toContain('Reportar fallo');
+      expect(btn?.textContent).toContain('Reportar un fallo');
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       // The dialog explains the copy BEFORE anything happens.
       const dlg = document.querySelector(

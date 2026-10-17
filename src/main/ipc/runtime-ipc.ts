@@ -6,10 +6,7 @@ import {
   ipcStringField,
   type IpcRegistrar,
 } from '../ipc-validators.js';
-import type {
-  PipelineState,
-  PrescriptConfirmContext,
-} from '../../ipc-contract.js';
+import type { PrescriptConfirmContext } from '../../ipc-contract.js';
 import type { ConfirmDecision } from '../ipc-validators.js';
 import {
   createRuntimeActions,
@@ -17,21 +14,17 @@ import {
 } from '../runtime-actions.js';
 
 /**
- * Starting and stopping things over IPC: commands, actions, the pre-script
- * pipeline, and the branch switch. Each handler narrows its payload and hands
+ * Starting and stopping things over IPC: commands, actions, the confirmation
+ * dialog, and the branch switch (workflow runs are in workflows-ipc.ts). Each handler narrows its payload and hands
  * it to src/main/runtime-actions.ts — the same module «Control remoto» calls —
  * so a start from a window and one from a phone cannot diverge.
  */
 
 export interface RuntimeIpcDeps extends RuntimeActionsDeps {
-  preScriptRunner: RuntimeActionsDeps['preScriptRunner'] & {
-    cancel: () => { ok: boolean; error?: string | undefined };
-  };
   confirms: RuntimeActionsDeps['confirms'] & {
     getContext: (token: string) => PrescriptConfirmContext | null;
     resolveConfirm: (token: string, decision: ConfirmDecision) => void;
   };
-  snapshots: { snapshotPipelineState(): PipelineState };
 }
 
 export function registerRuntimeIpc(
@@ -46,11 +39,6 @@ export function registerRuntimeIpc(
       ipcStringField(payload, 'actionId'),
     ),
   );
-
-  // One global pipeline: run/cancel take no groupId.
-  ipc.handle('prescripts:run', () => runtime.runPipeline());
-  ipc.handle('prescripts:cancel', () => deps.preScriptRunner.cancel());
-  ipc.handle('pipeline:state', () => deps.snapshots.snapshotPipelineState());
 
   ipc.handle(
     'prescriptConfirm:getContext',

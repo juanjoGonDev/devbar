@@ -36,10 +36,14 @@ function harness(groups: Group[]) {
       },
       getState: (id) => states.get(id) ?? makeState({ id }),
     },
-    preScriptRunner: {
-      run: () => {
-        calls.push('run');
+    workflowRunner: {
+      run: (id, cause) => {
+        calls.push(`run:${id}:${cause}`);
         return Promise.resolve({ ok: true });
+      },
+      stop: (id) => {
+        calls.push(`stop:${id}`);
+        return { ok: true };
       },
     },
     gitManager: {
@@ -110,13 +114,14 @@ describe('src/main/runtime-actions.ts', () => {
     });
   });
 
-  describe('runPipeline', () => {
-    it('starts the one global pipeline', async () => {
+  describe('runWorkflow / stopWorkflow', () => {
+    it('runs a workflow as a manual run and stops it', async () => {
       const { runtime, calls } = harness([guarded]);
 
-      await runtime.runPipeline();
+      await runtime.runWorkflow('w1');
+      runtime.stopWorkflow('w1');
 
-      expect(calls).toEqual(['run']);
+      expect(calls).toEqual(['run:w1:manual', 'stop:w1']);
     });
   });
 });

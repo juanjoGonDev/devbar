@@ -1,13 +1,16 @@
 import './report-uncaught.js';
 import { formatUptime } from './format-uptime.js';
 import { isComboboxOpen, setComboboxHostHooks } from './combobox.js';
-import type { GroupState, PipelineState } from '../src/ipc-contract.js';
+import type { GroupState } from '../src/ipc-contract.js';
 import { byId } from './dom.js';
 import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
 import { setTrayHost, showToast } from './tray/host.js';
 import { wireUpdateChip } from './tray/update-chip.js';
-import { renderPipelineStrip } from './tray/pipeline-strip.js';
+import {
+  renderWorkflowsSection,
+  workflowsSection,
+} from './tray/workflows-section.js';
 import { installAutoHeight } from './tray/auto-height.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
@@ -105,44 +108,28 @@ function alertButton(
   return btn;
 }
 
-// ─────────────────────── Global pipeline trigger ──────────────────────
+// ─────────────────────── Hidden groups ───────────────────────────────
 //
-// One global run-pipeline trigger in the sticky header row (there is one
-// pipeline now, not one per group). Everything about a run — step, elapsed
-// time, cancel, logs, the ✓/✕ result — lives in the pipeline strip under the
-// row (renderer/tray/pipeline-strip.ts).
+// A group hidden from the tray keeps running; it is only folded into the
+// «N oculto(s)» disclosure at the end of the list, which shows it dimmed.
 
-let lastPipelineState: PipelineState | null = null;
+let hiddenGroupsOpen = false;
 
-function renderPipelineTrigger(state: PipelineState | null): void {
-  lastPipelineState = state;
-  renderPipelineStrip(state);
-  const host = document.getElementById('pipeline-trigger');
-  if (!host) return;
-  host.innerHTML = '';
-  // Nothing configured and nothing to show for a past run — hide entirely,
-  // same gate as the old per-group "only when preSteps defined" condition.
-  if (!state || (state.totalSteps === 0 && state.status === 'idle')) return;
-
-  const triggerBtn = document.createElement('button');
-  triggerBtn.className = 'ghost prescripts-trigger';
-  triggerBtn.title =
-    state.status === 'running' ? 'Pipeline corriendo…' : 'Ejecutar pipeline';
-  triggerBtn.setAttribute('aria-label', triggerBtn.title);
-  triggerBtn.dataset.prestepStatus = state.status;
-  triggerBtn.append(icon('fast-forward'));
-  triggerBtn.addEventListener('click', async (e) => {
+function hiddenGroupsToggle(count: number): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ghost hidden-groups-toggle';
+  btn.setAttribute('aria-expanded', String(hiddenGroupsOpen));
+  btn.append(
+    icon(hiddenGroupsOpen ? 'chevron-down' : 'chevron-right'),
+    ` ${count} ${count === 1 ? 'oculto' : 'ocultos'}`,
+  );
+  btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (state.status === 'running') {
-      showToast('Ya hay un pipeline corriendo', 'warn');
-      return;
-    }
-    const res = await window.api.runPreScripts();
-    if (res && !res.ok && res.error === 'already_running') {
-      showToast('Ya hay un pipeline corriendo', 'warn');
-    }
+    hiddenGroupsOpen = !hiddenGroupsOpen;
+    render(lastGroupStates);
   });
-  host.appendChild(triggerBtn);
+  return btn;
 }
 
 // ─────────────────────── Main render ─────────────────────────────────
@@ -164,21 +151,31 @@ function render(groupStates: GroupState[]): void {
   }
   groupsEl.innerHTML = '';
   renderAlertsSummary(groupStates);
-  renderPipelineTrigger(lastPipelineState);
 
   if (!groupStates.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.innerHTML =
       'No hay grupos configurados.<br/>Pulsa <strong>Configuración</strong> para añadir uno.';
-    groupsEl.appendChild(empty);
+    groupsEl.append(empty, workflowsSection());
     autoHeight.schedule();
     return;
   }
 
+  const hidden = groupStates.filter((gs) => gs.group.hiddenInTray);
   for (const gs of groupStates) {
-    groupsEl.appendChild(renderGroupRow(gs));
+    if (!gs.group.hiddenInTray) groupsEl.appendChild(renderGroupRow(gs));
   }
+  if (hidden.length > 0) {
+    groupsEl.appendChild(hiddenGroupsToggle(hidden.length));
+    if (hiddenGroupsOpen)
+      for (const gs of hidden) {
+        const row = renderGroupRow(gs);
+        row.classList.add('is-hidden-group');
+        groupsEl.appendChild(row);
+      }
+  }
+  groupsEl.appendChild(workflowsSection());
   autoHeight.schedule();
 }
 
@@ -300,8 +297,11 @@ window.api.onUpdate((groupStates) => {
   render(groupStates);
 });
 
-window.api.onPipelineUpdate((state) => {
-  renderPipelineTrigger(state);
+const pushedWorkflows = latestWins();
+window.api.onWorkflowsUpdate((entries) => {
+  pushedWorkflows.invalidate();
+  renderWorkflowsSection(entries);
+  autoHeight.schedule();
 });
 
 window.api.onBranchesChanged(() => {
@@ -322,11 +322,19 @@ window.api.getGroupStates().then((groupStates) => {
   // older snapshot on top would leave the list stale until the next push.
   if (initialGroupStates()) render(groupStates);
 });
-window.api.getPipelineState().then((state) => {
-  // A pushed update can land while this read is still pending; applying the
-  // older snapshot on top would leave the trigger stale until the next push.
-  if (lastPipelineState === null) renderPipelineTrigger(state);
-});
+const initialWorkflows = pushedWorkflows.claim();
+window.api
+  .listWorkflows()
+  .then((entries) => {
+    // A pushed update can land while this read is still pending; applying
+    // the older snapshot on top would leave the section stale.
+    if (!initialWorkflows()) return;
+    renderWorkflowsSection(entries);
+    autoHeight.schedule();
+  })
+  .catch(() => {
+    /* stays hidden until the next push */
+  });
 
 // App version label
 if (window.api.getAppVersion) {

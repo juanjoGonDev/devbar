@@ -66,7 +66,8 @@ describe('src/main/remote/runtime.ts', () => {
     const { runtime } = harness();
 
     expect(runtime.groupStates()).toEqual([]);
-    expect(runtime.pipelineState().status).toBe('idle');
+    expect(runtime.workflowEntries()).toEqual([]);
+    expect(runtime.workflowVisible('w1')).toBe(false);
     expect(runtime.confirms.pending()).toEqual([]);
   });
 });

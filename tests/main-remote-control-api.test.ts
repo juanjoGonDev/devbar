@@ -76,7 +76,11 @@ function harness(overrides: Partial<ControlApiDeps> = {}) {
         calls.push('stopAll');
         return Promise.resolve({ ok: true, stopped: 2 });
       },
-      runPipeline: () => hold('pipeline'),
+      runWorkflow: (id) => hold(`workflow:${id}`),
+      stopWorkflow: (id) => {
+        calls.push(`stopWorkflow:${id}`);
+        return { ok: true };
+      },
       listBranches: () =>
         Promise.resolve({ ok: true, branches: ['main', 'feat/x'] }),
       switchBranch: (groupId, branch) => {
@@ -85,6 +89,7 @@ function harness(overrides: Partial<ControlApiDeps> = {}) {
       },
       needsConfirm: (pid) => pid === 'cmd:g1:web' || pid === 'act:g1:seed',
     },
+    workflowVisible: (id) => id === 'w-phone',
     state: () =>
       Promise.resolve({ now: 5 } as unknown as Awaited<
         ReturnType<ControlApiDeps['state']>
@@ -285,15 +290,42 @@ describe('src/main/remote/control-api.ts', () => {
     });
   });
 
-  describe('POST /api/pipeline/run and /api/stop-all', () => {
-    it('starts the pipeline without waiting for it to finish', async () => {
+  describe('POST /api/workflows/* and /api/stop-all', () => {
+    it('starts a workflow without waiting for it to finish', async () => {
       const h = harness();
 
-      await expect(h.post('/api/pipeline/run')).resolves.toEqual({
+      await expect(
+        h.post('/api/workflows/run', { workflowId: 'w-phone' }),
+      ).resolves.toEqual({
         status: 202,
         body: { pending: true },
       });
-      expect(h.calls).toEqual(['pipeline']);
+      await Promise.resolve();
+      expect(h.calls).toEqual(['workflow:w-phone']);
+    });
+
+    it('stops a workflow', async () => {
+      const h = harness();
+
+      await expect(
+        h.post('/api/workflows/stop', { workflowId: 'w-phone' }),
+      ).resolves.toEqual({ status: 200, body: { ok: true } });
+      expect(h.calls).toEqual(['stopWorkflow:w-phone']);
+    });
+
+    it('refuses a workflow the phone is not shown, or none at all', async () => {
+      const h = harness();
+
+      await expect(
+        h.post('/api/workflows/run', { workflowId: 'w-desk' }),
+      ).resolves.toEqual({ status: 404, body: { error: 'unknown-workflow' } });
+      await expect(
+        h.post('/api/workflows/stop', { workflowId: 'w-desk' }),
+      ).resolves.toMatchObject({ status: 404 });
+      await expect(h.post('/api/workflows/run', {})).resolves.toMatchObject({
+        status: 400,
+      });
+      expect(h.calls).toEqual([]);
     });
 
     it('stops every running service', async () => {

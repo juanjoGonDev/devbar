@@ -1,12 +1,12 @@
 import type { GlobalSettings, LogEntry } from '../../domain-types.js';
-import type { GroupState, PipelineState } from '../../ipc-contract.js';
+import type { GroupState, WorkflowEntry } from '../../ipc-contract.js';
 import type { UpdateStatus } from '../../ipc-contract/updates-api.js';
 import type {
   RemoteGroupView,
   RemoteLogLine,
-  RemotePipelineView,
   RemoteSettingsView,
   RemoteUpdateView,
+  RemoteWorkflowView,
 } from '../../ipc-contract/remote-wire.js';
 import { stripAnsi } from '../../process/log-filters.js';
 import { isBusyPhase, phaseVersion } from '../update-phase.js';
@@ -57,13 +57,30 @@ export function groupViews(
   });
 }
 
-export function pipelineView(pipeline: PipelineState): RemotePipelineView {
-  return {
-    status: pipeline.status,
-    currentStep: pipeline.currentStep,
-    totalSteps: pipeline.totalSteps,
-    lastError: pipeline.lastError,
-  };
+/**
+ * The workflows a phone may see, run and stop: a running one (so it can be
+ * stopped), else an enabled one shown on the phone, whatever its trigger.
+ */
+export function remoteWorkflowVisible(entry: WorkflowEntry): boolean {
+  if (entry.running) return true;
+  return entry.workflow.enabled && entry.workflow.showInRemote;
+}
+
+export function workflowViews(
+  entries: readonly WorkflowEntry[],
+): RemoteWorkflowView[] {
+  return entries
+    .filter(remoteWorkflowVisible)
+    .map(({ workflow, running, scriptCount, lastRun }) => ({
+      id: workflow.id,
+      name: workflow.name,
+      startup: workflow.trigger.kind === 'startup',
+      running: running !== null,
+      doneScripts: running ? running.doneScripts : null,
+      totalScripts: running ? running.totalScripts : scriptCount,
+      lastResult: lastRun ? lastRun.result : null,
+      lastFinishedAt: lastRun ? lastRun.finishedAt : null,
+    }));
 }
 
 /**

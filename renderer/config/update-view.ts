@@ -6,7 +6,13 @@ import type { UpdatePhase, UpdateStatus } from '../../src/ipc-contract.js';
  * phase's wording is decided in one place; `updates-pane.ts` only paints it.
  */
 
+/** Colour and glyph of the About card's round status badge. */
+type UpdateBadge = 'ok' | 'available' | 'busy' | 'error';
+
 export interface UpdateView {
+  badge: UpdateBadge;
+  /** One-line headline next to the badge; `text` is the detail under it. */
+  title: string;
   text: string;
   /** Null hides the button. */
   apply: { label: string; disabled: boolean } | null;
@@ -16,6 +22,24 @@ export interface UpdateView {
 }
 
 const MB = 1024 * 1024;
+
+type Headline = Pick<UpdateView, 'badge' | 'title'>;
+const UP_TO_DATE: Headline = { badge: 'ok', title: 'Estás al día' };
+const AVAILABLE: Headline = {
+  badge: 'available',
+  title: 'Actualización disponible',
+};
+const READY: Headline = { badge: 'available', title: 'Lista para instalar' };
+const CHECKING: Headline = {
+  badge: 'busy',
+  title: 'Buscando actualizaciones',
+};
+const UPDATING: Headline = { badge: 'busy', title: 'Actualizando DevBar' };
+const CHECK_FAILED: Headline = {
+  badge: 'error',
+  title: 'No se pudo comprobar',
+};
+const FAILED: Headline = { badge: 'error', title: 'No se pudo actualizar' };
 
 function megabytes(bytes: number): string {
   return (bytes / MB).toLocaleString('es-ES', {
@@ -32,8 +56,10 @@ function folderOf(file: string): string {
 export function describeUpdate(
   status: UpdateStatus,
   phase: UpdatePhase,
-  lastCheck: string,
+  /** "hoy a las 14:41" and the like; null when nothing was ever checked. */
+  lastCheck: string | null,
 ): UpdateView {
+  const lastCheckSuffix = lastCheck ? ` · última búsqueda ${lastCheck}` : '';
   const version = status.available?.version ?? null;
   // A phase about an older release (the check since found a newer one) says
   // nothing about the release on offer now.
@@ -49,12 +75,14 @@ export function describeUpdate(
   switch (current.state) {
     case 'checking':
       return {
+        ...CHECKING,
         text: 'Buscando actualizaciones…',
         apply: offer(`Actualizar a v${version}`),
         help: null,
       };
     case 'check-failed':
       return {
+        ...CHECK_FAILED,
         text: `No se pudo comprobar: ${current.reason}${version ? ` · v${version} disponible` : ''}`,
         apply: offer(`Actualizar a v${version}`),
         help: null,
@@ -63,6 +91,7 @@ export function describeUpdate(
       const { received, total } = current;
       const percent = total ? Math.floor((received / total) * 100) : null;
       return {
+        ...UPDATING,
         text:
           percent === null || !total
             ? `Descargando v${current.version} — ${megabytes(received)} MB`
@@ -74,18 +103,21 @@ export function describeUpdate(
     }
     case 'download-failed':
       return {
+        ...FAILED,
         text: `No se pudo descargar v${current.version}: ${current.reason}`,
         apply: retry,
         help: null,
       };
     case 'verifying':
       return {
+        ...UPDATING,
         text: `Verificando la integridad de v${current.version}…`,
         apply: busy,
         help: null,
       };
     case 'verify-failed':
       return {
+        ...FAILED,
         text: `La descarga de v${current.version} no superó la verificación: ${current.reason}`,
         apply: retry,
         help: null,
@@ -93,6 +125,7 @@ export function describeUpdate(
     case 'ready-to-install':
       if (current.install === 'package')
         return {
+          ...READY,
           text: `v${current.version} descargada y verificada.`,
           apply: offer('Instalar ahora'),
           help: {
@@ -103,6 +136,7 @@ export function describeUpdate(
         };
       if (current.install === 'manual')
         return {
+          ...READY,
           text: `v${current.version} descargada en ${folderOf(current.path)}.`,
           apply: null,
           help: current.command
@@ -120,12 +154,14 @@ export function describeUpdate(
       break;
     case 'installing':
       return {
+        ...UPDATING,
         text: `Instalando v${current.version}… Confirma la contraseña en el diálogo del sistema.`,
         apply: busy,
         help: null,
       };
     case 'install-failed':
       return {
+        ...FAILED,
         text: `No se pudo instalar v${current.version}: ${current.reason}`,
         apply: retry,
         help: {
@@ -138,6 +174,7 @@ export function describeUpdate(
       };
     case 'restarting':
       return {
+        ...UPDATING,
         text: `Reiniciando para instalar v${current.version}…`,
         apply: busy,
         help: null,
@@ -151,18 +188,24 @@ export function describeUpdate(
     Boolean(status.staged && version && status.staged.version === version);
   if (!version)
     return {
-      text: `Al día · última búsqueda ${lastCheck}`,
+      ...UP_TO_DATE,
+      // The headline already says "al día"; the detail only dates it.
+      text: lastCheck
+        ? `Última búsqueda ${lastCheck}`
+        : 'Aún no se ha buscado ninguna actualización',
       apply: null,
       help: null,
     };
   return ready
     ? {
-        text: `v${version} descargada, lista para instalar · última búsqueda ${lastCheck}`,
+        ...READY,
+        text: `v${version} descargada, lista para instalar${lastCheckSuffix}`,
         apply: offer(`Reiniciar e instalar v${version}`),
         help: null,
       }
     : {
-        text: `Actualización v${version} disponible · última búsqueda ${lastCheck}`,
+        ...AVAILABLE,
+        text: `Actualización v${version} disponible${lastCheckSuffix}`,
         apply: offer(`Actualizar a v${version}`),
         help: null,
       };

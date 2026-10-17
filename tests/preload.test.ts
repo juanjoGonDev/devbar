@@ -354,7 +354,7 @@ const FORWARDS: readonly Forward[] = [
           groupsCount: 1,
           commandsCount: 0,
           actionsCount: 0,
-          preStepsCount: 0,
+          workflowsCount: 0,
           preScriptsCount: 0,
           hasGlobalSettings: true,
         },
@@ -366,7 +366,7 @@ const FORWARDS: readonly Forward[] = [
           groupsCount: 1,
           commandsCount: 0,
           actionsCount: 0,
-          preStepsCount: 0,
+          workflowsCount: 0,
           preScriptsCount: 0,
           hasGlobalSettings: true,
         },
@@ -385,31 +385,112 @@ const FORWARDS: readonly Forward[] = [
     'dialog:pickFolder',
     [{ defaultPath: '/repos' }],
   ],
-  ['runPreScripts', (api) => api.runPreScripts(), 'prescripts:run', []],
+  ['listWorkflows', (api) => api.listWorkflows(), 'workflows:list', []],
   [
-    'cancelPreScripts',
-    (api) => api.cancelPreScripts(),
-    'prescripts:cancel',
+    'saveWorkflow',
+    (api) =>
+      api.saveWorkflow({
+        id: 'w1',
+        name: 'W',
+        enabled: true,
+        showInTray: true,
+        showInRemote: false,
+        trigger: { kind: 'startup' },
+        graph: { blocks: [], edges: [] },
+      }),
+    'workflows:save',
+    [
+      {
+        workflow: {
+          id: 'w1',
+          name: 'W',
+          enabled: true,
+          showInTray: true,
+          showInRemote: false,
+          trigger: { kind: 'startup' },
+          graph: { blocks: [], edges: [] },
+        },
+      },
+    ],
+  ],
+  [
+    'createWorkflow',
+    (api) => api.createWorkflow('W', { kind: 'startup' }),
+    'workflows:create',
+    [{ name: 'W', trigger: { kind: 'startup' } }],
+  ],
+  [
+    'deleteWorkflow',
+    (api) => api.deleteWorkflow('w1'),
+    'workflows:delete',
+    [{ workflowId: 'w1' }],
+  ],
+  [
+    'setWorkflowEnabled',
+    (api) => api.setWorkflowEnabled('w1', false),
+    'workflows:setEnabled',
+    [{ workflowId: 'w1', enabled: false }],
+  ],
+  [
+    'makeStartupWorkflow',
+    (api) => api.makeStartupWorkflow('w1'),
+    'workflows:makeStartup',
+    [{ workflowId: 'w1' }],
+  ],
+  [
+    'runWorkflow',
+    (api) => api.runWorkflow('w1'),
+    'workflows:run',
+    [{ workflowId: 'w1' }],
+  ],
+  [
+    'stopWorkflow',
+    (api) => api.stopWorkflow('w1'),
+    'workflows:stop',
+    [{ workflowId: 'w1' }],
+  ],
+  [
+    'retryWorkflowFrom',
+    (api) => api.retryWorkflowFrom('w1', 'b1'),
+    'workflows:retryFrom',
+    [{ workflowId: 'w1', blockId: 'b1' }],
+  ],
+  [
+    'getWorkflowRunStates',
+    (api) => api.getWorkflowRunStates(),
+    'workflows:runState',
     [],
   ],
-  ['getPreSteps', (api) => api.getPreSteps(), 'pipeline:list', []],
   [
-    'savePreStep',
-    (api) => api.savePreStep({ id: 's1' }),
-    'preSteps:save',
-    [{ data: { id: 's1' } }],
+    'getWorkflowScriptLog',
+    (api) =>
+      api.getWorkflowScriptLog('w1', 'latest', { groupId: 'g', scriptId: 's' }),
+    'workflows:scriptLog',
+    [
+      {
+        workflowId: 'w1',
+        runId: 'latest',
+        ref: { groupId: 'g', scriptId: 's' },
+      },
+    ],
   ],
   [
-    'deletePreStep',
-    (api) => api.deletePreStep('s1'),
-    'preSteps:delete',
-    [{ stepId: 's1' }],
+    'openWorkflowLog',
+    (api) => api.openWorkflowLog('w1'),
+    'workflows:openLog',
+    [{ workflowId: 'w1', ref: null }],
   ],
   [
-    'reorderPreSteps',
-    (api) => api.reorderPreSteps(['s2', 's1']),
-    'preSteps:reorder',
-    [{ orderedIds: ['s2', 's1'] }],
+    'openWorkflowsConfig',
+    (api) => api.openWorkflowsConfig(),
+    'workflows:openConfig',
+    [],
+  ],
+  [
+    'setGroupHiddenInTray',
+    (api) => api.setGroupHiddenInTray('g1', true),
+    'groups:setHiddenInTray',
+    [{ groupId: 'g1', hidden: true }],
   ],
   [
     'savePreScript',
@@ -429,19 +510,6 @@ const FORWARDS: readonly Forward[] = [
     'preScripts:reorder',
     [{ groupId: 'g1', orderedIds: ['sc2', 'sc1'] }],
   ],
-  [
-    'assignScriptToStep',
-    (api) => api.assignScriptToStep('s1', 'g1', 'sc1', 2),
-    'preSteps:assignScript',
-    [{ stepId: 's1', groupId: 'g1', scriptId: 'sc1', position: 2 }],
-  ],
-  [
-    'unassignScriptFromStep',
-    (api) => api.unassignScriptFromStep('s1', 'g1', 'sc1'),
-    'preSteps:unassignScript',
-    [{ stepId: 's1', groupId: 'g1', scriptId: 'sc1' }],
-  ],
-  ['getPipelineState', (api) => api.getPipelineState(), 'pipeline:state', []],
   [
     'getPrescriptConfirmContext',
     (api) => api.getPrescriptConfirmContext('tok'),
@@ -570,9 +638,14 @@ const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ['onUpdateStatus', (api, cb) => api.onUpdateStatus(cb), 'updates:status'],
   ['onUpdatePhase', (api, cb) => api.onUpdatePhase(cb), 'updates:phase'],
   [
-    'onPipelineUpdate',
-    (api, cb) => api.onPipelineUpdate(cb),
-    'pipeline:update',
+    'onWorkflowsUpdate',
+    (api, cb) => api.onWorkflowsUpdate(cb),
+    'workflows:update',
+  ],
+  [
+    'onWorkflowRunState',
+    (api, cb) => api.onWorkflowRunState(cb),
+    'workflows:runState',
   ],
   ['onUpdate', (api, cb) => api.onUpdate(cb), 'groups:update'],
   ['onThemeChange', (api, cb) => api.onThemeChange(cb), 'settings:theme'],
@@ -618,6 +691,11 @@ describe('src/preload.ts', () => {
 
     it('publishes the platform as a value, not an IPC call', () => {
       expect(exposedApi().platform).toBe(process.platform);
+      expect(ipc.invokes).toEqual([]);
+    });
+
+    it('publishes the CPU architecture as a value, not an IPC call', () => {
+      expect(exposedApi().arch).toBe(process.arch);
       expect(ipc.invokes).toEqual([]);
     });
 

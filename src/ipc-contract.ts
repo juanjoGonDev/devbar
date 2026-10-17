@@ -5,7 +5,6 @@ import type {
   Group,
   LogEntry,
   PreScript,
-  PreStep,
   ProcessStatus,
   ReleaseSummary,
   SilencedPatterns,
@@ -15,6 +14,7 @@ import type { SimpleResult } from './ipc-contract/simple-result.js';
 import type { UpdatesApi } from './ipc-contract/updates-api.js';
 import type { CustomIconsApi } from './ipc-contract/custom-icons-api.js';
 import type { RemoteApi } from './ipc-contract/remote-api.js';
+import type { WorkflowsApi } from './ipc-contract/workflows-api.js';
 
 export type { UpdatePhase } from './update-phase-types.js';
 export type { UpdateStatus } from './ipc-contract/updates-api.js';
@@ -22,6 +22,13 @@ export type {
   CustomIconAddResult,
   CustomIconUploadResult,
 } from './ipc-contract/custom-icons-api.js';
+export type {
+  WorkflowBlockRunState,
+  WorkflowEntry,
+  WorkflowNodeStatus,
+  WorkflowRunState,
+  WorkflowScriptRunState,
+} from './ipc-contract/workflows-api.js';
 export type SilenceLevel = 'warn' | 'error';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
 export interface CommandRuntimeState {
@@ -52,20 +59,6 @@ export interface GroupState {
   commands: CommandRuntimeState[];
   actions: ActionRuntimeState[];
   lastError: string | null;
-}
-/**
- * Runtime state of the ONE global pre-script pipeline (D2/D7). Sibling of
- * `GroupState` now that pipeline steps are no longer per-group — broadcast on
- * its own `pipeline:update` channel instead of nested per-group fields.
- */
-export interface PipelineState {
-  status: 'running' | 'done' | 'error' | 'idle';
-  currentStep: number | null;
-  totalSteps: number;
-  lastError: string | null;
-  /** Survives after the transient status clears, so "ver logs" keeps working. */
-  lastRunId: string | null;
-  startedAt: number | null;
 }
 export type LogsTarget =
   | { kind: 'command'; group: Group; target: Command }
@@ -134,7 +127,7 @@ export interface ImportPreview {
   groupsCount: number;
   commandsCount: number;
   actionsCount: number;
-  preStepsCount: number;
+  workflowsCount: number;
   preScriptsCount: number;
   hasGlobalSettings: boolean;
 }
@@ -237,7 +230,8 @@ interface FixtureGroupsStatus {
   repeat: number;
 }
 
-export interface DevBarApi extends UpdatesApi, CustomIconsApi, RemoteApi {
+export interface DevBarApi
+  extends UpdatesApi, CustomIconsApi, RemoteApi, WorkflowsApi {
   listGroups(): Promise<Group[]>;
   getGroupStates(): Promise<GroupState[]>;
   saveGroup(
@@ -338,39 +332,12 @@ export interface DevBarApi extends UpdatesApi, CustomIconsApi, RemoteApi {
     error?: string | undefined;
     canceled?: boolean | undefined;
   }>;
-  runPreScripts(): Promise<{
-    ok: boolean;
-    runId?: number | undefined;
-    error?: string | undefined;
-    cancelled?: boolean | undefined;
-  }>;
-  cancelPreScripts(): Promise<SimpleResult>;
-  /** The pipeline's CONFIG (global, ordered steps) — mirrors `listGroups()`. */
-  getPreSteps(): Promise<PreStep[]>;
-  savePreStep(data: unknown): Promise<PreStep | null>;
-  deletePreStep(stepId: string): Promise<SimpleResult>;
-  reorderPreSteps(orderedIds: string[]): Promise<SimpleResult>;
   savePreScript(groupId: string, data: unknown): Promise<PreScript | null>;
   deletePreScript(groupId: string, scriptId: string): Promise<SimpleResult>;
   reorderPreScripts(
     groupId: string,
     orderedIds: string[],
   ): Promise<SimpleResult>;
-  /** Places an already-defined script into a step, at an optional position. */
-  assignScriptToStep(
-    stepId: string,
-    groupId: string,
-    scriptId: string,
-    position?: number,
-  ): Promise<PreStep[]>;
-  unassignScriptFromStep(
-    stepId: string,
-    groupId: string,
-    scriptId: string,
-  ): Promise<PreStep[]>;
-  /** The pipeline's RUNTIME state — mirrors `getGroupStates()`. */
-  getPipelineState(): Promise<PipelineState>;
-  onPipelineUpdate(callback: (payload: PipelineState) => void): () => void;
   getPrescriptConfirmContext(
     token: string,
   ): Promise<PrescriptConfirmContext | null>;
@@ -385,6 +352,9 @@ export interface DevBarApi extends UpdatesApi, CustomIconsApi, RemoteApi {
    * renderers use it to adapt user-facing text to the platform.
    */
   platform: string;
+  /** The CPU architecture (Node's `process.arch`: 'arm64' | 'x64' | …). Static
+   *  value, shown next to the platform in «Acerca de». */
+  arch: string;
   /**
    * Whether this build shipped the dev simulation panel — true for any dev run
    * and for a `DEVBAR_DEV_PANEL=1` package, false for a normal build. Gates

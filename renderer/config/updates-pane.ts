@@ -1,4 +1,5 @@
 import { latestWins } from '../latest-wins.js';
+import { lastCheckLabel } from './about-pane.js';
 import { describeUpdate } from './update-view.js';
 import type { UpdatePhase, UpdateStatus } from '../../src/ipc-contract.js';
 import type { ShowToast } from './toast.js';
@@ -27,6 +28,8 @@ export function wireUpdatesPane(
     const found = document.getElementById(id);
     return found instanceof ctor ? found : null;
   };
+  const card = byId('update-card', HTMLElement);
+  const title = byId('update-title', HTMLElement);
   const progress = byId('update-progress', HTMLProgressElement);
   const help = byId('update-help', HTMLElement);
   const helpText = byId('update-help-text', HTMLElement);
@@ -42,14 +45,14 @@ export function wireUpdatesPane(
   function render(): void {
     const s = lastStatus;
     if (!s || !els.status) return;
-    const last = s.lastCheckAt
-      ? new Date(s.lastCheckAt).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : 'nunca';
-    const view = describeUpdate(s, phase, last);
+    const view = describeUpdate(
+      s,
+      phase,
+      lastCheckLabel(s.lastCheckAt, new Date()),
+    );
     els.status.textContent = view.text;
+    if (card) card.dataset.state = view.badge;
+    if (title) title.textContent = view.title;
     if (els.applyBtn) {
       els.applyBtn.style.display = view.apply ? '' : 'none';
       if (view.apply) {
@@ -131,8 +134,11 @@ export function wireUpdatesPane(
   if (els.checkBtn) {
     els.checkBtn.addEventListener('click', async () => {
       els.checkBtn.disabled = true;
-      const prev = els.checkBtn.textContent;
-      els.checkBtn.textContent = 'Buscando…';
+      // Only the label changes, so the button keeps its refresh icon.
+      const label =
+        els.checkBtn.querySelector<HTMLElement>('.btn-label') ?? els.checkBtn;
+      const prev = label.textContent;
+      label.textContent = 'Buscando…';
       try {
         const status = await window.api.checkForUpdates();
         // A check the user asked for is the freshest answer there is, so it
@@ -142,7 +148,7 @@ export function wireUpdatesPane(
         freshestStatus.invalidate();
         renderUpdateStatus(status);
       } finally {
-        els.checkBtn.textContent = prev;
+        label.textContent = prev;
         els.checkBtn.disabled = false;
       }
     });

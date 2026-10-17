@@ -60,7 +60,7 @@ function harness(
       listGroups: () => [],
       getGroup: () => null,
       getGlobalSettings: () => makeSettings(),
-      getPreSteps: () => [],
+      getPipeline: () => ({ blocks: [], edges: [] }),
       exportConfig: () => ({}),
       replaceConfig: noop,
       writeImportBackup: () => '/backup.json',
@@ -73,11 +73,7 @@ function harness(
       saveAction: () => null,
       deleteAction: noop,
       reorderActions: () => [],
-      savePreStep: () => ({}),
-      deletePreStep: noop,
-      reorderPreSteps: () => [],
-      assignScriptToStep: () => ({}),
-      unassignScriptFromStep: () => ({}),
+      replacePipeline: () => ({ blocks: [], edges: [] }),
       savePreScript: () => null,
       deletePreScript: noop,
       reorderPreScripts: () => [],
@@ -110,14 +106,19 @@ function harness(
       currentBranch: () => Promise.resolve({}),
       switchBranch: () => Promise.resolve({ ok: true }),
     },
-    preScriptRunner: {
+    workflowRunner: {
       run: () => Promise.resolve({}),
-      cancel: () => ({ ok: true }),
+      stop: () => ({ ok: true }),
+      cancelAll: () => calls.push('cancelWorkflows'),
+      runStates: () => [],
+      runState: () => null,
     },
     snapshots: {
       snapshotGroupStates: () => [],
-      snapshotPipelineState: () => ({}),
-      forgetPipelineRunId: () => calls.push('forgetRunId'),
+      workflowEntries: () => {
+        calls.push('workflowEntries');
+        return [];
+      },
     },
     confirms: {
       confirmIfNeeded: () => Promise.resolve(true),
@@ -128,11 +129,12 @@ function harness(
       isSharedWindowSender: () => false,
       watchSingle: noop,
       watchScope: noop,
-      ensureLogsWindow: () => ({}),
+      ensureLogsWindow: (id: string) => calls.push(`logs:${id}`),
       ensureLogsScopeWindow: () => ({}),
     },
     appWindows: {
-      ensureConfigWindow: () => calls.push('config'),
+      ensureConfigWindow: (options?: { goto?: string }) =>
+        calls.push(`config:${options?.goto ?? ''}`),
       confirmCloseConfig: noop,
       ensureSilencedWindow: () => null,
     },
@@ -142,7 +144,7 @@ function harness(
       runNotificationAction: noop,
     },
     trayHost: {
-      hideIfVisible: noop,
+      hideIfVisible: () => calls.push('hideTray'),
       hide: noop,
       popover: () => null,
       workAreaFor: () => ({ x: 0, y: 0, width: 1440, height: 900 }),
@@ -190,9 +192,27 @@ describe('src/main/ipc/register-all.ts', () => {
           'window:openConfig',
           'updates:status',
           'remote:getStatus',
+          'workflows:list',
         ]),
       );
       expect(h.ipc.channels().length).toBeGreaterThan(50);
+    });
+
+    it('opens the settings on Workflows and the logs, hiding the tray', () => {
+      const h = harness();
+      h.ipc.invoke('workflows:list');
+      h.ipc.invoke('workflows:openConfig');
+      h.ipc.invoke('workflows:openLog', {
+        workflowId: 'w1',
+        ref: { groupId: 'g', scriptId: 's' },
+      });
+      expect(h.calls).toEqual([
+        'workflowEntries',
+        'config:workflows',
+        'hideTray',
+        'logs:pre:g:s',
+        'hideTray',
+      ]);
     });
 
     it('registers no channel twice', () => {

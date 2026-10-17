@@ -1,5 +1,5 @@
 import type { GlobalSettings, LogEntry } from '../../domain-types.js';
-import type { GroupState, PipelineState } from '../../ipc-contract.js';
+import type { GroupState, WorkflowEntry } from '../../ipc-contract.js';
 import type { ConfirmQueue } from '../confirm-queue.js';
 import type { WindowRegistry } from '../renderer-bus.js';
 import {
@@ -10,6 +10,7 @@ import { saveSettings, type SettingsSaveDeps } from '../settings-save.js';
 import type { Updater } from '../updater.js';
 import type { ControlApiDeps } from './control-api.js';
 import type { RemoteRuntime } from './live.js';
+import { remoteWorkflowVisible } from './views.js';
 
 /**
  * Everything «Control remoto» drives, assembled from collaborators main.ts
@@ -26,6 +27,7 @@ export interface RemoteControlRuntime extends RemoteRuntime {
   confirms: RemoteRuntime['confirms'] & ControlApiDeps['confirms'];
   settings: ControlApiDeps['settings'];
   updater: RemoteRuntime['updater'] & ControlApiDeps['updater'];
+  workflowVisible: ControlApiDeps['workflowVisible'];
 }
 
 /** The slice of main.ts's collaborators this is built from. */
@@ -53,7 +55,7 @@ export interface RemoteAppWiring extends Omit<
     >;
   snapshots: {
     snapshotGroupStates(): GroupState[];
-    snapshotPipelineState(): PipelineState;
+    workflowEntries(): WorkflowEntry[];
   };
   updater: Pick<
     Updater,
@@ -77,7 +79,13 @@ export function remoteRuntime(app: RemoteAppWiring): RemoteControlRuntime {
     actions,
     configStore: app.configStore,
     groupStates: () => app.snapshots.snapshotGroupStates(),
-    pipelineState: () => app.snapshots.snapshotPipelineState(),
+    workflowEntries: () => app.snapshots.workflowEntries(),
+    workflowVisible: (id) =>
+      app.snapshots
+        .workflowEntries()
+        .some(
+          (entry) => entry.workflow.id === id && remoteWorkflowVisible(entry),
+        ),
     currentBranch: (groupId) => actions.currentBranch(groupId),
     logs: (id) => app.processManager.getLogs(id),
     logSeq: (id) => app.processManager.getLogSeq(id),

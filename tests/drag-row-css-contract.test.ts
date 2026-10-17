@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Defect 2+3 remediation: `.service-row-card`, `.nav-card`, `.sub-item-row`,
-// `.prescript-row` and `.prestep-card` used to each carry their own copy of
+// Defect 2+3 remediation: `.service-row-card`, `.nav-card`, `.sub-item-row`
+// and `.prescript-row` used to each carry their own copy of
 // the same draggable-row pattern (handle reveal, dragging state, drop
 // indicator). This asserts they now share ONE `.drag-row` base, and that
 // each context only overrides the custom properties that genuinely differ.
@@ -18,10 +18,6 @@ const rendererDir = path.resolve(
   '../renderer',
 );
 const css = fs.readFileSync(path.join(rendererDir, 'styles.css'), 'utf8');
-const pipelineEditorSource = fs.readFileSync(
-  path.join(rendererDir, 'pipeline-editor.ts'),
-  'utf8',
-);
 // The config window builds each of its draggable rows in the module that owns
 // that list, so that is where each half of this contract is now written down.
 const groupsListSource = fs.readFileSync(
@@ -197,33 +193,9 @@ describe('shared .drag-row pattern (defect 2+3 remediation)', () => {
     expect(/\.sub-item-row \.drag-handle:hover/.test(css)).toBe(false);
   });
 
-  it('the pipeline editor opts prescript rows and step cards into the shared pattern', () => {
-    expect(/['"]prescript-row drag-row['"]/.test(pipelineEditorSource)).toBe(
-      true,
-    );
-    expect(/['"]prestep-card drag-row['"]/.test(pipelineEditorSource)).toBe(
-      true,
-    );
-  });
-
   it('the group nav card and sub-item row creation sites opt into the shared pattern', () => {
     expect(/nav-card drag-row/.test(groupsListSource)).toBe(true);
     expect(/['"]sub-item-row drag-row['"]/.test(subListsSource)).toBe(true);
-  });
-
-  it('keeps the existing empty-container drop-zone affordance working', () => {
-    const body = ruleBody(css, '.prescript-list.drop-zone-active');
-    expect(declaresExactly(body, 'outline', '2px dashed var(--accent)')).toBe(
-      true,
-    );
-  });
-
-  it('highlights the whole step card while a script is dragged over it, like the approved reference', () => {
-    const body = ruleBody(css, '.prestep-card:has(.prescript-list.drop-into)');
-    expect(declaresExactly(body, 'border-color', 'var(--accent)')).toBe(true);
-    expect(/background:/.test(body)).toBe(true);
-    // Something must actually apply that class while dragging over the step.
-    expect(/classList\.add\('drop-into'\)/.test(dndHelperSource)).toBe(true);
   });
 });
 

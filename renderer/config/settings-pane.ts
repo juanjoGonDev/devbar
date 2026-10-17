@@ -121,26 +121,24 @@ export function createSettingsPane(
       els.autostartHint.textContent = `Registra DevBar en ${osMechanism}. Solo aplica a la app empaquetada/instalada.`;
     }
 
-    if (els.notifHint && els.openNotifSettings) {
-      let text: string;
+    if (els.notifHint) {
+      let hint: string;
+      let button = 'Abrir ajustes';
       if (platform === 'darwin') {
-        text =
-          '¿No se ven las notificaciones? macOS pide permiso una sola vez por app. Compruébalo en ';
-        els.openNotifSettings.textContent =
-          'Ajustes del sistema → Notificaciones';
+        hint =
+          'macOS pide permiso una sola vez por app: revísalo en Ajustes del sistema → Notificaciones.';
       } else if (platform === 'win32') {
-        text =
-          '¿No se ven las notificaciones? Windows gestiona el permiso por app. Compruébalo en ';
-        els.openNotifSettings.textContent =
-          'Configuración → Sistema → Notificaciones';
+        hint =
+          'Windows gestiona el permiso por app en Configuración → Sistema → Notificaciones.';
+        button = 'Abrir Configuración';
       } else {
-        text =
-          '¿No se ven las notificaciones? El panel depende de tu escritorio (GNOME: Ajustes → Notificaciones; KDE: Configuración del sistema → Notificaciones). Puedes abrir ';
-        els.openNotifSettings.textContent = 'los ajustes del sistema';
+        hint =
+          'Depende de tu escritorio (GNOME: Ajustes → Notificaciones; KDE: Configuración del sistema → Notificaciones).';
       }
-      els.notifHint.textContent = text;
-      els.notifHint.appendChild(els.openNotifSettings);
-      els.notifHint.appendChild(document.createTextNode('.'));
+      els.notifHint.textContent = hint;
+      // Only the label: the button keeps its trailing external-link icon.
+      const label = els.openNotifSettings?.querySelector('.btn-label');
+      if (label) label.textContent = button;
     }
   }
 

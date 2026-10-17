@@ -90,7 +90,7 @@ export function ipcImportPreview(value: unknown): ImportPreview {
       | 'groupsCount'
       | 'commandsCount'
       | 'actionsCount'
-      | 'preStepsCount'
+      | 'workflowsCount'
       | 'preScriptsCount'
     >,
   ): number => ipcNumber(preview[field], String(field));
@@ -101,7 +101,7 @@ export function ipcImportPreview(value: unknown): ImportPreview {
     groupsCount: numberField('groupsCount'),
     commandsCount: numberField('commandsCount'),
     actionsCount: numberField('actionsCount'),
-    preStepsCount: numberField('preStepsCount'),
+    workflowsCount: numberField('workflowsCount'),
     preScriptsCount: numberField('preScriptsCount'),
     hasGlobalSettings,
   };
@@ -116,7 +116,6 @@ export function ipcGlobalSettingsPatch(
     'silenceWarnings',
     'silenceErrors',
     'notifySuccess',
-    'preScriptsAutoRun',
   ] as const) {
     if (raw[field] !== undefined) {
       if (typeof raw[field] !== 'boolean')

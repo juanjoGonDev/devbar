@@ -2,6 +2,7 @@ import { icon, userIcon } from '../icon.js';
 import { customIconIdOf } from '../../src/custom-icons.js';
 import { createIconColorControl } from './icon-color-control.js';
 import { buildEnvEditor, type EnvSectionElement } from './env-editor.js';
+import { setHiddenInTray } from './group-visibility.js';
 import type { Group } from '../../src/domain-types.js';
 import type { GroupStore } from './group-store.js';
 import type { SubLists } from './sub-lists.js';
@@ -169,8 +170,38 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
       });
     });
     header.appendChild(nameInput);
+    header.appendChild(buildVisibility(group));
 
     deps.detailEl.appendChild(header);
+  }
+
+  /** «Visible / Oculto» in the tray: an instant write, outside the draft. */
+  function buildVisibility(group: Group): HTMLButtonElement {
+    const stored = store.getGroups().find((g) => g.id === group.id) ?? group;
+    const visible = !stored.hiddenInTray;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'detail-visibility';
+    button.setAttribute('aria-pressed', String(visible));
+    button.title = visible ? 'Ocultar de la barra' : 'Mostrar en la barra';
+    const label = document.createElement('span');
+    label.textContent = visible ? 'Visible' : 'Oculto';
+    button.append(icon(visible ? 'eye' : 'eye-off'), label);
+    button.addEventListener('click', () => {
+      void setHiddenInTray(
+        {
+          store,
+          showToast: deps.showToast,
+          repaint: () => {
+            deps.renderGroupsList();
+            renderGroupDetail();
+          },
+        },
+        stored,
+        visible,
+      );
+    });
+    return button;
   }
 
   function buildPathField(group: Group): void {
@@ -316,17 +347,20 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
   }
 
   function buildWaitSection(group: Group): void {
-    // ── Pipeline release timing (Group.waitForPipeline, default true) ──────
+    // ── Startup-workflow release timing (Group.waitForPipeline) ────────────
     // Placed right before the commands list, where each command's own
     // auto-start toggle lives — this setting decides WHEN this group's
-    // auto-start commands are released relative to the pipeline.
+    // auto-start commands are released relative to the startup workflow.
     const waitSection = document.createElement('div');
     waitSection.className = 'detail-section';
     const waitLbl = buildToggleLabel(
-      'Esperar a que termine todo el pipeline antes de arrancar',
+      'Esperar al workflow de arranque',
       group.waitForPipeline,
       'detail-wait-pipeline',
     );
+    // The why lives in the tooltip: the pane stays a list of settings.
+    waitLbl.title =
+      'Arranca los comandos de este grupo cuando termina todo el workflow de arranque: un bloque de otro grupo puede reiniciar servicios compartidos (p. ej. Docker).';
     waitLbl
       .querySelector<HTMLInputElement>('input')
       ?.addEventListener('change', (event) => {
@@ -336,12 +370,6 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
         });
       });
     waitSection.appendChild(waitLbl);
-    const waitHint = document.createElement('p');
-    waitHint.className = 'help-text muted';
-    waitHint.style.cssText = 'font-size:11px; margin:4px 0 8px;';
-    waitHint.textContent =
-      'Un paso posterior de OTRO grupo puede reiniciar servicios compartidos (p. ej. Docker). Desactívalo solo si este grupo es realmente independiente del resto del pipeline.';
-    waitSection.appendChild(waitHint);
     deps.detailEl.appendChild(waitSection);
   }
 
@@ -372,7 +400,7 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
       store.clearDraft();
       await deps.loadGroups();
       renderGroupDetail();
-      await deps.refreshPipeline(); // deleting a group prunes its refs from the pipeline
+      await deps.refreshPipeline(); // deleting a group prunes its refs from every workflow
     });
     btnRow.appendChild(deleteBtn);
 
@@ -409,7 +437,7 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     buildSilenceSection(group);
     buildGroupEnvSection(group);
 
-    // ── Pre-scripts library (definitions only — order lives in "Pipeline") ──
+    // ── Pre-scripts library (definitions only — order lives in "Workflows") ─
     deps.subLists.buildPreScriptsLibrary(group, deps.detailEl);
 
     buildWaitSection(group);

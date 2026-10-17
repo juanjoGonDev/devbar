@@ -3,6 +3,72 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.12.0] - 2026-10-17
+
+### Añadido
+
+- **Workflows: varios, cada uno con su desencadenante.** Los pre-scripts se
+  organizan ahora en workflows, con una lista propia en Ajustes para buscarlos,
+  filtrarlos, crearlos, duplicarlos y activarlos o desactivarlos. Cada uno se
+  lanza al arrancar DevBar (solo uno puede hacerlo, y es el que esperan los
+  grupos que lo piden), de forma programada por días y hora o «cada N
+  minutos/horas», o a mano desde la barra o el móvil, con confirmación
+  opcional. El pipeline que tenías se convierte en el workflow «Arranque».
+
+- **Editor visual de cada workflow.** Un lienzo donde cada pre-script es un
+  nodo que unes con flechas para decir qué espera a qué; varias ramas o un
+  marco «En paralelo» corren a la vez. Con zoom, minimapa, orden automático y
+  creación de pre-scripts desde el propio lienzo.
+
+- **Ejecuciones en vivo.** Ejecuta o detén un workflow desde la lista o el
+  editor y sigue cada nodo en el lienzo: en espera, ejecutándose, correcto,
+  con avisos, con error u omitido. «Todos OK» decide si un fallo dentro de un
+  marco para el resto, y puedes reintentar desde el bloque que falló. Un panel
+  de logs muestra la salida de cada script mientras corre.
+
+- **Sección «Workflows» en la barra.** El workflow en curso aparece primero,
+  con su progreso y un botón para detenerlo; debajo, los manuales y los
+  programados (con su próxima ejecución o su último resultado), cada uno con
+  su botón ▶. Cada workflow, sea cual sea su desencadenante, elige si aparece
+  en la barra y en el móvil.
+
+- **Grupos ocultos en la barra.** Un grupo puede ocultarse de la lista de la
+  barra sin dejar de funcionar (con el ojo de su fila en Ajustes o desde su
+  cabecera): queda plegado al final bajo «N oculto(s)».
+
+- **Botón «Nuevo grupo» al principio de la lista.** Sustituye al antiguo
+  «+ Añadir» de la cabecera, así la lista de grupos empieza más arriba y
+  aprovecha el espacio. Sigue a mano con la lista plegada, solo con el icono.
+
+- **La lista de grupos se puede ensanchar.** Arrastra el separador entre la
+  lista y el editor (o usa las flechas del teclado sobre él) y DevBar recuerda
+  el ancho. Si no la tocas, se ajusta sola al nombre de grupo más largo; un
+  doble clic en el separador vuelve a ese ajuste automático.
+
+### Cambiado
+
+- **Selector de tema con vista previa.** Automático, Claro y Oscuro son ahora
+  tarjetas con una ventana en miniatura de cada aspecto y su icono, y la
+  sección General se presenta en listas agrupadas al estilo de macOS.
+
+- **«Acerca de» renovado.** El icono de la app, la versión y el sistema en el
+  centro; debajo, una tarjeta de actualizaciones con un indicador de estado (al
+  día, disponible, en curso o con error) y cuándo fue la última búsqueda, las
+  novedades de la versión instalada con acceso al historial completo, y los
+  enlaces a GitHub, a las notas de la versión y para reportar un fallo.
+
+- **Notificaciones y Copias de seguridad, rediseñadas.** Notificaciones
+  muestra una vista previa del aviso y separa el interruptor de las acciones
+  del sistema (enviar una prueba, abrir los ajustes de permisos). Copias de
+  seguridad presenta Exportar e Importar en dos tarjetas y recuerda que antes
+  de importar se guarda una copia automática.
+
+### Corregido
+
+- **El cursor ya no parpadea al pasar por encima de los botones.** La mano
+  aparecía y al instante volvía a ser la flecha en los controles con
+  descripción emergente.
+
 ## [0.11.0] - 2026-10-10
 
 ### Añadido

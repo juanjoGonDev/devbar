@@ -49,13 +49,13 @@ function harness(
       },
       getState: (id) => states.get(id) ?? makeState({ id }),
     },
-    preScriptRunner: {
+    workflowRunner: {
       run: () => {
         calls.push('run');
         return Promise.resolve({ ok: true });
       },
-      cancel: () => {
-        calls.push('cancel');
+      stop: () => {
+        calls.push('stop');
         return { ok: true };
       },
     },
@@ -75,7 +75,6 @@ function harness(
       },
     },
     confirms,
-    snapshots: { snapshotPipelineState: () => ({}) as never },
     groupErrors,
     broadcast: () => calls.push('broadcast'),
     branchesChanged,
@@ -114,9 +113,6 @@ describe('src/main/ipc/runtime-ipc.ts', () => {
     it('claims every runtime channel', () => {
       expect(harness().ipc.channels()).toEqual([
         'actions:run',
-        'prescripts:run',
-        'prescripts:cancel',
-        'pipeline:state',
         'prescriptConfirm:getContext',
         'prescriptConfirm:resolve',
         'process:start',
@@ -154,15 +150,7 @@ describe('src/main/ipc/runtime-ipc.ts', () => {
     });
   });
 
-  describe('pipeline', () => {
-    it('runs and cancels the one global pipeline, and reads its state', async () => {
-      const h = harness();
-      await h.ipc.invoke('prescripts:run');
-      h.ipc.invoke('prescripts:cancel');
-      expect(h.ipc.invoke('pipeline:state')).toEqual({});
-      expect(h.calls).toEqual(['run', 'cancel']);
-    });
-
+  describe('the confirmation modal', () => {
     it('answers the modal with its own context and resolves it', () => {
       const h = harness();
       h.ipc.invoke('prescriptConfirm:getContext', 't1');

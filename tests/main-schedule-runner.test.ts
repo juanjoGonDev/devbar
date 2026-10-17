@@ -6,15 +6,23 @@ import {
   makeGroup,
   makeState,
 } from './helpers/main-fakes.js';
-import type { Group, ProcessState, Schedule } from '../src/domain-types.js';
+import type {
+  Group,
+  ProcessState,
+  Schedule,
+  Workflow,
+} from '../src/domain-types.js';
+import { graph } from './helpers/pipeline.js';
 
 const EVERY_DAY: Schedule = {
   enabled: true,
   rules: [{ time: '09:00', days: [0, 1, 2, 3, 4, 5, 6] }],
 };
 
-function harness(groups: Group[] = []) {
+function harness(groups: Group[] = [], workflows: Workflow[] = []) {
   const lastRuns = new Map<string, string>();
+  const workflowRuns: string[] = [];
+  const runningWorkflows = new Set<string>();
   const states = new Map<string, ProcessState>();
   const started: string[] = [];
   const stopped: string[] = [];
@@ -27,6 +35,7 @@ function harness(groups: Group[] = []) {
   const runner = createScheduleRunner({
     configStore: {
       listGroups: () => groups,
+      listWorkflows: () => workflows,
       getScheduleLastRun: (pid) => lastRuns.get(pid) ?? null,
       setScheduleLastRun: (pid, iso) => lastRuns.set(pid, iso),
     },
@@ -44,6 +53,13 @@ function harness(groups: Group[] = []) {
     },
     confirmIfNeeded,
     broadcast,
+    workflowRunner: {
+      isRunning: (id) => runningWorkflows.has(id),
+      run: (id, cause) => {
+        workflowRuns.push(`${id}:${cause}`);
+        return new Promise(() => undefined);
+      },
+    },
     setTimer: (fn, ms) => timers.push({ fn, ms, repeating: false }),
     setRepeatingTimer: (fn, ms) => timers.push({ fn, ms, repeating: true }),
     now: () => 1_000_000_000_000,
@@ -51,6 +67,8 @@ function harness(groups: Group[] = []) {
   return {
     runner,
     lastRuns,
+    workflowRuns,
+    runningWorkflows,
     states,
     started,
     stopped,
@@ -295,6 +313,76 @@ describe('src/main/schedule-runner.ts', () => {
         broadcast: () => undefined,
       });
       expect(() => runner.startScheduleLoop()).not.toThrow();
+    });
+  });
+  describe('scheduled workflows', () => {
+    function scheduled(id: string, extra: Partial<Workflow> = {}): Workflow {
+      return {
+        id,
+        name: id,
+        enabled: true,
+        showInTray: true,
+        showInRemote: false,
+        trigger: {
+          kind: 'schedule',
+          schedule: { rules: [{ time: '09:00', days: [] }], interval: null },
+        },
+        graph: graph(['A'], ['trigger>A']),
+        ...extra,
+      };
+    }
+
+    it('seeds a workflow it sees for the first time instead of running it', async () => {
+      const { runner, workflowRuns, lastRuns } = harness([], [scheduled('w1')]);
+      await runner.checkSchedules(AT);
+      expect(workflowRuns).toEqual([]);
+      expect(lastRuns.get('wf:w1')).toBe(AT.toISOString());
+    });
+
+    it('runs a due workflow as a scheduled run, without waiting for it to end', async () => {
+      const { runner, workflowRuns, lastRuns, broadcast } = harness(
+        [],
+        [scheduled('w1')],
+      );
+      lastRuns.set('wf:w1', BEFORE);
+      await runner.checkSchedules(AT);
+      expect(workflowRuns).toEqual(['w1:schedule']);
+      expect(lastRuns.get('wf:w1')).toBe(AT.toISOString());
+      expect(broadcast).toHaveBeenCalled();
+    });
+
+    it('fires an interval schedule once the interval elapsed', async () => {
+      const every: Workflow = scheduled('w1', {
+        trigger: {
+          kind: 'schedule',
+          schedule: { rules: [], interval: { every: 30, unit: 'minutes' } },
+        },
+      });
+      const { runner, workflowRuns, lastRuns } = harness([], [every]);
+      lastRuns.set('wf:w1', new Date(2026, 4, 4, 8, 40).toISOString());
+      await runner.checkSchedules(AT);
+      expect(workflowRuns).toEqual([]);
+      lastRuns.set('wf:w1', new Date(2026, 4, 4, 8, 30).toISOString());
+      await runner.checkSchedules(AT);
+      expect(workflowRuns).toEqual(['w1:schedule']);
+    });
+
+    it('leaves disabled, running and non-scheduled workflows alone', async () => {
+      const manual: Workflow = {
+        ...scheduled('w3'),
+        trigger: {
+          kind: 'manual',
+          confirm: false,
+        },
+      };
+      const { runner, workflowRuns, lastRuns, runningWorkflows } = harness(
+        [],
+        [scheduled('w1', { enabled: false }), scheduled('w2'), manual],
+      );
+      for (const id of ['w1', 'w2', 'w3']) lastRuns.set(`wf:${id}`, BEFORE);
+      runningWorkflows.add('w2');
+      await runner.checkSchedules(AT);
+      expect(workflowRuns).toEqual([]);
     });
   });
 });
