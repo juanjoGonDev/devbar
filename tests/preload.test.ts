@@ -649,6 +649,11 @@ const SUBSCRIPTIONS: readonly SubscriptionCase[] = [
   ],
   ['onUpdate', (api, cb) => api.onUpdate(cb), 'groups:update'],
   ['onThemeChange', (api, cb) => api.onThemeChange(cb), 'settings:theme'],
+  [
+    'onSettingsChange',
+    (api, cb) => api.onSettingsChange(cb),
+    'settings:changed',
+  ],
   ['onLog', (api, cb) => api.onLog(cb), 'logs:line'],
   ['onLogsSelect', (api, cb) => api.onLogsSelect(cb), 'logs:select'],
   [

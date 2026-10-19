@@ -257,6 +257,11 @@ export interface GlobalSettings {
   silenceErrors: boolean;
   maxLogLines: number;
   notifySuccess: boolean;
+  /**
+   * Whether the tray (and a linked phone) lists the groups hidden from it
+   * behind the «N oculto(s)» fold; off, they are not listed anywhere there.
+   */
+  showHiddenGroupsFold: boolean;
 }
 
 export type ProcessStatus =

@@ -208,5 +208,25 @@ describe('renderer/tray/workflows-section.ts', () => {
       await win.push('onUpdate', [groupState('api')]);
       expect(document.querySelector('.hidden-groups-toggle')).toBeNull();
     });
+
+    it('lists no hidden group at all when the fold is turned off', async () => {
+      const win = await openTray();
+      // The theme reads the settings too: answer every read the same way.
+      for (let left = win.callCount('getSettings'); left > 0; left--)
+        await win.settle('getSettings', { showHiddenGroupsFold: false });
+      await win.push('onUpdate', [groupState('api'), groupState('web', true)]);
+      expect(groupNames()).toEqual(['api']);
+      expect(document.querySelector('.hidden-groups-toggle')).toBeNull();
+    });
+
+    it('follows the setting when it changes while the tray is open', async () => {
+      const win = await openTray();
+      await win.push('onUpdate', [groupState('api'), groupState('web', true)]);
+      expect(document.querySelector('.hidden-groups-toggle')).not.toBeNull();
+      await win.push('onSettingsChange', { showHiddenGroupsFold: false });
+      expect(document.querySelector('.hidden-groups-toggle')).toBeNull();
+      await win.push('onSettingsChange', { showHiddenGroupsFold: true });
+      expect(document.querySelector('.hidden-groups-toggle')).not.toBeNull();
+    });
   });
 });

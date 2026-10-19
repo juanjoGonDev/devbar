@@ -322,7 +322,16 @@ describe('src/config-store/store.ts', () => {
         silenceErrors: false,
         maxLogLines: 10_000,
         notifySuccess: true,
+        showHiddenGroupsFold: true,
       });
+    });
+
+    it('keeps showing the hidden groups fold for settings saved before it existed', async () => {
+      const store = await harness.open({
+        seed: { version: 4, globalSettings: { theme: 'dark' } },
+      });
+
+      expect(store.getGlobalSettings().showHiddenGroupsFold).toBe(true);
     });
 
     it.each([
@@ -366,9 +375,11 @@ describe('src/config-store/store.ts', () => {
         silenceWarnings: '' as unknown as boolean,
         silenceErrors: 'yes' as unknown as boolean,
         notifySuccess: 0 as unknown as boolean,
+        showHiddenGroupsFold: '' as unknown as boolean,
       });
 
       expect(saved).toMatchObject({
+        showHiddenGroupsFold: false,
         autostart: true,
         silenceWarnings: false,
         silenceErrors: true,

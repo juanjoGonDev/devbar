@@ -48,6 +48,7 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   silenceErrors: false,
   maxLogLines: DEFAULT_MAX_LOG_LINES,
   notifySuccess: true,
+  showHiddenGroupsFold: true,
 };
 
 type StoreState = {
@@ -298,6 +299,7 @@ export function saveGlobalSettings(
   next.silenceErrors = Boolean(next.silenceErrors);
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
   next.notifySuccess = Boolean(next.notifySuccess);
+  next.showHiddenGroupsFold = Boolean(next.showHiddenGroupsFold);
   store.set('globalSettings', next);
   return next;
 }

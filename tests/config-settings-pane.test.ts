@@ -16,6 +16,7 @@ function settings(extra: Partial<GlobalSettings> = {}): GlobalSettings {
     silenceErrors: false,
     maxLogLines: 1234,
     notifySuccess: false,
+    showHiddenGroupsFold: false,
     ...extra,
   };
 }
@@ -104,6 +105,7 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-silence-errors').checked).toBe(false);
       expect(input('set-max-log-lines').value).toBe('1234');
       expect(input('set-notify-success').checked).toBe(false);
+      expect(input('set-show-hidden-groups-fold').checked).toBe(false);
       expect(themeButton('dark').getAttribute('aria-pressed')).toBe('true');
       expect(themeButton('auto').getAttribute('aria-pressed')).toBe('false');
     });
@@ -119,6 +121,7 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-max-log-lines').value).not.toBe('');
       expect(themeButton('auto').getAttribute('aria-pressed')).toBe('true');
       expect(input('set-notify-success').checked).toBe(true);
+      expect(input('set-show-hidden-groups-fold').checked).toBe(true);
     });
   });
 
@@ -143,6 +146,18 @@ describe('renderer/config/settings-pane.ts', () => {
       field.dispatchEvent(new Event('change'));
       field.dispatchEvent(new Event('blur'));
       expect(win.callCount('saveSettings')).toBe(2);
+    });
+
+    it('persists the hidden groups fold switch', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-show-hidden-groups-fold');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+        showHiddenGroupsFold: true,
+      });
     });
 
     it('persists the silence and notification toggles', async () => {

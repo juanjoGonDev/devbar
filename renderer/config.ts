@@ -58,6 +58,10 @@ const setNotifySuccess = byId<HTMLInputElement>(
   'set-notify-success',
   HTMLInputElement,
 );
+const setShowHiddenGroupsFold = byId<HTMLInputElement>(
+  'set-show-hidden-groups-fold',
+  HTMLInputElement,
+);
 const testNotifyBtn = byId<HTMLButtonElement>(
   'test-notification',
   HTMLButtonElement,
@@ -231,6 +235,7 @@ const settings = createSettingsPane(
     silenceErrors: setSilenceErrors,
     maxLogLines: setMaxLogLines,
     notifySuccess: setNotifySuccess,
+    showHiddenGroupsFold: setShowHiddenGroupsFold,
     notifHint,
     openNotifSettings: openNotifSettingsBtn,
     testNotify: testNotifyBtn,

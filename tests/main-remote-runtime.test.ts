@@ -36,6 +36,7 @@ describe('src/main/remote/runtime.ts', () => {
       'autostart:false',
       'repaint',
       'theme:auto',
+      'settings',
       'broadcast',
     ]);
   });

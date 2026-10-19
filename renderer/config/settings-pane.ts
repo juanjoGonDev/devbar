@@ -9,6 +9,7 @@ export interface SettingsPaneElements {
   silenceErrors: HTMLInputElement;
   maxLogLines: HTMLInputElement;
   notifySuccess: HTMLInputElement;
+  showHiddenGroupsFold: HTMLInputElement;
   notifHint: HTMLElement;
   openNotifSettings: HTMLButtonElement;
   testNotify: HTMLButtonElement;
@@ -79,6 +80,7 @@ export function createSettingsPane(
       );
     if (els.notifySuccess)
       els.notifySuccess.checked = s.notifySuccess !== false;
+    els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;
     settingsLoaded = true;
     return true;
   }
@@ -100,6 +102,7 @@ export function createSettingsPane(
       silenceErrors: els.silenceErrors.checked,
       maxLogLines,
       notifySuccess: els.notifySuccess ? els.notifySuccess.checked : true,
+      showHiddenGroupsFold: els.showHiddenGroupsFold.checked,
     });
     showToast('Ajustes guardados', 'ok');
   }
@@ -223,6 +226,7 @@ export function createSettingsPane(
   }
   if (els.notifySuccess)
     els.notifySuccess.addEventListener('change', persistSettings);
+  els.showHiddenGroupsFold.addEventListener('change', persistSettings);
 
   adaptOsTexts();
 

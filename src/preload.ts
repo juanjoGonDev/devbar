@@ -215,6 +215,7 @@ const api: DevBarApi = {
   buildSilencePattern,
   onUpdate: (cb) => subscribe('groups:update', cb),
   onThemeChange: (cb) => subscribe('settings:theme', cb),
+  onSettingsChange: (cb) => subscribe('settings:changed', cb),
   onLog: (cb) => subscribe('logs:line', cb),
   onLogsSelect: (cb) => subscribe('logs:select', cb),
   onBranchesChanged: (cb) => subscribe('branches:changed', cb),

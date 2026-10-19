@@ -84,6 +84,7 @@ export interface RegisterAllDeps {
   expandTilde: (value: string) => string;
   repaintWindows: () => void;
   sendTheme: ConfigIpcDeps['sendTheme'];
+  sendSettings: ConfigIpcDeps['sendSettings'];
   fetchReleases: AppIpcDeps['fetchReleases'];
   releasesUrl: string;
   iconBattery: unknown;

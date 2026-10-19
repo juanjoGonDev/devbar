@@ -81,6 +81,7 @@ function harness(groups: Group[] = [], overrides: Partial<ConfigIpcDeps> = {}) {
     applyAutostart: (enabled) => calls.push(`autostart:${enabled}`),
     refreshWindowBackgrounds: () => calls.push('repaint'),
     sendTheme: (theme) => themes.push(theme),
+    sendSettings: () => undefined,
     ...overrides,
   });
   return { ipc, calls, saved, themes, groupErrors, stopResults };

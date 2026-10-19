@@ -409,6 +409,8 @@ export interface DevBarApi
    * config file on every warn/error log line, in every open window.
    */
   onThemeChange(callback: (payload: ThemePreference) => void): () => void;
+  /** The global settings, pushed after every save. */
+  onSettingsChange(callback: (payload: GlobalSettings) => void): () => void;
   onLog(
     callback: (payload: { id: string; entry: LogEntry }) => void,
   ): () => void;

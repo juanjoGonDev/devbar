@@ -2,6 +2,8 @@ import './report-uncaught.js';
 import { formatUptime } from './format-uptime.js';
 import { isComboboxOpen, setComboboxHostHooks } from './combobox.js';
 import type { GroupState } from '../src/ipc-contract.js';
+import type { GlobalSettings } from '../src/domain-types.js';
+import { trayGroupLayout } from '../src/tray-group-layout.js';
 import { byId } from './dom.js';
 import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
@@ -114,6 +116,8 @@ function alertButton(
 // «N oculto(s)» disclosure at the end of the list, which shows it dimmed.
 
 let hiddenGroupsOpen = false;
+/** Settings › General › «Mostrar grupos ocultos plegados». */
+let showHiddenGroupsFold = true;
 
 function hiddenGroupsToggle(count: number): HTMLButtonElement {
   const btn = document.createElement('button');
@@ -162,10 +166,11 @@ function render(groupStates: GroupState[]): void {
     return;
   }
 
-  const hidden = groupStates.filter((gs) => gs.group.hiddenInTray);
-  for (const gs of groupStates) {
-    if (!gs.group.hiddenInTray) groupsEl.appendChild(renderGroupRow(gs));
-  }
+  const { shown, folded: hidden } = trayGroupLayout(
+    groupStates,
+    showHiddenGroupsFold,
+  );
+  for (const gs of shown) groupsEl.appendChild(renderGroupRow(gs));
   if (hidden.length > 0) {
     groupsEl.appendChild(hiddenGroupsToggle(hidden.length));
     if (hiddenGroupsOpen)
@@ -303,6 +308,20 @@ window.api.onWorkflowsUpdate((entries) => {
   renderWorkflowsSection(entries);
   autoHeight.schedule();
 });
+
+function applySettings(settings: Partial<GlobalSettings>): void {
+  const next = settings.showHiddenGroupsFold !== false;
+  if (next === showHiddenGroupsFold) return;
+  showHiddenGroupsFold = next;
+  if (lastGroupStates.length) render(lastGroupStates);
+}
+window.api.onSettingsChange(applySettings);
+window.api
+  .getSettings()
+  .then(applySettings)
+  .catch(() => {
+    /* keeps the default fold until the next push */
+  });
 
 window.api.onBranchesChanged(() => {
   if (lastGroupStates.length) {

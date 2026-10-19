@@ -116,6 +116,7 @@ export function ipcGlobalSettingsPatch(
     'silenceWarnings',
     'silenceErrors',
     'notifySuccess',
+    'showHiddenGroupsFold',
   ] as const) {
     if (raw[field] !== undefined) {
       if (typeof raw[field] !== 'boolean')

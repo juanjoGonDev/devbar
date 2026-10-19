@@ -12,7 +12,7 @@ import {
   type IpcRegistrar,
 } from '../ipc-validators.js';
 import type { GroupState } from '../../ipc-contract.js';
-import type { ThemePreference } from '../../domain-types.js';
+import type { GlobalSettings, ThemePreference } from '../../domain-types.js';
 import { saveSettings } from '../settings-save.js';
 
 /**
@@ -61,6 +61,7 @@ export interface ConfigIpcDeps {
   applyAutostart: (enabled: boolean) => void;
   refreshWindowBackgrounds: () => void;
   sendTheme: (theme: ThemePreference) => void;
+  sendSettings: (settings: GlobalSettings) => void;
 }
 
 export function registerConfigIpc(

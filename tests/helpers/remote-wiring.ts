@@ -71,6 +71,7 @@ export function fakeAppWiring() {
     },
     repaintWindows: () => calls.push('repaint'),
     sendTheme: (theme) => calls.push(`theme:${theme}`),
+    sendSettings: () => calls.push('settings'),
     registry,
   };
   return { wiring, calls, events, registry };

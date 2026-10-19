@@ -63,6 +63,7 @@ export interface RemoteAppWiring extends Omit<
   >;
   repaintWindows(): void;
   sendTheme: SettingsSaveDeps['sendTheme'];
+  sendSettings: SettingsSaveDeps['sendSettings'];
   registry: WindowRegistry;
 }
 
@@ -73,6 +74,7 @@ export function remoteRuntime(app: RemoteAppWiring): RemoteControlRuntime {
     applyAutostart: (enabled) => app.host.applyAutostart(enabled),
     refreshWindowBackgrounds: () => app.repaintWindows(),
     sendTheme: (theme) => app.sendTheme(theme),
+    sendSettings: (settings) => app.sendSettings(settings),
     broadcast: () => app.broadcast(),
   };
   return {

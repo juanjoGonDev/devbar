@@ -139,6 +139,15 @@ describe('src/main/ipc-validators.ts', () => {
       ).toEqual({ autostart: true, maxLogLines: 500 });
     });
 
+    it('accepts the hidden groups fold flag', () => {
+      expect(ipcGlobalSettingsPatch({ showHiddenGroupsFold: false })).toEqual({
+        showHiddenGroupsFold: false,
+      });
+      expect(() =>
+        ipcGlobalSettingsPatch({ showHiddenGroupsFold: 'no' }),
+      ).toThrow(/showHiddenGroupsFold/);
+    });
+
     it('ignores absent fields entirely', () => {
       expect(ipcGlobalSettingsPatch({})).toEqual({});
     });

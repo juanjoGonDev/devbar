@@ -40,10 +40,10 @@ import { createNotifications } from './main/notification-banner.js';
 import {
   anyAppWindowOpen,
   applyDockVisibility,
-  broadcastTheme,
   createWindowRegistry,
   refreshWindowBackgrounds,
   sendToRenderers,
+  settingsPushes,
 } from './main/renderer-bus.js';
 import { remoteControlFor } from './main/remote/remote-wiring.js';
 import { createScheduleRunner } from './main/schedule-runner.js';
@@ -57,7 +57,7 @@ import { createTrayHost } from './main/tray-host.js';
 import { createUpdater } from './main/updater.js';
 import { workflowFeedback } from './main/workflow-wiring.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
-import type { Group, ThemePreference } from './domain-types.js';
+import type { Group } from './domain-types.js';
 
 /**
  * Wiring only. Every decision this process makes lives under `src/main/`; what
@@ -284,7 +284,7 @@ const wiring = {
   broadcast,
   repaintWindows,
   registry,
-  sendTheme: (theme: ThemePreference) => broadcastTheme(registry, theme),
+  ...settingsPushes(registry),
 };
 
 // «Control remoto»: the LAN server for linked phones, off unless enabled.

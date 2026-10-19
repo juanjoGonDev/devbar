@@ -162,6 +162,7 @@ function harness(
     expandTilde: (value: string) => value,
     repaintWindows: () => calls.push('repaint'),
     sendTheme: () => calls.push('theme'),
+    sendSettings: () => calls.push('settings'),
     fetchReleases: () => Promise.resolve([]),
     releasesUrl: 'https://github.test/releases',
     iconBattery: {},

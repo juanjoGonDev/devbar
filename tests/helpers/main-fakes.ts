@@ -233,6 +233,7 @@ export function makeSettings(
     silenceErrors: false,
     maxLogLines: 10_000,
     notifySuccess: true,
+    showHiddenGroupsFold: true,
     ...overrides,
   };
 }
