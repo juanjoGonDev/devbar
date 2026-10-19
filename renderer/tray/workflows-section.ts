@@ -6,42 +6,37 @@ import { workflowSubtitle } from './workflow-format.js';
 import { trayWorkflowLayout } from '../../src/tray-layout.js';
 
 /**
- * The popover's WORKFLOWS section, after the groups: the running (or the
- * startup) workflow first — lightning, progress and a stop button — then the
- * manual and scheduled ones, each with a ▶, then the hidden ones behind an
- * «N oculto(s)» fold when the settings ask for it. «Ver todos» opens the
- * settings on the Workflows section. Hidden while there is nothing to list.
+ * The popover's Workflows tab: the running (or the startup) workflow first —
+ * lightning, progress and a stop button — then the manual and scheduled ones,
+ * each with a ▶, then the hidden ones behind an «N oculto(s)» fold when the
+ * settings ask for it. «Gestionar workflows» opens the settings on the
+ * Workflows section.
  *
- * One persistent element: `tray.ts` re-appends it after every group render,
- * and `renderWorkflowsSection` repaints it whenever the list changes.
+ * One persistent element: `tray.ts` puts it in the list while the Workflows
+ * tab is selected, and `renderWorkflowsSection` repaints it whenever the list
+ * changes. `workflowsSummary` tells the tabs whether there is anything to
+ * list and how many are running.
  */
 
 const section = document.createElement('section');
 section.id = 'tray-workflows';
 section.className = 'tray-workflows';
-section.hidden = true;
 
-/** The element `tray.ts` keeps at the end of the groups list. */
+/** The element `tray.ts` shows on the Workflows tab. */
 export function workflowsSection(): HTMLElement {
   return section;
 }
 
-function header(): HTMLElement {
-  const head = document.createElement('div');
-  head.className = 'tray-wf-head';
-  const label = document.createElement('span');
-  label.className = 'tray-wf-label';
-  label.textContent = 'Workflows';
-  const all = document.createElement('button');
-  all.type = 'button';
-  all.className = 'ghost tray-wf-all';
-  all.textContent = 'Ver todos';
-  all.addEventListener('click', (e) => {
+function manageLink(): HTMLElement {
+  const link = document.createElement('button');
+  link.type = 'button';
+  link.className = 'ghost tray-wf-manage';
+  link.append('Gestionar workflows', icon('chevron-right'));
+  link.addEventListener('click', (e) => {
     e.stopPropagation();
     void window.api.openWorkflowsConfig();
   });
-  head.append(label, all);
-  return head;
+  return link;
 }
 
 function kindIcon(entry: WorkflowEntry): IconName {
@@ -163,11 +158,19 @@ function foldToggle(count: number): HTMLButtonElement {
   return btn;
 }
 
-/** Follows the setting; repaints only when it changed. */
-export function setWorkflowsFold(on: boolean): void {
-  if (on === showFold) return;
+/** Follows the setting; repaints (and says so) only when it changed. */
+export function setWorkflowsFold(on: boolean): boolean {
+  if (on === showFold) return false;
   showFold = on;
   renderWorkflowsSection(lastEntries);
+  return true;
+}
+
+let summary = { listed: 0, running: 0 };
+
+/** Workflows listed (in sight or behind the fold), and those running. */
+export function workflowsSummary(): { listed: number; running: number } {
+  return summary;
 }
 
 export function renderWorkflowsSection(
@@ -175,11 +178,10 @@ export function renderWorkflowsSection(
 ): void {
   lastEntries = entries;
   const { shown, folded } = trayWorkflowLayout(entries, showFold);
-  section.hidden = shown.length === 0 && folded.length === 0;
-  if (section.hidden) {
-    section.replaceChildren();
-    return;
-  }
+  summary = {
+    listed: shown.length + folded.length,
+    running: shown.filter((entry) => entry.running !== null).length,
+  };
   const now = Date.now();
   const nodes = shown.map((entry) => row(entry, now));
   if (folded.length > 0) {
@@ -191,5 +193,5 @@ export function renderWorkflowsSection(
         nodes.push(el);
       }
   }
-  section.replaceChildren(header(), ...nodes);
+  section.replaceChildren(...nodes, manageLink());
 }

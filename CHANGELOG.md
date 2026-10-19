@@ -26,10 +26,14 @@ Todas las novedades relevantes de DevBar. El formato sigue
   marco para el resto, y puedes reintentar desde el bloque que falló. Un panel
   de logs muestra la salida de cada script mientras corre.
 
-- **Sección «Workflows» en la barra.** El workflow en curso aparece primero,
-  con su progreso y un botón para detenerlo; debajo, los manuales y los
-  programados (con su próxima ejecución o su último resultado), cada uno con
-  su botón ▶.
+- **Pestañas «Grupos | Workflows» en la barra.** Bajo la cabecera, un
+  selector cambia entre tus grupos (con cuántos se ven) y tus workflows (con
+  cuántos están en marcha). En Workflows, el que está en curso aparece
+  primero, con su progreso y un botón para detenerlo; debajo, los manuales y
+  los programados (con su próxima ejecución o su último resultado), cada uno
+  con su botón ▶, y «Gestionar workflows» abre sus ajustes. La barra recuerda
+  la última pestaña y, si no hay ningún workflow que mostrar, enseña solo los
+  grupos.
 
 - **Workflows ocultos, como los grupos.** Con el ojo de su fila en Ajustes,
   un workflow se oculta a la vez en la barra y en el móvil sin dejar de

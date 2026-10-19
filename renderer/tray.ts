@@ -13,7 +13,9 @@ import {
   renderWorkflowsSection,
   setWorkflowsFold,
   workflowsSection,
+  workflowsSummary,
 } from './tray/workflows-section.js';
+import { createTrayTabs } from './tray/tabs.js';
 import { installAutoHeight } from './tray/auto-height.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
@@ -24,6 +26,7 @@ initTheme();
 hydrateIcons(document);
 const groupsEl = byId('groups', HTMLElement);
 const toastEl = byId('toast', HTMLElement);
+const tabsEl = byId('tray-tabs', HTMLElement);
 
 // ─────────────────────── Uptime ticker ───────────────────────────────
 
@@ -56,6 +59,8 @@ if (document.readyState !== 'loading') {
 
 // Keyed by groupId
 let lastGroupStates: GroupState[] = [];
+/** False until the first group snapshot: no empty state before it. */
+let groupStatesKnown = false;
 // State update that arrived while a branch dropdown was open; replayed on close.
 let _pendingStates: GroupState[] | null = null;
 
@@ -147,6 +152,7 @@ function hiddenGroupsToggle(count: number): HTMLButtonElement {
  */
 function render(groupStates: GroupState[]): void {
   lastGroupStates = groupStates;
+  groupStatesKnown = true;
   // A branch dropdown is open: wiping the groups list here would destroy the
   // combobox mid-interaction and orphan its (body-level) dropdown, while the
   // resize below would shrink the popover under it. Defer until it closes.
@@ -157,32 +163,44 @@ function render(groupStates: GroupState[]): void {
   groupsEl.innerHTML = '';
   renderAlertsSummary(groupStates);
 
-  if (!groupStates.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    empty.innerHTML =
-      'No hay grupos configurados.<br/>Pulsa <strong>Configuración</strong> para añadir uno.';
-    groupsEl.append(empty, workflowsSection());
-    autoHeight.schedule();
-    return;
-  }
-
   const { shown, folded: hidden } = trayGroupLayout(
     groupStates,
     showHiddenGroupsFold,
   );
-  for (const gs of shown) groupsEl.appendChild(renderGroupRow(gs));
-  if (hidden.length > 0) {
-    groupsEl.appendChild(hiddenGroupsToggle(hidden.length));
-    if (hiddenGroupsOpen)
-      for (const gs of hidden) {
-        const row = renderGroupRow(gs);
-        row.classList.add('is-hidden-group');
-        groupsEl.appendChild(row);
-      }
+  const workflows = workflowsSummary();
+  tabs.paint({
+    visible: workflows.listed > 0,
+    groups: shown.length,
+    running: workflows.running,
+  });
+
+  if (tabs.active() === 'workflows') {
+    groupsEl.appendChild(workflowsSection());
+  } else if (!groupStates.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.innerHTML =
+      'No hay grupos configurados.<br/>Pulsa <strong>Configuración</strong> para añadir uno.';
+    groupsEl.append(empty);
+  } else {
+    for (const gs of shown) groupsEl.appendChild(renderGroupRow(gs));
+    if (hidden.length > 0) {
+      groupsEl.appendChild(hiddenGroupsToggle(hidden.length));
+      if (hiddenGroupsOpen)
+        for (const gs of hidden) {
+          const row = renderGroupRow(gs);
+          row.classList.add('is-hidden-group');
+          groupsEl.appendChild(row);
+        }
+    }
   }
-  groupsEl.appendChild(workflowsSection());
   autoHeight.schedule();
+}
+
+/** Repaints after a workflows change — once the groups are known. */
+function renderAfterWorkflows(): void {
+  if (groupStatesKnown) render(lastGroupStates);
+  else autoHeight.schedule();
 }
 
 // ─────────────────────── Dynamic popover height ──────────────────────
@@ -208,14 +226,18 @@ function measureContentHeight(): number {
   const bodyCS = getComputedStyle(document.body);
   const padTop = parseFloat(bodyCS.paddingTop) || 0;
   const padBottom = parseFloat(bodyCS.paddingBottom) || 0;
-  let headerBlock = 0;
-  if (header) {
-    const headerCS = getComputedStyle(header);
-    const mt = parseFloat(headerCS.marginTop) || 0;
-    const mb = parseFloat(headerCS.marginBottom) || 0;
-    headerBlock = header.offsetHeight + mt + mb;
-  }
-  return Math.ceil(padTop + headerBlock + groups.scrollHeight + padBottom);
+  // The tab selector sits between the two, outside the scrolling list; a
+  // hidden one has no box and adds nothing.
+  const block = (el: HTMLElement | null): number => {
+    if (!el || el.hidden) return 0;
+    const cs = getComputedStyle(el);
+    const mt = parseFloat(cs.marginTop) || 0;
+    const mb = parseFloat(cs.marginBottom) || 0;
+    return el.offsetHeight + mt + mb;
+  };
+  return Math.ceil(
+    padTop + block(header) + block(tabsEl) + groups.scrollHeight + padBottom,
+  );
 }
 
 // Every DOM change in the popover — a state render, a row expanding, the
@@ -248,6 +270,11 @@ setComboboxHostHooks({
   flushPendingRender,
   scheduleTrayResize,
   measureContentHeight,
+});
+const tabs = createTrayTabs({
+  root: tabsEl,
+  panel: groupsEl,
+  onChange: () => render(lastGroupStates),
 });
 setTrayHost({
   toastElement: toastEl,
@@ -307,15 +334,17 @@ const pushedWorkflows = latestWins();
 window.api.onWorkflowsUpdate((entries) => {
   pushedWorkflows.invalidate();
   renderWorkflowsSection(entries);
-  autoHeight.schedule();
+  renderAfterWorkflows();
 });
 
 function applySettings(settings: Partial<GlobalSettings>): void {
-  setWorkflowsFold(settings.showHiddenWorkflowsFold === true);
+  const workflowsChanged = setWorkflowsFold(
+    settings.showHiddenWorkflowsFold === true,
+  );
   const next = settings.showHiddenGroupsFold !== false;
-  if (next === showHiddenGroupsFold) return;
+  const groupsChanged = next !== showHiddenGroupsFold;
   showHiddenGroupsFold = next;
-  if (lastGroupStates.length) render(lastGroupStates);
+  if (workflowsChanged || groupsChanged) renderAfterWorkflows();
 }
 window.api.onSettingsChange(applySettings);
 window.api
@@ -351,7 +380,7 @@ window.api
     // the older snapshot on top would leave the section stale.
     if (!initialWorkflows()) return;
     renderWorkflowsSection(entries);
-    autoHeight.schedule();
+    renderAfterWorkflows();
   })
   .catch(() => {
     /* stays hidden until the next push */

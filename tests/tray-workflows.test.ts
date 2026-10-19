@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   loadRendererWindow,
@@ -9,8 +9,9 @@ import type { GroupState, WorkflowEntry } from '../src/ipc-contract.js';
 import type { Workflow, WorkflowTrigger } from '../src/domain-types.js';
 
 /**
- * The tray popover's WORKFLOWS section and its «N oculto(s)» group
- * disclosure, driven through the real tray window.
+ * The tray popover's Workflows tab and its «N oculto(s)» group disclosure,
+ * driven through the real tray window. The Workflows tab is the remembered
+ * one here, so its list shows as soon as there is something in it.
  */
 
 function byId(id: string): HTMLElement {
@@ -89,9 +90,13 @@ const rows = (): string[] =>
 
 describe('renderer/tray/workflows-section.ts', () => {
   let tray: RendererWindow | null = null;
+  beforeEach(() => {
+    localStorage.setItem('devbar.tray.tab', 'workflows');
+  });
   afterEach(() => {
     tray?.close();
     tray = null;
+    localStorage.clear();
     document.body.innerHTML = '';
   });
 
@@ -105,11 +110,12 @@ describe('renderer/tray/workflows-section.ts', () => {
     return tray;
   }
 
-  describe('the WORKFLOWS section', () => {
-    it('stays hidden while there is nothing to list', async () => {
+  describe('the Workflows tab', () => {
+    it('has no tab to show while there is nothing to list', async () => {
       const win = await openTray();
       await win.settle('listWorkflows', []);
-      expect(byId('tray-workflows').hidden).toBe(true);
+      expect(byId('tray-tabs').hidden).toBe(true);
+      expect(document.getElementById('tray-workflows')).toBeNull();
     });
 
     it('lists the running one first with its progress and a stop button', async () => {
@@ -129,7 +135,6 @@ describe('renderer/tray/workflows-section.ts', () => {
           },
         ),
       ]);
-      expect(byId('tray-workflows').hidden).toBe(false);
       expect(rows()).toEqual(['Flujo s', 'Flujo m']);
       const running = document.querySelector('.tray-wf-row.is-running');
       expect(running?.querySelector('.tray-wf-count')?.textContent).toBe('3/8');
@@ -153,13 +158,6 @@ describe('renderer/tray/workflows-section.ts', () => {
       await win.settle('listWorkflows', []);
       await win.push('onWorkflowsUpdate', [entry('m')]);
       expect(rows()).toEqual(['Flujo m']);
-    });
-
-    it('opens the settings on the Workflows section from «Ver todos»', async () => {
-      const win = await openTray();
-      await win.settle('listWorkflows', [entry('m')]);
-      click(document.querySelector('.tray-wf-all'));
-      expect(win.callCount('openWorkflowsConfig')).toBe(1);
     });
 
     it('lists no hidden workflow while the fold is off (the default)', async () => {

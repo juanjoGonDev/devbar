@@ -65,6 +65,37 @@
         <div id="update-strip" class="tray-strip" hidden></div>
       </div>
     </div>
+    <!-- «Grupos | Workflows»: hidden while there is no workflow to list
+         (renderer/tray/tabs.ts). -->
+    <div
+      id="tray-tabs"
+      class="tray-tabs"
+      role="tablist"
+      aria-label="Contenido del panel"
+      hidden
+    >
+      <button
+        id="tray-tab-groups"
+        class="tray-tab"
+        type="button"
+        role="tab"
+        aria-selected="true"
+        aria-controls="groups"
+      >
+        Grupos <span class="tray-tab-count"></span>
+      </button>
+      <button
+        id="tray-tab-workflows"
+        class="tray-tab"
+        type="button"
+        role="tab"
+        aria-selected="false"
+        aria-controls="groups"
+        tabindex="-1"
+      >
+        Workflows <span class="tray-tab-badge" hidden></span>
+      </button>
+    </div>
     <div id="groups" class="groups-list"></div>
     <div id="toast" style="display: none" class="toast"></div>
     <script type="module" src="tray.js"></script>
