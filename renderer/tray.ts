@@ -265,7 +265,7 @@ byId('quit-app', HTMLButtonElement).addEventListener('click', () => {
   window.api.quit();
 });
 
-// "Volver junto al icono": only while the user has pinned the popover away
+// «Restablecer posición»: only while the user has pinned the popover away
 // from the tray icon (dragged or resized it). Main pushes every change.
 const resetTrayPositionBtn = byId('reset-tray-position', HTMLButtonElement);
 function showPinned(pinned: boolean): void {

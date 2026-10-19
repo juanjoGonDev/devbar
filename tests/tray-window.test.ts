@@ -509,7 +509,7 @@ describe('renderer/tray.ts', () => {
       return el;
     }
 
-    it('hides "Volver junto al icono" while the popover hangs from the icon', async () => {
+    it('hides «Restablecer posición» while the popover hangs from the icon', async () => {
       const win = await openTray();
       await win.settle('getTrayPinned', { pinned: false });
       expect(resetButton().hidden).toBe(true);
@@ -520,9 +520,9 @@ describe('renderer/tray.ts', () => {
       await win.settle('getTrayPinned', { pinned: true });
       const button = resetButton();
       expect(button.hidden).toBe(false);
-      expect(button.getAttribute('aria-label')).toBe('Volver junto al icono');
-      expect(tipOf(button)).toBe('Volver junto al icono');
-      expect(iconText(button)).toBe('[pin-off]');
+      expect(button.getAttribute('aria-label')).toBe('Restablecer posición');
+      expect(tipOf(button)).toBe('Restablecer posición');
+      expect(iconText(button)).toBe('[locate-fixed]');
     });
 
     it('follows the pinned state main pushes', async () => {

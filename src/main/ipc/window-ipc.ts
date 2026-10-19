@@ -143,7 +143,7 @@ export function registerWindowIpc(
     },
   );
 
-  // The header's "Volver junto al icono" button only shows while pinned.
+  // The header's «Restablecer posición» button only shows while pinned.
   ipc.handle('tray:pinnedState', () => ({
     pinned: deps.trayHost.pinned.isPinned(),
   }));

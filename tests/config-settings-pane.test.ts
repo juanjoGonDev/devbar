@@ -252,6 +252,17 @@ describe('renderer/config/settings-pane.ts', () => {
   });
 
   describe('tray popover position', () => {
+    it('labels the button «Restablecer posición» with its own icon', async () => {
+      win = await openConfigWindow();
+      const button = document.getElementById('reset-tray-position-config');
+      expect(button?.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+        'Restablecer posición',
+      );
+      expect(
+        button?.querySelector('[data-icon="locate-fixed"]'),
+      ).not.toBeNull();
+    });
+
     it('puts a pinned popover back by the tray icon', async () => {
       win = await openConfigWindow();
       click('reset-tray-position-config');

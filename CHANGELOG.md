@@ -49,6 +49,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Cambiado
 
+- **«Restablecer posición».** El botón que devuelve el panel de la barra junto
+  al icono (en su cabecera y en Ajustes › General) se llama ahora así y lleva
+  un icono de localizar.
+
 - **Selector de tema con vista previa.** Automático, Claro y Oscuro son ahora
   tarjetas con una ventana en miniatura de cada aspecto y su icono, y la
   sección General se presenta en listas agrupadas al estilo de macOS.
