@@ -21,6 +21,8 @@ export interface Rect extends Point {
 
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 2;
+/** How far fitting may zoom a small graph in: a little, never a blow-up. */
+export const MAX_FIT_ZOOM = 1.25;
 /** One click of the zoom buttons multiplies or divides by this. */
 const STEP_FACTOR = 1.2;
 /** How strongly a wheel delta zooms: `exp(-delta * WHEEL_RATE)`. */
@@ -83,8 +85,8 @@ export function panBy(view: Viewport, dx: number, dy: number): Viewport {
 
 /**
  * The view that shows all of `bounds` inside `area` (canvas coordinates),
- * centred, with `padding` screen pixels around it. It never zooms past 100%
- * (a small pipeline is drawn at its real size), nor under the minimum. Null
+ * centred, with `padding` screen pixels around it. It zooms a small pipeline
+ * in up to `MAX_FIT_ZOOM` to use the room, never more, nor under the minimum. Null
  * while the area has no size: a hidden canvas cannot be fitted yet.
  */
 export function fitView(
@@ -100,7 +102,7 @@ export function fitView(
     usableH / Math.max(1, bounds.height),
   );
   // Rounded down, so the rounding never pushes the graph past the edge.
-  const zoom = Math.min(1, clampZoom(Math.floor(fit * 100) / 100));
+  const zoom = Math.min(MAX_FIT_ZOOM, clampZoom(Math.floor(fit * 100) / 100));
   return {
     x: area.x + (area.width - bounds.width * zoom) / 2 - bounds.x * zoom,
     y: area.y + (area.height - bounds.height * zoom) / 2 - bounds.y * zoom,

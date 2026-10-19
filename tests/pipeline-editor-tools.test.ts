@@ -374,6 +374,77 @@ describe('renderer/pipeline-editor.ts', () => {
       expect(Number.parseInt(zoomText(), 10)).toBeLessThan(50);
     });
 
+    /** Gives the canvas a size; jsdom lays nothing out. */
+    function sizeCanvas(width: number, height: number): void {
+      Object.defineProperty(canvas(), 'clientWidth', {
+        value: width,
+        configurable: true,
+      });
+      Object.defineProperty(canvas(), 'clientHeight', {
+        value: height,
+        configurable: true,
+      });
+    }
+
+    const big = () =>
+      graph(
+        [blk('a', [SETUP], 300, 40), blk('b', [DEPS], 3000, 2000)],
+        ['trigger>a', 'a>b'],
+      );
+
+    it('fits again every time a workflow is opened, even the same one', async () => {
+      const { win, editor } = await openEditor({ groups: groups() });
+      sizeCanvas(600, 400);
+      void editor.open('w-start');
+      await win.settle('listWorkflows', startupEntries(big()));
+      const fitted = zoomText();
+      click(button('Acercar'));
+      expect(zoomText()).not.toBe(fitted);
+
+      void editor.open('w-start');
+      await win.settle('listWorkflows', startupEntries(big()));
+
+      expect(zoomText()).toBe(fitted);
+    });
+
+    it('refits when the window resizes, until the view is moved by hand', async () => {
+      const observer = { resized: (): void => undefined };
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(callback: () => void) {
+            observer.resized = callback;
+          }
+          observe(): void {}
+          disconnect(): void {}
+        },
+      );
+      vi.stubGlobal('requestAnimationFrame', (frame: () => void) => {
+        frame();
+        return 0;
+      });
+      try {
+        const { win, editor } = await openEditor({ groups: groups() });
+        sizeCanvas(600, 400);
+        void editor.open('w-start');
+        await win.settle('listWorkflows', startupEntries(big()));
+        const small = Number.parseInt(zoomText(), 10);
+
+        sizeCanvas(1800, 1200);
+        observer.resized();
+        const large = Number.parseInt(zoomText(), 10);
+        expect(large).toBeGreaterThan(small);
+
+        click(button('Alejar'));
+        const byHand = zoomText();
+        sizeCanvas(600, 400);
+        observer.resized();
+        expect(zoomText(), 'a view moved by hand stays put').toBe(byHand);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it('lays the graph out automatically and saves it', async () => {
       const { win } = await openWith(
         graph(

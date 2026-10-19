@@ -5,6 +5,7 @@ import {
   centerOn,
   clampZoom,
   fitView,
+  MAX_FIT_ZOOM,
   formatZoom,
   panBy,
   stepZoom,
@@ -73,12 +74,22 @@ describe('renderer/pipeline/viewport.ts', () => {
   });
 
   describe('fitView', () => {
-    it('centres a small graph at 100% instead of blowing it up', () => {
+    it('centres a small graph, zooming in no further than 125%', () => {
       const view = fitView(
         { x: 0, y: 0, width: 100, height: 50 },
         { x: 0, y: 0, width: 500, height: 300 },
       );
-      expect(view).toEqual({ x: 200, y: 125, zoom: 1 });
+      expect(view).toEqual({ x: 187.5, y: 118.75, zoom: MAX_FIT_ZOOM });
+      expect(MAX_FIT_ZOOM).toBe(1.25);
+    });
+
+    it('zooms in only as far as the area allows', () => {
+      const view = fitView(
+        { x: 0, y: 0, width: 400, height: 100 },
+        { x: 0, y: 0, width: 520, height: 600 },
+        40,
+      );
+      expect(view?.zoom).toBe(1.1);
     });
 
     it('shrinks a wide graph to fit the area, padding included', () => {
@@ -104,7 +115,8 @@ describe('renderer/pipeline/viewport.ts', () => {
         { x: 250, y: 0, width: 500, height: 300 },
         0,
       );
-      expect(view?.x).toBe(450);
+      // Centred in the 500px that start at 250, at the 125% cap.
+      expect(view?.x).toBe(250 + (500 - 100 * MAX_FIT_ZOOM) / 2);
     });
 
     it('gives up on an area with no size yet', () => {

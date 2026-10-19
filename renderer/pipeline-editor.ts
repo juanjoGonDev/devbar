@@ -104,7 +104,11 @@ export function initPipelineEditor(
   const drag: DragState = { target: null, preview: null };
   let query = '';
   let minimapOn = true;
-  let fitted = false;
+  /**
+   * Whether the view still follows the canvas: true from every open until the
+   * user pans or zooms by hand, and again after «Ajustar a la vista».
+   */
+  let autoFit = true;
   let run: WorkflowRunState | null = null;
   let ticker: ReturnType<typeof setInterval> | null = null;
   const now = deps.now ?? (() => Date.now());
@@ -140,7 +144,7 @@ export function initPipelineEditor(
   });
   const controls = buildCanvasControls();
   const minimap = createMinimap((point) =>
-    setView(centerOn(view, point, canvasSize())),
+    setViewByHand(centerOn(view, point, canvasSize())),
   );
   const overlays = createEditorOverlays({
     root,
@@ -301,9 +305,21 @@ export function initPipelineEditor(
     return next !== null;
   }
 
-  /** First open: fit as soon as the canvas has both a size and a graph. */
-  function fitOnce(): void {
-    if (!fitted && sync.loaded()) fitted = fit();
+  /** The «Ajustar a la vista» button: fits, and follows the canvas again. */
+  function fitByHand(): boolean {
+    autoFit = true;
+    return fit();
+  }
+
+  /** A pan or zoom by hand: the view stops following the canvas. */
+  function setViewByHand(next: Viewport): void {
+    autoFit = false;
+    setView(next);
+  }
+
+  /** Since the open and until a hand moves the view, fit to the canvas. */
+  function followCanvas(): void {
+    if (autoFit && sync.loaded()) fit();
   }
 
   async function refresh(): Promise<void> {
@@ -311,7 +327,7 @@ export function initPipelineEditor(
     if (selectedKey && !placedRefKeys(sync.get()).has(selectedKey))
       selectedKey = null;
     render();
-    fitOnce();
+    followCanvas();
   }
 
   function tick(): void {
@@ -350,7 +366,7 @@ export function initPipelineEditor(
     drag,
     locked,
     getView: () => view,
-    setView,
+    setView: setViewByHand,
     shown,
     render,
     showToast: (message, kind) => deps.showToast(message, kind),
@@ -384,9 +400,9 @@ export function initPipelineEditor(
     placement,
     sync,
     getView: () => view,
-    setView,
+    setView: setViewByHand,
     canvasSize,
-    fit,
+    fit: fitByHand,
     onQuery: (next) => {
       query = next;
       renderPalette();
@@ -397,14 +413,15 @@ export function initPipelineEditor(
     },
   });
 
-  // The section starts hidden: fit once it first gets a size, and keep the
-  // minimap's view rectangle in step with the window.
+  // The section starts hidden: fit once it gets a size, refit as the window
+  // resizes until the view is moved by hand, and keep the minimap's view
+  // rectangle in step with the window.
   if (typeof ResizeObserver === 'function')
     // Next frame: repainting inside the callback can resize observed boxes and
     // trip the "ResizeObserver loop" error.
     new ResizeObserver(() =>
       requestAnimationFrame(() => {
-        fitOnce();
+        followCanvas();
         paintMinimap();
       }),
     ).observe(canvas);
@@ -418,9 +435,10 @@ export function initPipelineEditor(
     open: async (workflowId, options = {}) => {
       const switching = sync.workflow()?.id !== workflowId;
       sync.target(workflowId);
+      // Every open, even of the same workflow, starts fitted to the canvas.
+      autoFit = true;
       if (switching) {
         selectedKey = null;
-        fitted = false;
         run = null;
         popover.close();
         drawer.close();
