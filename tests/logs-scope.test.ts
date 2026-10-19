@@ -259,6 +259,84 @@ describe('renderer/logs/scope.ts', () => {
       expect(activeItems()).toEqual(['web']);
     });
 
+    describe('bringing the opened row into view', () => {
+      /** Two groups with headers; `g2` folded shut, as a user may leave it. */
+      function buildFoldedSidebar(): void {
+        elements.sideTreeEl.innerHTML = [
+          '<details class="side-group" data-group-id="g1" open>',
+          '<summary>Back</summary>',
+          '<div class="side-item" data-id="api"></div>',
+          '</details>',
+          '<details class="side-group" data-group-id="g2">',
+          '<summary>Front</summary>',
+          '<div class="side-item" data-id="web"></div>',
+          '</details>',
+        ].join('');
+      }
+
+      function row(id: string): Element | null {
+        return elements.sideTreeEl.querySelector(`[data-id="${id}"]`);
+      }
+
+      function header(groupId: string): Element | null {
+        return elements.sideTreeEl.querySelector(
+          `[data-group-id="${groupId}"] > summary`,
+        );
+      }
+
+      it('scrolls the sidebar to the service a link opened, and its group header', async () => {
+        buildFoldedSidebar();
+        const spy = vi.spyOn(Element.prototype, 'scrollIntoView');
+        await scope.selectLog('api');
+        expect(spy.mock.contexts).toEqual([header('g1'), row('api')]);
+        // `nearest`: a row already on screen must not make the tree jump.
+        expect(spy.mock.calls).toEqual([
+          [{ block: 'nearest' }],
+          [{ block: 'nearest' }],
+        ]);
+      });
+
+      it('unfolds a collapsed group before scrolling to its service', async () => {
+        buildFoldedSidebar();
+        const spy = vi.spyOn(Element.prototype, 'scrollIntoView');
+        await scope.selectLog('web');
+        const group = elements.sideTreeEl.querySelector<HTMLDetailsElement>(
+          '[data-group-id="g2"]',
+        );
+        expect(group?.open).toBe(true);
+        expect(spy.mock.contexts.at(-1)).toBe(row('web'));
+      });
+
+      it('follows a new target into view in a window that was already open', async () => {
+        buildFoldedSidebar();
+        await scope.selectLog('api');
+        const spy = vi.spyOn(Element.prototype, 'scrollIntoView');
+        await scope.selectLog('web');
+        expect(spy.mock.contexts).toEqual([header('g2'), row('web')]);
+      });
+
+      it('scrolls to the group header when a link opened a whole group', async () => {
+        buildFoldedSidebar();
+        const spy = vi.spyOn(Element.prototype, 'scrollIntoView');
+        await scope.openScope({ kind: 'group', groupId: 'g2' });
+        expect(spy.mock.contexts).toEqual([header('g2')]);
+        expect(spy).toHaveBeenCalledWith({ block: 'nearest' });
+        // The header is visible folded; the merged view does not unfold it.
+        const group = elements.sideTreeEl.querySelector<HTMLDetailsElement>(
+          '[data-group-id="g2"]',
+        );
+        expect(group?.open).toBe(false);
+      });
+
+      it('scrolls nothing in a detached window, which has no sidebar', async () => {
+        await open({ search: '?detached=1' });
+        buildFoldedSidebar();
+        const spy = vi.spyOn(Element.prototype, 'scrollIntoView');
+        await scope.selectLog('web');
+        expect(spy).not.toHaveBeenCalled();
+      });
+    });
+
     it('leaves the sidebar alone in a detached window, which has none', async () => {
       await open({ search: '?detached=1' });
       buildSidebar();

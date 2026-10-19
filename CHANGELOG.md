@@ -103,6 +103,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
   `TypeError:`, `npm ERR!`, `FATAL` o `DeprecationWarning:`. Los comandos que
   usaban la detección por defecto antigua pasan a la nueva; las expresiones
   personalizadas no cambian.
+- **La ventana de logs muestra el servicio que abres.** Al abrirla desde la
+  barra, un workflow o una notificación, la lista lateral se desplaza hasta el
+  servicio (o el grupo) elegido y despliega su grupo si estaba plegado, también
+  cuando la ventana ya estaba abierta.
 
 ## [0.11.0] - 2026-10-10
 

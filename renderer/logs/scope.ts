@@ -117,6 +117,32 @@ function markMergedInSidebar(groupId: string | null): void {
   sideTreeEl
     .querySelector<HTMLElement>('.side-all')
     ?.classList.toggle('active', view.mergedIsAll);
+  if (groupId !== null && !logsParams.isDetached)
+    revealInSidebar(
+      sideTreeEl.querySelector<HTMLElement>(
+        `.side-group[data-group-id="${CSS.escape(groupId)}"] > summary`,
+      ),
+    );
+}
+
+/**
+ * Scroll the sidebar so what the window just opened is on screen — a link
+ * from the tray, a workflow or a notification may target a service far down
+ * the tree, or inside a group the user left folded. The group header goes
+ * first so it shows too whenever both fit; the row goes last so it always
+ * does. `nearest` leaves a row that is already visible exactly where it is.
+ */
+function revealInSidebar(target: HTMLElement | null): void {
+  if (!target) return;
+  const group = target.closest('details');
+  const header = group?.querySelector(':scope > summary');
+  // A service inside a folded group has no box to scroll to; a group header
+  // opened as a whole scope is visible folded, so it stays as the user left it.
+  if (header && header !== target) {
+    if (group && !group.open) group.open = true;
+    header.scrollIntoView({ block: 'nearest' });
+  }
+  target.scrollIntoView({ block: 'nearest' });
 }
 
 export async function selectLog(
@@ -184,6 +210,11 @@ export async function selectLog(
     )) {
       row.classList.toggle('active', row.dataset.id === id);
     }
+    revealInSidebar(
+      sideTreeEl.querySelector<HTMLElement>(
+        `.side-item[data-id="${CSS.escape(id)}"]`,
+      ),
+    );
   }
   renderHeaderRunState();
 }
