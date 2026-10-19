@@ -29,7 +29,6 @@ export type IconName =
   | 'circle-x'
   | 'clock'
   | 'copy'
-  | 'dna'
   | 'download'
   | 'ellipsis'
   | 'external-link'

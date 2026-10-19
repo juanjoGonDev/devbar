@@ -59,7 +59,7 @@ function groupOpenKey(groupId: string): string {
 
 /** The pipeline bucket is a cross-cutting view, and says so with its own mark. */
 function groupFallbackIcon(group: LogListGroup): IconName {
-  return group.groupId === PIPELINE_LOG_GROUP_ID ? 'dna' : 'folder';
+  return group.groupId === PIPELINE_LOG_GROUP_ID ? 'workflow' : 'folder';
 }
 
 /**

@@ -454,7 +454,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
     it('marks itself as the cross-cutting view it is', () => {
       const details = mount(rows.buildPipelineRow(pipeline()));
       expect(iconText(details.getElementsByClassName('g-ico')[0])).toBe(
-        '[dna]',
+        '[workflow]',
       );
     });
 

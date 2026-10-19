@@ -59,6 +59,9 @@ describe('renderer/workflows/section.ts', () => {
     await boot();
     const item = q('.nav-item[data-target="prescripts"]');
     expect(item.querySelector('.nav-label')?.textContent).toBe('Workflows');
+    expect(
+      item.querySelector<HTMLElement>('.nav-ico .icon')?.dataset.icon,
+    ).toBe('workflow');
     item.click();
     expect(q('#window-title').textContent).toBe('Workflows');
   });
