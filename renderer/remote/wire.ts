@@ -11,6 +11,7 @@ import type {
   RemoteLogLine,
   RemoteNotice,
   RemoteNoticeKind,
+  RemoteWorkflowTrigger,
   RemoteWorkflowView,
   RemoteSettingsView,
   RemoteStateView,
@@ -108,14 +109,28 @@ const RESULTS: readonly WorkflowRunResult[] = [
   'cancelled',
 ];
 
+const TRIGGERS: readonly RemoteWorkflowTrigger[] = [
+  'manual',
+  'schedule',
+  'startup',
+];
+
 const workflow = (raw: Raw): RemoteWorkflowView => ({
   id: str(raw.id),
   name: str(raw.name),
   startup: raw.startup === true,
+  // An older server only says whether it runs at startup.
+  trigger: oneOf(
+    raw.trigger,
+    TRIGGERS,
+    raw.startup === true ? 'startup' : 'manual',
+  ),
   running: raw.running === true,
   hidden: raw.hidden === true,
   doneScripts: numOrNull(raw.doneScripts),
   totalScripts: num(raw.totalScripts),
+  startedAt: numOrNull(raw.startedAt),
+  nextRunAt: numOrNull(raw.nextRunAt),
   lastResult:
     raw.lastResult === null || raw.lastResult === undefined
       ? null

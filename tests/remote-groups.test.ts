@@ -226,10 +226,13 @@ describe('renderer/remote/groups-tab.ts', () => {
         id: 'w1',
         name: 'Backup',
         startup: false,
+        trigger: 'manual' as const,
         running: false,
         hidden: false,
         doneScripts: null,
         totalScripts: 2,
+        startedAt: null,
+        nextRunAt: null,
         lastResult: 'warning' as const,
         lastFinishedAt: 1,
       };
@@ -259,6 +262,9 @@ describe('renderer/remote/groups-tab.ts', () => {
               id: 'w1',
               name: 'Arranque',
               startup: true,
+              trigger: 'startup',
+              startedAt: null,
+              nextRunAt: null,
               running: true,
               hidden: false,
               doneScripts: 3,
@@ -280,6 +286,9 @@ describe('renderer/remote/groups-tab.ts', () => {
     it('folds the workflows hidden from the tray, like the tray does', async () => {
       const base = {
         startup: false,
+        trigger: 'manual' as const,
+        startedAt: null,
+        nextRunAt: null,
         running: false,
         doneScripts: null,
         totalScripts: 2,

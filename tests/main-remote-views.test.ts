@@ -276,13 +276,37 @@ describe('src/main/remote/views.ts', () => {
         id: 'start',
         name: 'Flujo start',
         startup: true,
+        trigger: 'startup',
         running: true,
         hidden: false,
         doneScripts: 3,
         totalScripts: 8,
+        startedAt: 2,
+        nextRunAt: null,
         lastResult: 'warning',
         lastFinishedAt: 9,
       });
+    });
+
+    it('says how each one fires, and when a scheduled one fires next', () => {
+      const views = workflowViews(
+        [
+          { ...entry(workflow('cron', SCHEDULE)), nextRunAt: 42 },
+          entry(workflow('desk', MANUAL)),
+        ],
+        false,
+      );
+      expect(
+        views.map(({ id, trigger, nextRunAt, startedAt }) => ({
+          id,
+          trigger,
+          nextRunAt,
+          startedAt,
+        })),
+      ).toEqual([
+        { id: 'desk', trigger: 'manual', nextRunAt: null, startedAt: null },
+        { id: 'cron', trigger: 'schedule', nextRunAt: 42, startedAt: null },
+      ]);
     });
   });
 

@@ -90,16 +90,19 @@ export function workflowViews(
     showHiddenWorkflowsFold,
   );
   const view = (
-    { workflow, running, scriptCount, lastRun }: WorkflowEntry,
+    { workflow, running, scriptCount, lastRun, nextRunAt }: WorkflowEntry,
     hidden: boolean,
   ): RemoteWorkflowView => ({
     id: workflow.id,
     name: workflow.name,
     startup: workflow.trigger.kind === 'startup',
+    trigger: workflow.trigger.kind,
     running: running !== null,
     hidden,
     doneScripts: running ? running.doneScripts : null,
     totalScripts: running ? running.totalScripts : scriptCount,
+    startedAt: running ? running.startedAt : null,
+    nextRunAt,
     lastResult: lastRun ? lastRun.result : null,
     lastFinishedAt: lastRun ? lastRun.finishedAt : null,
   });

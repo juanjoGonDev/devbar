@@ -61,6 +61,8 @@ export interface RemoteGroupView {
   actions: RemoteActionView[];
 }
 
+export type RemoteWorkflowTrigger = 'manual' | 'schedule' | 'startup';
+
 /**
  * A workflow the phone may run and stop: the ones the tray lists (see
  * src/tray-layout.ts). Never its graph or its scripts.
@@ -68,7 +70,10 @@ export interface RemoteGroupView {
 export interface RemoteWorkflowView {
   id: string;
   name: string;
+  /** Same as `trigger === 'startup'`; kept for pages loaded before it. */
   startup: boolean;
+  /** How it fires: picks its tile and its subtitle on the phone. */
+  trigger: RemoteWorkflowTrigger;
   running: boolean;
   /** Hidden from the tray: the phone folds it like the tray does. */
   hidden: boolean;
@@ -76,6 +81,10 @@ export interface RemoteWorkflowView {
   doneScripts: number | null;
   /** The run's scripts, or the workflow's runnable ones when idle. */
   totalScripts: number;
+  /** When the run in flight started, on main's clock; null when idle. */
+  startedAt: number | null;
+  /** When a scheduled (and enabled) workflow fires next. */
+  nextRunAt: number | null;
   lastResult: WorkflowRunResult | null;
   lastFinishedAt: number | null;
 }
