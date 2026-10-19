@@ -223,12 +223,24 @@
               </span>
               <span data-glyph="chevron"></span>
             </button>
-            <h3 id="workflows-title" class="section-title" hidden>Workflows</h3>
-            <div id="workflows" class="workflows"></div>
             <p id="groups-empty" class="muted" hidden>
               No hay grupos configurados en DevBar.
             </p>
             <div id="groups" class="groups"></div>
+          </div>
+
+          <div id="tab-workflows" class="tab" data-tab="workflows" hidden>
+            <h3 id="workflows-running-title" class="section-title" hidden>
+              En curso
+            </h3>
+            <div id="workflows-running" class="wf-card"></div>
+            <h3 id="workflows-idle-title" class="section-title" hidden>
+              Disponibles
+            </h3>
+            <div id="workflows-idle" class="wf-card"></div>
+            <p id="workflows-empty" class="muted" hidden>
+              No hay workflows que lanzar desde aquí.
+            </p>
           </div>
 
           <div id="tab-logs" class="tab" data-tab="logs" hidden>
@@ -414,6 +426,15 @@
             <span data-glyph="groups"></span>
             <span class="drawer-label">Grupos</span>
             <span id="drawer-count-groups" class="drawer-count"></span>
+          </button>
+          <button type="button" class="drawer-item" data-tab-button="workflows">
+            <span data-glyph="workflow"></span>
+            <span class="drawer-label">Workflows</span>
+            <span
+              id="drawer-count-workflows"
+              class="drawer-count is-running"
+              hidden
+            ></span>
           </button>
           <button type="button" class="drawer-item" data-tab-button="logs">
             <span data-glyph="logs"></span>

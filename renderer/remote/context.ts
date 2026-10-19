@@ -10,7 +10,7 @@ import type { DeviceKeys } from './keys.js';
  * switching tabs, the standard way to send a command).
  */
 
-export type TabName = 'groups' | 'logs' | 'notices' | 'settings';
+export type TabName = 'groups' | 'workflows' | 'logs' | 'notices' | 'settings';
 export type ConfirmAnswer = 'ok' | 'gone' | 'error';
 
 /** This device's keys, as the app keeps them (renderer/remote/keys.ts). */

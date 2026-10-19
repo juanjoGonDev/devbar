@@ -21,6 +21,8 @@ export function panelElements() {
       title: byId<HTMLElement>('screen-title', HTMLElement),
       host: byId<HTMLElement>('drawer-host', HTMLElement),
       groupsCount: byId<HTMLElement>('drawer-count-groups', HTMLElement),
+      workflowsCount: byId<HTMLElement>('drawer-count-workflows', HTMLElement),
+      menuDot: byId<HTMLElement>('menu-dot', HTMLElement),
     },
     groups: {
       hostName: byId<HTMLElement>('host-name', HTMLElement),
@@ -28,8 +30,6 @@ export function panelElements() {
       stopAll: byId<HTMLButtonElement>('stop-all', HTMLButtonElement),
       errorChip: byId<HTMLElement>('error-chip', HTMLElement),
       warnChip: byId<HTMLElement>('warn-chip', HTMLElement),
-      workflowsTitle: byId<HTMLElement>('workflows-title', HTMLElement),
-      workflows: byId<HTMLElement>('workflows', HTMLElement),
       confirmBanner: byId<HTMLButtonElement>(
         'confirm-banner',
         HTMLButtonElement,
@@ -43,6 +43,13 @@ export function panelElements() {
       updateBannerTitle: byId<HTMLElement>('update-banner-title', HTMLElement),
       empty: byId<HTMLElement>('groups-empty', HTMLElement),
       list: byId<HTMLElement>('groups', HTMLElement),
+    },
+    workflows: {
+      runningTitle: byId<HTMLElement>('workflows-running-title', HTMLElement),
+      running: byId<HTMLElement>('workflows-running', HTMLElement),
+      idleTitle: byId<HTMLElement>('workflows-idle-title', HTMLElement),
+      idle: byId<HTMLElement>('workflows-idle', HTMLElement),
+      empty: byId<HTMLElement>('workflows-empty', HTMLElement),
     },
     branches: {
       sheet: byId<HTMLDialogElement>('branch-sheet', HTMLDialogElement),

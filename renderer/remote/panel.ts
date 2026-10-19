@@ -17,6 +17,7 @@ import { createGroupsTab } from './groups-tab.js';
 import { createLogsTab } from './logs-tab.js';
 import { createNoticesTab } from './notices-tab.js';
 import { createSettingsTab } from './settings-tab.js';
+import { createWorkflowsTab } from './workflows-tab.js';
 import {
   confirmsView,
   logBatch,
@@ -42,6 +43,7 @@ import {
 const TOAST_MS = 4000;
 const TITLES: Record<TabName, string> = {
   groups: 'Grupos',
+  workflows: 'Workflows',
   logs: 'Logs',
   notices: 'Avisos',
   settings: 'Ajustes',
@@ -169,6 +171,7 @@ export function startPanel(deps: PanelDeps): Panel {
   };
 
   const groups = createGroupsTab(els.groups, els.branches, ctx, me.version);
+  const workflows = createWorkflowsTab(els.workflows, ctx);
   const logs = createLogsTab(els.logs, ctx, (processId) => {
     if (tab === 'logs') connection.watch(processId);
   });
@@ -193,7 +196,12 @@ export function startPanel(deps: PanelDeps): Panel {
     if (now) skew = now - env.now();
     els.nav.host.textContent = state.host.name;
     els.nav.groupsCount.textContent = String(state.groups.length);
+    const running = state.workflows.filter((w) => w.running).length;
+    els.nav.workflowsCount.hidden = running === 0;
+    els.nav.workflowsCount.textContent = String(running);
+    els.nav.menuDot.hidden = running === 0;
     groups.render(state);
+    workflows.render(state);
     logs.render(state);
     notices.render(state);
     settings.renderUpdate(state.update);

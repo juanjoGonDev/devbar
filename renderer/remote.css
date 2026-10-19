@@ -33,6 +33,10 @@
   --scrim: rgba(0, 0, 0, 0.32);
   --drawer-shadow: 8px 0 30px rgba(0, 0, 0, 0.2);
   --edge-hint: rgba(0, 0, 0, 0.18);
+  --schedule: #5e5ce6;
+  --schedule-bg: #efeefe;
+  --startup-bg: #1d1d1f;
+  --warn-result: #a05a00;
   --log-bg: #1c1c1e;
   --log-text: #e5e5ea;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -64,6 +68,10 @@
     --scrim: rgba(0, 0, 0, 0.55);
     --drawer-shadow: 8px 0 30px rgba(0, 0, 0, 0.6);
     --edge-hint: rgba(255, 255, 255, 0.22);
+    --schedule: #7d7aff;
+    --schedule-bg: rgba(94, 92, 230, 0.24);
+    --startup-bg: #2c2c2e;
+    --warn-result: #ffb340;
     --log-bg: #000000;
     --shadow: none;
   }
@@ -770,26 +778,138 @@ body[data-screen='linked'] .app {
   font-size: 13px;
 }
 
-/* Group cards */
-/* «Workflows»: one card, a row per workflow the phone may run. */
-.workflows:not(:empty) {
-  margin-bottom: 16px;
-  padding: 0 14px;
+/* «Workflows»: a card per section, a row per workflow */
+.wf-card:not(:empty) {
+  margin-bottom: 8px;
   overflow: hidden;
   border-radius: 14px;
   background: var(--card);
   box-shadow: var(--shadow);
 }
-.workflows .workflow-row:first-child {
-  border-top: none;
+.wf-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 14px;
 }
-/* The workflows' own «N oculto(s)» fold, inside their card. */
-.workflows > .hidden-groups-toggle {
-  width: 100%;
-  margin: 0;
-  padding: 0;
+.wf-row + .wf-row,
+.wf-card > .hidden-groups-toggle {
   border-top: 1px solid var(--separator);
 }
+.wf-card > .hidden-groups-toggle {
+  width: 100%;
+  margin: 0;
+}
+.wf-row.is-running {
+  background: var(--accent-soft);
+}
+.wf-tile {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+.wf-tile.is-manual {
+  background: var(--go-bg);
+  color: var(--go);
+}
+.wf-tile.is-schedule {
+  background: var(--schedule-bg);
+  color: var(--schedule);
+}
+.wf-tile.is-startup {
+  background: var(--startup-bg);
+  color: #ff9f0a;
+}
+.wf-tile.is-startup svg.i {
+  fill: currentColor;
+}
+.wf-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+.wf-name {
+  overflow: hidden;
+  font-size: 15.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-row.is-running .wf-name {
+  font-weight: 600;
+}
+.wf-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.wf-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+.wf-line .wf-sub {
+  color: var(--accent-strong);
+}
+.wf-progress {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--accent-soft);
+}
+.wf-row.is-running .wf-progress {
+  background: var(--separator);
+}
+.wf-progress-bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.wf-result.is-success {
+  color: var(--go);
+}
+.wf-result.is-warning {
+  color: var(--warn-result);
+}
+.wf-result.is-error {
+  color: var(--error-text);
+}
+.round-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.round-button svg.i {
+  fill: currentColor;
+}
+.round-button.is-run {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.round-button.is-stop {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+.round-button:disabled {
+  opacity: 0.5;
+}
+
+/* Group cards */
 .group-card {
   margin-bottom: 8px;
   overflow: hidden;
@@ -838,7 +958,7 @@ body[data-screen='linked'] .app {
   transform: rotate(90deg);
 }
 .group-card.is-hidden-group,
-.workflow-row.is-hidden-group {
+.wf-row.is-hidden-group {
   opacity: 0.7;
 }
 .group-text,
