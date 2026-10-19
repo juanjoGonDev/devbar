@@ -10,6 +10,8 @@ import { makePreScriptId } from '../compound-id.js';
 import {
   DEFAULT_ERROR_REGEX,
   DEFAULT_WARN_REGEX,
+} from '../log-level-defaults.js';
+import {
   expandTilde,
   isRecord,
   record,

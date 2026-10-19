@@ -97,6 +97,12 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - **Varias confirmaciones seguidas en el móvil.** Cuando dos scripts pedían
   confirmación a la vez, la segunda ventana no respondía a los botones y había
   que recargar la página.
+- **Menos falsos avisos y errores en los logs.** La detección por defecto ya no
+  marca rutas ni nombres de archivo (`src/errors/`, `error-handler.ts`,
+  `--no-warnings`) ni resúmenes como «0 errors» o «no warnings»; sí reconoce
+  `TypeError:`, `npm ERR!`, `FATAL` o `DeprecationWarning:`. Los comandos que
+  usaban la detección por defecto antigua pasan a la nueva; las expresiones
+  personalizadas no cambian.
 
 ## [0.11.0] - 2026-10-10
 

@@ -12,6 +12,9 @@ import { normalizeIconColor } from '../icon-color.js';
 import {
   DEFAULT_ERROR_REGEX,
   DEFAULT_WARN_REGEX,
+  upgradeLegacyDefaultRegex,
+} from '../log-level-defaults.js';
+import {
   isRecord,
   record,
   stringArray,
@@ -150,8 +153,14 @@ export function normalizeCommand(value: unknown): Command {
     args: stringArray(raw.args),
     env: normalizeEnvEntries(raw.env),
     cwd: typeof raw.cwd === 'string' && raw.cwd ? raw.cwd.trim() : null,
-    warnRegex: stringValue(raw.warnRegex) || DEFAULT_WARN_REGEX,
-    errorRegex: stringValue(raw.errorRegex) || DEFAULT_ERROR_REGEX,
+    // A detector still holding an old default is upgraded on read; the
+    // store persists the new one on its next write. Custom ones stay as-is.
+    warnRegex:
+      upgradeLegacyDefaultRegex(stringValue(raw.warnRegex)) ||
+      DEFAULT_WARN_REGEX,
+    errorRegex:
+      upgradeLegacyDefaultRegex(stringValue(raw.errorRegex)) ||
+      DEFAULT_ERROR_REGEX,
     silenceWarnings: Boolean(raw.silenceWarnings),
     silenceErrors: Boolean(raw.silenceErrors),
     silencedPatterns: {

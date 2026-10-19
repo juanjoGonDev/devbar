@@ -17,6 +17,12 @@ import {
   materializeEnv,
   bucketKeyFor,
 } from '../src/groups-model.js';
+import {
+  DEFAULT_ERROR_REGEX,
+  DEFAULT_WARN_REGEX,
+  LEGACY_DEFAULT_ERROR_REGEX,
+  LEGACY_DEFAULT_WARN_REGEX,
+} from '../src/log-level-defaults.js';
 
 // ─── normalizeGroup ───────────────────────────────────────────────────
 
@@ -113,6 +119,32 @@ describe('normalizeCommand', () => {
       { key: 'PORT', value: '3000', enabled: true },
       { key: 'NODE_ENV', value: 'dev', enabled: true },
     ]);
+  });
+
+  it('gives a command without detectors the current defaults', () => {
+    const c = normalizeCommand({ command: 'node' });
+    expect(c.warnRegex).toBe(DEFAULT_WARN_REGEX);
+    expect(c.errorRegex).toBe(DEFAULT_ERROR_REGEX);
+  });
+
+  it('upgrades detectors still holding the exact old defaults', () => {
+    const c = normalizeCommand({
+      command: 'node',
+      warnRegex: LEGACY_DEFAULT_WARN_REGEX,
+      errorRegex: LEGACY_DEFAULT_ERROR_REGEX,
+    });
+    expect(c.warnRegex).toBe(DEFAULT_WARN_REGEX);
+    expect(c.errorRegex).toBe(DEFAULT_ERROR_REGEX);
+  });
+
+  it('keeps custom detectors untouched', () => {
+    const c = normalizeCommand({
+      command: 'node',
+      warnRegex: '\\bwarn\\b',
+      errorRegex: 'ERR|FAIL',
+    });
+    expect(c.warnRegex).toBe('\\bwarn\\b');
+    expect(c.errorRegex).toBe('ERR|FAIL');
   });
 
   it('passes through already-array env unchanged', () => {

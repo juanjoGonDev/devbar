@@ -1,5 +1,9 @@
 import { userIcon } from '../icon.js';
 import { customIconIdOf } from '../../src/custom-icons.js';
+import {
+  DEFAULT_ERROR_REGEX,
+  DEFAULT_WARN_REGEX,
+} from '../../src/log-level-defaults.js';
 import { createIconColorControl } from './icon-color-control.js';
 import { wireModal } from '../modal.js';
 import { buildEnvEditor, type EnvEditorHandle } from './env-editor.js';
@@ -91,9 +95,6 @@ export interface SubDialogDeps {
   renderGroupDetail(): void;
   refreshPipeline(): Promise<void>;
 }
-
-const DEFAULT_WARN = '\\bwarn(ing)?s?\\b';
-const DEFAULT_ERROR = '\\berror(s)?\\b';
 
 /** Creating a pre-script from the pipeline, which belongs to no group. */
 interface NewPreScriptRequest {
@@ -215,8 +216,8 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     if (isCommand) {
       const command = item && 'cwd' in item ? item : null;
       els.cwd.value = command?.cwd || '';
-      els.warn.value = command?.warnRegex || DEFAULT_WARN;
-      els.error.value = command?.errorRegex || DEFAULT_ERROR;
+      els.warn.value = command?.warnRegex || DEFAULT_WARN_REGEX;
+      els.error.value = command?.errorRegex || DEFAULT_ERROR_REGEX;
       els.silenceWarn.checked = command?.silenceWarnings ?? false;
       els.silenceErr.checked = command?.silenceErrors ?? false;
       els.maxLogLines.value =
@@ -254,8 +255,8 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
         args: data.args,
         env: data.env,
         cwd: data.cwd || null,
-        warnRegex: data.warnRegex || DEFAULT_WARN,
-        errorRegex: data.errorRegex || DEFAULT_ERROR,
+        warnRegex: data.warnRegex || DEFAULT_WARN_REGEX,
+        errorRegex: data.errorRegex || DEFAULT_ERROR_REGEX,
         silenceWarnings: data.silenceWarnings,
         silenceErrors: data.silenceErrors,
         maxLogLines: data.maxLogLines,
