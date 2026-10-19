@@ -130,6 +130,32 @@ describe('renderer/remote/confirm-dialog.ts', () => {
     expect(text('confirm-title')).toBe('¿Ejecutar «seed»?');
   });
 
+  it('keeps the next one answerable when the close of the first lands late', async () => {
+    const h = await startLinked();
+    h.answer('confirm', { status: 200, body: { ok: true } });
+    const second = { ...CONFIRM, token: 't2', name: 'seed' };
+    h.source().emit('confirm', { now: NOW, confirms: [CONFIRM, second] });
+    // A browser fires `close` a task after close(), not inside it; jsdom fires
+    // it at once. Hold it back, so the state push can land in between.
+    const d = dialog();
+    d.close = () => d.removeAttribute('open');
+
+    tapId('confirm-run');
+    await settle();
+    h.source().emit('confirm', { now: NOW, confirms: [second] });
+    d.dispatchEvent(new Event('close'));
+
+    expect(d.open).toBe(true);
+    expect(text('confirm-title')).toBe('¿Ejecutar «seed»?');
+    h.answer('confirm', { status: 200, body: { ok: true } });
+    tapId('confirm-run');
+    await settle();
+    expect(h.callsTo('confirm').map((call) => call.body)).toEqual([
+      { token: 't1', decision: 'confirm' },
+      { token: 't2', decision: 'confirm' },
+    ]);
+  });
+
   it('moves on to the next one when the computer settled the first', async () => {
     const h = await startLinked();
     const second = { ...CONFIRM, token: 't2', name: 'seed' };

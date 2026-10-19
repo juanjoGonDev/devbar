@@ -94,6 +94,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
   aparecía y al instante volvía a ser la flecha en los controles con
   descripción emergente.
 
+- **Varias confirmaciones seguidas en el móvil.** Cuando dos scripts pedían
+  confirmación a la vez, la segunda ventana no respondía a los botones y había
+  que recargar la página.
+
 ## [0.11.0] - 2026-10-10
 
 ### Añadido
