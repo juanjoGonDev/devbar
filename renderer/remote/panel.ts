@@ -3,6 +3,7 @@ import type { Me, RemoteClient } from './api.js';
 import { RemoteError } from './channel.js';
 import { createConfirmDialog } from './confirm-dialog.js';
 import { createConnection, type Verdict } from './connection.js';
+import { createDrawer } from './drawer.js';
 import type {
   ConfirmAnswer,
   DeviceIdentity,
@@ -25,7 +26,9 @@ import {
 } from './wire.js';
 
 /**
- * The linked panel: four tabs over one live connection. It keeps the last
+ * The linked panel: its screens over one live connection, reached from the
+ * side menu (renderer/remote/drawer.ts) and, for «Avisos», the bell. The
+ * last screen shown comes back on the next visit. It keeps the last
  * state DevBar pushed, measures how far this phone's clock is from the
  * computer's (countdowns and uptimes are counted on main's clock), runs the
  * 1 s clock the countdowns tick on, and routes each event of the stream to
@@ -37,7 +40,17 @@ import {
  */
 
 const TOAST_MS = 4000;
-const TABS: readonly TabName[] = ['groups', 'logs', 'notices', 'settings'];
+const TITLES: Record<TabName, string> = {
+  groups: 'Grupos',
+  logs: 'Logs',
+  notices: 'Avisos',
+  settings: 'Ajustes',
+};
+const TABS = Object.keys(TITLES) as TabName[];
+const SCREEN_KEY = 'devbar-remote:screen';
+
+const isTab = (value: unknown): value is TabName =>
+  TABS.includes(value as TabName);
 
 export interface PanelDeps {
   env: RemoteEnv;
@@ -167,6 +180,7 @@ export function startPanel(deps: PanelDeps): Panel {
   );
   const settings = createSettingsTab(els.settings, ctx, me);
   const confirm = createConfirmDialog(els.confirm, ctx);
+  const drawer = createDrawer(els.nav, { now: () => env.now() });
 
   function paintStatus(): void {
     els.reconnecting.hidden = live || !(everLive || readFailed);
@@ -177,6 +191,8 @@ export function startPanel(deps: PanelDeps): Panel {
   function applyState(state: RemoteStateView, now?: number): void {
     current = state;
     if (now) skew = now - env.now();
+    els.nav.host.textContent = state.host.name;
+    els.nav.groupsCount.textContent = String(state.groups.length);
     groups.render(state);
     logs.render(state);
     notices.render(state);
@@ -242,22 +258,44 @@ export function startPanel(deps: PanelDeps): Panel {
 
   function showTab(next: TabName): void {
     tab = next;
+    els.nav.title.textContent = TITLES[next];
     for (const name of TABS) {
       const panel = document.querySelector<HTMLElement>(`[data-tab="${name}"]`);
       if (panel) panel.hidden = name !== next;
-      const control = document.querySelector(`[data-tab-button="${name}"]`);
-      if (name === next) control?.setAttribute('aria-current', 'page');
-      else control?.removeAttribute('aria-current');
+      for (const control of document.querySelectorAll(
+        `[data-tab-button="${name}"]`,
+      )) {
+        if (name === next) control.setAttribute('aria-current', 'page');
+        else control.removeAttribute('aria-current');
+      }
+    }
+    try {
+      env.storage().setItem(SCREEN_KEY, next);
+    } catch {
+      /* no storage: the next visit starts on «Grupos» */
     }
     if (next === 'logs') logs.show();
     else connection.watch(null);
     if (next === 'settings') settings.show();
   }
 
+  function lastScreen(): TabName {
+    try {
+      const stored = env.storage().getItem(SCREEN_KEY);
+      return isTab(stored) ? stored : 'groups';
+    } catch {
+      return 'groups';
+    }
+  }
+
   for (const name of TABS)
-    document
-      .querySelector(`[data-tab-button="${name}"]`)
-      ?.addEventListener('click', () => showTab(name));
+    for (const control of document.querySelectorAll(
+      `[data-tab-button="${name}"]`,
+    ))
+      control.addEventListener('click', () => {
+        showTab(name);
+        drawer.close();
+      });
 
   const clock = env.setInterval(() => {
     for (const fns of tickers.values()) for (const fn of fns) fn();
@@ -274,7 +312,8 @@ export function startPanel(deps: PanelDeps): Panel {
   }
 
   els.groups.hostName.textContent = me.hostName;
-  showTab('groups');
+  els.nav.host.textContent = me.hostName;
+  showTab(lastScreen());
   paintStatus();
   refresh();
 

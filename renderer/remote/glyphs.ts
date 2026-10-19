@@ -26,6 +26,7 @@ const PATHS = {
     'M16 17H8',
   ],
   chevron: ['m9 18 6-6-6-6'],
+  menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
   branch: [
     'M6 3v12',
     circle(18, 6, 3),

@@ -12,6 +12,16 @@ export function panelElements() {
     toast: byId<HTMLElement>('toast', HTMLElement),
     noticesTab: byId<HTMLButtonElement>('notices-tab', HTMLButtonElement),
     unreadBadge: byId<HTMLElement>('unread-badge', HTMLElement),
+    nav: {
+      root: byId<HTMLElement>('linked-panel', HTMLElement),
+      main: byId<HTMLElement>('panel-main', HTMLElement),
+      drawer: byId<HTMLElement>('drawer', HTMLElement),
+      backdrop: byId<HTMLElement>('drawer-backdrop', HTMLElement),
+      button: byId<HTMLButtonElement>('menu-button', HTMLButtonElement),
+      title: byId<HTMLElement>('screen-title', HTMLElement),
+      host: byId<HTMLElement>('drawer-host', HTMLElement),
+      groupsCount: byId<HTMLElement>('drawer-count-groups', HTMLElement),
+    },
     groups: {
       hostName: byId<HTMLElement>('host-name', HTMLElement),
       hostStatus: byId<HTMLElement>('host-status', HTMLElement),
