@@ -55,6 +55,8 @@ export interface RemoteGroupView {
   /** The checked-out branch, or null when the group is not a git repo. */
   branch: string | null;
   lastError: string | null;
+  /** Hidden from the tray: the phone folds it like the tray does. */
+  hidden: boolean;
   commands: RemoteCommandView[];
   actions: RemoteActionView[];
 }

@@ -68,6 +68,7 @@ export function fakeRuntime(): RemoteControlRuntime {
     },
     configStore: { getGroup: () => null },
     groupStates: () => [],
+    showHiddenGroupsFold: () => true,
     workflowEntries: () => [],
     workflowVisible: () => false,
     currentBranch: () => Promise.resolve({ ok: false }),

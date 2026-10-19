@@ -54,6 +54,8 @@ export function createGroupsTab(
 ): GroupsTab {
   const sheet = createBranchSheet(sheetEls, ctx);
   let open: string | null | undefined;
+  /** The «N oculto(s)» fold, closed like the tray's until tapped. */
+  let hiddenOpen = false;
   /** Process ids (and `wf:<id>`) with a request in flight. */
   const busy = new Set<string>();
   let last: RemoteStateView | null = null;
@@ -209,6 +211,40 @@ export function createGroupsTab(
     return row;
   }
 
+  function hiddenToggle(count: number): HTMLButtonElement {
+    const toggle = el('button', 'hidden-groups-toggle');
+    toggle.type = 'button';
+    toggle.addEventListener('click', () => {
+      hiddenOpen = !hiddenOpen;
+      repaint();
+    });
+    toggle.setAttribute('aria-expanded', String(hiddenOpen));
+    toggle.append(
+      glyph('chevron', 14),
+      el('span', '', plural(count, 'oculto', 'ocultos')),
+    );
+    return toggle;
+  }
+
+  /** The cards in the tray's order, the hidden ones behind its fold. */
+  function cards(
+    groups: readonly RemoteGroupView[],
+    ticks: (() => void)[],
+  ): HTMLElement[] {
+    const shown = groups.filter((group) => !group.hidden);
+    const hidden = groups.filter((group) => group.hidden);
+    const nodes = shown.map((group) => card(group, ticks));
+    if (hidden.length === 0) return nodes;
+    nodes.push(hiddenToggle(hidden.length));
+    if (hiddenOpen)
+      for (const group of hidden) {
+        const box = card(group, ticks);
+        box.classList.add('is-hidden-group');
+        nodes.push(box);
+      }
+    return nodes;
+  }
+
   function card(group: RemoteGroupView, ticks: (() => void)[]): HTMLElement {
     const box = el('div', 'group-card');
     const expanded = open === group.id;
@@ -297,16 +333,15 @@ export function createGroupsTab(
 
   function render(state: RemoteStateView): void {
     last = state;
-    if (open === undefined) open = state.groups[0]?.id ?? null;
+    if (open === undefined)
+      open = state.groups.find((group) => !group.hidden)?.id ?? null;
     const ticks: (() => void)[] = [];
     header(state);
     banners(state, ticks);
     els.workflowsTitle.hidden = state.workflows.length === 0;
     els.workflows.replaceChildren(...state.workflows.map(workflowRow));
     els.empty.hidden = state.groups.length > 0;
-    els.list.replaceChildren(
-      ...state.groups.map((group) => card(group, ticks)),
-    );
+    els.list.replaceChildren(...cards(state.groups, ticks));
     ctx.onTick('groups', ticks);
   }
 

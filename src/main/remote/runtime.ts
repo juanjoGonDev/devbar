@@ -81,6 +81,8 @@ export function remoteRuntime(app: RemoteAppWiring): RemoteControlRuntime {
     actions,
     configStore: app.configStore,
     groupStates: () => app.snapshots.snapshotGroupStates(),
+    showHiddenGroupsFold: () =>
+      app.configStore.getGlobalSettings().showHiddenGroupsFold,
     workflowEntries: () => app.snapshots.workflowEntries(),
     workflowVisible: (id) =>
       app.snapshots

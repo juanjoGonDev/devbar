@@ -581,6 +581,30 @@ svg.i {
 .group-head[aria-expanded='true'] > svg.i {
   transform: rotate(90deg);
 }
+/* «N oculto(s)»: the groups hidden from the tray, folded like the tray does. */
+.hidden-groups-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 0 0 8px;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.hidden-groups-toggle > svg.i {
+  transition: transform 0.18s ease;
+}
+.hidden-groups-toggle[aria-expanded='true'] > svg.i {
+  transform: rotate(90deg);
+}
+.group-card.is-hidden-group {
+  opacity: 0.7;
+}
 .group-text,
 .command-text,
 .notice-text {

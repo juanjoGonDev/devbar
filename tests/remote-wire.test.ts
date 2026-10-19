@@ -18,6 +18,7 @@ const STATE = {
       color: 'warn',
       branch: 'main',
       lastError: null,
+      hidden: true,
       commands: [
         {
           id: 'web',
@@ -102,6 +103,7 @@ describe('renderer/remote/wire.ts', () => {
 
       expect(state.groups).toHaveLength(1);
       expect(state.groups[0]?.color).toBe('stopped');
+      expect(state.groups[0]?.hidden).toBe(false);
       expect(state.groups[0]?.commands).toEqual([
         {
           id: 'c',

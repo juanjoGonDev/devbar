@@ -40,6 +40,8 @@ export type LiveStream =
 /** What the app hands the live layer (built in remote-control.ts). */
 export interface RemoteRuntime {
   groupStates(): GroupState[];
+  /** Settings › General › «Mostrar grupos ocultos plegados». */
+  showHiddenGroupsFold(): boolean;
   workflowEntries(): WorkflowEntry[];
   currentBranch(groupId: string): Promise<unknown>;
   onLog(listener: (payload: { id: string; entry: LogEntry }) => void): void;
@@ -96,7 +98,11 @@ export function createLive(deps: LiveDeps): Live {
   const snapshot = (): RemoteStateView => ({
     now: deps.now(),
     host: deps.hostInfo(),
-    groups: groupViews(runtime.groupStates(), branches),
+    groups: groupViews(
+      runtime.groupStates(),
+      branches,
+      runtime.showHiddenGroupsFold(),
+    ),
     workflows: workflowViews(runtime.workflowEntries()),
     update: updateView(
       runtime.updater.status(),

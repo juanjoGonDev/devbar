@@ -9,6 +9,7 @@ import type {
   RemoteWorkflowView,
 } from '../../ipc-contract/remote-wire.js';
 import { stripAnsi } from '../../process/log-filters.js';
+import { trayGroupLayout } from '../../tray-group-layout.js';
 import { isBusyPhase, phaseVersion } from '../update-phase.js';
 
 /**
@@ -18,11 +19,17 @@ import { isBusyPhase, phaseVersion } from '../update-phase.js';
  * after someone adds a field to the config shapes.
  */
 
+/**
+ * The groups in the tray's order: the hidden ones last and flagged, behind
+ * the same fold — or left out when the tray does not list them either.
+ */
 export function groupViews(
   groups: readonly GroupState[],
   branches: ReadonlyMap<string, string | null>,
+  showHiddenGroupsFold: boolean,
 ): RemoteGroupView[] {
-  return groups.map((state) => {
+  const { shown, folded } = trayGroupLayout(groups, showHiddenGroupsFold);
+  return [...shown, ...folded].map((state) => {
     const { group } = state;
     const commandName = (id: string): string =>
       group.commands.find((command) => command.id === id)?.name ?? id;
@@ -34,6 +41,7 @@ export function groupViews(
       color: state.color,
       branch: branches.get(state.groupId) ?? null,
       lastError: state.lastError,
+      hidden: group.hiddenInTray,
       commands: state.commands.map((command) => ({
         id: command.commandId,
         processId: command.processId,

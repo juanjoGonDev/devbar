@@ -46,6 +46,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         color: 'warn',
         branch: 'main',
         lastError: null,
+        hidden: false,
         commands: [
           {
             id: 'api',
@@ -87,6 +88,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         color: 'error',
         branch: null,
         lastError: null,
+        hidden: false,
         commands: [
           {
             id: 'astro',

@@ -63,6 +63,7 @@ function harness() {
   let confirmListener: (() => void) | null = null;
   let confirms: RemoteConfirmView[] = [];
   let groups = [groupState('g1')];
+  let showFold = true;
   const branches = new Map<string, string>([['g1', 'main']]);
   let branchReads = 0;
   let presence = 0;
@@ -80,6 +81,7 @@ function harness() {
   };
   const runtime: RemoteRuntime = {
     groupStates: () => groups,
+    showHiddenGroupsFold: () => showFold,
     workflowEntries: () => [],
     currentBranch: (groupId) => {
       branchReads += 1;
@@ -155,6 +157,9 @@ function harness() {
     setGroups: (next: GroupState[]) => {
       groups = next;
     },
+    setShowFold: (next: boolean) => {
+      showFold = next;
+    },
     setUpdate: (next: UpdateStatus) => {
       update = next;
     },
@@ -190,6 +195,20 @@ describe('src/main/remote/live.ts', () => {
       });
       await h.live.state();
       expect(h.branchReads()).toBe(1);
+    });
+
+    it('follows the tray fold setting for the groups hidden from it', async () => {
+      const h = harness();
+      const hidden = groupState('g2');
+      hidden.group = { ...hidden.group, hiddenInTray: true };
+      h.setGroups([groupState('g1'), hidden]);
+
+      expect((await h.live.state()).groups.map((g) => g.hidden)).toEqual([
+        false,
+        true,
+      ]);
+      h.setShowFold(false);
+      expect((await h.live.state()).groups.map((g) => g.id)).toEqual(['g1']);
     });
 
     it('has no branch for a group that is not a repository', async () => {

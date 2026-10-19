@@ -96,6 +96,7 @@ const group = (raw: Raw): RemoteGroupView => ({
   color: oneOf(raw.color, DOTS, 'stopped'),
   branch: strOrNull(raw.branch),
   lastError: strOrNull(raw.lastError),
+  hidden: raw.hidden === true,
   commands: list(raw.commands, command),
   actions: list(raw.actions, action),
 });

@@ -107,6 +107,39 @@ describe('renderer/remote/groups-tab.ts', () => {
       );
     });
 
+    it('folds the groups hidden from the tray behind «N oculto(s)», like the tray', async () => {
+      const initial = state();
+      const docs = initial.groups[1];
+      if (docs) docs.hidden = true;
+      await startLinked(initial);
+
+      expect(cards().map((card) => rowText(card, '.group-name'))).toEqual([
+        'Backend',
+      ]);
+      const toggle = document.querySelector<HTMLButtonElement>(
+        '#groups > .hidden-groups-toggle',
+      );
+      expect(toggle?.textContent).toContain('1 oculto');
+      expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+      tap(toggle);
+      expect(cards().map((card) => rowText(card, '.group-name'))).toEqual([
+        'Backend',
+        'Docs',
+      ]);
+      expect(cards()[1]?.classList.contains('is-hidden-group')).toBe(true);
+    });
+
+    it('opens the first group the tray lists, never a hidden one', async () => {
+      const initial = state();
+      const [backend, docs] = initial.groups;
+      if (backend && docs)
+        initial.groups = [{ ...docs, hidden: true }, backend];
+      await startLinked(initial);
+
+      expect(headOf(cards()[0])?.getAttribute('aria-expanded')).toBe('true');
+      expect(rowText(cards()[0], '.group-name')).toBe('Backend');
+    });
+
     it('repaints when the computer pushes a new state', async () => {
       const h = await startLinked();
       const next = state();

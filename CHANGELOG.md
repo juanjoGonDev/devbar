@@ -34,8 +34,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 - **Grupos ocultos en la barra.** Un grupo puede ocultarse de la lista de la
   barra sin dejar de funcionar (con el ojo de su fila en Ajustes o desde su
-  cabecera): queda plegado al final bajo «N oculto(s)». Si prefieres no
-  verlos ni plegados, desactiva «Mostrar grupos ocultos plegados» en Ajustes ›
+  cabecera): queda plegado al final bajo «N oculto(s)», en la barra y en el
+  móvil. Si prefieres no verlos ni plegados, desactiva «Mostrar grupos ocultos plegados» en Ajustes ›
   General › Panel de la barra.
 
 - **Botón «Nuevo grupo» al principio de la lista.** Sustituye al antiguo
