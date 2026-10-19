@@ -202,7 +202,7 @@ describe('src/main/ipc/register-all.ts', () => {
     it('opens the settings on Workflows and the logs, hiding the tray', () => {
       const h = harness();
       h.ipc.invoke('workflows:list');
-      h.ipc.invoke('workflows:openConfig');
+      h.ipc.invoke('window:openConfig', 'workflows');
       h.ipc.invoke('workflows:openLog', {
         workflowId: 'w1',
         ref: { groupId: 'g', scriptId: 's' },

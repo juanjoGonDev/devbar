@@ -1,6 +1,10 @@
 import type { IpcMainInvokeEvent } from 'electron';
 import type { GlobalSettings } from '../domain-types.js';
-import type { ImportPreview, SilenceLevel } from '../ipc-contract.js';
+import type {
+  ConfigSection,
+  ImportPreview,
+  SilenceLevel,
+} from '../ipc-contract.js';
 
 /**
  * Payload validation for every `ipcMain.handle` entry point. A renderer is a
@@ -75,6 +79,11 @@ export function ipcNumber(value: unknown, label: string): number {
 export function ipcSilenceLevel(value: unknown): SilenceLevel {
   if (value !== 'warn' && value !== 'error')
     throw new TypeError('Invalid IPC silence level');
+  return value;
+}
+export function ipcConfigSection(value: unknown): ConfigSection {
+  if (value !== 'workflows' && value !== 'groups')
+    throw new TypeError('Invalid IPC config section');
   return value;
 }
 export function ipcConfirmDecision(value: unknown): ConfirmDecision {

@@ -250,7 +250,12 @@ const FORWARDS: readonly Forward[] = [
     'dev:setFixtureGroups',
     [{ on: true, repeat: 3 }],
   ],
-  ['openConfig', (api) => api.openConfig(), 'window:openConfig', []],
+  [
+    'openConfig',
+    (api) => api.openConfig('groups'),
+    'window:openConfig',
+    ['groups'],
+  ],
   [
     'openConfigChangelog',
     (api) => api.openConfigChangelog(),
@@ -477,12 +482,6 @@ const FORWARDS: readonly Forward[] = [
     (api) => api.openWorkflowLog('w1'),
     'workflows:openLog',
     [{ workflowId: 'w1', ref: null }],
-  ],
-  [
-    'openWorkflowsConfig',
-    (api) => api.openWorkflowsConfig(),
-    'workflows:openConfig',
-    [],
   ],
   [
     'setGroupHiddenInTray',
@@ -728,6 +727,12 @@ describe('src/preload.ts', () => {
       expect(ipc.invokes).toEqual([
         { channel: 'dev:simulateUpdate', args: [{ version: undefined }] },
       ]);
+    });
+
+    it('opens config with no payload when no section is asked for', () => {
+      void exposedApi().openConfig();
+
+      expect(ipc.invokes).toEqual([{ channel: 'window:openConfig', args: [] }]);
     });
 
     it('covers every channel exactly once across the table', () => {

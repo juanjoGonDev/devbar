@@ -136,8 +136,6 @@ export interface WorkflowsApi {
     workflowId: string,
     ref?: PreStepScriptRef | null,
   ): Promise<SimpleResult>;
-  /** Opens the settings window on its Workflows section. */
-  openWorkflowsConfig(): Promise<SimpleResult>;
   onWorkflowsUpdate(callback: (entries: WorkflowEntry[]) => void): () => void;
   onWorkflowRunState(callback: (state: WorkflowRunState) => void): () => void;
   /** Folds the group into the tray's «N oculto(s)»; it keeps running. */

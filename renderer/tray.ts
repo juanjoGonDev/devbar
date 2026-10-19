@@ -16,6 +16,7 @@ import {
   workflowsSummary,
 } from './tray/workflows-section.js';
 import { createTrayTabs } from './tray/tabs.js';
+import { manageLink } from './tray/manage-link.js';
 import { installAutoHeight } from './tray/auto-height.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
@@ -176,7 +177,13 @@ function render(groupStates: GroupState[]): void {
 
   if (tabs.active() === 'workflows') {
     groupsEl.appendChild(workflowsSection());
-  } else if (!groupStates.length) {
+    autoHeight.schedule();
+    return;
+  }
+  // The Grupos tab — or the bare list while the selector is hidden — opens
+  // with its own way into the settings, like the Workflows tab.
+  groupsEl.appendChild(manageLink('Gestionar grupos', 'groups'));
+  if (!groupStates.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.innerHTML =

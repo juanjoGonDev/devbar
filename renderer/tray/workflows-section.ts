@@ -2,6 +2,7 @@ import { formatUptime } from '../format-uptime.js';
 import { icon, type IconName } from '../icon.js';
 import type { WorkflowEntry } from '../../src/ipc-contract.js';
 import { showToast } from './host.js';
+import { manageLink } from './manage-link.js';
 import { workflowSubtitle } from './workflow-format.js';
 import { trayWorkflowLayout } from '../../src/tray-layout.js';
 
@@ -9,8 +10,8 @@ import { trayWorkflowLayout } from '../../src/tray-layout.js';
  * The popover's Workflows tab: the running (or the startup) workflow first —
  * lightning, progress and a stop button — then the manual and scheduled ones,
  * each with a ▶, then the hidden ones behind an «N oculto(s)» fold when the
- * settings ask for it. «Gestionar workflows» opens the settings on the
- * Workflows section.
+ * settings ask for it. «Gestionar workflows», heading the list, opens the
+ * settings on the Workflows section.
  *
  * One persistent element: `tray.ts` puts it in the list while the Workflows
  * tab is selected, and `renderWorkflowsSection` repaints it whenever the list
@@ -25,18 +26,6 @@ section.className = 'tray-workflows';
 /** The element `tray.ts` shows on the Workflows tab. */
 export function workflowsSection(): HTMLElement {
   return section;
-}
-
-function manageLink(): HTMLElement {
-  const link = document.createElement('button');
-  link.type = 'button';
-  link.className = 'ghost tray-wf-manage';
-  link.append('Gestionar workflows', icon('chevron-right'));
-  link.addEventListener('click', (e) => {
-    e.stopPropagation();
-    void window.api.openWorkflowsConfig();
-  });
-  return link;
 }
 
 function kindIcon(entry: WorkflowEntry): IconName {
@@ -193,5 +182,8 @@ export function renderWorkflowsSection(
         nodes.push(el);
       }
   }
-  section.replaceChildren(...nodes, manageLink());
+  section.replaceChildren(
+    manageLink('Gestionar workflows', 'workflows'),
+    ...nodes,
+  );
 }

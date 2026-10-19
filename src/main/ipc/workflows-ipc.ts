@@ -47,8 +47,6 @@ export interface WorkflowsIpcDeps {
   broadcast: () => void;
   /** The logs window, on one process id. */
   openLogs: (processId: string) => void;
-  /** The settings window, on its Workflows section. */
-  openWorkflowsConfig: () => void;
 }
 
 function ipcRef(value: unknown): PreStepScriptRef {
@@ -152,10 +150,6 @@ export function registerWorkflowsIpc(
       return { ok: true };
     },
   );
-  ipc.handle('workflows:openConfig', () => {
-    deps.openWorkflowsConfig();
-    return { ok: true };
-  });
 
   // ── Groups in the tray ───────────────────────────────────────────────
   ipc.handle(

@@ -109,10 +109,6 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
       deps.logWindows.ensureLogsWindow(processId);
       deps.trayHost.hideIfVisible();
     },
-    openWorkflowsConfig: () => {
-      deps.appWindows.ensureConfigWindow({ goto: 'workflows' });
-      deps.trayHost.hideIfVisible();
-    },
   });
   registerLogsIpc(ipc, deps);
   registerWindowIpc(ipc, {

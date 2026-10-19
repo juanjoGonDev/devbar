@@ -2114,26 +2114,34 @@ dialog h2 {
 .tray-workflows {
   padding: 2px 0 0;
 }
-/* «Gestionar workflows ›»: the link at the end of the tab. */
-.tray-wf-manage {
+/* «Gestionar workflows ›» / «Gestionar grupos ›» (renderer/tray/manage-link.ts):
+   a compact link right-aligned over the first item of each tab's list. */
+.tray-manage {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 100%;
-  margin-top: 4px;
-  padding: 8px 10px;
+  gap: 2px;
+  width: fit-content;
+  margin: 0 6px 0 auto;
+  padding: 2px 4px;
   border: 0;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
+  border-radius: 4px;
   background: transparent;
   box-shadow: none;
   color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.tray-manage .icon {
   font-size: 12px;
 }
-.tray-wf-manage:hover {
+.tray-manage:hover {
   filter: none;
   background: var(--bg-row-hover);
+}
+.tray-manage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .tray-wf-row {
   display: flex;

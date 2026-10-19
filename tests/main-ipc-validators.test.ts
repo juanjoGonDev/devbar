@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   errorMessage,
   ipcBooleanField,
+  ipcConfigSection,
   ipcConfirmDecision,
   ipcGlobalSettingsPatch,
   ipcImportPreview,
@@ -102,6 +103,15 @@ describe('src/main/ipc-validators.ts', () => {
       expect(ipcSilenceLevel('warn')).toBe('warn');
       expect(ipcSilenceLevel('error')).toBe('error');
       expect(() => ipcSilenceLevel('info')).toThrow(/silence level/);
+    });
+  });
+
+  describe('ipcConfigSection', () => {
+    it('accepts only the sections the tray opens', () => {
+      expect(ipcConfigSection('workflows')).toBe('workflows');
+      expect(ipcConfigSection('groups')).toBe('groups');
+      expect(() => ipcConfigSection('about')).toThrow(/config section/);
+      expect(() => ipcConfigSection(null)).toThrow(/config section/);
     });
   });
 

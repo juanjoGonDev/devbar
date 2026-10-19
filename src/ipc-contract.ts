@@ -30,6 +30,8 @@ export type {
   WorkflowScriptRunState,
 } from './ipc-contract/workflows-api.js';
 export type SilenceLevel = 'warn' | 'error';
+/** A settings section the tray can open the settings window on. */
+export type ConfigSection = 'workflows' | 'groups';
 export type TrayColor = 'stopped' | 'running' | 'warn' | 'error';
 export interface CommandRuntimeState {
   commandId: string;
@@ -285,7 +287,8 @@ export interface DevBarApi
   getMergedSources(groupId: string | null): Promise<LogSource[]>;
   clearLogs(processId: string): Promise<SimpleResult>;
   listLogs(): Promise<LogListGroup[]>;
-  openConfig(): Promise<SimpleResult>;
+  /** Opens the settings window, on `section` when one is given. */
+  openConfig(section?: ConfigSection): Promise<SimpleResult>;
   openConfigChangelog(): Promise<SimpleResult>;
   hideTray(): Promise<SimpleResult>;
   onConfigGoto(callback: (target: string) => void): () => void;

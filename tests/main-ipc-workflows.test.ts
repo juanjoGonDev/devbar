@@ -72,7 +72,6 @@ function harness() {
     workflowEntries: () => [],
     broadcast: () => calls.push('broadcast'),
     openLogs: vi.fn(),
-    openWorkflowsConfig: vi.fn(),
   };
   registerWorkflowsIpc(ipc, deps);
   return { ipc, calls, deps };
@@ -93,7 +92,6 @@ describe('src/main/ipc/workflows-ipc.ts', () => {
       'workflows:runState',
       'workflows:scriptLog',
       'workflows:openLog',
-      'workflows:openConfig',
       'groups:setHiddenInTray',
     ]);
   });
@@ -204,11 +202,5 @@ describe('src/main/ipc/workflows-ipc.ts', () => {
     const h = harness();
     h.ipc.invoke('groups:setHiddenInTray', { groupId: 'g', hidden: true });
     expect(h.calls).toEqual(['hidden:g:true', 'broadcast']);
-  });
-
-  it('opens settings on the Workflows section', () => {
-    const h = harness();
-    h.ipc.invoke('workflows:openConfig');
-    expect(h.deps.openWorkflowsConfig).toHaveBeenCalled();
   });
 });

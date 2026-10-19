@@ -90,7 +90,8 @@ const api: DevBarApi = {
     setFixtureGroups: (on, repeat) =>
       ipcRenderer.invoke('dev:setFixtureGroups', { on, repeat }),
   },
-  openConfig: () => ipcRenderer.invoke('window:openConfig'),
+  openConfig: (...section) =>
+    ipcRenderer.invoke('window:openConfig', ...section),
   openConfigChangelog: () => ipcRenderer.invoke('window:openConfigChangelog'),
   onConfigGoto: (cb) => subscribe('config:goto', cb),
   hideTray: () => ipcRenderer.invoke('window:hideTray'),
@@ -176,7 +177,6 @@ const api: DevBarApi = {
     ipcRenderer.invoke('workflows:scriptLog', { workflowId, runId, ref }),
   openWorkflowLog: (workflowId, ref = null) =>
     ipcRenderer.invoke('workflows:openLog', { workflowId, ref }),
-  openWorkflowsConfig: () => ipcRenderer.invoke('workflows:openConfig'),
   onWorkflowsUpdate: (cb) => subscribe('workflows:update', cb),
   onWorkflowRunState: (cb) => subscribe('workflows:runState', cb),
   setGroupHiddenInTray: (groupId, hidden) =>

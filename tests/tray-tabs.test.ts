@@ -164,14 +164,36 @@ describe('renderer/tray/tabs.ts', () => {
     expect(badge()?.getAttribute('aria-label')).toBe('2 en ejecución');
   });
 
-  it('opens the settings on Workflows from «Gestionar workflows»', async () => {
-    const win = await openTray();
+  it('heads the Workflows tab with «Gestionar workflows», which opens them in settings', async () => {
+    const win = await openTray([entry('m'), entry('n')]);
     click(workflowsTab());
-    const manage = document.querySelector<HTMLElement>('.tray-wf-manage');
+    const section = document.querySelector('#groups .tray-workflows');
+    const manage = section?.firstElementChild ?? null;
+    expect(manage?.classList.contains('tray-manage')).toBe(true);
     expect(manage?.textContent).toContain('Gestionar workflows');
+    expect(document.querySelectorAll('#groups .tray-manage')).toHaveLength(1);
     click(manage);
-    expect(win.callCount('openWorkflowsConfig')).toBe(1);
+    expect(win.argsFor('openConfig')).toEqual([['workflows']]);
     expect(document.querySelector('.tray-wf-all')).toBeNull();
+  });
+
+  it('heads the Grupos tab with «Gestionar grupos», which opens them in settings', async () => {
+    const win = await openTray();
+    const manage = byId('groups').firstElementChild;
+    expect(manage?.classList.contains('tray-manage')).toBe(true);
+    expect(manage?.textContent).toContain('Gestionar grupos');
+    expect(document.querySelectorAll('#groups .tray-manage')).toHaveLength(1);
+    click(manage);
+    expect(win.argsFor('openConfig')).toEqual([['groups']]);
+  });
+
+  it('keeps «Gestionar grupos» over the groups when the selector is hidden', async () => {
+    await openTray([]);
+    expect(tabs().hidden).toBe(true);
+    expect(byId('groups').firstElementChild?.textContent).toContain(
+      'Gestionar grupos',
+    );
+    expect(groupNames()).toEqual(['api', 'web']);
   });
 
   it('moves between the tabs with the arrow keys, Home and End', async () => {

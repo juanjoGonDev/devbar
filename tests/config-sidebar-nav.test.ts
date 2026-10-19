@@ -260,6 +260,12 @@ describe('renderer/config/sidebar-nav.ts', () => {
       expect(activeSections()).toEqual(['remote']);
     });
 
+    it('jumps to Grupos when the tray asks for it', async () => {
+      win = await openConfigWindow();
+      await win.push('onConfigGoto', 'groups');
+      expect(activeSections()).toEqual(['groups']);
+    });
+
     it('ignores a target it does not know', async () => {
       win = await openConfigWindow();
       await win.push('onConfigGoto', 'somewhere-else');
