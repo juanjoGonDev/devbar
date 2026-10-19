@@ -13,6 +13,7 @@ import type {
   WorkflowRunState,
   WorkflowScriptRunState,
 } from '../../src/ipc-contract.js';
+import { spinPhase } from '../spin-phase.js';
 
 /**
  * The log drawer at the bottom of the canvas: one tab per script of the
@@ -81,7 +82,7 @@ function lineOf(entry: LogEntry): HTMLElement {
 
 function mark(status: string): HTMLElement {
   return status === 'running'
-    ? el('span', 'pipeline-spinner')
+    ? spinPhase(el('span', 'pipeline-spinner'))
     : el('span', `wf-dot is-${status}`);
 }
 

@@ -6,6 +6,7 @@ import type {
   WorkflowEntry,
   WorkflowRunState,
 } from '../../src/ipc-contract.js';
+import { spinPhase } from '../spin-phase.js';
 
 /**
  * The editor's floating chrome (the WorkflowRun mock): the breadcrumb pill
@@ -180,7 +181,7 @@ export function createEditorChrome(deps: EditorChromeDeps): EditorChrome {
     const { run } = state;
     if (run?.status === 'running') {
       status.replaceChildren(
-        el('span', 'pipeline-spinner'),
+        spinPhase(el('span', 'pipeline-spinner')),
         el(
           'span',
           'wf-run-label is-running',

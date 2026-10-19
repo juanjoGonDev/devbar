@@ -138,6 +138,10 @@ describe('renderer/tray.ts status strips', () => {
           .querySelector('.strip-progress')
           ?.classList.contains('indeterminate'),
       ).toBe(true);
+      expect(
+        strip().querySelector<HTMLElement>('.strip-progress')?.style
+          .animationDelay,
+      ).toMatch(/^-[\d.]+ms$/);
     });
 
     it('names the step that is running', async () => {

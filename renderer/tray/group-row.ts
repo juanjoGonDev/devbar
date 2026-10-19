@@ -16,6 +16,7 @@ import type {
   GroupState,
 } from '../../src/ipc-contract.js';
 import type { Action, Command } from '../../src/domain-types.js';
+import { spinPhase } from '../spin-phase.js';
 
 // Expanded/collapsed state: groupId → boolean
 const expandedState = new Map<string, boolean>();
@@ -343,6 +344,7 @@ function buildActionChip(
   // Icon + name, then the outcome of the last run while it is fresh.
   if (act.icon) chip.append(userIcon(act.icon, 'wand-sparkles', act.iconColor));
   if (isRunning) {
+    spinPhase(chip);
     chip.append(`${act.name} …`);
   } else if (
     isDone &&

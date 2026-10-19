@@ -172,6 +172,9 @@ describe('renderer/workflows/list-view.ts', () => {
       const status = q('.wf-row[data-id="boot"] .wf-status');
       expect(status.textContent?.trim()).toBe('Ejecutando · 3/8');
       expect(status.classList.contains('is-running')).toBe(true);
+      expect(
+        status.querySelector<HTMLElement>('.wf-dot')?.style.animationDelay,
+      ).toMatch(/^-[\d.]+ms$/);
       expect(rowFor('demo').classList.contains('is-off')).toBe(true);
       expect(cellText(rowFor('demo'), '.wf-status')).toBe('Inactivo');
     });

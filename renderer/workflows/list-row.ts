@@ -8,6 +8,7 @@ import {
 import { TRIGGER_META } from './trigger-meta.js';
 import type { Group } from '../../src/domain-types.js';
 import type { WorkflowEntry } from '../../src/ipc-contract.js';
+import { spinPhase } from '../spin-phase.js';
 
 /**
  * One row of the Workflows list. A builder only: the buttons carry
@@ -89,7 +90,10 @@ function statusCell(input: RowInput): HTMLElement {
   const box = cell('wf-cell-status');
   const status = workflowStatus(input.entry);
   const pill = el('span', `wf-status is-${status.kind}`);
-  pill.append(el('span', 'wf-dot'), el('span', '', status.label));
+  const dot = el('span', 'wf-dot');
+  // The running dot pulses; phase-locked so a repaint does not restart it.
+  if (status.kind === 'running') spinPhase(dot);
+  pill.append(dot, el('span', '', status.label));
   box.append(pill);
   return box;
 }

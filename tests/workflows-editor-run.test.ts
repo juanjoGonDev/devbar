@@ -69,7 +69,12 @@ describe('renderer/pipeline-editor.ts (runs)', () => {
       expect(textOf(done.querySelector('.pipeline-node-caption'))).toBe('3s');
       const busy = node('Install deps');
       expect(busy.classList.contains('is-run-running')).toBe(true);
-      expect(busy.querySelector('.pipeline-spinner')).not.toBeNull();
+      expect(busy.style.animationDelay).toMatch(/^-[\d.]+ms$/);
+      expect(
+        busy.querySelector<HTMLElement>('.pipeline-spinner')?.style
+          .animationDelay,
+        'phase-locked, so a repaint does not restart it',
+      ).toMatch(/^-[\d.]+ms$/);
       expect(textOf(busy.querySelector('.pipeline-node-caption'))).toBe(
         'ejecutando · 0:12',
       );
@@ -157,6 +162,9 @@ describe('renderer/pipeline-editor.ts (runs)', () => {
       expect(textOf(query('.wf-run-status'))).toBe(
         'Ejecutando · 1/212sDetener',
       );
+      expect(
+        query('.wf-run-status .pipeline-spinner').style.animationDelay,
+      ).toMatch(/^-[\d.]+ms$/);
       click(button('Detener'));
       expect(win.argsFor('stopWorkflow')).toEqual([['w-start']]);
     });

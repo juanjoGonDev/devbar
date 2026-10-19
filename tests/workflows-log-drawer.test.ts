@@ -128,6 +128,10 @@ describe('renderer/workflows/log-drawer.ts', () => {
     );
     drawer.open('back::setup');
     expect(q('.wf-log-meta').textContent).toBe('0:05');
+    expect(
+      document.querySelector<HTMLElement>('.wf-log-tabs .pipeline-spinner')
+        ?.style.animationDelay,
+    ).toMatch(/^-[\d.]+ms$/);
     await win?.settle('getWorkflowScriptLog', [line('uno')]);
     await sleep(20);
     expect(win?.callCount('getWorkflowScriptLog')).toBe(2);

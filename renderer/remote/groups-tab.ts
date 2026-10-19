@@ -12,6 +12,7 @@ import type { PanelElements } from './elements.js';
 import { countdown, mmss, plural, uptime } from './format.js';
 import { glyph } from './glyphs.js';
 import { button, el } from './view.js';
+import { spinPhase } from '../spin-phase.js';
 
 /**
  * «Grupos»: the computer, the error and warning totals, the banners (a
@@ -163,7 +164,7 @@ export function createGroupsTab(
         ),
     );
     chip.append(
-      running ? el('span', 'spinner is-small') : glyph('play', 12),
+      running ? spinPhase(el('span', 'spinner is-small')) : glyph('play', 12),
       el('span', '', running ? `${action.name} · en curso` : action.name),
     );
     chip.disabled = running || busy.has(action.processId);

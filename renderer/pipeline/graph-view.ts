@@ -21,6 +21,7 @@ import type {
   PreStepScriptRef,
 } from '../../src/domain-types.js';
 import type { Point } from './viewport.js';
+import { spinPhase } from '../spin-phase.js';
 
 /**
  * DOM builders for the world layer of the canvas — everything that pans and
@@ -154,7 +155,7 @@ function stateBadge(status: string): HTMLElement | null {
   const glyph = glyphs[status];
   if (glyph === undefined) return null;
   const badge = el('span', 'pipeline-node-state');
-  if (glyph === '') badge.append(el('span', 'pipeline-spinner'));
+  if (glyph === '') badge.append(spinPhase(el('span', 'pipeline-spinner')));
   else if (glyph === '!') badge.textContent = '!';
   else badge.append(icon(glyph));
   return badge;
@@ -170,6 +171,8 @@ function paintRun(
   if (!script) return;
   card.classList.add(`is-run-${script.status}`);
   card.dataset.run = script.status;
+  // The running card glows; phase-locked so a repaint does not restart it.
+  if (script.status === 'running') spinPhase(card);
   if (script.status === 'skipped') {
     card.append(el('span', 'pipeline-node-skipped', 'omitido'));
     return;
@@ -314,10 +317,9 @@ function edges(input: WorldInput): SVGSVGElement {
     const status = edgeStatus(input.run, edge.to);
     if (status) group.classList.add(`is-run-${status}`);
     if (status === 'running') group.classList.add('is-flowing');
-    group.append(
-      svg('path', { class: 'pipeline-edge-hit', d }),
-      svg('path', { class: 'pipeline-edge-line', d }),
-    );
+    const line = svg('path', { class: 'pipeline-edge-line', d });
+    if (status === 'running') spinPhase(line);
+    group.append(svg('path', { class: 'pipeline-edge-hit', d }), line);
     const mid = edgeMidpoint(from, to);
     const remove = svg('g', {
       class: 'pipeline-edge-delete',
