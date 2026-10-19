@@ -13,8 +13,6 @@ interface MenuAction {
   icon: IconName;
   /** Painted red: the action takes something away (Desvincular). */
   danger?: boolean;
-  /** Set: a `menuitemcheckbox` showing this state with a trailing check. */
-  checked?: boolean;
   run(): void;
 }
 
@@ -41,9 +39,7 @@ export function createDeviceMenu(): DeviceMenu {
   let open: OpenMenu | null = null;
 
   const menuItems = (menu: HTMLElement): HTMLButtonElement[] => [
-    ...menu.querySelectorAll<HTMLButtonElement>(
-      '[role="menuitem"], [role="menuitemcheckbox"]',
-    ),
+    ...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
   ];
 
   function close(restoreFocus: boolean): HTMLButtonElement | null {
@@ -72,22 +68,11 @@ export function createDeviceMenu(): DeviceMenu {
     button.className = action.danger
       ? 'remote-menu-item is-danger'
       : 'remote-menu-item';
-    button.setAttribute(
-      'role',
-      action.checked === undefined ? 'menuitem' : 'menuitemcheckbox',
-    );
+    button.setAttribute('role', 'menuitem');
     button.tabIndex = -1;
     const label = document.createElement('span');
     label.textContent = action.label;
     button.append(icon(action.icon), label);
-    if (action.checked !== undefined)
-      button.setAttribute('aria-checked', String(action.checked));
-    // Appended only when on: `hidden` would lose to `.icon { display }`.
-    if (action.checked) {
-      const mark = icon('check');
-      mark.classList.add('remote-menu-check');
-      button.append(mark);
-    }
     button.addEventListener('click', () => {
       close(true);
       action.run();

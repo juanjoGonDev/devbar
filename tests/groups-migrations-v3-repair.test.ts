@@ -536,8 +536,7 @@ describe('planStoreMigration', () => {
         id: 'w1',
         name: 'Backup',
         enabled: true,
-        showInTray: false,
-        showInRemote: true,
+        hidden: true,
         trigger: { kind: 'manual', confirm: false },
         graph: { blocks: [], edges: [] },
       },
@@ -552,7 +551,7 @@ describe('planStoreMigration', () => {
     expect(result.workflows).toEqual(workflows);
   });
 
-  it("moves a stored manual trigger's tray and phone flags onto the workflow", () => {
+  it("turns a stored manual trigger's tray flag into the workflow's hidden", () => {
     const result = planStoreMigration({
       version: 4,
       groups: [],
@@ -572,11 +571,9 @@ describe('planStoreMigration', () => {
       ],
       globalSettings: {},
     });
-    expect(
-      result.workflows.map((w) => [w.showInTray, w.showInRemote, w.trigger]),
-    ).toEqual([
-      [false, true, { kind: 'manual', confirm: true }],
-      [true, true, { kind: 'startup' }],
+    expect(result.workflows.map((w) => [w.hidden, w.trigger])).toEqual([
+      [true, { kind: 'manual', confirm: true }],
+      [false, { kind: 'startup' }],
     ]);
   });
 

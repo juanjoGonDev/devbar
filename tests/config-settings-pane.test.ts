@@ -17,6 +17,7 @@ function settings(extra: Partial<GlobalSettings> = {}): GlobalSettings {
     maxLogLines: 1234,
     notifySuccess: false,
     showHiddenGroupsFold: false,
+    showHiddenWorkflowsFold: true,
     ...extra,
   };
 }
@@ -106,6 +107,7 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-max-log-lines').value).toBe('1234');
       expect(input('set-notify-success').checked).toBe(false);
       expect(input('set-show-hidden-groups-fold').checked).toBe(false);
+      expect(input('set-show-hidden-workflows-fold').checked).toBe(true);
       expect(themeButton('dark').getAttribute('aria-pressed')).toBe('true');
       expect(themeButton('auto').getAttribute('aria-pressed')).toBe('false');
     });
@@ -122,6 +124,7 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(themeButton('auto').getAttribute('aria-pressed')).toBe('true');
       expect(input('set-notify-success').checked).toBe(true);
       expect(input('set-show-hidden-groups-fold').checked).toBe(true);
+      expect(input('set-show-hidden-workflows-fold').checked).toBe(false);
     });
   });
 
@@ -157,6 +160,23 @@ describe('renderer/config/settings-pane.ts', () => {
       toggle.dispatchEvent(new Event('change'));
       expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
         showHiddenGroupsFold: true,
+      });
+    });
+
+    it('persists the hidden workflows fold switch, under the groups one', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-show-hidden-workflows-fold');
+      expect(toggle.closest('label')?.textContent?.trim()).toBe(
+        'Mostrar workflows ocultos plegados',
+      );
+      const groups = input('set-show-hidden-groups-fold').closest('label');
+      expect(groups?.nextElementSibling).toBe(toggle.closest('label'));
+      toggle.checked = false;
+      toggle.dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+        showHiddenWorkflowsFold: false,
       });
     });
 

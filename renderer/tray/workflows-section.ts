@@ -2,13 +2,15 @@ import { formatUptime } from '../format-uptime.js';
 import { icon, type IconName } from '../icon.js';
 import type { WorkflowEntry } from '../../src/ipc-contract.js';
 import { showToast } from './host.js';
-import { trayWorkflowEntries, workflowSubtitle } from './workflow-format.js';
+import { workflowSubtitle } from './workflow-format.js';
+import { trayWorkflowLayout } from '../../src/tray-layout.js';
 
 /**
  * The popover's WORKFLOWS section, after the groups: the running (or the
  * startup) workflow first — lightning, progress and a stop button — then the
- * manual and scheduled ones, each with a ▶. «Ver todos» opens the settings on
- * the Workflows section. Hidden while there is nothing to list.
+ * manual and scheduled ones, each with a ▶, then the hidden ones behind an
+ * «N oculto(s)» fold when the settings ask for it. «Ver todos» opens the
+ * settings on the Workflows section. Hidden while there is nothing to list.
  *
  * One persistent element: `tray.ts` re-appends it after every group render,
  * and `renderWorkflowsSection` repaints it whenever the list changes.
@@ -139,15 +141,55 @@ function row(entry: WorkflowEntry, now: number): HTMLElement {
   return el;
 }
 
+let lastEntries: readonly WorkflowEntry[] = [];
+/** Settings › General › «Mostrar workflows ocultos plegados». */
+let showFold = false;
+let foldOpen = false;
+
+function foldToggle(count: number): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ghost hidden-groups-toggle';
+  btn.setAttribute('aria-expanded', String(foldOpen));
+  btn.append(
+    icon(foldOpen ? 'chevron-down' : 'chevron-right'),
+    ` ${count} ${count === 1 ? 'oculto' : 'ocultos'}`,
+  );
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    foldOpen = !foldOpen;
+    renderWorkflowsSection(lastEntries);
+  });
+  return btn;
+}
+
+/** Follows the setting; repaints only when it changed. */
+export function setWorkflowsFold(on: boolean): void {
+  if (on === showFold) return;
+  showFold = on;
+  renderWorkflowsSection(lastEntries);
+}
+
 export function renderWorkflowsSection(
   entries: readonly WorkflowEntry[],
 ): void {
-  const listed = trayWorkflowEntries(entries);
-  section.hidden = listed.length === 0;
+  lastEntries = entries;
+  const { shown, folded } = trayWorkflowLayout(entries, showFold);
+  section.hidden = shown.length === 0 && folded.length === 0;
   if (section.hidden) {
     section.replaceChildren();
     return;
   }
   const now = Date.now();
-  section.replaceChildren(header(), ...listed.map((entry) => row(entry, now)));
+  const nodes = shown.map((entry) => row(entry, now));
+  if (folded.length > 0) {
+    nodes.push(foldToggle(folded.length));
+    if (foldOpen)
+      for (const entry of folded) {
+        const el = row(entry, now);
+        el.classList.add('is-hidden-group');
+        nodes.push(el);
+      }
+  }
+  section.replaceChildren(header(), ...nodes);
 }

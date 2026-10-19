@@ -1,4 +1,4 @@
-import { icon, type IconName } from '../icon.js';
+import { icon } from '../icon.js';
 import { nextRunText } from './list-model.js';
 import { MANUAL_TRIGGER, TRIGGER_META } from './trigger-meta.js';
 import { nextWorkflowRun } from '../../src/scheduler.js';
@@ -16,16 +16,14 @@ import type { WorkflowEntry } from '../../src/ipc-contract.js';
  * Al arrancar | Programado | Manual, then what that kind needs — the
  * «Ya lo usa …» swap for a startup slot another workflow holds, weekday chips
  * and a time or an «every N» interval for a schedule, whether a manual one
- * asks first — and, for every kind, where the workflow shows (tray, phone).
+ * asks first. Where the workflow shows is the list's eye, not this.
  * Every change is saved at once through `save`; main's answer repaints it.
  */
 
 type Kind = WorkflowTrigger['kind'];
 
 /** What the popover changes on the workflow. */
-type TriggerPatch = Partial<
-  Pick<Workflow, 'trigger' | 'showInTray' | 'showInRemote'>
->;
+type TriggerPatch = Pick<Workflow, 'trigger'>;
 
 export interface TriggerPopoverDeps {
   /** Positioned inside this element. */
@@ -92,13 +90,11 @@ function segmented(
 }
 
 function switchRow(
-  glyph: IconName | null,
   label: string,
   checked: boolean,
   onChange: (on: boolean) => void,
 ): HTMLElement {
   const row = el('label', 'wf-pop-row');
-  if (glyph) row.append(icon(glyph));
   const text = el('span', 'wf-pop-grow', label);
   const toggle = el('input', 'remote-switch');
   toggle.type = 'checkbox';
@@ -280,32 +276,8 @@ export function createTriggerPopover(deps: TriggerPopoverDeps): TriggerPopover {
     trigger: Extract<WorkflowTrigger, { kind: 'manual' }>,
   ): HTMLElement[] {
     return [
-      switchRow(
-        null,
-        'Pedir confirmación antes de ejecutar',
-        trigger.confirm,
-        (on) => saveTrigger({ ...trigger, confirm: on }),
-      ),
-    ];
-  }
-
-  /** Where the workflow shows, whatever its trigger. */
-  function visibilityBody(): HTMLElement[] {
-    const workflow = deps.workflow();
-    return [
-      el('div', 'wf-pop-divider'),
-      el('div', 'wf-pop-label', 'Mostrar en'),
-      switchRow(
-        'panel-top',
-        'Menú de la barra',
-        workflow?.showInTray ?? true,
-        (on) => deps.save({ showInTray: on }),
-      ),
-      switchRow(
-        'smartphone',
-        'Control remoto',
-        workflow?.showInRemote ?? false,
-        (on) => deps.save({ showInRemote: on }),
+      switchRow('Pedir confirmación antes de ejecutar', trigger.confirm, (on) =>
+        saveTrigger({ ...trigger, confirm: on }),
       ),
     ];
   }
@@ -330,7 +302,6 @@ export function createTriggerPopover(deps: TriggerPopoverDeps): TriggerPopover {
     else if (trigger.kind === 'schedule')
       body.push(...scheduleBody(trigger.schedule));
     else if (trigger.kind === 'manual') body.push(...manualBody(trigger));
-    if (shown === trigger.kind) body.push(...visibilityBody());
     root.replaceChildren(...body);
   }
 

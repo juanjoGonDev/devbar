@@ -81,8 +81,7 @@ const FIXTURE_WORKFLOW: Workflow = {
   id: 'fixture-wf-demo',
   name: 'Demo',
   enabled: true,
-  showInTray: true,
-  showInRemote: false,
+  hidden: false,
   trigger: { kind: 'manual', confirm: false },
   graph: {
     blocks: [

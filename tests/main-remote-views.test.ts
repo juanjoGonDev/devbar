@@ -191,14 +191,13 @@ describe('src/main/remote/views.ts', () => {
     const workflow = (
       id: string,
       trigger: WorkflowTrigger,
-      showInRemote: boolean,
+      hidden = false,
       enabled = true,
     ): Workflow => ({
       id,
       name: `Flujo ${id}`,
       enabled,
-      showInTray: true,
-      showInRemote,
+      hidden,
       trigger,
       graph: graph(['A'], ['trigger>A']),
     });
@@ -210,49 +209,75 @@ describe('src/main/remote/views.ts', () => {
       running: null,
     });
 
-    it('shows the enabled workflows shown on the phone, whatever their trigger', () => {
-      const views = workflowViews([
-        entry(workflow('start', { kind: 'startup' }, true)),
-        entry(workflow('start-off', { kind: 'startup' }, true, false)),
-        entry(workflow('phone', MANUAL, true)),
-        entry(workflow('desk', MANUAL, false)),
-        entry(workflow('off', MANUAL, true, false)),
-        entry(workflow('cron', SCHEDULE, true)),
-        entry(workflow('cron-desk', SCHEDULE, false)),
+    it('lists what the tray lists, the hidden ones last and flagged', () => {
+      const views = workflowViews(
+        [
+          entry(workflow('cron', SCHEDULE)),
+          entry(workflow('desk', MANUAL, true)),
+          entry(workflow('off', MANUAL, false, false)),
+          entry(workflow('start', { kind: 'startup' })),
+        ],
+        true,
+      );
+      expect(views.map((view) => [view.id, view.hidden])).toEqual([
+        ['start', false],
+        ['cron', false],
+        ['desk', true],
       ]);
-      expect(views.map((view) => view.id)).toEqual(['start', 'phone', 'cron']);
-      expect(
-        remoteWorkflowVisible(entry(workflow('desk', MANUAL, false))),
-      ).toBe(false);
     });
 
-    it('shows a running workflow even when it is not shown on the phone', () => {
+    it('leaves the hidden ones out when the tray does not fold them', () => {
+      const views = workflowViews(
+        [entry(workflow('desk', MANUAL, true)), entry(workflow('m', MANUAL))],
+        false,
+      );
+      expect(views.map((view) => view.id)).toEqual(['m']);
+      expect(
+        remoteWorkflowVisible(entry(workflow('desk', MANUAL, true)), false),
+      ).toBe(false);
+      expect(
+        remoteWorkflowVisible(entry(workflow('desk', MANUAL, true)), true),
+      ).toBe(true);
+    });
+
+    it('shows a running workflow even when it is hidden or off', () => {
       const running = {
-        ...entry(workflow('desk', MANUAL, false, false)),
+        ...entry(workflow('desk', MANUAL, true, false)),
         running: { runId: 1, doneScripts: 0, totalScripts: 1, startedAt: 1 },
       };
-      expect(remoteWorkflowVisible(running)).toBe(true);
-      expect(workflowViews([running]).map((view) => view.id)).toEqual(['desk']);
+      expect(remoteWorkflowVisible(running, false)).toBe(true);
+      expect(workflowViews([running], false)).toMatchObject([
+        { id: 'desk', hidden: false },
+      ]);
     });
 
     it('carries only the name, the progress and the last result — never the graph', () => {
-      const [view] = workflowViews([
-        {
-          ...entry(workflow('start', { kind: 'startup' }, true)),
-          lastRun: {
-            startedAt: 1,
-            finishedAt: 9,
-            durationMs: 8,
-            result: 'warning',
+      const [view] = workflowViews(
+        [
+          {
+            ...entry(workflow('start', { kind: 'startup' })),
+            lastRun: {
+              startedAt: 1,
+              finishedAt: 9,
+              durationMs: 8,
+              result: 'warning',
+            },
+            running: {
+              runId: 4,
+              doneScripts: 3,
+              totalScripts: 8,
+              startedAt: 2,
+            },
           },
-          running: { runId: 4, doneScripts: 3, totalScripts: 8, startedAt: 2 },
-        },
-      ]);
+        ],
+        true,
+      );
       expect(view).toEqual({
         id: 'start',
         name: 'Flujo start',
         startup: true,
         running: true,
+        hidden: false,
         doneScripts: 3,
         totalScripts: 8,
         lastResult: 'warning',

@@ -9,7 +9,11 @@ import type {
   RemoteWorkflowView,
 } from '../../ipc-contract/remote-wire.js';
 import { stripAnsi } from '../../process/log-filters.js';
-import { trayGroupLayout } from '../../tray-group-layout.js';
+import {
+  trayGroupLayout,
+  trayWorkflowLayout,
+  workflowListed,
+} from '../../tray-layout.js';
 import { isBusyPhase, phaseVersion } from '../update-phase.js';
 
 /**
@@ -66,29 +70,43 @@ export function groupViews(
 }
 
 /**
- * The workflows a phone may see, run and stop: a running one (so it can be
- * stopped), else an enabled one shown on the phone, whatever its trigger.
+ * The workflows a phone may see, run and stop: exactly the ones the tray
+ * lists — a running one always, the hidden ones only behind its fold.
  */
-export function remoteWorkflowVisible(entry: WorkflowEntry): boolean {
-  if (entry.running) return true;
-  return entry.workflow.enabled && entry.workflow.showInRemote;
+export function remoteWorkflowVisible(
+  entry: WorkflowEntry,
+  showHiddenWorkflowsFold: boolean,
+): boolean {
+  return workflowListed(entry, showHiddenWorkflowsFold);
 }
 
+/** In the tray's order: the hidden ones last and flagged, behind its fold. */
 export function workflowViews(
   entries: readonly WorkflowEntry[],
+  showHiddenWorkflowsFold: boolean,
 ): RemoteWorkflowView[] {
-  return entries
-    .filter(remoteWorkflowVisible)
-    .map(({ workflow, running, scriptCount, lastRun }) => ({
-      id: workflow.id,
-      name: workflow.name,
-      startup: workflow.trigger.kind === 'startup',
-      running: running !== null,
-      doneScripts: running ? running.doneScripts : null,
-      totalScripts: running ? running.totalScripts : scriptCount,
-      lastResult: lastRun ? lastRun.result : null,
-      lastFinishedAt: lastRun ? lastRun.finishedAt : null,
-    }));
+  const { shown, folded } = trayWorkflowLayout(
+    entries,
+    showHiddenWorkflowsFold,
+  );
+  const view = (
+    { workflow, running, scriptCount, lastRun }: WorkflowEntry,
+    hidden: boolean,
+  ): RemoteWorkflowView => ({
+    id: workflow.id,
+    name: workflow.name,
+    startup: workflow.trigger.kind === 'startup',
+    running: running !== null,
+    hidden,
+    doneScripts: running ? running.doneScripts : null,
+    totalScripts: running ? running.totalScripts : scriptCount,
+    lastResult: lastRun ? lastRun.result : null,
+    lastFinishedAt: lastRun ? lastRun.finishedAt : null,
+  });
+  return [
+    ...shown.map((entry) => view(entry, false)),
+    ...folded.map((entry) => view(entry, true)),
+  ];
 }
 
 /**

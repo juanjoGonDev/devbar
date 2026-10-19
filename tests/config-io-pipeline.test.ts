@@ -141,8 +141,7 @@ describe('validateImportedConfig — `workflows` import', () => {
     id,
     name: `Flujo ${id}`,
     enabled: true,
-    showInTray: true,
-    showInRemote: true,
+    hidden: false,
     trigger,
     graph: {
       blocks: [
@@ -173,17 +172,16 @@ describe('validateImportedConfig — `workflows` import', () => {
     expect(result.payload.workflows).toEqual(workflows);
   });
 
-  it("moves a legacy manual trigger's flags onto the workflow", () => {
-    const {
-      showInTray: _tray,
-      showInRemote: _remote,
-      ...legacy
-    } = workflow('b', { ...MANUAL, showInTray: false, showInRemote: true });
+  it("turns a legacy manual trigger's tray flag into the workflow's hidden", () => {
+    const { hidden: _hidden, ...legacy } = workflow('b', {
+      ...MANUAL,
+      showInTray: false,
+      showInRemote: true,
+    });
     const result = validateImportedConfig({ ...base, workflows: [legacy] });
     expectValid(result);
     expect(result.payload.workflows?.[0]).toMatchObject({
-      showInTray: false,
-      showInRemote: true,
+      hidden: true,
       trigger: MANUAL,
     });
   });
@@ -275,8 +273,7 @@ describe('serializeConfig -> validateImportedConfig round-trip', () => {
           id: 'w-start',
           name: 'Arranque',
           enabled: true,
-          showInTray: true,
-          showInRemote: true,
+          hidden: false,
           trigger: { kind: 'startup' as const },
           graph: {
             blocks: [

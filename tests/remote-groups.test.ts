@@ -227,6 +227,7 @@ describe('renderer/remote/groups-tab.ts', () => {
         name: 'Backup',
         startup: false,
         running: false,
+        hidden: false,
         doneScripts: null,
         totalScripts: 2,
         lastResult: 'warning' as const,
@@ -259,6 +260,7 @@ describe('renderer/remote/groups-tab.ts', () => {
               name: 'Arranque',
               startup: true,
               running: true,
+              hidden: false,
               doneScripts: 3,
               totalScripts: 8,
               lastResult: null,
@@ -273,6 +275,42 @@ describe('renderer/remote/groups-tab.ts', () => {
       await settle();
 
       expect(h.callsTo('workflow.stop')[0]?.body).toEqual({ workflowId: 'w1' });
+    });
+
+    it('folds the workflows hidden from the tray, like the tray does', async () => {
+      const base = {
+        startup: false,
+        running: false,
+        doneScripts: null,
+        totalScripts: 2,
+        lastResult: null,
+        lastFinishedAt: null,
+      };
+      await startLinked(
+        state({
+          workflows: [
+            { ...base, id: 'w1', name: 'Backup', hidden: false },
+            { ...base, id: 'w2', name: 'Limpieza', hidden: true },
+            { ...base, id: 'w3', name: 'Seed', hidden: true },
+          ],
+        }),
+      );
+      const names = (): string[] =>
+        Array.from(
+          document.querySelectorAll('#workflows .command-name'),
+          (el) => el.textContent ?? '',
+        );
+
+      expect(names()).toEqual(['Backup']);
+      const toggle = document.querySelector<HTMLButtonElement>(
+        '#workflows > .hidden-groups-toggle',
+      );
+      expect(toggle?.textContent).toContain('2 ocultos');
+      tap(toggle);
+      expect(names()).toEqual(['Backup', 'Limpieza', 'Seed']);
+      expect(
+        document.querySelectorAll('#workflows .is-hidden-group'),
+      ).toHaveLength(2);
     });
 
     it('hides the workflows section when there are none', async () => {

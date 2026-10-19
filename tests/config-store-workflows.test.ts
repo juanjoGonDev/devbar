@@ -72,8 +72,7 @@ function startup(graph: unknown = CHAIN) {
     id: 'w-start',
     name: 'Arranque',
     enabled: true,
-    showInTray: true,
-    showInRemote: true,
+    hidden: false,
     trigger: { kind: 'startup' },
     graph,
   };
@@ -193,8 +192,7 @@ describe('src/config-store/workflow-store.ts', () => {
       expect(store.getWorkflow(other.id)?.trigger).toEqual({ kind: 'startup' });
       expect(store.getWorkflow('w-start')).toMatchObject({
         trigger: MANUAL,
-        showInTray: true,
-        showInRemote: true,
+        hidden: false,
       });
     });
 

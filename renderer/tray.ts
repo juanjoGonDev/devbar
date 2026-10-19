@@ -3,7 +3,7 @@ import { formatUptime } from './format-uptime.js';
 import { isComboboxOpen, setComboboxHostHooks } from './combobox.js';
 import type { GroupState } from '../src/ipc-contract.js';
 import type { GlobalSettings } from '../src/domain-types.js';
-import { trayGroupLayout } from '../src/tray-group-layout.js';
+import { trayGroupLayout } from '../src/tray-layout.js';
 import { byId } from './dom.js';
 import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
@@ -11,6 +11,7 @@ import { setTrayHost, showToast } from './tray/host.js';
 import { wireUpdateChip } from './tray/update-chip.js';
 import {
   renderWorkflowsSection,
+  setWorkflowsFold,
   workflowsSection,
 } from './tray/workflows-section.js';
 import { installAutoHeight } from './tray/auto-height.js';
@@ -310,6 +311,7 @@ window.api.onWorkflowsUpdate((entries) => {
 });
 
 function applySettings(settings: Partial<GlobalSettings>): void {
+  setWorkflowsFold(settings.showHiddenWorkflowsFold === true);
   const next = settings.showHiddenGroupsFold !== false;
   if (next === showHiddenGroupsFold) return;
   showHiddenGroupsFold = next;

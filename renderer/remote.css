@@ -555,6 +555,13 @@ svg.i {
 .workflows .workflow-row:first-child {
   border-top: none;
 }
+/* The workflows' own «N oculto(s)» fold, inside their card. */
+.workflows > .hidden-groups-toggle {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--separator);
+}
 .group-card {
   margin-bottom: 8px;
   overflow: hidden;
@@ -602,7 +609,8 @@ svg.i {
 .hidden-groups-toggle[aria-expanded='true'] > svg.i {
   transform: rotate(90deg);
 }
-.group-card.is-hidden-group {
+.group-card.is-hidden-group,
+.workflow-row.is-hidden-group {
   opacity: 0.7;
 }
 .group-text,

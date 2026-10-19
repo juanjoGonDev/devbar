@@ -58,6 +58,10 @@ const setNotifySuccess = byId<HTMLInputElement>(
   'set-notify-success',
   HTMLInputElement,
 );
+const setShowHiddenWorkflowsFold = byId<HTMLInputElement>(
+  'set-show-hidden-workflows-fold',
+  HTMLInputElement,
+);
 const setShowHiddenGroupsFold = byId<HTMLInputElement>(
   'set-show-hidden-groups-fold',
   HTMLInputElement,
@@ -236,6 +240,7 @@ const settings = createSettingsPane(
     maxLogLines: setMaxLogLines,
     notifySuccess: setNotifySuccess,
     showHiddenGroupsFold: setShowHiddenGroupsFold,
+    showHiddenWorkflowsFold: setShowHiddenWorkflowsFold,
     notifHint,
     openNotifSettings: openNotifSettingsBtn,
     testNotify: testNotifyBtn,

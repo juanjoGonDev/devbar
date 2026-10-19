@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLive, type RemoteRuntime } from '../src/main/remote/live.js';
 import type { EventSink } from '../src/main/remote/events.js';
-import type { GroupState } from '../src/ipc-contract.js';
+import type { GroupState, WorkflowEntry } from '../src/ipc-contract.js';
 import type { RemoteConfirmView } from '../src/ipc-contract/remote-wire.js';
 import type { UpdateStatus } from '../src/ipc-contract/updates-api.js';
 import type { LogEntry } from '../src/domain-types.js';
@@ -64,6 +64,8 @@ function harness() {
   let confirms: RemoteConfirmView[] = [];
   let groups = [groupState('g1')];
   let showFold = true;
+  let workflows: WorkflowEntry[] = [];
+  let showWorkflowFold = false;
   const branches = new Map<string, string>([['g1', 'main']]);
   let branchReads = 0;
   let presence = 0;
@@ -82,7 +84,8 @@ function harness() {
   const runtime: RemoteRuntime = {
     groupStates: () => groups,
     showHiddenGroupsFold: () => showFold,
-    workflowEntries: () => [],
+    showHiddenWorkflowsFold: () => showWorkflowFold,
+    workflowEntries: () => workflows,
     currentBranch: (groupId) => {
       branchReads += 1;
       return Promise.resolve({ ok: true, branch: branches.get(groupId) });
@@ -160,6 +163,12 @@ function harness() {
     setShowFold: (next: boolean) => {
       showFold = next;
     },
+    setWorkflows: (next: WorkflowEntry[]) => {
+      workflows = next;
+    },
+    setShowWorkflowFold: (next: boolean) => {
+      showWorkflowFold = next;
+    },
     setUpdate: (next: UpdateStatus) => {
       update = next;
     },
@@ -209,6 +218,34 @@ describe('src/main/remote/live.ts', () => {
       ]);
       h.setShowFold(false);
       expect((await h.live.state()).groups.map((g) => g.id)).toEqual(['g1']);
+    });
+
+    it('follows the workflows fold setting for the workflows hidden from it', async () => {
+      const h = harness();
+      const workflowEntry = (id: string, hidden: boolean): WorkflowEntry => ({
+        workflow: {
+          id,
+          name: id,
+          enabled: true,
+          hidden,
+          trigger: { kind: 'manual', confirm: false },
+          graph: { blocks: [], edges: [] },
+        },
+        lastRun: null,
+        nextRunAt: null,
+        scriptCount: 1,
+        running: null,
+      });
+      h.setWorkflows([workflowEntry('w1', false), workflowEntry('w2', true)]);
+
+      expect((await h.live.state()).workflows.map((w) => w.id)).toEqual(['w1']);
+      h.setShowWorkflowFold(true);
+      expect(
+        (await h.live.state()).workflows.map((w) => [w.id, w.hidden]),
+      ).toEqual([
+        ['w1', false],
+        ['w2', true],
+      ]);
     });
 
     it('has no branch for a group that is not a repository', async () => {

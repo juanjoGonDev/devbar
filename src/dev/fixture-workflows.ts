@@ -71,8 +71,7 @@ const at = (time: string, days: number[]): WorkflowTrigger => ({
 
 interface Options {
   enabled?: boolean;
-  tray?: boolean;
-  remote?: boolean;
+  hidden?: boolean;
 }
 
 function workflow(
@@ -86,8 +85,7 @@ function workflow(
     id: `${FIXTURE_ID_PREFIX}wf-${key}`,
     name,
     enabled: options.enabled !== false,
-    showInTray: options.tray !== false,
-    showInRemote: options.remote ?? trigger.kind === 'startup',
+    hidden: options.hidden === true,
     trigger,
     graph: pipeline,
   };
@@ -161,7 +159,7 @@ export function buildFixtureWorkflows(): Workflow[] {
       'Informe de los lunes',
       at('09:30', [1]),
       chain('lento-5', 'docs'),
-      { tray: false },
+      { hidden: true },
     ),
     workflow(
       'cada-6h',
@@ -176,24 +174,22 @@ export function buildFixtureWorkflows(): Workflow[] {
       chain('rapido'),
       { enabled: false },
     ),
-    workflow('simple', 'Paso único', manual(), chain('rapido'), {
-      remote: true,
-    }),
+    workflow('simple', 'Paso único', manual(), chain('rapido')),
     workflow(
       'desplegar',
       'Desplegar a preproducción',
       manual(true),
       chain('build', 'test', 'empaquetar', 'publicar'),
-      { remote: true },
     ),
-    workflow('solo-bandeja', 'Solo en la bandeja', manual(), chain('cache')),
-    workflow('solo-movil', 'Solo en el móvil', manual(), chain('lint'), {
-      tray: false,
-      remote: true,
-    }),
-    workflow('oculto', 'Oculto en bandeja y móvil', manual(), chain('tipos'), {
-      tray: false,
-    }),
+    workflow(
+      'oculto',
+      'Oculto en la barra y el móvil',
+      manual(),
+      chain('tipos'),
+      {
+        hidden: true,
+      },
+    ),
     workflow(
       'cadena',
       'Cadena lineal',

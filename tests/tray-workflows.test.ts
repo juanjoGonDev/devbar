@@ -6,7 +6,7 @@ import {
   type RendererWindow,
 } from './helpers/renderer-dom.js';
 import type { GroupState, WorkflowEntry } from '../src/ipc-contract.js';
-import type { WorkflowTrigger } from '../src/domain-types.js';
+import type { Workflow, WorkflowTrigger } from '../src/domain-types.js';
 
 /**
  * The tray popover's WORKFLOWS section and its «N oculto(s)» group
@@ -33,16 +33,17 @@ function entry(
   id: string,
   trigger: WorkflowTrigger = MANUAL,
   extra: Partial<WorkflowEntry> = {},
+  workflow: Partial<Workflow> = {},
 ): WorkflowEntry {
   return {
     workflow: {
       id,
       name: `Flujo ${id}`,
       enabled: true,
-      showInTray: true,
-      showInRemote: false,
+      hidden: false,
       trigger,
       graph: { blocks: [], edges: [] },
+      ...workflow,
     },
     lastRun: null,
     nextRunAt: null,
@@ -159,6 +160,57 @@ describe('renderer/tray/workflows-section.ts', () => {
       await win.settle('listWorkflows', [entry('m')]);
       click(document.querySelector('.tray-wf-all'));
       expect(win.callCount('openWorkflowsConfig')).toBe(1);
+    });
+
+    it('lists no hidden workflow while the fold is off (the default)', async () => {
+      const win = await openTray();
+      await win.settle('listWorkflows', [
+        entry('m'),
+        entry('h', MANUAL, {}, { hidden: true }),
+      ]);
+      expect(rows()).toEqual(['Flujo m']);
+      expect(
+        document.querySelector('#tray-workflows .hidden-groups-toggle'),
+      ).toBeNull();
+    });
+
+    it('folds the hidden workflows at the end when the fold is on', async () => {
+      const win = await openTray();
+      await win.push('onSettingsChange', { showHiddenWorkflowsFold: true });
+      await win.settle('listWorkflows', [
+        entry('h', MANUAL, {}, { hidden: true }),
+        entry('m'),
+      ]);
+      expect(rows()).toEqual(['Flujo m']);
+      const toggle = document.querySelector<HTMLElement>(
+        '#tray-workflows .hidden-groups-toggle',
+      );
+      expect(toggle?.textContent).toContain('1 oculto');
+      click(toggle);
+      expect(rows()).toEqual(['Flujo m', 'Flujo h']);
+      expect(
+        document.querySelector('.tray-wf-row.is-hidden-group')?.textContent,
+      ).toContain('Flujo h');
+    });
+
+    it('always lists a running hidden workflow', async () => {
+      const win = await openTray();
+      await win.settle('listWorkflows', [
+        entry(
+          'h',
+          MANUAL,
+          {
+            running: {
+              runId: 1,
+              doneScripts: 0,
+              totalScripts: 2,
+              startedAt: Date.now(),
+            },
+          },
+          { hidden: true },
+        ),
+      ]);
+      expect(rows()).toEqual(['Flujo h']);
     });
 
     it('survives a group re-render', async () => {

@@ -13,8 +13,7 @@ const workflow = (kind: 'startup' | 'manual'): Workflow => ({
   id: 'w1',
   name: 'Backup',
   enabled: true,
-  showInTray: true,
-  showInRemote: false,
+  hidden: false,
   trigger:
     kind === 'startup'
       ? { kind: 'startup' }

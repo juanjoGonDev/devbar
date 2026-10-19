@@ -120,22 +120,17 @@ describe('src/dev/fixture-workflows.ts', () => {
       ).toBe(true);
     });
 
-    it('covers every manual combination of confirmation, tray and phone', () => {
+    it('covers every manual combination of confirmation and visibility', () => {
       const manual = buildFixtureWorkflows().filter(
         (w) => w.trigger.kind === 'manual',
       );
       const combos = new Set(
         manual.map(
           (w) =>
-            `${w.trigger.kind === 'manual' && w.trigger.confirm}:${w.showInTray}:${w.showInRemote}`,
+            `${w.trigger.kind === 'manual' && w.trigger.confirm}:${w.hidden}`,
         ),
       );
-      for (const combo of [
-        'true:true:true',
-        'false:true:false',
-        'false:false:true',
-        'false:false:false',
-      ])
+      for (const combo of ['true:false', 'false:false', 'false:true'])
         expect(combos.has(combo), combo).toBe(true);
       expect(buildFixtureWorkflows().some((w) => !w.enabled)).toBe(true);
     });

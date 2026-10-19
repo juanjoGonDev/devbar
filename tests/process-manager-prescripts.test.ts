@@ -60,6 +60,7 @@ const GLOBAL_SETTINGS: GlobalSettings = {
   maxLogLines: 2000,
   notifySuccess: true,
   showHiddenGroupsFold: true,
+  showHiddenWorkflowsFold: false,
 };
 
 function makeConfigStoreStub(group: Group = GROUP) {

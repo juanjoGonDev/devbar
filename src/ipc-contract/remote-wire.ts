@@ -62,14 +62,16 @@ export interface RemoteGroupView {
 }
 
 /**
- * A workflow the phone may run and stop: the startup one, and every enabled
- * manual one with «Mostrar en el móvil». Never its graph or its scripts.
+ * A workflow the phone may run and stop: the ones the tray lists (see
+ * src/tray-layout.ts). Never its graph or its scripts.
  */
 export interface RemoteWorkflowView {
   id: string;
   name: string;
   startup: boolean;
   running: boolean;
+  /** Hidden from the tray: the phone folds it like the tray does. */
+  hidden: boolean;
   /** Settled scripts of the run in flight; null when it is not running. */
   doneScripts: number | null;
   /** The run's scripts, or the workflow's runnable ones when idle. */

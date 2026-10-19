@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatWhen,
-  trayWorkflowEntries,
   workflowSubtitle,
 } from '../renderer/tray/workflow-format.js';
 import type { WorkflowEntry } from '../src/ipc-contract.js';
 import type { Workflow, WorkflowTrigger } from '../src/domain-types.js';
 
 /**
- * `renderer/tray/workflow-format.ts` — which workflows the tray lists, in
- * which order, and the one-line subtitle under each.
+ * `renderer/tray/workflow-format.ts` — the one-line subtitle under each of
+ * the tray's workflows (which ones it lists is src/tray-layout.ts).
  */
 
 // 2026-01-05 is a Monday.
@@ -34,8 +33,7 @@ function entry(
       id,
       name: id,
       enabled: true,
-      showInTray: true,
-      showInRemote: false,
+      hidden: false,
       trigger,
       graph: { blocks: [], edges: [] },
       ...workflow,
@@ -48,8 +46,6 @@ function entry(
   };
 }
 
-const RUNNING = { runId: 1, doneScripts: 3, totalScripts: 8, startedAt: NOW };
-
 describe('renderer/tray/workflow-format.ts', () => {
   describe('formatWhen', () => {
     it('says today, yesterday, a weekday or a date', () => {
@@ -60,44 +56,6 @@ describe('renderer/tray/workflow-format.ts', () => {
       expect(formatWhen(new Date(2025, 11, 20, 10, 0).getTime(), NOW)).toBe(
         '20/12 10:00',
       );
-    });
-  });
-
-  describe('trayWorkflowEntries', () => {
-    it('lists the running ones first, then startup, manual and scheduled', () => {
-      const list = trayWorkflowEntries([
-        entry('cron', SCHEDULE),
-        entry('manual', MANUAL),
-        entry('start', { kind: 'startup' }),
-        entry('busy', MANUAL, { running: RUNNING }),
-      ]);
-      expect(list.map((e) => e.workflow.id)).toEqual([
-        'busy',
-        'start',
-        'manual',
-        'cron',
-      ]);
-    });
-
-    it('leaves out what is off, hidden from the tray (whatever its trigger) or empty', () => {
-      const list = trayWorkflowEntries([
-        entry('off', MANUAL, {}, { enabled: false }),
-        entry('desk', MANUAL, {}, { showInTray: false }),
-        entry('start-desk', { kind: 'startup' }, {}, { showInTray: false }),
-        entry('cron-desk', SCHEDULE, {}, { showInTray: false }),
-        entry('empty', MANUAL, { scriptCount: 0 }),
-        entry('cron-off', SCHEDULE, {}, { enabled: false }),
-        entry('start-off', { kind: 'startup' }, {}, { enabled: false }),
-        entry('shown', MANUAL),
-      ]);
-      expect(list.map((e) => e.workflow.id)).toEqual(['shown']);
-    });
-
-    it('keeps a running workflow even when it would be left out', () => {
-      const list = trayWorkflowEntries([
-        entry('desk', MANUAL, { running: RUNNING }, { showInTray: false }),
-      ]);
-      expect(list).toHaveLength(1);
     });
   });
 

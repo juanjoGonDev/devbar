@@ -2017,7 +2017,8 @@ dialog h2 {
   border-bottom: none;
 }
 
-/* «N oculto(s)»: the tray-hidden groups, folded at the end of the list. */
+/* «N oculto(s)»: the tray-hidden groups (and workflows), folded at the end
+   of their list. */
 .hidden-groups-toggle {
   display: flex;
   align-items: center;
@@ -2030,7 +2031,8 @@ dialog h2 {
   text-align: left;
 }
 .group-wrapper.is-hidden-group,
-.group-row.is-hidden-group {
+.group-row.is-hidden-group,
+.tray-wf-row.is-hidden-group {
   opacity: 0.55;
 }
 
@@ -5653,7 +5655,7 @@ label.remote-row {
   display: grid;
   grid-template-columns:
     minmax(0, 2.2fr) minmax(0, 1.5fr) minmax(0, 1.3fr) minmax(0, 1.3fr)
-    136px;
+    170px;
   align-items: center;
   gap: 12px;
   min-height: 52px;
@@ -5892,6 +5894,22 @@ label.remote-row {
 .wf-icon-btn.is-menu[aria-expanded='true'] {
   opacity: 1;
 }
+/* The eye: on hover, and always while the workflow is hidden (then the
+   name dims, like a group hidden from the tray). */
+.wf-icon-btn.is-eye {
+  border-color: transparent;
+  background: transparent;
+  color: var(--wf-muted);
+  opacity: 0;
+}
+.wf-row:hover .wf-icon-btn.is-eye,
+.wf-icon-btn.is-eye:focus-visible,
+.wf-row.is-hidden .wf-icon-btn.is-eye {
+  opacity: 1;
+}
+.wf-row.is-hidden .wf-name {
+  opacity: 0.45;
+}
 .wf-switch {
   flex: none;
 }
@@ -5946,7 +5964,7 @@ label.remote-row {
   .wf-row {
     grid-template-columns:
       minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.2fr)
-      136px;
+      170px;
   }
   .wf-cell-last {
     display: none;
@@ -6732,9 +6750,4 @@ label.remote-row {
 .detail-visibility:hover {
   filter: none;
   background: var(--bg-row-hover);
-}
-/* A checkable «⋯» menu item: the check sits at the far end of the row. */
-button.remote-menu-item .remote-menu-check {
-  margin-left: auto;
-  color: var(--accent);
 }

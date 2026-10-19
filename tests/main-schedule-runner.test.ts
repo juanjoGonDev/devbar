@@ -321,8 +321,7 @@ describe('src/main/schedule-runner.ts', () => {
         id,
         name: id,
         enabled: true,
-        showInTray: true,
-        showInRemote: false,
+        hidden: false,
         trigger: {
           kind: 'schedule',
           schedule: { rules: [{ time: '09:00', days: [] }], interval: null },

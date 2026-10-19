@@ -27,8 +27,7 @@ function harness(overrides: Partial<StartupDeps> = {}) {
     id: 'w-start',
     name: 'Arranque',
     enabled: startupEnabled,
-    showInTray: true,
-    showInRemote: false,
+    hidden: false,
     trigger: { kind: 'startup' },
     graph: pipeline,
   });

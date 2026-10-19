@@ -11,8 +11,7 @@ export function startupWorkflow(graph: Pipeline, enabled = false): Workflow {
     id: 'w-start',
     name: 'Arranque',
     enabled,
-    showInTray: true,
-    showInRemote: true,
+    hidden: false,
     trigger: { kind: 'startup' },
     graph,
   };

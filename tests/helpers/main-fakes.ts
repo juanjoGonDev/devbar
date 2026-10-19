@@ -234,6 +234,7 @@ export function makeSettings(
     maxLogLines: 10_000,
     notifySuccess: true,
     showHiddenGroupsFold: true,
+    showHiddenWorkflowsFold: false,
     ...overrides,
   };
 }

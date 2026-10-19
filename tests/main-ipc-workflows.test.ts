@@ -15,8 +15,7 @@ const WORKFLOW: Workflow = {
   id: 'w1',
   name: 'Arranque',
   enabled: true,
-  showInTray: true,
-  showInRemote: false,
+  hidden: false,
   trigger: { kind: 'startup' },
   graph: { blocks: [], edges: [] },
 };

@@ -113,6 +113,7 @@ const workflow = (raw: Raw): RemoteWorkflowView => ({
   name: str(raw.name),
   startup: raw.startup === true,
   running: raw.running === true,
+  hidden: raw.hidden === true,
   doneScripts: numOrNull(raw.doneScripts),
   totalScripts: num(raw.totalScripts),
   lastResult:

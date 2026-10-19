@@ -13,11 +13,7 @@ import {
   reasonOf,
   runErrorText,
 } from './trigger-meta.js';
-import type {
-  Group,
-  Workflow,
-  WorkflowTrigger,
-} from '../../src/domain-types.js';
+import type { Group, WorkflowTrigger } from '../../src/domain-types.js';
 import type { WorkflowEntry } from '../../src/ipc-contract.js';
 
 export interface WorkflowListDeps {
@@ -62,8 +58,8 @@ function copyTrigger(trigger: WorkflowTrigger): WorkflowTrigger {
 /**
  * The Workflows section's list (the WorkflowsList mock): search, filter chips,
  * «Nuevo workflow», one row per workflow with its trigger, last run, status,
- * ▶/■ and the enabled switch, a «⋯» menu (rename, duplicate, delete) and
- * pages of ten. The toolbar is built once so the search keeps its focus; the
+ * the eye that hides it from the tray and the phone, ▶/■ and the enabled
+ * switch, a «⋯» menu (rename, duplicate, delete) and pages of ten. The toolbar is built once so the search keeps its focus; the
  * rows repaint on every list push.
  */
 export function createWorkflowList(deps: WorkflowListDeps): WorkflowListView {
@@ -209,8 +205,7 @@ export function createWorkflowList(deps: WorkflowListDeps): WorkflowListView {
       );
       await window.api.saveWorkflow({
         ...created,
-        showInTray: workflow.showInTray,
-        showInRemote: workflow.showInRemote,
+        hidden: workflow.hidden,
         graph: workflow.graph,
       });
     } catch (error) {
@@ -246,35 +241,20 @@ export function createWorkflowList(deps: WorkflowListDeps): WorkflowListView {
     }
   }
 
-  async function setShownIn(
-    entry: WorkflowEntry,
-    patch: Pick<Workflow, 'showInTray'> | Pick<Workflow, 'showInRemote'>,
-  ): Promise<void> {
+  /** The eye: hides it from (or shows it again in) the tray and the phone. */
+  async function toggleHidden(entry: WorkflowEntry): Promise<void> {
+    const { workflow } = entry;
     try {
-      await window.api.saveWorkflow({ ...entry.workflow, ...patch });
+      await window.api.saveWorkflow({ ...workflow, hidden: !workflow.hidden });
     } catch (error) {
       deps.showToast(reasonOf(error), 'error');
     }
   }
 
   function openMenu(trigger: HTMLButtonElement, entry: WorkflowEntry): void {
-    const { showInTray, showInRemote } = entry.workflow;
     menu.toggle(trigger, [
       { label: 'Renombrar', icon: 'pencil', run: () => startRename(entry) },
       { label: 'Duplicar', icon: 'copy', run: () => void duplicate(entry) },
-      null,
-      {
-        label: 'Mostrar en la barra',
-        icon: 'panel-top',
-        checked: showInTray,
-        run: () => void setShownIn(entry, { showInTray: !showInTray }),
-      },
-      {
-        label: 'Mostrar en el móvil',
-        icon: 'smartphone',
-        checked: showInRemote,
-        run: () => void setShownIn(entry, { showInRemote: !showInRemote }),
-      },
       null,
       {
         label: 'Eliminar',
@@ -290,6 +270,7 @@ export function createWorkflowList(deps: WorkflowListDeps): WorkflowListView {
     if (action === 'run' && target.getAttribute('aria-disabled') !== 'true')
       void run(id);
     else if (action === 'stop') void window.api.stopWorkflow(id);
+    else if (action === 'eye') void toggleHidden(entry);
     else if (action === 'menu' && target instanceof HTMLButtonElement)
       openMenu(target, entry);
   }

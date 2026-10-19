@@ -75,8 +75,7 @@ function workflow(
     id,
     name: `Flujo ${id}`,
     enabled: true,
-    showInTray: true,
-    showInRemote: false,
+    hidden: false,
     trigger,
     graph: graph([scriptId], [`trigger>${scriptId}`]),
   };

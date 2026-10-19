@@ -42,6 +42,8 @@ export interface RemoteRuntime {
   groupStates(): GroupState[];
   /** Settings › General › «Mostrar grupos ocultos plegados». */
   showHiddenGroupsFold(): boolean;
+  /** Settings › General › «Mostrar workflows ocultos plegados». */
+  showHiddenWorkflowsFold(): boolean;
   workflowEntries(): WorkflowEntry[];
   currentBranch(groupId: string): Promise<unknown>;
   onLog(listener: (payload: { id: string; entry: LogEntry }) => void): void;
@@ -103,7 +105,10 @@ export function createLive(deps: LiveDeps): Live {
       branches,
       runtime.showHiddenGroupsFold(),
     ),
-    workflows: workflowViews(runtime.workflowEntries()),
+    workflows: workflowViews(
+      runtime.workflowEntries(),
+      runtime.showHiddenWorkflowsFold(),
+    ),
     update: updateView(
       runtime.updater.status(),
       runtime.updater.canInstallStaged(),

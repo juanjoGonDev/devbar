@@ -68,8 +68,7 @@ function workflow(id: string, extra: Partial<Workflow> = {}): Workflow {
     id,
     name: id,
     enabled: true,
-    showInTray: true,
-    showInRemote: false,
+    hidden: false,
     trigger: {
       kind: 'manual',
       confirm: false,

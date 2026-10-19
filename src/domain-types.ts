@@ -163,10 +163,12 @@ export interface Workflow {
   name: string;
   /** Arms the automatic triggers (startup, schedule) and the tray entry. */
   enabled: boolean;
-  /** Listed in the tray menu (when enabled and it has scripts to run). */
-  showInTray: boolean;
-  /** Listed on a linked phone, which may then run and stop it. */
-  showInRemote: boolean;
+  /**
+   * Hidden from the tray and a linked phone, like `Group.hiddenInTray`: listed
+   * only behind their «N oculto(s)» fold (`showHiddenWorkflowsFold`), or not
+   * at all. A running workflow is listed whatever this says.
+   */
+  hidden: boolean;
   trigger: WorkflowTrigger;
   graph: Pipeline;
 }
@@ -262,6 +264,8 @@ export interface GlobalSettings {
    * behind the «N oculto(s)» fold; off, they are not listed anywhere there.
    */
   showHiddenGroupsFold: boolean;
+  /** The same fold for the workflows hidden from the tray and the phone. */
+  showHiddenWorkflowsFold: boolean;
 }
 
 export type ProcessStatus =

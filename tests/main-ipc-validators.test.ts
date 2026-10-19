@@ -148,6 +148,15 @@ describe('src/main/ipc-validators.ts', () => {
       ).toThrow(/showHiddenGroupsFold/);
     });
 
+    it('accepts the hidden workflows fold flag', () => {
+      expect(ipcGlobalSettingsPatch({ showHiddenWorkflowsFold: true })).toEqual(
+        { showHiddenWorkflowsFold: true },
+      );
+      expect(() =>
+        ipcGlobalSettingsPatch({ showHiddenWorkflowsFold: 'no' }),
+      ).toThrow(/showHiddenWorkflowsFold/);
+    });
+
     it('ignores absent fields entirely', () => {
       expect(ipcGlobalSettingsPatch({})).toEqual({});
     });

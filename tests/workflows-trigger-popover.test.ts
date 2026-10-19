@@ -96,14 +96,9 @@ describe('renderer/workflows/trigger-popover.ts', () => {
   });
 
   describe('manual', () => {
-    it('toggles where it is offered and whether it asks first', async () => {
+    it('toggles whether it asks first', async () => {
       const { win } = await openOn(MANUAL);
       expect(textOf(popover())).not.toContain('Listado de workflows');
-      toggle('Control remoto');
-      expect(await lastSaved(win)).toMatchObject({
-        showInRemote: true,
-        trigger: MANUAL,
-      });
       toggle('Pedir confirmación antes de ejecutar');
       expect(await lastTrigger(win)).toEqual({ ...MANUAL, confirm: true });
     });
@@ -213,37 +208,21 @@ describe('renderer/workflows/trigger-popover.ts', () => {
     });
   });
 
-  describe('mostrar en', () => {
+  describe('visibility', () => {
     it.each([
       ['startup', STARTUP],
       ['schedule', NIGHTLY],
+      ['manual', MANUAL],
     ] as const)(
-      'offers where a %s workflow shows, without the confirmation',
+      'no longer offers where a %s workflow shows (the list eye does)',
       async (_kind, trigger) => {
-        const { win } = await openOn(trigger);
+        await openOn(trigger);
         const text = textOf(popover());
-        expect(text).toContain('Mostrar en');
-        expect(text).not.toContain('Pedir confirmación');
-        toggle('Menú de la barra');
-        expect(await lastSaved(win)).toMatchObject({
-          showInTray: false,
-          showInRemote: false,
-          trigger,
-        });
-        toggle('Control remoto');
-        expect(await lastSaved(win)).toMatchObject({ showInRemote: true });
+        expect(text).not.toContain('Mostrar en');
+        expect(text).not.toContain('Menú de la barra');
+        expect(text).not.toContain('Control remoto');
       },
     );
-
-    it('draws the switches from the workflow, below the schedule', async () => {
-      await openOn(NIGHTLY);
-      const tray = option('Menú de la barra').querySelector('input');
-      expect(tray?.checked).toBe(true);
-      const parts = [...popover().children].map((part) => part.className);
-      expect(parts.indexOf('wf-pop-next')).toBeLessThan(
-        parts.lastIndexOf('wf-pop-label'),
-      );
-    });
   });
 
   it('saves the trigger with the graph it already had', async () => {

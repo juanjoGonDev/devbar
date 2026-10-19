@@ -48,29 +48,15 @@ function manualTrigger(): WorkflowTrigger {
   return { kind: 'manual', confirm: false };
 }
 
-type Visibility = Pick<Workflow, 'showInTray' | 'showInRemote'>;
-
 /**
- * Where a workflow shows when nothing says so: everywhere it showed before
- * the flags moved off the manual trigger — the tray always, the phone only
- * for the startup one.
+ * The workflow's own `hidden`, else the old «Mostrar en la barra» flag it (or
+ * a legacy manual trigger) carried, turned around. The old phone flag is
+ * dropped: the one flag now covers the tray and the phone.
  */
-function defaultVisibility(kind: TriggerKind): Visibility {
-  return { showInTray: true, showInRemote: kind === 'startup' };
-}
-
-/**
- * The workflow's own flags, else the ones a legacy manual trigger carried,
- * else the defaults for its trigger kind.
- */
-function readVisibility(raw: Raw, kind: TriggerKind): Visibility {
-  const legacy = record(raw.trigger);
-  const fallback = defaultVisibility(kind);
-  const flag = (key: keyof Visibility): boolean => {
-    const own = raw[key] ?? legacy[key];
-    return typeof own === 'boolean' ? own : fallback[key];
-  };
-  return { showInTray: flag('showInTray'), showInRemote: flag('showInRemote') };
+function readHidden(raw: Raw): boolean {
+  if (typeof raw.hidden === 'boolean') return raw.hidden;
+  const legacy = raw.showInTray ?? record(raw.trigger).showInTray;
+  return typeof legacy === 'boolean' ? !legacy : false;
 }
 
 const INTERVAL_LIMITS = { minutes: 1440, hours: 168 } as const;
@@ -126,7 +112,7 @@ function normalizeOne(value: unknown, id: string): Workflow {
     id,
     name: text(raw.name) || DEFAULT_NAME,
     enabled: raw.enabled !== false,
-    ...readVisibility(raw, trigger.kind),
+    hidden: readHidden(raw),
     trigger,
     graph: normalizePipeline(raw.graph),
   };
@@ -166,7 +152,7 @@ export function startupWorkflow(
 
 /**
  * Moves the startup trigger to `workflowId`. The workflow that had it becomes
- * manual and keeps its own `showInTray` / `showInRemote`.
+ * manual and keeps its own `hidden`.
  */
 export function makeStartup(
   workflows: readonly Workflow[],
@@ -190,7 +176,7 @@ export function createWorkflow(
     id: newId(),
     name: text(name) || DEFAULT_NAME,
     enabled: true,
-    ...readVisibility({ trigger }, normalized.kind),
+    hidden: false,
     trigger: normalized,
     graph: { blocks: [], edges: [] },
   };
@@ -212,7 +198,7 @@ export function workflowsFromPipeline(
       id: newId(),
       name: STARTUP_WORKFLOW_NAME,
       enabled,
-      ...defaultVisibility('startup'),
+      hidden: false,
       trigger: { kind: 'startup' },
       graph: pipeline,
     },
@@ -259,7 +245,7 @@ export function validateWorkflow(
       id,
       name,
       enabled: raw.enabled !== false,
-      ...readVisibility(raw, trigger.kind),
+      hidden: readHidden(raw),
       trigger,
       graph: graph.pipeline,
     },

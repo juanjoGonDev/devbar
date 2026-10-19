@@ -2,8 +2,9 @@ import type { WorkflowRunResult } from '../../src/domain-types.js';
 import type { WorkflowEntry } from '../../src/ipc-contract.js';
 
 /**
- * What the tray's WORKFLOWS section lists, in which order, and the subtitle
- * under each row. Pure, so the wording is tested without a DOM.
+ * The subtitle under each row of the tray's WORKFLOWS section (which ones it
+ * lists, and in which order, is src/tray-layout.ts). Pure, so the wording is
+ * tested without a DOM.
  */
 
 const WEEKDAYS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
@@ -35,33 +36,6 @@ const RESULT_TEXT: Record<WorkflowRunResult, string> = {
   error: 'falló',
   cancelled: 'cancelado',
 };
-
-/** Where a row goes: running first, then startup, manual, scheduled. */
-function rank(entry: WorkflowEntry): number {
-  if (entry.running) return 0;
-  const order = { startup: 1, manual: 2, schedule: 3 } as const;
-  return order[entry.workflow.trigger.kind];
-}
-
-function listed(entry: WorkflowEntry): boolean {
-  if (entry.running) return true;
-  const { workflow } = entry;
-  return entry.scriptCount > 0 && workflow.enabled && workflow.showInTray;
-}
-
-/**
- * The enabled workflows shown in the tray — and anything running, whatever
- * its settings. A disabled workflow or one with nothing to run is left out.
- */
-export function trayWorkflowEntries(
-  entries: readonly WorkflowEntry[],
-): WorkflowEntry[] {
-  return entries
-    .filter(listed)
-    .map((entry, index) => ({ entry, index }))
-    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
-    .map(({ entry }) => entry);
-}
 
 /** The line under an idle row (a running one shows its progress instead). */
 export function workflowSubtitle(entry: WorkflowEntry, now: number): string {

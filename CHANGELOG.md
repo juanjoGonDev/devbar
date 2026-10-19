@@ -29,8 +29,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - **Sección «Workflows» en la barra.** El workflow en curso aparece primero,
   con su progreso y un botón para detenerlo; debajo, los manuales y los
   programados (con su próxima ejecución o su último resultado), cada uno con
-  su botón ▶. Cada workflow, sea cual sea su desencadenante, elige si aparece
-  en la barra y en el móvil.
+  su botón ▶.
+
+- **Workflows ocultos, como los grupos.** Con el ojo de su fila en Ajustes,
+  un workflow se oculta a la vez en la barra y en el móvil sin dejar de
+  funcionar. Si quieres tenerlos a mano, activa «Mostrar workflows ocultos
+  plegados» en Ajustes › General › Panel de la barra y aparecerán al final
+  bajo «N oculto(s)». Uno en marcha se ve siempre.
 
 - **Grupos ocultos en la barra.** Un grupo puede ocultarse de la lista de la
   barra sin dejar de funcionar (con el ojo de su fila en Ajustes o desde su

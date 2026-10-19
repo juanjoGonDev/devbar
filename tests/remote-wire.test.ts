@@ -50,6 +50,7 @@ const STATE = {
       name: 'Arranque',
       startup: true,
       running: true,
+      hidden: false,
       doneScripts: 3,
       totalScripts: 8,
       lastResult: 'warning',
@@ -180,6 +181,7 @@ describe('renderer/remote/wire.ts workflows', () => {
         null,
         { id: 7 },
         { id: 'w2', name: 'X', lastResult: 'weird', running: 'yes' },
+        { id: 'w3', name: 'Y', hidden: true },
       ],
     });
     expect(state.workflows).toEqual([
@@ -188,9 +190,21 @@ describe('renderer/remote/wire.ts workflows', () => {
         name: 'X',
         startup: false,
         running: false,
+        hidden: false,
         doneScripts: null,
         totalScripts: 0,
         lastResult: 'error',
+        lastFinishedAt: null,
+      },
+      {
+        id: 'w3',
+        name: 'Y',
+        startup: false,
+        running: false,
+        hidden: true,
+        doneScripts: null,
+        totalScripts: 0,
+        lastResult: null,
         lastFinishedAt: null,
       },
     ]);

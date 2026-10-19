@@ -72,7 +72,7 @@ const SAMPLE: WorkflowEntry[] = [
     },
     {
       name: 'Arranque',
-      showInRemote: true,
+      hidden: true,
       graph: {
         blocks: [
           {
@@ -277,6 +277,46 @@ describe('renderer/workflows/list-view.ts', () => {
       expect(opened).toEqual([]);
     });
 
+    it('hides a workflow from the tray and the phone with its eye', async () => {
+      await mount();
+      const eye = rowFor('backup').querySelector<HTMLElement>('.wf-eye');
+      expect(eye?.getAttribute('aria-label')).toBe(
+        'Ocultar en la barra y el móvil',
+      );
+      expect(tipOf(eye)).toBe('Ocultar en la barra y el móvil');
+      expect(iconText(eye)).toBe('[eye]');
+      expect(rowFor('backup').classList.contains('is-hidden')).toBe(false);
+      click(eye);
+      expect(win?.argsFor('saveWorkflow')[0]?.[0]).toMatchObject({
+        id: 'backup',
+        hidden: true,
+      });
+      expect(opened).toEqual([]);
+    });
+
+    it('marks a hidden workflow and shows it again from its eye', async () => {
+      await mount();
+      const boot = rowFor('boot');
+      expect(boot.classList.contains('is-hidden')).toBe(true);
+      const eye = boot.querySelector<HTMLElement>('.wf-eye');
+      expect(eye?.getAttribute('aria-label')).toBe(
+        'Mostrar en la barra y el móvil',
+      );
+      expect(iconText(eye)).toBe('[eye-off]');
+      click(eye);
+      expect(win?.argsFor('saveWorkflow')[0]?.[0]).toMatchObject({
+        id: 'boot',
+        hidden: false,
+      });
+    });
+
+    it('reports an eye toggle main refused', async () => {
+      await mount();
+      click(rowFor('backup').querySelector('.wf-eye'));
+      await win?.fail('saveWorkflow', new Error('disco lleno'));
+      expect(toasts).toEqual(['disco lleno']);
+    });
+
     it('opens the editor on a row click or Enter', async () => {
       await mount();
       click(rowFor('backup').querySelector('.wf-name'));
@@ -308,9 +348,7 @@ describe('renderer/workflows/list-view.ts', () => {
     function menuItem(id: string, label: string): HTMLElement {
       click(rowFor(id).querySelector('[aria-label="Más acciones"]'));
       const item = [
-        ...document.querySelectorAll<HTMLElement>(
-          '[role="menuitem"], [role="menuitemcheckbox"]',
-        ),
+        ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
       ].find((candidate) => candidate.textContent?.includes(label));
       if (!item) throw new Error(`no "${label}" item`);
       return item;
@@ -358,41 +396,17 @@ describe('renderer/workflows/list-view.ts', () => {
       const saved = win?.argsFor('saveWorkflow')[0]?.[0] as Workflow;
       expect(saved.id).toBe('copy');
       expect(saved.graph).toEqual(SAMPLE[1]?.workflow.graph);
-      // The copy shows where the original did (the startup one: the phone).
-      expect(saved).toMatchObject({ showInTray: true, showInRemote: true });
+      // The copy is hidden when the original was.
+      expect(saved).toMatchObject({ hidden: true });
     });
 
-    it('shows where the workflow appears as checkable items', async () => {
+    it('no longer lists where the workflow shows in the menu', async () => {
       await mount();
       click(rowFor('backup').querySelector('[aria-label="Más acciones"]'));
-      const checks = [
-        ...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]'),
-      ].map((item) => [
-        // [icon, label, check]: the icon glyphs are text too.
-        item.children[1]?.textContent,
-        item.getAttribute('aria-checked'),
-        // `hidden` loses to `.icon { display }`, so only a real mark counts.
-        item.querySelector('.remote-menu-check') !== null,
-      ]);
-      expect(checks).toEqual([
-        ['Mostrar en la barra', 'true', true],
-        ['Mostrar en el móvil', 'false', false],
-      ]);
-    });
-
-    it('toggles the tray and phone visibility from the menu', async () => {
-      await mount();
-      click(menuItem('backup', 'Mostrar en el móvil'));
-      expect(win?.argsFor('saveWorkflow')[0]?.[0]).toMatchObject({
-        id: 'backup',
-        showInTray: true,
-        showInRemote: true,
-      });
-      click(menuItem('backup', 'Mostrar en la barra'));
-      expect(win?.argsFor('saveWorkflow')[1]?.[0]).toMatchObject({
-        id: 'backup',
-        showInTray: false,
-      });
+      const labels = [
+        ...document.querySelectorAll<HTMLElement>('[role="menu"] button'),
+      ].map((item) => item.textContent);
+      expect(labels.join('|')).not.toContain('Mostrar en');
     });
 
     it('deletes after confirming', async () => {

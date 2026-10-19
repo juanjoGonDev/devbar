@@ -49,6 +49,7 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   maxLogLines: DEFAULT_MAX_LOG_LINES,
   notifySuccess: true,
   showHiddenGroupsFold: true,
+  showHiddenWorkflowsFold: false,
 };
 
 type StoreState = {
@@ -322,6 +323,7 @@ export function saveGlobalSettings(
   next.maxLogLines = clampMaxLogLines(next.maxLogLines);
   next.notifySuccess = Boolean(next.notifySuccess);
   next.showHiddenGroupsFold = Boolean(next.showHiddenGroupsFold);
+  next.showHiddenWorkflowsFold = Boolean(next.showHiddenWorkflowsFold);
   store.set('globalSettings', next);
   return next;
 }

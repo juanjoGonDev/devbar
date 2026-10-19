@@ -108,9 +108,23 @@ function actionButton(
   return button;
 }
 
+/** Shown on hover — always while the workflow is hidden. */
+function eyeButton(hidden: boolean): HTMLButtonElement {
+  const eye = actionButton(
+    'eye',
+    hidden ? 'eye-off' : 'eye',
+    hidden
+      ? 'Mostrar en la barra y el móvil'
+      : 'Ocultar en la barra y el móvil',
+  );
+  eye.classList.add('wf-eye');
+  return eye;
+}
+
 function actionsCell(input: RowInput): HTMLElement {
   const { entry } = input;
   const box = cell('wf-cell-actions');
+  box.append(eyeButton(entry.workflow.hidden));
   if (entry.running) box.append(actionButton('stop', 'square', 'Detener'));
   else if (entry.workflow.enabled) {
     const run = actionButton('run', 'play', 'Ejecutar ahora');
@@ -143,6 +157,7 @@ export function buildRow(input: RowInput): HTMLElement {
   row.setAttribute('aria-label', workflow.name);
   if (workflow.trigger.kind === 'startup') row.classList.add('is-startup');
   if (!workflow.enabled && !input.entry.running) row.classList.add('is-off');
+  if (workflow.hidden) row.classList.add('is-hidden');
   const last = cell('wf-cell-last');
   last.append(
     el('span', 'wf-sub wf-last', lastRunText(input.entry.lastRun, input.now)),

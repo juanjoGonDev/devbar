@@ -83,13 +83,18 @@ export function remoteRuntime(app: RemoteAppWiring): RemoteControlRuntime {
     groupStates: () => app.snapshots.snapshotGroupStates(),
     showHiddenGroupsFold: () =>
       app.configStore.getGlobalSettings().showHiddenGroupsFold,
+    showHiddenWorkflowsFold: () =>
+      app.configStore.getGlobalSettings().showHiddenWorkflowsFold,
     workflowEntries: () => app.snapshots.workflowEntries(),
-    workflowVisible: (id) =>
-      app.snapshots
+    workflowVisible: (id) => {
+      const fold = app.configStore.getGlobalSettings().showHiddenWorkflowsFold;
+      return app.snapshots
         .workflowEntries()
         .some(
-          (entry) => entry.workflow.id === id && remoteWorkflowVisible(entry),
-        ),
+          (entry) =>
+            entry.workflow.id === id && remoteWorkflowVisible(entry, fold),
+        );
+    },
     currentBranch: (groupId) => actions.currentBranch(groupId),
     logs: (id) => app.processManager.getLogs(id),
     logSeq: (id) => app.processManager.getLogSeq(id),

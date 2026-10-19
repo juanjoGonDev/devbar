@@ -323,6 +323,7 @@ describe('src/config-store/store.ts', () => {
         maxLogLines: 10_000,
         notifySuccess: true,
         showHiddenGroupsFold: true,
+        showHiddenWorkflowsFold: false,
       });
     });
 
@@ -332,6 +333,14 @@ describe('src/config-store/store.ts', () => {
       });
 
       expect(store.getGlobalSettings().showHiddenGroupsFold).toBe(true);
+    });
+
+    it('leaves the hidden workflows fold off for settings saved before it existed', async () => {
+      const store = await harness.open({
+        seed: { version: 4, globalSettings: { theme: 'dark' } },
+      });
+
+      expect(store.getGlobalSettings().showHiddenWorkflowsFold).toBe(false);
     });
 
     it.each([
@@ -376,10 +385,12 @@ describe('src/config-store/store.ts', () => {
         silenceErrors: 'yes' as unknown as boolean,
         notifySuccess: 0 as unknown as boolean,
         showHiddenGroupsFold: '' as unknown as boolean,
+        showHiddenWorkflowsFold: 1 as unknown as boolean,
       });
 
       expect(saved).toMatchObject({
         showHiddenGroupsFold: false,
+        showHiddenWorkflowsFold: true,
         autostart: true,
         silenceWarnings: false,
         silenceErrors: true,

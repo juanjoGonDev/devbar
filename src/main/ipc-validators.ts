@@ -117,6 +117,7 @@ export function ipcGlobalSettingsPatch(
     'silenceErrors',
     'notifySuccess',
     'showHiddenGroupsFold',
+    'showHiddenWorkflowsFold',
   ] as const) {
     if (raw[field] !== undefined) {
       if (typeof raw[field] !== 'boolean')

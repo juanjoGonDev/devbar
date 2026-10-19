@@ -4,9 +4,7 @@ import { emptyPipeline } from '../../src/pipeline-graph.js';
 import type { Pipeline, Workflow } from '../../src/domain-types.js';
 
 /** What the editor may change about a workflow besides its graph. */
-type WorkflowMeta = Partial<
-  Pick<Workflow, 'name' | 'trigger' | 'showInTray' | 'showInRemote'>
->;
+type WorkflowMeta = Partial<Pick<Workflow, 'name' | 'trigger'>>;
 
 export interface PipelineSync {
   /** The pipeline the canvas shows: the stored one plus local edits. */
@@ -171,15 +169,8 @@ export function createPipelineSync(deps: PipelineSyncDeps): PipelineSync {
 
   function adopt(next: Workflow): void {
     if (!workflow || next.id !== workflow.id || pending > 0) return;
-    const { name, trigger, enabled, showInTray, showInRemote } = next;
-    workflow = {
-      ...workflow,
-      name,
-      trigger,
-      enabled,
-      showInTray,
-      showInRemote,
-    };
+    const { name, trigger, enabled, hidden } = next;
+    workflow = { ...workflow, name, trigger, enabled, hidden };
   }
 
   async function refresh(): Promise<void> {

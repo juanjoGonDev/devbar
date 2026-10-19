@@ -11,6 +11,7 @@ export interface SettingsPaneElements {
   maxLogLines: HTMLInputElement;
   notifySuccess: HTMLInputElement;
   showHiddenGroupsFold: HTMLInputElement;
+  showHiddenWorkflowsFold: HTMLInputElement;
   notifHint: HTMLElement;
   openNotifSettings: HTMLButtonElement;
   testNotify: HTMLButtonElement;
@@ -85,6 +86,7 @@ export function createSettingsPane(
     if (els.notifySuccess)
       els.notifySuccess.checked = s.notifySuccess !== false;
     els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;
+    els.showHiddenWorkflowsFold.checked = s.showHiddenWorkflowsFold === true;
     settingsLoaded = true;
     return true;
   }
@@ -107,6 +109,7 @@ export function createSettingsPane(
       maxLogLines,
       notifySuccess: els.notifySuccess ? els.notifySuccess.checked : true,
       showHiddenGroupsFold: els.showHiddenGroupsFold.checked,
+      showHiddenWorkflowsFold: els.showHiddenWorkflowsFold.checked,
     });
     showToast('Ajustes guardados', 'ok');
   }
@@ -231,6 +234,7 @@ export function createSettingsPane(
   if (els.notifySuccess)
     els.notifySuccess.addEventListener('change', persistSettings);
   els.showHiddenGroupsFold.addEventListener('change', persistSettings);
+  els.showHiddenWorkflowsFold.addEventListener('change', persistSettings);
 
   adaptOsTexts();
 

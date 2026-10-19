@@ -30,8 +30,7 @@ function workflow(
     id,
     name: id,
     enabled: true,
-    showInTray: true,
-    showInRemote: false,
+    hidden: false,
     trigger,
     graph: graph(['A'], ['trigger>A']),
     ...extra,
@@ -101,8 +100,34 @@ describe('src/workflows.ts', () => {
     });
   });
 
-  describe('where a workflow shows (showInTray / showInRemote)', () => {
-    it('moves the flags off a legacy manual trigger onto the workflow', () => {
+  describe('whether a workflow is hidden (hidden)', () => {
+    it('reads the stored flag', () => {
+      const list = normalizeWorkflows([
+        { id: 'a', hidden: true, trigger: { kind: 'manual' } },
+        { id: 'b', hidden: false, trigger: { kind: 'manual' } },
+      ]);
+      expect(list.map((w) => [w.id, w.hidden])).toEqual([
+        ['a', true],
+        ['b', false],
+      ]);
+    });
+
+    it('migrates the old tray flag and drops the phone one', () => {
+      const list = normalizeWorkflows([
+        { id: 'a', showInTray: false, showInRemote: true, trigger: MANUAL },
+        { id: 'b', showInTray: true, showInRemote: false, trigger: MANUAL },
+        { id: 's', trigger: { kind: 'startup' } },
+      ]);
+      expect(list.map((w) => [w.id, w.hidden])).toEqual([
+        ['a', true],
+        ['b', false],
+        ['s', false],
+      ]);
+      expect(list[0]).not.toHaveProperty('showInTray');
+      expect(list[0]).not.toHaveProperty('showInRemote');
+    });
+
+    it('migrates the tray flag a legacy manual trigger carried', () => {
       const [only] = normalizeWorkflows([
         {
           id: 'm',
@@ -115,42 +140,22 @@ describe('src/workflows.ts', () => {
         },
       ]);
       expect(only).toMatchObject({
-        showInTray: false,
-        showInRemote: true,
+        hidden: true,
         trigger: { kind: 'manual', confirm: true },
       });
       expect(only?.trigger).not.toHaveProperty('showInTray');
     });
 
-    it('defaults by trigger: startup on the phone, the rest only in the tray', () => {
-      const list = normalizeWorkflows([
-        { id: 's', trigger: { kind: 'startup' } },
-        { id: 'p', trigger: { kind: 'schedule', schedule: {} } },
-        { id: 'm', trigger: { kind: 'manual' } },
-      ]);
-      expect(list.map((w) => [w.id, w.showInTray, w.showInRemote])).toEqual([
-        ['s', true, true],
-        ['p', true, false],
-        ['m', true, false],
-      ]);
-    });
-
-    it('keeps the flags stored on the workflow over a legacy trigger', () => {
+    it('lets the new flag win over an old one', () => {
       const [only] = normalizeWorkflows([
-        {
-          id: 's',
-          showInTray: false,
-          showInRemote: false,
-          trigger: { kind: 'startup' },
-        },
+        { id: 'm', hidden: false, showInTray: false, trigger: MANUAL },
       ]);
-      expect(only).toMatchObject({ showInTray: false, showInRemote: false });
+      expect(only?.hidden).toBe(false);
     });
 
-    it('migrates a legacy manual trigger in what a backup sends', () => {
+    it('migrates the old flag in what a backup sends', () => {
       const result = validateWorkflow(
         {
-          id: 'm',
           name: 'M',
           trigger: {
             kind: 'manual',
@@ -164,7 +169,7 @@ describe('src/workflows.ts', () => {
       );
       expect(result).toMatchObject({
         ok: true,
-        workflow: { showInTray: false, showInRemote: true, trigger: MANUAL },
+        workflow: { hidden: true, trigger: MANUAL },
       });
     });
   });
@@ -180,15 +185,12 @@ describe('src/workflows.ts', () => {
 
     it('moves the startup trigger, leaving the previous one manual with its own visibility', () => {
       const list = makeStartup(
-        [
-          workflow('a', { kind: 'startup' }, { showInTray: false }),
-          workflow('b'),
-        ],
+        [workflow('a', { kind: 'startup' }, { hidden: true }), workflow('b')],
         'b',
       );
-      expect(list.map((w) => [w.id, w.trigger, w.showInTray])).toEqual([
-        ['a', MANUAL, false],
-        ['b', { kind: 'startup' }, true],
+      expect(list.map((w) => [w.id, w.trigger, w.hidden])).toEqual([
+        ['a', MANUAL, true],
+        ['b', { kind: 'startup' }, false],
       ]);
     });
 
@@ -205,16 +207,15 @@ describe('src/workflows.ts', () => {
         id: 'id1',
         name: 'Backup',
         enabled: true,
-        showInTray: true,
-        showInRemote: false,
+        hidden: false,
         trigger: MANUAL,
         graph: { blocks: [], edges: [] },
       });
     });
 
-    it('shows a new startup workflow on the phone, a scheduled one only in the tray', () => {
+    it('starts visible whatever its trigger', () => {
       expect(createWorkflow('a', { kind: 'startup' }, () => 'a')).toMatchObject(
-        { showInTray: true, showInRemote: true },
+        { hidden: false },
       );
       expect(
         createWorkflow(
@@ -222,7 +223,7 @@ describe('src/workflows.ts', () => {
           { kind: 'schedule', schedule: { rules: [], interval: null } },
           () => 'b',
         ),
-      ).toMatchObject({ showInTray: true, showInRemote: false });
+      ).toMatchObject({ hidden: false });
     });
   });
 
@@ -234,8 +235,7 @@ describe('src/workflows.ts', () => {
           id: 'w',
           name: STARTUP_WORKFLOW_NAME,
           enabled: false,
-          showInTray: true,
-          showInRemote: true,
+          hidden: false,
           trigger: { kind: 'startup' },
           graph: pipeline,
         },
