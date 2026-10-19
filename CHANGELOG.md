@@ -58,6 +58,16 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Cambiado
 
+- **El móvil se navega con un menú lateral.** La barra de pestañas de abajo
+  deja paso a un menú que se abre con el botón ☰ o deslizando el dedo desde
+  el borde izquierdo, y se cierra deslizando hacia la izquierda, tocando
+  fuera o con Escape. Cada pantalla lleva su título arriba y, a la derecha, la
+  campana de Avisos con los que tienes sin leer. Los workflows tienen ahora
+  pantalla propia: «En curso», con su progreso, el tiempo que llevan y un
+  botón para detenerlos, y «Disponibles», con cómo se lanzan, su último
+  resultado y su botón ▶. Un punto azul en el ☰ avisa de que hay uno en
+  marcha, y el móvil recuerda la última pantalla que abriste.
+
 - **«Restablecer posición».** El botón que devuelve el panel de la barra junto
   al icono (en su cabecera y en Ajustes › General) se llama ahora así y lleva
   un icono de localizar.
