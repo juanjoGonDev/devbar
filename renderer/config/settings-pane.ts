@@ -1,5 +1,6 @@
 import { DEFAULT_MAX_LOG_LINES } from '../../src/domain-types.js';
 import type { ThemePreference } from '../../src/domain-types.js';
+import { wireNumberStepper } from './number-stepper.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 export interface SettingsPaneElements {
@@ -31,6 +32,9 @@ export function createSettingsPane(
   showToast: ShowToast,
 ): SettingsPane {
   let settingsLoaded = false;
+  // Wired before the save listeners below, so a typed value is clamped
+  // before persistSettings reads it.
+  const logLinesStepper = wireNumberStepper(els.maxLogLines);
   // Theme picker: segmented control, persists on click (same as the other
   // instant-save controls). Main pushes the saved theme on `settings:theme`, so
   // the change propagates to all open windows (and to this one).
@@ -74,10 +78,10 @@ export function createSettingsPane(
     markThemeOption();
     els.silenceWarnings.checked = !!s.silenceWarnings;
     els.silenceErrors.checked = !!s.silenceErrors;
-    if (els.maxLogLines)
-      els.maxLogLines.value = String(
-        s.maxLogLines != null ? s.maxLogLines : DEFAULT_MAX_LOG_LINES,
-      );
+    els.maxLogLines.value = String(
+      s.maxLogLines != null ? s.maxLogLines : DEFAULT_MAX_LOG_LINES,
+    );
+    logLinesStepper.refresh();
     if (els.notifySuccess)
       els.notifySuccess.checked = s.notifySuccess !== false;
     els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;

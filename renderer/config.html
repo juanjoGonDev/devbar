@@ -247,13 +247,37 @@
                     aplica al reiniciar el proceso.</small
                   ></label
                 >
-                <input
-                  type="number"
-                  id="set-max-log-lines"
-                  min="100"
-                  max="50000"
-                  step="100"
-                />
+                <div class="num-stepper">
+                  <button
+                    type="button"
+                    class="num-stepper-btn"
+                    data-step="-1"
+                    aria-label="Menos líneas"
+                    title="Menos líneas"
+                  >
+                    <span class="icon" data-icon="minus"></span>
+                  </button>
+                  <span class="num-stepper-field">
+                    <input
+                      type="number"
+                      id="set-max-log-lines"
+                      min="100"
+                      max="50000"
+                      step="100"
+                      inputmode="numeric"
+                    />
+                    <span class="num-stepper-suffix">líneas</span>
+                  </span>
+                  <button
+                    type="button"
+                    class="num-stepper-btn"
+                    data-step="1"
+                    aria-label="Más líneas"
+                    title="Más líneas"
+                  >
+                    <span class="icon" data-icon="plus"></span>
+                  </button>
+                </div>
               </div>
             </section>
             <p class="settings-group-note">

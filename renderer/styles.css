@@ -1148,9 +1148,75 @@ body.config {
   margin-top: 2px;
   font-weight: normal;
 }
-.settings-row input[type='number'] {
-  width: 120px;
+/* A number field with a compact −/+ stepper: one box on the inputs' tokens,
+   the number right-aligned with its unit after it, no native spin arrows. */
+.num-stepper {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-card-strong);
+  overflow: hidden;
+}
+.num-stepper:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid rgba(0, 122, 255, 0.4);
+  outline-offset: -1px;
+}
+.num-stepper-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border-strong);
+  border-right: 1px solid var(--border-strong);
+}
+.num-stepper input[type='number'] {
+  width: 52px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  appearance: textfield;
+}
+.num-stepper input[type='number']::-webkit-inner-spin-button,
+.num-stepper input[type='number']::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+.num-stepper-suffix {
+  color: var(--muted);
+  font-size: 11px;
+}
+.num-stepper-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.num-stepper-btn:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  color: inherit;
+  filter: none;
+}
+.num-stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .settings-group-note {
   margin: 6px 12px 0;

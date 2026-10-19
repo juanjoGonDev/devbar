@@ -160,6 +160,88 @@ describe('renderer/config/settings-pane.ts', () => {
       });
     });
 
+    describe('log limit stepper', () => {
+      function stepButton(label: string): HTMLButtonElement {
+        const found = document.querySelector<HTMLButtonElement>(
+          `.num-stepper button[aria-label="${label}"]`,
+        );
+        if (!found) throw new Error(`no ${label} button`);
+        return found;
+      }
+
+      async function loadedWith(maxLogLines: number): Promise<void> {
+        win = await openConfigWindow();
+        await answerBystanderSettingsReads(win);
+        await win.settle('getSettings', settings({ maxLogLines }));
+      }
+
+      it('steps by 100 onto the grid and saves each step', async () => {
+        await loadedWith(1234);
+        stepButton('Más líneas').click();
+        expect(input('set-max-log-lines').value).toBe('1300');
+        stepButton('Menos líneas').click();
+        stepButton('Menos líneas').click();
+        expect(input('set-max-log-lines').value).toBe('1100');
+        expect(win?.argsFor('saveSettings').at(-1)?.[0]).toMatchObject({
+          maxLogLines: 1100,
+        });
+        expect(win?.callCount('saveSettings')).toBe(3);
+      });
+
+      it('stops at 100 and at 50000, disabling the button that would pass them', async () => {
+        await loadedWith(200);
+        stepButton('Menos líneas').click();
+        expect(input('set-max-log-lines').value).toBe('100');
+        expect(stepButton('Menos líneas').disabled).toBe(true);
+        await win?.settle('saveSettings', settings());
+        win?.close();
+        await loadedWith(49_950);
+        stepButton('Más líneas').click();
+        expect(input('set-max-log-lines').value).toBe('50000');
+        expect(stepButton('Más líneas').disabled).toBe(true);
+      });
+
+      it('clamps a typed value into range before saving it', async () => {
+        await loadedWith(1000);
+        const field = input('set-max-log-lines');
+        field.value = '99999';
+        field.dispatchEvent(new Event('change'));
+        expect(field.value).toBe('50000');
+        expect(win?.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+          maxLogLines: 50_000,
+        });
+      });
+
+      it('steps with the arrow keys and saves when the field is left', async () => {
+        await loadedWith(1000);
+        const field = input('set-max-log-lines');
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }),
+        );
+        expect(field.value).toBe('1100');
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }),
+        );
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }),
+        );
+        expect(field.value).toBe('900');
+        expect(win?.callCount('saveSettings')).toBe(0);
+        field.dispatchEvent(new Event('blur'));
+        expect(win?.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+          maxLogLines: 900,
+        });
+      });
+
+      it('names the unit beside the number', async () => {
+        await loadedWith(1000);
+        expect(
+          document.querySelector('.num-stepper .num-stepper-suffix')
+            ?.textContent,
+        ).toBe('líneas');
+      });
+    });
+
     it('persists the silence and notification toggles', async () => {
       win = await openConfigWindow();
       await answerBystanderSettingsReads(win);
