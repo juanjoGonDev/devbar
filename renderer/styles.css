@@ -5538,25 +5538,34 @@ label.remote-row {
 .wf-spacer {
   flex: 1;
 }
+/* A toolbar button like its neighbours: the dashed outline is only for the
+   add buttons that sit inside a list as its next entry. */
 .wf-new {
   flex: none;
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   height: 30px;
   padding: 0 12px;
-  border: 1.5px dashed var(--add-dash);
+  border: 1px solid var(--wf-border);
   border-radius: 8px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--accent);
+  background: var(--wf-surface);
+  box-shadow: var(--btn-shadow);
+  color: inherit;
   font-size: 13px;
+  font-weight: 500;
+}
+.wf-new .icon {
+  color: var(--accent);
 }
 .wf-new:hover {
-  background: var(--accent-tint);
-  border-color: var(--accent);
+  background: var(--bg-row-hover);
   filter: none;
+}
+.wf-new:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .wf-table {
   flex: 1;
