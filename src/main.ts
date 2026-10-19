@@ -57,7 +57,6 @@ import { createTrayHost } from './main/tray-host.js';
 import { createUpdater } from './main/updater.js';
 import { workflowFeedback } from './main/workflow-wiring.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
-import type { Group } from './domain-types.js';
 
 /**
  * Wiring only. Every decision this process makes lives under `src/main/`; what
@@ -305,10 +304,8 @@ const shutdown = createShutdownController({
 });
 
 function syncRepoWatchers(): void {
-  const groups: Group[] = configStore.listGroups();
-  repoWatcher.sync([
-    ...new Set(groups.map((g) => expandTilde(g.path)).filter(Boolean)),
-  ]);
+  const paths = configStore.listGroups().map((g) => expandTilde(g.path));
+  repoWatcher.sync([...new Set(paths.filter(Boolean))]);
 }
 
 const trayHost = createTrayHost(() => menuBar, host, configStore);
@@ -343,6 +340,8 @@ const devHooks = {
     app,
     pathExists: host.pathExists,
     setOverlay: configStore.setGroupsOverlay,
+    listWorkflows: configStore.listWorkflows,
+    workflowRunner,
     processManager,
     refresh: () => {
       syncRepoWatchers();

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { normalizeGroup } from '../groups-model.js';
 import { quoteWindowsArg, shellQuote } from '../parse-command.js';
 import type { Group } from '../domain-types.js';
+import { fixtureScriptsGroup } from './fixture-scripts.js';
 
 /**
  * The dev panel's "Grupos de prueba": a set of groups that exercises every
@@ -201,7 +202,10 @@ function fixtureSet(env: FixtureEnvironment, copy: number): unknown[] {
   ];
 }
 
-/** `repeat` copies of the fixture set, normalized like any stored group. */
+/**
+ * `repeat` copies of the fixture set, plus the one group of scripts the
+ * fixture workflows run, normalized like any stored group.
+ */
 export function buildFixtureGroups(
   env: FixtureEnvironment,
   repeat: number,
@@ -209,6 +213,13 @@ export function buildFixtureGroups(
   const copies = clampFixtureRepeat(repeat);
   const raw: unknown[] = [];
   for (let copy = 1; copy <= copies; copy++) raw.push(...fixtureSet(env, copy));
+  raw.push(
+    fixtureScriptsGroup({
+      path: env.tmpDir,
+      node: (script) => nodeCommand(env, script),
+      env: RUN_AS_NODE,
+    }),
+  );
   return raw.map((group, order) =>
     normalizeGroup({ ...(group as object), order }),
   );

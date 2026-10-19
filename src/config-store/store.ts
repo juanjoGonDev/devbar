@@ -207,16 +207,34 @@ function runMigration(): void {
 runMigration();
 
 /**
- * The dev panel's "Grupos de prueba": while set, every group (and workflow)
- * read and write in the app goes to this in-memory copy instead of the store,
- * so the user's configuration is hidden but never read-modify-written. Never
- * persisted: a restart always comes back on the real groups.
+ * The dev panel's "Grupos y workflows de prueba": while set, every group,
+ * workflow, workflow last run and schedule marker read and written in the
+ * app goes to this in-memory copy instead of the store, so the user's
+ * configuration and history are hidden but never read-modify-written. Never
+ * persisted: a restart always comes back on the real ones.
  */
-let overlay: { groups: Group[]; workflows: Workflow[] } | null = null;
+interface Overlay {
+  groups: Group[];
+  workflows: Workflow[];
+  workflowRuns: Record<string, WorkflowRunRecord>;
+  scheduleState: Record<string, string>;
+}
+let overlay: Overlay | null = null;
 
-export function setGroupsOverlay(groups: readonly Group[] | null): void {
-  overlay = groups
-    ? { groups: structuredClone([...groups]), workflows: [] }
+export function setGroupsOverlay(
+  next: {
+    groups: readonly Group[];
+    workflows?: readonly Workflow[];
+    workflowRuns?: Readonly<Record<string, WorkflowRunRecord>>;
+  } | null,
+): void {
+  overlay = next
+    ? {
+        groups: structuredClone([...next.groups]),
+        workflows: structuredClone([...(next.workflows ?? [])]),
+        workflowRuns: structuredClone({ ...next.workflowRuns }),
+        scheduleState: {},
+      }
     : null;
 }
 export function groupsOverlayActive(): boolean {
@@ -253,6 +271,7 @@ export function persistState(
   const pruned = pruneWorkflowRefs(workflows ?? readWorkflows(), groups);
   if (overlay) {
     overlay = {
+      ...overlay,
       groups: structuredClone(groups),
       workflows: structuredClone(pruned),
     };
@@ -263,14 +282,17 @@ export function persistState(
   store.set('workflows', pruned);
 }
 
-/** Last runs are runtime history, never part of the overlay or a backup. */
+/** Last runs are runtime history, never part of a backup. */
 export function readWorkflowRuns(): Record<string, WorkflowRunRecord> {
-  return { ...store.get('workflowRuns', {}) };
+  return overlay
+    ? structuredClone(overlay.workflowRuns)
+    : { ...store.get('workflowRuns', {}) };
 }
 export function writeWorkflowRuns(
   runs: Record<string, WorkflowRunRecord>,
 ): void {
-  store.set('workflowRuns', runs);
+  if (overlay) overlay.workflowRuns = structuredClone(runs);
+  else store.set('workflowRuns', runs);
 }
 
 /** Read through normalizeCustomIcons: a hand-edited entry that is not an
@@ -303,10 +325,17 @@ export function saveGlobalSettings(
   store.set('globalSettings', next);
   return next;
 }
+// Under the overlay the scheduler only sees the fixture targets: their
+// markers stay in memory, and the real ones are left exactly as they were.
 export function getScheduleLastRun(processId: string): string | null {
-  return store.get('scheduleState', {})[processId] ?? null;
+  const state = overlay?.scheduleState ?? store.get('scheduleState', {});
+  return state[processId] ?? null;
 }
 export function setScheduleLastRun(processId: string, iso: string): void {
+  if (overlay) {
+    overlay.scheduleState = { ...overlay.scheduleState, [processId]: iso };
+    return;
+  }
   const state = { ...store.get('scheduleState', {}) };
   state[processId] = iso;
   store.set('scheduleState', state);
