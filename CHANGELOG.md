@@ -91,6 +91,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   sola línea, recortada con «… ▸ JSON»; al pulsarlo se abre debajo, con
   sangría. Copiar sigue copiando la línea original.
 
+- **Acciones al pasar el ratón por una línea.** Arriba a la derecha de la
+  línea aparecen «Copiar línea», «Silenciar» (abre el popover de silenciados
+  con esa línea como borrador, o quita el silencio si ya lo estaba) y
+  «Filtrar por esto», que busca el texto que tengas seleccionado o, si no,
+  la palabra más significativa de la línea. Sustituye al icono de silenciar
+  que se veía siempre en warnings y errores.
+
 - **Silenciados, en un popover sobre el log.** En la ventana de logs, el
   botón de la campana (con cuántas reglas hay) abre un popover flotante que no
   le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un

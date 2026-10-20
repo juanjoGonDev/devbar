@@ -974,36 +974,40 @@ main {
   margin-right: 4px;
 }
 
-.line .silence-btn {
-  visibility: hidden;
+/* One toolbar, moved into the row under the pointer (row-actions.ts). */
+.row-actions {
+  position: absolute;
+  top: 1px;
+  right: 14px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #3a3a3c;
+  border-radius: 7px;
+  background: #2c2c2e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  z-index: 2;
+}
+.row-actions .ra-btn {
+  width: 24px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
   background: transparent;
-  border: 1px solid transparent;
-  color: #8a8a8a;
-  border-radius: 3px;
+  color: #c7c7cc;
+  font-size: 12px;
   cursor: pointer;
-  font-size: 10px;
-  padding: 0 4px;
-  margin-left: 6px;
-  flex-shrink: 0;
-  align-self: flex-start;
-  line-height: 1.4;
 }
-.line:hover .silence-btn {
-  visibility: visible;
+.row-actions .ra-btn[hidden] {
+  display: none;
 }
-.line .silence-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: #4a4a4a;
-  color: #d4d4d4;
-}
-.line.warn .silence-btn,
-.line.error .silence-btn {
-  visibility: visible;
-  opacity: 0.5;
-}
-.line.warn .silence-btn:hover,
-.line.error .silence-btn:hover {
-  opacity: 1;
+.row-actions .ra-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 footer {

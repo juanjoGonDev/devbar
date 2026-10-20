@@ -10,7 +10,11 @@ import type { LogEntry } from '../src/domain-types.js';
  * a row gets. This drives a realistic mix — plain, debug, warnings, errors
  * with stack traces, JSON lines — through a full snapshot and a burst of
  * arrivals, and holds both to a DOM budget and a (generous, jsdom-sized) time
- * budget. The times are printed in the assertion messages for comparison.
+ * budget. The times are printed in the assertion messages for comparison
+ * (and on stdout with LOGS_PERF=1). The time budgets are an order of
+ * magnitude above a quiet run — about 0.2 ms per arriving line here — so a
+ * loaded CI box stays green while a per-line cost that grows with the buffer
+ * (a full repaint or a list-wide query per line) still fails it.
  */
 const HELD = 50_000;
 const BURST = 5_000;
@@ -64,7 +68,7 @@ describe('renderer/logs/pane.ts (large buffers)', () => {
     const timing = `snapshot ${snapshotMs.toFixed(0)} ms, burst ${burstMs.toFixed(0)} ms`;
     if (process.env.LOGS_PERF) process.stdout.write(`${timing}\n`);
     expect(linesEl.childElementCount, timing).toBeLessThanOrEqual(DOM_BUDGET);
-    expect(snapshotMs, timing).toBeLessThan(3_000);
-    expect(burstMs, timing).toBeLessThan(6_000);
-  }, 30_000);
+    expect(snapshotMs, timing).toBeLessThan(5_000);
+    expect(burstMs, timing).toBeLessThan(15_000);
+  }, 60_000);
 });

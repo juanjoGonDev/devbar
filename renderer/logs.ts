@@ -21,6 +21,7 @@ import { jumpToLine, openScope, selectLog } from './logs/scope.js';
 import { refreshSidebar } from './logs/sidebar.js';
 import { receivePush } from './logs/stream.js';
 import './logs/selection-ui.js';
+import './logs/row-actions.js';
 import './logs/menu.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 

@@ -415,13 +415,13 @@ window.addEventListener(
 );
 
 // A press anywhere else closes it — except the toggle, which toggles, and a
-// line's silence button, which fills the draft and wants the popover open.
+// row's silence action, which fills the draft and wants the popover open.
 document.addEventListener('mousedown', (event) => {
   if (!popoverOpen()) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
   if (popoverEl.contains(target) || silenceToggleBtn.contains(target)) return;
-  if (target.closest('.silence-btn')) return;
+  if (target.closest('.row-actions')) return;
   setSilencePopover(false);
 });
 

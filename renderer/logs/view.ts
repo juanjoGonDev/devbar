@@ -151,8 +151,8 @@ export function installNav(next: LogsNav): void {
 
 /**
  * The silenced popover's entry points, handed in for the same reason as `nav`:
- * a row's silence button prefills the popover's draft, and `rows.ts` sits below
- * the popover. The popover installs itself when it loads.
+ * a row's silence action prefills the popover's draft, and `row-actions.ts`
+ * sits below the popover. The popover installs itself when it loads.
  */
 export interface SilenceHooks {
   /** Open the popover on `level` with `pattern` (in storage form) as the draft. */

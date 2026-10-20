@@ -25,7 +25,7 @@ import {
   type JsonLine,
 } from './json-line.js';
 import { icon } from '../icon.js';
-import { nav, rowHooks, silenceHooks, view } from './view.js';
+import { nav, rowHooks, view } from './view.js';
 import {
   isFolded,
   stackOf,
@@ -34,7 +34,7 @@ import {
 } from './stack-fold.js';
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
 import type { LogEntry } from '../../src/domain-types.js';
-import type { SilenceLevel, SourcedLogEntry } from '../../src/ipc-contract.js';
+import type { SourcedLogEntry } from '../../src/ipc-contract.js';
 
 /** How much of an object the one-line rendering shows before «…». */
 const JSON_INLINE_CHARS = 160;
@@ -271,54 +271,6 @@ export function buildRow(
     markMatches(body, view.silencePreview.matcher);
   msg.appendChild(body);
   if (json) appendJsonToggle(msg, entry, json);
-
-  if (
-    (entry.originalLevel === 'warn' || entry.originalLevel === 'error') &&
-    view.currentGroupId &&
-    view.currentCommandId
-  ) {
-    const groupId = view.currentGroupId;
-    const commandId = view.currentCommandId;
-    const btn = document.createElement('button');
-    btn.className = 'silence-btn';
-    btn.append(icon(entry.silenced ? 'bell' : 'bell-off'));
-    btn.title = entry.silenced
-      ? 'Quitar silencio (esta línea)'
-      : 'Silenciar líneas como esta…';
-    btn.setAttribute('aria-label', btn.title);
-    btn.addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      const lvl = entry.originalLevel as SilenceLevel;
-      const cleaned = stripAnsi(entry.line).trim();
-      // Build a regex pattern when possible so it matches across timestamp changes
-      const pattern = cleaned
-        ? window.api.buildSilencePattern(cleaned)
-        : cleaned;
-      if (entry.silenced) {
-        // Try removing the built pattern first; then fall back to literal cleaned.
-        // removeSilencePattern is a no-op when the pattern is not found.
-        if (pattern && pattern !== cleaned) {
-          await window.api.removeSilencePattern(
-            groupId,
-            commandId,
-            lvl,
-            pattern,
-          );
-        }
-        await window.api.removeSilencePattern(groupId, commandId, lvl, cleaned);
-      } else {
-        // Not saved yet: the popover opens with it as the draft, so the preview
-        // shows what else it would swallow before anything is silenced. The
-        // popover acts on the command on screen, so a stale row does nothing.
-        if (
-          view.currentGroupId === groupId &&
-          view.currentCommandId === commandId
-        )
-          silenceHooks.prefill(lvl, pattern || cleaned);
-      }
-    });
-    msg.appendChild(btn);
-  }
 
   if (buffer.selected.has(entryIndex)) div.classList.add('selected');
   return div;

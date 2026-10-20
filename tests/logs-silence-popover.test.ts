@@ -202,11 +202,13 @@ describe('renderer/logs/silence-popover.ts', () => {
       expect(elements.popoverEl.hidden).toBe(false);
     });
 
-    it("a press on a line's silence button keeps it open, since that prefills it", () => {
+    it("a press on a row's silence action keeps it open, since that prefills it", () => {
       popover.setSilencePopover(true);
       const btn = document.createElement('button');
-      btn.className = 'silence-btn';
-      elements.linesEl.appendChild(btn);
+      const bar = document.createElement('div');
+      bar.className = 'row-actions';
+      bar.appendChild(btn);
+      elements.linesEl.appendChild(bar);
       pressOn(btn);
       expect(elements.popoverEl.hidden).toBe(false);
     });

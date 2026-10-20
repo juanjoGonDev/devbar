@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { iconText } from './helpers/icon-text.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PIPELINE_LOG_GROUP_ID } from '../src/pipeline-labels.js';
@@ -14,8 +13,9 @@ import type {
  * `renderer/logs/rows.ts` builds one line of the log and nothing else — it
  * neither appends nor trims — so it is exercised directly here rather than
  * through the window. What it decides: which classes and data attributes the
- * row carries, which of the two "ways out" (source tags) it grows, and whether
- * the line gets a silence button and what that button does.
+ * row carries, its level badge, which of the two "ways out" (source tags) it
+ * grows, and how a JSON line is drawn. The hover actions (copy, silence,
+ * filter) live in `row-actions.ts` and its own test.
  */
 type RowsModule = typeof import('../renderer/logs/rows.js');
 type ViewModule = typeof import('../renderer/logs/view.js');
@@ -357,121 +357,6 @@ describe('renderer/logs/rows.ts', () => {
       const { row } = build(sourced('desconocido'));
       expect(row.querySelectorAll('.src')).toHaveLength(0);
       expect(row.dataset.src).toBeUndefined();
-    });
-  });
-
-  describe('the silence button', () => {
-    beforeEach(() => {
-      viewModule.view.groupSources = null;
-      viewModule.view.mergedGroupId = null;
-      viewModule.view.currentGroupId = 'g1';
-      viewModule.view.currentCommandId = 'c1';
-    });
-
-    it('is offered on a warning', () => {
-      const { row } = build(line('ojo', { originalLevel: 'warn' }));
-      const btn = row.querySelector<HTMLElement>('.silence-btn');
-      expect(iconText(btn)).toBe('[bell-off]');
-    });
-
-    it('offers to UNDO it on a line a rule already swallowed', () => {
-      const { row } = build(
-        line('ojo', { originalLevel: 'error', silenced: true }),
-      );
-      const btn = row.querySelector<HTMLElement>('.silence-btn');
-      expect(iconText(btn)).toBe('[bell]');
-      expect(btn?.title).toContain('Quitar silencio');
-    });
-
-    it('stays away from a line with no severity to silence', () => {
-      const { row } = build(line('rutina'));
-      expect(row.querySelector('.silence-btn')).toBeNull();
-    });
-
-    it('stays away when no single command owns the view', () => {
-      // Silencing is per service: in a merged scope there is nothing to act on.
-      viewModule.view.currentCommandId = null;
-      const { row } = build(line('ojo', { originalLevel: 'warn' }));
-      expect(row.querySelector('.silence-btn')).toBeNull();
-    });
-
-    it('prefills the panel with the built pattern instead of saving it', async () => {
-      const { row } = build(
-        line('\u001b[33mfallo 42\u001b[0m  ', { originalLevel: 'warn' }),
-      );
-      row.querySelector<HTMLElement>('.silence-btn')?.click();
-      await Promise.resolve();
-      expect(api.buildSilencePattern).toHaveBeenCalledWith('fallo 42');
-      expect(prefilled).toEqual([['warn', 're:fallo 42']]);
-      expect(api.addSilencePattern).not.toHaveBeenCalled();
-    });
-
-    it('falls back to the cleaned text when no pattern could be built', () => {
-      api.buildSilencePattern.mockReturnValue('');
-      const { row } = build(line('fallo', { originalLevel: 'error' }));
-      row.querySelector<HTMLElement>('.silence-btn')?.click();
-      expect(prefilled).toEqual([['error', 'fallo']]);
-    });
-
-    it('unsilencing removes the built pattern AND the literal it may have been', async () => {
-      const { row } = build(
-        line('fallo 42', { originalLevel: 'warn', silenced: true }),
-      );
-      row.querySelector<HTMLElement>('.silence-btn')?.click();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(api.removeSilencePattern.mock.calls).toEqual([
-        ['g1', 'c1', 'warn', 're:fallo 42'],
-        ['g1', 'c1', 'warn', 'fallo 42'],
-      ]);
-    });
-
-    it('unsilencing asks once when the pattern IS the literal', async () => {
-      api.buildSilencePattern.mockImplementation((text: string) => text);
-      const { row } = build(
-        line('fallo', { originalLevel: 'warn', silenced: true }),
-      );
-      row.querySelector<HTMLElement>('.silence-btn')?.click();
-      await Promise.resolve();
-      expect(api.removeSilencePattern.mock.calls).toEqual([
-        ['g1', 'c1', 'warn', 'fallo'],
-      ]);
-    });
-
-    it('does not disturb the line-selection handler underneath it', () => {
-      const { row } = build(line('ojo', { originalLevel: 'warn' }));
-      const event = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-      });
-      const stop = vi.spyOn(event, 'stopPropagation');
-      row.querySelector<HTMLElement>('.silence-btn')?.dispatchEvent(event);
-      expect(stop).toHaveBeenCalled();
-    });
-
-    it('unsilences on the command the row was BUILT for, not the one on screen now', async () => {
-      // The view can switch between a row being drawn and its button pressed;
-      // the removal must land on the command whose line it is.
-      const { row } = build(
-        line('fallo', { originalLevel: 'warn', silenced: true }),
-      );
-      viewModule.view.currentGroupId = 'otro';
-      viewModule.view.currentCommandId = 'otro-cmd';
-      row.querySelector<HTMLElement>('.silence-btn')?.click();
-      await Promise.resolve();
-      expect(api.removeSilencePattern.mock.calls[0]?.slice(0, 2)).toEqual([
-        'g1',
-        'c1',
-      ]);
-    });
-
-    it('prefills nothing once the view has moved to another command', () => {
-      // The panel adds to the command on screen; a stale row's line is not
-      // that command's.
-      const { row } = build(line('fallo', { originalLevel: 'warn' }));
-      viewModule.view.currentCommandId = 'otro-cmd';
-      row.querySelector<HTMLElement>('.silence-btn')?.click();
-      expect(prefilled).toEqual([]);
     });
   });
 });

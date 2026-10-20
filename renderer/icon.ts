@@ -39,6 +39,7 @@ export type IconName =
   | 'flask-conical'
   | 'folder'
   | 'folder-open'
+  | 'funnel'
   | 'git-branch'
   | 'grip-vertical'
   | 'history'
