@@ -109,6 +109,26 @@ describe('renderer/workflows/log-drawer.ts', () => {
     expect(q('.wf-log-meta').textContent).toBe('exit 1 · 3.2s');
   });
 
+  it('guesses an unlabelled level with the shared defaults, not a looser regex', async () => {
+    const drawer = await mount(
+      runState('w-start', chain(), 'error', { a: 'success', b: 'error' }),
+    );
+    drawer.open('front::deps');
+    await win?.settle('getWorkflowScriptLog', [
+      line('compilado src/errors/index.ts'),
+      line('0 errors, 0 warnings'),
+      line('DeprecationWarning: Buffer() está obsoleto'),
+      line('TypeError: x is undefined'),
+    ]);
+    const lines = [...document.querySelectorAll<HTMLElement>('.wf-log-line')];
+    expect(lines.map((l) => l.className)).toEqual([
+      'wf-log-line',
+      'wf-log-line',
+      'wf-log-line is-warn',
+      'wf-log-line is-error',
+    ]);
+  });
+
   it('switches script from its tab', async () => {
     const drawer = await mount(
       runState('w-start', chain(), 'error', { a: 'success', b: 'error' }),

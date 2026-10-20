@@ -4,6 +4,10 @@ import { stripAnsi } from '../logs/ansi.js';
 import { formatClock, formatPreciseDuration } from './list-model.js';
 import { runScripts } from '../pipeline/run-view.js';
 import { pipelineRefKey } from '../../src/pipeline-graph.js';
+import {
+  DEFAULT_ERROR_REGEX,
+  DEFAULT_WARN_REGEX,
+} from '../../src/log-level-defaults.js';
 import type {
   LogEntry,
   Pipeline,
@@ -63,10 +67,15 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** The same detectors a command gets by default, so a workflow script's line
+ *  reads as the same level here as it would in the logs window. */
+const ERROR_RE = new RegExp(DEFAULT_ERROR_REGEX, 'i');
+const WARN_RE = new RegExp(DEFAULT_WARN_REGEX, 'i');
+
 function levelOf(entry: LogEntry, text: string): 'error' | 'warn' | null {
   if (entry.level) return entry.level;
-  if (/\berror\b/i.test(text)) return 'error';
-  if (/\bwarn(ing)?\b/i.test(text)) return 'warn';
+  if (ERROR_RE.test(text)) return 'error';
+  if (WARN_RE.test(text)) return 'warn';
   return null;
 }
 
