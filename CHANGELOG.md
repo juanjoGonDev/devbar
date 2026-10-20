@@ -58,15 +58,18 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Cambiado
 
-- **Panel de silenciados rediseñado.** En la ventana de logs, el botón
-  «Silenciados · N» abre un panel con un selector «Warnings | Errores». Al
-  escribir un patrón (texto o, con «.*», regex) ves al momento cuántas líneas
-  de este log silenciaría, las primeras marcadas, y esas líneas aparecen
-  tachadas en el log; Intro lo añade. La lista «Activos» dice cuántas líneas
-  coinciden con cada patrón y, al pasar el ratón, las marca en el log. El
-  botón de silenciar de una línea ya no guarda al instante: abre el panel con
-  esa línea como borrador para que veas qué más silenciaría. El feed de líneas
-  silenciadas desaparece; la vista previa al pasar el ratón cumple su papel.
+- **Silenciados, en un popover sobre el log.** En la ventana de logs, el
+  botón de la campana (con cuántas reglas hay) abre un popover flotante que no
+  le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un
+  patrón (texto o, con «.*», regex) ves al momento cuántas líneas de este log
+  silenciaría, y en el log se atenúan con lo que coincide resaltado; eliges
+  «warnings» o «errores» y «Silenciar N» (o Intro) lo añade. Debajo, una sola
+  lista con las reglas de ambos niveles, cuántas líneas coincide cada una y,
+  al pasar el ratón, cuáles; y los interruptores «Todos los warnings» y «Todos
+  los errores». El botón de silenciar de una línea ya no guarda al instante:
+  abre el popover con esa línea como borrador para que veas qué más
+  silenciaría. El feed de líneas silenciadas desaparece; la vista previa al
+  pasar el ratón cumple su papel.
 
 - **El móvil se navega con un menú lateral.** La barra de pestañas de abajo
   deja paso a un menú que se abre con el botón ☰ o deslizando el dedo desde
