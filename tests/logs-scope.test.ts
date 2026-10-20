@@ -143,14 +143,16 @@ describe('renderer/logs/scope.ts', () => {
     it('pins the levels the caller asked for, before anything is drawn', async () => {
       await scope.openScope({ kind: 'all' }, ['warn', 'error']);
       expect([...view.view.levelFilter]).toEqual(['warn', 'error']);
-      expect(elements.levelPillEl.hidden).toBe(false);
+      expect(elements.levelAllBtn.getAttribute('aria-pressed')).toBe('false');
+      expect(elements.levelWarnChip.getAttribute('aria-pressed')).toBe('true');
+      expect(elements.levelErrorChip.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('a scope opened without levels shows everything', async () => {
       await scope.openScope({ kind: 'all' }, ['warn']);
       await scope.openScope({ kind: 'all' });
       expect([...view.view.levelFilter]).toEqual([]);
-      expect(elements.levelPillEl.hidden).toBe(true);
+      expect(elements.levelAllBtn.getAttribute('aria-pressed')).toBe('true');
     });
   });
 
@@ -391,18 +393,19 @@ describe('renderer/logs/scope.ts', () => {
       expect(buffer.buffer.entries.map((line) => line.line)).toEqual([
         'de todo',
       ]);
-      expect(elements.titleEl.textContent).toBe('Telemetría');
+      expect(document.title).toBe('Telemetría');
     });
 
-    it('titles the window after the group it merged', async () => {
+    it('names the group it merged, and titles the window after it', async () => {
       await scope.openScope({ kind: 'group', groupId: 'g1' });
-      expect(elements.titleEl.textContent).toBe('Logs — Back · todos');
+      expect(elements.crumbNameEl.textContent).toBe('Back');
       expect(document.title).toBe('Logs — Back · todos');
     });
 
     it('calls the everything view what it is', async () => {
       await scope.openScope({ kind: 'all' });
-      expect(elements.titleEl.textContent).toBe('Telemetría');
+      expect(elements.crumbNameEl.textContent).toBe('Todo');
+      expect(document.title).toBe('Telemetría');
     });
 
     it('keeps the sources so a row can name where it came from', async () => {
@@ -417,10 +420,12 @@ describe('renderer/logs/scope.ts', () => {
     });
 
     it('puts away the controls that only mean something for one service', async () => {
-      elements.uptimeBadgeEl.classList.add('visible');
+      elements.runPillEl.hidden = false;
+      elements.runBtn.hidden = false;
       await scope.openScope({ kind: 'all' });
-      expect(elements.uptimeBadgeEl.classList.contains('visible')).toBe(false);
-      expect(elements.runBtn.style.display).toBe('none');
+      expect(elements.runPillEl.hidden).toBe(true);
+      expect(elements.runBtn.hidden).toBe(true);
+      expect(elements.restartBtn.hidden).toBe(true);
       expect(view.view.currentCommandId).toBeNull();
       expect(elements.popoverEl.hidden).toBe(true);
     });
@@ -463,9 +468,8 @@ describe('renderer/logs/scope.ts', () => {
             ),
         },
       });
-      elements.autoscrollEl.checked = true;
       await scope.jumpToLine('api', 2);
-      expect(elements.autoscrollEl.checked).toBe(false);
+      expect(view.view.live.following).toBe(false);
       expect((scrolledIntoView[0] as HTMLElement).dataset.line).toBe(
         'la buscada',
       );
@@ -568,7 +572,7 @@ describe('renderer/logs/scope.ts', () => {
       });
       const status = await import('../renderer/logs/status.js');
       await scope.selectLog('api');
-      elements.pausedEl.checked = true;
+      view.view.live = { following: false, cause: 'manual', unseen: 0 };
       status.queueWhilePaused(entry('de la corrida vieja', { seq: 1 }));
       status.queueWhilePaused(entry('de la nueva', { seq: 9 }));
       listWatched({ startedAt: 999 });

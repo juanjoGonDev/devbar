@@ -8,17 +8,37 @@
  */
 import { byId, requireElement } from '../dom.js';
 
-export const titleEl = byId<HTMLElement>('title', HTMLElement);
-export const uptimeBadgeEl = byId<HTMLElement>('uptime-badge', HTMLElement);
+export const crumbGroupEl = byId<HTMLElement>('crumb-group', HTMLElement);
+export const crumbSepEl = byId<HTMLElement>('crumb-sep', HTMLElement);
+export const crumbNameEl = byId<HTMLElement>('crumb-name', HTMLElement);
+export const runPillEl = byId<HTMLElement>('run-pill', HTMLElement);
+export const runPillTextEl = byId<HTMLElement>('run-pill-text', HTMLElement);
+export const restartBtn = byId<HTMLButtonElement>('restart', HTMLButtonElement);
 export const linesEl = byId<HTMLElement>('lines', HTMLElement);
 export const filterEl = byId<HTMLInputElement>('filter', HTMLInputElement);
-export const autoscrollEl = byId<HTMLInputElement>(
-  'autoscroll',
-  HTMLInputElement,
+export const levelAllBtn = byId<HTMLButtonElement>(
+  'level-all',
+  HTMLButtonElement,
 );
-export const pausedEl = byId<HTMLInputElement>('paused', HTMLInputElement);
-export const clearBtn = byId<HTMLButtonElement>('clear', HTMLButtonElement);
-export const copyBtn = byId<HTMLButtonElement>('copy', HTMLButtonElement);
+export const levelWarnChip = byId<HTMLButtonElement>(
+  'level-warn',
+  HTMLButtonElement,
+);
+export const levelErrorChip = byId<HTMLButtonElement>(
+  'level-error',
+  HTMLButtonElement,
+);
+export const levelWarnCountEl = byId<HTMLElement>(
+  'level-warn-count',
+  HTMLElement,
+);
+export const levelErrorCountEl = byId<HTMLElement>(
+  'level-error-count',
+  HTMLElement,
+);
+export const liveBtn = byId<HTMLButtonElement>('live', HTMLButtonElement);
+export const liveTextEl = byId<HTMLElement>('live-text', HTMLElement);
+export const moreBtn = byId<HTMLButtonElement>('more', HTMLButtonElement);
 export const clearSelectionBtn = byId<HTMLButtonElement>(
   'clear-selection',
   HTMLButtonElement,
@@ -28,20 +48,11 @@ export const statusEl = byId<HTMLElement>('status', HTMLElement);
 export const mainEl = requireElement<HTMLElement>('main', HTMLElement);
 export const muteWarnEl = byId<HTMLInputElement>('mute-warn', HTMLInputElement);
 export const muteErrEl = byId<HTMLInputElement>('mute-err', HTMLInputElement);
-export const levelPillEl = byId<HTMLButtonElement>(
-  'level-pill',
-  HTMLButtonElement,
-);
-export const levelPillTextEl = byId<HTMLElement>(
-  'level-pill-text',
-  HTMLElement,
-);
 export const scrollBtn = byId<HTMLButtonElement>(
   'scroll-bottom',
   HTMLButtonElement,
 );
 export const runBtn = byId<HTMLButtonElement>('run-toggle', HTMLButtonElement);
-export const detachBtn = byId<HTMLButtonElement>('detach', HTMLButtonElement);
 export const sideTreeEl = byId<HTMLElement>('side-tree', HTMLElement);
 export const sideFilterEl = byId<HTMLInputElement>(
   'side-filter',

@@ -4,8 +4,6 @@ import {
   buildFilter,
   clientMatchesPattern,
   levelOf,
-  levelPillClass,
-  levelPillLabel,
   matchesFilter,
   matchesLevel,
 } from '../renderer/logs/filters.js';
@@ -106,27 +104,6 @@ describe('renderer/logs/filters.ts', () => {
 
     it('falls back to a substring when that regex will not compile', () => {
       expect(clientMatchesPattern('a\\', 'trailing a\\ here')).toBe(true);
-    });
-  });
-
-  describe('levelPillLabel', () => {
-    it('names the single level the view is pinned to', () => {
-      expect(levelPillLabel(['warn'])).toBe('sólo warnings');
-      expect(levelPillLabel(['error'])).toBe('sólo errores');
-    });
-
-    it('joins both levels when the pin covers the two', () => {
-      expect(levelPillLabel(['warn', 'error'])).toBe('sólo warnings + errores');
-    });
-  });
-
-  describe('levelPillClass', () => {
-    it('reads as a warning pill when only warnings are pinned', () => {
-      expect(levelPillClass(['warn'])).toBe('level-pill warn');
-    });
-
-    it('lets errors win whenever they are part of the pin', () => {
-      expect(levelPillClass(['warn', 'error'])).toBe('level-pill err');
     });
   });
 });

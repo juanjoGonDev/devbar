@@ -72,17 +72,41 @@ describe('renderer/logs/header.ts', () => {
   }
 
   describe('renderHeaderRunState', () => {
-    it('writes nothing while a merged scope is on screen', () => {
+    it('names just the group while a whole group is merged', () => {
       view.view.processId = null;
-      elements.titleEl.textContent = 'sin tocar';
+      view.view.mergedGroupId = 'g1';
+      view.view.groupName = 'Back';
       header.renderHeaderRunState();
-      expect(elements.titleEl.textContent).toBe('sin tocar');
+      expect(elements.crumbNameEl.textContent).toBe('Back');
+      expect(elements.crumbGroupEl.hidden).toBe(true);
+      expect(elements.runPillEl.hidden).toBe(true);
+      expect(elements.runBtn.hidden).toBe(true);
+      expect(document.title).toBe('Logs — Back · todos');
+    });
+
+    it('says «Todo» for everything merged', () => {
+      view.view.processId = null;
+      view.view.mergedIsAll = true;
+      header.renderHeaderRunState();
+      expect(elements.crumbNameEl.textContent).toBe('Todo');
+      expect(document.title).toBe('Telemetría');
+    });
+
+    it('waits for the snapshot before naming a service', () => {
+      view.view.processId = 'api';
+      view.view.displayName = '';
+      elements.crumbNameEl.textContent = 'sin tocar';
+      header.renderHeaderRunState();
+      expect(elements.crumbNameEl.textContent).toBe('sin tocar');
     });
 
     it('names the service, qualified by its group', () => {
       showing();
       header.renderHeaderRunState();
-      expect(elements.titleEl.textContent).toBe('Logs — Back · api');
+      expect(elements.crumbGroupEl.textContent).toBe('Back');
+      expect(elements.crumbGroupEl.hidden).toBe(false);
+      expect(elements.crumbSepEl.hidden).toBe(false);
+      expect(elements.crumbNameEl.textContent).toBe('api');
       expect(document.title).toBe('Logs — Back · api');
     });
 
@@ -90,75 +114,116 @@ describe('renderer/logs/header.ts', () => {
       showing();
       view.view.groupName = '';
       header.renderHeaderRunState();
-      expect(elements.titleEl.textContent).toBe('Logs — api');
+      expect(elements.crumbGroupEl.hidden).toBe(true);
+      expect(elements.crumbSepEl.hidden).toBe(true);
+      expect(document.title).toBe('Logs — api');
     });
 
-    it('offers to stop a running command', () => {
+    it('offers to stop a running command, or restart it', () => {
       showing({ status: 'running', startedAt: Date.now() });
       header.renderHeaderRunState();
-      expect(elements.runBtn.style.display).toBe('');
+      expect(elements.runBtn.hidden).toBe(false);
       expect(iconText(elements.runBtn)).toBe('[square]');
       expect(elements.runBtn.title).toBe('Parar');
       expect(elements.runBtn.classList.contains('on')).toBe(true);
+      expect(elements.restartBtn.hidden).toBe(false);
     });
 
-    it('offers to start a stopped one', () => {
+    it('offers to start a stopped one, and nothing to restart', () => {
       showing({ status: 'stopped' });
       header.renderHeaderRunState();
       expect(iconText(elements.runBtn)).toBe('[play]');
-      expect(elements.runBtn.title).toBe('Arrancar');
+      expect(elements.runBtn.title).toBe('Iniciar');
       expect(elements.runBtn.classList.contains('on')).toBe(false);
+      expect(elements.restartBtn.hidden).toBe(true);
     });
 
-    it('hides the control for something the window cannot launch', () => {
-      showing({ type: 'prescript' });
+    it('never offers to restart an action', () => {
+      showing({
+        id: 'action:g1:deploy',
+        type: 'action',
+        status: 'running',
+        startedAt: Date.now(),
+      });
       header.renderHeaderRunState();
-      expect(elements.runBtn.style.display).toBe('none');
+      expect(elements.runBtn.hidden).toBe(false);
+      expect(elements.restartBtn.hidden).toBe(true);
     });
 
-    it('ticks the uptime of a live run', () => {
+    it('hides the controls for something the window cannot launch', () => {
+      showing({ type: 'prescript', status: 'running', startedAt: Date.now() });
+      header.renderHeaderRunState();
+      expect(elements.runBtn.hidden).toBe(true);
+      expect(elements.restartBtn.hidden).toBe(true);
+      expect(elements.runPillEl.hidden).toBe(false);
+    });
+
+    it('ticks the uptime of a live run on the pill', () => {
       showing({ status: 'running', startedAt: Date.now() - 65_000 });
       header.renderHeaderRunState();
-      expect(elements.uptimeBadgeEl.textContent).toBe('1m 5s');
-      expect(elements.uptimeBadgeEl.classList.contains('visible')).toBe(true);
+      expect(elements.runPillTextEl.textContent).toBe('En marcha · 1m 5s');
+      expect(elements.runPillEl.dataset.tone).toBe('running');
       expect(document.title).toBe('Logs — Back · api · 1m 5s');
     });
 
-    it('freezes the duration of a finished run, and says it is past', () => {
+    it('says a finished run is stopped, keeping its length in the tooltip', () => {
       showing({
         status: 'stopped',
         startedAt: 1000,
         lastFinishedAt: 4000,
       });
       header.renderHeaderRunState();
-      expect(elements.uptimeBadgeEl.textContent).toBe('último: 3s');
+      expect(elements.runPillTextEl.textContent).toBe('Parado');
+      expect(elements.runPillEl.title).toBe('Última ejecución: 3s');
+      expect(elements.runPillEl.dataset.tone).toBe('stopped');
       expect(document.title).toBe('Logs — Back · api · 3s');
     });
 
-    it('shows no clock at all for something that never ran', () => {
-      elements.uptimeBadgeEl.classList.add('visible');
-      showing({ startedAt: null });
+    it('turns the pill red when the run ended in an error', () => {
+      showing({ status: 'error' });
       header.renderHeaderRunState();
-      expect(elements.uptimeBadgeEl.textContent).toBe('');
-      expect(elements.uptimeBadgeEl.classList.contains('visible')).toBe(false);
+      expect(elements.runPillTextEl.textContent).toBe('Con errores');
+      expect(elements.runPillEl.dataset.tone).toBe('error');
     });
 
-    it('leaves the text node alone when the second changed nothing', () => {
+    it('leaves the text nodes alone when the second changed nothing', () => {
       // It runs once a second: writing the same string back would still dirty
-      // the node, and the browser would repaint the title on every tick.
+      // the node, and the browser would repaint the toolbar on every tick.
       showing({ status: 'stopped' });
       header.renderHeaderRunState();
-      const before = elements.titleEl.firstChild;
+      const name = elements.crumbNameEl.firstChild;
+      const pill = elements.runPillTextEl.firstChild;
       header.renderHeaderRunState();
-      expect(elements.titleEl.firstChild).toBe(before);
+      expect(elements.crumbNameEl.firstChild).toBe(name);
+      expect(elements.runPillTextEl.firstChild).toBe(pill);
     });
 
-    it('repaints the level pill, which the header shares a row with', () => {
+    it('repaints the level chips, which share the toolbar', () => {
       showing();
       view.view.levelFilter = new Set(['error']);
       header.renderHeaderRunState();
-      expect(elements.levelPillEl.hidden).toBe(false);
-      expect(elements.levelPillTextEl.textContent).toBe('sólo errores');
+      expect(elements.levelErrorChip.getAttribute('aria-pressed')).toBe('true');
+      expect(elements.levelAllBtn.getAttribute('aria-pressed')).toBe('false');
+    });
+  });
+
+  describe('the restart control', () => {
+    it('stops, then starts, the running command', async () => {
+      showing({ status: 'running', startedAt: Date.now() });
+      elements.restartBtn.click();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dom.calls.map((call) => call.name)).toEqual([
+        'stopProcess',
+        'startProcess',
+      ]);
+      expect(dom.argsFor('startProcess')).toEqual([['api']]);
+    });
+
+    it('does nothing once the command is no longer running', async () => {
+      showing({ status: 'stopped' });
+      elements.restartBtn.click();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dom.calls).toEqual([]);
     });
   });
 
@@ -213,7 +278,7 @@ describe('renderer/logs/header.ts', () => {
     });
   });
 
-  describe('clearing the log', () => {
+  describe('clearLog', () => {
     it('wipes the retained buffer, not merely the rows on screen', async () => {
       const pane = await import('../renderer/logs/pane.js');
       const status = await import('../renderer/logs/status.js');
@@ -227,8 +292,7 @@ describe('renderer/logs/header.ts', () => {
         level: null,
         line: 'en cola',
       });
-      elements.clearBtn.click();
-      await vi.advanceTimersByTimeAsync(0);
+      await header.clearLog();
       expect(dom.argsFor('clearLogs')).toEqual([['api']]);
       expect(elements.linesEl.childElementCount).toBe(0);
       // Resuming would otherwise re-add the very lines just cleared.
@@ -241,17 +305,16 @@ describe('renderer/logs/header.ts', () => {
       pane.resetBuffer([
         { ts: 0, stream: 'stdout', level: null, line: 'vieja' },
       ]);
-      elements.clearBtn.click();
-      await vi.advanceTimersByTimeAsync(0);
+      await header.clearLog();
       expect(dom.argsFor('clearLogs')).toEqual([]);
       expect(elements.linesEl.childElementCount).toBe(0);
     });
   });
 
-  describe('detaching', () => {
+  describe('detachLog', () => {
     it('opens this very service in a window of its own', () => {
       showing();
-      elements.detachBtn.click();
+      header.detachLog();
       expect(dom.argsFor('openLogs')).toEqual([
         [{ processId: 'api', detached: true }],
       ]);
@@ -259,7 +322,7 @@ describe('renderer/logs/header.ts', () => {
 
     it('has nothing to detach while a merged scope is on screen', () => {
       view.view.processId = null;
-      elements.detachBtn.click();
+      header.detachLog();
       expect(dom.argsFor('openLogs')).toEqual([]);
     });
   });

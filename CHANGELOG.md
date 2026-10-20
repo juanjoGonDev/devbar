@@ -58,6 +58,14 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Cambiado
 
+- **Barra de la ventana de logs más clara.** Arriba se lee qué estás viendo
+  («Grupo › Servicio»), cómo va («En marcha · 8m 26s», «Parado», «Con
+  errores») y, para un servicio, Reiniciar y Parar/Iniciar. El buscador lleva
+  dentro los filtros «Todo», warnings y errores, cada uno con cuántas líneas
+  hay. «Auto-scroll» y «Pausa» son ahora un solo botón: «En directo» sigue el
+  final; al subir o pulsarlo pasa a «En pausa · N nuevas», y pulsarlo de nuevo
+  te devuelve al final. Vaciar, Copiar y Separar ventana están en el menú «⋯».
+
 - **Silenciados, en un popover sobre el log.** En la ventana de logs, el
   botón de la campana (con cuántas reglas hay) abre un popover flotante que no
   le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un

@@ -8,8 +8,9 @@
  * pane would mean each one holding its own copy and the copies drifting; this
  * module keeps a single answer and no pane owns it.
  *
- * It imports nothing but types on purpose: it is the bottom of the graph, so
- * any pane may read it without creating a cycle.
+ * It imports nothing but types — and the pure live-state module, which imports
+ * nothing at all — on purpose: it is the bottom of the graph, so any pane may
+ * read it without creating a cycle.
  */
 import type { LogEntry } from '../../src/domain-types.js';
 import type {
@@ -20,6 +21,7 @@ import type {
   SilenceLevel,
 } from '../../src/ipc-contract.js';
 import type { PatternMatcher } from './silence-preview.js';
+import { LIVE, type LiveState } from './live-state.js';
 
 /**
  * The three scopes the window can show. Every entry point — nav counters, tray
@@ -86,6 +88,8 @@ export interface LogsView {
    * a row built later (scrolling, a new line) is marked the same way.
    */
   silencePreview: SilencePreview | null;
+  /** Following the tail, or paused — and why (see `live-state.ts`). */
+  live: LiveState;
 }
 
 /** A rule being previewed: which lines it swallows, and where it bites. */
@@ -111,6 +115,7 @@ export const view: LogsView = {
   displayName: '',
   groupName: '',
   silencePreview: null,
+  live: LIVE,
 };
 
 export function itemById(id: string): LogListItem | null {

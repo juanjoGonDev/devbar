@@ -12,17 +12,6 @@
     <title>Logs</title>
   </head>
   <body>
-    <!--
-      The titlebar is `hiddenInset`, so macOS paints no title of its own and
-      this strip was 36px of dead space. It now carries the window title, which
-      frees the header row below for controls. On Windows/Linux the native
-      titlebar already shows the title, so CSS hides the strip there
-      (html[data-os] — see logs.css).
-    -->
-    <div class="app-window-spacer">
-      <strong id="title">Logs</strong>
-      <span id="uptime-badge" class="uptime-badge"></span>
-    </div>
     <div class="shell">
       <aside id="sidebar">
         <div class="side-head">
@@ -35,7 +24,14 @@
         <div id="side-tree"></div>
       </aside>
       <div class="pane">
-        <header>
+        <!--
+          The titlebar is `hiddenInset`: on macOS the traffic lights sit over
+          the top of the sidebar (or over this toolbar's left edge when there
+          is no sidebar), so the toolbar doubles as the window's drag strip.
+          It reads left to right as what is on screen, how it is doing, and
+          what you can do to it — then how you look at it.
+        -->
+        <header class="toolbar">
           <button
             id="toggle-sidebar"
             class="icon-btn"
@@ -45,48 +41,88 @@
           >
             <span class="icon" data-icon="panel-left"></span>
           </button>
-          <button
-            id="run-toggle"
-            class="run-btn"
-            type="button"
-            title="Arrancar / parar"
-            aria-label="Arrancar / parar"
-          >
-            <span class="icon" data-icon="play"></span>
-          </button>
-          <input
-            id="filter"
-            type="search"
-            placeholder="Filtrar (texto o regex)…"
-          />
+          <div class="tb-subject">
+            <span class="crumbs">
+              <span id="crumb-group" class="crumb-group" hidden></span>
+              <span id="crumb-sep" class="crumb-sep" hidden
+                ><span class="icon" data-icon="chevron-right"></span
+              ></span>
+              <strong id="crumb-name" class="crumb-name">Logs</strong>
+            </span>
+            <span id="run-pill" class="run-pill" hidden>
+              <span class="run-pill-dot"></span>
+              <span id="run-pill-text"></span>
+            </span>
+            <button
+              id="restart"
+              class="icon-btn tb-ico"
+              type="button"
+              title="Reiniciar"
+              aria-label="Reiniciar"
+              hidden
+            >
+              <span class="icon" data-icon="rotate-cw"></span>
+            </button>
+            <button
+              id="run-toggle"
+              class="icon-btn tb-ico run-btn"
+              type="button"
+              title="Iniciar"
+              aria-label="Iniciar"
+              hidden
+            >
+              <span class="icon" data-icon="play"></span>
+            </button>
+          </div>
+          <span class="tb-grow"></span>
           <!--
-            The level filter is driven from the nav (per service, per group) and
-            from the tray. This pill is only its escape hatch: it appears when a
-            filter is active and clicking it clears it.
+            The search box carries the level chips: text and level are both
+            ways of narrowing the same lines, and every warn/error entry point
+            (the nav, the tray) lands on the chip it stands for.
           -->
-          <button id="level-pill" class="level-pill" type="button" hidden>
-            <span id="level-pill-text"></span>
-            <span class="level-pill-x"
-              ><span class="icon" data-icon="x"></span
-            ></span>
-          </button>
-          <label class="check spaced"
-            ><input type="checkbox" id="autoscroll" checked />
-            Auto-scroll</label
-          >
-          <label class="check"
-            ><input type="checkbox" id="paused" /> Pausa</label
-          >
-          <button
-            id="clear"
-            class="icon-btn"
-            title="Limpiar"
-            aria-label="Limpiar"
-          >
-            <span class="icon" data-icon="trash-2"></span>
-          </button>
-          <button id="copy" class="icon-btn" title="Copiar" aria-label="Copiar">
-            <span class="icon" data-icon="copy"></span>
+          <div class="tb-search">
+            <span class="icon tb-search-ico" data-icon="search"></span>
+            <input
+              id="filter"
+              type="search"
+              placeholder="Buscar… (texto o regex)"
+              aria-label="Buscar en el log"
+            />
+            <span class="level-chips" role="group" aria-label="Nivel">
+              <button
+                id="level-all"
+                class="level-chip"
+                type="button"
+                aria-pressed="true"
+                title="Todos los niveles"
+              >
+                Todo
+              </button>
+              <button
+                id="level-warn"
+                class="level-chip warn"
+                type="button"
+                aria-pressed="false"
+                title="Sólo warnings"
+              >
+                <span class="level-chip-dot"></span
+                ><span id="level-warn-count">0</span>
+              </button>
+              <button
+                id="level-error"
+                class="level-chip err"
+                type="button"
+                aria-pressed="false"
+                title="Sólo errores"
+              >
+                <span class="level-chip-dot"></span
+                ><span id="level-error-count">0</span>
+              </button>
+            </span>
+          </div>
+          <button id="live" class="live-btn" type="button" aria-pressed="true">
+            <span class="live-dot"></span>
+            <span id="live-text">En directo</span>
           </button>
           <button
             id="toggle-silenced"
@@ -101,14 +137,19 @@
             <span class="icon" data-icon="bell-off"></span>
             <span id="silence-toggle-count" class="silence-toggle-count"></span>
           </button>
-          <button
-            id="detach"
-            class="icon-btn"
-            title="Abrir este log en una ventana aparte"
-            aria-label="Abrir en ventana aparte"
-          >
-            <span class="icon" data-icon="app-window"></span>
-          </button>
+          <span class="tb-more">
+            <button
+              id="more"
+              class="icon-btn tb-ico"
+              type="button"
+              title="Más opciones"
+              aria-label="Más opciones"
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >
+              <span class="icon" data-icon="ellipsis"></span>
+            </button>
+          </span>
         </header>
         <div class="log-container">
           <main>

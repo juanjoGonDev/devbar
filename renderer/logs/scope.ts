@@ -15,7 +15,6 @@ import { logsParams } from './params.js';
 import {
   EDGE_CHUNK,
   flashEntry,
-  renderLevelChips,
   resetBuffer,
   setLevelFilter,
   trimMemory,
@@ -33,17 +32,8 @@ import {
   endLoad,
 } from './stream.js';
 import { dropPendingQueue, keepQueuedAfter } from './status.js';
-import {
-  autoscrollEl,
-  filterEl,
-  muteErrEl,
-  muteWarnEl,
-  runBtn,
-  setText,
-  sideTreeEl,
-  titleEl,
-  uptimeBadgeEl,
-} from './elements.js';
+import { dispatchLive } from './live.js';
+import { filterEl, muteErrEl, muteWarnEl, sideTreeEl } from './elements.js';
 import { view, type Scope } from './view.js';
 import type { SilenceLevel } from '../../src/ipc-contract.js';
 
@@ -67,7 +57,7 @@ export async function jumpToLine(srcId: string, ts: number): Promise<void> {
   // certainly outside the drawn window, so the window is moved to it.
   const entryIndex = buffer.entries.findIndex((entry) => entry.ts === ts);
   if (entryIndex < 0) return;
-  autoscrollEl.checked = false;
+  dispatchLive({ type: 'leftTail' });
   flashEntry(entryIndex);
 }
 
@@ -97,12 +87,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   view.groupSources = new Map(res.sources.map((s) => [s.id, s]));
   view.displayName = groupId ? 'todos' : '';
   view.groupName = res.groupName;
-  const heading = groupId ? `Logs — ${res.groupName} · todos` : 'Telemetría';
-  setText(titleEl, heading);
-  document.title = heading;
-  uptimeBadgeEl.classList.remove('visible');
-  runBtn.style.display = 'none';
-  renderLevelChips();
+  renderHeaderRunState();
 
   resetBuffer([...res.lines]);
   endLoad((id) => res.seqs[id] ?? 0);

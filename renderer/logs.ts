@@ -14,13 +14,14 @@ import { watchCustomIcons } from './custom-icons.js';
 import { installTooltips } from './tooltip.js';
 import { logsParams } from './logs/params.js';
 import { installNav, view } from './logs/view.js';
-import { filterEl, titleEl } from './logs/elements.js';
+import { filterEl } from './logs/elements.js';
 import { applyFilter, rerenderExistingLines } from './logs/pane.js';
 import { renderSilencePopover } from './logs/silence-popover.js';
 import { jumpToLine, openScope, selectLog } from './logs/scope.js';
 import { refreshSidebar } from './logs/sidebar.js';
 import { receivePush } from './logs/stream.js';
 import './logs/selection-ui.js';
+import './logs/menu.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 
 initTheme();
@@ -54,8 +55,6 @@ installNav({ openScope, jumpToLine });
       logsParams.filter || undefined,
       logsParams.level ?? undefined,
     );
-  } else {
-    titleEl.textContent = 'Logs (sin proceso)';
   }
 })();
 

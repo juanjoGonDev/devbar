@@ -90,7 +90,7 @@ describe('renderer/logs/stream.ts', () => {
     });
 
     it('holds it back instead while the viewer is paused', () => {
-      elements.pausedEl.checked = true;
+      view.view.live = { following: false, cause: 'manual', unseen: 0 };
       stream.receivePush({ id: 'api', entry: entry('mientras') });
       expect(drawn()).toEqual([]);
       expect(status.pendingQueue.map((held) => held.line)).toEqual([
@@ -200,7 +200,7 @@ describe('renderer/logs/stream.ts', () => {
     });
 
     it('holds a merged line back while the viewer is paused', () => {
-      elements.pausedEl.checked = true;
+      view.view.live = { following: false, cause: 'manual', unseen: 0 };
       stream.receivePush({ id: 'api', entry: entry('mientras') });
       expect(drawn()).toEqual([]);
       expect(status.pendingQueue).toHaveLength(1);
