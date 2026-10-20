@@ -2,7 +2,7 @@
  * The state every pane of the logs window reads, in one place.
  *
  * The window is one screen made of several panes — the line list, the
- * sidebar, the silenced drawer, the header — and they all answer questions
+ * sidebar, the silenced popover, the header — and they all answer questions
  * about the SAME thing: which scope is on screen, which levels it is pinned
  * to, what main last told us about the services. Splitting that state per
  * pane would mean each one holding its own copy and the copies drifting; this
@@ -80,7 +80,7 @@ export interface LogsView {
   displayName: string;
   groupName: string;
   /**
-   * The rule the silenced panel is previewing — a draft being typed, or a
+   * The rule the silenced popover is previewing — a draft being typed, or a
    * saved rule under the pointer. Rows it would swallow are drawn marked, so
    * a row built later (scrolling, a new line) is marked the same way.
    */
@@ -138,12 +138,12 @@ export function installNav(next: LogsNav): void {
 }
 
 /**
- * The silenced panel's entry points, handed in for the same reason as `nav`:
- * a row's silence button prefills the panel's draft, and `rows.ts` sits below
- * the panel. The panel installs itself when it loads.
+ * The silenced popover's entry points, handed in for the same reason as `nav`:
+ * a row's silence button prefills the popover's draft, and `rows.ts` sits below
+ * the popover. The popover installs itself when it loads.
  */
 export interface SilenceHooks {
-  /** Open the panel on `level` with `pattern` (in storage form) as the draft. */
+  /** Open the popover on `level` with `pattern` (in storage form) as the draft. */
   prefill(level: SilenceLevel, pattern: string): void;
 }
 

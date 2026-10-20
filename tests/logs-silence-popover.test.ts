@@ -7,13 +7,14 @@ import type { LogEntry } from '../src/domain-types.js';
 import type { LogsTarget, LogSource } from '../src/ipc-contract.js';
 
 /**
- * `renderer/logs/drawer.ts` is the silenced panel: the rules that swallow
- * lines, a draft that previews — against the lines already held — what it
- * would swallow before it is saved, and the per-level "silence everything"
- * switch. Driven here against the real markup, because the point of the panel
- * is that the rule and the lines it eats are visible together.
+ * `renderer/logs/silence-popover.ts` is the silenced popover: it floats over
+ * the log, under its toolbar toggle, with a composer that previews — against
+ * the lines already held — what a rule would swallow before it is saved, the
+ * saved rules of both levels in one list, and the per-level "silence
+ * everything" switches. Driven here against the real markup, because the
+ * point of it is that the rule and the lines it eats are visible together.
  */
-type DrawerModule = typeof import('../renderer/logs/drawer.js');
+type PopoverModule = typeof import('../renderer/logs/silence-popover.js');
 type ElementsModule = typeof import('../renderer/logs/elements.js');
 type ViewModule = typeof import('../renderer/logs/view.js');
 type BufferModule = typeof import('../renderer/logs/buffer.js');
@@ -62,15 +63,15 @@ const HELD: LogEntry[] = [
   warn('otra advertencia'),
 ];
 
-describe('renderer/logs/drawer.ts', () => {
-  let drawer: DrawerModule;
+describe('renderer/logs/silence-popover.ts', () => {
+  let popover: PopoverModule;
   let elements: ElementsModule;
   let view: ViewModule;
   let buffer: BufferModule;
   let dom: LogsDom;
 
   async function load(): Promise<void> {
-    drawer = await import('../renderer/logs/drawer.js');
+    popover = await import('../renderer/logs/silence-popover.js');
     elements = await import('../renderer/logs/elements.js');
     view = await import('../renderer/logs/view.js');
     buffer = await import('../renderer/logs/buffer.js');
@@ -112,10 +113,24 @@ describe('renderer/logs/drawer.ts', () => {
     );
   }
 
-  function patternRows(): HTMLElement[] {
-    return Array.from(
-      elements.patternListEl.querySelectorAll<HTMLElement>('.pat'),
+  function pressEscape(): void {
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     );
+  }
+
+  function pressOn(node: Element): void {
+    node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  }
+
+  function ruleRows(): HTMLElement[] {
+    return Array.from(
+      elements.patternListEl.querySelectorAll<HTMLElement>('.rule'),
+    );
+  }
+
+  function ruleTexts(): Array<string | null | undefined> {
+    return ruleRows().map((row) => row.querySelector('code')?.textContent);
   }
 
   beforeEach(async () => {
@@ -131,33 +146,74 @@ describe('renderer/logs/drawer.ts', () => {
   });
 
   describe('opening and closing', () => {
-    it('shows the panel, presses the control that opened it and focuses the draft', () => {
-      drawer.setDrawer(true);
-      expect(elements.drawerEl.hidden).toBe(false);
-      expect(elements.togglePanelBtn.getAttribute('aria-pressed')).toBe('true');
+    it('shows the popover, expands the toggle and focuses the composer', () => {
+      popover.setSilencePopover(true);
+      expect(elements.popoverEl.hidden).toBe(false);
+      expect(elements.silenceToggleBtn.getAttribute('aria-expanded')).toBe(
+        'true',
+      );
       expect(document.activeElement).toBe(elements.draftInputEl);
     });
 
-    it('hides it again from the close button', () => {
-      drawer.setDrawer(true);
-      elements.drawerCloseBtn.click();
-      expect(elements.drawerEl.hidden).toBe(true);
-      expect(elements.togglePanelBtn.getAttribute('aria-pressed')).toBe(
-        'false',
-      );
+    it('is a dialog named after what it holds', () => {
+      expect(elements.popoverEl.getAttribute('role')).toBe('dialog');
+      expect(elements.popoverEl.getAttribute('aria-label')).toBe('Silenciados');
     });
 
-    it('the toolbar control toggles it', () => {
-      elements.togglePanelBtn.click();
-      expect(elements.drawerEl.hidden).toBe(false);
-      elements.togglePanelBtn.click();
-      expect(elements.drawerEl.hidden).toBe(true);
+    it('the toolbar toggle opens it and closes it, handing focus back', () => {
+      elements.silenceToggleBtn.click();
+      expect(elements.popoverEl.hidden).toBe(false);
+      elements.silenceToggleBtn.click();
+      expect(elements.popoverEl.hidden).toBe(true);
+      expect(elements.silenceToggleBtn.getAttribute('aria-expanded')).toBe(
+        'false',
+      );
+      expect(document.activeElement).toBe(elements.silenceToggleBtn);
+    });
+
+    it('Escape closes it and returns focus to the toggle', () => {
+      popover.setSilencePopover(true);
+      pressEscape();
+      expect(elements.popoverEl.hidden).toBe(true);
+      expect(document.activeElement).toBe(elements.silenceToggleBtn);
+    });
+
+    it('a press outside closes it', () => {
+      popover.setSilencePopover(true);
+      pressOn(elements.linesEl);
+      expect(elements.popoverEl.hidden).toBe(true);
+    });
+
+    it('a press inside keeps it open', () => {
+      popover.setSilencePopover(true);
+      pressOn(elements.muteWarnEl);
+      expect(elements.popoverEl.hidden).toBe(false);
+    });
+
+    it("a press on a line's silence button keeps it open, since that prefills it", () => {
+      popover.setSilencePopover(true);
+      const btn = document.createElement('button');
+      btn.className = 'silence-btn';
+      elements.linesEl.appendChild(btn);
+      pressOn(btn);
+      expect(elements.popoverEl.hidden).toBe(false);
+    });
+
+    it('closing takes the marks off the log', () => {
+      ownCommand({ warn: [] });
+      hold(HELD);
+      popover.setSilencePopover(true);
+      type('Successfully compiled');
+      vi.advanceTimersByTime(100);
+      popover.setSilencePopover(false);
+      expect(markedRows()).toEqual([]);
+      expect(elements.silencePreviewEl.hidden).toBe(true);
     });
 
     it('refuses to open in a merged scope, and says why', () => {
       view.view.groupSources = new Map([['api', source('api')]]);
-      elements.togglePanelBtn.click();
-      expect(elements.drawerEl.hidden).toBe(true);
+      elements.silenceToggleBtn.click();
+      expect(elements.popoverEl.hidden).toBe(true);
       expect(elements.statusEl.textContent).toBe(
         'Los silenciados son por servicio: elige uno',
       );
@@ -165,38 +221,38 @@ describe('renderer/logs/drawer.ts', () => {
 
     it('takes the message back down once it has been read', () => {
       view.view.groupSources = new Map([['api', source('api')]]);
-      elements.togglePanelBtn.click();
+      elements.silenceToggleBtn.click();
       vi.advanceTimersByTime(2500);
       expect(elements.statusEl.textContent).toBe('');
     });
   });
 
   describe('the toolbar toggle', () => {
-    it('counts every active rule of the command on screen', () => {
+    it('counts every active rule of the command on screen, both levels', () => {
       ownCommand({ warn: ['a'], error: ['b', 'c'] });
-      drawer.renderDrawer();
-      expect(elements.toggleLabelEl.textContent).toBe('Silenciados · 3');
+      popover.renderSilencePopover();
+      expect(elements.silenceToggleCountEl.textContent).toBe('3');
     });
 
-    it('drops the count when no single command owns the view', () => {
+    it('shows no count when no single command owns the view', () => {
       view.view.currentTarget = null;
-      drawer.renderDrawer();
-      expect(elements.toggleLabelEl.textContent).toBe('Silenciados');
+      popover.renderSilencePopover();
+      expect(elements.silenceToggleCountEl.textContent).toBe('');
     });
   });
 
   describe('applyTargetSnapshot', () => {
     it("adopts main's view of the shown command, silence settings included", () => {
-      drawer.applyTargetSnapshot(commandTarget({ warn: ['x'] }));
+      popover.applyTargetSnapshot(commandTarget({ warn: ['x'] }));
       expect(view.view.currentTarget).not.toBeNull();
       expect(elements.muteWarnEl.checked).toBe(true);
       expect(elements.muteErrEl.checked).toBe(false);
-      expect(elements.toggleLabelEl.textContent).toBe('Silenciados · 1');
+      expect(elements.silenceToggleCountEl.textContent).toBe('1');
     });
 
     it('leaves the per-command switches alone for a target that has none', () => {
       elements.muteWarnEl.checked = true;
-      drawer.applyTargetSnapshot({
+      popover.applyTargetSnapshot({
         kind: 'action',
         group: { id: 'g1', name: 'Back' },
         target: { id: 'a1', name: 'deploy' },
@@ -205,49 +261,42 @@ describe('renderer/logs/drawer.ts', () => {
     });
   });
 
-  describe('the level switcher', () => {
-    it('counts the rules of each level', () => {
-      ownCommand({ warn: ['a'], error: ['b', 'c'] });
-      drawer.setDrawer(true);
-      expect(elements.segWarnCountEl.textContent).toBe('1');
-      expect(elements.segErrCountEl.textContent).toBe('2');
+  describe('the level pills', () => {
+    it('start on warnings', () => {
+      popover.setSilencePopover(true);
+      expect(elements.levelWarnBtn.getAttribute('aria-pressed')).toBe('true');
+      expect(elements.levelErrBtn.getAttribute('aria-pressed')).toBe('false');
     });
 
-    it('starts on warnings and lists only that level', () => {
-      ownCommand({ warn: ['ruido'], error: ['grave'] });
-      drawer.setDrawer(true);
-      expect(elements.segWarnBtn.getAttribute('aria-selected')).toBe('true');
-      expect(
-        patternRows().map((row) => row.querySelector('code')?.textContent),
-      ).toEqual(['ruido']);
+    it('pick one level at a time', () => {
+      popover.setSilencePopover(true);
+      elements.levelErrBtn.click();
+      expect(elements.levelErrBtn.getAttribute('aria-pressed')).toBe('true');
+      expect(elements.levelWarnBtn.getAttribute('aria-pressed')).toBe('false');
     });
 
-    it('switches level, its list and its switch', () => {
-      ownCommand({ warn: ['ruido'], error: ['grave'] });
-      drawer.setDrawer(true);
-      elements.segErrBtn.click();
-      expect(elements.segErrBtn.getAttribute('aria-selected')).toBe('true');
-      expect(elements.segWarnBtn.getAttribute('aria-selected')).toBe('false');
-      expect(
-        patternRows().map((row) => row.querySelector('code')?.textContent),
-      ).toEqual(['grave']);
-      const switches = Array.from(
-        elements.drawerEl.querySelectorAll<HTMLElement>('.switch-row'),
-      );
-      expect(switches.map((row) => row.hidden)).toEqual([true, false]);
+    it('re-preview the draft against the level picked', () => {
+      ownCommand({ warn: [] });
+      hold(HELD);
+      popover.setSilencePopover(true);
+      type('Successfully compiled');
+      vi.advanceTimersByTime(100);
+      elements.levelErrBtn.click();
+      expect(markedRows()).toEqual([3]);
+      expect(elements.draftCountEl.textContent).toBe('1');
     });
 
-    it('remembers the level across a reload', async () => {
-      elements.segErrBtn.click();
+    it('remember the level across a reload', async () => {
+      elements.levelErrBtn.click();
       expect(localStorage.getItem('devbar.logs.silence-level')).toBe('error');
       mountLogsDom();
       localStorage.setItem('devbar.logs.silence-level', 'error');
       await load();
-      drawer.setDrawer(true);
-      expect(elements.segErrBtn.getAttribute('aria-selected')).toBe('true');
+      popover.setSilencePopover(true);
+      expect(elements.levelErrBtn.getAttribute('aria-pressed')).toBe('true');
     });
 
-    it('still works when storage refuses to answer', async () => {
+    it('still work when storage refuses to answer', async () => {
       mountLogsDom();
       const spy = vi
         .spyOn(Storage.prototype, 'getItem')
@@ -260,53 +309,63 @@ describe('renderer/logs/drawer.ts', () => {
           throw new Error('blocked');
         });
       await load();
-      drawer.setDrawer(true);
-      elements.segErrBtn.click();
-      expect(elements.segErrBtn.getAttribute('aria-selected')).toBe('true');
+      popover.setSilencePopover(true);
+      elements.levelErrBtn.click();
+      expect(elements.levelErrBtn.getAttribute('aria-pressed')).toBe('true');
       spy.mockRestore();
       setSpy.mockRestore();
     });
   });
 
   describe('the active rules', () => {
-    it('shows each rule as typed, with how many held lines it matches', () => {
-      ownCommand({ warn: ['Successfully compiled', `${REGEX_MARKER}otra.*`] });
+    it('lists both levels together, each with its level and its matches', () => {
+      ownCommand({
+        warn: ['Successfully compiled', `${REGEX_MARKER}otra.*`],
+        error: ['Successfully compiled'],
+      });
       hold(HELD);
-      drawer.setDrawer(true);
-      const rows = patternRows();
-      expect(rows.map((row) => row.querySelector('code')?.textContent)).toEqual(
-        ['Successfully compiled', 'otra.*'],
-      );
+      popover.setSilencePopover(true);
+      const rows = ruleRows();
+      expect(ruleTexts()).toEqual([
+        'Successfully compiled',
+        'otra.*',
+        'Successfully compiled',
+      ]);
+      expect(rows.map((row) => row.dataset.level)).toEqual([
+        'warn',
+        'warn',
+        'error',
+      ]);
       expect(rows.map((row) => row.querySelector('.cnt')?.textContent)).toEqual(
-        ['2', '1'],
+        ['2', '1', '1'],
       );
       expect(rows[1]?.querySelector('code')?.getAttribute('title')).toBe(
         'otra.*',
       );
     });
 
-    it('says so when a level has no rules at all', () => {
+    it('says so when there are no rules at all', () => {
       ownCommand({ warn: [] });
-      drawer.setDrawer(true);
-      expect(elements.patternListEl.textContent).toBe('Ninguno');
+      popover.setSilencePopover(true);
+      expect(elements.patternListEl.textContent).toBe('Sin reglas');
     });
 
-    it('removing a rule asks main to drop exactly what is stored', () => {
-      ownCommand({ warn: [`${REGEX_MARKER}otra.*`] });
-      drawer.setDrawer(true);
-      patternRows()[0]?.querySelector<HTMLElement>('.x')?.click();
+    it('removing a rule asks main to drop exactly what is stored, at its own level', () => {
+      ownCommand({ warn: ['ruido'], error: [`${REGEX_MARKER}grave.*`] });
+      popover.setSilencePopover(true);
+      ruleRows()[1]?.querySelector<HTMLElement>('.x')?.click();
       expect(dom.argsFor('removeSilencePattern')).toEqual([
-        ['g1', 'c1', 'warn', `${REGEX_MARKER}otra.*`],
+        ['g1', 'c1', 'error', `${REGEX_MARKER}grave.*`],
       ]);
     });
 
-    it('keeps a rule removable while state pushes repaint the panel', () => {
+    it('keeps a rule removable while state pushes repaint the popover', () => {
       ownCommand({ warn: ['otra'] });
-      drawer.setDrawer(true);
-      const remove = patternRows()[0]?.querySelector<HTMLElement>('.x');
+      popover.setSilencePopover(true);
+      const remove = ruleRows()[0]?.querySelector<HTMLElement>('.x');
       // A busy service pushes state constantly; each push repaints the
-      // panel. Rebuilding the rows between press and release lost the click.
-      drawer.renderDrawer();
+      // popover. Rebuilding the rows between press and release lost the click.
+      popover.renderSilencePopover();
       expect(remove?.isConnected).toBe(true);
       remove?.click();
       expect(dom.argsFor('removeSilencePattern')).toEqual([
@@ -314,35 +373,55 @@ describe('renderer/logs/drawer.ts', () => {
       ]);
     });
 
+    it('refreshes the counts of unchanged rules without rebuilding them', () => {
+      ownCommand({ warn: ['otra'] });
+      hold([]);
+      popover.setSilencePopover(true);
+      const row = ruleRows()[0];
+      hold(HELD);
+      popover.renderSilencePopover();
+      expect(ruleRows()[0]).toBe(row);
+      expect(row?.querySelector('.cnt')?.textContent).toBe('1');
+    });
+
     it('asks nothing when no single command owns the view', () => {
       view.view.currentTarget = commandTarget({ warn: ['grave'] });
       view.view.currentGroupId = null;
-      drawer.setDrawer(true);
-      patternRows()[0]?.querySelector<HTMLElement>('.x')?.click();
+      popover.setSilencePopover(true);
+      ruleRows()[0]?.querySelector<HTMLElement>('.x')?.click();
       expect(dom.argsFor('removeSilencePattern')).toEqual([]);
     });
 
-    it('hovering a rule marks the lines it matches, and leaving unmarks them', () => {
-      ownCommand({ warn: ['Successfully compiled'] });
+    it('hovering a rule marks the lines it matches at its level, and leaving unmarks them', () => {
+      ownCommand({ warn: ['Successfully compiled'], error: ['Successfully'] });
       hold(HELD);
-      drawer.setDrawer(true);
-      patternRows()[0]?.dispatchEvent(new MouseEvent('mouseenter'));
+      popover.setSilencePopover(true);
+      ruleRows()[1]?.dispatchEvent(new MouseEvent('mouseenter'));
+      expect(markedRows()).toEqual([3]);
+      ruleRows()[1]?.dispatchEvent(new MouseEvent('mouseleave'));
+      ruleRows()[0]?.dispatchEvent(new MouseEvent('mouseenter'));
       expect(markedRows()).toEqual([0, 2]);
       expect(elements.silencePreviewEl.hidden).toBe(false);
       expect(elements.silencePreviewTextEl.textContent).toBe(
         '2 coinciden con este patrón',
       );
-      patternRows()[0]?.dispatchEvent(new MouseEvent('mouseleave'));
+      ruleRows()[0]?.dispatchEvent(new MouseEvent('mouseleave'));
       expect(markedRows()).toEqual([]);
       expect(elements.silencePreviewEl.hidden).toBe(true);
     });
   });
 
-  describe('the draft', () => {
+  describe('the composer', () => {
     beforeEach(() => {
       ownCommand({ warn: [] });
       hold(HELD);
-      drawer.setDrawer(true);
+      popover.setSilencePopover(true);
+    });
+
+    it('starts empty, with nothing to silence', () => {
+      expect(elements.submitBtn.disabled).toBe(true);
+      expect(elements.submitBtn.textContent?.trim()).toBe('Silenciar');
+      expect(elements.draftCountEl.hidden).toBe(true);
     });
 
     it('waits for typing to settle before previewing', () => {
@@ -353,19 +432,21 @@ describe('renderer/logs/drawer.ts', () => {
       expect(markedRows()).toEqual([0, 2]);
     });
 
-    it('counts and samples the held lines of this level it would silence', () => {
+    it('counts the held lines of this level it would silence, in the field and on the button', () => {
       type('Successfully compiled');
       vi.advanceTimersByTime(100);
-      expect(elements.draftMetaEl.hidden).toBe(false);
-      expect(elements.draftCountEl.textContent).toBe('2 líneas de este log');
-      const samples = Array.from(elements.draftSamplesEl.children);
-      expect(samples.map((s) => s.textContent)).toEqual([
-        'Successfully compiled src/a.ts',
-        'Successfully compiled src/b.ts',
-      ]);
-      expect(samples[0]?.querySelector('mark')?.textContent).toBe(
-        'Successfully compiled',
-      );
+      expect(elements.draftCountEl.hidden).toBe(false);
+      expect(elements.draftCountEl.textContent).toBe('2');
+      expect(elements.submitBtn.textContent?.trim()).toBe('Silenciar 2');
+      expect(elements.submitBtn.disabled).toBe(false);
+    });
+
+    it('still lets a rule that matches nothing yet be saved', () => {
+      type('nada parecido');
+      vi.advanceTimersByTime(100);
+      expect(elements.draftCountEl.textContent).toBe('0');
+      expect(elements.submitBtn.textContent?.trim()).toBe('Silenciar');
+      expect(elements.submitBtn.disabled).toBe(false);
     });
 
     it('marks the log and says how many would go in the footer', () => {
@@ -384,8 +465,8 @@ describe('renderer/logs/drawer.ts', () => {
       vi.advanceTimersByTime(100);
       expect(markedRows()).toEqual([]);
       expect(elements.silencePreviewEl.hidden).toBe(true);
-      expect(elements.draftMetaEl.hidden).toBe(true);
-      expect(elements.draftSamplesEl.childElementCount).toBe(0);
+      expect(elements.draftCountEl.hidden).toBe(true);
+      expect(elements.submitBtn.disabled).toBe(true);
       expect(view.view.silencePreview).toBeNull();
     });
 
@@ -397,6 +478,16 @@ describe('renderer/logs/drawer.ts', () => {
       ]);
       expect(elements.draftInputEl.value).toBe('');
       expect(markedRows()).toEqual([]);
+    });
+
+    it('the button does the same as Enter', () => {
+      type('Successfully compiled');
+      vi.advanceTimersByTime(100);
+      elements.submitBtn.click();
+      expect(dom.argsFor('addSilencePattern')).toEqual([
+        ['g1', 'c1', 'warn', 'Successfully compiled'],
+      ]);
+      expect(elements.draftInputEl.value).toBe('');
     });
 
     it('stores a regex with no backslash so it is read back as one', () => {
@@ -416,20 +507,22 @@ describe('renderer/logs/drawer.ts', () => {
       expect(markedRows()).toEqual([0]);
     });
 
-    it('refuses an invalid regex inline, and Enter does nothing', () => {
+    it('refuses an invalid regex inline, and neither Enter nor the button sends it', () => {
       elements.draftRegexBtn.click();
       type('(abc');
       vi.advanceTimersByTime(100);
       expect(elements.draftErrorEl.hidden).toBe(false);
       expect(elements.draftErrorEl.textContent).toBe('Regex no válida');
-      expect(elements.draftCardEl.classList.contains('invalid')).toBe(true);
+      expect(elements.composerEl.classList.contains('invalid')).toBe(true);
+      expect(elements.submitBtn.disabled).toBe(true);
       pressEnter();
+      elements.submitBtn.click();
       expect(dom.argsFor('addSilencePattern')).toEqual([]);
       expect(elements.draftInputEl.value).toBe('(abc');
     });
 
-    it('adds to errors when errors is the level on screen', () => {
-      elements.segErrBtn.click();
+    it('adds to errors when errors is the level picked', () => {
+      elements.levelErrBtn.click();
       type('grave');
       pressEnter();
       expect(dom.argsFor('addSilencePattern')).toEqual([
@@ -447,7 +540,7 @@ describe('renderer/logs/drawer.ts', () => {
     it('a scope switch drops the draft and its preview', () => {
       type('Successfully compiled');
       vi.advanceTimersByTime(100);
-      drawer.resetSilenceScope();
+      popover.resetSilenceScope();
       expect(elements.draftInputEl.value).toBe('');
       expect(view.view.silencePreview).toBeNull();
       expect(elements.silencePreviewEl.hidden).toBe(true);
@@ -459,8 +552,8 @@ describe('renderer/logs/drawer.ts', () => {
       ownCommand({ warn: [] });
       hold(HELD);
       view.silenceHooks.prefill('error', 'Successfully compiled');
-      expect(elements.drawerEl.hidden).toBe(false);
-      expect(elements.segErrBtn.getAttribute('aria-selected')).toBe('true');
+      expect(elements.popoverEl.hidden).toBe(false);
+      expect(elements.levelErrBtn.getAttribute('aria-pressed')).toBe('true');
       expect(elements.draftInputEl.value).toBe('Successfully compiled');
       expect(elements.draftRegexBtn.getAttribute('aria-pressed')).toBe('false');
       expect(markedRows()).toEqual([3]);
@@ -476,6 +569,12 @@ describe('renderer/logs/drawer.ts', () => {
   });
 
   describe('the per-command mute switches', () => {
+    it('shows both levels side by side', () => {
+      popover.setSilencePopover(true);
+      expect(elements.muteWarnEl.closest('[hidden]')).toBeNull();
+      expect(elements.muteErrEl.closest('[hidden]')).toBeNull();
+    });
+
     it('forwards a warning mute to main', () => {
       view.view.currentGroupId = 'g1';
       view.view.currentCommandId = 'c1';

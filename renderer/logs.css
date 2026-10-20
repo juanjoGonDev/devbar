@@ -738,249 +738,221 @@ footer {
 }
 
 /* ================================================================
-   SILENCED PANEL — rules, a live-previewed draft, the master switch
+   SILENCED POPOVER — composer, the rules of both levels, the switches
    ================================================================ */
 
 /*
- * The panel's own tokens. The log pane beside it is dark in every theme, so
- * the log-side pieces (the toolbar toggle, the marked rows, the footer note)
- * read the dark values from :root; the panel itself follows the theme.
+ * Its own tokens. The logs window is dark in every theme, and so is the
+ * popover floating over it; the log-side pieces (the toolbar toggle, the
+ * marked rows, the footer note) read the same values from :root.
  */
 :root {
   --sil-accent: #0a84ff;
   --sil-accent-soft: rgba(10, 132, 255, 0.18);
   --sil-accent-text: #64d2ff;
-  --sil-hit-bg: rgba(10, 132, 255, 0.14);
-  --sil-mark-bg: rgba(10, 132, 255, 0.45);
+  --sil-hit-bg: rgba(10, 132, 255, 0.1);
+  --sil-mark-bg: rgba(10, 132, 255, 0.5);
   --sil-mark-text: #fff;
-}
-.drawer {
-  --sil-bg: #232325;
-  --sil-surface: #2c2c2e;
-  --sil-surface-strong: #48484a;
-  --sil-field: #1c1c1e;
-  --sil-border: #3a3a3c;
-  --sil-text: #f5f5f7;
-  --sil-text-2: #a1a1a6;
-  --sil-text-3: #8e8e93;
-  --sil-chip: rgba(255, 255, 255, 0.1);
+  --sil-warn: #ff9f0a;
+  --sil-warn-soft: rgba(255, 159, 10, 0.18);
+  --sil-warn-text: #ffb340;
   --sil-danger: #ff453a;
+  --sil-danger-soft: rgba(255, 69, 58, 0.18);
+  --sil-danger-text: #ff6961;
+  --sil-glass: rgba(44, 44, 48, 0.86);
+  --sil-glass-border: rgba(255, 255, 255, 0.08);
+  --sil-field: rgba(0, 0, 0, 0.35);
+  --sil-chip: rgba(255, 255, 255, 0.06);
+  --sil-chip-hover: rgba(255, 255, 255, 0.12);
+  --sil-sep: rgba(255, 255, 255, 0.07);
+  --sil-text: #f2f2f7;
+  --sil-text-2: #c7c7cc;
+  --sil-text-3: #8e8e93;
   --sil-switch-off: #48484a;
   --sil-knob: #fff;
 }
 
-.drawer {
-  width: 340px;
-  flex-shrink: 0;
+/* Floats over the log under its toggle; it never takes the log's width. */
+.silence-popover {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 20;
+  width: 420px;
+  max-width: calc(100% - 28px);
+  max-height: calc(100% - 16px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   padding: 14px;
-  min-height: 0;
-  overflow-y: auto;
-  background: var(--sil-bg);
-  border-left: 1px solid var(--sil-border);
-  font-family: var(--font-ui);
+  border: 1px solid var(--sil-glass-border);
+  border-radius: 18px;
+  background: var(--sil-glass);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
   color: var(--sil-text);
+  font-family: var(--font-ui);
+  font-size: 12px;
 }
-.drawer[hidden] {
+.silence-popover[hidden] {
   display: none;
 }
 
-.drawer-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.drawer-title {
-  flex-grow: 1;
-  font-size: 14px;
-}
-.drawer-x,
-.pat .x {
+/* The composer: one field, its live count and the regex switch. */
+.sil-composer {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--sil-text-2);
-  font-size: 13px;
-  cursor: pointer;
-}
-.drawer-x:hover,
-.pat .x:hover {
-  background: var(--sil-chip);
-  color: var(--sil-text);
-}
-
-/* Segmented level switcher: one level on screen at a time. */
-.seg {
-  display: flex;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--sil-surface);
-}
-.seg-btn {
-  flex: 1;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--sil-text-2);
-  font-family: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.seg-btn.on {
-  background: var(--sil-surface-strong);
-  color: var(--sil-text);
-  font-weight: 600;
-}
-.seg-n {
-  padding: 0 6px;
-  border-radius: 8px;
-  background: var(--sil-chip);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* The draft: what is being typed, and what it would swallow. */
-.draft-card {
-  display: flex;
-  flex-direction: column;
   gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--sil-border);
-  border-radius: 10px;
+  height: 44px;
+  padding: 0 6px 0 12px;
+  border-radius: 12px;
   background: var(--sil-field);
+  box-shadow: inset 0 0 0 1px var(--sil-glass-border);
 }
-.draft-card:focus-within {
-  border-color: var(--sil-accent);
-  box-shadow: 0 0 0 3px var(--sil-accent-soft);
+.sil-composer:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--sil-accent);
 }
-.draft-card.invalid,
-.draft-card.invalid:focus-within {
-  border-color: var(--sil-danger);
-  box-shadow: none;
+.sil-composer.invalid,
+.sil-composer.invalid:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--sil-danger);
 }
-.draft-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.sil-composer-icon {
+  flex-shrink: 0;
+  color: var(--sil-text-3);
+  font-size: 15px;
 }
-.draft-input {
+.sil-input {
   flex-grow: 1;
   min-width: 0;
   border: 0;
   outline: 0;
   background: none;
-  color: var(--sil-text);
+  color: #fff;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: 13px;
 }
-.draft-input::placeholder {
+.sil-input::placeholder {
   color: var(--sil-text-3);
 }
-.draft-regex {
+.sil-count {
   flex-shrink: 0;
-  height: 22px;
-  padding: 0 6px;
-  border: 1px solid var(--sil-border);
-  border-radius: 5px;
-  background: none;
+  color: var(--sil-accent-text);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.sil-count[hidden],
+.sil-error[hidden] {
+  display: none;
+}
+.sil-regex {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sil-chip);
   color: var(--sil-text-3);
   font-family: var(--font-mono);
   font-size: 11px;
   cursor: pointer;
 }
-.draft-regex[aria-pressed='true'] {
-  border-color: var(--sil-accent);
+.sil-regex:hover {
+  background: var(--sil-chip-hover);
+}
+.sil-regex[aria-pressed='true'] {
   background: var(--sil-accent);
   color: #fff;
 }
-.draft-error {
-  color: var(--sil-danger);
+.sil-error {
+  margin-top: -6px;
+  padding: 0 4px;
+  color: var(--sil-danger-text);
   font-size: 11.5px;
-}
-.draft-error[hidden],
-.draft-meta[hidden] {
-  display: none;
-}
-.draft-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--sil-accent-text);
-  font-size: 11.5px;
-}
-.draft-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--sil-accent);
-}
-.draft-grow,
-.drawer-grow {
-  flex-grow: 1;
-}
-.draft-kbd {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 0 5px;
-  border: 1px solid var(--sil-border);
-  border-radius: 4px;
-  color: var(--sil-text-2);
-  font-family: inherit;
-  font-size: 10.5px;
-}
-.draft-samples {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  color: var(--sil-text-2);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-}
-.draft-samples:empty {
-  display: none;
-}
-.draft-sample {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.draft-sample mark {
-  padding: 0 1px;
-  border-radius: 3px;
-  background: var(--sil-mark-bg);
-  color: var(--sil-mark-text);
 }
 
-/* Saved rules of the level on screen. */
-.active-block {
+/* «en [warnings] [errores] ……… [Silenciar N]» */
+.sil-row {
+  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
 }
-.active-label {
-  padding: 0 2px 4px;
+.sil-en {
   color: var(--sil-text-3);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
-.pattern-list {
+.sil-grow {
+  flex-grow: 1;
+}
+.sil-pill,
+.sil-submit {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 13px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sil-pill {
+  background: var(--sil-chip);
+  color: var(--sil-text-3);
+}
+.sil-pill:hover {
+  background: var(--sil-chip-hover);
+}
+.sil-pill[aria-pressed='false'] .sil-dot {
+  opacity: 0.5;
+}
+.sil-pill[data-level='warn'][aria-pressed='true'] {
+  background: var(--sil-warn-soft);
+  color: var(--sil-warn-text);
+}
+.sil-pill[data-level='error'][aria-pressed='true'] {
+  background: var(--sil-danger-soft);
+  color: var(--sil-danger-text);
+}
+.sil-submit {
+  background: var(--sil-accent);
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sil-submit:disabled {
+  background: var(--sil-chip);
+  color: var(--sil-text-3);
+  cursor: default;
+}
+
+/* A level's colour: amber for warnings, red for errors. */
+.sil-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sil-warn);
+}
+[data-level='error'] > .sil-dot {
+  background: var(--sil-danger);
+}
+
+.sil-sep {
+  flex-shrink: 0;
+  height: 1px;
+  background: var(--sil-sep);
+}
+
+/* Saved rules of both levels; the only part that scrolls. */
+.sil-rules {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -988,23 +960,23 @@ footer {
   flex-direction: column;
   gap: 2px;
 }
-.pattern-list .empty {
-  padding: 4px 2px;
+.sil-rules .empty {
+  padding: 4px 12px;
   color: var(--sil-text-3);
-  font-size: 12px;
 }
-.pat {
+.rule {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 6px 0 10px;
-  border-radius: 8px;
+  gap: 10px;
+  height: 40px;
+  padding: 0 8px 0 12px;
+  border-radius: 12px;
 }
-.pat:hover {
-  background: var(--sil-surface);
+.rule:hover {
+  background: var(--sil-chip);
 }
-.pat code {
+.rule code {
   flex-grow: 1;
   min-width: 0;
   overflow: hidden;
@@ -1012,40 +984,57 @@ footer {
   white-space: nowrap;
   color: var(--sil-text);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
 }
-.pat .cnt {
+.rule .cnt {
   color: var(--sil-text-3);
-  font-size: 11px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
-
-/* "Silence everything" for the level on screen — the whole row is the target. */
-.switch-row {
+.rule .x {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--sil-surface);
-  font-size: 12.5px;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sil-chip);
+  color: var(--sil-text-2);
+  font-size: 12px;
   cursor: pointer;
 }
-.switch-row[hidden] {
-  display: none;
+.rule .x:hover {
+  background: var(--sil-chip-hover);
+  color: #fff;
 }
-.switch-row span {
-  flex-grow: 1;
+
+/* "Silence everything" for each level, side by side. */
+.sil-switches {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 2px 4px 0;
+}
+.sil-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sil-text-2);
+  cursor: pointer;
 }
 .switch {
   appearance: none;
   -webkit-appearance: none;
   position: relative;
   flex-shrink: 0;
-  width: 30px;
-  height: 18px;
+  width: 28px;
+  height: 16px;
   margin: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--sil-switch-off);
   cursor: pointer;
   transition: background 0.15s ease;
@@ -1055,8 +1044,8 @@ footer {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--sil-knob);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -1069,37 +1058,41 @@ footer {
   transform: translateX(12px);
 }
 .switch:focus-visible,
-.seg-btn:focus-visible,
-.draft-regex:focus-visible,
-.pat .x:focus-visible,
-.drawer-x:focus-visible {
+.sil-regex:focus-visible,
+.sil-pill:focus-visible,
+.sil-submit:focus-visible,
+.rule .x:focus-visible,
+.silence-toggle:focus-visible {
   outline: 2px solid var(--sil-accent);
   outline-offset: 1px;
 }
 
-/* The toolbar control that opens the panel, pressed while it is open. */
+/* The toolbar control: the bell and how many rules; solid while open. */
 .silence-toggle {
   height: 26px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #d0d0d4;
+  gap: 5px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sil-accent-soft);
+  color: var(--sil-accent-text);
   font-family: var(--font-ui);
   font-size: 12px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 .silence-toggle:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(10, 132, 255, 0.28);
 }
-.silence-toggle[aria-pressed='true'] {
-  border-color: var(--sil-accent);
+.silence-toggle[aria-expanded='true'] {
   background: var(--sil-accent);
   color: #fff;
+}
+.silence-toggle-count:empty {
+  display: none;
 }
 
 /* Rows a previewed rule would swallow: blue bar, dimmed, struck through. */

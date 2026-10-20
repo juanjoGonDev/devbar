@@ -4,7 +4,7 @@
  * What is left here is only the wiring: pull the panes in, tell them what the
  * window was opened for, and route what main pushes. Everything the window
  * actually DOES lives under `renderer/logs/` — the line pane, the sidebar, the
- * silenced drawer, the scope switcher — each small enough to read in one sitting
+ * silenced popover, the scope switcher — each small enough to read in one sitting
  * and testable without the others.
  */
 import './report-uncaught.js';
@@ -16,7 +16,7 @@ import { logsParams } from './logs/params.js';
 import { installNav, view } from './logs/view.js';
 import { filterEl, titleEl } from './logs/elements.js';
 import { applyFilter, rerenderExistingLines } from './logs/pane.js';
-import { renderDrawer } from './logs/drawer.js';
+import { renderSilencePopover } from './logs/silence-popover.js';
 import { jumpToLine, openScope, selectLog } from './logs/scope.js';
 import { refreshSidebar } from './logs/sidebar.js';
 import { receivePush } from './logs/stream.js';
@@ -90,7 +90,7 @@ window.api.onLog((payload) => {
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 window.api.onUpdate(() => {
   rerenderExistingLines();
-  renderDrawer(); // patterns may have just been added or removed
+  renderSilencePopover(); // patterns may have just been added or removed
   if (refreshTimer) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = null;

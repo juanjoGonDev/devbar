@@ -28,10 +28,6 @@ export const statusEl = byId<HTMLElement>('status', HTMLElement);
 export const mainEl = requireElement<HTMLElement>('main', HTMLElement);
 export const muteWarnEl = byId<HTMLInputElement>('mute-warn', HTMLInputElement);
 export const muteErrEl = byId<HTMLInputElement>('mute-err', HTMLInputElement);
-export const togglePanelBtn = byId<HTMLButtonElement>(
-  'toggle-silenced',
-  HTMLButtonElement,
-);
 export const levelPillEl = byId<HTMLButtonElement>(
   'level-pill',
   HTMLButtonElement,
@@ -56,37 +52,40 @@ export const toggleSidebarBtn = byId<HTMLButtonElement>(
   HTMLButtonElement,
 );
 
-export const toggleLabelEl = byId<HTMLElement>(
-  'silence-toggle-label',
+export const silenceToggleBtn = byId<HTMLButtonElement>(
+  'toggle-silenced',
+  HTMLButtonElement,
+);
+export const silenceToggleCountEl = byId<HTMLElement>(
+  'silence-toggle-count',
   HTMLElement,
 );
-export const drawerEl = byId<HTMLElement>('silenced-drawer', HTMLElement);
-export const drawerCloseBtn = byId<HTMLButtonElement>(
-  'drawer-close',
-  HTMLButtonElement,
-);
-export const segWarnBtn = byId<HTMLButtonElement>(
-  'seg-warn',
-  HTMLButtonElement,
-);
-export const segErrBtn = byId<HTMLButtonElement>('seg-err', HTMLButtonElement);
-export const segWarnCountEl = byId<HTMLElement>('seg-warn-count', HTMLElement);
-export const segErrCountEl = byId<HTMLElement>('seg-err-count', HTMLElement);
-export const draftCardEl = byId<HTMLElement>('draft-card', HTMLElement);
+export const popoverEl = byId<HTMLElement>('silence-popover', HTMLElement);
+export const composerEl = byId<HTMLElement>('silence-composer', HTMLElement);
 export const draftInputEl = byId<HTMLInputElement>(
-  'draft-input',
+  'silence-input',
   HTMLInputElement,
 );
+export const draftCountEl = byId<HTMLElement>('silence-count', HTMLElement);
 export const draftRegexBtn = byId<HTMLButtonElement>(
-  'draft-regex',
+  'silence-regex',
   HTMLButtonElement,
 );
-export const draftErrorEl = byId<HTMLElement>('draft-error', HTMLElement);
-export const draftMetaEl = byId<HTMLElement>('draft-meta', HTMLElement);
-export const draftCountEl = byId<HTMLElement>('draft-count', HTMLElement);
-export const draftSamplesEl = byId<HTMLElement>('draft-samples', HTMLElement);
+export const draftErrorEl = byId<HTMLElement>('silence-error', HTMLElement);
+export const levelWarnBtn = byId<HTMLButtonElement>(
+  'silence-level-warn',
+  HTMLButtonElement,
+);
+export const levelErrBtn = byId<HTMLButtonElement>(
+  'silence-level-error',
+  HTMLButtonElement,
+);
+export const submitBtn = byId<HTMLButtonElement>(
+  'silence-submit',
+  HTMLButtonElement,
+);
 export const patternListEl = byId<HTMLUListElement>(
-  'pattern-list',
+  'silence-rules',
   HTMLUListElement,
 );
 export const silencePreviewEl = byId<HTMLElement>(

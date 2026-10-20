@@ -92,11 +92,14 @@
             id="toggle-silenced"
             class="silence-toggle"
             type="button"
-            title="Patrones silenciados"
-            aria-pressed="false"
+            title="Silenciados"
+            aria-label="Silenciados"
+            aria-haspopup="dialog"
+            aria-controls="silence-popover"
+            aria-expanded="false"
           >
             <span class="icon" data-icon="bell-off"></span>
-            <span id="silence-toggle-label">Silenciados</span>
+            <span id="silence-toggle-count" class="silence-toggle-count"></span>
           </button>
           <button
             id="detach"
@@ -119,6 +122,95 @@
           >
             <span class="icon" data-icon="arrow-down"></span>
           </button>
+          <!--
+            Silenced popover. Floats over the log, under its toolbar toggle, so
+            the rules and the lines they swallow are visible together: the
+            draft previews, live, which held lines it would silence, and
+            hovering a saved rule marks what it is eating.
+          -->
+          <div
+            id="silence-popover"
+            class="silence-popover"
+            role="dialog"
+            aria-label="Silenciados"
+            hidden
+          >
+            <div id="silence-composer" class="sil-composer">
+              <span class="icon sil-composer-icon" data-icon="bell-off"></span>
+              <input
+                id="silence-input"
+                class="sil-input"
+                type="text"
+                placeholder="Silenciar líneas que contengan…"
+                aria-label="Silenciar líneas que contengan"
+                spellcheck="false"
+                autocomplete="off"
+              />
+              <span id="silence-count" class="sil-count" hidden></span>
+              <button
+                id="silence-regex"
+                class="sil-regex"
+                type="button"
+                aria-pressed="false"
+                title="Usar como regex"
+              >
+                .*
+              </button>
+            </div>
+            <div id="silence-error" class="sil-error" hidden></div>
+            <div class="sil-row">
+              <span class="sil-en">en</span>
+              <button
+                id="silence-level-warn"
+                class="sil-pill"
+                type="button"
+                data-level="warn"
+                aria-pressed="true"
+              >
+                <span class="sil-dot"></span>warnings
+              </button>
+              <button
+                id="silence-level-error"
+                class="sil-pill"
+                type="button"
+                data-level="error"
+                aria-pressed="false"
+              >
+                <span class="sil-dot"></span>errores
+              </button>
+              <span class="sil-grow"></span>
+              <button
+                id="silence-submit"
+                class="sil-submit"
+                type="button"
+                disabled
+              >
+                Silenciar
+              </button>
+            </div>
+            <div class="sil-sep"></div>
+            <ul id="silence-rules" class="sil-rules"></ul>
+            <div class="sil-switches">
+              <label class="sil-switch">
+                <input
+                  id="mute-warn"
+                  class="switch"
+                  type="checkbox"
+                  role="switch"
+                />
+                Todos los warnings
+              </label>
+              <label class="sil-switch">
+                <input
+                  id="mute-err"
+                  class="switch"
+                  type="checkbox"
+                  role="switch"
+                />
+                Todos los errores
+              </label>
+            </div>
+          </div>
         </div>
         <footer>
           <span class="footer-left">
@@ -143,101 +235,6 @@
           </span>
         </footer>
       </div>
-      <!--
-        Silenced panel. Lives inside the logs window instead of a separate
-        window so the rules and the lines they swallow are visible together:
-        a draft previews, live, which held lines it would silence, and
-        hovering a saved rule marks what it is eating.
-      -->
-      <aside
-        id="silenced-drawer"
-        class="drawer"
-        aria-label="Silenciados"
-        hidden
-      >
-        <div class="drawer-head">
-          <strong class="drawer-title">Silenciados</strong>
-          <button
-            id="drawer-close"
-            class="drawer-x"
-            type="button"
-            title="Cerrar"
-            aria-label="Cerrar panel"
-          >
-            <span class="icon" data-icon="x"></span>
-          </button>
-        </div>
-
-        <div class="seg" role="tablist" aria-label="Nivel">
-          <button
-            id="seg-warn"
-            class="seg-btn"
-            type="button"
-            role="tab"
-            data-level="warn"
-          >
-            Warnings <span id="seg-warn-count" class="seg-n">0</span>
-          </button>
-          <button
-            id="seg-err"
-            class="seg-btn"
-            type="button"
-            role="tab"
-            data-level="error"
-          >
-            Errores <span id="seg-err-count" class="seg-n">0</span>
-          </button>
-        </div>
-
-        <div id="draft-card" class="draft-card">
-          <div class="draft-row">
-            <input
-              id="draft-input"
-              class="draft-input"
-              type="text"
-              placeholder="Patrón o regex…"
-              aria-label="Nuevo patrón"
-              spellcheck="false"
-              autocomplete="off"
-            />
-            <button
-              id="draft-regex"
-              class="draft-regex"
-              type="button"
-              aria-pressed="false"
-              title="Usar como regex"
-            >
-              .*
-            </button>
-          </div>
-          <div id="draft-error" class="draft-error" hidden></div>
-          <div id="draft-meta" class="draft-meta" hidden>
-            <span class="draft-dot"></span>
-            <span id="draft-count"></span>
-            <span class="draft-grow"></span>
-            <kbd class="draft-kbd"
-              ><span class="icon" data-icon="corner-down-left"></span>
-              añadir</kbd
-            >
-          </div>
-          <div id="draft-samples" class="draft-samples"></div>
-        </div>
-
-        <div class="active-block">
-          <div class="active-label">Activos</div>
-          <ul id="pattern-list" class="pattern-list"></ul>
-        </div>
-
-        <div class="drawer-grow"></div>
-        <label class="switch-row" data-level="warn">
-          <span>Silenciar todos los warnings</span>
-          <input id="mute-warn" class="switch" type="checkbox" role="switch" />
-        </label>
-        <label class="switch-row" data-level="error">
-          <span>Silenciar todos los errores</span>
-          <input id="mute-err" class="switch" type="checkbox" role="switch" />
-        </label>
-      </aside>
     </div>
     <script type="module" src="logs.js"></script>
   </body>

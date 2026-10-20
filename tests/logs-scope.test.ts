@@ -422,7 +422,7 @@ describe('renderer/logs/scope.ts', () => {
       expect(elements.uptimeBadgeEl.classList.contains('visible')).toBe(false);
       expect(elements.runBtn.style.display).toBe('none');
       expect(view.view.currentCommandId).toBeNull();
-      expect(elements.drawerEl.hidden).toBe(true);
+      expect(elements.popoverEl.hidden).toBe(true);
     });
 
     it('caps a merged snapshot globally, since no single run owns it', async () => {

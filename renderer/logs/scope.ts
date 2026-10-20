@@ -20,7 +20,11 @@ import {
   setLevelFilter,
   trimMemory,
 } from './pane.js';
-import { applyTargetSnapshot, resetSilenceScope, setDrawer } from './drawer.js';
+import {
+  applyTargetSnapshot,
+  resetSilenceScope,
+  setSilencePopover,
+} from './silence-popover.js';
 import { renderHeaderRunState } from './header.js';
 import {
   awaitSnapshot,
@@ -84,7 +88,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   view.currentTarget = null;
   view.currentGroupId = null;
   view.currentCommandId = null;
-  setDrawer(false); // silencing is per-service; it has no meaning here
+  setSilencePopover(false); // silencing is per-service; it has no meaning here
 
   view.memoryCap = view.globalRetention; // merged snapshots are capped globally
   const token = beginLoad();

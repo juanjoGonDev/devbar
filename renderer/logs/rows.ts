@@ -154,9 +154,9 @@ export function buildRow(
         }
         await window.api.removeSilencePattern(groupId, commandId, lvl, cleaned);
       } else {
-        // Not saved yet: the panel opens with it as the draft, so the preview
+        // Not saved yet: the popover opens with it as the draft, so the preview
         // shows what else it would swallow before anything is silenced. The
-        // panel acts on the command on screen, so a stale row does nothing.
+        // popover acts on the command on screen, so a stale row does nothing.
         if (
           view.currentGroupId === groupId &&
           view.currentCommandId === commandId
