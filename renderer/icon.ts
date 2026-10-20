@@ -13,6 +13,7 @@ import type { CustomIcon } from '../src/domain-types.js';
 
 /** The icons the chrome itself uses — a typo here fails typecheck. */
 export type IconName =
+  | 'activity'
   | 'app-window'
   | 'arrow-down'
   | 'arrow-right'

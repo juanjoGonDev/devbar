@@ -9,7 +9,7 @@
 const WRAP_KEY = 'devbar.logs.wrap';
 const TIME_KEY = 'devbar.logs.time';
 
-function read(key: string): string | null {
+export function readPref(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -17,7 +17,7 @@ function read(key: string): string | null {
   }
 }
 
-function write(key: string, value: string): void {
+export function writePref(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
   } catch {
@@ -26,16 +26,16 @@ function write(key: string, value: string): void {
 }
 
 export const rowPrefs = {
-  wrap: read(WRAP_KEY) !== 'off',
-  relativeTime: read(TIME_KEY) === 'relative',
+  wrap: readPref(WRAP_KEY) !== 'off',
+  relativeTime: readPref(TIME_KEY) === 'relative',
 };
 
 export function setWrap(wrap: boolean): void {
   rowPrefs.wrap = wrap;
-  write(WRAP_KEY, wrap ? 'on' : 'off');
+  writePref(WRAP_KEY, wrap ? 'on' : 'off');
 }
 
 export function setRelativeTime(relative: boolean): void {
   rowPrefs.relativeTime = relative;
-  write(TIME_KEY, relative ? 'relative' : 'absolute');
+  writePref(TIME_KEY, relative ? 'relative' : 'absolute');
 }

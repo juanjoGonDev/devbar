@@ -40,7 +40,9 @@ describe('renderer/logs/menu.ts', () => {
 
   function items(): HTMLButtonElement[] {
     return Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+      document.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"], [role="menuitemcheckbox"]',
+      ),
     );
   }
 
@@ -70,7 +72,12 @@ describe('renderer/logs/menu.ts', () => {
   it('offers to detach the single service on screen', () => {
     view.view.processId = 'api';
     elements.moreBtn.click();
-    expect(labels()).toEqual(['Copiar todo', 'Vaciar', 'Separar ventana']);
+    expect(labels()).toEqual([
+      'Copiar todo',
+      'Vaciar',
+      'Mostrar actividad',
+      'Separar ventana',
+    ]);
     choose('Separar ventana');
     expect(dom.argsFor('openLogs')).toEqual([
       [{ processId: 'api', detached: true }],
@@ -80,14 +87,14 @@ describe('renderer/logs/menu.ts', () => {
   it('has nothing to detach while a merged scope is on screen', () => {
     view.view.processId = null;
     elements.moreBtn.click();
-    expect(labels()).toEqual(['Copiar todo', 'Vaciar']);
+    expect(labels()).toEqual(['Copiar todo', 'Vaciar', 'Mostrar actividad']);
   });
 
   it('has nothing to detach in a window that already is detached', async () => {
     await load('?detached=1');
     view.view.processId = 'api';
     elements.moreBtn.click();
-    expect(labels()).toEqual(['Copiar todo', 'Vaciar']);
+    expect(labels()).toEqual(['Copiar todo', 'Vaciar', 'Mostrar actividad']);
   });
 
   it('says it copies the selection when there is one', () => {
@@ -95,6 +102,18 @@ describe('renderer/logs/menu.ts', () => {
     buffer.buffer.selected.add(1);
     elements.moreBtn.click();
     expect(labels()[0]).toBe('Copiar 2 seleccionada(s)');
+  });
+
+  it('switches the activity strip off and on, showing which it is', () => {
+    const toggle = (): HTMLButtonElement | undefined =>
+      items().find((item) => labelOf(item) === 'Mostrar actividad');
+    elements.moreBtn.click();
+    expect(toggle()?.getAttribute('role')).toBe('menuitemcheckbox');
+    expect(toggle()?.getAttribute('aria-checked')).toBe('true');
+    choose('Mostrar actividad');
+    expect(localStorage.getItem('devbar.logs.activity')).toBe('off');
+    elements.moreBtn.click();
+    expect(toggle()?.getAttribute('aria-checked')).toBe('false');
   });
 
   it('empties the log from «Vaciar»', async () => {

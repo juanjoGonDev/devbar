@@ -686,10 +686,94 @@ header.toolbar .silence-toggle {
 .tb-more .remote-menu-item.is-danger .icon {
   color: #ff6961;
 }
+.tb-more .remote-menu-check {
+  margin-left: auto;
+  color: var(--sil-accent-text);
+}
+.tb-more .remote-menu-item[aria-checked='false'] .remote-menu-check {
+  visibility: hidden;
+}
 .tb-more .remote-menu-separator {
   height: 1px;
   margin: 4px 6px;
   background: var(--sil-sep);
+}
+
+/* ── Activity strip: lines per slice of time, under the toolbar ── */
+.activity {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+  height: 44px;
+  padding: 8px 18px 6px;
+  border-bottom: 1px solid #262629;
+  background: #1c1c1e;
+  font-family: var(--font-ui);
+}
+.activity[hidden] {
+  display: none;
+}
+.activity-bars {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+/* The whole column is the target; the bar is drawn at its foot. */
+.activity-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 14px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(
+      to top,
+      var(--activity-tone) var(--h, 0px),
+      transparent var(--h, 0px)
+    )
+    no-repeat;
+  --activity-tone: #3a3a3c;
+  cursor: pointer;
+}
+.activity-bar.tone-warn {
+  --activity-tone: var(--sil-warn);
+}
+.activity-bar.tone-error {
+  --activity-tone: var(--sil-danger);
+}
+.activity-bar.current {
+  --activity-tone: var(--sil-accent);
+}
+.activity-bar.tone-empty {
+  cursor: default;
+}
+button.activity-bar:hover {
+  --activity-tone: #636366;
+}
+button.activity-bar.tone-warn:hover {
+  --activity-tone: var(--sil-warn-text);
+}
+button.activity-bar.tone-error:hover {
+  --activity-tone: var(--sil-danger-text);
+}
+button.activity-bar.current:hover {
+  --activity-tone: var(--sil-accent-text);
+}
+.activity-bar:focus-visible {
+  outline: 2px solid var(--sil-accent);
+  outline-offset: 1px;
+}
+.activity-span {
+  align-self: flex-start;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: #636366;
+  white-space: nowrap;
 }
 
 .log-container {

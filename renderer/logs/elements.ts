@@ -15,6 +15,9 @@ export const runPillEl = byId<HTMLElement>('run-pill', HTMLElement);
 export const runPillTextEl = byId<HTMLElement>('run-pill-text', HTMLElement);
 export const restartBtn = byId<HTMLButtonElement>('restart', HTMLButtonElement);
 export const linesEl = byId<HTMLElement>('lines', HTMLElement);
+export const activityEl = byId<HTMLElement>('activity', HTMLElement);
+export const activityBarsEl = byId<HTMLElement>('activity-bars', HTMLElement);
+export const activitySpanEl = byId<HTMLElement>('activity-span', HTMLElement);
 export const filterEl = byId<HTMLInputElement>('filter', HTMLInputElement);
 export const levelAllBtn = byId<HTMLButtonElement>(
   'level-all',

@@ -157,6 +157,19 @@
             </button>
           </span>
         </header>
+        <!--
+          Activity strip: one bar per slice of time for the lines on screen.
+          Hidden until the scope spans at least two slices, or when switched
+          off from the «⋯» menu. Bars are buttons that jump to their lines.
+        -->
+        <div id="activity" class="activity" role="group" hidden>
+          <div id="activity-bars" class="activity-bars"></div>
+          <span
+            id="activity-span"
+            class="activity-span"
+            aria-hidden="true"
+          ></span>
+        </div>
         <div class="log-container">
           <main>
             <div id="lines"></div>

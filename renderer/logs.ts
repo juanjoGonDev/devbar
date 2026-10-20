@@ -24,6 +24,7 @@ import './logs/selection-ui.js';
 import './logs/row-actions.js';
 import './logs/footer.js';
 import './logs/menu.js';
+import { invalidateActivity } from './logs/activity.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 
 initTheme();
@@ -92,6 +93,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 window.api.onUpdate(() => {
   rerenderExistingLines();
   renderSilencePopover(); // patterns may have just been added or removed
+  invalidateActivity(); // a silenced warning no longer colours its bar
   if (refreshTimer) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = null;

@@ -1,8 +1,8 @@
 /**
  * The toolbar's «⋯» menu: the actions on the view as a whole that used to be
- * a row of icon buttons — clear, copy, detach. They are used rarely enough
- * that a menu costs nothing, and the toolbar has room again for what you read
- * while the log runs.
+ * a row of icon buttons — clear, copy, detach — plus the switch for the
+ * activity strip. They are used rarely enough that a menu costs nothing, and
+ * the toolbar has room again for what you read while the log runs.
  *
  * The entries are built when the menu opens, so «Copiar» can say whether it
  * copies the selection or everything the filter leaves.
@@ -11,6 +11,7 @@ import {
   createDeviceMenu,
   type MenuEntry,
 } from '../config/remote-device-menu.js';
+import { activityShown, setActivityShown } from './activity.js';
 import { buffer } from './buffer.js';
 import { clearLog, detachLog } from './header.js';
 import { logsParams } from './params.js';
@@ -35,10 +36,17 @@ export function menuEntries(): MenuEntry[] {
       danger: true,
       run: () => void clearLog(),
     },
+    null,
+    {
+      label: 'Mostrar actividad',
+      icon: 'activity',
+      checked: activityShown(),
+      run: () => setActivityShown(!activityShown()),
+    },
   ];
   // Only a single service can be detached, and a detached window already is.
   if (view.processId && !logsParams.isDetached)
-    entries.push(null, {
+    entries.push({
       label: 'Separar ventana',
       icon: 'app-window',
       run: detachLog,

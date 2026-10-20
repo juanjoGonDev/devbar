@@ -56,6 +56,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   el ancho. Si no la tocas, se ajusta sola al nombre de grupo más largo; un
   doble clic en el separador vuelve a ese ajuste automático.
 
+- **Actividad por tiempo en la ventana de logs.** Bajo la barra, una franja de
+  barras muestra cuántas líneas hubo en cada tramo de tiempo, en rojo si hubo
+  errores y en ámbar si hubo avisos; el tramo que estás viendo va en azul.
+  Respeta la búsqueda y el filtro de nivel. Al pasar por encima ves el tramo y
+  sus números, y al pulsar saltas a su primera línea. Se oculta desde «⋯ ›
+  Mostrar actividad».
+
 ### Cambiado
 
 - **Barra de la ventana de logs más clara.** Arriba se lee qué estás viendo
