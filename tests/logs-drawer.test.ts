@@ -2,18 +2,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { entry, mountLogsDom, type LogsDom } from './helpers/logs-dom.js';
+import { REGEX_MARKER } from '../src/silence-pattern.js';
+import type { LogEntry } from '../src/domain-types.js';
 import type { LogsTarget, LogSource } from '../src/ipc-contract.js';
 
 /**
- * `renderer/logs/drawer.ts` is the silenced drawer: the rules that swallow
- * lines on the left, and the lines they are actually swallowing on the right.
- * Both halves are driven here against the real drawer markup, because the
- * point of the pane is that the two agree — a rule you cannot inspect is a
- * rule you stop trusting.
+ * `renderer/logs/drawer.ts` is the silenced panel: the rules that swallow
+ * lines, a draft that previews — against the lines already held — what it
+ * would swallow before it is saved, and the per-level "silence everything"
+ * switch. Driven here against the real markup, because the point of the panel
+ * is that the rule and the lines it eats are visible together.
  */
 type DrawerModule = typeof import('../renderer/logs/drawer.js');
 type ElementsModule = typeof import('../renderer/logs/elements.js');
 type ViewModule = typeof import('../renderer/logs/view.js');
+type BufferModule = typeof import('../renderer/logs/buffer.js');
 
 function commandTarget(patterns?: {
   warn?: string[];
@@ -43,49 +46,105 @@ function source(id: string): LogSource {
   return { id, name: id, groupId: 'g1', groupName: 'Back' };
 }
 
+function warn(line: string): LogEntry {
+  return entry(line, { level: 'warn', originalLevel: 'warn' });
+}
+
+function error(line: string): LogEntry {
+  return entry(line, { level: 'error', originalLevel: 'error' });
+}
+
+const HELD: LogEntry[] = [
+  warn('Successfully compiled src/a.ts'),
+  entry('DEBUG reconnect'),
+  warn('Successfully compiled src/b.ts'),
+  error('Successfully compiled pero en error'),
+  warn('otra advertencia'),
+];
+
 describe('renderer/logs/drawer.ts', () => {
   let drawer: DrawerModule;
   let elements: ElementsModule;
   let view: ViewModule;
+  let buffer: BufferModule;
   let dom: LogsDom;
+
+  async function load(): Promise<void> {
+    drawer = await import('../renderer/logs/drawer.js');
+    elements = await import('../renderer/logs/elements.js');
+    view = await import('../renderer/logs/view.js');
+    buffer = await import('../renderer/logs/buffer.js');
+  }
+
+  /** Hold `entries` and draw each as a row, the way the pane would. */
+  function hold(entries: LogEntry[]): void {
+    buffer.buffer.entries = entries;
+    elements.linesEl.textContent = '';
+    entries.forEach((_, index) => {
+      const row = document.createElement('div');
+      row.className = 'line';
+      row.dataset.eidx = String(index);
+      elements.linesEl.appendChild(row);
+    });
+  }
+
+  function markedRows(): number[] {
+    return Array.from(
+      elements.linesEl.querySelectorAll<HTMLElement>('.line.would-silence'),
+      (row) => Number(row.dataset.eidx),
+    );
+  }
+
+  function ownCommand(patterns?: { warn?: string[]; error?: string[] }): void {
+    view.view.currentTarget = commandTarget(patterns);
+    view.view.currentGroupId = 'g1';
+    view.view.currentCommandId = 'c1';
+  }
+
+  function type(text: string): void {
+    elements.draftInputEl.value = text;
+    elements.draftInputEl.dispatchEvent(new Event('input'));
+  }
+
+  function pressEnter(): void {
+    elements.draftInputEl.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+  }
+
+  function patternRows(): HTMLElement[] {
+    return Array.from(
+      elements.patternListEl.querySelectorAll<HTMLElement>('.pat'),
+    );
+  }
 
   beforeEach(async () => {
     vi.useFakeTimers();
     dom = mountLogsDom({
       api: { buildSilencePattern: (text: string) => `re:${text}` },
     });
-    drawer = await import('../renderer/logs/drawer.js');
-    elements = await import('../renderer/logs/elements.js');
-    view = await import('../renderer/logs/view.js');
+    await load();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  function warnRows(): HTMLElement[] {
-    return Array.from(elements.warnFeedEl.children) as HTMLElement[];
-  }
-
-  function countBadge(level: 'warn' | 'error'): string {
-    const badge = elements.drawerEl.querySelector<HTMLElement>(
-      `.drawer-count[data-count="${level}"]`,
-    );
-    return badge?.textContent ?? '';
-  }
-
   describe('opening and closing', () => {
-    it('shows the drawer and marks the control that opened it', () => {
+    it('shows the panel, presses the control that opened it and focuses the draft', () => {
       drawer.setDrawer(true);
       expect(elements.drawerEl.hidden).toBe(false);
-      expect(elements.togglePanelBtn.classList.contains('on')).toBe(true);
+      expect(elements.togglePanelBtn.getAttribute('aria-pressed')).toBe('true');
+      expect(document.activeElement).toBe(elements.draftInputEl);
     });
 
     it('hides it again from the close button', () => {
       drawer.setDrawer(true);
       elements.drawerCloseBtn.click();
       expect(elements.drawerEl.hidden).toBe(true);
-      expect(elements.togglePanelBtn.classList.contains('on')).toBe(false);
+      expect(elements.togglePanelBtn.getAttribute('aria-pressed')).toBe(
+        'false',
+      );
     });
 
     it('the toolbar control toggles it', () => {
@@ -96,8 +155,6 @@ describe('renderer/logs/drawer.ts', () => {
     });
 
     it('refuses to open in a merged scope, and says why', () => {
-      // Patterns would list empty — reading as "nothing is silenced" — and a
-      // typed pattern would be dropped without a word.
       view.view.groupSources = new Map([['api', source('api')]]);
       elements.togglePanelBtn.click();
       expect(elements.drawerEl.hidden).toBe(true);
@@ -114,12 +171,27 @@ describe('renderer/logs/drawer.ts', () => {
     });
   });
 
+  describe('the toolbar toggle', () => {
+    it('counts every active rule of the command on screen', () => {
+      ownCommand({ warn: ['a'], error: ['b', 'c'] });
+      drawer.renderDrawer();
+      expect(elements.toggleLabelEl.textContent).toBe('Silenciados · 3');
+    });
+
+    it('drops the count when no single command owns the view', () => {
+      view.view.currentTarget = null;
+      drawer.renderDrawer();
+      expect(elements.toggleLabelEl.textContent).toBe('Silenciados');
+    });
+  });
+
   describe('applyTargetSnapshot', () => {
     it("adopts main's view of the shown command, silence settings included", () => {
-      drawer.applyTargetSnapshot(commandTarget());
+      drawer.applyTargetSnapshot(commandTarget({ warn: ['x'] }));
       expect(view.view.currentTarget).not.toBeNull();
       expect(elements.muteWarnEl.checked).toBe(true);
       expect(elements.muteErrEl.checked).toBe(false);
+      expect(elements.toggleLabelEl.textContent).toBe('Silenciados · 1');
     });
 
     it('leaves the per-command switches alone for a target that has none', () => {
@@ -133,205 +205,219 @@ describe('renderer/logs/drawer.ts', () => {
     });
   });
 
-  describe('renderDrawer', () => {
-    it('stays quiet while the drawer is closed', () => {
-      view.view.currentTarget = commandTarget({ warn: ['ruido'] });
-      drawer.renderDrawer();
-      expect(elements.warnListEl.childElementCount).toBe(0);
+  describe('the level switcher', () => {
+    it('counts the rules of each level', () => {
+      ownCommand({ warn: ['a'], error: ['b', 'c'] });
+      drawer.setDrawer(true);
+      expect(elements.segWarnCountEl.textContent).toBe('1');
+      expect(elements.segErrCountEl.textContent).toBe('2');
     });
 
-    it('lists the patterns of the command on screen', () => {
-      view.view.currentTarget = commandTarget({
-        warn: ['ruido', 'otro'],
-        error: ['grave'],
-      });
+    it('starts on warnings and lists only that level', () => {
+      ownCommand({ warn: ['ruido'], error: ['grave'] });
       drawer.setDrawer(true);
+      expect(elements.segWarnBtn.getAttribute('aria-selected')).toBe('true');
       expect(
-        Array.from(
-          elements.warnListEl.querySelectorAll('.pattern'),
-          (el) => el.textContent,
-        ),
-      ).toEqual(['ruido', 'otro']);
+        patternRows().map((row) => row.querySelector('code')?.textContent),
+      ).toEqual(['ruido']);
+    });
+
+    it('switches level, its list and its switch', () => {
+      ownCommand({ warn: ['ruido'], error: ['grave'] });
+      drawer.setDrawer(true);
+      elements.segErrBtn.click();
+      expect(elements.segErrBtn.getAttribute('aria-selected')).toBe('true');
+      expect(elements.segWarnBtn.getAttribute('aria-selected')).toBe('false');
       expect(
-        Array.from(
-          elements.errListEl.querySelectorAll('.pattern'),
-          (el) => el.textContent,
-        ),
+        patternRows().map((row) => row.querySelector('code')?.textContent),
       ).toEqual(['grave']);
+      const switches = Array.from(
+        elements.drawerEl.querySelectorAll<HTMLElement>('.switch-row'),
+      );
+      expect(switches.map((row) => row.hidden)).toEqual([true, false]);
+    });
+
+    it('remembers the level across a reload', async () => {
+      elements.segErrBtn.click();
+      expect(localStorage.getItem('devbar.logs.silence-level')).toBe('error');
+      mountLogsDom();
+      localStorage.setItem('devbar.logs.silence-level', 'error');
+      await load();
+      drawer.setDrawer(true);
+      expect(elements.segErrBtn.getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('still works when storage refuses to answer', async () => {
+      mountLogsDom();
+      const spy = vi
+        .spyOn(Storage.prototype, 'getItem')
+        .mockImplementation(() => {
+          throw new Error('blocked');
+        });
+      const setSpy = vi
+        .spyOn(Storage.prototype, 'setItem')
+        .mockImplementation(() => {
+          throw new Error('blocked');
+        });
+      await load();
+      drawer.setDrawer(true);
+      elements.segErrBtn.click();
+      expect(elements.segErrBtn.getAttribute('aria-selected')).toBe('true');
+      spy.mockRestore();
+      setSpy.mockRestore();
+    });
+  });
+
+  describe('the active rules', () => {
+    it('shows each rule as typed, with how many held lines it matches', () => {
+      ownCommand({ warn: ['Successfully compiled', `${REGEX_MARKER}otra.*`] });
+      hold(HELD);
+      drawer.setDrawer(true);
+      const rows = patternRows();
+      expect(rows.map((row) => row.querySelector('code')?.textContent)).toEqual(
+        ['Successfully compiled', 'otra.*'],
+      );
+      expect(rows.map((row) => row.querySelector('.cnt')?.textContent)).toEqual(
+        ['2', '1'],
+      );
+      expect(rows[1]?.querySelector('code')?.getAttribute('title')).toBe(
+        'otra.*',
+      );
     });
 
     it('says so when a level has no rules at all', () => {
-      view.view.currentTarget = commandTarget({ warn: [] });
+      ownCommand({ warn: [] });
       drawer.setDrawer(true);
-      expect(elements.warnListEl.textContent).toBe('Ninguno');
+      expect(elements.patternListEl.textContent).toBe('Ninguno');
     });
 
-    it('names what the drawer is acting on, group first', () => {
-      view.view.displayName = 'api';
-      view.view.groupName = 'Back';
+    it('removing a rule asks main to drop exactly what is stored', () => {
+      ownCommand({ warn: [`${REGEX_MARKER}otra.*`] });
       drawer.setDrawer(true);
-      expect(elements.drawerTargetEl.textContent).toBe('Back · api');
-    });
-
-    it('drops the qualifier when there is no group to qualify with', () => {
-      view.view.displayName = 'api';
-      view.view.groupName = '';
-      drawer.setDrawer(true);
-      expect(elements.drawerTargetEl.textContent).toBe('api');
-    });
-
-    it('removing a rule from the list asks main to drop it', () => {
-      view.view.currentTarget = commandTarget({ warn: ['ruido'] });
-      view.view.currentGroupId = 'g1';
-      view.view.currentCommandId = 'c1';
-      drawer.setDrawer(true);
-      elements.warnListEl.querySelector<HTMLElement>('.unsilence')?.click();
+      patternRows()[0]?.querySelector<HTMLElement>('.x')?.click();
       expect(dom.argsFor('removeSilencePattern')).toEqual([
-        ['g1', 'c1', 'warn', 'ruido'],
+        ['g1', 'c1', 'warn', `${REGEX_MARKER}otra.*`],
       ]);
     });
 
     it('asks nothing when no single command owns the view', () => {
-      view.view.currentTarget = commandTarget({ error: ['grave'] });
+      view.view.currentTarget = commandTarget({ warn: ['grave'] });
       view.view.currentGroupId = null;
       drawer.setDrawer(true);
-      elements.errListEl.querySelector<HTMLElement>('.unsilence')?.click();
+      patternRows()[0]?.querySelector<HTMLElement>('.x')?.click();
       expect(dom.argsFor('removeSilencePattern')).toEqual([]);
+    });
+
+    it('hovering a rule marks the lines it matches, and leaving unmarks them', () => {
+      ownCommand({ warn: ['Successfully compiled'] });
+      hold(HELD);
+      drawer.setDrawer(true);
+      patternRows()[0]?.dispatchEvent(new MouseEvent('mouseenter'));
+      expect(markedRows()).toEqual([0, 2]);
+      expect(elements.silencePreviewEl.hidden).toBe(false);
+      expect(elements.silencePreviewTextEl.textContent).toBe(
+        '2 coinciden con este patrón',
+      );
+      patternRows()[0]?.dispatchEvent(new MouseEvent('mouseleave'));
+      expect(markedRows()).toEqual([]);
+      expect(elements.silencePreviewEl.hidden).toBe(true);
     });
   });
 
-  describe('the feed of swallowed lines', () => {
-    it('mirrors a swallowed warning, with its clock and its text', () => {
-      const ts = new Date(2024, 0, 2, 3, 4, 5, 6).getTime();
-      drawer.pushMutedLine(
-        entry('[33mruido[0m', { originalLevel: 'warn', ts }),
-      );
-      expect(warnRows()).toHaveLength(1);
-      expect(warnRows()[0]?.querySelector('.ts')?.textContent).toBe(
-        '03:04:05.006',
-      );
-      expect(warnRows()[0]?.querySelector('.body')?.textContent).toBe('ruido');
+  describe('the draft', () => {
+    beforeEach(() => {
+      ownCommand({ warn: [] });
+      hold(HELD);
+      drawer.setDrawer(true);
     });
 
-    it('sends an error to the error feed instead', () => {
-      drawer.pushMutedLine(entry('grave', { originalLevel: 'error' }));
-      expect(elements.warnFeedEl.childElementCount).toBe(0);
-      expect(elements.errFeedEl.childElementCount).toBe(1);
+    it('waits for typing to settle before previewing', () => {
+      type('Successfully compiled');
+      vi.advanceTimersByTime(50);
+      expect(markedRows()).toEqual([]);
+      vi.advanceTimersByTime(60);
+      expect(markedRows()).toEqual([0, 2]);
     });
 
-    it('ignores a line with no severity behind it', () => {
-      drawer.pushMutedLine(entry('rutina'));
-      expect(elements.warnFeedEl.childElementCount).toBe(0);
-      expect(elements.errFeedEl.childElementCount).toBe(0);
-    });
-
-    it('ignores everything in a merged scope, where no command owns the row', () => {
-      // Unsilencing acts on the CURRENT selection, so a row here would remove
-      // a pattern from whichever command happened to be selected.
-      view.view.groupSources = new Map([['api', source('api')]]);
-      drawer.pushMutedLine(entry('ruido', { originalLevel: 'warn' }));
-      expect(elements.warnFeedEl.childElementCount).toBe(0);
-    });
-
-    it('counts a repeat of the same event instead of listing it again', () => {
-      // The skeleton is what tells two sightings of one event apart from two
-      // different events: the number varies, the shape does not.
-      drawer.pushMutedLine(entry('fallo 1', { originalLevel: 'warn' }));
-      drawer.pushMutedLine(entry('fallo 2', { originalLevel: 'warn' }));
-      expect(warnRows()).toHaveLength(1);
-      expect(warnRows()[0]?.dataset.count).toBe('2');
-      const badge = warnRows()[0]?.querySelector<HTMLElement>('.rep');
-      expect(badge?.textContent).toBe('×2');
-      expect(badge?.hidden).toBe(false);
-    });
-
-    it('floats the noisy one back to the bottom, showing its latest sighting', () => {
-      const later = new Date(2024, 0, 2, 9, 9, 9, 999).getTime();
-      drawer.pushMutedLine(entry('fallo 1', { originalLevel: 'warn', ts: 0 }));
-      drawer.pushMutedLine(entry('otra cosa', { originalLevel: 'warn' }));
-      drawer.pushMutedLine(
-        entry('fallo 2', { originalLevel: 'warn', ts: later }),
-      );
-      expect(
-        warnRows().map((row) => row.querySelector('.body')?.textContent),
-      ).toEqual(['otra cosa', 'fallo 1']);
-      expect(warnRows().at(-1)?.querySelector('.ts')?.textContent).toBe(
-        '09:09:09.999',
-      );
-    });
-
-    it('counts total sightings in the header, not distinct rows', () => {
-      drawer.pushMutedLine(entry('fallo 1', { originalLevel: 'warn' }));
-      drawer.pushMutedLine(entry('fallo 2', { originalLevel: 'warn' }));
-      drawer.pushMutedLine(entry('otra', { originalLevel: 'warn' }));
-      expect(countBadge('warn')).toBe('3');
-      expect(countBadge('error')).toBe('0');
-    });
-
-    it('drops the oldest row once the feed is full', () => {
-      for (let i = 0; i < 61; i += 1)
-        drawer.pushMutedLine(
-          entry(`ruido ${'x'.repeat(i)}`, {
-            originalLevel: 'warn',
-          }),
-        );
-      expect(warnRows()).toHaveLength(60);
-      expect(warnRows()[0]?.querySelector('.body')?.textContent).toBe(
-        `ruido ${'x'.repeat(1)}`,
-      );
-    });
-
-    it('wiping the feeds resets their counters too', () => {
-      drawer.pushMutedLine(entry('ruido', { originalLevel: 'warn' }));
-      drawer.pushMutedLine(entry('grave', { originalLevel: 'error' }));
-      drawer.clearMutedFeeds();
-      expect(elements.warnFeedEl.childElementCount).toBe(0);
-      expect(elements.errFeedEl.childElementCount).toBe(0);
-      expect(countBadge('warn')).toBe('0');
-      expect(countBadge('error')).toBe('0');
-    });
-
-    it('one click on a row drops whichever rule is swallowing it', async () => {
-      view.view.currentGroupId = 'g1';
-      view.view.currentCommandId = 'c1';
-      drawer.pushMutedLine(entry('  fallo 42  ', { originalLevel: 'warn' }));
-      warnRows()[0]?.click();
-      await vi.advanceTimersByTimeAsync(0);
-      // The built pattern first, then the literal it may have been stored as.
-      expect(dom.argsFor('removeSilencePattern')).toEqual([
-        ['g1', 'c1', 'warn', 're:fallo 42'],
-        ['g1', 'c1', 'warn', 'fallo 42'],
+    it('counts and samples the held lines of this level it would silence', () => {
+      type('Successfully compiled');
+      vi.advanceTimersByTime(100);
+      expect(elements.draftMetaEl.hidden).toBe(false);
+      expect(elements.draftCountEl.textContent).toBe('2 líneas de este log');
+      const samples = Array.from(elements.draftSamplesEl.children);
+      expect(samples.map((s) => s.textContent)).toEqual([
+        'Successfully compiled src/a.ts',
+        'Successfully compiled src/b.ts',
       ]);
+      expect(samples[0]?.querySelector('mark')?.textContent).toBe(
+        'Successfully compiled',
+      );
     });
 
-    it('a click asks nothing while no single command owns the view', () => {
-      view.view.currentGroupId = null;
-      view.view.currentCommandId = null;
-      drawer.pushMutedLine(entry('fallo', { originalLevel: 'warn' }));
-      warnRows()[0]?.click();
-      expect(dom.argsFor('removeSilencePattern')).toEqual([]);
+    it('marks the log and says how many would go in the footer', () => {
+      type('Successfully compiled');
+      vi.advanceTimersByTime(100);
+      expect(elements.silencePreviewTextEl.textContent).toBe(
+        '2 se silenciarían con el patrón nuevo',
+      );
+      expect(view.view.silencePreview?.(HELD[0])).toBe(true);
     });
-  });
 
-  describe('adding a rule by hand', () => {
-    it('sends what was typed and empties the box', () => {
-      view.view.currentGroupId = 'g1';
-      view.view.currentCommandId = 'c1';
-      elements.warnInputEl.value = '  ruido  ';
-      elements.warnAddBtn.click();
+    it('clearing the draft takes the preview away', () => {
+      type('Successfully compiled');
+      vi.advanceTimersByTime(100);
+      type('');
+      vi.advanceTimersByTime(100);
+      expect(markedRows()).toEqual([]);
+      expect(elements.silencePreviewEl.hidden).toBe(true);
+      expect(elements.draftMetaEl.hidden).toBe(true);
+      expect(elements.draftSamplesEl.childElementCount).toBe(0);
+      expect(view.view.silencePreview).toBeNull();
+    });
+
+    it('Enter adds the draft to the selected level and empties it', () => {
+      type('  Successfully compiled ');
+      pressEnter();
       expect(dom.argsFor('addSilencePattern')).toEqual([
-        ['g1', 'c1', 'warn', 'ruido'],
+        ['g1', 'c1', 'warn', 'Successfully compiled'],
       ]);
-      expect(elements.warnInputEl.value).toBe('');
+      expect(elements.draftInputEl.value).toBe('');
+      expect(markedRows()).toEqual([]);
     });
 
-    it('does the same for errors, from the keyboard', () => {
-      view.view.currentGroupId = 'g1';
-      view.view.currentCommandId = 'c1';
-      elements.errInputEl.value = 'grave';
-      elements.errInputEl.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
-      );
+    it('stores a regex with no backslash so it is read back as one', () => {
+      elements.draftRegexBtn.click();
+      expect(elements.draftRegexBtn.getAttribute('aria-pressed')).toBe('true');
+      type('compiled src/[ab]');
+      pressEnter();
+      expect(dom.argsFor('addSilencePattern')).toEqual([
+        ['g1', 'c1', 'warn', `${REGEX_MARKER}compiled src/[ab]`],
+      ]);
+    });
+
+    it('previews a regex as a regex', () => {
+      elements.draftRegexBtn.click();
+      type('src/[a]');
+      vi.advanceTimersByTime(100);
+      expect(markedRows()).toEqual([0]);
+    });
+
+    it('refuses an invalid regex inline, and Enter does nothing', () => {
+      elements.draftRegexBtn.click();
+      type('(abc');
+      vi.advanceTimersByTime(100);
+      expect(elements.draftErrorEl.hidden).toBe(false);
+      expect(elements.draftErrorEl.textContent).toBe('Regex no válida');
+      expect(elements.draftCardEl.classList.contains('invalid')).toBe(true);
+      pressEnter();
+      expect(dom.argsFor('addSilencePattern')).toEqual([]);
+      expect(elements.draftInputEl.value).toBe('(abc');
+    });
+
+    it('adds to errors when errors is the level on screen', () => {
+      elements.segErrBtn.click();
+      type('grave');
+      pressEnter();
       expect(dom.argsFor('addSilencePattern')).toEqual([
         ['g1', 'c1', 'error', 'grave'],
       ]);
@@ -339,9 +425,39 @@ describe('renderer/logs/drawer.ts', () => {
 
     it('sends nothing when no single command owns the view', () => {
       view.view.currentGroupId = null;
-      elements.warnInputEl.value = 'ruido';
-      elements.warnAddBtn.click();
+      type('ruido');
+      pressEnter();
       expect(dom.argsFor('addSilencePattern')).toEqual([]);
+    });
+
+    it('a scope switch drops the draft and its preview', () => {
+      type('Successfully compiled');
+      vi.advanceTimersByTime(100);
+      drawer.resetSilenceScope();
+      expect(elements.draftInputEl.value).toBe('');
+      expect(view.view.silencePreview).toBeNull();
+      expect(elements.silencePreviewEl.hidden).toBe(true);
+    });
+  });
+
+  describe('prefilling from a line', () => {
+    it('opens on that level with the line as the draft, previewed at once', () => {
+      ownCommand({ warn: [] });
+      hold(HELD);
+      view.silenceHooks.prefill('error', 'Successfully compiled');
+      expect(elements.drawerEl.hidden).toBe(false);
+      expect(elements.segErrBtn.getAttribute('aria-selected')).toBe('true');
+      expect(elements.draftInputEl.value).toBe('Successfully compiled');
+      expect(elements.draftRegexBtn.getAttribute('aria-pressed')).toBe('false');
+      expect(markedRows()).toEqual([3]);
+      expect(dom.argsFor('addSilencePattern')).toEqual([]);
+    });
+
+    it('turns the regex toggle on for a built pattern', () => {
+      ownCommand({ warn: [] });
+      view.silenceHooks.prefill('warn', 'fallo \\d+');
+      expect(elements.draftInputEl.value).toBe('fallo \\d+');
+      expect(elements.draftRegexBtn.getAttribute('aria-pressed')).toBe('true');
     });
   });
 

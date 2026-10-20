@@ -47,11 +47,13 @@ describe('renderer/logs/rows.ts', () => {
   };
   let opened: unknown[];
   let jumped: unknown[];
+  let prefilled: unknown[];
 
   beforeEach(async () => {
     document.body.innerHTML = '';
     opened = [];
     jumped = [];
+    prefilled = [];
     api = {
       buildSilencePattern: vi.fn((text: string) => `re:${text}`),
       addSilencePattern: vi.fn(() => Promise.resolve({ ok: true })),
@@ -72,6 +74,9 @@ describe('renderer/logs/rows.ts', () => {
         return Promise.resolve();
       },
     });
+    viewModule.installSilenceHooks({
+      prefill: (level, pattern) => prefilled.push([level, pattern]),
+    });
   });
 
   /** Build a row with the plumbing every test needs, and hand back both ends. */
@@ -88,6 +93,16 @@ describe('renderer/logs/rows.ts', () => {
   }
 
   describe('the row itself', () => {
+    it('is marked when the silenced panel previews a rule that would swallow it', () => {
+      viewModule.view.silencePreview = (entry) => entry.line === 'ruido';
+      expect(build(line('ruido')).row.classList.contains('would-silence')).toBe(
+        true,
+      );
+      expect(build(line('otra')).row.classList.contains('would-silence')).toBe(
+        false,
+      );
+    });
+
     it('carries the stream, the level and the silenced mark as classes', () => {
       const { row } = build(
         line('boom', { stream: 'stderr', level: 'error', silenced: true }),
@@ -288,31 +303,22 @@ describe('renderer/logs/rows.ts', () => {
       expect(row.querySelector('.silence-btn')).toBeNull();
     });
 
-    it('silences the built pattern, not the raw line', async () => {
+    it('prefills the panel with the built pattern instead of saving it', async () => {
       const { row } = build(
-        line('[33mfallo 42[0m  ', { originalLevel: 'warn' }),
+        line('\u001b[33mfallo 42\u001b[0m  ', { originalLevel: 'warn' }),
       );
       row.querySelector<HTMLElement>('.silence-btn')?.click();
       await Promise.resolve();
       expect(api.buildSilencePattern).toHaveBeenCalledWith('fallo 42');
-      expect(api.addSilencePattern).toHaveBeenCalledWith(
-        'g1',
-        'c1',
-        'warn',
-        're:fallo 42',
-      );
+      expect(prefilled).toEqual([['warn', 're:fallo 42']]);
+      expect(api.addSilencePattern).not.toHaveBeenCalled();
     });
 
     it('falls back to the cleaned text when no pattern could be built', () => {
       api.buildSilencePattern.mockReturnValue('');
       const { row } = build(line('fallo', { originalLevel: 'error' }));
       row.querySelector<HTMLElement>('.silence-btn')?.click();
-      expect(api.addSilencePattern).toHaveBeenCalledWith(
-        'g1',
-        'c1',
-        'error',
-        'fallo',
-      );
+      expect(prefilled).toEqual([['error', 'fallo']]);
     });
 
     it('unsilencing removes the built pattern AND the literal it may have been', async () => {
@@ -351,18 +357,29 @@ describe('renderer/logs/rows.ts', () => {
       expect(stop).toHaveBeenCalled();
     });
 
-    it('resolves the command the row was BUILT for, not the one on screen now', async () => {
+    it('unsilences on the command the row was BUILT for, not the one on screen now', async () => {
       // The view can switch between a row being drawn and its button pressed;
-      // the pattern must land on the command whose line it is.
-      const { row } = build(line('fallo', { originalLevel: 'warn' }));
+      // the removal must land on the command whose line it is.
+      const { row } = build(
+        line('fallo', { originalLevel: 'warn', silenced: true }),
+      );
       viewModule.view.currentGroupId = 'otro';
       viewModule.view.currentCommandId = 'otro-cmd';
       row.querySelector<HTMLElement>('.silence-btn')?.click();
       await Promise.resolve();
-      expect(api.addSilencePattern.mock.calls[0]?.slice(0, 2)).toEqual([
+      expect(api.removeSilencePattern.mock.calls[0]?.slice(0, 2)).toEqual([
         'g1',
         'c1',
       ]);
+    });
+
+    it('prefills nothing once the view has moved to another command', () => {
+      // The panel adds to the command on screen; a stale row's line is not
+      // that command's.
+      const { row } = build(line('fallo', { originalLevel: 'warn' }));
+      viewModule.view.currentCommandId = 'otro-cmd';
+      row.querySelector<HTMLElement>('.silence-btn')?.click();
+      expect(prefilled).toEqual([]);
     });
   });
 });

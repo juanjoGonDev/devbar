@@ -15,7 +15,7 @@ import { levelOf } from './filters.js';
 import { fmtTime, sourceColor } from './format.js';
 import { buffer } from './buffer.js';
 import { icon } from '../icon.js';
-import { nav, view } from './view.js';
+import { nav, silenceHooks, view } from './view.js';
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
 import type { LogEntry } from '../../src/domain-types.js';
 import type { SilenceLevel, SourcedLogEntry } from '../../src/ipc-contract.js';
@@ -37,6 +37,7 @@ export function buildRow(
   const classes = ['line', entry.stream];
   if (entry.level) classes.push(entry.level);
   if (entry.silenced) classes.push('silenced');
+  if (view.silencePreview?.(entry)) classes.push('would-silence');
   div.className = classes.join(' ');
   div.dataset.line = entry.line;
   div.dataset.level = levelOf(entry);
@@ -130,7 +131,7 @@ export function buildRow(
     btn.append(icon(entry.silenced ? 'bell' : 'bell-off'));
     btn.title = entry.silenced
       ? 'Quitar silencio (esta línea)'
-      : 'Silenciar este patrón (matchea por substring)';
+      : 'Silenciar líneas como esta…';
     btn.setAttribute('aria-label', btn.title);
     btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
@@ -153,12 +154,14 @@ export function buildRow(
         }
         await window.api.removeSilencePattern(groupId, commandId, lvl, cleaned);
       } else {
-        await window.api.addSilencePattern(
-          groupId,
-          commandId,
-          lvl,
-          pattern || cleaned,
-        );
+        // Not saved yet: the panel opens with it as the draft, so the preview
+        // shows what else it would swallow before anything is silenced. The
+        // panel acts on the command on screen, so a stale row does nothing.
+        if (
+          view.currentGroupId === groupId &&
+          view.currentCommandId === commandId
+        )
+          silenceHooks.prefill(lvl, pattern || cleaned);
       }
     });
     div.appendChild(btn);

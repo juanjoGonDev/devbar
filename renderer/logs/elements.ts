@@ -56,26 +56,47 @@ export const toggleSidebarBtn = byId<HTMLButtonElement>(
   HTMLButtonElement,
 );
 
+export const toggleLabelEl = byId<HTMLElement>(
+  'silence-toggle-label',
+  HTMLElement,
+);
 export const drawerEl = byId<HTMLElement>('silenced-drawer', HTMLElement);
-export const drawerTargetEl = byId<HTMLElement>('drawer-target', HTMLElement);
 export const drawerCloseBtn = byId<HTMLButtonElement>(
   'drawer-close',
   HTMLButtonElement,
 );
-export const warnListEl = byId<HTMLUListElement>('warn-list', HTMLUListElement);
-export const errListEl = byId<HTMLUListElement>('err-list', HTMLUListElement);
-export const warnInputEl = byId<HTMLInputElement>(
-  'warn-input',
-  HTMLInputElement,
-);
-export const errInputEl = byId<HTMLInputElement>('err-input', HTMLInputElement);
-export const warnAddBtn = byId<HTMLButtonElement>(
-  'warn-add',
+export const segWarnBtn = byId<HTMLButtonElement>(
+  'seg-warn',
   HTMLButtonElement,
 );
-export const errAddBtn = byId<HTMLButtonElement>('err-add', HTMLButtonElement);
-export const warnFeedEl = byId<HTMLElement>('warn-feed', HTMLElement);
-export const errFeedEl = byId<HTMLElement>('err-feed', HTMLElement);
+export const segErrBtn = byId<HTMLButtonElement>('seg-err', HTMLButtonElement);
+export const segWarnCountEl = byId<HTMLElement>('seg-warn-count', HTMLElement);
+export const segErrCountEl = byId<HTMLElement>('seg-err-count', HTMLElement);
+export const draftCardEl = byId<HTMLElement>('draft-card', HTMLElement);
+export const draftInputEl = byId<HTMLInputElement>(
+  'draft-input',
+  HTMLInputElement,
+);
+export const draftRegexBtn = byId<HTMLButtonElement>(
+  'draft-regex',
+  HTMLButtonElement,
+);
+export const draftErrorEl = byId<HTMLElement>('draft-error', HTMLElement);
+export const draftMetaEl = byId<HTMLElement>('draft-meta', HTMLElement);
+export const draftCountEl = byId<HTMLElement>('draft-count', HTMLElement);
+export const draftSamplesEl = byId<HTMLElement>('draft-samples', HTMLElement);
+export const patternListEl = byId<HTMLUListElement>(
+  'pattern-list',
+  HTMLUListElement,
+);
+export const silencePreviewEl = byId<HTMLElement>(
+  'silence-preview',
+  HTMLElement,
+);
+export const silencePreviewTextEl = byId<HTMLElement>(
+  'silence-preview-text',
+  HTMLElement,
+);
 
 /** Write only when the content differs — keeps per-second updates flicker-free. */
 export function setText(node: HTMLElement, value: string): void {

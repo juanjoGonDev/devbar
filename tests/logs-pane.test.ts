@@ -276,16 +276,6 @@ describe('renderer/logs/pane.ts', () => {
       expect(drawn).toEqual(['la gota']);
       expect(buffer.buffer.entries).toHaveLength(5);
     });
-
-    it('mirrors a swallowed line into the drawer feed', () => {
-      pane.resetBuffer([]);
-      pane.pushEntry(
-        entry('ruido', { originalLevel: 'warn', silenced: true, level: null }),
-      );
-      const feed = document.getElementById('warn-feed');
-      expect(feed?.childElementCount).toBe(1);
-      expect(feed?.textContent).toContain('ruido');
-    });
   });
 
   describe('trimMemory', () => {

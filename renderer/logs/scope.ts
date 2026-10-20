@@ -20,7 +20,7 @@ import {
   setLevelFilter,
   trimMemory,
 } from './pane.js';
-import { applyTargetSnapshot, clearMutedFeeds, setDrawer } from './drawer.js';
+import { applyTargetSnapshot, resetSilenceScope, setDrawer } from './drawer.js';
 import { renderHeaderRunState } from './header.js';
 import {
   awaitSnapshot,
@@ -76,7 +76,7 @@ export async function jumpToLine(srcId: string, ts: number): Promise<void> {
 async function selectMergedLog(groupId: string | null): Promise<void> {
   view.processId = null;
   dropUnknownSources(); // held lines belong to the old scope
-  clearMutedFeeds(); // rows from the previous scope would target the wrong command
+  resetSilenceScope(); // a draft and its marks belong to the previous log
   view.mergedIsAll = groupId === null;
   view.mergedGroupId = groupId;
   resetBuffer([]);
@@ -154,7 +154,7 @@ export async function selectLog(
   view.groupSources = null;
   view.mergedGroupId = null;
   dropUnknownSources(); // held lines belong to the old scope
-  clearMutedFeeds(); // rows from the previous scope would target the wrong command
+  resetSilenceScope(); // a draft and its marks belong to the previous log
   view.mergedIsAll = false;
   for (const summary of Array.from(
     sideTreeEl.querySelectorAll<HTMLElement>('.side-group'),

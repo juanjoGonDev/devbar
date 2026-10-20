@@ -11,6 +11,7 @@
  * It imports nothing but types on purpose: it is the bottom of the graph, so
  * any pane may read it without creating a cycle.
  */
+import type { LogEntry } from '../../src/domain-types.js';
 import type {
   LogListGroup,
   LogListItem,
@@ -78,6 +79,12 @@ export interface LogsView {
   /** Name of what is on screen, and of the group it belongs to. */
   displayName: string;
   groupName: string;
+  /**
+   * The rule the silenced panel is previewing — a draft being typed, or a
+   * saved rule under the pointer. Rows it would swallow are drawn marked, so
+   * a row built later (scrolling, a new line) is marked the same way.
+   */
+  silencePreview: ((entry: LogEntry) => boolean) | null;
 }
 
 export const view: LogsView = {
@@ -96,6 +103,7 @@ export const view: LogsView = {
   sideData: [],
   displayName: '',
   groupName: '',
+  silencePreview: null,
 };
 
 export function itemById(id: string): LogListItem | null {
@@ -127,4 +135,20 @@ export const nav = {} as LogsNav;
 
 export function installNav(next: LogsNav): void {
   Object.assign(nav, next);
+}
+
+/**
+ * The silenced panel's entry points, handed in for the same reason as `nav`:
+ * a row's silence button prefills the panel's draft, and `rows.ts` sits below
+ * the panel. The panel installs itself when it loads.
+ */
+export interface SilenceHooks {
+  /** Open the panel on `level` with `pattern` (in storage form) as the draft. */
+  prefill(level: SilenceLevel, pattern: string): void;
+}
+
+export const silenceHooks = {} as SilenceHooks;
+
+export function installSilenceHooks(next: SilenceHooks): void {
+  Object.assign(silenceHooks, next);
 }

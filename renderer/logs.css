@@ -738,19 +738,68 @@ footer {
 }
 
 /* ================================================================
-   SILENCED DRAWER — in-window panel, replaces the old separate window
+   SILENCED PANEL — rules, a live-previewed draft, the master switch
    ================================================================ */
 
+/*
+ * The panel's own tokens. The log pane beside it is dark in every theme, so
+ * the log-side pieces (the toolbar toggle, the marked rows, the footer note)
+ * read the dark values from :root; the panel itself follows the theme.
+ */
+:root {
+  --sil-accent: #0a84ff;
+  --sil-accent-soft: rgba(10, 132, 255, 0.18);
+  --sil-accent-text: #64d2ff;
+  --sil-hit-bg: rgba(10, 132, 255, 0.14);
+  --sil-mark-bg: rgba(10, 132, 255, 0.45);
+  --sil-mark-text: #fff;
+}
 .drawer {
-  width: 330px;
+  --sil-bg: #232325;
+  --sil-surface: #2c2c2e;
+  --sil-surface-strong: #48484a;
+  --sil-field: #1c1c1e;
+  --sil-border: #3a3a3c;
+  --sil-text: #f5f5f7;
+  --sil-text-2: #a1a1a6;
+  --sil-text-3: #8e8e93;
+  --sil-chip: rgba(255, 255, 255, 0.1);
+  --sil-danger: #ff453a;
+  --sil-switch-off: #48484a;
+  --sil-knob: #fff;
+}
+:root[data-theme='light'] .drawer {
+  --sil-bg: #f5f5f7;
+  --sil-surface: #e8e8ed;
+  --sil-surface-strong: #fff;
+  --sil-field: #fff;
+  --sil-border: #d2d2d7;
+  --sil-text: #1d1d1f;
+  --sil-text-2: #6e6e73;
+  --sil-text-3: #86868b;
+  --sil-chip: rgba(0, 0, 0, 0.07);
+  --sil-danger: #d70015;
+  --sil-switch-off: #d1d1d6;
+  --sil-accent: #007aff;
+  --sil-accent-soft: rgba(0, 122, 255, 0.16);
+  --sil-accent-text: #0066cc;
+  --sil-mark-bg: rgba(0, 122, 255, 0.22);
+  --sil-mark-text: inherit;
+}
+
+.drawer {
+  width: 340px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  padding: 14px;
   min-height: 0;
-  background: rgba(30, 30, 32, 0.98);
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-y: auto;
+  background: var(--sil-bg);
+  border-left: 1px solid var(--sil-border);
   font-family: var(--font-ui);
-  color: #e5e5e7;
+  color: var(--sil-text);
 }
 .drawer[hidden] {
   display: none;
@@ -758,218 +807,350 @@ footer {
 
 .drawer-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  flex-shrink: 0;
 }
 .drawer-title {
+  flex-grow: 1;
+  font-size: 14px;
+}
+.drawer-x,
+.pat .x {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--sil-text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+.drawer-x:hover,
+.pat .x:hover {
+  background: var(--sil-chip);
+  color: var(--sil-text);
+}
+
+/* Segmented level switcher: one level on screen at a time. */
+.seg {
+  display: flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--sil-surface);
+}
+.seg-btn {
   flex: 1;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--sil-text-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.seg-btn.on {
+  background: var(--sil-surface-strong);
+  color: var(--sil-text);
+  font-weight: 600;
+}
+.seg-n {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--sil-chip);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The draft: what is being typed, and what it would swallow. */
+.draft-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--sil-border);
+  border-radius: 10px;
+  background: var(--sil-field);
+}
+.draft-card:focus-within {
+  border-color: var(--sil-accent);
+  box-shadow: 0 0 0 3px var(--sil-accent-soft);
+}
+.draft-card.invalid,
+.draft-card.invalid:focus-within {
+  border-color: var(--sil-danger);
+  box-shadow: none;
+}
+.draft-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.draft-input {
+  flex-grow: 1;
   min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--sil-text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.draft-input::placeholder {
+  color: var(--sil-text-3);
+}
+.draft-regex {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--sil-border);
+  border-radius: 5px;
+  background: none;
+  color: var(--sil-text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.draft-regex[aria-pressed='true'] {
+  border-color: var(--sil-accent);
+  background: var(--sil-accent);
+  color: #fff;
+}
+.draft-error {
+  color: var(--sil-danger);
+  font-size: 11.5px;
+}
+.draft-error[hidden],
+.draft-meta[hidden] {
+  display: none;
+}
+.draft-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sil-accent-text);
+  font-size: 11.5px;
+}
+.draft-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sil-accent);
+}
+.draft-grow,
+.drawer-grow {
+  flex-grow: 1;
+}
+.draft-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  border: 1px solid var(--sil-border);
+  border-radius: 4px;
+  color: var(--sil-text-2);
+  font-family: inherit;
+  font-size: 10.5px;
+}
+.draft-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--sil-text-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.draft-samples:empty {
+  display: none;
+}
+.draft-sample {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.draft-sample mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: var(--sil-mark-bg);
+  color: var(--sil-mark-text);
+}
+
+/* Saved rules of the level on screen. */
+.active-block {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.drawer-title strong {
-  font-size: 13px;
+.active-label {
+  padding: 0 2px 4px;
+  color: var(--sil-text-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
-.drawer-sub {
-  font-size: 11px;
-  color: #8e8e93;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.drawer-scroll {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.drawer-count {
-  margin-left: auto;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.09);
-  color: #9a9aa0;
-  font-size: 9.5px;
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
-}
-.lvl-tag {
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 9.5px;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.lvl-tag.warn {
-  background: rgba(255, 214, 10, 0.16);
-  color: #ffd60a;
-}
-.lvl-tag.err {
-  background: rgba(255, 69, 58, 0.16);
-  color: #ff6961;
-}
-
-/* Master switches, one row each — the whole row is the hit target. */
-.switch-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 4px;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.switch-row:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-.switch-row input {
-  flex-shrink: 0;
-  accent-color: #0a84ff;
-}
-
 .pattern-list {
   list-style: none;
-  margin: 0 0 8px;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 .pattern-list .empty {
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #6e6e73;
-  font-size: 11px;
+  padding: 4px 2px;
+  color: var(--sil-text-3);
+  font-size: 12px;
 }
-.pattern-list-item {
+.pat {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 6px 5px 9px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  gap: 8px;
+  height: 36px;
+  padding: 0 6px 0 10px;
+  border-radius: 8px;
 }
-.pattern-list-item .pattern {
-  flex: 1;
+.pat:hover {
+  background: var(--sil-surface);
+}
+.pat code {
+  flex-grow: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--sil-text);
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: #d0d0d4;
+  font-size: 12px;
 }
-.pattern-list-item .unsilence {
-  flex-shrink: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: #8e8e93;
-  font-family: inherit;
-  font-size: 10.5px;
-  padding: 3px 6px;
-  cursor: pointer;
-  /* Revealed on hover: the list is for reading, removal is the rarer act. */
-  opacity: 0;
-}
-.pattern-list-item:hover .unsilence {
-  opacity: 1;
-}
-.pattern-list-item .unsilence:hover {
-  background: rgba(255, 69, 58, 0.2);
-  color: #ff6961;
-}
-
-.add-row {
-  display: flex;
-  gap: 6px;
-}
-.add-row input {
-  flex: 1;
-  min-width: 0;
-  background: rgba(255, 255, 255, 0.06);
-  color: #e5e5e7;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 5px 9px;
-  font-family: inherit;
+.pat .cnt {
+  color: var(--sil-text-3);
   font-size: 11px;
-}
-.add-row input:focus {
-  outline: 2px solid rgba(0, 122, 255, 0.5);
-  outline-offset: -1px;
-  border-color: #0a84ff;
-}
-.ghost-btn {
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: #e5e5e7;
-  font-family: inherit;
-  font-size: 11px;
-  padding: 5px 10px;
-  cursor: pointer;
-}
-.ghost-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.muted-feed {
-  max-height: 260px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.28);
-  padding: 6px;
-}
-.muted-feed:empty {
-  display: none;
-}
-.muted-line {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  padding: 3px 5px;
-  color: #7a7a80;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 1.45;
-  cursor: pointer;
-}
-.muted-line:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #c8c8cc;
-}
-.muted-line .ts {
-  flex-shrink: 0;
-  color: #5a5a5f;
   font-variant-numeric: tabular-nums;
 }
-.muted-line .body {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
+
+/* "Silence everything" for the level on screen — the whole row is the target. */
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sil-surface);
+  font-size: 12.5px;
+  cursor: pointer;
 }
-.muted-line.warn .ts {
-  color: #8a7a2a;
+.switch-row[hidden] {
+  display: none;
 }
-.muted-line.error .ts {
-  color: #8a3a34;
+.switch-row span {
+  flex-grow: 1;
+}
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 30px;
+  height: 18px;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--sil-switch-off);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--sil-knob);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+.switch:checked {
+  background: var(--sil-accent);
+}
+.switch:checked::after {
+  transform: translateX(12px);
+}
+.switch:focus-visible,
+.seg-btn:focus-visible,
+.draft-regex:focus-visible,
+.pat .x:focus-visible,
+.drawer-x:focus-visible {
+  outline: 2px solid var(--sil-accent);
+  outline-offset: 1px;
+}
+
+/* The toolbar control that opens the panel, pressed while it is open. */
+.silence-toggle {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d0d0d4;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.silence-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.silence-toggle[aria-pressed='true'] {
+  border-color: var(--sil-accent);
+  background: var(--sil-accent);
+  color: #fff;
+}
+
+/* Rows a previewed rule would swallow: blue bar, dimmed, struck through. */
+.line.would-silence,
+.line.would-silence:hover {
+  border-left-color: var(--sil-accent);
+  background: var(--sil-hit-bg);
+}
+.line.would-silence .body {
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.35);
+}
+
+.footer-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.silence-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sil-accent-text);
+}
+.silence-preview[hidden] {
+  display: none;
+}
+.silence-preview-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--sil-mark-bg);
 }
 
 /* Merged group view: open-all button + per-row source tag */
@@ -1115,86 +1296,6 @@ header .check.spaced {
   100% {
     background: transparent;
   }
-}
-
-/* ── Drawer: foldable level sections ────────────────────────────── */
-/* A real close control, sized to the header instead of borrowing the
-   toolbar's icon-button look. */
-.drawer-x {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #9a9aa0;
-  font-family: var(--font-ui);
-  font-size: 10px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-}
-.drawer-x:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #e5e5e7;
-}
-
-.drawer-lvl {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.drawer-lvl > summary {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 12px;
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-  font-size: 11px;
-  font-weight: 600;
-  color: #d0d0d4;
-}
-.drawer-lvl > summary::-webkit-details-marker {
-  display: none;
-}
-.drawer-lvl > summary:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-.drawer-lvl > summary .chevron {
-  font-size: 8px;
-  width: 8px;
-  flex-shrink: 0;
-  color: #8e8e93;
-  transition: transform 0.15s ease;
-}
-.drawer-lvl[open] > summary .chevron {
-  transform: rotate(90deg);
-}
-.drawer-lvl > summary .lvl-name {
-  flex: 1;
-}
-.drawer-lvl-body {
-  padding: 0 12px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.muted-line .rep {
-  flex-shrink: 0;
-  align-self: flex-start;
-  padding: 0 5px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #c8c8cc;
-  font-size: 9.5px;
-  font-variant-numeric: tabular-nums;
-}
-.muted-line .rep[hidden] {
-  display: none;
 }
 
 /* ── Root scope row: "Todo", above every group ──────────────────── */

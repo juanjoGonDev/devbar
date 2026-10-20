@@ -28,7 +28,6 @@ import {
   trimBuffer,
 } from './buffer.js';
 import { buildRow } from './rows.js';
-import { pushMutedLine } from './drawer.js';
 import { pendingQueue, reportSelection } from './status.js';
 import {
   autoscrollEl,
@@ -201,7 +200,6 @@ export function resetBuffer(next: LogEntry[]): void {
  * yanked forward.
  */
 export function pushEntry(entry: LogEntry): void {
-  if (entry.silenced) pushMutedLine(entry);
   // A selection detaches the view from the tail. Otherwise every arriving line
   // slides the window and drops rows off the top — with the DOM budget down
   // from the old 20 000 to a few hundred that happens constantly, so a

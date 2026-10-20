@@ -1,39 +1,81 @@
 /**
- * The silenced drawer: the rules that swallow lines, and the lines they are
- * actually swallowing.
+ * The silenced panel: the rules that swallow lines, and a draft that shows
+ * what it WOULD swallow before it is saved.
  *
  * It lives inside the logs window instead of a separate one so the two are
- * visible together — a rule you cannot inspect is a rule you stop trusting —
- * and unsilencing works straight from the feed.
+ * visible together — a rule you cannot inspect is a rule you stop trusting.
+ * The draft previews live against the lines already held (count, a few
+ * samples, and the rows marked in the log), and hovering a saved rule marks
+ * what it is eating the same way. The matching itself is in
+ * `silence-preview.ts`, pure; this module only puts it on screen.
  */
-import { renderPatternList, wireAddPattern } from '../silence-ui.js';
-import { fmtTime, mutedKey } from './format.js';
-import { stripAnsi } from './ansi.js';
+import { icon } from '../icon.js';
 import { reportSelection } from './status.js';
 import {
+  checkDraft,
+  compilePattern,
+  countPatternMatches,
+  entryWouldSilence,
+  highlightSegments,
+  previewPattern,
+  type PatternMatcher,
+} from './silence-preview.js';
+import { buffer } from './buffer.js';
+import {
+  draftCardEl,
+  draftCountEl,
+  draftErrorEl,
+  draftInputEl,
+  draftMetaEl,
+  draftRegexBtn,
+  draftSamplesEl,
   drawerCloseBtn,
   drawerEl,
-  drawerTargetEl,
-  errAddBtn,
-  errFeedEl,
-  errInputEl,
-  errListEl,
+  linesEl,
   muteErrEl,
   muteWarnEl,
+  patternListEl,
+  segErrBtn,
+  segErrCountEl,
+  segWarnBtn,
+  segWarnCountEl,
   setText,
+  silencePreviewEl,
+  silencePreviewTextEl,
   statusEl,
+  toggleLabelEl,
   togglePanelBtn,
-  warnAddBtn,
-  warnFeedEl,
-  warnInputEl,
-  warnListEl,
 } from './elements.js';
-import { view } from './view.js';
-import type { LogEntry } from '../../src/domain-types.js';
+import { installSilenceHooks, view } from './view.js';
+import { decodeSilencePattern } from '../../src/silence-pattern.js';
 import type { LogsTarget, SilenceLevel } from '../../src/ipc-contract.js';
 
-/** Distinct swallowed lines kept per level before the oldest is dropped. */
-const MUTED_FEED_LIMIT = 60;
+/** Typing settles for this long before the preview re-reads the buffer. */
+const PREVIEW_DEBOUNCE_MS = 100;
+const LEVEL_KEY = 'devbar.logs.silence-level';
+
+/** Storage can be missing or throw (private mode, blocked site data). */
+function loadLevel(): SilenceLevel {
+  try {
+    return localStorage.getItem(LEVEL_KEY) === 'error' ? 'error' : 'warn';
+  } catch {
+    return 'warn';
+  }
+}
+
+function saveLevel(level: SilenceLevel): void {
+  try {
+    localStorage.setItem(LEVEL_KEY, level);
+  } catch {
+    // Remembering the level is a convenience; losing it changes nothing else.
+  }
+}
+
+let level: SilenceLevel = loadLevel();
+let draftIsRegex = false;
+let draftTimer: ReturnType<typeof setTimeout> | null = null;
+/** A saved rule under the pointer wins over the draft until it is left. */
+let hovered: string | null = null;
 
 /** Adopt main's view of the shown target, including its silence settings. */
 export function applyTargetSnapshot(target: LogsTarget): void {
@@ -45,172 +87,290 @@ export function applyTargetSnapshot(target: LogsTarget): void {
     muteWarnEl.checked = !!cmd.silenceWarnings;
     muteErrEl.checked = !!cmd.silenceErrors;
   }
+  renderToggle();
 }
 
 function drawerOpen(): boolean {
   return !drawerEl.hidden;
 }
 
-/** Repaint the drawer's pattern lists and target label from current state. */
-export function renderDrawer(): void {
-  if (!drawerOpen()) return;
+function currentPatterns(): Record<SilenceLevel, string[]> | null {
   const target = view.currentTarget;
-  const patterns =
-    target && target.kind === 'command' && target.target
-      ? target.target.silencedPatterns || { warn: [], error: [] }
-      : { warn: [], error: [] };
-  setText(
-    drawerTargetEl,
-    view.displayName
-      ? view.groupName
-        ? `${view.groupName} · ${view.displayName}`
-        : view.displayName
-      : '',
-  );
-  const groupId = view.currentGroupId;
-  const commandId = view.currentCommandId;
-  const remove = (level: SilenceLevel) => (pattern: string) => {
-    if (!groupId || !commandId) return;
-    void window.api.removeSilencePattern(groupId, commandId, level, pattern);
-  };
-  renderPatternList(warnListEl, patterns.warn || [], 'warn', {
-    onRemove: remove('warn'),
-  });
-  renderPatternList(errListEl, patterns.error || [], 'error', {
-    onRemove: remove('error'),
-  });
+  if (!target || target.kind !== 'command' || !target.target) return null;
+  const patterns = target.target.silencedPatterns;
+  return { warn: patterns?.warn ?? [], error: patterns?.error ?? [] };
 }
 
-/** Wipe both feeds — called on every scope switch, see pushMutedLine. */
-export function clearMutedFeeds(): void {
-  warnFeedEl.textContent = '';
-  errFeedEl.textContent = '';
-  renderMutedCounts();
+/** `Silenciados · N`: every rule of the command on screen, both levels. */
+function renderToggle(): void {
+  const patterns = currentPatterns();
+  setText(
+    toggleLabelEl,
+    patterns
+      ? `Silenciados · ${patterns.warn.length + patterns.error.length}`
+      : 'Silenciados',
+  );
 }
+
+// ─────────────────────────── Preview ───────────────────────────
+
+type PreviewSource = 'draft' | 'hover';
 
 /**
- * Mirror a swallowed line into the drawer feed. Seeing WHAT a pattern eats is
- * the point — a rule you cannot inspect is a rule you stop trusting.
+ * Mark the rows `matcher` would swallow — the drawn ones now, and through
+ * `view.silencePreview` any row built later — and say how many in the footer.
+ * `null` takes every mark away.
  */
-export function pushMutedLine(entry: LogEntry): void {
-  const level = entry.originalLevel;
-  if (level !== 'warn' && level !== 'error') return;
-  // Silencing is per-service, and unsilenceLine acts on the CURRENT selection.
-  // A merged scope mixes many services, so a row here would remove a pattern
-  // from whichever command happened to be selected — the wrong one.
-  if (view.groupSources) return;
-  const feed = level === 'warn' ? warnFeedEl : errFeedEl;
-  const key = mutedKey(entry.line);
-
-  const existing = feed.querySelector<HTMLElement>(
-    `.muted-line[data-key="${CSS.escape(key)}"]`,
+function showPreview(
+  matcher: PatternMatcher | null,
+  source: PreviewSource,
+): number {
+  const previewLevel = level;
+  view.silencePreview = matcher
+    ? (entry) => entryWouldSilence(entry, previewLevel, matcher)
+    : null;
+  for (const row of Array.from(
+    linesEl.querySelectorAll<HTMLElement>('.line'),
+  )) {
+    const entry = buffer.entries[Number(row.dataset.eidx)];
+    row.classList.toggle(
+      'would-silence',
+      !!entry && !!view.silencePreview?.(entry),
+    );
+  }
+  if (!matcher) {
+    silencePreviewEl.hidden = true;
+    return 0;
+  }
+  const { count } = previewPattern(buffer.entries, previewLevel, matcher);
+  silencePreviewEl.hidden = false;
+  setText(
+    silencePreviewTextEl,
+    source === 'draft'
+      ? `${count} ${count === 1 ? 'se silenciaría' : 'se silenciarían'} con el patrón nuevo`
+      : `${count} ${count === 1 ? 'coincide' : 'coinciden'} con este patrón`,
   );
-  if (existing) {
-    const next = Number(existing.dataset.count ?? '1') + 1;
-    existing.dataset.count = String(next);
-    const badge = existing.querySelector<HTMLElement>('.rep');
-    if (badge) {
-      badge.textContent = `×${next}`;
-      badge.hidden = false;
+  return count;
+}
+
+function clearDraftPreview(): void {
+  draftMetaEl.hidden = true;
+  draftSamplesEl.textContent = '';
+  if (!hovered) showPreview(null, 'draft');
+}
+
+/** Re-read the draft: validity, the inline preview and the marks in the log. */
+function updateDraft(): void {
+  if (draftTimer) {
+    clearTimeout(draftTimer);
+    draftTimer = null;
+  }
+  const check = checkDraft(draftInputEl.value, draftIsRegex);
+  const invalid = check.kind === 'invalid';
+  draftCardEl.classList.toggle('invalid', invalid);
+  draftErrorEl.hidden = !invalid;
+  setText(draftErrorEl, invalid ? check.message : '');
+  if (check.kind !== 'ok') {
+    clearDraftPreview();
+    return;
+  }
+  const matcher = compilePattern(check.pattern);
+  const result = previewPattern(buffer.entries, level, matcher);
+  draftMetaEl.hidden = false;
+  const count = `${result.count}${result.truncated ? '+' : ''}`;
+  setText(
+    draftCountEl,
+    `${count} ${result.count === 1 ? 'línea' : 'líneas'} de este log`,
+  );
+  draftSamplesEl.textContent = '';
+  for (const sample of result.samples) {
+    const row = document.createElement('div');
+    row.className = 'draft-sample';
+    row.title = sample;
+    for (const segment of highlightSegments(sample, matcher)) {
+      if (segment.hit) {
+        const mark = document.createElement('mark');
+        mark.textContent = segment.text;
+        row.appendChild(mark);
+      } else row.append(segment.text);
     }
-    const ts = existing.querySelector<HTMLElement>('.ts');
-    if (ts) ts.textContent = fmtTime(entry.ts); // most recent sighting
-    feed.appendChild(existing); // float the noisy one back to the bottom
-  } else {
-    feed.appendChild(buildMutedRow(entry, level, key));
-    while (feed.childElementCount > MUTED_FEED_LIMIT && feed.firstChild)
-      feed.removeChild(feed.firstChild);
+    draftSamplesEl.appendChild(row);
   }
-  renderMutedCounts();
+  if (!hovered) showPreview(matcher, 'draft');
 }
 
-function buildMutedRow(
-  entry: LogEntry,
-  level: SilenceLevel,
-  key: string,
-): HTMLElement {
-  const row = document.createElement('button');
-  row.type = 'button';
-  row.className = `muted-line ${level}`;
-  row.dataset.key = key;
-  row.dataset.count = '1';
-  row.title = 'Dejar de silenciar este patrón';
-  const ts = document.createElement('span');
-  ts.className = 'ts';
-  ts.textContent = fmtTime(entry.ts);
-  const body = document.createElement('span');
-  body.className = 'body';
-  body.textContent = stripAnsi(entry.line);
-  const rep = document.createElement('span');
-  rep.className = 'rep';
-  rep.hidden = true;
-  row.append(ts, body, rep);
-  row.addEventListener('click', () => void unsilenceLine(entry));
-  return row;
+function scheduleDraft(): void {
+  if (draftTimer) clearTimeout(draftTimer);
+  draftTimer = setTimeout(updateDraft, PREVIEW_DEBOUNCE_MS);
 }
 
-/** Header counts are total sightings, not distinct rows. */
-function renderMutedCounts(): void {
-  for (const [feed, level] of [
-    [warnFeedEl, 'warn'],
-    [errFeedEl, 'error'],
-  ] as const) {
-    const total = Array.from(feed.children).reduce(
-      (sum, node) =>
-        sum +
-        (node instanceof HTMLElement ? Number(node.dataset.count ?? '1') : 0),
-      0,
-    );
-    const badge = drawerEl.querySelector<HTMLElement>(
-      `.drawer-count[data-count="${level}"]`,
-    );
-    if (badge) setText(badge, String(total));
-  }
+function setDraftRegex(on: boolean): void {
+  draftIsRegex = on;
+  draftRegexBtn.setAttribute('aria-pressed', String(on));
 }
 
-/** One click from the feed drops whichever rule is swallowing that line. */
-async function unsilenceLine(entry: LogEntry): Promise<void> {
-  const level = entry.originalLevel;
-  if (!level || !view.currentGroupId || !view.currentCommandId) return;
-  const cleaned = stripAnsi(entry.line).trim();
-  const built = cleaned ? window.api.buildSilencePattern(cleaned) : cleaned;
-  if (built && built !== cleaned)
-    await window.api.removeSilencePattern(
-      view.currentGroupId,
-      view.currentCommandId,
-      level,
-      built,
-    );
-  await window.api.removeSilencePattern(
+function clearDraft(): void {
+  draftInputEl.value = '';
+  setDraftRegex(false);
+  updateDraft();
+}
+
+function submitDraft(): void {
+  const check = checkDraft(draftInputEl.value, draftIsRegex);
+  if (check.kind !== 'ok') return;
+  if (!view.currentGroupId || !view.currentCommandId) return;
+  void window.api.addSilencePattern(
     view.currentGroupId,
     view.currentCommandId,
     level,
-    cleaned,
+    check.pattern,
   );
+  clearDraft();
+}
+
+// ─────────────────────────── Panel ───────────────────────────
+
+function renderLevel(): void {
+  for (const [button, own] of [
+    [segWarnBtn, 'warn'],
+    [segErrBtn, 'error'],
+  ] as const) {
+    const on = own === level;
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-selected', String(on));
+  }
+  for (const row of Array.from(
+    drawerEl.querySelectorAll<HTMLElement>('.switch-row'),
+  ))
+    row.hidden = row.dataset.level !== level;
+}
+
+function patternRow(pattern: string, count: number): HTMLLIElement {
+  const item = document.createElement('li');
+  item.className = 'pat';
+  const code = document.createElement('code');
+  const shown = decodeSilencePattern(pattern).text;
+  code.textContent = shown;
+  code.title = shown;
+  const cnt = document.createElement('span');
+  cnt.className = 'cnt';
+  cnt.textContent = String(count);
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'x';
+  remove.setAttribute('aria-label', 'Quitar patrón');
+  remove.title = 'Quitar patrón';
+  remove.append(icon('x'));
+  remove.addEventListener('click', () => {
+    if (!view.currentGroupId || !view.currentCommandId) return;
+    void window.api.removeSilencePattern(
+      view.currentGroupId,
+      view.currentCommandId,
+      level,
+      pattern,
+    );
+  });
+  item.addEventListener('mouseenter', () => {
+    hovered = pattern;
+    showPreview(compilePattern(pattern), 'hover');
+  });
+  item.addEventListener('mouseleave', () => {
+    if (hovered !== pattern) return;
+    hovered = null;
+    updateDraft(); // back to the draft's marks, or to none
+  });
+  item.append(code, cnt, remove);
+  return item;
+}
+
+function renderPatterns(patterns: readonly string[]): void {
+  patternListEl.textContent = '';
+  if (!patterns.length) {
+    const empty = document.createElement('li');
+    empty.className = 'empty';
+    empty.textContent = 'Ninguno';
+    patternListEl.appendChild(empty);
+    return;
+  }
+  const counts = countPatternMatches(buffer.entries, level, patterns);
+  patterns.forEach((pattern, index) =>
+    patternListEl.appendChild(patternRow(pattern, counts[index] ?? 0)),
+  );
+}
+
+/** Repaint the panel and the toolbar toggle from current state. */
+export function renderDrawer(): void {
+  renderToggle();
+  if (!drawerOpen()) return;
+  const patterns = currentPatterns() ?? { warn: [], error: [] };
+  setText(segWarnCountEl, String(patterns.warn.length));
+  setText(segErrCountEl, String(patterns.error.length));
+  renderLevel();
+  // A rule just removed may be the one under the pointer.
+  if (hovered && !patterns[level].includes(hovered)) hovered = null;
+  renderPatterns(patterns[level]);
+  if (!hovered) updateDraft();
+}
+
+function setLevel(next: SilenceLevel): void {
+  if (next === level) return;
+  level = next;
+  saveLevel(next);
+  hovered = null;
+  renderDrawer();
+}
+
+/** A scope switch: the draft and its marks belonged to the previous log. */
+export function resetSilenceScope(): void {
+  hovered = null;
+  draftInputEl.value = '';
+  setDraftRegex(false);
+  updateDraft();
+  showPreview(null, 'draft');
 }
 
 export function setDrawer(open: boolean): void {
   drawerEl.hidden = !open;
   togglePanelBtn.classList.toggle('on', open);
-  if (open) renderDrawer();
+  togglePanelBtn.setAttribute('aria-pressed', String(open));
+  if (open) {
+    renderDrawer();
+    draftInputEl.focus();
+  } else {
+    hovered = null;
+    showPreview(null, 'draft');
+  }
 }
 
-for (const [input, button, level] of [
-  [warnInputEl, warnAddBtn, 'warn'],
-  [errInputEl, errAddBtn, 'error'],
-] as const) {
-  wireAddPattern(input, button, level, {
-    onAdd: (pattern) => {
-      if (!view.currentGroupId || !view.currentCommandId) return;
-      void window.api.addSilencePattern(
-        view.currentGroupId,
-        view.currentCommandId,
-        level,
-        pattern,
-      );
-    },
-  });
+/** A row's silence button: show the rule as a draft instead of saving it. */
+function prefill(nextLevel: SilenceLevel, pattern: string): void {
+  if (view.groupSources) return; // silencing is per service
+  const { text, regex } = decodeSilencePattern(pattern);
+  level = nextLevel;
+  saveLevel(nextLevel);
+  draftInputEl.value = text;
+  setDraftRegex(regex);
+  if (drawerOpen()) renderDrawer();
+  else setDrawer(true);
+  updateDraft();
+  draftInputEl.focus();
 }
+
+installSilenceHooks({ prefill });
+
+draftInputEl.addEventListener('input', scheduleDraft);
+draftInputEl.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  submitDraft();
+});
+draftRegexBtn.addEventListener('click', () => {
+  setDraftRegex(!draftIsRegex);
+  updateDraft();
+  draftInputEl.focus();
+});
+segWarnBtn.addEventListener('click', () => setLevel('warn'));
+segErrBtn.addEventListener('click', () => setLevel('error'));
 
 drawerCloseBtn.addEventListener('click', () => setDrawer(false));
 togglePanelBtn.addEventListener('click', () => {

@@ -90,11 +90,13 @@
           </button>
           <button
             id="toggle-silenced"
-            class="icon-btn"
+            class="silence-toggle"
+            type="button"
             title="Patrones silenciados"
-            aria-label="Patrones silenciados"
+            aria-pressed="false"
           >
             <span class="icon" data-icon="bell-off"></span>
+            <span id="silence-toggle-label">Silenciados</span>
           </button>
           <button
             id="detach"
@@ -119,7 +121,13 @@
           </button>
         </div>
         <footer>
-          <span id="counts">0 líneas</span>
+          <span class="footer-left">
+            <span id="counts">0 líneas</span>
+            <span id="silence-preview" class="silence-preview" hidden>
+              <span class="silence-preview-swatch"></span>
+              <span id="silence-preview-text"></span>
+            </span>
+          </span>
           <span class="footer-status">
             <span id="status"></span>
             <button
@@ -136,93 +144,99 @@
         </footer>
       </div>
       <!--
-        Silenced drawer. Lives inside the logs window instead of a separate
+        Silenced panel. Lives inside the logs window instead of a separate
         window so the rules and the lines they swallow are visible together:
-        you can see what a pattern is actually eating, and unsilence straight
-        from the feed.
+        a draft previews, live, which held lines it would silence, and
+        hovering a saved rule marks what it is eating.
       -->
-      <aside id="silenced-drawer" class="drawer" hidden>
+      <aside
+        id="silenced-drawer"
+        class="drawer"
+        aria-label="Silenciados"
+        hidden
+      >
         <div class="drawer-head">
-          <div class="drawer-title">
-            <strong>Silenciados</strong>
-            <span id="drawer-target" class="drawer-sub"></span>
-          </div>
+          <strong class="drawer-title">Silenciados</strong>
           <button
             id="drawer-close"
             class="drawer-x"
             type="button"
             title="Cerrar"
-            aria-label="Cerrar"
+            aria-label="Cerrar panel"
           >
             <span class="icon" data-icon="x"></span>
           </button>
         </div>
 
-        <div class="drawer-scroll">
-          <!--
-            One section per level, each foldable. Inside a level live both its
-            rules and the lines they are actually swallowing — identical lines
-            collapse into one row with a counter, so a chatty pattern does not
-            bury the rest.
-          -->
-          <details class="drawer-lvl" data-level="warn" open>
-            <summary>
-              <span class="chevron"
-                ><span class="icon" data-icon="chevron-right"></span
-              ></span>
-              <span class="lvl-tag warn">warn</span>
-              <span class="lvl-name">Warnings</span>
-              <span class="drawer-count" data-count="warn">0</span>
-            </summary>
-            <div class="drawer-lvl-body">
-              <label class="switch-row">
-                <input type="checkbox" id="mute-warn" />
-                <span>Silenciar <strong>todos</strong> los warnings</span>
-              </label>
-              <ul id="warn-list" class="pattern-list"></ul>
-              <div class="add-row">
-                <input
-                  id="warn-input"
-                  type="text"
-                  placeholder="Patrón o regex…"
-                />
-                <button id="warn-add" class="ghost-btn" type="button">
-                  Añadir
-                </button>
-              </div>
-              <div id="warn-feed" class="muted-feed"></div>
-            </div>
-          </details>
-
-          <details class="drawer-lvl" data-level="error" open>
-            <summary>
-              <span class="chevron"
-                ><span class="icon" data-icon="chevron-right"></span
-              ></span>
-              <span class="lvl-tag err">error</span>
-              <span class="lvl-name">Errores</span>
-              <span class="drawer-count" data-count="error">0</span>
-            </summary>
-            <div class="drawer-lvl-body">
-              <label class="switch-row">
-                <input type="checkbox" id="mute-err" />
-                <span>Silenciar <strong>todos</strong> los errores</span>
-              </label>
-              <ul id="err-list" class="pattern-list"></ul>
-              <div class="add-row">
-                <input
-                  id="err-input"
-                  type="text"
-                  placeholder="Patrón o regex…"
-                />
-                <button id="err-add" class="ghost-btn" type="button">
-                  Añadir
-                </button>
-              </div>
-              <div id="err-feed" class="muted-feed"></div>
-            </div>
-          </details>
+        <div class="seg" role="tablist" aria-label="Nivel">
+          <button
+            id="seg-warn"
+            class="seg-btn"
+            type="button"
+            role="tab"
+            data-level="warn"
+          >
+            Warnings <span id="seg-warn-count" class="seg-n">0</span>
+          </button>
+          <button
+            id="seg-err"
+            class="seg-btn"
+            type="button"
+            role="tab"
+            data-level="error"
+          >
+            Errores <span id="seg-err-count" class="seg-n">0</span>
+          </button>
         </div>
+
+        <div id="draft-card" class="draft-card">
+          <div class="draft-row">
+            <input
+              id="draft-input"
+              class="draft-input"
+              type="text"
+              placeholder="Patrón o regex…"
+              aria-label="Nuevo patrón"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <button
+              id="draft-regex"
+              class="draft-regex"
+              type="button"
+              aria-pressed="false"
+              title="Usar como regex"
+            >
+              .*
+            </button>
+          </div>
+          <div id="draft-error" class="draft-error" hidden></div>
+          <div id="draft-meta" class="draft-meta" hidden>
+            <span class="draft-dot"></span>
+            <span id="draft-count"></span>
+            <span class="draft-grow"></span>
+            <kbd class="draft-kbd"
+              ><span class="icon" data-icon="corner-down-left"></span>
+              añadir</kbd
+            >
+          </div>
+          <div id="draft-samples" class="draft-samples"></div>
+        </div>
+
+        <div class="active-block">
+          <div class="active-label">Activos</div>
+          <ul id="pattern-list" class="pattern-list"></ul>
+        </div>
+
+        <div class="drawer-grow"></div>
+        <label class="switch-row" data-level="warn">
+          <span>Silenciar todos los warnings</span>
+          <input id="mute-warn" class="switch" type="checkbox" role="switch" />
+        </label>
+        <label class="switch-row" data-level="error">
+          <span>Silenciar todos los errores</span>
+          <input id="mute-err" class="switch" type="checkbox" role="switch" />
+        </label>
       </aside>
     </div>
     <script type="module" src="logs.js"></script>
