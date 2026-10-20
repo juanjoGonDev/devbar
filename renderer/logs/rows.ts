@@ -17,10 +17,57 @@ import { buffer } from './buffer.js';
 import { markMatches } from './silence-marks.js';
 import { BADGE_LABEL, badgeOf } from './line-level.js';
 import { icon } from '../icon.js';
-import { nav, silenceHooks, view } from './view.js';
+import { nav, rowHooks, silenceHooks, view } from './view.js';
+import {
+  isFolded,
+  stackOf,
+  toggleStack,
+  type StackBlock,
+} from './stack-fold.js';
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
 import type { LogEntry } from '../../src/domain-types.js';
 import type { SilenceLevel, SourcedLogEntry } from '../../src/ipc-contract.js';
+
+function cell(className: string): HTMLElement {
+  const span = document.createElement('span');
+  span.className = className;
+  return span;
+}
+
+/** The fold's own button: opens or closes the block, without selecting. */
+function foldToggle(
+  block: StackBlock,
+  label: string,
+  glyph: 'chevron-right' | 'chevron-down',
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'fold-toggle';
+  btn.setAttribute('aria-expanded', String(glyph === 'chevron-down'));
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  btn.append(icon(glyph));
+  btn.addEventListener('click', (event) => {
+    event.stopPropagation(); // a fold is not a row click
+    toggleStack(block);
+    rowHooks.repaint();
+  });
+  return btn;
+}
+
+/** «+N líneas de stack», then the first frame, muted. */
+function foldSummary(block: StackBlock, first: LogEntry): HTMLElement {
+  const msg = cell('msg');
+  const btn = foldToggle(block, 'Mostrar el stack', 'chevron-right');
+  const text = `+${block.members.length} líneas de stack`;
+  btn.append(` ${text}`);
+  btn.removeAttribute('title');
+  btn.setAttribute('aria-label', text);
+  const frame = cell('fold-first');
+  frame.textContent = stripAnsi(first.line).trim();
+  msg.append(btn, frame);
+  return msg;
+}
 
 /** Enough to see where the search bites without marking a 20 KB line solid. */
 const MAX_SEARCH_HITS = 50;
@@ -53,6 +100,29 @@ export function buildRow(
   div.dataset.eidx = String(entryIndex); // position in `entries`
   if (entry.originalLevel) div.dataset.originalLevel = entry.originalLevel;
 
+  // A stack is only folded while nothing is searched for: with a search on,
+  // a frame that matches is drawn as itself, which is what opening its block
+  // would show anyway.
+  const block = view.filterRe ? undefined : stackOf(entry);
+  const foldable = block !== undefined && block.members.length > 1;
+  const folded = block !== undefined && isFolded(block);
+  if (block) {
+    div.classList.add('stack');
+    const headLevel = block.head.originalLevel ?? block.head.level;
+    if (headLevel) div.classList.add(`under-${headLevel}`);
+  }
+  if (folded && block.members[0] !== entry) {
+    // Hidden but present, so the window keeps one row per visible line.
+    div.classList.add('folded');
+    return div;
+  }
+  if (folded) {
+    div.classList.add('stack-fold');
+    div.append(cell('ts'), cell('lv'), foldSummary(block, entry));
+    if (buffer.selected.has(entryIndex)) div.classList.add('selected');
+    return div;
+  }
+
   const ts = document.createElement('span');
   ts.className = 'ts';
   ts.textContent = fmtTime(entry.ts);
@@ -63,10 +133,14 @@ export function buildRow(
     showInContext(div);
   });
   div.appendChild(ts);
-  const lv = document.createElement('span');
-  lv.className = `lv ${badge}`;
-  lv.textContent = BADGE_LABEL[badge];
-  div.appendChild(lv);
+  if (foldable && block.members[0] === entry) {
+    div.appendChild(foldToggle(block, 'Plegar stack', 'chevron-down'));
+  } else {
+    const lv = document.createElement('span');
+    lv.className = `lv ${badge}`;
+    lv.textContent = BADGE_LABEL[badge];
+    div.appendChild(lv);
+  }
   // The third column holds everything else — source tags and the text — so a
   // merged row's tags flow inline with its message instead of taking columns.
   const msg = document.createElement('span');

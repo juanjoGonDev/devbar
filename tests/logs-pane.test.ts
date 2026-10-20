@@ -92,6 +92,84 @@ describe('renderer/logs/pane.ts', () => {
     });
   });
 
+  describe('stack traces', () => {
+    const crash = (): LogEntry[] => [
+      entry('Error: socket hang up', { level: 'error' }),
+      entry('    at a (x:1)'),
+      entry('    at b (x:2)'),
+      entry('    at c (x:3)'),
+      entry('listo'),
+    ];
+
+    function rowOf(text: string): HTMLElement | undefined {
+      return drawnRows().find((row) => row.dataset.line === text);
+    }
+
+    function foldButton(): HTMLElement | null {
+      return elements.linesEl.querySelector<HTMLElement>('.fold-toggle');
+    }
+
+    it('folds the frames under their message as «+N líneas de stack»', () => {
+      pane.resetBuffer(crash());
+      const fold = rowOf('    at a (x:1)');
+      expect(fold?.classList.contains('stack-fold')).toBe(true);
+      expect(foldButton()?.textContent).toContain('+3 líneas de stack');
+      // The first frame is the one worth a glance, so it stays readable.
+      expect(fold?.querySelector('.fold-first')?.textContent).toBe(
+        'at a (x:1)',
+      );
+      expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(true);
+      expect(rowOf('    at c (x:3)')?.classList.contains('folded')).toBe(true);
+      expect(rowOf('listo')?.classList.contains('folded')).toBe(false);
+    });
+
+    it('opens on a press, and stays open across a repaint', () => {
+      pane.resetBuffer(crash());
+      foldButton()?.click();
+      expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(false);
+      expect(rowOf('    at a (x:1)')?.classList.contains('stack-fold')).toBe(
+        false,
+      );
+      pane.applyFilter(); // a full repaint
+      expect(rowOf('    at c (x:3)')?.classList.contains('folded')).toBe(false);
+      foldButton()?.click();
+      expect(rowOf('    at c (x:3)')?.classList.contains('folded')).toBe(true);
+    });
+
+    it('does not select the row when the fold is pressed', () => {
+      pane.resetBuffer(crash());
+      const event = new MouseEvent('click', { bubbles: true });
+      const stop = vi.spyOn(event, 'stopPropagation');
+      foldButton()?.dispatchEvent(event);
+      expect(stop).toHaveBeenCalled();
+    });
+
+    it('counts a frame that arrives at the tail into the folded block', () => {
+      stubScroll();
+      pane.resetBuffer(crash().slice(0, 4));
+      pane.pushEntry(entry('    at d (x:4)'));
+      expect(foldButton()?.textContent).toContain('+4 líneas de stack');
+      expect(rowOf('    at d (x:4)')?.classList.contains('folded')).toBe(true);
+    });
+
+    it('starts folding once a second frame arrives', () => {
+      stubScroll();
+      pane.resetBuffer(crash().slice(0, 2));
+      expect(foldButton()).toBeNull();
+      pane.pushEntry(entry('    at b (x:2)'));
+      expect(foldButton()?.textContent).toContain('+2 líneas de stack');
+    });
+
+    it('shows a folded line the search finds, by opening its block', () => {
+      pane.resetBuffer(crash());
+      elements.filterEl.value = 'at b';
+      pane.applyFilter();
+      expect(drawnText()).toEqual(['    at b (x:2)']);
+      expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(false);
+      expect(foldButton()).toBeNull();
+    });
+  });
+
   describe('applyFilter', () => {
     it('redraws the list from the whole buffer, not from what is on screen', () => {
       pane.resetBuffer([entry('uno'), entry('dos'), entry('tres')]);

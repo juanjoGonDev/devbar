@@ -164,3 +164,19 @@ export const silenceHooks = {} as SilenceHooks;
 export function installSilenceHooks(next: SilenceHooks): void {
   Object.assign(silenceHooks, next);
 }
+
+/**
+ * The pane's repaint, handed to the rows for the same reason as `nav`: a row
+ * that folds or unfolds itself (a stack trace, a JSON line) changes what the
+ * rows around it look like, and `rows.ts` sits below the pane that draws them.
+ */
+export interface RowHooks {
+  /** Rebuild the drawn rows in place, keeping the reader where they were. */
+  repaint(): void;
+}
+
+export const rowHooks = {} as RowHooks;
+
+export function installRowHooks(next: RowHooks): void {
+  Object.assign(rowHooks, next);
+}

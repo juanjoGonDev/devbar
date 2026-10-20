@@ -838,6 +838,67 @@ main {
   color: inherit;
 }
 
+/* ── Stack traces, folded under their message ──────────────────── */
+.line.folded {
+  display: none;
+}
+.line.stack .body {
+  color: #8e8e93;
+}
+/* The block keeps the bar of the line it hangs from. */
+.line.under-error {
+  box-shadow: inset 2px 0 0 #ff453a;
+}
+.line.under-warn {
+  box-shadow: inset 2px 0 0 #ff9f0a;
+}
+.line.stack-fold .msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: #232326;
+  color: #c7c7cc;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.fold-toggle:hover {
+  background: #2c2c2e;
+  color: #fff;
+}
+.fold-toggle:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 1px;
+}
+.fold-toggle .icon {
+  font-size: 11px;
+}
+/* Open, the toggle takes the badge's place on the block's first frame. */
+.line > .fold-toggle {
+  justify-content: center;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  color: #8e8e93;
+}
+.fold-first {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #636366;
+}
+
 /* After the level backgrounds so a selected error line still reads selected. */
 .line.selected,
 .line.selected:hover {

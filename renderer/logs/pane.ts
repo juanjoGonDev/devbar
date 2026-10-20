@@ -22,6 +22,7 @@ import {
   trimBuffer,
 } from './buffer.js';
 import { buildRow } from './rows.js';
+import { indexStackEntry, indexStacks, stackOf } from './stack-fold.js';
 import { pendingQueue, reportSelection } from './status.js';
 import { dispatchLive, paintLive } from './live.js';
 import { isHolding } from './live-state.js';
@@ -40,7 +41,7 @@ import {
   scrollBtn,
   setText,
 } from './elements.js';
-import { view } from './view.js';
+import { installRowHooks, view } from './view.js';
 import type { LogEntry } from '../../src/domain-types.js';
 import type { SilenceLevel } from '../../src/ipc-contract.js';
 
@@ -206,6 +207,7 @@ export function applyFilter(): void {
 /** Point the view at a fresh set of lines (a scope switch or a snapshot). */
 export function resetBuffer(next: LogEntry[]): void {
   replaceEntries(next, view.filterRe, view.levelFilter);
+  indexStacks(buffer.entries);
   recount();
   renderAtBottom();
   reportSelection();
@@ -225,6 +227,7 @@ export function pushEntry(entry: LogEntry): void {
   // returns to following them.
   const wasAtEnd =
     buffer.winEnd >= buffer.visible.length - 1 && buffer.selected.size === 0;
+  indexStackEntry(buffer.entries[buffer.entries.length - 1], entry);
   buffer.entries.push(entry);
   addToTally(tally, entry);
   dispatchLive({ type: 'arrived', count: 1 }); // counted only while paused
@@ -246,6 +249,7 @@ export function pushEntry(entry: LogEntry): void {
     return;
   }
   linesEl.appendChild(buildRow(entry, entryIndex, showInContext));
+  refreshStackHead(entry, entryIndex);
   buffer.winEnd = buffer.visible.length - 1;
   while (
     linesEl.childElementCount > WINDOW_ROWS + EDGE_CHUNK &&
@@ -258,6 +262,40 @@ export function pushEntry(entry: LogEntry): void {
   renderCounts();
   updateScrollButton();
 }
+
+/**
+ * A frame that joined a block changes how the block's FIRST row looks — the
+ * «+N» it counts, or whether it folds at all — so that one row is rebuilt.
+ * Members are consecutive in the buffer, which is what locates it.
+ */
+function refreshStackHead(entry: LogEntry, entryIndex: number): void {
+  const block = stackOf(entry);
+  if (!block || block.members.length < 2) return;
+  const firstIndex = entryIndex - block.members.length + 1;
+  const first = block.members[0];
+  // Walk back from the row just appended rather than querying: the first row
+  // of the block is at most `members.length` rows up, and a selector over the
+  // whole list on every arriving frame is what a fast stream cannot afford.
+  let row = linesEl.lastElementChild;
+  for (let i = 1; i < block.members.length && row; i += 1)
+    row = row.previousElementSibling;
+  if (
+    row instanceof HTMLElement &&
+    row.dataset.eidx === String(firstIndex) &&
+    first
+  )
+    row.replaceWith(buildRow(first, firstIndex, showInContext));
+}
+
+/** Rebuild the drawn rows where they are — a block folded or unfolded. */
+function repaintInPlace(): void {
+  const top = mainEl.scrollTop;
+  renderWindow(buffer.winStart, buffer.winEnd);
+  mainEl.scrollTop = view.live.following ? mainEl.scrollHeight : top;
+  updateScrollButton();
+}
+
+installRowHooks({ repaint: repaintInPlace });
 
 /** Drop the oldest lines once memory is past its cap, and redraw. */
 export function trimMemory(): boolean {

@@ -79,6 +79,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   izquierda en lugar de teñir toda la fila. Lo que coincide con la búsqueda
   queda resaltado dentro de la línea.
 
+- **Los stack traces se pliegan.** Las líneas de un stack (`at …` de Node o
+  Java, `File "…", line N` de Python, `... N more`) quedan recogidas bajo la
+  línea a la que pertenecen como «+N líneas de stack», con el primer frame a
+  la vista. Un clic (o Intro) lo despliega y sigue desplegado aunque lleguen
+  líneas nuevas; si buscas algo que está dentro de un stack plegado, se
+  muestra.
+
 - **Silenciados, en un popover sobre el log.** En la ventana de logs, el
   botón de la campana (con cuántas reglas hay) abre un popover flotante que no
   le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un
