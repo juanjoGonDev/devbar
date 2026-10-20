@@ -77,6 +77,8 @@ export function runPillFor(
 export interface LevelTally {
   warn: number;
   error: number;
+  /** Held lines a silence rule swallowed, for the footer. */
+  silenced: number;
 }
 
 /**
@@ -85,7 +87,7 @@ export interface LevelTally {
  * shows exactly the number it promised.
  */
 export function tallyLevels(entries: readonly LogEntry[]): LevelTally {
-  const tally: LevelTally = { warn: 0, error: 0 };
+  const tally: LevelTally = { warn: 0, error: 0, silenced: 0 };
   for (const entry of entries) addToTally(tally, entry);
   return tally;
 }
@@ -94,4 +96,5 @@ export function addToTally(tally: LevelTally, entry: LogEntry): void {
   const level = levelOf(entry);
   if (level === 'warn') tally.warn += 1;
   else if (level === 'error') tally.error += 1;
+  if (entry.silenced) tally.silenced += 1;
 }

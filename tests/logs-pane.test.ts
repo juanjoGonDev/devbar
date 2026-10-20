@@ -84,6 +84,15 @@ describe('renderer/logs/pane.ts', () => {
       expect(elements.countsEl.textContent).toBe('3 líneas');
     });
 
+    it('says how many held lines a rule silenced', () => {
+      pane.resetBuffer([
+        entry('a'),
+        entry('b', { originalLevel: 'warn', silenced: true }),
+        entry('c', { originalLevel: 'error', silenced: true }),
+      ]);
+      expect(elements.countsEl.textContent).toBe('3 líneas · 2 silenciadas');
+    });
+
     it('says how many of how many once a filter narrows it', () => {
       pane.resetBuffer([entry('api ok'), entry('web ok'), entry('api mal')]);
       elements.filterEl.value = 'api';

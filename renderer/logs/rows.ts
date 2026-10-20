@@ -12,7 +12,8 @@
  */
 import { ansiToHtml, stripAnsi } from './ansi.js';
 import { levelOf } from './filters.js';
-import { fmtTime, sourceColor } from './format.js';
+import { fmtTime, relativeTime, sourceColor } from './format.js';
+import { rowPrefs } from './row-prefs.js';
 import { buffer } from './buffer.js';
 import { markMatches } from './silence-marks.js';
 import { BADGE_LABEL, badgeOf } from './line-level.js';
@@ -124,6 +125,11 @@ function foldSummary(block: StackBlock, first: LogEntry): HTMLElement {
   return msg;
 }
 
+/** A row's clock, in the mode the footer's «Hora» switch is on. */
+export function stampText(ts: number): string {
+  return rowPrefs.relativeTime ? relativeTime(ts, Date.now()) : fmtTime(ts);
+}
+
 /** Enough to see where the search bites without marking a 20 KB line solid. */
 const MAX_SEARCH_HITS = 50;
 
@@ -180,7 +186,7 @@ export function buildRow(
 
   const ts = document.createElement('span');
   ts.className = 'ts';
-  ts.textContent = fmtTime(entry.ts);
+  ts.textContent = stampText(entry.ts);
   // Plain `title`: installTooltips() takes it over and draws the styled bubble.
   ts.title = 'Ver en contexto · quita los filtros y centra esta línea';
   ts.addEventListener('click', (event) => {

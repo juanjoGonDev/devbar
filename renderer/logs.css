@@ -1052,6 +1052,47 @@ footer {
   color: #e5e5e7;
 }
 
+/* Right half of the footer: status, then the two display switches. */
+footer {
+  align-items: center;
+}
+.footer-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.footer-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.footer-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.footer-toggle #time-mode-value {
+  margin-left: 4px;
+  color: #c7c7cc;
+}
+.footer-toggle:hover #time-mode-value {
+  color: #fff;
+}
+
+/* «Ajustar líneas» off: one row per line, the list scrolls sideways. */
+#lines.nowrap {
+  width: max-content;
+  min-width: 100%;
+}
+#lines.nowrap .line .msg,
+#lines.nowrap .line .body span {
+  white-space: pre;
+}
+
 /* ================================================================
    SILENCED POPOVER — composer, the rules of both levels, the switches
    ================================================================ */

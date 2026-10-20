@@ -13,7 +13,7 @@ import { closestElement } from '../dom.js';
 import { icon, iconButton } from '../icon.js';
 import { stripAnsi } from './ansi.js';
 import { buffer } from './buffer.js';
-import { filterEl, linesEl, statusEl } from './elements.js';
+import { filterEl, linesEl, mainEl, statusEl } from './elements.js';
 import { reportSelection } from './status.js';
 import { silenceHooks, view } from './view.js';
 import type { LogEntry } from '../../src/domain-types.js';
@@ -56,6 +56,12 @@ function showOn(row: HTMLElement): void {
   silenceBtn.title = label;
   silenceBtn.setAttribute('aria-label', label);
   silenceBtn.replaceChildren(icon(entry.silenced ? 'bell' : 'bell-off'));
+  // Unwrapped, a row is as wide as the longest line: pin the toolbar to the
+  // right edge of what is on screen, not to the far end of the row.
+  const offscreen = linesEl.classList.contains('nowrap')
+    ? row.offsetWidth - mainEl.scrollLeft - mainEl.clientWidth
+    : 0;
+  toolbar.style.right = offscreen > 0 ? `${offscreen + 14}px` : '';
   row.appendChild(toolbar);
 }
 

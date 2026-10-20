@@ -53,12 +53,12 @@ const EDGE_PX = 500;
 const SCROLL_THRESHOLD = 4;
 
 /**
- * Warn/error lines held, behind the level chips' numbers. Kept up to date one
- * line at a time — recounting 20 000 entries for every arriving line would be
- * the slowest thing in the window — and recounted whenever the held lines are
- * replaced wholesale.
+ * Warn/error lines held, behind the level chips' numbers, and the silenced
+ * ones behind the footer's. Kept up to date one line at a time — recounting
+ * 20 000 entries for every arriving line would be the slowest thing in the
+ * window — and recounted whenever the held lines are replaced wholesale.
  */
-let tally: LevelTally = { warn: 0, error: 0 };
+let tally: LevelTally = { warn: 0, error: 0, silenced: 0 };
 
 function recount(): void {
   tally = tallyLevels(buffer.entries);
@@ -68,10 +68,14 @@ function renderCounts(): void {
   setText(levelWarnCountEl, String(tally.warn));
   setText(levelErrorCountEl, String(tally.error));
   const total = buffer.entries.length;
-  countsEl.textContent =
+  const lines =
     buffer.visible.length === total
       ? `${total} líneas`
       : `${buffer.visible.length} de ${total} líneas`;
+  setText(
+    countsEl,
+    tally.silenced ? `${lines} · ${tally.silenced} silenciadas` : lines,
+  );
 }
 
 /** Replace the DOM with `visible[from..to]`, clamped to what exists. */

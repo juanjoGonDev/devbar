@@ -45,6 +45,18 @@ export const clearSelectionBtn = byId<HTMLButtonElement>(
 );
 export const countsEl = byId<HTMLElement>('counts', HTMLElement);
 export const statusEl = byId<HTMLElement>('status', HTMLElement);
+export const wrapLinesEl = byId<HTMLInputElement>(
+  'wrap-lines',
+  HTMLInputElement,
+);
+export const timeModeBtn = byId<HTMLButtonElement>(
+  'time-mode',
+  HTMLButtonElement,
+);
+export const timeModeValueEl = byId<HTMLElement>(
+  'time-mode-value',
+  HTMLElement,
+);
 export const mainEl = requireElement<HTMLElement>('main', HTMLElement);
 export const muteWarnEl = byId<HTMLInputElement>('mute-warn', HTMLInputElement);
 export const muteErrEl = byId<HTMLInputElement>('mute-err', HTMLInputElement);

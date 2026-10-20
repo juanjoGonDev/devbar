@@ -98,6 +98,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   la palabra más significativa de la línea. Sustituye al icono de silenciar
   que se veía siempre en warnings y errores.
 
+- **Pie de la ventana de logs con más contexto.** Dice cuántas líneas hay y
+  cuántas están silenciadas («1192 líneas · 3 silenciadas»), y a la derecha
+  ofrece «Ajustar líneas» (desactívalo para ver cada línea en una sola fila y
+  desplazarte en horizontal) y «Hora: absoluta/relativa», que cambia la hora
+  de cada línea por «hace 12 s» y la mantiene al día. Ambas opciones se
+  recuerdan.
+
 - **Silenciados, en un popover sobre el log.** En la ventana de logs, el
   botón de la campana (con cuántas reglas hay) abre un popover flotante que no
   le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un

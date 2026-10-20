@@ -267,17 +267,38 @@
               <span id="silence-preview-text"></span>
             </span>
           </span>
-          <span class="footer-status">
-            <span id="status"></span>
+          <span class="footer-right">
+            <span class="footer-status">
+              <span id="status"></span>
+              <button
+                id="clear-selection"
+                class="clear-selection-btn"
+                type="button"
+                title="Quitar selección (Esc)"
+                aria-label="Quitar selección"
+                hidden
+              >
+                <span class="icon" data-icon="x"></span>
+              </button>
+            </span>
+            <label class="footer-switch">
+              Ajustar líneas
+              <input
+                id="wrap-lines"
+                class="switch"
+                type="checkbox"
+                role="switch"
+                checked
+              />
+            </label>
             <button
-              id="clear-selection"
-              class="clear-selection-btn"
+              id="time-mode"
+              class="footer-toggle"
               type="button"
-              title="Quitar selección (Esc)"
-              aria-label="Quitar selección"
-              hidden
+              aria-pressed="false"
+              title="Cambiar entre hora absoluta y relativa"
             >
-              <span class="icon" data-icon="x"></span>
+              Hora <span id="time-mode-value">absoluta</span>
             </button>
           </span>
         </footer>

@@ -139,14 +139,18 @@ describe('renderer/logs/toolbar-model.ts', () => {
           line({ level: 'error' }),
           line(),
         ]),
-      ).toEqual({ warn: 2, error: 1 });
+      ).toEqual({ warn: 2, error: 1, silenced: 1 });
     });
 
     it('adds one line at a time the same way', () => {
       const tally = tallyLevels([]);
       addToTally(tally, line({ level: 'error' }));
+      addToTally(
+        tally,
+        line({ level: null, originalLevel: 'error', silenced: true }),
+      );
       addToTally(tally, line());
-      expect(tally).toEqual({ warn: 0, error: 1 });
+      expect(tally).toEqual({ warn: 0, error: 2, silenced: 1 });
     });
   });
 });
