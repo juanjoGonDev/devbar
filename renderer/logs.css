@@ -913,6 +913,9 @@ main {
   color: #ff9f0a;
 }
 .json-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   margin-left: 6px;
   padding: 0 4px;
   border: 0;
@@ -926,6 +929,9 @@ main {
 .json-toggle:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #c7c7cc;
+}
+.json-toggle .icon {
+  font-size: 10px;
 }
 .json-toggle:focus-visible {
   outline: 2px solid #0a84ff;

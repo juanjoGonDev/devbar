@@ -67,7 +67,7 @@ function appendJsonToggle(
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'json-toggle';
-  btn.textContent = open ? '▾ JSON' : '▸ JSON';
+  btn.append(icon(open ? 'chevron-down' : 'chevron-right'), 'JSON');
   btn.setAttribute('aria-expanded', String(open));
   btn.title = open ? 'Plegar el JSON' : 'Ver el JSON completo';
   btn.addEventListener('click', (event) => {
