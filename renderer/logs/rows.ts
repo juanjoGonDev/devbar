@@ -196,6 +196,10 @@ export function buildRow(
   div.appendChild(ts);
   if (foldable && block.members[0] === entry) {
     div.appendChild(foldToggle(block, 'Plegar stack', 'chevron-down'));
+  } else if (block && badge !== 'err' && badge !== 'wrn') {
+    // A frame says nothing a badge could add: the block reads as one unit
+    // under the bar of the line it hangs from.
+    div.appendChild(cell('lv'));
   } else {
     const lv = document.createElement('span');
     lv.className = `lv ${badge}`;

@@ -145,6 +145,17 @@ describe('renderer/logs/pane.ts', () => {
       expect(rowOf('    at c (x:3)')?.classList.contains('folded')).toBe(true);
     });
 
+    it('draws the frames of an opened stack without a badge of their own', () => {
+      pane.resetBuffer(crash());
+      foldButton()?.click();
+      expect(rowOf('    at b (x:2)')?.querySelector('.lv')?.textContent).toBe(
+        '',
+      );
+      expect(
+        rowOf('Error: socket hang up')?.querySelector('.lv')?.textContent,
+      ).toBe('ERR');
+    });
+
     it('does not select the row when the fold is pressed', () => {
       pane.resetBuffer(crash());
       const event = new MouseEvent('click', { bubbles: true });
