@@ -300,6 +300,20 @@ describe('renderer/logs/drawer.ts', () => {
       ]);
     });
 
+    it('keeps a rule removable while state pushes repaint the panel', () => {
+      ownCommand({ warn: ['otra'] });
+      drawer.setDrawer(true);
+      const remove = patternRows()[0]?.querySelector<HTMLElement>('.x');
+      // A busy service pushes state constantly; each push repaints the
+      // panel. Rebuilding the rows between press and release lost the click.
+      drawer.renderDrawer();
+      expect(remove?.isConnected).toBe(true);
+      remove?.click();
+      expect(dom.argsFor('removeSilencePattern')).toEqual([
+        ['g1', 'c1', 'warn', 'otra'],
+      ]);
+    });
+
     it('asks nothing when no single command owns the view', () => {
       view.view.currentTarget = commandTarget({ warn: ['grave'] });
       view.view.currentGroupId = null;

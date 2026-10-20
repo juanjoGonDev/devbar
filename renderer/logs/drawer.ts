@@ -283,7 +283,22 @@ function patternRow(pattern: string, count: number): HTMLLIElement {
   return item;
 }
 
+/** Level + patterns the rows on screen were built for. */
+let renderedKey: string | null = null;
+
 function renderPatterns(patterns: readonly string[]): void {
+  // State pushes repaint the panel constantly on a busy service. Rebuilding
+  // the rows between press and release of × loses the click, so when the
+  // rules are the same ones, only their counts are refreshed.
+  const key = JSON.stringify([level, patterns]);
+  if (key === renderedKey) {
+    const counts = countPatternMatches(buffer.entries, level, patterns);
+    patternListEl
+      .querySelectorAll<HTMLElement>('.pat .cnt')
+      .forEach((cnt, index) => setText(cnt, String(counts[index] ?? 0)));
+    return;
+  }
+  renderedKey = key;
   patternListEl.textContent = '';
   if (!patterns.length) {
     const empty = document.createElement('li');
