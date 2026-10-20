@@ -85,8 +85,20 @@ describe('renderer/logs/silence-popover.ts', () => {
       const row = document.createElement('div');
       row.className = 'line';
       row.dataset.eidx = String(index);
+      const body = document.createElement('span');
+      body.className = 'body';
+      body.textContent = entries[index]?.line ?? '';
+      row.appendChild(body);
       elements.linesEl.appendChild(row);
     });
+  }
+
+  /** What is painted as matched inside the drawn lines, in order. */
+  function marks(): string[] {
+    return Array.from(
+      elements.linesEl.querySelectorAll('.line .body mark'),
+      (mark) => mark.textContent ?? '',
+    );
   }
 
   function markedRows(): number[] {
@@ -207,6 +219,7 @@ describe('renderer/logs/silence-popover.ts', () => {
       vi.advanceTimersByTime(100);
       popover.setSilencePopover(false);
       expect(markedRows()).toEqual([]);
+      expect(marks()).toEqual([]);
       expect(elements.silencePreviewEl.hidden).toBe(true);
     });
 
@@ -407,6 +420,7 @@ describe('renderer/logs/silence-popover.ts', () => {
       );
       ruleRows()[0]?.dispatchEvent(new MouseEvent('mouseleave'));
       expect(markedRows()).toEqual([]);
+      expect(marks()).toEqual([]);
       expect(elements.silencePreviewEl.hidden).toBe(true);
     });
   });
@@ -428,6 +442,7 @@ describe('renderer/logs/silence-popover.ts', () => {
       type('Successfully compiled');
       vi.advanceTimersByTime(50);
       expect(markedRows()).toEqual([]);
+      expect(marks()).toEqual([]);
       vi.advanceTimersByTime(60);
       expect(markedRows()).toEqual([0, 2]);
     });
@@ -455,7 +470,11 @@ describe('renderer/logs/silence-popover.ts', () => {
       expect(elements.silencePreviewTextEl.textContent).toBe(
         '2 se silenciarían con el patrón nuevo',
       );
-      expect(view.view.silencePreview?.(HELD[0])).toBe(true);
+      expect(view.view.silencePreview?.swallows(HELD[0])).toBe(true);
+      expect(marks()).toEqual([
+        'Successfully compiled',
+        'Successfully compiled',
+      ]);
     });
 
     it('clearing the draft takes the preview away', () => {
@@ -464,6 +483,7 @@ describe('renderer/logs/silence-popover.ts', () => {
       type('');
       vi.advanceTimersByTime(100);
       expect(markedRows()).toEqual([]);
+      expect(marks()).toEqual([]);
       expect(elements.silencePreviewEl.hidden).toBe(true);
       expect(elements.draftCountEl.hidden).toBe(true);
       expect(elements.submitBtn.disabled).toBe(true);
@@ -478,6 +498,7 @@ describe('renderer/logs/silence-popover.ts', () => {
       ]);
       expect(elements.draftInputEl.value).toBe('');
       expect(markedRows()).toEqual([]);
+      expect(marks()).toEqual([]);
     });
 
     it('the button does the same as Enter', () => {

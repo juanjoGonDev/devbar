@@ -6,7 +6,6 @@ import {
   compilePattern,
   countPatternMatches,
   entryWouldSilence,
-  highlightSegments,
   previewPattern,
 } from '../renderer/logs/silence-preview.js';
 import { REGEX_MARKER } from '../src/silence-pattern.js';
@@ -106,27 +105,6 @@ describe('renderer/logs/silence-preview.ts', () => {
     });
   });
 
-  describe('highlightSegments', () => {
-    it('splits a line into plain and matched runs', () => {
-      expect(
-        highlightSegments(
-          'Successfully compiled app',
-          compilePattern('compiled'),
-        ),
-      ).toEqual([
-        { text: 'Successfully ', hit: false },
-        { text: 'compiled', hit: true },
-        { text: ' app', hit: false },
-      ]);
-    });
-
-    it('answers the whole line unmarked when nothing matches', () => {
-      expect(highlightSegments('nada', compilePattern('x'))).toEqual([
-        { text: 'nada', hit: false },
-      ]);
-    });
-  });
-
   describe('previewPattern', () => {
     const entries = [
       warn('\u001b[33mSuccessfully compiled a\u001b[0m'),
@@ -147,17 +125,13 @@ describe('renderer/logs/silence-preview.ts', () => {
       expect(result.count).toBe(4);
     });
 
-    it('samples the first three matches, without their escapes', () => {
+    it('reads a coloured line by its text, not its escapes', () => {
       const result = previewPattern(
-        entries,
+        [warn('\u001b[33mSuccessfully\u001b[0m compiled')],
         'warn',
         compilePattern('Successfully compiled'),
       );
-      expect(result.samples).toEqual([
-        'Successfully compiled a',
-        'Successfully compiled c',
-        'Successfully compiled e',
-      ]);
+      expect(result.count).toBe(1);
     });
 
     it('stays fast over fifty thousand held lines', () => {

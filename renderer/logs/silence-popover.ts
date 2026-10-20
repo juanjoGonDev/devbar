@@ -5,10 +5,10 @@
  * It floats over the log, under its toolbar toggle, instead of living in a
  * separate window or a docked column: the rules and the lines they eat stay
  * visible together, and the log keeps its full width. The draft previews live
- * against the lines already held (a count in the field, the rows marked in
- * the log), and hovering a saved rule marks what it is eating the same way.
- * The matching itself is in `silence-preview.ts`, pure; this module only puts
- * it on screen.
+ * against the lines already held (a count in the field, the rows tinted and
+ * the matched text marked in the log), and hovering a saved rule marks what
+ * it is eating the same way. The matching itself is in `silence-preview.ts`,
+ * pure; the marks are in `silence-marks.ts`; this module puts it on screen.
  */
 import { icon } from '../icon.js';
 import { reportSelection } from './status.js';
@@ -21,6 +21,7 @@ import {
   type PatternMatcher,
 } from './silence-preview.js';
 import { buffer } from './buffer.js';
+import { markMatches, unmarkMatches } from './silence-marks.js';
 import {
   composerEl,
   draftCountEl,
@@ -129,16 +130,21 @@ function showPreview(
   source: PreviewSource,
 ): void {
   view.silencePreview = matcher
-    ? (entry) => entryWouldSilence(entry, previewLevel, matcher)
+    ? {
+        swallows: (entry) => entryWouldSilence(entry, previewLevel, matcher),
+        matcher,
+      }
     : null;
   for (const row of Array.from(
     linesEl.querySelectorAll<HTMLElement>('.line'),
   )) {
     const entry = buffer.entries[Number(row.dataset.eidx)];
-    row.classList.toggle(
-      'would-silence',
-      !!entry && !!view.silencePreview?.(entry),
-    );
+    const swallowed = !!entry && !!view.silencePreview?.swallows(entry);
+    row.classList.toggle('would-silence', swallowed);
+    const body = row.querySelector<HTMLElement>('.body');
+    if (!body) continue;
+    unmarkMatches(body);
+    if (swallowed && matcher) markMatches(body, matcher);
   }
   if (!matcher) {
     silencePreviewEl.hidden = true;

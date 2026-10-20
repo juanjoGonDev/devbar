@@ -19,6 +19,7 @@ import type {
   LogsTarget,
   SilenceLevel,
 } from '../../src/ipc-contract.js';
+import type { PatternMatcher } from './silence-preview.js';
 
 /**
  * The three scopes the window can show. Every entry point — nav counters, tray
@@ -84,7 +85,13 @@ export interface LogsView {
    * saved rule under the pointer. Rows it would swallow are drawn marked, so
    * a row built later (scrolling, a new line) is marked the same way.
    */
-  silencePreview: ((entry: LogEntry) => boolean) | null;
+  silencePreview: SilencePreview | null;
+}
+
+/** A rule being previewed: which lines it swallows, and where it bites. */
+export interface SilencePreview {
+  swallows(entry: LogEntry): boolean;
+  matcher: PatternMatcher;
 }
 
 export const view: LogsView = {

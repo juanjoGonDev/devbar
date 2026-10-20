@@ -14,6 +14,7 @@ import { ansiToHtml, stripAnsi } from './ansi.js';
 import { levelOf } from './filters.js';
 import { fmtTime, sourceColor } from './format.js';
 import { buffer } from './buffer.js';
+import { markMatches } from './silence-marks.js';
 import { icon } from '../icon.js';
 import { nav, silenceHooks, view } from './view.js';
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
@@ -37,7 +38,8 @@ export function buildRow(
   const classes = ['line', entry.stream];
   if (entry.level) classes.push(entry.level);
   if (entry.silenced) classes.push('silenced');
-  if (view.silencePreview?.(entry)) classes.push('would-silence');
+  const previewed = !!view.silencePreview?.swallows(entry);
+  if (previewed) classes.push('would-silence');
   div.className = classes.join(' ');
   div.dataset.line = entry.line;
   div.dataset.level = levelOf(entry);
@@ -117,6 +119,8 @@ export function buildRow(
   const body = document.createElement('span');
   body.className = 'body';
   body.innerHTML = ansiToHtml(entry.line);
+  if (previewed && view.silencePreview)
+    markMatches(body, view.silencePreview.matcher);
   div.appendChild(body);
 
   if (

@@ -1095,16 +1095,21 @@ footer {
   display: none;
 }
 
-/* Rows a previewed rule would swallow: blue bar, dimmed, struck through. */
+/* Rows a previewed rule would swallow: tinted and dimmed, with the runs the
+   rule matched marked so it is plain what it bites. */
 .line.would-silence,
 .line.would-silence:hover {
   border-left-color: var(--sil-accent);
   background: var(--sil-hit-bg);
 }
 .line.would-silence .body {
-  opacity: 0.55;
-  text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.35);
+  opacity: 0.4;
+}
+.line .body mark.sil-hit {
+  padding: 0 2px;
+  border-radius: 4px;
+  background: var(--sil-mark-bg);
+  color: var(--sil-mark-text);
 }
 
 .footer-left {

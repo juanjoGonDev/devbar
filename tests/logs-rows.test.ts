@@ -93,14 +93,19 @@ describe('renderer/logs/rows.ts', () => {
   }
 
   describe('the row itself', () => {
-    it('is marked when the silenced panel previews a rule that would swallow it', () => {
-      viewModule.view.silencePreview = (entry) => entry.line === 'ruido';
-      expect(build(line('ruido')).row.classList.contains('would-silence')).toBe(
-        true,
-      );
-      expect(build(line('otra')).row.classList.contains('would-silence')).toBe(
-        false,
-      );
+    it('is marked when the silenced popover previews a rule that would swallow it', async () => {
+      const { compilePattern } =
+        await import('../renderer/logs/silence-preview.js');
+      viewModule.view.silencePreview = {
+        swallows: (entry) => entry.line.startsWith('ruido'),
+        matcher: compilePattern('ruido'),
+      };
+      const { row } = build(line('ruido de fondo'));
+      expect(row.classList.contains('would-silence')).toBe(true);
+      expect(row.querySelector('.body mark')?.textContent).toBe('ruido');
+      const other = build(line('otra')).row;
+      expect(other.classList.contains('would-silence')).toBe(false);
+      expect(other.querySelector('mark')).toBeNull();
     });
 
     it('carries the stream, the level and the silenced mark as classes', () => {

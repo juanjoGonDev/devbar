@@ -1,10 +1,11 @@
 /**
  * What a silence rule WOULD swallow, worked out before it is saved.
  *
- * The silenced panel previews a draft (and each saved rule, on hover) against
- * the lines the window already holds: how many, which ones, and where in each
- * line the rule bites. Pure on purpose — every question here takes the lines
- * and the rule as arguments, so the matching is checked without a window.
+ * The silenced popover previews a draft (and each saved rule, on hover)
+ * against the lines the window already holds: how many, which ones, and where
+ * in each line the rule bites (`ranges`, painted by `silence-marks.ts`). Pure
+ * on purpose — every question here takes the lines and the rule as arguments,
+ * so the matching is checked without a window.
  *
  * Matching follows storage exactly (`matchesPattern` in
  * `src/process/log-filters.ts`): no backslash → case-sensitive substring, any
@@ -23,8 +24,6 @@ import type { SilenceLevel } from '../../src/ipc-contract.js';
  * re-runs on every keystroke, so it reads a bounded tail instead.
  */
 export const PREVIEW_SCAN_LIMIT = 50_000;
-/** Matching lines shown under the draft. */
-const PREVIEW_SAMPLE_LIMIT = 3;
 /** Highlighted runs per line: enough for a row, bounded for a pathological one. */
 const MAX_RANGES = 20;
 
@@ -104,29 +103,6 @@ export function compilePattern(pattern: string): PatternMatcher {
   };
 }
 
-export interface Segment {
-  text: string;
-  hit: boolean;
-}
-
-/** A line cut into plain and matched runs, for `<mark>`-ing the matches. */
-export function highlightSegments(
-  text: string,
-  matcher: PatternMatcher,
-): Segment[] {
-  const out: Segment[] = [];
-  let cursor = 0;
-  for (const [start, end] of matcher.ranges(text)) {
-    if (start > cursor)
-      out.push({ text: text.slice(cursor, start), hit: false });
-    out.push({ text: text.slice(start, end), hit: true });
-    cursor = end;
-  }
-  if (cursor < text.length || out.length === 0)
-    out.push({ text: text.slice(cursor), hit: false });
-  return out;
-}
-
 export function entryWouldSilence(
   entry: LogEntry,
   level: SilenceLevel,
@@ -137,8 +113,6 @@ export function entryWouldSilence(
 
 export interface PreviewResult {
   count: number;
-  /** The first matching lines, escapes stripped. */
-  samples: string[];
   /** True when older lines past the scan cap were not read. */
   truncated: boolean;
 }
@@ -150,17 +124,13 @@ export function previewPattern(
   scanLimit = PREVIEW_SCAN_LIMIT,
 ): PreviewResult {
   const start = Math.max(0, entries.length - scanLimit);
-  const samples: string[] = [];
   let count = 0;
   for (let i = start; i < entries.length; i += 1) {
     const entry = entries[i];
     if (!entry || levelOf(entry) !== level) continue;
-    const text = stripAnsi(entry.line);
-    if (!matcher.test(text)) continue;
-    count += 1;
-    if (samples.length < PREVIEW_SAMPLE_LIMIT) samples.push(text);
+    if (matcher.test(stripAnsi(entry.line))) count += 1;
   }
-  return { count, samples, truncated: start > 0 };
+  return { count, truncated: start > 0 };
 }
 
 /** One count per saved pattern, stripping each line once for all of them. */
