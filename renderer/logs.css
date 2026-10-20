@@ -899,6 +899,49 @@ main {
   color: #636366;
 }
 
+/* ── JSON lines: coloured on one line, opened into a block below ── */
+.line .j-key {
+  color: #64d2ff;
+}
+.line .j-str {
+  color: #a8d8a0;
+}
+.line .j-num {
+  color: #ffd60a;
+}
+.line .j-lit {
+  color: #ff9f0a;
+}
+.json-toggle {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #636366;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  cursor: pointer;
+}
+.json-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #c7c7cc;
+}
+.json-toggle:focus-visible {
+  outline: 2px solid #0a84ff;
+}
+.json-pretty {
+  display: block;
+  margin: 4px 0 2px;
+  padding: 8px 10px;
+  border: 1px solid #262629;
+  border-radius: 6px;
+  background: #19191b;
+  font: inherit;
+  white-space: pre;
+  overflow-x: auto;
+}
+
 /* After the level backgrounds so a selected error line still reads selected. */
 .line.selected,
 .line.selected:hover {

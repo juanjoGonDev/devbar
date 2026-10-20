@@ -186,6 +186,67 @@ describe('renderer/logs/rows.ts', () => {
     });
   });
 
+  describe('JSON lines', () => {
+    let repaints: number;
+
+    beforeEach(() => {
+      repaints = 0;
+      viewModule.installRowHooks({ repaint: () => (repaints += 1) });
+    });
+
+    it('draws the object syntax-coloured on one line, prefix kept', () => {
+      const { row } = build(line('[42] {"level":"info","ms":42}'));
+      const body = row.querySelector<HTMLElement>('.body');
+      expect(body?.textContent).toBe('[42] { "level": "info", "ms": 42 }');
+      expect(
+        Array.from(
+          body?.querySelectorAll('.j-key') ?? [],
+          (k) => k.textContent,
+        ),
+      ).toEqual(['"level"', '"ms"']);
+      expect(body?.querySelector('.j-num')?.textContent).toBe('42');
+      expect(row.querySelector('.json-toggle')?.textContent).toContain('JSON');
+    });
+
+    it('cuts a long object at a whole member, marked «…»', () => {
+      const long = JSON.stringify({ a: 'x'.repeat(100), b: 'y'.repeat(100) });
+      const { row } = build(line(long));
+      expect(row.querySelector('.body')?.textContent).toMatch(/, … \}$/);
+    });
+
+    it('opens into a pretty-printed block below, which a rebuild keeps', () => {
+      const entry = line('{"a":{"b":1}}');
+      build(entry).row.querySelector<HTMLElement>('.json-toggle')?.click();
+      expect(repaints).toBe(1);
+      const { row } = build(entry);
+      expect(row.querySelector('.json-pretty')?.textContent).toBe(
+        JSON.stringify({ a: { b: 1 } }, null, 2),
+      );
+      expect(
+        row.querySelector('.json-toggle')?.getAttribute('aria-expanded'),
+      ).toBe('true');
+    });
+
+    it('opening it does not select the row', () => {
+      const { row } = build(line('{"a":1}'));
+      const event = new MouseEvent('click', { bubbles: true });
+      const stop = vi.spyOn(event, 'stopPropagation');
+      row.querySelector('.json-toggle')?.dispatchEvent(event);
+      expect(stop).toHaveBeenCalled();
+    });
+
+    it('leaves a line that is not an object as text', () => {
+      const { row } = build(line('[1, 2]'));
+      expect(row.querySelector('.json-toggle')).toBeNull();
+      expect(row.querySelector('.body')?.textContent).toBe('[1, 2]');
+    });
+
+    it('keeps the original line as the row handle, for copying', () => {
+      const { row } = build(line('{"a":1}'));
+      expect(row.dataset.line).toBe('{"a":1}');
+    });
+  });
+
   describe('ways back to the line in context', () => {
     it('shows the timestamp as a clock, to the millisecond', () => {
       const ts = new Date(2024, 0, 2, 3, 4, 5, 6).getTime();

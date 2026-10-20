@@ -16,6 +16,14 @@ import { fmtTime, sourceColor } from './format.js';
 import { buffer } from './buffer.js';
 import { markMatches } from './silence-marks.js';
 import { BADGE_LABEL, badgeOf } from './line-level.js';
+import {
+  compactJson,
+  isJsonOpen,
+  jsonOf,
+  jsonTokens,
+  toggleJson,
+  type JsonLine,
+} from './json-line.js';
 import { icon } from '../icon.js';
 import { nav, rowHooks, silenceHooks, view } from './view.js';
 import {
@@ -27,6 +35,53 @@ import {
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
 import type { LogEntry } from '../../src/domain-types.js';
 import type { SilenceLevel, SourcedLogEntry } from '../../src/ipc-contract.js';
+
+/** How much of an object the one-line rendering shows before «…». */
+const JSON_INLINE_CHARS = 160;
+
+/** Coloured runs of JSON text, appended to `parent`. */
+function appendJsonText(parent: HTMLElement, text: string): void {
+  for (const token of jsonTokens(text)) {
+    if (token.kind === 'punct') {
+      parent.append(token.text);
+      continue;
+    }
+    const run = cell(`j-${token.kind}`);
+    run.textContent = token.text;
+    parent.appendChild(run);
+  }
+}
+
+function fillJson(body: HTMLElement, json: JsonLine): void {
+  if (json.prefix) body.append(json.prefix);
+  appendJsonText(body, compactJson(json.value, JSON_INLINE_CHARS).text);
+}
+
+/** «▸ JSON», and — once opened — the object pretty-printed under the line. */
+function appendJsonToggle(
+  msg: HTMLElement,
+  entry: LogEntry,
+  json: JsonLine,
+): void {
+  const open = isJsonOpen(entry);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'json-toggle';
+  btn.textContent = open ? '▾ JSON' : '▸ JSON';
+  btn.setAttribute('aria-expanded', String(open));
+  btn.title = open ? 'Plegar el JSON' : 'Ver el JSON completo';
+  btn.addEventListener('click', (event) => {
+    event.stopPropagation(); // opening is not a row click
+    toggleJson(entry);
+    rowHooks.repaint();
+  });
+  msg.appendChild(btn);
+  if (!open) return;
+  const pre = document.createElement('pre');
+  pre.className = 'json-pretty';
+  appendJsonText(pre, JSON.stringify(json.value, null, 2));
+  msg.appendChild(pre);
+}
 
 function cell(className: string): HTMLElement {
   const span = document.createElement('span');
@@ -207,12 +262,15 @@ export function buildRow(
 
   const body = document.createElement('span');
   body.className = 'body';
-  body.innerHTML = ansiToHtml(entry.line);
+  const json = jsonOf(entry);
+  if (json) fillJson(body, json);
+  else body.innerHTML = ansiToHtml(entry.line);
   if (view.filterRe)
     markMatches(body, searchMatcher(view.filterRe), 'search-hit');
   if (previewed && view.silencePreview)
     markMatches(body, view.silencePreview.matcher);
   msg.appendChild(body);
+  if (json) appendJsonToggle(msg, entry, json);
 
   if (
     (entry.originalLevel === 'warn' || entry.originalLevel === 'error') &&

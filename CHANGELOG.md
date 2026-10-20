@@ -86,6 +86,11 @@ Todas las novedades relevantes de DevBar. El formato sigue
   líneas nuevas; si buscas algo que está dentro de un stack plegado, se
   muestra.
 
+- **Las líneas JSON se leen como JSON.** Una línea que es un objeto JSON
+  (aunque lleve delante un prefijo como `[pid]`) se muestra coloreada en una
+  sola línea, recortada con «… ▸ JSON»; al pulsarlo se abre debajo, con
+  sangría. Copiar sigue copiando la línea original.
+
 - **Silenciados, en un popover sobre el log.** En la ventana de logs, el
   botón de la campana (con cuántas reglas hay) abre un popover flotante que no
   le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un
