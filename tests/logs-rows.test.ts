@@ -108,6 +108,32 @@ describe('renderer/logs/rows.ts', () => {
       expect(other.querySelector('mark')).toBeNull();
     });
 
+    it('puts a level badge in its own column, between the clock and the text', () => {
+      const { row } = build(line('boom', { level: 'error' }));
+      expect(
+        Array.from(row.children, (el) => (el as HTMLElement).className),
+      ).toEqual(['ts', 'lv err', 'msg']);
+      expect(row.querySelector('.lv')?.textContent).toBe('ERR');
+    });
+
+    it('badges a plain line INF and a debug-looking one DBG, muted', () => {
+      expect(build(line('hola')).row.querySelector('.lv')?.textContent).toBe(
+        'INF',
+      );
+      const { row } = build(line('[debug] tick'));
+      expect(row.querySelector('.lv')?.textContent).toBe('DBG');
+      expect(row.classList.contains('dbg')).toBe(true);
+    });
+
+    it('marks where the search box matches inside the text', () => {
+      viewModule.view.filterRe = /ruido/i;
+      const { row } = build(line('mucho ruido aquí'));
+      expect(row.querySelector('.body mark.search-hit')?.textContent).toBe(
+        'ruido',
+      );
+      viewModule.view.filterRe = null;
+    });
+
     it('carries the stream, the level and the silenced mark as classes', () => {
       const { row } = build(
         line('boom', { stream: 'stderr', level: 'error', silenced: true }),

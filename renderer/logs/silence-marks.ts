@@ -20,16 +20,24 @@ function textNodes(root: Node): Text[] {
 }
 
 /** Wrap `[start, end)` of `node`'s own text in a mark. */
-function wrap(node: Text, start: number, end: number): void {
+function wrap(node: Text, start: number, end: number, className: string): void {
   const hit = start > 0 ? node.splitText(start) : node;
   if (end - start < hit.length) hit.splitText(end - start);
   const mark = document.createElement('mark');
-  mark.className = MARK_CLASS;
+  mark.className = className;
   hit.replaceWith(mark);
   mark.appendChild(hit);
 }
 
-export function markMatches(body: HTMLElement, matcher: PatternMatcher): void {
+/**
+ * Mark every run `matcher` finds in `body`. The class says whose marks they
+ * are: the silence preview's by default, or the search box's (`search-hit`).
+ */
+export function markMatches(
+  body: HTMLElement,
+  matcher: Pick<PatternMatcher, 'ranges'>,
+  className: string = MARK_CLASS,
+): void {
   const ranges = matcher.ranges(body.textContent ?? '');
   if (!ranges.length) return;
   // Offsets are taken before any split, then applied last node first, so a
@@ -48,7 +56,7 @@ export function markMatches(body: HTMLElement, matcher: PatternMatcher): void {
   }
   for (let i = pieces.length - 1; i >= 0; i -= 1) {
     const [node, start, end] = pieces[i] as [Text, number, number];
-    wrap(node, start, end);
+    wrap(node, start, end, className);
   }
 }
 

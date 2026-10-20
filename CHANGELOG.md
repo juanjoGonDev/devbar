@@ -73,6 +73,12 @@ Todas las novedades relevantes de DevBar. El formato sigue
   del grupo dice cuántos van en marcha («1/8») y ⌘K (Ctrl+K) lleva al
   buscador de servicios.
 
+- **Líneas de log más fáciles de leer.** Cada línea lleva una columna con su
+  nivel (INF, DBG, WRN, ERR), con la hora atenuada delante; las de depuración
+  se ven atenuadas, y los warnings y errores llevan solo una fina barra a la
+  izquierda en lugar de teñir toda la fila. Lo que coincide con la búsqueda
+  queda resaltado dentro de la línea.
+
 - **Silenciados, en un popover sobre el log.** En la ventana de logs, el
   botón de la campana (con cuántas reglas hay) abre un popover flotante que no
   le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un

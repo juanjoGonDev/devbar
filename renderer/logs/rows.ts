@@ -15,11 +15,15 @@ import { levelOf } from './filters.js';
 import { fmtTime, sourceColor } from './format.js';
 import { buffer } from './buffer.js';
 import { markMatches } from './silence-marks.js';
+import { BADGE_LABEL, badgeOf } from './line-level.js';
 import { icon } from '../icon.js';
 import { nav, silenceHooks, view } from './view.js';
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
 import type { LogEntry } from '../../src/domain-types.js';
 import type { SilenceLevel, SourcedLogEntry } from '../../src/ipc-contract.js';
+
+/** Enough to see where the search bites without marking a 20 KB line solid. */
+const MAX_SEARCH_HITS = 50;
 
 /** Drop every filter and land on this row, in sequence with its neighbours. */
 export type ShowInContext = (row: HTMLElement) => void;
@@ -35,8 +39,10 @@ export function buildRow(
   showInContext: ShowInContext,
 ): HTMLElement {
   const div = document.createElement('div');
+  const badge = badgeOf(entry);
   const classes = ['line', entry.stream];
   if (entry.level) classes.push(entry.level);
+  if (badge === 'dbg') classes.push('dbg');
   if (entry.silenced) classes.push('silenced');
   const previewed = !!view.silencePreview?.swallows(entry);
   if (previewed) classes.push('would-silence');
@@ -57,6 +63,15 @@ export function buildRow(
     showInContext(div);
   });
   div.appendChild(ts);
+  const lv = document.createElement('span');
+  lv.className = `lv ${badge}`;
+  lv.textContent = BADGE_LABEL[badge];
+  div.appendChild(lv);
+  // The third column holds everything else — source tags and the text — so a
+  // merged row's tags flow inline with its message instead of taking columns.
+  const msg = document.createElement('span');
+  msg.className = 'msg';
+  div.appendChild(msg);
   // Right-click anywhere on the row does the same — but NOT ctrl+click. macOS
   // routes ctrl+click to `contextmenu`, and this list already spends ctrl on
   // toggling a row's selection (see selectModeFor). Without this guard the two
@@ -101,7 +116,7 @@ export function buildRow(
           ...view.levelFilter,
         ]);
       });
-      div.appendChild(grp);
+      msg.appendChild(grp);
     }
     const src = document.createElement('button');
     src.type = 'button';
@@ -113,15 +128,17 @@ export function buildRow(
       event.stopPropagation();
       void nav.jumpToLine(srcId, entry.ts);
     });
-    div.appendChild(src);
+    msg.appendChild(src);
   }
 
   const body = document.createElement('span');
   body.className = 'body';
   body.innerHTML = ansiToHtml(entry.line);
+  if (view.filterRe)
+    markMatches(body, searchMatcher(view.filterRe), 'search-hit');
   if (previewed && view.silencePreview)
     markMatches(body, view.silencePreview.matcher);
-  div.appendChild(body);
+  msg.appendChild(body);
 
   if (
     (entry.originalLevel === 'warn' || entry.originalLevel === 'error') &&
@@ -168,9 +185,41 @@ export function buildRow(
           silenceHooks.prefill(lvl, pattern || cleaned);
       }
     });
-    div.appendChild(btn);
+    msg.appendChild(btn);
   }
 
   if (buffer.selected.has(entryIndex)) div.classList.add('selected');
   return div;
+}
+
+/** Every non-empty run the search box's regex finds, for highlighting. */
+interface Ranges {
+  ranges(text: string): Array<[number, number]>;
+}
+
+// One compiled matcher per filter: rows are built hundreds at a time and the
+// filter only changes on a keystroke.
+let searchCache: { re: RegExp; matcher: Ranges } | null = null;
+
+function searchMatcher(re: RegExp): Ranges {
+  if (searchCache?.re === re) return searchCache.matcher;
+  const global = new RegExp(re.source, `${re.flags.replace('g', '')}g`);
+  const matcher: Ranges = {
+    ranges(text) {
+      const out: Array<[number, number]> = [];
+      global.lastIndex = 0;
+      while (out.length < MAX_SEARCH_HITS) {
+        const match = global.exec(text);
+        if (!match) break;
+        if (match[0].length === 0) {
+          global.lastIndex += 1;
+          continue;
+        }
+        out.push([match.index, match.index + match[0].length]);
+      }
+      return out;
+    },
+  };
+  searchCache = { re, matcher };
+  return matcher;
 }

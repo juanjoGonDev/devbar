@@ -736,33 +736,35 @@ main {
 }
 
 #lines {
-  white-space: pre-wrap;
-  word-break: break-word;
-  padding: 6px 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  padding: 8px 0;
 }
 
+/*
+ * Three columns — clock, level badge, everything else — so the text of every
+ * row starts at the same x whatever its level. Source tags of a merged view
+ * live in the third column, inline with the message.
+ */
 .line {
-  padding: 1px 16px;
-  display: flex;
-  gap: 6px;
-  line-height: 1.55;
-  border-left: 3px solid transparent;
+  display: grid;
+  grid-template-columns: 92px 38px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: baseline;
+  padding: 2px 16px;
+  color: #d1d1d6;
   min-width: 0;
   /* Anchor for the hover tip positioned against the row. */
   position: relative;
-}
-/* The timestamp keeps its old breathing room; the tags pack in after it. */
-.line .ts + * {
-  margin-left: 4px;
 }
 .line:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 .line .ts {
-  color: #6e7681;
-  flex-shrink: 0;
+  color: #5a5a5e;
   user-select: none;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   cursor: pointer;
 }
 /* The timestamp is the "where am I in the stream" handle: pressing it drops
@@ -772,25 +774,56 @@ main {
   text-decoration: underline;
 }
 
-.line .body {
-  flex: 1;
+.line .lv {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  border-radius: 4px;
+  text-align: center;
+  padding: 1px 0;
+  user-select: none;
+}
+.line .lv.inf {
+  color: #8e8e93;
+  background: rgba(142, 142, 147, 0.14);
+}
+.line .lv.dbg {
+  color: #636366;
+  background: rgba(99, 99, 102, 0.12);
+}
+.line .lv.wrn {
+  color: #ffb340;
+  background: rgba(255, 159, 10, 0.16);
+}
+.line .lv.err {
+  color: #ff6961;
+  background: rgba(255, 69, 58, 0.16);
+}
+
+.line .msg {
+  min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
   /* preserve runs of spaces between tokens (typical of structured logs) */
   tab-size: 2;
 }
+.line .msg > .src {
+  margin-right: 6px;
+}
 .line .body span {
   white-space: pre-wrap;
 }
-.line.stderr {
-  background: rgba(255, 90, 70, 0.04);
+.line.dbg .body {
+  color: #8e8e93;
 }
+/* A thin bar, not a tinted row: the badge already says the level. */
 .line.warn {
-  border-left-color: #ffd60a;
+  box-shadow: inset 2px 0 0 #ff9f0a;
 }
 .line.error {
-  border-left-color: #ff453a;
-  background: rgba(255, 69, 58, 0.06);
+  box-shadow: inset 2px 0 0 #ff453a;
 }
 .line.sys .body {
   color: #7adfff;
@@ -798,6 +831,11 @@ main {
 }
 .line.hidden {
   display: none;
+}
+.line .body mark.search-hit {
+  border-radius: 3px;
+  background: rgba(255, 214, 10, 0.32);
+  color: inherit;
 }
 
 /* After the level backgrounds so a selected error line still reads selected. */
@@ -811,19 +849,19 @@ main {
 
 .line.silenced {
   opacity: 0.45;
-  border-left-color: transparent;
+  box-shadow: none;
 }
 .line.silenced .body {
   font-style: italic;
 }
-.line.silenced::before {
+.line.silenced .msg::before {
   /* Lucide bell-off (renderer/icons.css face); tests/icon-font.test.ts pins
      the codepoint against the generated table. */
   font-family: 'lucide';
   content: '\e05a';
   font-size: 10px;
   user-select: none;
-  margin-right: 2px;
+  margin-right: 4px;
 }
 
 .line .silence-btn {
@@ -1262,7 +1300,7 @@ footer {
    rule matched marked so it is plain what it bites. */
 .line.would-silence,
 .line.would-silence:hover {
-  border-left-color: var(--sil-accent);
+  box-shadow: inset 2px 0 0 var(--sil-accent);
   background: var(--sil-hit-bg);
 }
 .line.would-silence .body {
