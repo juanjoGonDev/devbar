@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { iconText } from './helpers/icon-text.js';
 import { mountLogsDom } from './helpers/logs-dom.js';
 import { PIPELINE_LOG_GROUP_ID } from '../src/pipeline-labels.js';
 import type { LogListGroup, LogListItem } from '../src/ipc-contract.js';
@@ -421,8 +422,22 @@ describe('renderer/logs/sidebar.ts', () => {
       expect(press({ key: 'k' }).defaultPrevented).toBe(false);
     });
 
-    it('names the key this platform uses', () => {
+    it('names the key this platform uses', async () => {
       expect(elements.sideFilterKeyEl.textContent).toBe('Ctrl+K');
+      mountLogsDom({ api: { listLogs: () => Promise.resolve([]) } });
+      const api = window.api;
+      Object.defineProperty(window, 'api', {
+        configurable: true,
+        value: new Proxy(api, {
+          get: (target, key) =>
+            key === 'platform'
+              ? 'darwin'
+              : (target as unknown as Record<string | symbol, unknown>)[key],
+        }),
+      });
+      await import('../renderer/logs/sidebar.js');
+      const key = document.getElementById('side-filter-key');
+      expect(iconText(key)).toBe('[command]K');
     });
   });
 

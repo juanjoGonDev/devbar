@@ -104,6 +104,9 @@ html[data-os='linux'] .side-head {
 }
 .side-kbd {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
   font-family: inherit;
   font-size: 11px;
   color: #636366;

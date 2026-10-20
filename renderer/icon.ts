@@ -28,6 +28,7 @@ export type IconName =
   | 'circle-alert'
   | 'circle-x'
   | 'clock'
+  | 'command'
   | 'copy'
   | 'download'
   | 'ellipsis'

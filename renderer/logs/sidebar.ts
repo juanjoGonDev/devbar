@@ -7,6 +7,7 @@
  * the focus, and any click already in progress on a counter button.
  */
 import { latestWins } from '../latest-wins.js';
+import { icon } from '../icon.js';
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
 import { logsParams } from './params.js';
 import { renderHeaderRunState } from './header.js';
@@ -178,9 +179,10 @@ toggleSidebarBtn.addEventListener('click', () => {
 
 sideFilterEl.addEventListener('input', applySideFilter);
 
-// The hint names the key this platform actually uses.
-sideFilterKeyEl.textContent =
-  window.api.platform === 'darwin' ? '⌘K' : 'Ctrl+K';
+// The hint names the key this platform actually uses («Ctrl+K» in the
+// markup); on macOS the ⌘ is drawn from the icon font, like every glyph.
+if (window.api.platform === 'darwin')
+  sideFilterKeyEl.replaceChildren(icon('command'), 'K');
 
 // ⌘K / Ctrl+K jumps to the service search, from anywhere in the window.
 document.addEventListener('keydown', (event) => {
