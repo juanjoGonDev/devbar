@@ -33,6 +33,7 @@ import {
 } from './stream.js';
 import { dropPendingQueue, keepQueuedAfter } from './status.js';
 import { dispatchLive } from './live.js';
+import { unfoldGroup } from './sidebar-fold.js';
 import { filterEl, muteErrEl, muteWarnEl, sideTreeEl } from './elements.js';
 import { view, type Scope } from './view.js';
 import type { SilenceLevel } from '../../src/ipc-contract.js';
@@ -125,6 +126,8 @@ function revealInSidebar(target: HTMLElement | null): void {
   if (!target) return;
   const group = target.closest('details');
   const header = group?.querySelector(':scope > summary');
+  // Behind «+ N parados» the row has no box either: open the fold first.
+  if (group && target.classList.contains('folded')) unfoldGroup(group);
   // A service inside a folded group has no box to scroll to; a group header
   // opened as a whole scope is visible folded, so it stays as the user left it.
   if (header && header !== target) {

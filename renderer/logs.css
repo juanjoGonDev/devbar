@@ -38,8 +38,8 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: rgba(28, 28, 30, 0.96);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #1a1a1d;
+  border-right: 1px solid #262629;
   font-family: var(--font-ui);
   min-height: 0;
 }
@@ -57,8 +57,7 @@ body.sidebar-collapsed #toggle-sidebar {
 .side-head {
   /* On macOS the inset traffic lights sit here, so this strip clears them
      and doubles as a handle to drag the window by. */
-  padding: 46px 10px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 46px 8px 6px;
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -69,43 +68,65 @@ html[data-os='win32'] .side-head,
 html[data-os='linux'] .side-head {
   padding-top: 8px;
 }
-.side-head input[type='search'] {
-  width: 100%;
-  background: rgba(255, 255, 255, 0.06);
-  color: #e5e5e7;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 5px 9px;
-  font-size: 12px;
-  font-family: inherit;
+/* The service search: a field with its icon and the ⌘K hint inside. */
+.side-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: #232326;
+  border: 1px solid transparent;
+  color: #8e8e93;
+  cursor: text;
 }
-.side-head input[type='search']:focus {
-  outline: 2px solid rgba(0, 122, 255, 0.5);
-  outline-offset: -1px;
-  border-color: #0a84ff;
+.side-search:focus-within {
+  border-color: rgba(10, 132, 255, 0.6);
+}
+.side-search-ico {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.side-search input[type='search'] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: none;
+  color: #f5f5f7;
+  font: inherit;
+  font-size: 12.5px;
+}
+.side-search input[type='search']::placeholder {
+  color: #8e8e93;
+}
+.side-kbd {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 11px;
+  color: #636366;
+}
+.side-search:focus-within .side-kbd {
+  display: none;
 }
 
 #side-tree {
   flex: 1;
   overflow: auto;
-  /* No side padding: group headers are full-bleed bands. Rows re-inset below. */
-  padding: 0 0 14px;
+  padding: 0 8px 14px;
 }
 #side-tree .empty {
   color: #8e8e93;
   font-size: 11px;
-  padding: 10px 14px;
-}
-
-.side-group + .side-group {
-  margin-top: 2px;
+  padding: 10px 6px;
 }
 
 /*
- * Group headers read as bands, not as rows: full width, own background,
- * hairlines above and below. Sticky so the group you are scrolling through
- * stays named at the top of the list — with ten services open, that label is
- * the only thing telling you whose logs you are looking at.
+ * Group headers: chevron, uppercase name, and «running/total» on the right.
+ * Sticky, so the group you are scrolling through stays named at the top of
+ * the list.
  */
 .side-group > summary {
   position: sticky;
@@ -114,254 +135,232 @@ html[data-os='linux'] .side-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  height: 30px;
+  margin-top: 6px;
+  padding: 0 6px 0 10px;
+  border-radius: 7px;
   cursor: pointer;
   user-select: none;
   list-style: none;
-  color: #e8e8ea;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.7px;
+  color: #8e8e93;
+  background: #1a1a1d;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  background: #35353a;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
-}
-.side-group:first-child > summary {
-  border-top-color: transparent;
 }
 .side-group > summary::-webkit-details-marker {
   display: none;
 }
 .side-group > summary:hover {
-  background: #3f3f45;
+  color: #d1d1d6;
 }
 .side-group > summary .chevron {
-  font-size: 9px;
-  width: 9px;
   flex-shrink: 0;
-  color: #8e8e93;
-  transition: transform 0.15s ease;
+  font-size: 10px;
+  transition: transform 0.12s ease;
 }
 .side-group[open] > summary .chevron {
   transform: rotate(90deg);
 }
 .side-group > summary .g-ico {
-  font-size: 11px;
   flex-shrink: 0;
+  font-size: 12px;
+}
+.side-group > summary .g-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .side-group > summary .g-name {
-  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Worst state inside the group — the only health cue left once it is folded. */
+.side-group > summary .g-badges,
+.side-all .a-badges,
+.side-item .s-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.side-group > summary .g-badges:empty,
+.side-all .a-badges:empty,
+.side-item .s-badges:empty {
+  display: none;
+}
+.side-group > summary .g-count {
+  flex-shrink: 0;
+  font-weight: 500;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
 .side-group > summary .g-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: transparent;
 }
 .side-group > summary .g-dot.running {
-  background: #30d158;
+  background: #34c759;
 }
 .side-group > summary .g-dot.warn {
-  background: #ffd60a;
+  background: #ff9f0a;
 }
 .side-group > summary .g-dot.error {
   background: #ff453a;
 }
 .side-group > summary .g-dot.starting,
 .side-group > summary .g-dot.stopping {
-  background: #0a84ff;
-}
-.side-group > summary .g-count {
-  flex-shrink: 0;
-  min-width: 16px;
-  padding: 1px 5px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.09);
-  color: #9a9aa0;
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
+  background: #8e8e93;
 }
 
-/*
- * The rail is the "these belong to the group above" cue: every item hangs off
- * one vertical line, indented past the header's own text.
- */
 .side-items {
-  padding: 4px 8px 7px 0;
-  margin-left: 18px;
-  border-left: 1px solid rgba(255, 255, 255, 0.16);
-}
-.side-group[open] > summary {
-  /* Let the rail meet the header instead of floating below it. */
-  border-bottom-color: rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 2px;
 }
 
+/* ── A service: one 30px line ─────────────────────────────────── */
 .side-item {
-  /* Two columns: everything about the service on the left, over two rows, and
-     the run control on the right spanning both. The counters and the clock had
-     been sharing one line with the name, which left them wrapping mid-badge. */
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
+  position: relative;
+  display: flex;
   align-items: center;
-  column-gap: 10px;
-  row-gap: 5px;
-  position: relative; /* anchors .s-open, which is the row's real hit target */
-  width: calc(100% - 6px);
-  text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
+  gap: 6px;
+  height: 30px;
+  padding: 0 6px 0 10px;
   border-radius: 7px;
-  box-sizing: border-box;
-  padding: 7px 9px;
-  margin: 1px 0 1px 6px;
-  color: #e5e5e7;
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
+  color: #d1d1d6;
+  font-size: 13px;
 }
 .side-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
 }
 .side-item.active {
-  background: rgba(10, 132, 255, 0.22);
-  border-color: rgba(10, 132, 255, 0.45);
+  background: rgba(10, 132, 255, 0.16);
+  color: #fff;
+}
+/* Stopped services follow the running ones, dimmed. */
+.side-item.stopped {
+  color: #636366;
+}
+.side-item.stopped:hover {
+  color: #a1a1a6;
 }
 .side-item .dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: #5a5a5f;
+  background: #3a3a3c;
 }
 .side-item .dot.running {
-  background: #30d158;
-}
-.side-item .dot.warn {
-  background: #ffd60a;
-}
-.side-item .dot.error {
-  background: #ff453a;
+  background: #34c759;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.2);
 }
 .side-item .dot.starting,
 .side-item .dot.stopping {
-  background: #0a84ff;
+  background: #8e8e93;
+  animation: dot-pulse 1s ease-in-out infinite alternate;
 }
-.side-item .s-ico {
-  flex-shrink: 0;
-  font-size: 12px;
+@keyframes dot-pulse {
+  to {
+    opacity: 0.35;
+  }
 }
+/* The whole row opens it; the controls on top of it stay their own. */
 .side-item .s-open {
-  /* The button that opens the log, underneath everything. Making the ROW a
-     button would nest the run control and the counters inside it, which HTML
-     forbids; this keeps one hit target without lying about the tree. */
   position: absolute;
   inset: 0;
-  z-index: 0;
-  background: transparent;
   border: 0;
   border-radius: inherit;
-  padding: 0;
+  background: transparent;
   cursor: pointer;
 }
 .side-item .s-open:focus-visible {
-  outline: 2px solid #0a84ff;
+  outline: 2px solid var(--sil-accent);
   outline-offset: -2px;
 }
 .side-item .s-head,
 .side-item .s-badges,
 .side-item .s-run {
   position: relative;
-  z-index: 1;
-}
-/* Text is not a target: let clicks through to the button underneath. Only the
-   counters and the run control take pointer events of their own. */
-.side-item .s-head,
-.side-item .s-badges {
-  pointer-events: none;
-}
-.side-item .s-badges .b,
-.side-item .s-run {
-  pointer-events: auto;
 }
 .side-item .s-head {
-  grid-area: 1 / 1;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0; /* so a long name ellipsises instead of pushing the column */
+  gap: 9px;
+  pointer-events: none;
 }
 .side-item .s-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.side-item .s-badges {
-  grid-area: 2 / 1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  /* A row of its own: the badges get real breathing room, and the runtime no
-     longer has to break between its minutes and its seconds. */
-  gap: 3px 12px;
-  padding-left: 15px; /* line up under the name, past the dot and the icon */
-  font-size: 10px;
-  color: #8e8e93;
-  font-variant-numeric: tabular-nums;
-}
-.side-item .s-badges .b {
+.side-item .s-run {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  /* As buttons these are wider than the old spans, and three of them plus the
-     runtime no longer fit 244px. Without this each one breaks between its icon
-     and its number instead of the ROW wrapping. */
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.side-item .s-badges .b.warn {
-  color: #ffd60a;
-}
-.side-item .s-badges .b.err {
-  color: #ff6961;
-}
-.side-item .s-badges .b.time.live {
-  color: #7eea9f;
-}
-.side-item .s-run {
-  grid-area: 1 / 2 / 3 / 3; /* its own column, centred across both rows */
-  align-self: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: #c8c8cc;
+  color: #a1a1a6;
   font-size: 11px;
-  line-height: 1;
-  padding: 6px 7px;
   cursor: pointer;
-  visibility: hidden;
+  opacity: 0;
 }
 .side-item:hover .s-run,
-.side-item .s-run.on {
-  visibility: visible;
+.side-item .s-run:focus-visible {
+  opacity: 1;
 }
 .side-item .s-run:hover {
   background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
-.side-item.hidden {
+.side-item .s-run.on {
+  color: #ff6961;
+}
+.side-item.hidden,
+.side-group.hidden {
   display: none;
 }
-.side-group.hidden {
+/* Folded behind «+ N parados» — unless a search is looking for it. */
+#side-tree:not(.searching) .side-item.folded {
+  display: none;
+}
+.s-fold {
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #636366;
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.s-fold:hover {
+  color: #d1d1d6;
+}
+.s-fold:focus-visible {
+  outline: 2px solid var(--sil-accent);
+}
+.s-fold[hidden],
+#side-tree.searching .s-fold {
   display: none;
 }
 
@@ -1317,48 +1316,38 @@ footer {
   color: #e5e5e7;
 }
 .side-group.viewing > summary {
-  background: rgba(10, 132, 255, 0.28);
+  background: rgba(10, 132, 255, 0.16);
   color: #fff;
 }
 
-/* ── Counters that are also doors ───────────────────────────────── */
+/* ── Counters that are also doors: pills, only when non-zero ────── */
 .b.clickable {
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  font-family: inherit;
-  font-size: 10px;
-  padding: 0 3px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
   margin: 0;
+  border: 0;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
 }
+.b.clickable.warn {
+  color: #ffb340;
+  background: rgba(255, 159, 10, 0.14);
+}
+.b.clickable.err {
+  color: #ff6961;
+  background: rgba(255, 69, 58, 0.14);
+}
 .b.clickable:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-/* Group header: name over its group-wide counters. */
-.side-group > summary .g-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.side-group > summary .g-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-  color: #8e8e93;
-  font-variant-numeric: tabular-nums;
-}
-.side-group > summary .g-badges:empty {
-  display: none;
+  filter: brightness(1.25);
 }
 
 /* ── Source tags on merged rows ─────────────────────────────────── */
@@ -1407,43 +1396,32 @@ footer {
 .side-all {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  text-align: left;
-  padding: 8px 10px;
+  height: 30px;
+  margin-top: 2px;
+  padding: 0 6px 0 10px;
   border: none;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
-  background: #2b2b30;
-  color: #e8e8ea;
+  border-radius: 7px;
+  background: transparent;
+  color: #d1d1d6;
   font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
 }
 .side-all:hover {
-  background: #35353a;
+  background: rgba(255, 255, 255, 0.05);
 }
 .side-all.active {
-  background: rgba(10, 132, 255, 0.28);
+  background: rgba(10, 132, 255, 0.16);
   color: #fff;
 }
 .side-all .a-ico {
   flex-shrink: 0;
-  font-size: 11px;
+  color: #a1a1a6;
+  font-size: 13px;
 }
 .side-all .a-name {
   flex: 1;
-}
-.side-all .a-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-  color: #8e8e93;
-  font-variant-numeric: tabular-nums;
 }

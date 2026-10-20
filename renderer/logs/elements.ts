@@ -58,6 +58,10 @@ export const sideFilterEl = byId<HTMLInputElement>(
   'side-filter',
   HTMLInputElement,
 );
+export const sideFilterKeyEl = byId<HTMLElement>(
+  'side-filter-key',
+  HTMLElement,
+);
 export const toggleSidebarBtn = byId<HTMLButtonElement>(
   'toggle-sidebar',
   HTMLButtonElement,

@@ -309,6 +309,28 @@ describe('renderer/logs/scope.ts', () => {
         expect(spy.mock.contexts.at(-1)).toBe(row('web'));
       });
 
+      it('opens the «+ N parados» fold a stopped service is hidden behind', async () => {
+        elements.sideTreeEl.innerHTML = [
+          '<details class="side-group" data-group-id="g1" open>',
+          '<summary>Back</summary>',
+          '<div class="side-items">',
+          '<div class="side-item" data-id="api"></div>',
+          '<button class="s-fold" type="button">+ 1 parados</button>',
+          '<div class="side-item folded" data-id="web"></div>',
+          '</div>',
+          '</details>',
+        ].join('');
+        const spy = vi.spyOn(Element.prototype, 'scrollIntoView');
+        await scope.selectLog('web');
+        expect(row('web')?.classList.contains('folded')).toBe(false);
+        expect(
+          elements.sideTreeEl.querySelector<HTMLElement>('.s-fold')?.hidden,
+        ).toBe(true);
+        // Remembered, so the next repaint does not fold it straight back.
+        expect(localStorage.getItem('devbar.logs.stopped.g1')).toBe('open');
+        expect(spy.mock.contexts.at(-1)).toBe(row('web'));
+      });
+
       it('follows a new target into view in a window that was already open', async () => {
         buildFoldedSidebar();
         await scope.selectLog('api');

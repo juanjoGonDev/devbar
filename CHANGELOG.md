@@ -66,6 +66,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   final; al subir o pulsarlo pasa a «En pausa · N nuevas», y pulsarlo de nuevo
   te devuelve al final. Vaciar, Copiar y Separar ventana están en el menú «⋯».
 
+- **Lista de servicios más compacta en los logs.** Cada servicio ocupa una
+  línea: su punto de estado y los avisos y errores solo si los hay. En cada
+  grupo van primero los que están en marcha y después, atenuados, los parados;
+  si hay más de tres parados, el resto se pliega en «+ N parados». La cabecera
+  del grupo dice cuántos van en marcha («1/8») y ⌘K (Ctrl+K) lleva al
+  buscador de servicios.
+
 - **Silenciados, en un popover sobre el log.** En la ventana de logs, el
   botón de la campana (con cuántas reglas hay) abre un popover flotante que no
   le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un

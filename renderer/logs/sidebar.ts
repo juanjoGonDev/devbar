@@ -20,7 +20,13 @@ import {
   paintGroupSummary,
   paintSideItem,
 } from './sidebar-rows.js';
-import { sideFilterEl, sideTreeEl, toggleSidebarBtn } from './elements.js';
+import { layoutGroupItems } from './sidebar-fold.js';
+import {
+  sideFilterEl,
+  sideFilterKeyEl,
+  sideTreeEl,
+  toggleSidebarBtn,
+} from './elements.js';
 import { view } from './view.js';
 
 function renderSidebar(): void {
@@ -68,7 +74,12 @@ function repaintSidebar(): boolean {
     const details = sideTreeEl.querySelector<HTMLElement>(
       `.side-group[data-group-id="${CSS.escape(group.groupId)}"]`,
     );
-    if (details) paintGroupSummary(details, group);
+    if (details) {
+      // A service starting or stopping moves between the halves of its group.
+      if (group.groupId !== PIPELINE_LOG_GROUP_ID)
+        layoutGroupItems(details, group);
+      paintGroupSummary(details, group);
+    }
   }
   return true;
 }
@@ -81,6 +92,9 @@ function sideSignature(): string {
 
 function applySideFilter(): void {
   const needle = sideFilterEl.value.trim().toLowerCase();
+  // A search looks behind the «+ N parados» fold too: the match you typed
+  // for must not stay folded away.
+  sideTreeEl.classList.toggle('searching', Boolean(needle));
   for (const details of Array.from(
     sideTreeEl.querySelectorAll<HTMLElement>('.side-group'),
   )) {
@@ -96,8 +110,6 @@ function applySideFilter(): void {
       row.classList.toggle('hidden', !ok);
       if (ok) visible += 1;
     }
-    const count = details.querySelector<HTMLElement>('.g-count');
-    if (count) count.textContent = String(visible);
     details.classList.toggle('hidden', visible === 0);
     if (needle && visible > 0 && details instanceof HTMLDetailsElement)
       details.open = true;
@@ -165,6 +177,22 @@ toggleSidebarBtn.addEventListener('click', () => {
 });
 
 sideFilterEl.addEventListener('input', applySideFilter);
+
+// The hint names the key this platform actually uses.
+sideFilterKeyEl.textContent =
+  window.api.platform === 'darwin' ? '⌘K' : 'Ctrl+K';
+
+// ⌘K / Ctrl+K jumps to the service search, from anywhere in the window.
+document.addEventListener('keydown', (event) => {
+  if (logsParams.isDetached) return;
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k')
+    return;
+  event.preventDefault();
+  if (document.body.classList.contains('sidebar-collapsed'))
+    toggleSidebarBtn.click(); // a hidden box cannot take the focus
+  sideFilterEl.focus();
+  sideFilterEl.select();
+});
 
 // One ticker for every live duration on screen (header + sidebar rows).
 setInterval(() => {

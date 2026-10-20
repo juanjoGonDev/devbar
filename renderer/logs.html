@@ -15,11 +15,17 @@
     <div class="shell">
       <aside id="sidebar">
         <div class="side-head">
-          <input
-            id="side-filter"
-            type="search"
-            placeholder="Buscar servicio…"
-          />
+          <label class="side-search">
+            <span class="icon side-search-ico" data-icon="search"></span>
+            <input
+              id="side-filter"
+              type="search"
+              placeholder="Buscar servicio"
+              aria-label="Buscar servicio"
+              aria-keyshortcuts="Meta+K Control+K"
+            />
+            <kbd id="side-filter-key" class="side-kbd">⌘K</kbd>
+          </label>
         </div>
         <div id="side-tree"></div>
       </aside>

@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { iconText } from './helpers/icon-text.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountLogsDom } from './helpers/logs-dom.js';
@@ -141,9 +140,7 @@ describe('renderer/logs/sidebar.ts', () => {
       expect(elements.sideTreeEl.getElementsByClassName('side-item')[0]).toBe(
         row,
       );
-      expect(iconText(row?.getElementsByClassName('s-badges')[0])).toBe(
-        '[triangle-alert] 3',
-      );
+      expect(row?.getElementsByClassName('s-badges')[0]?.textContent).toBe('3');
     });
 
     it('refreshes the root row on the fast path, which nothing rebuilds', async () => {
@@ -156,8 +153,8 @@ describe('renderer/logs/sidebar.ts', () => {
       await sidebar.refreshSidebar();
       await sidebar.refreshSidebar();
       expect(
-        iconText(elements.sideTreeEl.getElementsByClassName('a-badges')[0]),
-      ).toBe('[triangle-alert] 4');
+        elements.sideTreeEl.getElementsByClassName('a-badges')[0]?.textContent,
+      ).toBe('4');
     });
 
     it('rebuilds when a service appeared', async () => {
@@ -251,12 +248,10 @@ describe('renderer/logs/sidebar.ts', () => {
       expect(hiddenItems()).toEqual(['b']);
     });
 
-    it('counts what survived, next to the group name', () => {
-      elements.sideFilterEl.value = 'ap';
-      elements.sideFilterEl.dispatchEvent(new Event('input'));
+    it('says next to the group name how many of it are running', () => {
       expect(
         elements.sideTreeEl.getElementsByClassName('g-count')[0]?.textContent,
-      ).toBe('1');
+      ).toBe('0/2');
     });
 
     it('folds away a group with nothing left in it', () => {
@@ -304,6 +299,133 @@ describe('renderer/logs/sidebar.ts', () => {
     });
   });
 
+  describe('running first, the stopped tail folded', () => {
+    const many = (): LogListGroup =>
+      group({
+        items: [
+          item({ id: 'a' }),
+          item({ id: 'b' }),
+          item({ id: 'on', status: 'running' }),
+          item({ id: 'c' }),
+          item({ id: 'd' }),
+          item({ id: 'e' }),
+        ],
+      });
+
+    function foldedIds(): string[] {
+      return Array.from(
+        elements.sideTreeEl.querySelectorAll<HTMLElement>('.side-item.folded'),
+        (row) => row.dataset.id ?? '',
+      );
+    }
+
+    function fold(): HTMLButtonElement {
+      return elements.sideTreeEl.querySelector('.s-fold') as HTMLButtonElement;
+    }
+
+    it('lists the running services before the stopped ones', async () => {
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      expect(itemIds()).toEqual(['on', 'a', 'b', 'c', 'd', 'e']);
+    });
+
+    it('folds the stopped ones past the first three into «+ N parados»', async () => {
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      expect(foldedIds()).toEqual(['d', 'e']);
+      expect(fold().hidden).toBe(false);
+      expect(fold().textContent).toBe('+ 2 parados');
+      // The button sits where the hidden rows begin.
+      expect(fold().nextElementSibling?.getAttribute('data-id')).toBe('d');
+    });
+
+    it('opens the fold on a click, and remembers it per group', async () => {
+      willList([many()], [many()]);
+      await sidebar.refreshSidebar();
+      fold().click();
+      expect(foldedIds()).toEqual([]);
+      expect(fold().hidden).toBe(true);
+      await open();
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      expect(foldedIds()).toEqual(['d', 'e']); // a fresh window, fresh storage
+      localStorage.setItem('devbar.logs.stopped.g1', 'open');
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      expect(foldedIds()).toEqual([]);
+    });
+
+    it('needs no fold for three stopped services or fewer', async () => {
+      willList([
+        group({
+          items: [item({ id: 'a' }), item({ id: 'b' }), item({ id: 'c' })],
+        }),
+      ]);
+      await sidebar.refreshSidebar();
+      expect(foldedIds()).toEqual([]);
+      expect(fold().hidden).toBe(true);
+    });
+
+    it('moves a service that started to the top, keeping the same row', async () => {
+      const started = many();
+      started.items = started.items.map((one) =>
+        one.id === 'e' ? { ...one, status: 'running' } : one,
+      );
+      willList([many()], [started]);
+      await sidebar.refreshSidebar();
+      const row = elements.sideTreeEl.querySelector('[data-id="e"]');
+      await sidebar.refreshSidebar();
+      expect(itemIds()).toEqual(['on', 'e', 'a', 'b', 'c', 'd']);
+      expect(elements.sideTreeEl.querySelector('[data-id="e"]')).toBe(row);
+      expect(foldedIds()).toEqual(['d']);
+    });
+
+    it('a search looks behind the fold', async () => {
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      elements.sideFilterEl.value = 'e';
+      elements.sideFilterEl.dispatchEvent(new Event('input'));
+      expect(elements.sideTreeEl.classList.contains('searching')).toBe(true);
+      elements.sideFilterEl.value = '';
+      elements.sideFilterEl.dispatchEvent(new Event('input'));
+      expect(elements.sideTreeEl.classList.contains('searching')).toBe(false);
+    });
+  });
+
+  describe('the ⌘K shortcut', () => {
+    function press(init: KeyboardEventInit): KeyboardEvent {
+      const event = new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      document.dispatchEvent(event);
+      return event;
+    }
+
+    it('focuses the service search, with ⌘ or Ctrl', () => {
+      expect(press({ key: 'k', metaKey: true }).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(elements.sideFilterEl);
+      elements.sideFilterEl.blur();
+      press({ key: 'K', ctrlKey: true });
+      expect(document.activeElement).toBe(elements.sideFilterEl);
+    });
+
+    it('opens a collapsed sidebar first, so the box can take the focus', () => {
+      elements.toggleSidebarBtn.click();
+      press({ key: 'k', metaKey: true });
+      expect(document.body.classList.contains('sidebar-collapsed')).toBe(false);
+    });
+
+    it('leaves a plain K alone', () => {
+      expect(press({ key: 'k' }).defaultPrevented).toBe(false);
+    });
+
+    it('names the key this platform uses', () => {
+      expect(elements.sideFilterKeyEl.textContent).toBe('Ctrl+K');
+    });
+  });
+
   describe('hiding the sidebar', () => {
     it('starts open, and says what pressing the control would do', () => {
       expect(document.body.classList.contains('sidebar-collapsed')).toBe(false);
@@ -338,18 +460,20 @@ describe('renderer/logs/sidebar.ts', () => {
   });
 
   describe('the one-second ticker', () => {
-    it('keeps the live durations on screen moving', async () => {
-      vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 0));
-      const started = Date.now() - 1000;
-      willList([
-        group({ items: [item({ status: 'running', startedAt: started })] }),
-      ]);
+    it('keeps the running/total count of a group current', async () => {
+      willList(
+        [group({ items: [item({ id: 'a' }), item({ id: 'b' })] })],
+        [
+          group({
+            items: [item({ id: 'a', status: 'running' }), item({ id: 'b' })],
+          }),
+        ],
+      );
       await sidebar.refreshSidebar();
-      const clock = (): string =>
-        iconText(elements.sideTreeEl.getElementsByClassName('b time')[0]);
-      expect(clock()).toBe('[timer] 1s');
-      vi.advanceTimersByTime(4000);
-      expect(clock()).toBe('[timer] 5s');
+      await sidebar.refreshSidebar();
+      expect(
+        elements.sideTreeEl.getElementsByClassName('g-count')[0]?.textContent,
+      ).toBe('1/2');
     });
 
     it('does not touch the tree of a detached window', async () => {
