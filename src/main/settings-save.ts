@@ -14,6 +14,8 @@ export interface SettingsSaveDeps {
   applyAutostart: (enabled: boolean) => void;
   refreshWindowBackgrounds: () => void;
   sendTheme: (theme: ThemePreference) => void;
+  /** Pushes the saved settings to every window (the tray's group fold). */
+  sendSettings: (settings: GlobalSettings) => void;
   broadcast: () => void;
 }
 
@@ -32,6 +34,7 @@ export function saveSettings(
     // thread.
     deps.sendTheme(next.theme);
   }
+  deps.sendSettings(next);
   deps.broadcast();
   return next;
 }

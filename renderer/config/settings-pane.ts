@@ -1,5 +1,6 @@
 import { DEFAULT_MAX_LOG_LINES } from '../../src/domain-types.js';
 import type { ThemePreference } from '../../src/domain-types.js';
+import { wireNumberStepper } from './number-stepper.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 export interface SettingsPaneElements {
@@ -9,6 +10,8 @@ export interface SettingsPaneElements {
   silenceErrors: HTMLInputElement;
   maxLogLines: HTMLInputElement;
   notifySuccess: HTMLInputElement;
+  showHiddenGroupsFold: HTMLInputElement;
+  showHiddenWorkflowsFold: HTMLInputElement;
   notifHint: HTMLElement;
   openNotifSettings: HTMLButtonElement;
   testNotify: HTMLButtonElement;
@@ -30,6 +33,9 @@ export function createSettingsPane(
   showToast: ShowToast,
 ): SettingsPane {
   let settingsLoaded = false;
+  // Wired before the save listeners below, so a typed value is clamped
+  // before persistSettings reads it.
+  const logLinesStepper = wireNumberStepper(els.maxLogLines);
   // Theme picker: segmented control, persists on click (same as the other
   // instant-save controls). Main pushes the saved theme on `settings:theme`, so
   // the change propagates to all open windows (and to this one).
@@ -73,12 +79,14 @@ export function createSettingsPane(
     markThemeOption();
     els.silenceWarnings.checked = !!s.silenceWarnings;
     els.silenceErrors.checked = !!s.silenceErrors;
-    if (els.maxLogLines)
-      els.maxLogLines.value = String(
-        s.maxLogLines != null ? s.maxLogLines : DEFAULT_MAX_LOG_LINES,
-      );
+    els.maxLogLines.value = String(
+      s.maxLogLines != null ? s.maxLogLines : DEFAULT_MAX_LOG_LINES,
+    );
+    logLinesStepper.refresh();
     if (els.notifySuccess)
       els.notifySuccess.checked = s.notifySuccess !== false;
+    els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;
+    els.showHiddenWorkflowsFold.checked = s.showHiddenWorkflowsFold === true;
     settingsLoaded = true;
     return true;
   }
@@ -100,6 +108,8 @@ export function createSettingsPane(
       silenceErrors: els.silenceErrors.checked,
       maxLogLines,
       notifySuccess: els.notifySuccess ? els.notifySuccess.checked : true,
+      showHiddenGroupsFold: els.showHiddenGroupsFold.checked,
+      showHiddenWorkflowsFold: els.showHiddenWorkflowsFold.checked,
     });
     showToast('Ajustes guardados', 'ok');
   }
@@ -121,26 +131,24 @@ export function createSettingsPane(
       els.autostartHint.textContent = `Registra DevBar en ${osMechanism}. Solo aplica a la app empaquetada/instalada.`;
     }
 
-    if (els.notifHint && els.openNotifSettings) {
-      let text: string;
+    if (els.notifHint) {
+      let hint: string;
+      let button = 'Abrir ajustes';
       if (platform === 'darwin') {
-        text =
-          '¿No se ven las notificaciones? macOS pide permiso una sola vez por app. Compruébalo en ';
-        els.openNotifSettings.textContent =
-          'Ajustes del sistema → Notificaciones';
+        hint =
+          'macOS pide permiso una sola vez por app: revísalo en Ajustes del sistema → Notificaciones.';
       } else if (platform === 'win32') {
-        text =
-          '¿No se ven las notificaciones? Windows gestiona el permiso por app. Compruébalo en ';
-        els.openNotifSettings.textContent =
-          'Configuración → Sistema → Notificaciones';
+        hint =
+          'Windows gestiona el permiso por app en Configuración → Sistema → Notificaciones.';
+        button = 'Abrir Configuración';
       } else {
-        text =
-          '¿No se ven las notificaciones? El panel depende de tu escritorio (GNOME: Ajustes → Notificaciones; KDE: Configuración del sistema → Notificaciones). Puedes abrir ';
-        els.openNotifSettings.textContent = 'los ajustes del sistema';
+        hint =
+          'Depende de tu escritorio (GNOME: Ajustes → Notificaciones; KDE: Configuración del sistema → Notificaciones).';
       }
-      els.notifHint.textContent = text;
-      els.notifHint.appendChild(els.openNotifSettings);
-      els.notifHint.appendChild(document.createTextNode('.'));
+      els.notifHint.textContent = hint;
+      // Only the label: the button keeps its trailing external-link icon.
+      const label = els.openNotifSettings?.querySelector('.btn-label');
+      if (label) label.textContent = button;
     }
   }
 
@@ -225,6 +233,8 @@ export function createSettingsPane(
   }
   if (els.notifySuccess)
     els.notifySuccess.addEventListener('change', persistSettings);
+  els.showHiddenGroupsFold.addEventListener('change', persistSettings);
+  els.showHiddenWorkflowsFold.addEventListener('change', persistSettings);
 
   adaptOsTexts();
 

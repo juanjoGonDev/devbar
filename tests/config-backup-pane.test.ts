@@ -7,6 +7,7 @@ import {
   openConfigWindow,
 } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
+import { startupEntries } from './helpers/startup-workflow.js';
 
 function click(id: string): void {
   document
@@ -151,7 +152,10 @@ describe('renderer/config/backup-pane.ts', () => {
       await answerBystanderSettingsReads(win);
       await win.settle('getSettings', { theme: 'auto', maxLogLines: 500 });
       await win.settle('listGroups', [group('api')]);
-      await win.settle('getPreSteps', []);
+      await win.settle(
+        'listWorkflows',
+        startupEntries({ blocks: [], edges: [] }),
+      );
       click('import-config');
       await win.settle('importConfig', {
         ok: true,
@@ -162,7 +166,6 @@ describe('renderer/config/backup-pane.ts', () => {
       await win.settle('applyImportedConfig', { ok: true });
       await win.settle('getSettings', { theme: 'auto', maxLogLines: 900 });
       await win.settle('listGroups', [group('web')]);
-      await win.settle('getPreSteps', []);
       expect(toastText()).toBe('Configuración importada');
       expect(toastKind()).toContain('ok');
       expect(
@@ -175,7 +178,10 @@ describe('renderer/config/backup-pane.ts', () => {
       await answerBystanderSettingsReads(win);
       await win.settle('getSettings', { theme: 'auto', maxLogLines: 500 });
       await win.settle('listGroups', [group('api')]);
-      await win.settle('getPreSteps', []);
+      await win.settle(
+        'listWorkflows',
+        startupEntries({ blocks: [], edges: [] }),
+      );
       click('import-config');
       await win.settle('importConfig', {
         ok: true,
@@ -186,7 +192,6 @@ describe('renderer/config/backup-pane.ts', () => {
       await win.settle('applyImportedConfig', { ok: true });
       await win.fail('getSettings', new Error('store locked'));
       await win.settle('listGroups', []);
-      await win.settle('getPreSteps', []);
       expect(toastText()).toContain('reenfoca la ventana');
       expect(toastKind()).toContain('error');
     });

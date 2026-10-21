@@ -84,11 +84,109 @@ describe('renderer/logs/pane.ts', () => {
       expect(elements.countsEl.textContent).toBe('3 líneas');
     });
 
+    it('says how many held lines a rule silenced', () => {
+      pane.resetBuffer([
+        entry('a'),
+        entry('b', { originalLevel: 'warn', silenced: true }),
+        entry('c', { originalLevel: 'error', silenced: true }),
+      ]);
+      expect(elements.countsEl.textContent).toBe('3 líneas · 2 silenciadas');
+    });
+
     it('says how many of how many once a filter narrows it', () => {
       pane.resetBuffer([entry('api ok'), entry('web ok'), entry('api mal')]);
       elements.filterEl.value = 'api';
       pane.applyFilter();
       expect(elements.countsEl.textContent).toBe('2 de 3 líneas');
+    });
+  });
+
+  describe('stack traces', () => {
+    const crash = (): LogEntry[] => [
+      entry('Error: socket hang up', { level: 'error' }),
+      entry('    at a (x:1)'),
+      entry('    at b (x:2)'),
+      entry('    at c (x:3)'),
+      entry('listo'),
+    ];
+
+    function rowOf(text: string): HTMLElement | undefined {
+      return drawnRows().find((row) => row.dataset.line === text);
+    }
+
+    function foldButton(): HTMLElement | null {
+      return elements.linesEl.querySelector<HTMLElement>('.fold-toggle');
+    }
+
+    it('folds the frames under their message as «+N líneas de stack»', () => {
+      pane.resetBuffer(crash());
+      const fold = rowOf('    at a (x:1)');
+      expect(fold?.classList.contains('stack-fold')).toBe(true);
+      expect(foldButton()?.textContent).toContain('+3 líneas de stack');
+      // The first frame is the one worth a glance, so it stays readable.
+      expect(fold?.querySelector('.fold-first')?.textContent).toBe(
+        'at a (x:1)',
+      );
+      expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(true);
+      expect(rowOf('    at c (x:3)')?.classList.contains('folded')).toBe(true);
+      expect(rowOf('listo')?.classList.contains('folded')).toBe(false);
+    });
+
+    it('opens on a press, and stays open across a repaint', () => {
+      pane.resetBuffer(crash());
+      foldButton()?.click();
+      expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(false);
+      expect(rowOf('    at a (x:1)')?.classList.contains('stack-fold')).toBe(
+        false,
+      );
+      pane.applyFilter(); // a full repaint
+      expect(rowOf('    at c (x:3)')?.classList.contains('folded')).toBe(false);
+      foldButton()?.click();
+      expect(rowOf('    at c (x:3)')?.classList.contains('folded')).toBe(true);
+    });
+
+    it('draws the frames of an opened stack without a badge of their own', () => {
+      pane.resetBuffer(crash());
+      foldButton()?.click();
+      expect(rowOf('    at b (x:2)')?.querySelector('.lv')?.textContent).toBe(
+        '',
+      );
+      expect(
+        rowOf('Error: socket hang up')?.querySelector('.lv')?.textContent,
+      ).toBe('ERR');
+    });
+
+    it('does not select the row when the fold is pressed', () => {
+      pane.resetBuffer(crash());
+      const event = new MouseEvent('click', { bubbles: true });
+      const stop = vi.spyOn(event, 'stopPropagation');
+      foldButton()?.dispatchEvent(event);
+      expect(stop).toHaveBeenCalled();
+    });
+
+    it('counts a frame that arrives at the tail into the folded block', () => {
+      stubScroll();
+      pane.resetBuffer(crash().slice(0, 4));
+      pane.pushEntry(entry('    at d (x:4)'));
+      expect(foldButton()?.textContent).toContain('+4 líneas de stack');
+      expect(rowOf('    at d (x:4)')?.classList.contains('folded')).toBe(true);
+    });
+
+    it('starts folding once a second frame arrives', () => {
+      stubScroll();
+      pane.resetBuffer(crash().slice(0, 2));
+      expect(foldButton()).toBeNull();
+      pane.pushEntry(entry('    at b (x:2)'));
+      expect(foldButton()?.textContent).toContain('+2 líneas de stack');
+    });
+
+    it('shows a folded line the search finds, by opening its block', () => {
+      pane.resetBuffer(crash());
+      elements.filterEl.value = 'at b';
+      pane.applyFilter();
+      expect(drawnText()).toEqual(['    at b (x:2)']);
+      expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(false);
+      expect(foldButton()).toBeNull();
     });
   });
 
@@ -123,25 +221,55 @@ describe('renderer/logs/pane.ts', () => {
   });
 
   describe('the level pin', () => {
-    it('shows the escape hatch, named after what it is hiding', () => {
+    function pressed(chip: HTMLElement): boolean {
+      return chip.getAttribute('aria-pressed') === 'true';
+    }
+
+    it('marks the chip of the level the view is pinned to', () => {
       pane.setLevelFilter(['warn']);
-      expect(elements.levelPillEl.hidden).toBe(false);
-      expect(elements.levelPillTextEl.textContent).toBe('sólo warnings');
-      expect(elements.levelPillEl.className).toBe('level-pill warn');
+      expect(pressed(elements.levelWarnChip)).toBe(true);
+      expect(pressed(elements.levelErrorChip)).toBe(false);
+      expect(pressed(elements.levelAllBtn)).toBe(false);
     });
 
-    it('lets errors outrank warnings when it stands for both', () => {
+    it('marks both chips when an entry point pins both levels', () => {
       pane.setLevelFilter(['warn', 'error']);
-      expect(elements.levelPillTextEl.textContent).toBe(
-        'sólo warnings + errores',
-      );
-      expect(elements.levelPillEl.className).toBe('level-pill err');
+      expect(pressed(elements.levelWarnChip)).toBe(true);
+      expect(pressed(elements.levelErrorChip)).toBe(true);
     });
 
-    it('hides the pill when nothing is pinned', () => {
+    it('marks «Todo» when nothing is pinned', () => {
       pane.setLevelFilter(['warn']);
       pane.setLevelFilter([]);
-      expect(elements.levelPillEl.hidden).toBe(true);
+      expect(pressed(elements.levelAllBtn)).toBe(true);
+      expect(pressed(elements.levelWarnChip)).toBe(false);
+    });
+
+    it('counts the held warnings and errors on the chips', () => {
+      pane.resetBuffer([
+        entry('normal'),
+        entry('ojo', { originalLevel: 'warn', level: 'warn' }),
+        entry('callado', { originalLevel: 'warn', silenced: true }),
+        entry('fallo', { originalLevel: 'error', level: 'error' }),
+      ]);
+      expect(elements.levelWarnCountEl.textContent).toBe('2');
+      expect(elements.levelErrorCountEl.textContent).toBe('1');
+      pane.pushEntry(entry('otro', { originalLevel: 'error', level: 'error' }));
+      expect(elements.levelErrorCountEl.textContent).toBe('2');
+    });
+
+    it('pressing a chip pins its level alone, and pressing it again lets go', () => {
+      pane.resetBuffer([
+        entry('normal'),
+        entry('ojo', { originalLevel: 'warn' }),
+        entry('fallo', { originalLevel: 'error' }),
+      ]);
+      elements.levelErrorChip.click();
+      expect(drawnText()).toEqual(['fallo']);
+      elements.levelWarnChip.click();
+      expect(drawnText()).toEqual(['ojo']);
+      elements.levelWarnChip.click();
+      expect(drawnText()).toEqual(['normal', 'ojo', 'fallo']);
     });
 
     it('keeps only the lines of the pinned level', () => {
@@ -154,14 +282,14 @@ describe('renderer/logs/pane.ts', () => {
       expect(drawnText()).toEqual(['fallo']);
     });
 
-    it('pressing the pill drops the pin and brings everything back', () => {
+    it('pressing «Todo» drops the pin and brings everything back', () => {
       pane.resetBuffer([
         entry('normal'),
         entry('ojo', { originalLevel: 'warn' }),
       ]);
       pane.setLevelFilter(['warn']);
-      elements.levelPillEl.click();
-      expect(elements.levelPillEl.hidden).toBe(true);
+      elements.levelAllBtn.click();
+      expect(elements.levelAllBtn.getAttribute('aria-pressed')).toBe('true');
       expect(drawnText()).toEqual(['normal', 'ojo']);
     });
   });
@@ -276,16 +404,6 @@ describe('renderer/logs/pane.ts', () => {
       expect(drawn).toEqual(['la gota']);
       expect(buffer.buffer.entries).toHaveLength(5);
     });
-
-    it('mirrors a swallowed line into the drawer feed', () => {
-      pane.resetBuffer([]);
-      pane.pushEntry(
-        entry('ruido', { originalLevel: 'warn', silenced: true, level: null }),
-      );
-      const feed = document.getElementById('warn-feed');
-      expect(feed?.childElementCount).toBe(1);
-      expect(feed?.textContent).toContain('ruido');
-    });
   });
 
   describe('trimMemory', () => {
@@ -355,14 +473,13 @@ describe('renderer/logs/pane.ts', () => {
       pane.setLevelFilter(['error']);
       expect(drawnText()).toEqual(['fallo']);
 
-      elements.autoscrollEl.checked = true;
       drawnRows()[0]?.querySelector<HTMLElement>('.ts')?.click();
 
       expect(elements.filterEl.value).toBe('');
-      expect(elements.levelPillEl.hidden).toBe(true);
+      expect(view.view.levelFilter.size).toBe(0);
       expect(drawnText()).toEqual(['antes', 'fallo', 'después']);
       // Otherwise the tail yanks us straight back off the line we asked for.
-      expect(elements.autoscrollEl.checked).toBe(false);
+      expect(view.view.live.following).toBe(false);
       expect((scrolledIntoView[0] as HTMLElement).dataset.line).toBe('fallo');
     });
 
@@ -378,11 +495,11 @@ describe('renderer/logs/pane.ts', () => {
   describe('the scroll-to-bottom button', () => {
     it('hides itself while the tail is on screen, and resumes following', () => {
       pane.resetBuffer(lines(3));
-      elements.autoscrollEl.checked = false;
+      view.view.live = { following: false, cause: 'scroll', unseen: 0 };
       stubScroll({ scrollTop: 0, scrollHeight: 100, clientHeight: 100 });
       pane.updateScrollButton();
       expect(elements.scrollBtn.classList.contains('visible')).toBe(false);
-      expect(elements.autoscrollEl.checked).toBe(true);
+      expect(view.view.live.following).toBe(true);
     });
 
     it('appears when there are newer lines past the drawn window', () => {
@@ -394,29 +511,29 @@ describe('renderer/logs/pane.ts', () => {
 
     it('never resumes following while lines are selected', () => {
       pane.resetBuffer(lines(3));
-      elements.autoscrollEl.checked = false;
+      view.view.live = { following: false, cause: 'scroll', unseen: 0 };
       buffer.buffer.selected.add(0);
       stubScroll({ scrollTop: 0, scrollHeight: 100, clientHeight: 100 });
       pane.updateScrollButton();
-      expect(elements.autoscrollEl.checked).toBe(false);
+      expect(view.view.live.following).toBe(false);
     });
 
     it('moves the WINDOW to the tail, not merely the scrollbar', () => {
       pane.resetBuffer(lines(1000));
       buffer.buffer.winStart = 0;
       buffer.buffer.winEnd = 10;
-      elements.autoscrollEl.checked = false;
+      view.view.live = { following: false, cause: 'scroll', unseen: 0 };
       elements.scrollBtn.click();
       expect(drawnText().at(-1)).toBe('line 999');
-      expect(elements.autoscrollEl.checked).toBe(true);
+      expect(view.view.live.following).toBe(true);
     });
 
     it('scrolling away from the tail stops following it', () => {
       pane.resetBuffer(lines(10));
-      elements.autoscrollEl.checked = true;
       buffer.buffer.winEnd = 4;
       elements.mainEl.dispatchEvent(new Event('scroll'));
-      expect(elements.autoscrollEl.checked).toBe(false);
+      expect(view.view.live.following).toBe(false);
+      expect(elements.liveTextEl.textContent).toBe('En pausa');
     });
   });
 
@@ -481,28 +598,54 @@ describe('renderer/logs/pane.ts', () => {
     });
   });
 
-  describe('pausing', () => {
-    it('says so, and holds the lines that arrive meanwhile', async () => {
-      const status = await import('../renderer/logs/status.js');
-      pane.resetBuffer(lines(1));
-      elements.pausedEl.checked = true;
-      elements.pausedEl.dispatchEvent(new Event('change'));
-      expect(elements.statusEl.textContent).toBe('Pausado');
-      status.queueWhilePaused(entry('mientras'));
-      expect(drawnText()).toEqual(['line 0']);
+  describe('the live button', () => {
+    it('starts live', () => {
+      expect(elements.liveTextEl.textContent).toBe('En directo');
+      expect(elements.liveBtn.getAttribute('aria-pressed')).toBe('true');
     });
 
-    it('resuming flushes everything that was held, in order', async () => {
+    it('pressing it pauses, and holds the lines that arrive meanwhile', async () => {
+      const status = await import('../renderer/logs/status.js');
+      const stream = await import('../renderer/logs/stream.js');
+      pane.resetBuffer(lines(1));
+      view.view.processId = 'api';
+      elements.liveBtn.click();
+      expect(elements.liveBtn.classList.contains('paused')).toBe(true);
+      stream.receivePush({ id: 'api', entry: entry('mientras') });
+      expect(drawnText()).toEqual(['line 0']);
+      expect(status.pendingQueue).toHaveLength(1);
+      expect(elements.liveTextEl.textContent).toBe('En pausa · 1 nuevas');
+    });
+
+    it('pressing it again flushes everything that was held, in order', async () => {
       const status = await import('../renderer/logs/status.js');
       pane.resetBuffer(lines(1));
-      elements.pausedEl.checked = true;
-      elements.pausedEl.dispatchEvent(new Event('change'));
+      elements.liveBtn.click();
       status.queueWhilePaused(entry('primera'));
       status.queueWhilePaused(entry('segunda'));
-      elements.pausedEl.checked = false;
-      elements.pausedEl.dispatchEvent(new Event('change'));
+      elements.liveBtn.click();
       expect(drawnText()).toEqual(['line 0', 'primera', 'segunda']);
       expect(status.pendingQueue).toHaveLength(0);
+      expect(elements.liveTextEl.textContent).toBe('En directo');
+    });
+
+    it('counts what lands below while the reader is scrolled away', () => {
+      pane.resetBuffer(lines(10));
+      buffer.buffer.winEnd = 4;
+      elements.mainEl.dispatchEvent(new Event('scroll'));
+      pane.pushEntry(entry('nueva'));
+      pane.pushEntry(entry('otra'));
+      expect(elements.liveTextEl.textContent).toBe('En pausa · 2 nuevas');
+    });
+
+    it('pressing it while scrolled away jumps back to the tail', () => {
+      pane.resetBuffer(lines(1000));
+      buffer.buffer.winStart = 0;
+      buffer.buffer.winEnd = 10;
+      elements.mainEl.dispatchEvent(new Event('scroll'));
+      elements.liveBtn.click();
+      expect(drawnText().at(-1)).toBe('line 999');
+      expect(view.view.live.following).toBe(true);
     });
   });
 });

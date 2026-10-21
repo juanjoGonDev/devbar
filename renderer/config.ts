@@ -1,7 +1,7 @@
 import './report-uncaught.js';
 import { byId } from './dom.js';
 import { openChangelog } from './changelog.js';
-import { initPipelineEditor } from './pipeline-editor.js';
+import { createWorkflowsSection } from './workflows/section.js';
 import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
 import { hydrateIcons } from './icon.js';
@@ -11,13 +11,19 @@ import { createIconPicker } from './config/icon-picker.js';
 import { watchCustomIcons } from './custom-icons.js';
 import { createGroupStore } from './config/group-store.js';
 import { createGroupsList } from './config/groups-list.js';
+import { createGroupsSplitter } from './config/groups-splitter.js';
 import { createGroupDetail } from './config/group-detail.js';
+import { createGroupRuntime } from './config/group-runtime.js';
+import { createDeviceMenu } from './config/remote-device-menu.js';
 import { createSubLists } from './config/sub-lists.js';
 import { createSubDialog } from './config/sub-dialog.js';
+import { subDialogElements } from './config/sub-dialog-elements.js';
 import { createSidebarNav } from './config/sidebar-nav.js';
 import { createSettingsPane } from './config/settings-pane.js';
 import { wireBackupButtons } from './config/backup-pane.js';
 import { wireUpdatesPane } from './config/updates-pane.js';
+import { aboutVersionLine } from './config/about-pane.js';
+import { showReleaseNotes } from './config/about-notes.js';
 import { createRemotePane } from './config/remote-pane.js';
 import { remoteElements } from './config/remote-elements.js';
 initTheme();
@@ -34,10 +40,8 @@ const addGroupBtn = byId<HTMLButtonElement>('add-group', HTMLButtonElement);
 const iconPickerEl = byId<HTMLDivElement>('icon-picker', HTMLDivElement);
 const iconSearchEl = byId<HTMLInputElement>('icon-search', HTMLInputElement);
 const iconGridEl = byId<HTMLElement>('icon-grid', HTMLElement);
-const subDialogEl = byId<HTMLDialogElement>('sub-dialog', HTMLDialogElement);
-const subForm = byId<HTMLFormElement>('sub-form', HTMLFormElement);
-const subDialogTitle = byId<HTMLElement>('sub-dialog-title', HTMLElement);
 const toastEl = byId<HTMLElement>('toast', HTMLElement);
+const subDialogEls = subDialogElements();
 
 const setAutostart = byId<HTMLInputElement>('set-autostart', HTMLInputElement);
 const setSilenceWarnings = byId<HTMLInputElement>(
@@ -56,6 +60,14 @@ const setNotifySuccess = byId<HTMLInputElement>(
   'set-notify-success',
   HTMLInputElement,
 );
+const setShowHiddenWorkflowsFold = byId<HTMLInputElement>(
+  'set-show-hidden-workflows-fold',
+  HTMLInputElement,
+);
+const setShowHiddenGroupsFold = byId<HTMLInputElement>(
+  'set-show-hidden-groups-fold',
+  HTMLInputElement,
+);
 const testNotifyBtn = byId<HTMLButtonElement>(
   'test-notification',
   HTMLButtonElement,
@@ -71,63 +83,6 @@ const openNotifSettingsBtn = byId<HTMLButtonElement>(
   HTMLButtonElement,
 );
 
-// Sub-dialog fields
-const sfIconBtn = byId<HTMLButtonElement>('sf-icon-btn', HTMLButtonElement);
-const sfName = byId<HTMLInputElement>('sf-name', HTMLInputElement);
-const sfCommand = byId<HTMLInputElement>('sf-command', HTMLInputElement);
-const sfArgs = byId<HTMLTextAreaElement>('sf-args', HTMLTextAreaElement);
-const sfEnvEditor = byId<HTMLElement>('sf-env-editor', HTMLElement);
-const sfInheritGroupEnvRow = byId<HTMLElement>(
-  'sf-inherit-group-env-row',
-  HTMLElement,
-);
-const sfInheritGroupEnv = byId<HTMLInputElement>(
-  'sf-inherit-group-env',
-  HTMLInputElement,
-);
-const sfCwd = byId<HTMLInputElement>('sf-cwd', HTMLInputElement);
-const sfCwdPickBtn = byId<HTMLButtonElement>('sf-cwd-pick', HTMLButtonElement);
-const sfWarn = byId<HTMLInputElement>('sf-warn', HTMLInputElement);
-const sfError = byId<HTMLInputElement>('sf-error', HTMLInputElement);
-const sfSilenceWarn = byId<HTMLInputElement>(
-  'sf-silence-warn',
-  HTMLInputElement,
-);
-const sfSilenceErr = byId<HTMLInputElement>('sf-silence-err', HTMLInputElement);
-const sfMaxLogLines = byId<HTMLInputElement>(
-  'sf-max-log-lines',
-  HTMLInputElement,
-);
-const cmdOnlyFields = byId<HTMLElement>('cmd-only-fields', HTMLElement);
-const sfScheduleGroup = byId<HTMLElement>('sf-schedule-group', HTMLElement);
-const sfScheduleEnabled = byId<HTMLInputElement>(
-  'sf-schedule-enabled',
-  HTMLInputElement,
-);
-const sfScheduleRules = byId<HTMLElement>('sf-schedule-rules', HTMLElement);
-const sfScheduleAdd = byId<HTMLButtonElement>(
-  'sf-schedule-add',
-  HTMLButtonElement,
-);
-const sfScheduleDetails = byId<HTMLElement>('sf-schedule-details', HTMLElement);
-const sfTimeoutSecs = byId<HTMLInputElement>(
-  'sf-timeout-secs',
-  HTMLInputElement,
-);
-const sfTimeoutRow = byId<HTMLElement>('sf-timeout-row', HTMLElement);
-const sfConfirmRow = byId<HTMLElement>('sf-confirm-row', HTMLElement);
-const sfConfirm = byId<HTMLInputElement>('sf-confirm', HTMLInputElement);
-const sfConfirmDetails = byId<HTMLElement>('sf-confirm-details', HTMLElement);
-const sfConfirmOnTimeout = byId<HTMLSelectElement>(
-  'sf-confirm-on-timeout',
-  HTMLSelectElement,
-);
-const sfConfirmSecs = byId<HTMLInputElement>(
-  'sf-confirm-secs',
-  HTMLInputElement,
-);
-const subCancelBtn = byId<HTMLButtonElement>('sub-cancel', HTMLButtonElement);
-
 const configNav = byId<HTMLElement>('config-nav', HTMLElement);
 const windowTitleEl = byId<HTMLElement>('window-title', HTMLElement);
 const navCollapse = byId<HTMLButtonElement>('nav-collapse', HTMLButtonElement);
@@ -136,6 +91,13 @@ const groupsCollapse = byId<HTMLButtonElement>(
   HTMLButtonElement,
 );
 const groupsTwoPane = byId<HTMLElement>('groups-two-pane', HTMLElement);
+const groupsSplitterEl = byId<HTMLElement>('groups-splitter', HTMLElement);
+const workflowsListEl = byId<HTMLElement>('workflows-list-root', HTMLElement);
+const workflowsEditorEl = byId<HTMLElement>(
+  'prescripts-pipeline-root',
+  HTMLElement,
+);
+const workflowsBadgeEl = byId<HTMLElement>('workflows-badge', HTMLElement);
 
 const exportConfigBtn = byId<HTMLButtonElement>(
   'export-config',
@@ -155,17 +117,18 @@ const applyUpdateBtn = byId<HTMLButtonElement>(
   HTMLButtonElement,
 );
 const updateStatusEl = byId<HTMLElement>('update-status', HTMLElement);
+const aboutVersionEl = byId<HTMLElement>('about-version', HTMLElement);
 
 // ────────────────────── Wiring ─────────────────────────────────────────
-// Set once below — disjoint state from the group draft, per the pipeline
+// Set once below — disjoint state from the group draft, per the workflow
 // editor's decoupling contract.
-let pipelineEditor: ReturnType<typeof initPipelineEditor> | null = null;
+let workflows: ReturnType<typeof createWorkflowsSection> | null = null;
 
-/** Re-reads the pipeline from main, where referential-integrity pruning
- * already ran — called after a group-side save that can affect the global
- * pipeline (deleting a group or a pre-script definition prunes its refs). */
+/** Re-reads the open workflow from main, where referential-integrity pruning
+ * already ran — called after a group-side save that can affect a workflow
+ * (deleting a group or a pre-script definition prunes its refs). */
 async function refreshPipeline(): Promise<void> {
-  if (pipelineEditor) await pipelineEditor.refresh();
+  if (workflows) await workflows.refresh();
 }
 
 const showToast = createToast(toastEl);
@@ -174,7 +137,7 @@ const iconPicker = createIconPicker({
   picker: iconPickerEl,
   search: iconSearchEl,
   grid: iconGridEl,
-  dialog: subDialogEl,
+  dialog: subDialogEls.els.dialog,
 });
 const openIconPicker = (
   anchorEl: HTMLElement,
@@ -184,17 +147,18 @@ const openIconPicker = (
 // picker re-lists the library.
 watchCustomIcons(() => iconPicker.refresh());
 
-const schedule = createScheduleEditor({
-  group: sfScheduleGroup,
-  enabled: sfScheduleEnabled,
-  rules: sfScheduleRules,
-  add: sfScheduleAdd,
-  details: sfScheduleDetails,
-});
+const schedule = createScheduleEditor(subDialogEls.schedule);
 
 const store = createGroupStore({
   showToast,
   renderGroupDetail: () => groupDetail.render(),
+});
+
+const groupsSplitter = createGroupsSplitter({
+  twoPane: groupsTwoPane,
+  pane: groupsListEl.parentElement ?? groupsListEl,
+  handle: groupsSplitterEl,
+  listEl: groupsListEl,
 });
 
 const groupsList = createGroupsList({
@@ -202,38 +166,12 @@ const groupsList = createGroupsList({
   store,
   showToast,
   renderGroupDetail: () => groupDetail.render(),
+  onRendered: () => groupsSplitter.refresh(),
 });
 const loadGroups = () => groupsList.load();
 
 const subDialog = createSubDialog({
-  els: {
-    dialog: subDialogEl,
-    form: subForm,
-    title: subDialogTitle,
-    cancel: subCancelBtn,
-    iconBtn: sfIconBtn,
-    name: sfName,
-    command: sfCommand,
-    args: sfArgs,
-    envEditor: sfEnvEditor,
-    inheritGroupEnvRow: sfInheritGroupEnvRow,
-    inheritGroupEnv: sfInheritGroupEnv,
-    cwd: sfCwd,
-    cwdPick: sfCwdPickBtn,
-    warn: sfWarn,
-    error: sfError,
-    silenceWarn: sfSilenceWarn,
-    silenceErr: sfSilenceErr,
-    maxLogLines: sfMaxLogLines,
-    cmdOnlyFields,
-    timeoutRow: sfTimeoutRow,
-    timeoutSecs: sfTimeoutSecs,
-    confirmRow: sfConfirmRow,
-    confirm: sfConfirm,
-    confirmDetails: sfConfirmDetails,
-    confirmOnTimeout: sfConfirmOnTimeout,
-    confirmSecs: sfConfirmSecs,
-  },
+  els: subDialogEls.els,
   store,
   showToast,
   schedule,
@@ -243,8 +181,13 @@ const subDialog = createSubDialog({
   refreshPipeline,
 });
 
+const runtime = createGroupRuntime();
+const detailMenu = createDeviceMenu();
+
 const subLists = createSubLists({
   store,
+  runtime,
+  menu: detailMenu,
   showToast,
   openSubDialog: (item, kind, groupId) => subDialog.open(item, kind, groupId),
   loadGroups,
@@ -255,6 +198,8 @@ const subLists = createSubLists({
 const groupDetail = createGroupDetail({
   detailEl: groupDetailEl,
   store,
+  runtime,
+  menu: detailMenu,
   showToast,
   subLists,
   openIconPicker,
@@ -269,6 +214,7 @@ createSidebarNav({
   navCollapse,
   groupsCollapse,
   groupsTwoPane,
+  onWorkflows: () => workflows?.showList(),
 });
 
 // ────────────────────── Add group ──────────────────────────────────────
@@ -302,6 +248,8 @@ const settings = createSettingsPane(
     silenceErrors: setSilenceErrors,
     maxLogLines: setMaxLogLines,
     notifySuccess: setNotifySuccess,
+    showHiddenGroupsFold: setShowHiddenGroupsFold,
+    showHiddenWorkflowsFold: setShowHiddenWorkflowsFold,
     notifHint,
     openNotifSettings: openNotifSettingsBtn,
     testNotify: testNotifyBtn,
@@ -325,7 +273,22 @@ createRemotePane(remoteElements(), showToast);
 
 // ────────────────────── Live updates ───────────────────────────────────
 
-window.api.onUpdate(async () => {
+// Live process state for the group header: read once, then from every update.
+void window.api
+  .getGroupStates()
+  .then((states) => {
+    runtime.set(states);
+    groupDetail.refreshRuntime();
+  })
+  .catch(() => undefined);
+
+window.api.onUpdate(async (states) => {
+  if (Array.isArray(states)) {
+    runtime.set(states);
+    // Painted before the re-read below, and even when the pane is dirty and
+    // will not re-render: the pill reports processes, not the draft.
+    groupDetail.refreshRuntime();
+  }
   await loadGroups(); // refreshes allGroups + nav via renderGroupsList
   const selectedGroupId = store.getSelectedId();
   if (!selectedGroupId) return;
@@ -397,18 +360,23 @@ wireUpdatesPane(
 
 void settings.load();
 
-// Captured in a `const` rather than read back off the mutable `pipelineEditor`
+// Captured in a `const` rather than read back off the mutable `workflows`
 // module binding: a `let` narrowed non-null by this very assignment is not
 // guaranteed to stay narrowed inside the async callback below.
-const editor = initPipelineEditor(
-  byId('prescripts-pipeline-root', HTMLElement),
-  { getGroups: () => store.getGroups(), showToast },
-);
-pipelineEditor = editor;
-// The editor resolves every ref against `allGroups`, which `loadGroups()`
-// only fills once `listGroups()` resolves. Refreshing before that renders
-// perfectly valid refs as "Referencia rota".
-void loadGroups().then(() => editor.refresh());
+const section = createWorkflowsSection({
+  listHost: workflowsListEl,
+  editorHost: workflowsEditorEl,
+  badge: workflowsBadgeEl,
+  getGroups: () => store.getGroups(),
+  showToast,
+  editScript: (groupId, script) => subDialog.open(script, 'prescript', groupId),
+  createScript: (request) => subDialog.openNewPreScript(request),
+});
+workflows = section;
+// The list and the editor resolve every ref against `allGroups`, which
+// `loadGroups()` only fills once `listGroups()` resolves. Reading before
+// that renders perfectly valid refs as "Referencia rota".
+void loadGroups().then(() => section.load());
 
 // App version label next to the page title.
 if (window.api && window.api.getAppVersion) {
@@ -420,6 +388,15 @@ if (window.api && window.api.getAppVersion) {
         el.textContent = `v${v}`;
         el.addEventListener('click', () => openChangelog(v));
       }
+      // `arch` is a static preload value; anything else means an older
+      // preload that does not publish it.
+      const arch: unknown = window.api.arch;
+      aboutVersionEl.textContent = aboutVersionLine(
+        v,
+        window.api.platform,
+        typeof arch === 'string' ? arch : undefined,
+      );
+      if (v) void showReleaseNotes(v);
     })
     .catch(() => {
       /* leave the label empty on failure */

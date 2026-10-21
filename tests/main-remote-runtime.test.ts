@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { remoteRuntime } from '../src/main/remote/runtime.js';
 import { sendToRenderers } from '../src/main/renderer-bus.js';
 import { fakeAppWiring } from './helpers/remote-wiring.js';
+import type { WorkflowEntry } from '../src/ipc-contract.js';
 
 /**
  * The collaborators «Control remoto» gets from the app, assembled from what
@@ -36,6 +37,7 @@ describe('src/main/remote/runtime.ts', () => {
       'autostart:false',
       'repaint',
       'theme:auto',
+      'settings',
       'broadcast',
     ]);
   });
@@ -66,7 +68,33 @@ describe('src/main/remote/runtime.ts', () => {
     const { runtime } = harness();
 
     expect(runtime.groupStates()).toEqual([]);
-    expect(runtime.pipelineState().status).toBe('idle');
+    expect(runtime.workflowEntries()).toEqual([]);
+    expect(runtime.workflowVisible('w1')).toBe(false);
     expect(runtime.confirms.pending()).toEqual([]);
+  });
+
+  it('lets a phone run only the workflows it lists, fold included', () => {
+    const { wiring } = fakeAppWiring();
+    const hidden: WorkflowEntry = {
+      workflow: {
+        id: 'w1',
+        name: 'w1',
+        enabled: true,
+        hidden: true,
+        trigger: { kind: 'manual', confirm: false },
+        graph: { blocks: [], edges: [] },
+      },
+      lastRun: null,
+      nextRunAt: null,
+      scriptCount: 1,
+      running: null,
+    };
+    wiring.snapshots.workflowEntries = () => [hidden];
+    const runtime = remoteRuntime(wiring);
+
+    expect(runtime.workflowVisible('w1')).toBe(false);
+    runtime.settings.save({ showHiddenWorkflowsFold: true });
+    expect(runtime.workflowVisible('w1')).toBe(true);
+    expect(runtime.showHiddenWorkflowsFold()).toBe(true);
   });
 });

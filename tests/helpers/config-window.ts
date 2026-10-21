@@ -7,10 +7,12 @@
  * to restate the full shape of a group.
  */
 import { loadRendererWindow, type RendererWindow } from './renderer-dom.js';
+import { startupEntries } from './startup-workflow.js';
 import type {
   Action,
   Command,
   Group,
+  Pipeline,
   PreScript,
 } from '../../src/domain-types.js';
 import type { UpdateStatus } from '../../src/ipc-contract.js';
@@ -70,15 +72,14 @@ export async function openConfigWindow(
 }
 
 /**
- * Three modules read `getSettings` while the window boots, in this order:
- * `theme.ts`, the settings pane, then the pipeline editor. Answering the two
- * bystanders leaves exactly the pane's own read for a test to settle or fail.
+ * Two modules read `getSettings` while the window boots, in this order:
+ * `theme.ts`, then the settings pane. Answering the bystander leaves exactly
+ * the pane's own read for a test to settle or fail.
  */
 export async function answerBystanderSettingsReads(
   win: RendererWindow,
 ): Promise<void> {
   await win.settle('getSettings', {}); // renderer/theme.ts
-  await win.settleNewest('getSettings', {}); // renderer/pipeline-editor.ts
 }
 
 /**
@@ -149,6 +150,7 @@ export function group(name: string, extra: Partial<Group> = {}): Group {
     actions: [],
     preScripts: [],
     waitForPipeline: true,
+    hiddenInTray: false,
     ...extra,
   };
 }
@@ -233,4 +235,21 @@ export function updateStatus(version: string | null): UpdateStatus {
     currentVersion: '0.0.0',
     phase: { state: 'idle' },
   };
+}
+
+/**
+ * Lands the Workflows section's boot read (`listWorkflows` plus the runs of
+ * this session) and opens the startup workflow in the editor, landing the
+ * editor's own read too — what a test that drives the canvas needs.
+ */
+export async function openStartupWorkflow(
+  win: RendererWindow,
+  graph: Pipeline = { blocks: [], edges: [] },
+): Promise<void> {
+  await win.settle('listWorkflows', startupEntries(graph));
+  await win.settle('getWorkflowRunStates', []);
+  document
+    .querySelector('.wf-row[data-id="w-start"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await win.settle('listWorkflows', startupEntries(graph));
 }

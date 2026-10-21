@@ -161,6 +161,29 @@ describe('src/main/ipc/window-ipc.ts', () => {
       expect(h.calls).toEqual(['config:', 'hideIfVisible']);
     });
 
+    it('opens config on the section the tray asks for', () => {
+      const h = harness();
+      expect(h.ipc.invoke('window:openConfig', 'workflows')).toEqual({
+        ok: true,
+      });
+      h.ipc.invoke('window:openConfig', 'groups');
+      expect(h.calls).toEqual([
+        'config:workflows',
+        'hideIfVisible',
+        'config:groups',
+        'hideIfVisible',
+      ]);
+    });
+
+    it('refuses a section it does not know, opening nothing', () => {
+      const h = harness();
+      expect(() =>
+        h.ipc.invoke('window:openConfig', 'about-changelog'),
+      ).toThrow(/section/);
+      expect(() => h.ipc.invoke('window:openConfig', 42)).toThrow(/section/);
+      expect(h.calls).toEqual([]);
+    });
+
     it('deep-links the version chip straight to the changelog', () => {
       const h = harness();
       h.ipc.invoke('window:openConfigChangelog');

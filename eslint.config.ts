@@ -59,6 +59,9 @@ export default tseslint.config(
       // scripts are not ours to lint.
       'coverage/**',
       'dist/**',
+      // Agent worktrees: full checkouts of this repo, linting them runs out
+      // of memory and reports every file twice.
+      '.claude/**',
       'node_modules/**',
       'eslint.config.ts',
       'vitest.config.ts',

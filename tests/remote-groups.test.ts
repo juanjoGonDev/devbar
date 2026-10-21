@@ -107,6 +107,39 @@ describe('renderer/remote/groups-tab.ts', () => {
       );
     });
 
+    it('folds the groups hidden from the tray behind «N oculto(s)», like the tray', async () => {
+      const initial = state();
+      const docs = initial.groups[1];
+      if (docs) docs.hidden = true;
+      await startLinked(initial);
+
+      expect(cards().map((card) => rowText(card, '.group-name'))).toEqual([
+        'Backend',
+      ]);
+      const toggle = document.querySelector<HTMLButtonElement>(
+        '#groups > .hidden-groups-toggle',
+      );
+      expect(toggle?.textContent).toContain('1 oculto');
+      expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+      tap(toggle);
+      expect(cards().map((card) => rowText(card, '.group-name'))).toEqual([
+        'Backend',
+        'Docs',
+      ]);
+      expect(cards()[1]?.classList.contains('is-hidden-group')).toBe(true);
+    });
+
+    it('opens the first group the tray lists, never a hidden one', async () => {
+      const initial = state();
+      const [backend, docs] = initial.groups;
+      if (backend && docs)
+        initial.groups = [{ ...docs, hidden: true }, backend];
+      await startLinked(initial);
+
+      expect(headOf(cards()[0])?.getAttribute('aria-expanded')).toBe('true');
+      expect(rowText(cards()[0], '.group-name')).toBe('Backend');
+    });
+
     it('repaints when the computer pushes a new state', async () => {
       const h = await startLinked();
       const next = state();
@@ -186,47 +219,6 @@ describe('renderer/remote/groups-tab.ts', () => {
         groupId: 'g1',
         actionId: 'seed',
       });
-    });
-
-    it('runs the pipeline and shows it running', async () => {
-      const h = await startLinked();
-      h.answer('pipeline.run', {
-        status: 202,
-        body: { pending: true },
-      });
-
-      tapId('run-pipeline');
-      await settle();
-      h.source().emit(
-        'state',
-        state({
-          pipeline: {
-            status: 'running',
-            currentStep: 1,
-            totalSteps: 2,
-            lastError: null,
-          },
-        }),
-      );
-
-      expect(h.callsTo('pipeline.run')).toHaveLength(1);
-      expect(text('pipeline-label')).toBe('Pipeline en curso · paso 1 de 2');
-      expect(byId<HTMLButtonElement>('run-pipeline').disabled).toBe(true);
-    });
-
-    it('hides the pipeline button when there is no pipeline', async () => {
-      await startLinked(
-        state({
-          pipeline: {
-            status: 'idle',
-            currentStep: null,
-            totalSteps: 0,
-            lastError: null,
-          },
-        }),
-      );
-
-      expect(byId('run-pipeline').hidden).toBe(true);
     });
 
     it('asks before stopping everything', async () => {

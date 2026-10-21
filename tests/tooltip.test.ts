@@ -42,7 +42,17 @@ describe('renderer/tooltip.ts', () => {
   // The module hooks the document ONCE and keeps its bubble, timer and anchor
   // in module state, so the suite installs it once too and resets the state
   // between tests through the dismissal the module itself listens for.
+  //
+  // Markup already on the page when it installs is converted on the spot;
+  // this button stands for it.
+  document.body.innerHTML = '<button title="Ya estaba">x</button>';
+  const preinstalled = document.body.firstElementChild;
   installTooltips();
+
+  /** Lets the module's MutationObserver deliver what happened so far. */
+  async function settleObserver(): Promise<void> {
+    await Promise.resolve();
+  }
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -56,7 +66,7 @@ describe('renderer/tooltip.ts', () => {
 
   function bubble(): HTMLElement | null {
     return document.documentElement.querySelector<HTMLElement>(
-      '[popover="manual"]',
+      '[data-tooltip-bubble]',
     );
   }
 
@@ -195,6 +205,56 @@ describe('renderer/tooltip.ts', () => {
       hover(el);
       vi.advanceTimersByTime(DELAY_MS + 10);
       expect(bubble()).toBeNull();
+    });
+  });
+
+  describe('converting titles before any hover', () => {
+    // Changing the hovered element's title under the pointer is what makes
+    // macOS drop the hand cursor back to the arrow, so every title must be
+    // gone before the pointer can reach it.
+    it('strips the titles already on the page when it installs', () => {
+      expect(preinstalled?.hasAttribute('title')).toBe(false);
+      expect(preinstalled?.getAttribute('data-tip')).toBe('Ya estaba');
+      expect(preinstalled?.getAttribute('aria-label')).toBe('Ya estaba');
+    });
+
+    it('strips the title of an element added later', async () => {
+      const el = anchor('<button title="Nuevo">x</button>');
+      await settleObserver();
+      expect(el.hasAttribute('title')).toBe(false);
+      expect(el.dataset.tip).toBe('Nuevo');
+    });
+
+    it('strips the title of a descendant added later', async () => {
+      document.body.innerHTML =
+        '<div><span><button title="Dentro">x</button></span></div>';
+      await settleObserver();
+      const el = document.querySelector('button');
+      expect(el?.hasAttribute('title')).toBe(false);
+      expect(el?.getAttribute('data-tip')).toBe('Dentro');
+    });
+
+    it('converts a title the code reassigns later', async () => {
+      const el = anchor('<button title="uno">x</button>');
+      await settleObserver();
+      el.title = 'dos';
+      await settleObserver();
+      expect(el.hasAttribute('title')).toBe(false);
+      expect(el.dataset.tip).toBe('dos');
+    });
+
+    it('touches no attribute while the pointer is over the element', async () => {
+      const el = anchor('<button title="Salir"><span>x</span></button>');
+      await settleObserver();
+      const seen: MutationRecord[] = [];
+      const watcher = new MutationObserver((records) => seen.push(...records));
+      watcher.observe(document.body, { attributes: true, subtree: true });
+      hover(el);
+      vi.advanceTimersByTime(DELAY_MS);
+      unhover(el);
+      seen.push(...watcher.takeRecords());
+      watcher.disconnect();
+      expect(seen.map((r) => r.attributeName)).toEqual([]);
     });
   });
 
@@ -351,12 +411,37 @@ describe('renderer/tooltip.ts', () => {
   });
 
   describe('the browser top layer', () => {
+    /** The button is the anchor; the open dialog makes the page modal. */
+    function underModal(): HTMLElement {
+      const el = anchor('<button title="Salir">x</button>');
+      document.body.append(document.createElement('dialog'));
+      document.querySelector('dialog')?.setAttribute('open', '');
+      return el;
+    }
+
     it('promotes the bubble so it can never render behind a modal', () => {
+      const popover = withPopover();
+      try {
+        hover(underModal());
+        vi.advanceTimersByTime(DELAY_MS);
+        expect(popover.show).toHaveBeenCalled();
+        expect(bubble()?.getAttribute('popover')).toBe('manual');
+      } finally {
+        popover.restore();
+      }
+    });
+
+    it('stays out of the top layer when no modal is open', () => {
+      // Promoting an element to the top layer under the pointer is the other
+      // thing that resets the macOS cursor, so it is kept for the one case
+      // that needs it.
       const popover = withPopover();
       try {
         hover(anchor('<button title="Salir">x</button>'));
         vi.advanceTimersByTime(DELAY_MS);
-        expect(popover.show).toHaveBeenCalled();
+        expect(popover.show).not.toHaveBeenCalled();
+        expect(bubble()?.hasAttribute('popover')).toBe(false);
+        expect(bubble()?.textContent).toBe('Salir');
       } finally {
         popover.restore();
       }
@@ -365,7 +450,7 @@ describe('renderer/tooltip.ts', () => {
     it('takes the bubble back out of the top layer when it hides', () => {
       const popover = withPopover();
       try {
-        hover(anchor('<button title="Salir">x</button>'));
+        hover(underModal());
         vi.advanceTimersByTime(DELAY_MS);
         document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         expect(popover.hide).toHaveBeenCalled();
@@ -384,7 +469,7 @@ describe('renderer/tooltip.ts', () => {
         throw new Error('already hidden');
       };
       try {
-        hover(anchor('<button title="Salir">x</button>'));
+        hover(underModal());
         vi.advanceTimersByTime(DELAY_MS);
         expect(bubble()?.textContent).toBe('Salir');
         document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));

@@ -85,6 +85,7 @@ function groupState(overrides: Partial<GroupState> = {}): GroupState {
       actions: [],
       preScripts: [],
       waitForPipeline: true,
+      hiddenInTray: false,
     },
     currentBranch: null,
     color: 'stopped',
@@ -423,6 +424,8 @@ describe('renderer/tray/group-row.ts', () => {
       const chip = q(el, '.action-chip');
       expect(chip.className).toContain('running');
       expect(chip.textContent).toBe('migrar …');
+      // Phase-locked to the (faked) page clock, so a repaint keeps its pulse.
+      expect(chip.style.animationDelay).toMatch(/^-?[\d.]+ms$/);
       click(chip);
       expect(api.runAction).not.toHaveBeenCalled();
     });

@@ -29,6 +29,22 @@ body {
   --bg-card: rgba(255, 255, 255, 0.72);
   --bg-card-strong: rgba(255, 255, 255, 0.92);
   --bg-row-hover: rgba(0, 0, 0, 0.04);
+  /* Accent wash behind a hovered accent control, and the dashed outline of
+     a placeholder control such as "Nuevo grupo". */
+  --accent-tint: rgba(0, 122, 255, 0.08);
+  --add-dash: rgba(0, 122, 255, 0.45);
+  /* Round status badge in «Acerca de». Foregrounds are darkened for contrast
+     on the pale washes; dark mode brightens them instead. */
+  --badge-neutral-bg: rgba(142, 142, 147, 0.16);
+  --badge-ok-fg: #1f8a3c;
+  --badge-ok-bg: rgba(48, 209, 88, 0.16);
+  --badge-error-fg: #d70015;
+  --badge-error-bg: rgba(255, 69, 58, 0.14);
+  /* Blue (informative) and orange (caution) washes of the settings badges. */
+  --badge-info-fg: #0066cc;
+  --badge-info-bg: rgba(0, 122, 255, 0.12);
+  --badge-warn-fg: #c93400;
+  --badge-warn-bg: rgba(255, 149, 0, 0.16);
   /* Bezeled button surfaces (macOS-style depth) */
   --btn-bg: linear-gradient(180deg, #ffffff, #f2f2f4);
   --btn-bg-primary: linear-gradient(180deg, #3d93ff, #0a7bff);
@@ -46,6 +62,17 @@ body {
   --bg-card: rgba(40, 40, 42, 0.7);
   --bg-card-strong: rgba(50, 50, 52, 0.9);
   --bg-row-hover: rgba(255, 255, 255, 0.05);
+  --accent-tint: rgba(10, 132, 255, 0.16);
+  --add-dash: rgba(100, 170, 255, 0.5);
+  --badge-neutral-bg: rgba(142, 142, 147, 0.24);
+  --badge-ok-fg: #30d158;
+  --badge-ok-bg: rgba(48, 209, 88, 0.2);
+  --badge-error-fg: #ff6961;
+  --badge-error-bg: rgba(255, 69, 58, 0.2);
+  --badge-info-fg: #64aaff;
+  --badge-info-bg: rgba(10, 132, 255, 0.2);
+  --badge-warn-fg: #ffa94d;
+  --badge-warn-bg: rgba(255, 159, 10, 0.2);
   --btn-bg: linear-gradient(180deg, #4b4b4e, #3a3a3d);
   --btn-shadow:
     0 1px 1.5px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -616,16 +643,6 @@ body.config {
   flex: 1;
   min-height: 0;
 }
-/* Section header row (title + inline actions), used by Grupos. */
-.section-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-.section-head .spacer {
-  flex: 1;
-}
 /*
  * Collapsed groups list → the editor takes the width, but the pane keeps a
  * narrow rail so its own toggle survives. Hiding the pane outright would take
@@ -635,8 +652,92 @@ body.config {
   width: auto;
   min-width: 0;
 }
-.config-two-pane.list-collapsed .groups-list-nav {
+.config-two-pane.list-collapsed .groups-list-nav,
+.config-two-pane.list-collapsed .pane-splitter,
+.config-two-pane.list-collapsed .add-group-label {
   display: none;
+}
+/* Folded: the add button shrinks to its plus, centred in the rail. */
+.config-two-pane.list-collapsed .add-group-btn {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+  align-self: center;
+}
+
+/*
+ * First entry of the groups list. Dashed and transparent so it reads as a
+ * slot for a group that does not exist yet, not as one more group.
+ */
+.add-group-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin: 6px 6px 2px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1.5px dashed var(--add-dash);
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+.add-group-btn:hover {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  filter: none;
+}
+.add-group-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/*
+ * Draggable divider between the groups list and the editor. The 8px strip is
+ * the hit area; the visible part is the hairline it straddles plus a small
+ * grip pill, which brightens while hovered or dragged.
+ */
+.pane-splitter {
+  position: relative;
+  flex: 0 0 8px;
+  margin: 0 -4px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+.pane-splitter::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transform: translate(-50%, -50%);
+  transition: background 0.12s ease;
+}
+.pane-splitter:hover::after,
+.pane-splitter:focus-visible::after,
+.config-two-pane.is-resizing .pane-splitter::after {
+  background: var(--accent);
+}
+.pane-splitter:focus-visible {
+  outline: none;
+}
+/* While dragging, the pointer may stray over text or the editor: keep the
+   resize cursor everywhere and stop the drag from selecting anything. */
+.config-two-pane.is-resizing,
+.config-two-pane.is-resizing * {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* Header strip of a pane, holding the control that acts on that pane. The
@@ -803,7 +904,7 @@ body.config {
 
 /* Shared draggable-row pattern — handle reveal, dragging state, and a drop
  * indicator bar — reused by `.service-row-card`, `.nav-card`,
- * `.sub-item-row`, `.prescript-row` and `.prestep-card`. Each context below
+ * `.sub-item-row` and `.prescript-row`. Each context below
  * overrides only the custom properties that genuinely differ; everything
  * else is identical behaviour reused, not reimplemented. */
 .drag-row {
@@ -994,6 +1095,528 @@ body.config {
   font-size: 11px;
   margin: 0 0 8px;
   color: var(--muted);
+}
+
+/*
+ * macOS inset grouped list (General): a title above the card, rows of at
+ * least 44px split by hairlines, the control at the trailing edge and an
+ * optional footnote under the card.
+ */
+.settings-group {
+  margin-bottom: 22px;
+}
+.settings-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  margin: 0 0 6px 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.settings-card.settings-group-card {
+  padding: 0 16px;
+  margin-bottom: 0;
+}
+.settings-group-card > * + * {
+  border-top: 1px solid var(--border);
+}
+.settings-group-card > .toggle,
+.settings-group-card > .settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 8px 0;
+  margin: 0;
+}
+/* The switch comes first in the markup (it is the label's control) but sits
+   at the trailing edge, like a macOS settings row. */
+.settings-group-card > .toggle {
+  flex-direction: row-reverse;
+}
+.settings-group-card > .toggle > span,
+.settings-row-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+.settings-row-label small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-weight: normal;
+}
+/* A number field with a compact −/+ stepper: one box on the inputs' tokens,
+   the number right-aligned with its unit after it, no native spin arrows. */
+.num-stepper {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-card-strong);
+  overflow: hidden;
+}
+.num-stepper:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid rgba(0, 122, 255, 0.4);
+  outline-offset: -1px;
+}
+.num-stepper-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border-strong);
+  border-right: 1px solid var(--border-strong);
+}
+.num-stepper input[type='number'] {
+  width: 52px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  appearance: textfield;
+}
+.num-stepper input[type='number']::-webkit-inner-spin-button,
+.num-stepper input[type='number']::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+.num-stepper-suffix {
+  color: var(--muted);
+  font-size: 11px;
+}
+.num-stepper-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.num-stepper-btn:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  color: inherit;
+  filter: none;
+}
+.num-stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.settings-group-note {
+  margin: 6px 12px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---------- Acerca de ---------- */
+.about-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 0 8px;
+}
+.about-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.about-app-icon {
+  width: 84px;
+  height: 84px;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.18));
+}
+.about-name {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.about-version {
+  margin: 8px 0 0;
+  min-height: 1.3em;
+  font-size: 13px;
+  color: var(--muted);
+}
+.about-card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--bg-card-strong);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.update-card {
+  padding: 14px 16px;
+}
+.update-card-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.update-card-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.update-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.update-card-text .muted.small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.update-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/*
+ * Round status badge. Every glyph is in the markup; data-state on the card
+ * shows exactly one, so the pane only flips an attribute.
+ */
+.update-badge {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--muted);
+  background: var(--badge-neutral-bg);
+}
+.update-badge .icon {
+  display: none;
+}
+.update-card:not([data-state]) .badge-idle,
+.update-card[data-state='ok'] .badge-ok,
+.update-card[data-state='available'] .badge-available,
+.update-card[data-state='busy'] .badge-busy,
+.update-card[data-state='error'] .badge-error {
+  display: inline-block;
+}
+.update-card[data-state='ok'] .update-badge {
+  color: var(--badge-ok-fg);
+  background: var(--badge-ok-bg);
+}
+.update-card[data-state='available'] .update-badge {
+  color: #fff;
+  background: var(--accent-strong);
+}
+.update-card[data-state='busy'] .update-badge {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+.update-card[data-state='busy'] .badge-busy {
+  animation: badge-spin 1s linear infinite;
+}
+.update-card[data-state='error'] .update-badge {
+  color: var(--badge-error-fg);
+  background: var(--badge-error-bg);
+}
+@keyframes badge-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .update-card[data-state='busy'] .badge-busy {
+    animation: none;
+  }
+}
+
+/* A button with a glyph beside its label; scripts only touch .btn-label. */
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-with-icon .icon {
+  font-size: 13px;
+}
+.btn-with-icon .btn-trail-icon {
+  font-size: 12px;
+  color: var(--muted);
+}
+.update-card-actions .small-btn {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  border-radius: 7px;
+}
+
+.about-notes {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.about-notes[hidden] {
+  display: none;
+}
+.about-notes-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.about-notes-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.about-notes-history {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 400;
+}
+.about-notes-history:hover {
+  filter: none;
+  text-decoration: underline;
+}
+.about-notes-history:active {
+  transform: none;
+  box-shadow: none;
+}
+.about-notes-list ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.about-notes-list a {
+  color: var(--accent);
+}
+
+.about-links {
+  overflow: hidden;
+}
+.about-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.about-link[hidden] {
+  display: none;
+}
+.about-link + .about-link {
+  border-top: 1px solid var(--border);
+}
+.about-link-lead {
+  flex-shrink: 0;
+  font-size: 16px;
+  opacity: 0.85;
+}
+.about-link-lead-bug {
+  color: var(--badge-error-fg);
+  opacity: 1;
+}
+.about-link-label {
+  flex: 1;
+  min-width: 0;
+}
+.about-link:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.about-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.about-link-trail {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.about-link-hint {
+  font-size: 11.5px;
+}
+
+/* ---------- Notificaciones ---------- */
+.notif-preview-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 18px;
+}
+.notif-preview {
+  width: 360px;
+  max-width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  background: var(--bg-card-strong);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  font-size: 12.5px;
+}
+.notif-preview-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+}
+.notif-preview-text {
+  flex: 1;
+  min-width: 0;
+}
+.notif-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.notif-preview-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+/* A row's leading badge plus its label, as one flex child of the row. */
+.settings-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.row-badge {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.row-badge-ok {
+  color: var(--badge-ok-fg);
+  background: var(--badge-ok-bg);
+}
+.row-badge-info {
+  color: var(--badge-info-fg);
+  background: var(--badge-info-bg);
+}
+.row-badge-warn {
+  color: var(--badge-warn-fg);
+  background: var(--badge-warn-bg);
+}
+.settings-group-card > .settings-row:has(> .row-badge) {
+  gap: 12px;
+}
+/* Beats `.toggle span`, which would otherwise shrink the glyph. */
+.row-badge .icon {
+  font-size: 16px;
+}
+
+/* ---------- Copias de seguridad ---------- */
+.backup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.backup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  background: var(--bg-card-strong);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.backup-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+.backup-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.backup-text {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.backup-text strong {
+  color: #1d1d1f;
+}
+:root[data-theme='dark'] .backup-text strong {
+  color: #f5f5f7;
+}
+.backup-card > button {
+  align-self: flex-start;
+  /* Pinned to the card's foot so both cards' buttons line up whatever the
+     length of their text. */
+  margin-top: auto;
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+.backup-card > button.primary {
+  font-weight: 600;
+}
+.backup-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--bg-card-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+.backup-note .icon {
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--badge-ok-fg);
 }
 
 .toggle {
@@ -1394,6 +2017,193 @@ dialog h2 {
   border-bottom: none;
 }
 
+/* «N oculto(s)»: the tray-hidden groups (and workflows), folded at the end
+   of their list. */
+.hidden-groups-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  box-shadow: none;
+  text-align: left;
+}
+.group-wrapper.is-hidden-group,
+.group-row.is-hidden-group,
+.tray-wf-row.is-hidden-group {
+  opacity: 0.55;
+}
+
+/* ── Tray: «Grupos | Workflows» tabs (renderer/tray/tabs.ts) ─────────── */
+:root {
+  --tray-tabs-bg: rgba(118, 118, 128, 0.12);
+  --tray-tab-on-bg: #ffffff;
+  --tray-tab-on-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+:root[data-theme='dark'] {
+  --tray-tabs-bg: rgba(118, 118, 128, 0.24);
+  --tray-tab-on-bg: rgba(99, 99, 102, 0.9);
+  --tray-tab-on-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.tray-tabs {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--tray-tabs-bg);
+}
+.tray-tabs[hidden] {
+  display: none;
+}
+.tray-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+}
+.tray-tab:hover {
+  filter: none;
+}
+.tray-tab[aria-selected='true'] {
+  background: var(--tray-tab-on-bg);
+  box-shadow: var(--tray-tab-on-shadow);
+  font-weight: 600;
+}
+.tray-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tray-tab-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.tray-tab-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.tray-tab-badge[hidden] {
+  display: none;
+}
+
+/* ── Tray: Workflows tab (renderer/tray/workflows-section.ts) ───────── */
+.tray-workflows {
+  padding: 2px 0 0;
+}
+/* «Gestionar workflows ›» / «Gestionar grupos ›» (renderer/tray/manage-link.ts):
+   a compact link right-aligned over the first item of each tab's list. */
+.tray-manage {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  margin: 0 6px 0 auto;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.tray-manage .icon {
+  font-size: 12px;
+}
+.tray-manage:hover {
+  filter: none;
+  background: var(--bg-row-hover);
+}
+.tray-manage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tray-wf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 3px 6px 3px 10px;
+}
+.tray-wf-row:hover {
+  background: var(--bg-row-hover);
+}
+.tray-wf-row.is-running {
+  background: var(--accent-tint);
+}
+.tray-wf-icon {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.tray-wf-row.is-running .tray-wf-icon {
+  color: var(--accent);
+}
+.tray-wf-row.is-failed .tray-wf-sub {
+  color: var(--error);
+}
+.tray-wf-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+.tray-wf-name {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tray-wf-sub {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tray-wf-progress {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.tray-wf-progress-bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
 /* Collapsed group row — max 32px tall */
 .group-row {
   display: flex;
@@ -1710,7 +2520,10 @@ dialog h2 {
   height: 24px;
   display: flex;
   align-items: center;
-  transition: all 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
 }
 .action-chip:hover {
   background: var(--bg-row-hover);
@@ -1764,9 +2577,9 @@ dialog h2 {
 }
 
 /* Left pane: groups navigation */
+/* Width comes from renderer/config/groups-splitter.ts (auto-fit or dragged). */
 .config-left-pane {
-  width: 200px;
-  min-width: 160px;
+  width: var(--groups-list-width, 200px);
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   display: flex;
@@ -1823,51 +2636,86 @@ dialog h2 {
   background: rgba(255, 69, 58, 0.1);
 }
 
-/* Auto-start ⚡ toggle in the commands list. OFF = muted outline,
-   ON = filled accent. Hover gives an accent tint either way. */
-.small-btn.autostart-toggle {
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1;
-}
-.small-btn.autostart-toggle:hover {
-  color: var(--accent);
-  background: rgba(0, 122, 255, 0.08);
-}
-.small-btn.autostart-toggle.is-on {
-  background: var(--accent-strong);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
-}
-.small-btn.autostart-toggle.is-on:hover {
-  background: #0067db;
-  color: #fff;
-}
-
-/* Theme picker (General): segmented control forcing light/dark or following
-   the OS. */
+/*
+ * Theme picker (General): three cards, each a miniature window drawn in the
+ * theme it applies. The previews use fixed colours on purpose — "Claro" must
+ * look light even while the app is dark — while the card chrome follows the
+ * current theme through the tokens.
+ */
 .theme-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 0;
+}
+.theme-opt {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.theme-opt:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.theme-opt.is-on {
+  border-color: var(--accent);
+}
+.theme-opt:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.theme-preview {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  height: 56px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  overflow: hidden;
+}
+.theme-preview-light {
+  background: #f5f5f7;
+}
+.theme-preview-dark {
+  background: #2c2c2e;
+}
+.theme-preview-auto {
+  background: linear-gradient(90deg, #f5f5f7 50%, #2c2c2e 50%);
+}
+.tp-bar {
+  height: 6px;
+  width: 80%;
+  border-radius: 999px;
+  background: rgba(142, 142, 147, 0.55);
+}
+.tp-bar.tp-accent {
+  width: 45%;
+  background: var(--accent);
+}
+.tp-bar.tp-short {
+  width: 60%;
+}
+.theme-opt-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-  margin: 2px 0 6px;
+  font-size: 12px;
+  font-weight: 500;
 }
-.small-btn.theme-opt.is-on {
-  background: var(--accent-strong);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
-}
-
-/* Schedule 🕐 badge in the commands list — informational; opens the editor. */
-.small-btn.schedule-badge.is-on {
-  font-size: 13px;
-  line-height: 1;
-  border-color: transparent;
-  background: rgba(0, 122, 255, 0.12);
-}
-.small-btn.schedule-badge.is-on:hover {
-  background: rgba(0, 122, 255, 0.22);
+.theme-opt.is-on .theme-opt-label {
+  color: var(--accent);
 }
 
 /* Schedule editor */
@@ -1900,19 +2748,11 @@ fieldset.schedule-group legend {
 #sf-schedule-add {
   margin-top: 10px;
 }
-.updates-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: -4px 0 16px;
-}
 .update-progress {
   display: block;
   width: 100%;
-  max-width: 420px;
   height: 6px;
-  margin: -8px 0 16px;
+  margin: 12px 0 0;
   accent-color: var(--accent);
 }
 .update-progress[hidden],
@@ -1921,7 +2761,9 @@ fieldset.schedule-group legend {
   display: none;
 }
 .update-help {
-  margin: -8px 0 16px;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 .update-help p {
   margin: 0 0 6px;
@@ -2036,12 +2878,135 @@ fieldset.schedule-group legend {
   color: var(--muted);
 }
 
-/* Detail header: icon button + name input */
+/* Detail header: who the group is (icon, name, folder · branch), whether it
+   runs, whether the tray shows it, and its «⋯» menu. The tabs sit under it,
+   inside the same bordered strip. */
 .detail-header {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: -16px -20px 4px;
+  padding: 18px 24px 0;
+  border-bottom: 1px solid var(--border);
+}
+.detail-head-row {
+  display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 12px;
+  min-width: 0;
+}
+.detail-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.detail-path-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.detail-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.detail-path .icon,
+.detail-branch .icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.detail-path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-path.is-empty {
+  font-family: inherit;
+  font-style: italic;
+}
+.detail-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.detail-branch::before {
+  content: '·';
+  margin-right: 2px;
+}
+.detail-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  background: var(--badge-neutral-bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.detail-status.is-running {
+  background: var(--badge-ok-bg);
+  color: var(--badge-ok-fg);
+}
+.detail-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+.detail-status.is-running .detail-status-dot {
+  background: var(--running);
+  opacity: 1;
+}
+.detail-menu-host {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.detail-menu-host > .remote-menu {
+  top: calc(100% + 4px);
+  right: 0;
+}
+/* Icon-only header buttons: the eye and the «⋯». */
+button.detail-icon-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 16px;
+}
+button.detail-icon-btn:hover,
+button.detail-icon-btn[aria-expanded='true'] {
+  filter: none;
+  background: var(--bg-row-hover);
+}
+button.detail-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button.detail-visibility[aria-pressed='false'] {
+  color: var(--muted);
 }
 
 .icon-btn {
@@ -2063,25 +3028,81 @@ fieldset.schedule-group legend {
   background: var(--bg-row-hover);
 }
 
-.detail-name-input {
-  flex: 1;
-  font-size: 16px;
+/* «Procesos | Pre-scripts | Entorno | Ajustes»: underlined tabs sitting on
+   the header's bottom border. */
+.detail-tabs {
+  display: flex;
+  gap: 18px;
+  margin-bottom: -1px;
+}
+button.detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 2px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+button.detail-tab:hover {
+  filter: none;
+  color: inherit;
+}
+button.detail-tab[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: inherit;
   font-weight: 600;
-  padding: 6px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  background: var(--bg-card-strong);
+}
+button.detail-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 4px 4px 0 0;
+}
+.detail-tab-count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--badge-neutral-bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.detail-tab-count[hidden] {
+  display: none;
+}
+.detail-panel {
+  padding-top: 14px;
+}
+.detail-panel[hidden] {
+  display: none;
+}
+
+/* The name, edited in place: reads as a title until hovered or focused. */
+input.detail-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 20px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: inherit;
   min-width: 0;
 }
-.detail-name-input:focus {
+input.detail-name-input:hover {
+  border-color: var(--border);
+}
+input.detail-name-input:focus {
   outline: 2px solid rgba(0, 122, 255, 0.4);
   outline-offset: -1px;
   border-color: var(--accent);
-}
-
-.detail-field {
-  margin-bottom: 12px;
+  background: var(--bg-card-strong);
 }
 
 .detail-section {
@@ -2097,78 +3118,278 @@ fieldset.schedule-group legend {
   margin-bottom: 6px;
 }
 
-/* Mode toggle row */
-.mode-toggle-row {
-  display: flex;
-  gap: 14px;
-}
-.mode-option {
-  display: flex;
+/* «Ajustes» tab: General's macOS settings cards, plus a few controls of
+   its own — wide text fields, the «Varios | Uno» segmented mode and a
+   red-edged danger zone. */
+.gs-control {
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  justify-content: flex-end;
+  gap: 18px;
+  min-width: 0;
+}
+.settings-row.gs-wide .gs-control {
+  flex: 1.6;
+  gap: 8px;
+}
+input.gs-input {
+  height: 28px;
+  width: 260px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-card-strong);
+  color: inherit;
+  font-size: 13px;
+}
+input.gs-input.gs-path-input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+input.gs-input:focus {
+  outline: 2px solid rgba(0, 122, 255, 0.4);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+.gs-control > .toggle.gs-inline-switch {
+  flex-direction: row-reverse;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+.mode-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--tray-tabs-bg);
+}
+.mode-segment {
+  position: relative;
   cursor: pointer;
-  user-select: none;
+}
+.mode-segment input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.mode-segment span {
+  display: block;
+  padding: 4px 14px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.mode-segment input:checked + span {
+  background: var(--tray-tab-on-bg);
+  box-shadow: var(--tray-tab-on-shadow);
+  color: inherit;
+  font-weight: 600;
+}
+.mode-segment input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.detail-danger-zone .settings-group-title {
+  color: var(--badge-error-fg);
+}
+.detail-danger-zone .settings-card {
+  border-color: var(--badge-error-bg);
 }
 
-/* Sub-item list (commands / actions inside group) */
+/* Sub-item lists (commands, actions, pre-scripts): a «TITLE · N» header with
+   a text «Añadir», then every row inside one bordered card. */
+.sub-list-section {
+  margin-bottom: 18px;
+}
 .sub-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
 }
-
+.sub-list-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+button.sub-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+}
+button.sub-add-btn:hover {
+  filter: none;
+  background: var(--accent-tint);
+}
+button.sub-add-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .sub-item-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-height: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card-strong);
+}
+.sub-list-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sub-list-help {
+  margin: -10px 0 0 2px;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .sub-item-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px 20px minmax(0, 170px) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: var(--bg-card-strong);
-  --drop-indicator-offset: 3px;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 10px 0 8px;
+  box-sizing: border-box;
+  cursor: pointer;
+  --drop-indicator-offset: 1px;
 }
-
+.sub-item-row:not(:first-child) {
+  border-top: 1px solid var(--border);
+}
+.sub-item-row:first-child {
+  border-radius: 9px 9px 0 0;
+}
+.sub-item-row:last-child {
+  border-radius: 0 0 9px 9px;
+}
+.sub-item-row:only-child {
+  border-radius: 9px;
+}
+.sub-item-row:hover {
+  background: var(--bg-row-hover);
+}
+.sub-icon-slot {
+  display: inline-flex;
+  justify-content: center;
+}
 .sub-icon {
-  font-size: 13px;
-  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
 }
 .sub-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sub-cmd {
-  font-size: 11px;
-  flex: 1;
+  font-size: 12px;
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
   font-family: var(--font-mono);
 }
-
-.sub-actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
+.sub-trail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
 }
-
-.detail-btn-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+.sub-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sub-tag {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sub-tag.is-auto {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+.sub-tag.is-schedule {
+  background: var(--badge-neutral-bg);
+  color: inherit;
+}
+.sub-running-dot {
+  display: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--running);
+}
+.sub-item-row.is-running .sub-running-dot {
+  display: inline-block;
+}
+/* Row actions appear on hover or keyboard focus — and stay while their
+   menu is open, or the menu would vanish with them. Hidden ones keep their
+   width out of the layout so the tags hug the trailing edge. */
+.sub-actions {
+  position: relative;
+  display: none;
+  gap: 2px;
+}
+.sub-item-row:hover .sub-actions,
+.sub-item-row:focus-within .sub-actions,
+.sub-actions:has([aria-expanded='true']) {
+  display: inline-flex;
+}
+.sub-actions > .remote-menu {
+  top: calc(100% + 4px);
+  right: 0;
+}
+button.sub-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 15px;
+}
+button.sub-action-btn:hover,
+button.sub-action-btn[aria-expanded='true'] {
+  filter: none;
+  background: var(--bg-row-hover);
+  color: inherit;
+}
+button.sub-action-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+button.sub-action-btn.autostart-toggle.is-on {
+  color: var(--accent);
 }
 
 /* ── Icon picker popover ─────────────────────────────────────────── */
@@ -2828,10 +4049,24 @@ dialog form {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 .save-bar .save-bar-message {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
   color: var(--muted);
   flex: 1;
   letter-spacing: -0.1px;
+}
+/* An orange dot while there is something to save (Guardar is enabled). */
+.save-bar .save-bar-message::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--badge-neutral-bg);
+}
+.save-bar:has(#detail-save:not([disabled])) .save-bar-message::before {
+  background: var(--badge-warn-fg);
 }
 .save-bar button {
   font-size: 12px;
@@ -2856,31 +4091,7 @@ dialog form {
   min-width: 0;
 }
 
-/* ── Pre-scripts: tray header trigger + strip controls ───────────────── */
-
-/* Run-pipeline trigger button */
-.prescripts-trigger {
-  font-size: 12px;
-  border-radius: 4px;
-  opacity: 0.7;
-}
-.prescripts-trigger:hover {
-  opacity: 1;
-}
-.prescripts-trigger[data-prestep-status='running'] {
-  animation: prescripts-pulse 1.2s ease-in-out infinite;
-  opacity: 1;
-}
-
-@keyframes prescripts-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
+/* ── Tray strip controls ───────────────────────────────────────────── */
 
 /* Cancel chip */
 .prestep-cancel {
@@ -2892,14 +4103,8 @@ dialog form {
   opacity: 1;
 }
 
-/* Logs opener button (small, icon-only) */
-.prestep-logs-btn {
-  font-size: 12px;
-  opacity: 0.5;
-}
-
 /*
- * Every icon button of a tray row (and of the header's pipeline controls)
+ * Every icon button of a tray row (and of the header's strip controls)
  * shares ONE fixed square box. A button used
  * to be glyph advance + padding, so ■ vs ▶ (different advances, and on
  * Windows different fonts) changed its width — and every control to its
@@ -2910,9 +4115,8 @@ dialog form {
 .caret-btn,
 .cmd-sub-btn,
 .action-logs-btn,
-.tray-header button.ghost.prescripts-trigger,
-.tray-header button.ghost.prestep-cancel,
-.tray-header button.ghost.prestep-logs-btn {
+.tray-wf-row button.ghost.tray-wf-action,
+.tray-header button.ghost.prestep-cancel {
   width: 22px;
   min-width: 22px;
   height: 22px;
@@ -2945,24 +4149,6 @@ dialog form {
   margin-bottom: 8px;
 }
 
-.prestep-card {
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  padding: 8px;
-  margin-bottom: 6px;
-  background: var(--bg-card);
-}
-.prestep-card header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.prestep-card .step-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-}
 .del-step {
   margin-left: auto;
   font-size: 13px;
@@ -2973,55 +4159,7 @@ dialog form {
   opacity: 1;
 }
 
-/* Mode toggle buttons */
-.prestep-mode-toggle {
-  display: inline-flex;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.prestep-mode-toggle .mode-btn {
-  padding: 2px 10px;
-  font-size: 11px;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-.prestep-mode-toggle .mode-btn[aria-pressed='true'] {
-  background: var(--accent-strong);
-  color: #fff;
-}
-
-/* Script list inside each step card */
-.prescript-list {
-  list-style: none;
-  padding: 0;
-  margin: 4px 0;
-}
-.prescript-list li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
-}
-.prescript-list li strong {
-  font-size: 12px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.prescript-list li code {
-  font-size: 11px;
-  color: var(--muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.prestep-empty {
-  font-size: 11px;
-  color: var(--muted);
-  padding: 4px 0;
-}
+/* Pre-script library list (group pane) */
 
 /* Add-step button */
 .add-step-btn {
@@ -3029,170 +4167,822 @@ dialog form {
   margin-top: 4px;
 }
 
-/* ── Pipeline editor (global "Pipeline" nav section) ─────────────────── */
-
-/* Cross-container drop-zone affordance — for an append drop into an empty
- * (or background) area of a step's own script list. */
-.prescript-list.drop-zone-active {
-  outline: 2px dashed var(--accent);
-  outline-offset: -2px;
-  background: rgba(10, 132, 255, 0.06);
+/* ── Pipeline editor: a full-bleed canvas of nodes and edges ───────────
+ * Built by renderer/pipeline-editor.ts and renderer/pipeline/*.ts. Every
+ * node sits at its own 2D position; an edge means "wait for"; a dashed
+ * frame runs its scripts in parallel. The panels float over the canvas. */
+.config-content:has(> .config-section[data-section='prescripts'].active) {
+  /* Edge to edge: the canvas is the whole section, no card, no gutter. */
+  padding: 0;
+  overflow: hidden;
 }
-
-/* The step card's own drop target: highlights the WHOLE card (not just its
- * script list) for the entire duration a script is dragged over any part of
- * it, matching the approved reference's `.drop-into`. `:has()` lets this stay
- * pure CSS — `attachCrossContainerDragHandlers` only toggles a class on the
- * script list itself, same as `drop-zone-active` above. */
-.prestep-card:has(.prescript-list.drop-into) {
-  border-color: var(--accent);
-  background: rgba(0, 122, 255, 0.1);
-}
-
-/* An empty step is a barrier that waits for everything before it — rendered
- * as a dashed drop target instead of a bare, ambiguous empty list. */
-.prescript-list.prestep-empty-dropzone {
-  min-height: 32px;
-  border: 1px dashed var(--border-strong);
-  border-radius: 6px;
+.config-section[data-section='prescripts'].active {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  height: 100%;
 }
-.prestep-drop-hint {
-  font-size: 11px;
-  color: var(--muted);
-  padding: 6px 0;
+#prescripts-pipeline-root {
+  flex: 1;
+  min-height: 0;
+}
+.pipeline-editor {
+  --pl-canvas-bg: #f4f4f6;
+  --pl-grid-dot: #cfcfd4;
+  --pl-surface: #ffffff;
+  --pl-float: rgba(255, 255, 255, 0.96);
+  --pl-border: #d2d2d7;
+  --pl-border-soft: #dcdce0;
+  --pl-edge: #a1a1a6;
+  --pl-pin: #8e8e93;
+  --pl-text-2: #3a3a3c;
+  --pl-frame-bg: rgba(255, 255, 255, 0.55);
+  --pl-trigger-bg: #1d1d1f;
+  --pl-trigger-fg: #ffffff;
+  --pl-danger: #d70015;
+  --pl-ok: #34c759;
+  --pl-option-fg: #0062cc;
+  --pl-off-bg: #f5f5f7;
+  --pl-off-border: #d1d1d6;
+  --pl-off-fg: #c7c7cc;
+  --pl-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --pl-node-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  position: relative;
+  height: 100%;
+  min-height: 360px;
+  overflow: hidden;
+  color: #1d1d1f;
+}
+:root[data-theme='dark'] .pipeline-editor {
+  --pl-canvas-bg: #1c1c1e;
+  --pl-grid-dot: rgba(255, 255, 255, 0.14);
+  --pl-surface: #2c2c2e;
+  --pl-float: rgba(44, 44, 46, 0.96);
+  --pl-border: rgba(255, 255, 255, 0.16);
+  --pl-border-soft: rgba(255, 255, 255, 0.1);
+  --pl-edge: #6e6e73;
+  --pl-pin: #8e8e93;
+  --pl-text-2: #d1d1d6;
+  --pl-frame-bg: rgba(255, 255, 255, 0.04);
+  --pl-trigger-bg: #f5f5f7;
+  --pl-trigger-fg: #1d1d1f;
+  --pl-danger: #ff6961;
+  --pl-ok: #30d158;
+  --pl-option-fg: #64aaff;
+  --pl-off-bg: #3a3a3c;
+  --pl-off-border: #545458;
+  --pl-off-fg: #6e6e73;
+  --pl-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --pl-node-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #f5f5f7;
+}
+
+/* The canvas: the dotted grid moves and scales with the view (the editor
+   sets background-size and background-position). */
+.pipeline-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-color: var(--pl-canvas-bg);
+  background-image: radial-gradient(var(--pl-grid-dot) 1px, transparent 1px);
+  background-size: 20px 20px;
+  touch-action: none;
+  user-select: none;
+}
+.pipeline-canvas.is-pan-ready,
+.pipeline-canvas.is-pan-ready * {
+  cursor: grab !important;
+}
+.pipeline-canvas.is-panning,
+.pipeline-canvas.is-panning * {
+  cursor: grabbing !important;
+}
+.pipeline-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+/* Edges */
+.pipeline-edges {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
   pointer-events: none;
 }
-
-/* Group identity — a coloured dot (deterministic hash of the group name,
- * same technique as renderer/logs.ts's per-source colouring) plus its name,
- * reused on a pipeline script row, the summary strip, and the picker. */
-.pipeline-group-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--group-color, var(--muted));
-  flex-shrink: 0;
+.pipeline-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
 }
-.pipeline-group-badge {
+.pipeline-edge-line {
+  fill: none;
+  stroke: var(--pl-edge);
+  stroke-width: 2;
+}
+.pipeline-edge.is-disconnected .pipeline-edge-line {
+  stroke-dasharray: 3 3;
+}
+.pipeline-edge:hover .pipeline-edge-line {
+  stroke: var(--accent);
+}
+.pipeline-edge-delete {
+  opacity: 0;
+  cursor: pointer;
+  pointer-events: all;
+  transition: opacity 0.12s ease;
+}
+.pipeline-edge:hover .pipeline-edge-delete,
+.pipeline-edge-delete:focus {
+  opacity: 1;
+  outline: none;
+}
+.pipeline-edge-delete circle {
+  fill: var(--pl-surface);
+  stroke: var(--pl-border);
+}
+.pipeline-edge-delete:focus-visible circle {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.pipeline-edge-delete path {
+  stroke: var(--pl-danger);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.pipeline-edge-draft {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+/* The group's icon on a tile washed in the group's colour. */
+.group-tile {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--muted);
-  flex-shrink: 0;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--tile-color, var(--pl-text-2, #3a3a3c));
+  background: color-mix(in srgb, var(--tile-color, #8e8e93) 16%, transparent);
 }
-.pipeline-group-name {
-  max-width: 90px;
+.group-tile.is-small {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+.group-tile .icon-img img {
+  width: 70%;
+  height: 70%;
+}
+
+/* Trigger, blocks and nodes */
+.pipeline-trigger {
+  position: absolute;
+  width: 132px;
+  height: 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 8px;
+  border-radius: 22px 10px 10px 22px;
+  background: var(--pl-trigger-bg);
+  color: var(--pl-trigger-fg);
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: var(--pl-node-shadow);
+}
+.pipeline-trigger-bolt {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #ff9f0a;
+  color: #fff;
+  font-size: 13px;
+}
+.pipeline-trigger-lock {
+  margin-left: auto;
+  font-size: 12px;
+  color: #8e8e93;
+}
+.pipeline-block {
+  position: absolute;
+  box-sizing: border-box;
+}
+.pipeline-block.is-frame {
+  border: 1.5px dashed var(--pl-pin);
+  border-radius: 14px;
+  background: var(--pl-frame-bg);
+  cursor: grab;
+}
+.pipeline-frame-label {
+  position: absolute;
+  top: -9px;
+  left: 12px;
+  padding: 0 7px;
+  line-height: 16px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--pl-text-2);
+  background: var(--pl-canvas-bg);
+}
+.pipeline-block.is-drop-target > .pipeline-node,
+.pipeline-block.is-frame.is-drop-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+.pipeline-node {
+  position: absolute;
+  width: 148px;
+  height: 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--pl-border);
+  border-radius: 10px;
+  background: var(--pl-surface);
+  box-shadow: var(--pl-node-shadow);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: grab;
+}
+.pipeline-canvas.is-dragging .pipeline-node {
+  cursor: grabbing;
+}
+.pipeline-node.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.18);
+}
+.pipeline-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pipeline-node.is-broken .pipeline-node-tile {
+  color: var(--badge-error-fg);
+}
+.pipeline-node-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Will not run: dimmed, with a badge saying why. */
+.pipeline-block.is-disconnected > .pipeline-node {
+  opacity: 0.5;
+}
+.pipeline-block.is-frame.is-disconnected {
+  border-color: var(--pl-off-border);
+}
+.pipeline-block-warning {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ff9f0a;
+  color: #fff;
+  font-size: 10px;
+  box-shadow: var(--pl-node-shadow);
+}
 
-/* Summary strip: the resulting boot order at a glance, matching the
- * approved UI reference (`arranque-prototipo.html`) — one block per step,
- * with a header line and one lane per script, sitting in a horizontally
- * scrollable track so a long pipeline never widens the pane. */
-.pipeline-summary {
-  margin-bottom: 10px;
+/* Pins: input on the left, output on the right (drag it to connect). */
+.pipeline-pin {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  box-sizing: border-box;
+  border: 2px solid var(--pl-pin);
+  border-radius: 50%;
+  background: var(--pl-surface);
 }
-.pipeline-summary-steps {
+.pipeline-pin[data-block='trigger'] {
+  border-color: var(--pl-trigger-bg);
+}
+.pipeline-pin.is-out {
+  cursor: crosshair;
+}
+.pipeline-pin.is-out::after {
+  /* A bigger target than the 10px dot. */
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+}
+.pipeline-pin.is-out:hover,
+.pipeline-pin.is-drop-target {
+  border-color: var(--accent);
+  transform: scale(1.3);
+}
+.pipeline-stub {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pl-border);
+  border-radius: 5px;
+  background: var(--pl-surface);
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pipeline-stub::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 14px;
+  border-top: 1.5px dashed var(--pl-edge);
+}
+.pipeline-stub:hover,
+.pipeline-stub[aria-expanded='true'],
+.pipeline-stub.is-drop-target {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  filter: none;
+}
+.pipeline-stub[aria-disabled='true'] {
+  color: var(--pl-off-fg);
+  background: var(--pl-off-bg);
+  border: 1px dashed var(--pl-off-border);
+  cursor: not-allowed;
+}
+.pipeline-stub:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Chromeless icon buttons of the floating controls */
+.pipeline-icon-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  box-shadow: none;
+  color: var(--pl-text-2);
+  font-size: 15px;
+}
+.pipeline-icon-btn:hover {
+  filter: none;
+  background: var(--bg-row-hover);
+}
+.pipeline-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.pipeline-icon-btn.is-danger {
+  color: var(--pl-danger);
+}
+.pipeline-node-toolbar {
+  position: absolute;
+  z-index: 2;
   display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  overflow-x: auto;
-  padding: 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--bg-card);
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 8px;
+  background: var(--pl-surface);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
-.pipeline-summary-step {
-  flex: none;
+.pipeline-node-toolbar .pipeline-icon-btn {
+  width: 26px;
+  height: 24px;
+  font-size: 13px;
+}
+
+/* Floating pre-scripts panel (top left) */
+.pipeline-panel {
+  position: absolute;
+  z-index: 3;
+  left: 12px;
+  /* Under the breadcrumb pill. */
+  top: 58px;
+  bottom: 12px;
+  width: var(--pipeline-panel-width, 232px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 84px;
-  padding: 5px 7px 6px;
-  border-radius: 6px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-card-strong);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 12px;
+  background: var(--pl-float);
+  box-shadow: var(--pl-shadow);
 }
-.pipeline-summary-step.is-empty {
-  border-style: dashed;
-  background: transparent;
+.pipeline-panel[hidden],
+.pipeline-minimap[hidden] {
+  display: none;
 }
-/* A parallel step with more than one script gets an accent left edge. */
-.pipeline-summary-step.is-parallel {
-  border-color: var(--accent);
-  box-shadow: inset 2px 0 0 var(--accent);
+.pipeline-panel.is-resizing,
+.pipeline-panel.is-resizing * {
+  cursor: col-resize;
+  user-select: none;
 }
-.pipeline-summary-step-head {
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.pipeline-summary-lane {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10.5px;
-  white-space: nowrap;
-}
-.pipeline-summary-lane.is-muted {
-  color: var(--muted);
-}
-.pipeline-summary-count {
-  margin-top: 6px;
-}
-
-/* "+ Añadir script" picker, grouped by group; already-placed scripts show
- * disabled rather than being omitted, so the user sees WHY they're missing. */
-.script-picker {
-  margin-top: 6px;
-  padding: 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--bg-card);
-  max-height: 220px;
-  overflow-y: auto;
-}
-.script-picker-group + .script-picker-group {
-  margin-top: 8px;
-}
-.script-picker-group-header {
+.pipeline-panel-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+}
+.pipeline-panel-title {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
   font-weight: 600;
+}
+.pipeline-panel-collapse {
+  width: 24px;
+  height: 24px;
   color: var(--muted);
-  margin-bottom: 4px;
 }
-.script-picker-item {
-  display: block;
-  width: 100%;
-  text-align: left;
+.pipeline-panel .pipeline-panel-new {
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.pipeline-palette-search {
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  font: inherit;
   font-size: 12px;
-  padding: 4px 8px;
+  color: inherit;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 7px;
+  background: var(--pl-surface);
+}
+.pipeline-palette-search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.pipeline-palette-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.pipeline-palette-group-name {
+  margin: 6px 0 2px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pipeline-palette-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pipeline-palette-empty {
+  margin: 6px 8px;
+}
+.pipeline-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  cursor: grab;
+}
+.pipeline-chip:hover {
+  background: var(--bg-row-hover);
+}
+.pipeline-chip.is-placed {
+  opacity: 0.45;
+  cursor: default;
+}
+.pipeline-chip.is-placed:hover {
+  background: none;
+}
+.pipeline-chip.dragging {
+  opacity: 0.35;
+}
+.pipeline-chip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pipeline-chip-mark {
+  font-size: 13px;
+  color: var(--muted);
+}
+.pipeline-chip.is-placed .pipeline-chip-mark {
+  color: var(--pl-ok);
+}
+.pipeline-panel-resize {
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  width: 10px;
+  height: 40px;
+  margin-top: -20px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.pipeline-panel-resize::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--pl-off-fg);
+  transform: translate(-50%, -50%);
+}
+.pipeline-panel-resize:hover::after,
+.pipeline-panel-resize:focus-visible::after,
+.pipeline-panel.is-resizing .pipeline-panel-resize::after {
+  background: var(--accent);
+}
+.pipeline-panel-resize:focus-visible {
+  outline: none;
+}
+/* Status pill (top right), minimap and zoom cluster (bottom right) */
+.pipeline-status {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 10px;
+  background: var(--pl-float);
+  font-size: 12px;
+  color: var(--pl-text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pipeline-zoom-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--pl-border-soft);
+}
+.pipeline-minimap {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 56px;
+  width: 168px;
+  height: 96px;
+  overflow: hidden;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 10px;
+  background: var(--pl-float);
+  cursor: pointer;
+}
+.pipeline-minimap-item {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 3px;
+  background: var(--pl-edge);
+}
+.pipeline-minimap-item.is-trigger {
+  background: var(--pl-trigger-bg);
+}
+.pipeline-minimap-item.is-frame {
+  border: 1px dashed var(--pl-pin);
+  background: none;
+}
+.pipeline-minimap-item.is-selected {
+  background: var(--accent);
+}
+.pipeline-minimap-view {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid var(--accent);
   border-radius: 4px;
-  background: transparent;
+  background: rgba(0, 122, 255, 0.06);
+  pointer-events: none;
+}
+.pipeline-zoom {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 10px;
+  background: var(--pl-float);
+}
+.pipeline-zoom-sep {
+  height: 18px;
+  margin: 0 2px;
+}
+.pipeline-zoom-value {
+  min-width: 40px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.pipeline-zoom .pipeline-minimap-toggle[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+/* The "+" picker */
+.pipeline-picker {
+  position: absolute;
+  z-index: 10;
+  width: 300px;
+  max-height: 360px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 12px;
+  background: var(--pl-surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+.pipeline-picker-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+  color: var(--muted);
+}
+.pipeline-picker-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
   border: 0;
+  outline: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--pl-text-2);
 }
-.script-picker-item:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.06);
+.pipeline-picker-search kbd {
+  padding: 0 4px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 10.5px;
 }
-.script-picker-item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.pipeline-picker-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
-@media (prefers-color-scheme: dark) {
-  .script-picker-item:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.08);
-  }
+.pipeline-picker-group-name {
+  padding: 6px 8px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pipeline-picker-option {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  color: inherit;
+}
+.pipeline-picker-option:not([disabled]):hover,
+.pipeline-picker-option.is-active {
+  filter: none;
+  background: var(--accent-tint);
+  color: var(--pl-option-fg);
+}
+.pipeline-picker-option[disabled] {
+  color: var(--muted);
+  cursor: default;
+}
+.pipeline-picker-option[disabled] .group-tile {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+.pipeline-picker-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pipeline-picker-note {
+  margin-left: auto;
+  font-size: 11px;
+}
+.pipeline-picker-option.is-create {
+  color: var(--accent);
+}
+.pipeline-picker-sep {
+  flex: none;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--pl-border-soft);
+}
+.pipeline-picker-empty {
+  margin: 6px 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* New pre-script from the pipeline: the "Grupo" select and the note */
+.sf-group-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.sf-group-select select {
+  width: 100%;
+  height: 32px;
+  padding: 0 32px 0 38px;
+  appearance: none;
+  border-radius: 6px;
+}
+.sf-group-select .group-tile {
+  position: absolute;
+  left: 6px;
+  pointer-events: none;
+}
+.sf-group-select > .icon {
+  position: absolute;
+  right: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.sf-pipeline-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--badge-neutral-bg);
+  font-size: 12px;
+}
+.sf-pipeline-note > .icon {
+  color: var(--accent);
+  font-size: 15px;
+}
+.sf-pipeline-note[hidden],
+#sf-group-field[hidden] {
+  display: none;
 }
 
 /* Global pipeline trigger — lives in the tray header now, one for the whole
@@ -4001,4 +5791,1359 @@ label.remote-row {
   margin-top: 6px;
   padding: 2px 8px;
   text-align: center;
+}
+
+/* ── Workflows: list, editor chrome, run states, log drawer ────────────
+ * Built by renderer/workflows/*.ts and the pipeline editor. One token set
+ * for the whole section, redefined for dark below. */
+.config-section[data-section='prescripts'] {
+  --wf-startup: #ff9f0a;
+  --wf-startup-bg: #fff1d6;
+  --wf-startup-fg: #a05a00;
+  --wf-startup-row: #fffaf0;
+  --wf-schedule: #5e5ce6;
+  --wf-schedule-bg: #efeefe;
+  --wf-schedule-fg: #3634a3;
+  --wf-manual: #34c759;
+  --wf-manual-bg: #e8f8ec;
+  --wf-manual-fg: #1d6b31;
+  --wf-run: #007aff;
+  --wf-run-fg: #0062cc;
+  --wf-ok: #34c759;
+  --wf-ok-fg: #248a3d;
+  --wf-warn: #ff9f0a;
+  --wf-warn-fg: #a05a00;
+  --wf-error: #ff3b30;
+  --wf-error-fg: #d70015;
+  --wf-error-bg: #fff5f5;
+  --wf-idle: #c7c7cc;
+  --wf-muted: #6e6e73;
+  --wf-surface: #ffffff;
+  --wf-head-bg: #fafafa;
+  --wf-line: #ececef;
+  --wf-border: #dcdce0;
+  --wf-chip-on-bg: #1d1d1f;
+  --wf-chip-on-fg: #ffffff;
+  --wf-pop-warn-bg: #fff8eb;
+  --wf-pop-warn-border: #ffe2b3;
+  --wf-pop-warn-fg: #c93400;
+  --wf-seg-bg: #efeff2;
+  --wf-seg-on: #ffffff;
+  --remote-surface: var(--wf-surface);
+  --remote-danger: var(--wf-error-fg);
+}
+:root[data-theme='dark'] .config-section[data-section='prescripts'] {
+  --wf-startup-bg: rgba(255, 159, 10, 0.2);
+  --wf-startup-fg: #ffb340;
+  --wf-startup-row: rgba(255, 159, 10, 0.07);
+  --wf-schedule: #7d7aff;
+  --wf-schedule-bg: rgba(94, 92, 230, 0.26);
+  --wf-schedule-fg: #b4b2ff;
+  --wf-manual: #30d158;
+  --wf-manual-bg: rgba(48, 209, 88, 0.2);
+  --wf-manual-fg: #4ade80;
+  --wf-run: #0a84ff;
+  --wf-run-fg: #64aaff;
+  --wf-ok: #30d158;
+  --wf-ok-fg: #4ade80;
+  --wf-warn: #ff9f0a;
+  --wf-warn-fg: #ffb340;
+  --wf-error: #ff453a;
+  --wf-error-fg: #ff6961;
+  --wf-error-bg: rgba(255, 69, 58, 0.14);
+  --wf-idle: #636366;
+  --wf-muted: #98989d;
+  --wf-surface: #2c2c2e;
+  --wf-head-bg: #262628;
+  --wf-line: rgba(255, 255, 255, 0.08);
+  --wf-border: rgba(255, 255, 255, 0.12);
+  --wf-chip-on-bg: #f5f5f7;
+  --wf-chip-on-fg: #1d1d1f;
+  --wf-pop-warn-bg: rgba(255, 159, 10, 0.12);
+  --wf-pop-warn-border: rgba(255, 159, 10, 0.3);
+  --wf-pop-warn-fg: #ffb340;
+  --wf-seg-bg: rgba(255, 255, 255, 0.08);
+  --wf-seg-on: #48484a;
+}
+
+@keyframes wf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes wf-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--wf-run) 50%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+@keyframes wf-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--wf-run) 15%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--wf-run) 28%, transparent);
+  }
+}
+@keyframes wf-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+/* Nav badge: how many workflows are running. */
+.nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--accent-strong);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.nav-item.active .nav-badge {
+  background: rgba(255, 255, 255, 0.25);
+}
+.nav-badge[hidden] {
+  display: none;
+}
+.config-nav.collapsed .nav-badge {
+  position: absolute;
+  margin: -18px 0 0 18px;
+  min-width: 14px;
+  padding: 0 3px;
+  line-height: 14px;
+  font-size: 9.5px;
+}
+
+/* The list */
+#workflows-list-root {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 24px 18px;
+  box-sizing: border-box;
+}
+#workflows-list-root[hidden],
+#prescripts-pipeline-root[hidden] {
+  display: none;
+}
+.wf-list {
+  /* The list lays itself out by its own width, not the window's. */
+  container: wf-list / inline-size;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.wf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.wf-search {
+  /* Shrinks to its floor before anything else in the toolbar wraps. */
+  flex: 1 1 180px;
+  min-width: 180px;
+  max-width: 300px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  background: var(--wf-surface);
+  color: var(--wf-muted);
+}
+.wf-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: none;
+  color: var(--text, inherit);
+  font: inherit;
+  font-size: 13px;
+}
+.wf-search:focus-within {
+  border-color: var(--accent);
+}
+.wf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.wf-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--wf-border);
+  border-radius: 13px;
+  background: var(--wf-surface);
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+}
+.wf-chip .icon {
+  font-size: 12px;
+}
+.wf-chip[aria-pressed='true'] {
+  background: var(--wf-chip-on-bg);
+  border-color: var(--wf-chip-on-bg);
+  color: var(--wf-chip-on-fg);
+}
+.wf-chip:hover {
+  filter: none;
+}
+.icon.is-startup {
+  color: var(--wf-startup);
+}
+.icon.is-schedule {
+  color: var(--wf-schedule);
+}
+.icon.is-manual {
+  color: var(--wf-manual-fg);
+}
+.wf-spacer {
+  flex: 1;
+}
+/* A toolbar button like its neighbours: the dashed outline is only for the
+   add buttons that sit inside a list as its next entry. */
+.wf-new {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  background: var(--wf-surface);
+  box-shadow: var(--btn-shadow);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+.wf-new .icon {
+  color: var(--accent);
+}
+.wf-new:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.wf-new:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.wf-table {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--wf-border);
+  border-radius: 12px;
+  background: var(--wf-surface);
+  overflow: hidden;
+}
+.wf-rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.wf-row {
+  position: relative;
+  display: grid;
+  grid-template-columns:
+    minmax(0, 2.2fr) minmax(0, 1.5fr) minmax(0, 1.3fr) minmax(0, 1.3fr)
+    170px;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 14px;
+  border-top: 1px solid var(--wf-line);
+  font-size: 13px;
+  cursor: pointer;
+}
+.wf-rows .wf-row:hover {
+  background: var(--bg-row-hover);
+}
+.wf-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.wf-row.wf-head {
+  min-height: 34px;
+  border-top: 0;
+  background: var(--wf-head-bg);
+  color: var(--wf-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: default;
+}
+.wf-cell {
+  min-width: 0;
+}
+.wf-head .wf-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-cell.is-end {
+  text-align: right;
+}
+.wf-row.is-startup {
+  background: var(--wf-startup-row);
+}
+.wf-row.is-off > .wf-cell:not(.wf-cell-actions) {
+  opacity: 0.55;
+}
+.wf-cell-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wf-name-wrap {
+  min-width: 0;
+}
+.wf-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-rename {
+  width: 100%;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--wf-surface);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+.wf-sub {
+  color: var(--wf-muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-tile {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.wf-tile.is-startup {
+  background: #1d1d1f;
+  color: var(--wf-startup);
+}
+.wf-tile.is-schedule {
+  background: var(--wf-schedule-bg);
+  color: var(--wf-schedule);
+}
+.wf-tile.is-manual {
+  background: var(--wf-manual-bg);
+  color: var(--wf-manual-fg);
+}
+.wf-cell-trigger {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.wf-trigger-sub {
+  max-width: 100%;
+}
+/* Shown only where the last-run column is not (see the container queries). */
+.wf-sub-last {
+  display: none;
+}
+.wf-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wf-pill .icon {
+  flex: none;
+  font-size: 11px;
+}
+.wf-pill > span:last-child,
+.wf-status > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-pill.is-startup {
+  background: var(--wf-startup-bg);
+  color: var(--wf-startup-fg);
+}
+.wf-pill.is-schedule {
+  background: var(--wf-schedule-bg);
+  color: var(--wf-schedule-fg);
+}
+.wf-pill.is-manual {
+  background: var(--wf-manual-bg);
+  color: var(--wf-manual-fg);
+}
+.wf-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.wf-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--wf-idle);
+}
+.wf-status.is-running {
+  color: var(--wf-run-fg);
+}
+.wf-status.is-running .wf-dot {
+  background: var(--wf-run);
+  animation: wf-pulse 1.2s infinite;
+}
+.wf-status.is-success {
+  color: var(--wf-ok-fg);
+}
+.wf-dot.is-success,
+.wf-status.is-success .wf-dot {
+  background: var(--wf-ok);
+}
+.wf-status.is-warning {
+  color: var(--wf-warn-fg);
+}
+.wf-dot.is-warning,
+.wf-status.is-warning .wf-dot {
+  background: var(--wf-warn);
+}
+.wf-status.is-error {
+  color: var(--wf-error-fg);
+}
+.wf-dot.is-error,
+.wf-status.is-error .wf-dot {
+  background: var(--wf-error);
+}
+.wf-status.is-cancelled,
+.wf-status.is-inactive,
+.wf-status.is-never {
+  color: var(--wf-muted);
+}
+.wf-cell-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+.wf-icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: 7px;
+  background: var(--wf-surface);
+  box-shadow: none;
+  color: var(--pl-text-2, inherit);
+  font-size: 12px;
+}
+.wf-icon-btn:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.wf-icon-btn:disabled,
+.wf-icon-btn[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+.wf-icon-btn.is-stop {
+  color: var(--wf-error-fg);
+}
+.wf-icon-btn.is-menu {
+  border-color: transparent;
+  background: transparent;
+  color: var(--wf-muted);
+  font-size: 15px;
+  opacity: 0;
+}
+.wf-row:hover .wf-icon-btn.is-menu,
+.wf-row:focus-within .wf-icon-btn.is-menu,
+.wf-icon-btn.is-menu[aria-expanded='true'] {
+  opacity: 1;
+}
+/* The eye: on hover, and always while the workflow is hidden (then the
+   name dims, like a group hidden from the tray). */
+.wf-icon-btn.is-eye {
+  border-color: transparent;
+  background: transparent;
+  color: var(--wf-muted);
+  opacity: 0;
+}
+.wf-row:hover .wf-icon-btn.is-eye,
+.wf-icon-btn.is-eye:focus-visible,
+.wf-row.is-hidden .wf-icon-btn.is-eye {
+  opacity: 1;
+}
+.wf-row.is-hidden .wf-name {
+  opacity: 0.45;
+}
+.wf-switch {
+  flex: none;
+}
+.wf-empty {
+  padding: 40px 0;
+  color: var(--wf-muted);
+  text-align: center;
+  font-size: 12.5px;
+}
+.wf-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 14px;
+  border-top: 1px solid var(--wf-line);
+  color: var(--wf-muted);
+  font-size: 12px;
+}
+.wf-pager-label {
+  flex: 1;
+}
+.wf-pager-page {
+  min-width: 44px;
+  text-align: center;
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.wf-cell-actions .remote-menu {
+  top: calc(100% - 6px);
+}
+
+/*
+ * Narrower lists. Up to 760px the filter chips take a line of their own
+ * under the search and «Nuevo workflow»; up to 860px the last run moves from
+ * its column into the subtitle under the name; up to 560px each row becomes
+ * a two-line card (name and actions, then trigger and status), headless.
+ */
+@container wf-list (max-width: 760px) {
+  .wf-search {
+    max-width: none;
+  }
+  .wf-spacer {
+    display: none;
+  }
+  .wf-chips {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+@container wf-list (max-width: 860px) {
+  .wf-row {
+    grid-template-columns:
+      minmax(0, 2.2fr) minmax(0, 1.4fr) minmax(0, 1.2fr)
+      170px;
+  }
+  .wf-cell-last {
+    display: none;
+  }
+  .wf-sub-last {
+    display: inline;
+  }
+}
+@container wf-list (max-width: 560px) {
+  .wf-row.wf-head {
+    display: none;
+  }
+  .wf-row {
+    grid-template-columns: fit-content(60%) minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name name actions'
+      'trigger status status';
+    gap: 6px 10px;
+    padding: 10px 14px;
+  }
+  .wf-rows .wf-row:first-child {
+    border-top: 0;
+  }
+  .wf-cell-name {
+    grid-area: name;
+  }
+  .wf-cell-actions {
+    grid-area: actions;
+  }
+  .wf-cell-trigger {
+    grid-area: trigger;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    /* Under the name, past the tile (28px) and its gap. */
+    padding-left: 38px;
+  }
+  .wf-cell-status {
+    grid-area: status;
+  }
+}
+
+/* Editor chrome: breadcrumb (top left), status (top right), legend. */
+.wf-crumb {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  max-width: calc(100% - 380px);
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 10px;
+  background: var(--pl-float);
+  font-size: 13px;
+}
+.wf-crumb-back {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--wf-muted);
+  font-size: 13px;
+}
+.wf-crumb-back:hover {
+  color: var(--accent);
+  filter: none;
+}
+.wf-crumb-sep {
+  color: var(--wf-idle);
+  font-size: 12px;
+}
+.wf-crumb input.wf-crumb-name {
+  min-width: 0;
+  max-width: 280px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+.wf-crumb input.wf-crumb-name:hover {
+  border-color: var(--pl-border-soft);
+}
+.wf-crumb input.wf-crumb-name:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--pl-surface);
+}
+.wf-crumb .wf-pill {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.wf-crumb .wf-pill[hidden] {
+  display: none;
+}
+.wf-crumb-panel {
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 7px;
+  background: var(--pl-surface);
+  box-shadow: none;
+  color: var(--wf-muted);
+  font-size: 14px;
+}
+.wf-crumb-panel[aria-pressed='true'] {
+  color: var(--accent);
+}
+.wf-run-status {
+  gap: 10px;
+  padding: 0 6px 0 12px;
+}
+.wf-run-label {
+  font-weight: 600;
+}
+.wf-run-label.is-running {
+  color: var(--wf-run-fg);
+}
+.wf-run-time,
+.wf-run-count {
+  color: var(--wf-muted);
+}
+.wf-run-btn,
+.wf-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 7px;
+  background: var(--pl-surface);
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+}
+.wf-run-btn .icon,
+.wf-stop .icon {
+  font-size: 10px;
+}
+.wf-run-btn.is-icon {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+}
+.wf-run-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.wf-stop {
+  border-color: color-mix(in srgb, var(--wf-error) 30%, transparent);
+  color: var(--wf-error-fg);
+}
+.wf-run-btn:hover,
+.wf-stop:hover {
+  filter: none;
+  background: var(--bg-row-hover);
+}
+.wf-legend {
+  position: absolute;
+  z-index: 3;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 10px;
+  background: var(--pl-float);
+}
+.pipeline-editor:has(.pipeline-panel:not([hidden])) .wf-legend {
+  left: calc(var(--pipeline-panel-width, 232px) + 36px);
+}
+.wf-legend[hidden] {
+  display: none;
+}
+.wf-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--pl-text-2);
+  white-space: nowrap;
+}
+.wf-legend-mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.wf-legend-mark.is-waiting {
+  border: 1.5px solid var(--wf-idle);
+}
+.wf-legend-mark.is-running {
+  border: 2px solid color-mix(in srgb, var(--wf-run) 25%, transparent);
+  border-top-color: var(--wf-run);
+  animation: wf-spin 0.8s linear infinite;
+}
+.wf-legend-mark.is-success {
+  background: var(--wf-ok);
+}
+.wf-legend-mark.is-warning {
+  background: var(--wf-warn);
+}
+.wf-legend-mark.is-error {
+  background: var(--wf-error);
+}
+.wf-legend-mark.is-skipped {
+  border-radius: 3px;
+  border: 1.5px dashed var(--pl-edge);
+}
+.pipeline-spinner {
+  flex: none;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--wf-run) 25%, transparent);
+  border-top-color: var(--wf-run);
+  animation: wf-spin 0.8s linear infinite;
+}
+
+/* The trigger node: its kind's colour, and a button now. */
+.pipeline-trigger {
+  cursor: pointer;
+}
+.pipeline-trigger:focus-visible,
+.pipeline-trigger[aria-expanded='true'] {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.pipeline-trigger.is-schedule .pipeline-trigger-bolt {
+  background: var(--wf-schedule);
+}
+.pipeline-trigger.is-manual .pipeline-trigger-bolt {
+  background: var(--wf-manual);
+  font-size: 11px;
+}
+
+/* Run states on the nodes */
+.pipeline-node-state {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.pipeline-node.is-run-waiting {
+  color: var(--wf-muted);
+}
+.pipeline-node.is-run-waiting .pipeline-node-state {
+  border: 1.5px solid var(--wf-idle);
+  color: var(--wf-idle);
+  font-size: 10px;
+}
+.pipeline-node.is-run-running {
+  border-color: var(--wf-run);
+  animation: wf-glow 1.4s ease-in-out infinite;
+}
+.pipeline-node.is-run-success {
+  border-color: var(--wf-ok);
+}
+.pipeline-node.is-run-success .pipeline-node-state {
+  background: var(--wf-ok);
+}
+.pipeline-node.is-run-warning {
+  border-color: var(--wf-warn);
+}
+.pipeline-node.is-run-warning .pipeline-node-state {
+  background: var(--wf-warn);
+}
+.pipeline-node.is-run-error {
+  border-color: var(--wf-error);
+  background: var(--wf-error-bg);
+}
+.pipeline-node.is-run-error .pipeline-node-state {
+  background: var(--wf-error);
+  font-size: 10px;
+}
+.pipeline-node.is-run-cancelled {
+  opacity: 0.7;
+}
+.pipeline-node.is-run-cancelled .pipeline-node-state {
+  background: var(--wf-idle);
+}
+.pipeline-node.is-run-skipped {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+  color: var(--wf-idle);
+}
+.pipeline-node-skipped {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+}
+.pipeline-node-caption {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--wf-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.pipeline-node.is-run-running .pipeline-node-caption {
+  color: var(--wf-run-fg);
+}
+.pipeline-block.is-frame.is-run-running {
+  border-color: var(--wf-run);
+}
+.pipeline-block.is-frame.is-run-success {
+  border-color: var(--wf-ok);
+}
+.pipeline-block.is-frame.is-run-warning {
+  border-color: var(--wf-warn);
+  background: color-mix(in srgb, var(--wf-warn) 7%, transparent);
+}
+.pipeline-block.is-frame.is-run-error {
+  border-color: var(--wf-error);
+  background: color-mix(in srgb, var(--wf-error) 6%, transparent);
+}
+
+/* Run states on the edges: the block each one leads into. */
+.pipeline-edge.is-run-success .pipeline-edge-line {
+  stroke: var(--wf-ok);
+}
+.pipeline-edge.is-run-warning .pipeline-edge-line {
+  stroke: var(--wf-warn);
+}
+.pipeline-edge.is-run-error .pipeline-edge-line {
+  stroke: var(--wf-error);
+}
+.pipeline-edge.is-run-running .pipeline-edge-line {
+  stroke: var(--wf-run);
+}
+.pipeline-edge.is-run-waiting .pipeline-edge-line,
+.pipeline-edge.is-run-cancelled .pipeline-edge-line {
+  stroke: var(--wf-idle);
+}
+.pipeline-edge.is-run-skipped .pipeline-edge-line {
+  stroke: var(--wf-idle);
+  stroke-dasharray: 3 4;
+}
+.pipeline-edge.is-flowing .pipeline-edge-line {
+  stroke-dasharray: 6 6;
+  animation: wf-flow 0.6s linear infinite;
+}
+/* Mid-run only layout edits go through: nothing to delete. */
+.pipeline-editor.is-locked .pipeline-edge-delete {
+  display: none;
+}
+
+/* The frame's label, «Todos OK» shield and hover toolbar */
+.pipeline-frame-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.pipeline-frame-shield {
+  color: var(--pl-option-fg);
+  font-size: 11px;
+}
+.pipeline-node-toolbar {
+  align-items: center;
+}
+.pipeline-frame-toolbar {
+  top: -40px;
+  left: 24px;
+  cursor: default;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+/* A bridge over the gap, so the pointer reaches the toolbar. */
+.pipeline-frame-toolbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 14px;
+}
+.pipeline-block.is-frame:hover > .pipeline-frame-toolbar,
+.pipeline-block.is-frame:focus-within > .pipeline-frame-toolbar {
+  visibility: visible;
+  opacity: 1;
+}
+.pipeline-canvas.is-dragging .pipeline-frame-toolbar {
+  visibility: hidden;
+}
+.pipeline-require-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  box-shadow: none;
+  color: var(--pl-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.pipeline-require-all .icon {
+  font-size: 12px;
+}
+.pipeline-require-all[aria-pressed='true'] {
+  background: var(--badge-info-bg);
+  color: var(--pl-option-fg);
+}
+.pipeline-toolbar-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--pl-border-soft);
+}
+.pipeline-node-toolbar [aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Trigger popover */
+.wf-pop {
+  position: absolute;
+  z-index: 8;
+  width: 300px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--pl-border-soft);
+  border-radius: 12px;
+  background: var(--pl-surface);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+:root[data-theme='dark'] .wf-pop {
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+.wf-pop[hidden] {
+  display: none;
+}
+.wf-pop-label {
+  color: var(--wf-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.wf-seg {
+  display: flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--wf-seg-bg);
+}
+.wf-seg.is-sub {
+  background: color-mix(in srgb, var(--wf-seg-bg) 60%, transparent);
+}
+.wf-seg-option {
+  flex: 1;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  box-shadow: none;
+  color: var(--pl-text-2);
+  font-size: 12px;
+}
+.wf-seg-option:hover {
+  filter: none;
+}
+.wf-seg-option[aria-checked='true'] {
+  background: var(--wf-seg-on);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  color: inherit;
+  font-weight: 600;
+}
+.wf-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.wf-pop-row > .icon {
+  color: var(--pl-text-2);
+  font-size: 14px;
+}
+.wf-pop-grow {
+  flex: 1;
+}
+.wf-pop-divider {
+  height: 1px;
+  background: var(--wf-line);
+}
+.wf-pop-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--wf-pop-warn-border);
+  border-radius: 8px;
+  background: var(--wf-pop-warn-bg);
+  font-size: 12px;
+}
+.wf-pop-warn > .icon {
+  color: var(--wf-pop-warn-fg);
+  font-size: 14px;
+}
+.wf-pop-warn-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.wf-pop-swap {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.wf-days {
+  display: flex;
+  gap: 6px;
+}
+.wf-day {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: 50%;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font-size: 11.5px;
+}
+.wf-day[aria-pressed='true'] {
+  background: var(--wf-schedule);
+  border-color: var(--wf-schedule);
+  color: #fff;
+  font-weight: 600;
+}
+.wf-time,
+.wf-every,
+.wf-unit {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--wf-border);
+  border-radius: 7px;
+  background: var(--pl-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+.wf-time {
+  width: 86px;
+  text-align: center;
+}
+.wf-every {
+  width: 60px;
+}
+.wf-pop-next {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--wf-seg-bg);
+  font-size: 12.5px;
+}
+.wf-pop-next > .icon {
+  color: var(--wf-schedule);
+  font-size: 14px;
+}
+
+/* Log drawer: dark in both themes, like a terminal. */
+.wf-log {
+  position: absolute;
+  z-index: 6;
+  left: 12px;
+  right: 12px;
+  bottom: 58px;
+  height: 210px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #1c1c1e;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  color: #d1d1d6;
+}
+:root[data-theme='dark'] .wf-log {
+  background: #111113;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.wf-log[hidden] {
+  display: none;
+}
+.wf-log-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 6px 0 8px;
+  border-bottom: 1px solid #2c2c2e;
+}
+.wf-log-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+.wf-log-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  box-shadow: none;
+  color: #a1a1a6;
+  font-size: 12px;
+}
+.wf-log-tab:hover {
+  filter: none;
+  background: rgba(255, 255, 255, 0.06);
+}
+.wf-log-tab .wf-dot {
+  width: 7px;
+  height: 7px;
+}
+.wf-log-tab[aria-selected='true'] {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f5f7;
+}
+.wf-log-tab.is-error[aria-selected='true'] {
+  background: #3a1d1d;
+  color: #ff6961;
+}
+.wf-log-meta {
+  color: #8e8e93;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.wf-log-btn {
+  flex: none;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: #a1a1a6;
+  font-size: 13px;
+}
+.wf-log-btn:hover {
+  filter: none;
+  color: #f5f5f7;
+}
+.wf-log-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.wf-log-body:focus-visible {
+  outline: none;
+}
+.wf-log-time,
+.wf-log-line.is-sys {
+  color: #8e8e93;
+}
+.wf-log-line.is-warn {
+  color: #ffb340;
+}
+.wf-log-line.is-error {
+  color: #ff6961;
+}
+.pipeline-editor.has-log .pipeline-minimap {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-status.is-running .wf-dot,
+  .pipeline-node.is-run-running,
+  .pipeline-edge.is-flowing .pipeline-edge-line {
+    animation: none;
+  }
+  .pipeline-spinner,
+  .wf-legend-mark.is-running {
+    animation-duration: 2.4s;
+  }
+}
+
+/* Groups: «Ocultar de la barra» */
+.nav-eye {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+  opacity: 0;
+}
+.nav-card:hover .nav-eye,
+.nav-eye:focus-visible,
+.nav-card.is-hidden-in-tray .nav-eye {
+  opacity: 1;
+}
+.nav-eye:hover {
+  filter: none;
+  background: var(--bg-card-strong);
+  color: var(--accent);
+}
+.nav-card.is-hidden-in-tray .nav-name,
+.nav-card.is-hidden-in-tray .nav-icon {
+  opacity: 0.45;
 }

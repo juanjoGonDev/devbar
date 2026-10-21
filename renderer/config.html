@@ -74,10 +74,17 @@
           type="button"
           class="nav-item"
           data-target="prescripts"
-          aria-label="Pipeline"
+          aria-label="Workflows"
         >
-          <span class="nav-ico"><span class="icon" data-icon="dna"></span></span
-          ><span class="nav-label">Pipeline</span>
+          <span class="nav-ico"
+            ><span class="icon" data-icon="workflow"></span></span
+          ><span class="nav-label">Workflows</span
+          ><span
+            id="workflows-badge"
+            class="nav-badge"
+            title="Workflows en ejecución"
+            hidden
+          ></span>
         </button>
         <button
           type="button"
@@ -113,131 +120,272 @@
 
       <div class="config-content">
         <!-- ── General ────────────────────────────────────────────── -->
+        <!--
+          macOS inset grouped lists: the title sits above its card, every
+          row is at least 44px tall with a hairline between rows, and the
+          control sits at the trailing edge. Footnotes go under the card.
+        -->
         <section class="config-section active" data-section="general">
-          <section class="settings-card">
-            <label class="toggle">
-              <input type="checkbox" id="set-autostart" />
-              <span>Iniciar al arrancar el sistema</span>
-              <!-- textContent is refined per-OS by config.ts -->
-              <small id="autostart-hint"
-                >Registra DevBar en el autostart del sistema. Solo aplica a la
-                app empaquetada/instalada.</small
-              >
-            </label>
-          </section>
-          <section class="settings-card">
-            <h2>Tema</h2>
-            <div class="theme-picker">
-              <button
-                type="button"
-                class="small-btn theme-opt"
-                data-theme-value="auto"
-                aria-pressed="false"
-              >
-                Automático
-              </button>
-              <button
-                type="button"
-                class="small-btn theme-opt"
-                data-theme-value="light"
-                aria-pressed="false"
-              >
-                Claro
-              </button>
-              <button
-                type="button"
-                class="small-btn theme-opt"
-                data-theme-value="dark"
-                aria-pressed="false"
-              >
-                Oscuro
-              </button>
-            </div>
-            <small
-              >Automático sigue la apariencia del sistema. Claro y Oscuro
-              fuerzan la apariencia de todas las ventanas.</small
-            >
-          </section>
-          <section class="settings-card">
-            <h2>Panel de la barra</h2>
-            <p class="muted small">
-              Arrastra el panel por su cabecera o redimensiónalo por los bordes
-              y se quedará donde lo dejes.
+          <div class="settings-group">
+            <h2 class="settings-group-title">Inicio</h2>
+            <section class="settings-card settings-group-card">
+              <label class="toggle">
+                <input type="checkbox" id="set-autostart" />
+                <span
+                  >Iniciar al arrancar el sistema
+                  <!-- textContent is refined per-OS by config.ts -->
+                  <small id="autostart-hint"
+                    >Registra DevBar en el autostart del sistema. Solo aplica a
+                    la app empaquetada/instalada.</small
+                  ></span
+                >
+              </label>
+            </section>
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Tema</h2>
+            <section class="settings-card settings-group-card">
+              <div class="theme-picker" role="group" aria-label="Tema">
+                <button
+                  type="button"
+                  class="theme-opt"
+                  data-theme-value="auto"
+                  aria-pressed="false"
+                >
+                  <span class="theme-preview theme-preview-auto"
+                    ><span class="tp-bar tp-accent"></span
+                    ><span class="tp-bar"></span
+                    ><span class="tp-bar tp-short"></span
+                  ></span>
+                  <span class="theme-opt-label"
+                    ><span class="icon" data-icon="monitor"></span>
+                    Automático</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="theme-opt"
+                  data-theme-value="light"
+                  aria-pressed="false"
+                >
+                  <span class="theme-preview theme-preview-light"
+                    ><span class="tp-bar tp-accent"></span
+                    ><span class="tp-bar"></span
+                    ><span class="tp-bar tp-short"></span
+                  ></span>
+                  <span class="theme-opt-label"
+                    ><span class="icon" data-icon="sun"></span> Claro</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="theme-opt"
+                  data-theme-value="dark"
+                  aria-pressed="false"
+                >
+                  <span class="theme-preview theme-preview-dark"
+                    ><span class="tp-bar tp-accent"></span
+                    ><span class="tp-bar"></span
+                    ><span class="tp-bar tp-short"></span
+                  ></span>
+                  <span class="theme-opt-label"
+                    ><span class="icon" data-icon="moon"></span> Oscuro</span
+                  >
+                </button>
+              </div>
+            </section>
+            <p class="settings-group-note">
+              Automático sigue la apariencia del sistema. Claro y Oscuro fuerzan
+              la apariencia de todas las ventanas.
             </p>
-            <button
-              type="button"
-              id="reset-tray-position-config"
-              class="small-btn"
-            >
-              <span class="icon" data-icon="pin-off"></span> Volver junto al
-              icono
-            </button>
-          </section>
-          <section class="settings-card">
-            <h2>Filtros globales</h2>
-            <p class="muted small">
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Panel de la barra</h2>
+            <section class="settings-card settings-group-card">
+              <label class="toggle">
+                <input type="checkbox" id="set-show-hidden-groups-fold" />
+                <span>Mostrar grupos ocultos plegados</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="set-show-hidden-workflows-fold" />
+                <span>Mostrar workflows ocultos plegados</span>
+              </label>
+              <div class="settings-row">
+                <span class="settings-row-label"
+                  >Posición del panel
+                  <small
+                    >Arrástralo por su cabecera o redimensiónalo por los bordes
+                    y se quedará donde lo dejes.</small
+                  ></span
+                >
+                <button
+                  type="button"
+                  id="reset-tray-position-config"
+                  class="small-btn"
+                >
+                  <span class="icon" data-icon="locate-fixed"></span>
+                  Restablecer posición
+                </button>
+              </div>
+            </section>
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Filtros globales</h2>
+            <section class="settings-card settings-group-card">
+              <label class="toggle">
+                <input type="checkbox" id="set-silence-warnings" />
+                <span
+                  >Silenciar <strong>warnings</strong> en todos los grupos</span
+                >
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="set-silence-errors" />
+                <span
+                  >Silenciar <strong>errors</strong> en todos los grupos</span
+                >
+              </label>
+              <div class="settings-row">
+                <label class="settings-row-label" for="set-max-log-lines"
+                  >Líneas máximas de logs
+                  <small
+                    >Por defecto para todos los procesos (100–50000). El cambio
+                    aplica al reiniciar el proceso.</small
+                  ></label
+                >
+                <div class="num-stepper">
+                  <button
+                    type="button"
+                    class="num-stepper-btn"
+                    data-step="-1"
+                    aria-label="Menos líneas"
+                    title="Menos líneas"
+                  >
+                    <span class="icon" data-icon="minus"></span>
+                  </button>
+                  <span class="num-stepper-field">
+                    <input
+                      type="number"
+                      id="set-max-log-lines"
+                      min="100"
+                      max="50000"
+                      step="100"
+                      inputmode="numeric"
+                    />
+                    <span class="num-stepper-suffix">líneas</span>
+                  </span>
+                  <button
+                    type="button"
+                    class="num-stepper-btn"
+                    data-step="1"
+                    aria-label="Más líneas"
+                    title="Más líneas"
+                  >
+                    <span class="icon" data-icon="plus"></span>
+                  </button>
+                </div>
+              </div>
+            </section>
+            <p class="settings-group-note">
               Silenciar afecta solo al color de la bolita y al icono de la
               barra.
             </p>
-            <label class="toggle">
-              <input type="checkbox" id="set-silence-warnings" />
-              <span
-                >Silenciar <strong>warnings</strong> en todos los grupos</span
-              >
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="set-silence-errors" />
-              <span>Silenciar <strong>errors</strong> en todos los grupos</span>
-            </label>
-            <div class="field" style="margin-top: 12px">
-              <label for="set-max-log-lines">Líneas máximas de logs</label>
-              <input
-                type="number"
-                id="set-max-log-lines"
-                min="100"
-                max="50000"
-                step="100"
-                style="width: 120px"
-              />
-              <small class="muted" style="display: block; margin-top: 4px"
-                >Por defecto para todos los procesos (100–50000). El cambio
-                aplica al reiniciar el proceso.</small
-              >
-            </div>
-          </section>
+          </div>
         </section>
 
         <!-- ── Notificaciones ─────────────────────────────────────── -->
         <section class="config-section" data-section="notifications">
-          <section class="settings-card">
-            <label class="toggle">
-              <input type="checkbox" id="set-notify-success" />
-              <span
-                >Notificar al terminar pre-scripts y acciones programadas</span
-              >
-            </label>
-            <!-- Wording + button label are refined per-OS by config.ts -->
-            <p id="notif-hint" class="muted small" style="margin: 12px 0 0">
-              ¿No se ven las notificaciones? Revisa el permiso en
-              <button
-                type="button"
-                id="open-notification-settings"
-                class="linkish"
-              >
-                los ajustes del sistema</button
-              >.
-            </p>
-            <div style="margin-top: 8px">
-              <button type="button" id="test-notification" class="small-btn">
-                Probar notificación
-              </button>
+          <!-- A static sample of the banner DevBar shows; not interactive. -->
+          <div class="notif-preview-wrap">
+            <div
+              class="notif-preview"
+              role="img"
+              aria-label="Vista previa de una notificación"
+            >
+              <img
+                class="notif-preview-icon"
+                src="../assets/icon.png"
+                alt=""
+                width="34"
+                height="34"
+              />
+              <div class="notif-preview-text">
+                <div class="notif-preview-head">
+                  <strong>DevBar</strong
+                  ><span class="notif-preview-sub">ahora</span>
+                </div>
+                <div>Workflow terminado</div>
+                <div class="notif-preview-sub">
+                  Ejemplo de aviso al acabar los pre-scripts
+                </div>
+              </div>
             </div>
-          </section>
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Avisos</h2>
+            <section class="settings-card settings-group-card">
+              <label class="toggle">
+                <input type="checkbox" id="set-notify-success" />
+                <span class="settings-row-main"
+                  ><span class="row-badge row-badge-ok" aria-hidden="true"
+                    ><span class="icon" data-icon="check"></span></span
+                  ><span class="settings-row-label"
+                    >Al terminar pre-scripts y acciones programadas
+                    <small
+                      >Un aviso por workflow completado o acción
+                      programada.</small
+                    ></span
+                  ></span
+                >
+              </label>
+            </section>
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Sistema</h2>
+            <section class="settings-card settings-group-card">
+              <div class="settings-row">
+                <span class="row-badge row-badge-info" aria-hidden="true"
+                  ><span class="icon" data-icon="bell"></span
+                ></span>
+                <span class="settings-row-label"
+                  >Probar notificación
+                  <small>Envía un aviso de prueba ahora mismo.</small></span
+                >
+                <button type="button" id="test-notification" class="small-btn">
+                  Enviar prueba
+                </button>
+              </div>
+              <div class="settings-row">
+                <span class="row-badge row-badge-warn" aria-hidden="true"
+                  ><span class="icon" data-icon="circle-alert"></span
+                ></span>
+                <span class="settings-row-label"
+                  >¿No ves las notificaciones?
+                  <!-- Wording + button label are refined per-OS by settings-pane.ts -->
+                  <small id="notif-hint"
+                    >Revisa que DevBar tenga permiso en los ajustes del
+                    sistema.</small
+                  ></span
+                >
+                <button
+                  type="button"
+                  id="open-notification-settings"
+                  class="small-btn btn-with-icon"
+                >
+                  <span class="btn-label">Abrir ajustes</span
+                  ><span
+                    class="icon btn-trail-icon"
+                    data-icon="external-link"
+                  ></span>
+                </button>
+              </div>
+            </section>
+          </div>
         </section>
 
-        <!-- ── Pipeline de pre-scripts ────────────────────────────── -->
+        <!-- ── Workflows: the list, and the editor of one ─────────── -->
         <section class="config-section" data-section="prescripts">
-          <div id="prescripts-pipeline-root"></div>
+          <div id="workflows-list-root"></div>
+          <div id="prescripts-pipeline-root" hidden></div>
         </section>
 
         <!-- ── Control remoto ─────────────────────────────────────── -->
@@ -415,25 +563,52 @@
 
         <!-- ── Copias de seguridad ────────────────────────────────── -->
         <section class="config-section" data-section="backup">
-          <section class="settings-card">
-            <p class="muted small">
-              Exporta toda la configuración a JSON o impórtala desde otra
-              máquina. Importar <strong>sobreescribe</strong> todo lo actual; se
-              guarda un backup automático.
-            </p>
-            <div class="copy-actions">
-              <button id="export-config">Exportar</button>
-              <button id="import-config">Importar</button>
-            </div>
-          </section>
+          <div class="backup-grid">
+            <section class="backup-card" aria-labelledby="backup-export-title">
+              <span class="backup-badge row-badge-info" aria-hidden="true"
+                ><span class="icon" data-icon="download"></span
+              ></span>
+              <div>
+                <h2 id="backup-export-title" class="backup-title">Exportar</h2>
+                <p class="backup-text">
+                  Guarda grupos, workflows y ajustes en un archivo JSON para
+                  llevarlos a otra máquina.
+                </p>
+              </div>
+              <button type="button" id="export-config" class="primary">
+                Exportar…
+              </button>
+            </section>
+            <section class="backup-card" aria-labelledby="backup-import-title">
+              <span class="backup-badge row-badge-warn" aria-hidden="true"
+                ><span class="icon" data-icon="upload"></span
+              ></span>
+              <div>
+                <h2 id="backup-import-title" class="backup-title">Importar</h2>
+                <p class="backup-text">
+                  Sustituye <strong>toda</strong> la configuración actual por la
+                  del archivo.
+                </p>
+              </div>
+              <button type="button" id="import-config">Importar…</button>
+            </section>
+          </div>
+          <!-- config:applyImport writes pre-import-backup.json before applying. -->
+          <p class="backup-note">
+            <span
+              class="icon"
+              data-icon="shield-check"
+              aria-hidden="true"
+            ></span>
+            <span
+              >Antes de importar, DevBar guarda una copia automática de tu
+              configuración actual.</span
+            >
+          </p>
         </section>
 
         <!-- ── Grupos ─────────────────────────────────────────────── -->
         <section class="config-section" data-section="groups">
-          <div class="section-head">
-            <span class="spacer"></span>
-            <button id="add-group" class="primary small-btn">+ Añadir</button>
-          </div>
           <div class="config-two-pane" id="groups-two-pane">
             <div class="config-left-pane">
               <!--
@@ -452,8 +627,32 @@
                   <span class="icon" data-icon="panel-left-close"></span>
                 </button>
               </div>
+              <!--
+                Pinned above the rows rather than rendered among them: it is
+                not a group, so it must never join the drag-and-drop reorder,
+                and it stays reachable (icon-only) when the list is folded.
+              -->
+              <button
+                type="button"
+                id="add-group"
+                class="add-group-btn"
+                title="Nuevo grupo"
+                aria-label="Nuevo grupo"
+              >
+                <span class="icon" data-icon="plus"></span
+                ><span class="add-group-label">Nuevo grupo</span>
+              </button>
               <div id="groups-list" class="groups-list-nav"></div>
             </div>
+            <div
+              id="groups-splitter"
+              class="pane-splitter"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Ancho de la lista de grupos"
+              title="Arrastra para cambiar el ancho · doble clic para ajustarlo"
+              tabindex="0"
+            ></div>
             <div class="config-right-pane" id="group-detail">
               <div class="detail-empty">
                 <p class="muted">Selecciona un grupo para editarlo.</p>
@@ -465,62 +664,157 @@
 
         <!-- ── Acerca de ──────────────────────────────────────────── -->
         <section class="config-section" data-section="about">
-          <section class="settings-card about-card">
-            <h2>DevBar</h2>
-            <div class="copy-actions">
-              <button type="button" id="report-issue" class="small-btn">
-                Reportar fallo en GitHub
-              </button>
-              <button
-                type="button"
-                id="about-github"
-                class="small-btn with-icon"
-              >
-                Ver en GitHub
-                <span class="icon" data-icon="external-link"></span>
-              </button>
+          <div class="about-page">
+            <div class="about-hero">
+              <!-- The packaged app icon: build/assets sits beside build/renderer. -->
+              <img
+                class="about-app-icon"
+                src="../assets/icon.png"
+                alt=""
+                width="72"
+                height="72"
+              />
+              <h2 class="about-name">DevBar</h2>
+              <!-- Filled by config.ts once the version is known. -->
+              <p id="about-version" class="about-version"></p>
             </div>
-            <div class="updates-row" style="margin-top: 16px">
-              <button type="button" id="check-updates" class="small-btn">
-                Buscar actualizaciones
-              </button>
-              <button
-                type="button"
-                id="apply-update"
-                class="small-btn primary"
-                style="display: none"
-              ></button>
-              <span id="update-status" class="muted small"></span>
-            </div>
-            <progress
-              id="update-progress"
-              class="update-progress"
-              max="100"
+
+            <!--
+              data-state (ok | available | busy | error) is set by
+              updates-pane.ts and picks the badge's colour and glyph.
+            -->
+            <section id="update-card" class="about-card update-card">
+              <div class="update-card-row">
+                <span class="update-badge" aria-hidden="true"
+                  ><span class="icon badge-ok" data-icon="check"></span
+                  ><span
+                    class="icon badge-available"
+                    data-icon="arrow-down"
+                  ></span
+                  ><span
+                    class="icon badge-busy"
+                    data-icon="loader-circle"
+                  ></span
+                  ><span
+                    class="icon badge-error"
+                    data-icon="triangle-alert"
+                  ></span
+                  ><span class="icon badge-idle" data-icon="refresh-cw"></span
+                ></span>
+                <div class="update-card-text">
+                  <strong id="update-title" class="update-title"
+                    >Actualizaciones</strong
+                  >
+                  <span id="update-status" class="muted small"></span>
+                </div>
+                <div class="update-card-actions">
+                  <!-- updates-pane.ts swaps only .btn-label while checking. -->
+                  <button
+                    type="button"
+                    id="check-updates"
+                    class="small-btn btn-with-icon"
+                  >
+                    <span class="icon" data-icon="refresh-cw"></span
+                    ><span class="btn-label">Buscar ahora</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="apply-update"
+                    class="small-btn primary"
+                    style="display: none"
+                  ></button>
+                </div>
+              </div>
+              <progress
+                id="update-progress"
+                class="update-progress"
+                max="100"
+                hidden
+              ></progress>
+              <div id="update-help" class="update-help" hidden>
+                <p id="update-help-text" class="muted small"></p>
+                <code id="update-command" class="update-command" hidden></code>
+                <div class="copy-actions">
+                  <button
+                    type="button"
+                    id="update-copy-command"
+                    class="small-btn"
+                    hidden
+                  >
+                    Copiar comando
+                  </button>
+                  <button
+                    type="button"
+                    id="update-open-folder"
+                    class="small-btn"
+                    hidden
+                  >
+                    Abrir carpeta
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <!--
+              Filled and revealed by about-notes.ts only when the running
+              version has a published release; hidden otherwise.
+            -->
+            <section
+              id="about-notes"
+              class="about-card about-notes"
+              aria-labelledby="about-notes-title"
               hidden
-            ></progress>
-            <div id="update-help" class="update-help" hidden>
-              <p id="update-help-text" class="muted small"></p>
-              <code id="update-command" class="update-command" hidden></code>
-              <div class="copy-actions">
+            >
+              <div class="about-notes-head">
+                <h3 id="about-notes-title" class="about-notes-title">
+                  Novedades
+                </h3>
                 <button
                   type="button"
-                  id="update-copy-command"
-                  class="small-btn"
-                  hidden
+                  id="about-notes-history"
+                  class="about-notes-history"
                 >
-                  Copiar comando
-                </button>
-                <button
-                  type="button"
-                  id="update-open-folder"
-                  class="small-btn"
-                  hidden
-                >
-                  Abrir carpeta
+                  Historial completo
                 </button>
               </div>
-            </div>
-          </section>
+              <div id="about-notes-list" class="about-notes-list"></div>
+            </section>
+
+            <section class="about-card about-links">
+              <button type="button" id="about-github" class="about-link">
+                <span class="icon about-link-lead" data-icon="code-xml"></span>
+                <span class="about-link-label">Código en GitHub</span>
+                <span
+                  class="icon about-link-trail"
+                  data-icon="external-link"
+                ></span>
+              </button>
+              <button type="button" id="report-issue" class="about-link">
+                <span
+                  class="icon about-link-lead about-link-lead-bug"
+                  data-icon="bug"
+                ></span>
+                <span class="about-link-label">Reportar un fallo</span>
+                <span class="about-link-trail about-link-hint"
+                  >incluye los últimos errores</span
+                >
+              </button>
+              <!-- Revealed by about-notes.ts with the release's own URL. -->
+              <button
+                type="button"
+                id="about-release-notes"
+                class="about-link"
+                hidden
+              >
+                <span class="icon about-link-lead" data-icon="file-text"></span>
+                <span class="about-link-label">Notas de la versión</span>
+                <span
+                  class="icon about-link-trail"
+                  data-icon="external-link"
+                ></span>
+              </button>
+            </section>
+          </div>
         </section>
       </div>
     </div>
@@ -555,6 +849,20 @@
       </header>
       <form id="sub-form" method="dialog">
         <div class="modal-body">
+          <!-- Only when a pre-script is created from the pipeline, which
+               belongs to no group: everywhere else the group is implied. -->
+          <div class="field" id="sf-group-field" hidden>
+            <label for="sf-group">Grupo</label>
+            <div class="sf-group-select">
+              <span id="sf-group-tile" class="group-tile"></span>
+              <select id="sf-group"></select>
+              <span class="icon" data-icon="chevron-down"></span>
+            </div>
+            <small class="muted"
+              >Se ejecuta en la carpeta del grupo y puede heredar sus
+              variables.</small
+            >
+          </div>
           <div class="field sf-icon-field">
             <label>Icono</label>
             <div class="sf-icon-row">
@@ -738,11 +1046,18 @@
               </div>
             </details>
           </div>
+          <p id="sf-pipeline-note" class="sf-pipeline-note" hidden>
+            <span class="icon" data-icon="workflow"></span>
+            <span
+              >Se colocará en el workflow después de
+              <strong id="sf-pipeline-note-name"></strong>.</span
+            >
+          </p>
         </div>
 
         <div class="modal-actions">
           <button type="button" id="sub-cancel">Cancelar</button>
-          <button type="submit" class="primary">Guardar</button>
+          <button type="submit" id="sf-submit" class="primary">Guardar</button>
         </div>
       </form>
     </dialog>

@@ -1,5 +1,6 @@
 import type { IpcMainInvokeEvent } from 'electron';
 import {
+  ipcConfigSection,
   ipcNumber,
   ipcRecord,
   ipcString,
@@ -91,9 +92,17 @@ export function registerWindowIpc(
     return { ok: true };
   };
 
+  // The tray's «Gestionar …» links name the section to land on; the header's
+  // settings button names none.
   ipc.handle(
     'window:openConfig',
-    openThenHideTray(() => deps.appWindows.ensureConfigWindow()),
+    (_e: IpcMainInvokeEvent, section: unknown) => {
+      const goto =
+        section === undefined ? undefined : ipcConfigSection(section);
+      deps.appWindows.ensureConfigWindow(goto ? { goto } : undefined);
+      deps.trayHost.hideIfVisible();
+      return { ok: true };
+    },
   );
   // Tray version chip: open config on "Acerca de" with the changelog modal.
   ipc.handle(
@@ -143,7 +152,7 @@ export function registerWindowIpc(
     },
   );
 
-  // The header's "Volver junto al icono" button only shows while pinned.
+  // The header's «Restablecer posición» button only shows while pinned.
   ipc.handle('tray:pinnedState', () => ({
     pinned: deps.trayHost.pinned.isPinned(),
   }));

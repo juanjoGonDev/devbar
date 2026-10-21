@@ -4,9 +4,8 @@
  *
  * Every reorderable list in the app is reachable by pointer drag only. This
  * module adds a keyboard-operable path on the SAME `.drag-handle` element,
- * wired from inside `attachDragHandlers` and `attachCrossContainerDragHandlers`
- * themselves, so all five call sites get identical behaviour with no
- * per-call-site key handling.
+ * wired from inside `attachDragHandlers` itself, so every call site gets
+ * identical behaviour with no per-call-site key handling.
  *
  * It lives beside the pointer-drag helper rather than inside it because the
  * two halves share nothing but the handle: the pointer half owns DOM moves and
@@ -91,9 +90,8 @@ export function planKeyboardMove(
 /** Tried in order against an item's (or a container's enclosing) card to
  * find a human-readable label — covers every row shape across the five
  * lists without any call site having to pass a name in. `.step-label` is
- * checked first because a `.prestep-card` (a pipeline step, reordered as a
- * plain single-container item) also CONTAINS nested `.prescript-row strong`
- * script names — checking the step's own label first stops that descent. */
+ * checked first so a card that CONTAINS nested `strong` names is announced
+ * by its own label rather than by the first nested one. */
 const ITEM_LABEL_SELECTORS = [
   '.step-label',
   '.nav-name',

@@ -1,13 +1,22 @@
 import './report-uncaught.js';
 import { formatUptime } from './format-uptime.js';
 import { isComboboxOpen, setComboboxHostHooks } from './combobox.js';
-import type { GroupState, PipelineState } from '../src/ipc-contract.js';
+import type { GroupState } from '../src/ipc-contract.js';
+import type { GlobalSettings } from '../src/domain-types.js';
+import { trayGroupLayout } from '../src/tray-layout.js';
 import { byId } from './dom.js';
 import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
 import { setTrayHost, showToast } from './tray/host.js';
 import { wireUpdateChip } from './tray/update-chip.js';
-import { renderPipelineStrip } from './tray/pipeline-strip.js';
+import {
+  renderWorkflowsSection,
+  setWorkflowsFold,
+  workflowsSection,
+  workflowsSummary,
+} from './tray/workflows-section.js';
+import { createTrayTabs } from './tray/tabs.js';
+import { manageLink } from './tray/manage-link.js';
 import { installAutoHeight } from './tray/auto-height.js';
 import { latestWins } from './latest-wins.js';
 import { installTooltips } from './tooltip.js';
@@ -18,6 +27,7 @@ initTheme();
 hydrateIcons(document);
 const groupsEl = byId('groups', HTMLElement);
 const toastEl = byId('toast', HTMLElement);
+const tabsEl = byId('tray-tabs', HTMLElement);
 
 // ─────────────────────── Uptime ticker ───────────────────────────────
 
@@ -50,6 +60,8 @@ if (document.readyState !== 'loading') {
 
 // Keyed by groupId
 let lastGroupStates: GroupState[] = [];
+/** False until the first group snapshot: no empty state before it. */
+let groupStatesKnown = false;
 // State update that arrived while a branch dropdown was open; replayed on close.
 let _pendingStates: GroupState[] | null = null;
 
@@ -105,44 +117,30 @@ function alertButton(
   return btn;
 }
 
-// ─────────────────────── Global pipeline trigger ──────────────────────
+// ─────────────────────── Hidden groups ───────────────────────────────
 //
-// One global run-pipeline trigger in the sticky header row (there is one
-// pipeline now, not one per group). Everything about a run — step, elapsed
-// time, cancel, logs, the ✓/✕ result — lives in the pipeline strip under the
-// row (renderer/tray/pipeline-strip.ts).
+// A group hidden from the tray keeps running; it is only folded into the
+// «N oculto(s)» disclosure at the end of the list, which shows it dimmed.
 
-let lastPipelineState: PipelineState | null = null;
+let hiddenGroupsOpen = false;
+/** Settings › General › «Mostrar grupos ocultos plegados». */
+let showHiddenGroupsFold = true;
 
-function renderPipelineTrigger(state: PipelineState | null): void {
-  lastPipelineState = state;
-  renderPipelineStrip(state);
-  const host = document.getElementById('pipeline-trigger');
-  if (!host) return;
-  host.innerHTML = '';
-  // Nothing configured and nothing to show for a past run — hide entirely,
-  // same gate as the old per-group "only when preSteps defined" condition.
-  if (!state || (state.totalSteps === 0 && state.status === 'idle')) return;
-
-  const triggerBtn = document.createElement('button');
-  triggerBtn.className = 'ghost prescripts-trigger';
-  triggerBtn.title =
-    state.status === 'running' ? 'Pipeline corriendo…' : 'Ejecutar pipeline';
-  triggerBtn.setAttribute('aria-label', triggerBtn.title);
-  triggerBtn.dataset.prestepStatus = state.status;
-  triggerBtn.append(icon('fast-forward'));
-  triggerBtn.addEventListener('click', async (e) => {
+function hiddenGroupsToggle(count: number): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ghost hidden-groups-toggle';
+  btn.setAttribute('aria-expanded', String(hiddenGroupsOpen));
+  btn.append(
+    icon(hiddenGroupsOpen ? 'chevron-down' : 'chevron-right'),
+    ` ${count} ${count === 1 ? 'oculto' : 'ocultos'}`,
+  );
+  btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (state.status === 'running') {
-      showToast('Ya hay un pipeline corriendo', 'warn');
-      return;
-    }
-    const res = await window.api.runPreScripts();
-    if (res && !res.ok && res.error === 'already_running') {
-      showToast('Ya hay un pipeline corriendo', 'warn');
-    }
+    hiddenGroupsOpen = !hiddenGroupsOpen;
+    render(lastGroupStates);
   });
-  host.appendChild(triggerBtn);
+  return btn;
 }
 
 // ─────────────────────── Main render ─────────────────────────────────
@@ -155,6 +153,7 @@ function renderPipelineTrigger(state: PipelineState | null): void {
  */
 function render(groupStates: GroupState[]): void {
   lastGroupStates = groupStates;
+  groupStatesKnown = true;
   // A branch dropdown is open: wiping the groups list here would destroy the
   // combobox mid-interaction and orphan its (body-level) dropdown, while the
   // resize below would shrink the popover under it. Defer until it closes.
@@ -164,22 +163,51 @@ function render(groupStates: GroupState[]): void {
   }
   groupsEl.innerHTML = '';
   renderAlertsSummary(groupStates);
-  renderPipelineTrigger(lastPipelineState);
 
+  const { shown, folded: hidden } = trayGroupLayout(
+    groupStates,
+    showHiddenGroupsFold,
+  );
+  const workflows = workflowsSummary();
+  tabs.paint({
+    visible: workflows.listed > 0,
+    groups: shown.length,
+    running: workflows.running,
+  });
+
+  if (tabs.active() === 'workflows') {
+    groupsEl.appendChild(workflowsSection());
+    autoHeight.schedule();
+    return;
+  }
+  // The Grupos tab — or the bare list while the selector is hidden — opens
+  // with its own way into the settings, like the Workflows tab.
+  groupsEl.appendChild(manageLink('Gestionar grupos', 'groups'));
   if (!groupStates.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     empty.innerHTML =
       'No hay grupos configurados.<br/>Pulsa <strong>Configuración</strong> para añadir uno.';
-    groupsEl.appendChild(empty);
-    autoHeight.schedule();
-    return;
-  }
-
-  for (const gs of groupStates) {
-    groupsEl.appendChild(renderGroupRow(gs));
+    groupsEl.append(empty);
+  } else {
+    for (const gs of shown) groupsEl.appendChild(renderGroupRow(gs));
+    if (hidden.length > 0) {
+      groupsEl.appendChild(hiddenGroupsToggle(hidden.length));
+      if (hiddenGroupsOpen)
+        for (const gs of hidden) {
+          const row = renderGroupRow(gs);
+          row.classList.add('is-hidden-group');
+          groupsEl.appendChild(row);
+        }
+    }
   }
   autoHeight.schedule();
+}
+
+/** Repaints after a workflows change — once the groups are known. */
+function renderAfterWorkflows(): void {
+  if (groupStatesKnown) render(lastGroupStates);
+  else autoHeight.schedule();
 }
 
 // ─────────────────────── Dynamic popover height ──────────────────────
@@ -205,14 +233,18 @@ function measureContentHeight(): number {
   const bodyCS = getComputedStyle(document.body);
   const padTop = parseFloat(bodyCS.paddingTop) || 0;
   const padBottom = parseFloat(bodyCS.paddingBottom) || 0;
-  let headerBlock = 0;
-  if (header) {
-    const headerCS = getComputedStyle(header);
-    const mt = parseFloat(headerCS.marginTop) || 0;
-    const mb = parseFloat(headerCS.marginBottom) || 0;
-    headerBlock = header.offsetHeight + mt + mb;
-  }
-  return Math.ceil(padTop + headerBlock + groups.scrollHeight + padBottom);
+  // The tab selector sits between the two, outside the scrolling list; a
+  // hidden one has no box and adds nothing.
+  const block = (el: HTMLElement | null): number => {
+    if (!el || el.hidden) return 0;
+    const cs = getComputedStyle(el);
+    const mt = parseFloat(cs.marginTop) || 0;
+    const mb = parseFloat(cs.marginBottom) || 0;
+    return el.offsetHeight + mt + mb;
+  };
+  return Math.ceil(
+    padTop + block(header) + block(tabsEl) + groups.scrollHeight + padBottom,
+  );
 }
 
 // Every DOM change in the popover — a state render, a row expanding, the
@@ -246,6 +278,11 @@ setComboboxHostHooks({
   scheduleTrayResize,
   measureContentHeight,
 });
+const tabs = createTrayTabs({
+  root: tabsEl,
+  panel: groupsEl,
+  onChange: () => render(lastGroupStates),
+});
 setTrayHost({
   toastElement: toastEl,
   rerender: () => render(lastGroupStates),
@@ -263,7 +300,7 @@ byId('quit-app', HTMLButtonElement).addEventListener('click', () => {
   window.api.quit();
 });
 
-// "Volver junto al icono": only while the user has pinned the popover away
+// «Restablecer posición»: only while the user has pinned the popover away
 // from the tray icon (dragged or resized it). Main pushes every change.
 const resetTrayPositionBtn = byId('reset-tray-position', HTMLButtonElement);
 function showPinned(pinned: boolean): void {
@@ -300,9 +337,29 @@ window.api.onUpdate((groupStates) => {
   render(groupStates);
 });
 
-window.api.onPipelineUpdate((state) => {
-  renderPipelineTrigger(state);
+const pushedWorkflows = latestWins();
+window.api.onWorkflowsUpdate((entries) => {
+  pushedWorkflows.invalidate();
+  renderWorkflowsSection(entries);
+  renderAfterWorkflows();
 });
+
+function applySettings(settings: Partial<GlobalSettings>): void {
+  const workflowsChanged = setWorkflowsFold(
+    settings.showHiddenWorkflowsFold === true,
+  );
+  const next = settings.showHiddenGroupsFold !== false;
+  const groupsChanged = next !== showHiddenGroupsFold;
+  showHiddenGroupsFold = next;
+  if (workflowsChanged || groupsChanged) renderAfterWorkflows();
+}
+window.api.onSettingsChange(applySettings);
+window.api
+  .getSettings()
+  .then(applySettings)
+  .catch(() => {
+    /* keeps the default fold until the next push */
+  });
 
 window.api.onBranchesChanged(() => {
   if (lastGroupStates.length) {
@@ -322,11 +379,19 @@ window.api.getGroupStates().then((groupStates) => {
   // older snapshot on top would leave the list stale until the next push.
   if (initialGroupStates()) render(groupStates);
 });
-window.api.getPipelineState().then((state) => {
-  // A pushed update can land while this read is still pending; applying the
-  // older snapshot on top would leave the trigger stale until the next push.
-  if (lastPipelineState === null) renderPipelineTrigger(state);
-});
+const initialWorkflows = pushedWorkflows.claim();
+window.api
+  .listWorkflows()
+  .then((entries) => {
+    // A pushed update can land while this read is still pending; applying
+    // the older snapshot on top would leave the section stale.
+    if (!initialWorkflows()) return;
+    renderWorkflowsSection(entries);
+    renderAfterWorkflows();
+  })
+  .catch(() => {
+    /* stays hidden until the next push */
+  });
 
 // App version label
 if (window.api.getAppVersion) {

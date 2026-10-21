@@ -33,7 +33,7 @@ export interface AppIpcDeps {
     replaceConfig: (payload: {
       version: number;
       groups: unknown[];
-      preSteps?: unknown[];
+      workflows?: unknown;
       globalSettings: Partial<GlobalSettings>;
       customIcons?: readonly CustomIcon[];
     }) => void;
@@ -86,7 +86,8 @@ export interface AppIpcDeps {
     showDownloadedFile: () => { ok: boolean; error?: string };
   };
   /** stopAll wiped every log buffer, so a stale run id must not linger. */
-  snapshots: { forgetPipelineRunId(): void };
+  /** An import replaces every workflow: no run may outlive its own. */
+  workflowRunner: { cancelAll(): void };
   expandTilde: (value: string) => string;
   syncRepoWatchers: () => void;
   applyAutostart: (enabled: boolean) => void;
@@ -214,6 +215,7 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
         `· ${preview.groupsCount} grupos\n` +
         `· ${preview.commandsCount} comandos\n` +
         `· ${preview.actionsCount} acciones\n` +
+        `· ${preview.workflowsCount} workflows\n` +
         `${preview.hasGlobalSettings ? '· ajustes globales\n' : ''}` +
         `\nSe guardará una copia en pre-import-backup.json antes de aplicar.`;
       let res;
@@ -264,7 +266,7 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
             error: `No se pudieron detener todos los servicios (${stopped.failed.join(', ')}) — la importación se canceló. Detén los servicios e inténtalo de nuevo.`,
           };
         }
-        deps.snapshots.forgetPipelineRunId();
+        deps.workflowRunner.cancelAll();
         deps.configStore.replaceConfig(payload);
         deps.syncRepoWatchers();
         deps.applyAutostart(deps.configStore.getGlobalSettings().autostart);

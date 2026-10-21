@@ -139,7 +139,7 @@ describe('renderer/logs.ts', () => {
     it('says so when it was opened on nothing in particular', async () => {
       const win = await openLogs();
       await win.settle('listLogs', []);
-      expect(document.getElementById('title')?.textContent).toBe(
+      expect(document.getElementById('crumb-name')?.textContent).toBe(
         'Logs (sin proceso)',
       );
     });
@@ -224,9 +224,7 @@ describe('renderer/logs.ts', () => {
       await win.push('onLogsSelect', { scope: 'group', groupId: 'g1' });
       expect(win.callCount('getMergedLogs')).toBe(1);
       await win.settle('getMergedLogs', mergedSnapshot());
-      expect(document.getElementById('title')?.textContent).toBe(
-        'Logs — Back · todos',
-      );
+      expect(document.title).toBe('Logs — Back · todos');
     });
 
     it('falls back to everything when the group scope carries no group', async () => {
@@ -234,7 +232,7 @@ describe('renderer/logs.ts', () => {
       await win.settle('listLogs', []);
       await win.push('onLogsSelect', { scope: 'group' });
       await win.settle('getMergedLogs', mergedSnapshot());
-      expect(document.getElementById('title')?.textContent).toBe('Telemetría');
+      expect(document.title).toBe('Telemetría');
     });
 
     it('ignores a selection that names nothing at all', async () => {
@@ -321,11 +319,11 @@ describe('renderer/logs.ts', () => {
     it('installs the styled tooltips over the native ones', async () => {
       const win = await openLogs();
       await win.settle('listLogs', []);
-      const copy = document.getElementById('copy') as HTMLElement;
-      copy.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      const more = document.getElementById('more') as HTMLElement;
+      more.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
       await wait(300);
-      expect(copy.title, 'the native title is moved out of the way').toBe('');
-      expect(copy.dataset.tip).toBe('Copiar');
+      expect(more.title, 'the native title is moved out of the way').toBe('');
+      expect(more.dataset.tip).toBe('Más opciones');
     });
   });
 });

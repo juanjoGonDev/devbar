@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { isDue, mostRecentOccurrence } from '../src/scheduler.js';
-import type { Schedule, ScheduleRule } from '../src/domain-types.js';
+import {
+  isDue,
+  isWorkflowScheduleDue,
+  mostRecentOccurrence,
+  nextWorkflowRun,
+} from '../src/scheduler.js';
+import type {
+  Schedule,
+  ScheduleRule,
+  WorkflowSchedule,
+} from '../src/domain-types.js';
 
 // Local-time Date builder so tests read as wall-clock, matching how a user
 // thinks about "run at 09:00". The scheduler works entirely in local time.
@@ -122,5 +131,84 @@ describe('scheduler.isDue', () => {
     const lastRun = at(2026, 0, 5, 9, 5).toISOString();
     const s = sched(true, [rule('09:00'), rule('14:00')]);
     expect(isDue(s, lastRun, at(2026, 0, 5, 12, 0))).toBe(false);
+  });
+});
+
+describe('scheduler workflow schedules', () => {
+  const daily9: WorkflowSchedule = {
+    rules: [{ time: '09:00', days: [] }],
+    interval: null,
+  };
+  const every30: WorkflowSchedule = {
+    rules: [],
+    interval: { every: 30, unit: 'minutes' },
+  };
+
+  it('is due once a rule occurrence passed since the last run', () => {
+    const last = at(2026, 0, 5, 8, 0).toISOString();
+    expect(isWorkflowScheduleDue(daily9, last, at(2026, 0, 5, 8, 59))).toBe(
+      false,
+    );
+    expect(isWorkflowScheduleDue(daily9, last, at(2026, 0, 5, 9, 0))).toBe(
+      true,
+    );
+  });
+
+  it('is due once the interval elapsed since the last run', () => {
+    const last = at(2026, 0, 5, 9, 0).toISOString();
+    expect(isWorkflowScheduleDue(every30, last, at(2026, 0, 5, 9, 29))).toBe(
+      false,
+    );
+    expect(isWorkflowScheduleDue(every30, last, at(2026, 0, 5, 9, 30))).toBe(
+      true,
+    );
+  });
+
+  it('counts hours as hours', () => {
+    const hourly: WorkflowSchedule = {
+      rules: [],
+      interval: { every: 2, unit: 'hours' },
+    };
+    const last = at(2026, 0, 5, 9, 0).toISOString();
+    expect(isWorkflowScheduleDue(hourly, last, at(2026, 0, 5, 10, 59))).toBe(
+      false,
+    );
+    expect(isWorkflowScheduleDue(hourly, last, at(2026, 0, 5, 11, 0))).toBe(
+      true,
+    );
+  });
+
+  it('is never due with neither rules nor an interval', () => {
+    expect(
+      isWorkflowScheduleDue({ rules: [], interval: null }, null, MON),
+    ).toBe(false);
+  });
+
+  it('finds the next rule occurrence, honouring weekdays', () => {
+    const tuesdays: WorkflowSchedule = {
+      rules: [{ time: '23:30', days: [2] }],
+      interval: null,
+    };
+    // Mon 09:00 → Tue 23:30.
+    expect(nextWorkflowRun(tuesdays, null, MON)?.getTime()).toBe(
+      at(2026, 0, 6, 23, 30).getTime(),
+    );
+  });
+
+  it('takes the earliest of the rules and the interval', () => {
+    const both: WorkflowSchedule = {
+      rules: [{ time: '23:30', days: [] }],
+      interval: { every: 30, unit: 'minutes' },
+    };
+    const last = at(2026, 0, 5, 8, 50).toISOString();
+    expect(nextWorkflowRun(both, last, MON)?.getTime()).toBe(
+      at(2026, 0, 5, 9, 20).getTime(),
+    );
+  });
+
+  it('has no next run with nothing scheduled', () => {
+    expect(nextWorkflowRun({ rules: [], interval: null }, null, MON)).toBe(
+      null,
+    );
   });
 });

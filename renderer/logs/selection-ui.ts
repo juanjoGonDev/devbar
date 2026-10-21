@@ -18,7 +18,6 @@ import { repaintSelection, reportSelection } from './status.js';
 import { updateScrollButton } from './pane.js';
 import {
   clearSelectionBtn,
-  copyBtn,
   filterEl,
   linesEl,
   mainEl,
@@ -73,12 +72,15 @@ mainEl.addEventListener('click', (ev) => {
   if (!closestElement(ev.target, '.line')) clearSelection();
 });
 
-// With a selection the button copies just that; with none, everything the
-// filter leaves — the whole filtered buffer, not merely the drawn window.
-copyBtn.addEventListener('click', () => {
+/**
+ * With a selection, copy just that; with none, everything the filter leaves —
+ * the whole filtered buffer, not merely the drawn window. The «⋯» menu's
+ * «Copiar» runs this.
+ */
+export function copyPicked(): void {
   const picked = [...buffer.selected].sort((a, b) => a - b);
   void copyEntries(picked.length ? picked : buffer.visible);
-});
+}
 
 // A stray click is easy to make and the selection pauses following, so the
 // footer offers an explicit way out next to the count (Esc does the same).

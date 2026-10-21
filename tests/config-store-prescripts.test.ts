@@ -3,17 +3,16 @@ import {
   normalizePreStep,
   normalizePreScript,
   reorderByIds,
-  assignScriptToStep,
-  unassignScriptFromStep,
 } from '../src/groups-model.js';
 
 /**
  * config-store-prescripts.test.js
  *
- * The normalizer layer behind config-store's pipeline CRUD: the shapes
- * `normalizePreStep` / `normalizePreScript` produce, and the REAL reorder
- * algorithm via `reorderByIds` — what config-store's savePreStep /
- * reorderPreSteps / savePreScript build on.
+ * The normalizer layer behind config-store's pre-script CRUD: the shapes
+ * `normalizePreStep` (legacy steps, read only by the migrations) and
+ * `normalizePreScript` produce, and the REAL reorder algorithm via
+ * `reorderByIds` — what config-store's savePreScript / reorderPreScripts
+ * build on.
  *
  * config-store itself is no longer out of reach: it is exercised against a
  * real electron-store over a temp directory in `config-store.test.ts`,
@@ -23,17 +22,14 @@ import {
  * The normalizer tests ensure the data shapes produced by each CRUD
  * function are correct; the reorder tests below call the same
  * `reorderByIds` function config-store.ts imports for reorderGroups /
- * reorderCommands / reorderActions / reorderPreSteps / reorderPreScripts
+ * reorderCommands / reorderActions / reorderPreScripts
  * (sdd-verify W3: previously this file hand-copied the algorithm instead of
  * importing it, so a real drift between the two would have gone unnoticed;
  * dedicated coverage for `reorderByIds` itself lives in
  * `groups-model.test.ts`).
  *
- * Since the pipeline migration: `preSteps` is a GLOBAL top-level slice (no
- * `groupId` on save/delete/reorder), `preScripts` stays per-group but flat
- * (no `stepId`), and step placement is a distinct concern handled by
- * `assignScriptToStep` / `unassignScriptFromStep` (real imports from
- * `groups-model.ts`).
+ * The pipeline itself is a graph now (src/pipeline-graph.ts, with its own
+ * tests); `preScripts` stays per-group and flat (no block id).
  */
 
 // ─── normalizePreStep (savePreStep contract) ──────────────────────────────────
@@ -193,38 +189,5 @@ describe('reorderPreScripts contract', () => {
     const scripts = [{ id: 'sc1' }, { id: 'sc2' }, { id: 'sc3' }];
     const result = reorderByIds(scripts, ['sc3', 'sc1', 'sc2']);
     expect(result.map((sc) => sc.id)).toEqual(['sc3', 'sc1', 'sc2']);
-  });
-});
-
-// ─── assignScriptToStep / unassignScriptFromStep contract ─────────────────────
-// config-store's assignScriptToStep(stepId, groupId, scriptId, position?) and
-// unassignScriptFromStep(stepId, groupId, scriptId) are thin wrappers around
-// these real, imported groups-model.ts functions — full coverage of the
-// placement algorithm itself (moves, reorders, no-ops) lives in
-// groups-model.test.ts; this documents the config-store-facing contract.
-
-describe('assignScriptToStep / unassignScriptFromStep contract', () => {
-  it('assignScriptToStep places a ref into the target step', () => {
-    const steps = [{ id: 'step1', mode: 'parallel' as const, scripts: [] }];
-    const result = assignScriptToStep(steps, 'step1', {
-      groupId: 'g1',
-      scriptId: 'sc1',
-    });
-    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
-  });
-
-  it('unassignScriptFromStep removes a placed ref from its step', () => {
-    const steps = [
-      {
-        id: 'step1',
-        mode: 'parallel' as const,
-        scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
-      },
-    ];
-    const result = unassignScriptFromStep(steps, 'step1', {
-      groupId: 'g1',
-      scriptId: 'sc1',
-    });
-    expect(result[0]?.scripts).toEqual([]);
   });
 });

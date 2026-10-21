@@ -100,7 +100,8 @@ export function createLogWindows(deps: LogWindowsDeps): LogWindows {
       ...(deps.isMac
         ? {
             titleBarStyle: 'hiddenInset' as const,
-            trafficLightPosition: { x: 12, y: 14 },
+            // Centred on the 56px toolbar row (12px lights, 22 + 6 = 28).
+            trafficLightPosition: { x: 16, y: 22 },
           }
         : {}),
       backgroundColor: deps.background(),

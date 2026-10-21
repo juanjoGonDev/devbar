@@ -11,6 +11,10 @@ import { registerLogsIpc, type LogsIpcDeps } from './logs-ipc.js';
 import { registerRemoteIpc, type RemoteIpcDeps } from './remote-ipc.js';
 import { registerRuntimeIpc, type RuntimeIpcDeps } from './runtime-ipc.js';
 import { registerWindowIpc, type WindowIpcDeps } from './window-ipc.js';
+import {
+  registerWorkflowsIpc,
+  type WorkflowsIpcDeps,
+} from './workflows-ipc.js';
 
 /**
  * One call that stands the whole IPC surface up. The handler modules each
@@ -53,7 +57,8 @@ export interface RegisterAllDeps {
     RuntimeIpcDeps['configStore'] &
     LogsIpcDeps['configStore'] &
     AppIpcDeps['configStore'] &
-    IconsIpcDeps['configStore'];
+    IconsIpcDeps['configStore'] &
+    WorkflowsIpcDeps['configStore'];
   processManager: ConfigIpcDeps['processManager'] &
     RuntimeIpcDeps['processManager'] &
     LogsIpcDeps['processManager'] &
@@ -61,10 +66,12 @@ export interface RegisterAllDeps {
   configIo: AppIpcDeps['configIo'];
   gitManager: RuntimeIpcDeps['gitManager'];
   branchesChanged: RuntimeIpcDeps['branchesChanged'];
-  preScriptRunner: RuntimeIpcDeps['preScriptRunner'];
-  snapshots: ConfigIpcDeps['snapshots'] &
-    RuntimeIpcDeps['snapshots'] &
-    AppIpcDeps['snapshots'];
+  workflowRunner: RuntimeIpcDeps['workflowRunner'] &
+    WorkflowsIpcDeps['workflowRunner'] &
+    AppIpcDeps['workflowRunner'];
+  snapshots: ConfigIpcDeps['snapshots'] & {
+    workflowEntries: WorkflowsIpcDeps['workflowEntries'];
+  };
   confirms: RuntimeIpcDeps['confirms'];
   logWindows: LogsIpcDeps['logWindows'] & WindowIpcDeps['logWindows'];
   appWindows: WindowIpcDeps['appWindows'];
@@ -77,6 +84,7 @@ export interface RegisterAllDeps {
   expandTilde: (value: string) => string;
   repaintWindows: () => void;
   sendTheme: ConfigIpcDeps['sendTheme'];
+  sendSettings: ConfigIpcDeps['sendSettings'];
   fetchReleases: AppIpcDeps['fetchReleases'];
   releasesUrl: string;
   iconBattery: unknown;
@@ -92,6 +100,16 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
     refreshWindowBackgrounds: deps.repaintWindows,
   });
   registerRuntimeIpc(ipc, deps);
+  registerWorkflowsIpc(ipc, {
+    configStore: deps.configStore,
+    workflowRunner: deps.workflowRunner,
+    workflowEntries: () => deps.snapshots.workflowEntries(),
+    broadcast: deps.broadcast,
+    openLogs: (processId) => {
+      deps.logWindows.ensureLogsWindow(processId);
+      deps.trayHost.hideIfVisible();
+    },
+  });
   registerLogsIpc(ipc, deps);
   registerWindowIpc(ipc, {
     ...deps,

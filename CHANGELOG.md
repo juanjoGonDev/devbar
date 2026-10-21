@@ -3,6 +3,202 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.12.0] - 2026-10-17
+
+### Añadido
+
+- **Workflows: varios, cada uno con su desencadenante.** Los pre-scripts se
+  organizan ahora en workflows, con una lista propia en Ajustes para buscarlos,
+  filtrarlos, crearlos, duplicarlos y activarlos o desactivarlos. Cada uno se
+  lanza al arrancar DevBar (solo uno puede hacerlo, y es el que esperan los
+  grupos que lo piden), de forma programada por días y hora o «cada N
+  minutos/horas», o a mano desde la barra o el móvil, con confirmación
+  opcional. El pipeline que tenías se convierte en el workflow «Arranque».
+
+- **Editor visual de cada workflow.** Un lienzo donde cada pre-script es un
+  nodo que unes con flechas para decir qué espera a qué; varias ramas o un
+  marco «En paralelo» corren a la vez. Con zoom, minimapa, orden automático y
+  creación de pre-scripts desde el propio lienzo.
+
+- **Ejecuciones en vivo.** Ejecuta o detén un workflow desde la lista o el
+  editor y sigue cada nodo en el lienzo: en espera, ejecutándose, correcto,
+  con avisos, con error u omitido. «Todos OK» decide si un fallo dentro de un
+  marco para el resto, y puedes reintentar desde el bloque que falló. Un panel
+  de logs muestra la salida de cada script mientras corre.
+
+- **Pestañas «Grupos | Workflows» en la barra.** Bajo la cabecera, un
+  selector cambia entre tus grupos (con cuántos se ven) y tus workflows (con
+  cuántos están en marcha). En Workflows, el que está en curso aparece
+  primero, con su progreso y un botón para detenerlo; debajo, los manuales y
+  los programados (con su próxima ejecución o su último resultado), cada uno
+  con su botón ▶. Encima de cada lista, «Gestionar workflows ›» y «Gestionar
+  grupos ›» abren sus ajustes. La barra recuerda la última pestaña y, si no
+  hay ningún workflow que mostrar, enseña solo los grupos.
+
+- **Workflows ocultos, como los grupos.** Con el ojo de su fila en Ajustes,
+  un workflow se oculta a la vez en la barra y en el móvil sin dejar de
+  funcionar. Si quieres tenerlos a mano, activa «Mostrar workflows ocultos
+  plegados» en Ajustes › General › Panel de la barra y aparecerán al final
+  bajo «N oculto(s)». Uno en marcha se ve siempre.
+
+- **Grupos ocultos en la barra.** Un grupo puede ocultarse de la lista de la
+  barra sin dejar de funcionar (con el ojo de su fila en Ajustes o desde su
+  cabecera): queda plegado al final bajo «N oculto(s)», en la barra y en el
+  móvil. Si prefieres no verlos ni plegados, desactiva «Mostrar grupos
+  ocultos plegados» en Ajustes › General › Panel de la barra.
+
+- **Botón «Nuevo grupo» al principio de la lista.** Sustituye al antiguo
+  «+ Añadir» de la cabecera, así la lista de grupos empieza más arriba y
+  aprovecha el espacio. Sigue a mano con la lista plegada, solo con el icono.
+
+- **La lista de grupos se puede ensanchar.** Arrastra el separador entre la
+  lista y el editor (o usa las flechas del teclado sobre él) y DevBar recuerda
+  el ancho. Si no la tocas, se ajusta sola al nombre de grupo más largo; un
+  doble clic en el separador vuelve a ese ajuste automático.
+
+- **Actividad por tiempo en la ventana de logs.** Bajo la barra, una franja de
+  barras muestra cuántas líneas hubo en cada tramo de tiempo, en rojo si hubo
+  errores y en ámbar si hubo avisos; el tramo que estás viendo va en azul.
+  Respeta la búsqueda y el filtro de nivel. Al pasar por encima ves el tramo y
+  sus números, y al pulsar saltas a su primera línea. Se oculta desde «⋯ ›
+  Mostrar actividad».
+
+### Cambiado
+
+- **Barra de la ventana de logs más clara.** Arriba se lee qué estás viendo
+  («Grupo › Servicio»), cómo va («En marcha · 8m 26s», «Parado», «Con
+  errores») y, para un servicio, Reiniciar y Parar/Iniciar. El buscador lleva
+  dentro los filtros «Todo», warnings y errores, cada uno con cuántas líneas
+  hay. «Auto-scroll» y «Pausa» son ahora un solo botón: «En directo» sigue el
+  final; al subir o pulsarlo pasa a «En pausa · N nuevas», y pulsarlo de nuevo
+  te devuelve al final. Vaciar, Copiar y Separar ventana están en el menú «⋯».
+
+- **Lista de servicios más compacta en los logs.** Cada servicio ocupa una
+  línea: su punto de estado y los avisos y errores solo si los hay. En cada
+  grupo van primero los que están en marcha y después, atenuados, los parados;
+  si hay más de tres parados, el resto se pliega en «+ N parados». La cabecera
+  del grupo dice cuántos van en marcha («1/8») y ⌘K (Ctrl+K) lleva al
+  buscador de servicios.
+
+- **Líneas de log más fáciles de leer.** Cada línea lleva una columna con su
+  nivel (INF, DBG, WRN, ERR), con la hora atenuada delante; las de depuración
+  se ven atenuadas, y los warnings y errores llevan solo una fina barra a la
+  izquierda en lugar de teñir toda la fila. Lo que coincide con la búsqueda
+  queda resaltado dentro de la línea.
+
+- **Los stack traces se pliegan.** Las líneas de un stack (`at …` de Node o
+  Java, `File "…", line N` de Python, `... N more`) quedan recogidas bajo la
+  línea a la que pertenecen como «+N líneas de stack», con el primer frame a
+  la vista. Un clic (o Intro) lo despliega y sigue desplegado aunque lleguen
+  líneas nuevas; si buscas algo que está dentro de un stack plegado, se
+  muestra.
+
+- **Las líneas JSON se leen como JSON.** Una línea que es un objeto JSON
+  (aunque lleve delante un prefijo como `[pid]`) se muestra coloreada en una
+  sola línea, recortada con «… ▸ JSON»; al pulsarlo se abre debajo, con
+  sangría. Copiar sigue copiando la línea original.
+
+- **Acciones al pasar el ratón por una línea.** Arriba a la derecha de la
+  línea aparecen «Copiar línea», «Silenciar» (abre el popover de silenciados
+  con esa línea como borrador, o quita el silencio si ya lo estaba) y
+  «Filtrar por esto», que busca el texto que tengas seleccionado o, si no,
+  la palabra más significativa de la línea. Sustituye al icono de silenciar
+  que se veía siempre en warnings y errores.
+
+- **Pie de la ventana de logs con más contexto.** Dice cuántas líneas hay y
+  cuántas están silenciadas («1192 líneas · 3 silenciadas»), y a la derecha
+  ofrece «Ajustar líneas» (desactívalo para ver cada línea en una sola fila y
+  desplazarte en horizontal) y «Hora: absoluta/relativa», que cambia la hora
+  de cada línea por «hace 12 s» y la mantiene al día. Ambas opciones se
+  recuerdan.
+
+- **Silenciados, en un popover sobre el log.** En la ventana de logs, el
+  botón de la campana (con cuántas reglas hay) abre un popover flotante que no
+  le quita ancho al log; se cierra con Esc o pulsando fuera. Al escribir un
+  patrón (texto o, con «.*», regex) ves al momento cuántas líneas de este log
+  silenciaría, y en el log se atenúan con lo que coincide resaltado; eliges
+  «warnings» o «errores» y «Silenciar N» (o Intro) lo añade. Debajo, una sola
+  lista con las reglas de ambos niveles, cuántas líneas coincide cada una y,
+  al pasar el ratón, cuáles; y los interruptores «Todos los warnings» y «Todos
+  los errores». El botón de silenciar de una línea ya no guarda al instante:
+  abre el popover con esa línea como borrador para que veas qué más
+  silenciaría. El feed de líneas silenciadas desaparece; la vista previa al
+  pasar el ratón cumple su papel.
+
+- **El móvil se navega con un menú lateral.** La barra de pestañas de abajo
+  deja paso a un menú que se abre con el botón ☰ o deslizando el dedo desde
+  el borde izquierdo, y se cierra deslizando hacia la izquierda, tocando
+  fuera o con Escape. Cada pantalla lleva su título arriba y, a la derecha, la
+  campana de Avisos con los que tienes sin leer. Los workflows tienen ahora
+  pantalla propia: «En curso», con su progreso, el tiempo que llevan y un
+  botón para detenerlos, y «Disponibles», con cómo se lanzan, su último
+  resultado y su botón ▶. Un punto azul en el ☰ avisa de que hay uno en
+  marcha, y el móvil recuerda la última pantalla que abriste.
+
+- **«Restablecer posición».** El botón que devuelve el panel de la barra junto
+  al icono (en su cabecera y en Ajustes › General) se llama ahora así y lleva
+  un icono de localizar.
+
+- **Selector de tema con vista previa.** Automático, Claro y Oscuro son ahora
+  tarjetas con una ventana en miniatura de cada aspecto y su icono, y la
+  sección General se presenta en listas agrupadas al estilo de macOS.
+
+- **«Acerca de» renovado.** El icono de la app, la versión y el sistema en el
+  centro; debajo, una tarjeta de actualizaciones con un indicador de estado (al
+  día, disponible, en curso o con error) y cuándo fue la última búsqueda, las
+  novedades de la versión instalada con acceso al historial completo, y los
+  enlaces a GitHub, a las notas de la versión y para reportar un fallo.
+
+- **Notificaciones y Copias de seguridad, rediseñadas.** Notificaciones
+  muestra una vista previa del aviso y separa el interruptor de las acciones
+  del sistema (enviar una prueba, abrir los ajustes de permisos). Copias de
+  seguridad presenta Exportar e Importar en dos tarjetas y recuerda que antes
+  de importar se guarda una copia automática.
+
+- **Cabecera del grupo en Ajustes › Grupos.** Arriba, el icono, el nombre
+  (editable ahí mismo) y debajo su carpeta y la rama actual. Una pastilla
+  dice «N en marcha» o «Parado», el ojo lo oculta o muestra en la barra, y el
+  menú «⋯» permite duplicar el grupo (la copia no arranca nada sola) o
+  borrarlo.
+
+- **Pestañas en el detalle del grupo.** «Procesos» (comandos y acciones),
+  «Pre-scripts», «Entorno» y «Ajustes», cada una con cuántos elementos tiene.
+  Se manejan con las flechas del teclado y la ventana recuerda la última que
+  abriste. Borrar una variable de entorno ya marca el grupo como modificado.
+
+- **Listas de comandos, acciones y pre-scripts más limpias.** Cada lista
+  lleva su título con el total y un «Añadir» a la derecha, y sus filas van en
+  una sola tarjeta: icono, nombre, la orden en monoespaciada y etiquetas
+  compactas («Auto», el horario como «L–V 08:00», un punto verde si está en
+  marcha). Pulsar la fila abre el editor; el rayo, Editar y el menú «⋯»
+  (Duplicar, Borrar) aparecen al pasar el ratón o con el teclado.
+
+- **Pestaña «Ajustes» del grupo, en tarjetas.** General (nombre, carpeta con
+  «Elegir…» y el modo como «Varios | Uno»), Comportamiento (esperar al
+  workflow de arranque, silenciar warnings o errores, visible en la barra y el
+  móvil) y Zona de peligro, con «Borrar grupo…». El botón de borrar del final
+  desaparece, y la barra de guardado marca con un punto cuándo hay cambios.
+
+### Corregido
+
+- **El cursor ya no parpadea al pasar por encima de los botones.** La mano
+  aparecía y al instante volvía a ser la flecha en los controles con
+  descripción emergente.
+
+- **Varias confirmaciones seguidas en el móvil.** Cuando dos scripts pedían
+  confirmación a la vez, la segunda ventana no respondía a los botones y había
+  que recargar la página.
+- **Menos falsos avisos y errores en los logs.** La detección por defecto ya no
+  marca rutas ni nombres de archivo (`src/errors/`, `error-handler.ts`,
+  `--no-warnings`) ni resúmenes como «0 errors» o «no warnings»; sí reconoce
+  `TypeError:`, `npm ERR!`, `FATAL` o `DeprecationWarning:`. Los comandos que
+  usaban la detección por defecto antigua pasan a la nueva; las expresiones
+  personalizadas no cambian.
+- **La ventana de logs muestra el servicio que abres.** Al abrirla desde la
+  barra, un workflow o una notificación, la lista lateral se desplaza hasta el
+  servicio (o el grupo) elegido y despliega su grupo si estaba plegado, también
+  cuando la ventana ya estaba abierta.
+
 ## [0.11.0] - 2026-10-10
 
 ### Añadido

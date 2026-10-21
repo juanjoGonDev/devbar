@@ -43,11 +43,10 @@ const ROW_BUTTONS = [
   '.caret-btn',
   '.cmd-sub-btn',
   '.action-logs-btn',
-  // The pipeline controls live in the header, whose `button.ghost` rule
+  // The workflow row and strip controls are `button.ghost` too, whose rule
   // (padding 3px 9px) would otherwise out-rank a bare class selector.
-  '.tray-header button.ghost.prescripts-trigger',
+  '.tray-wf-row button.ghost.tray-wf-action',
   '.tray-header button.ghost.prestep-cancel',
-  '.tray-header button.ghost.prestep-logs-btn',
 ];
 
 describe('tray row layout (renderer/styles.css)', () => {

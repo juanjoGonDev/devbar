@@ -63,17 +63,3 @@ export function clientMatchesPattern(p: string, lineText: string): boolean {
     return lineText.includes(p);
   }
 }
-
-/** The text of the escape-hatch pill, e.g. `sólo warnings + errores` (the
- *  pill's own colour says which level it is). */
-export function levelPillLabel(levels: readonly SilenceLevel[]): string {
-  const label = levels
-    .map((level) => (level === 'warn' ? 'warnings' : 'errores'))
-    .join(' + ');
-  return `sólo ${label}`;
-}
-
-/** Errors outrank warnings when the pill stands for both. */
-export function levelPillClass(levels: readonly SilenceLevel[]): string {
-  return `level-pill ${levels.includes('error') ? 'err' : 'warn'}`;
-}

@@ -15,12 +15,15 @@ import { logsParams } from './params.js';
 import {
   EDGE_CHUNK,
   flashEntry,
-  renderLevelChips,
   resetBuffer,
   setLevelFilter,
   trimMemory,
 } from './pane.js';
-import { applyTargetSnapshot, clearMutedFeeds, setDrawer } from './drawer.js';
+import {
+  applyTargetSnapshot,
+  resetSilenceScope,
+  setSilencePopover,
+} from './silence-popover.js';
 import { renderHeaderRunState } from './header.js';
 import {
   awaitSnapshot,
@@ -29,17 +32,9 @@ import {
   endLoad,
 } from './stream.js';
 import { dropPendingQueue, keepQueuedAfter } from './status.js';
-import {
-  autoscrollEl,
-  filterEl,
-  muteErrEl,
-  muteWarnEl,
-  runBtn,
-  setText,
-  sideTreeEl,
-  titleEl,
-  uptimeBadgeEl,
-} from './elements.js';
+import { dispatchLive } from './live.js';
+import { unfoldGroup } from './sidebar-fold.js';
+import { filterEl, muteErrEl, muteWarnEl, sideTreeEl } from './elements.js';
 import { view, type Scope } from './view.js';
 import type { SilenceLevel } from '../../src/ipc-contract.js';
 
@@ -63,7 +58,7 @@ export async function jumpToLine(srcId: string, ts: number): Promise<void> {
   // certainly outside the drawn window, so the window is moved to it.
   const entryIndex = buffer.entries.findIndex((entry) => entry.ts === ts);
   if (entryIndex < 0) return;
-  autoscrollEl.checked = false;
+  dispatchLive({ type: 'leftTail' });
   flashEntry(entryIndex);
 }
 
@@ -76,7 +71,7 @@ export async function jumpToLine(srcId: string, ts: number): Promise<void> {
 async function selectMergedLog(groupId: string | null): Promise<void> {
   view.processId = null;
   dropUnknownSources(); // held lines belong to the old scope
-  clearMutedFeeds(); // rows from the previous scope would target the wrong command
+  resetSilenceScope(); // a draft and its marks belong to the previous log
   view.mergedIsAll = groupId === null;
   view.mergedGroupId = groupId;
   resetBuffer([]);
@@ -84,7 +79,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   view.currentTarget = null;
   view.currentGroupId = null;
   view.currentCommandId = null;
-  setDrawer(false); // silencing is per-service; it has no meaning here
+  setSilencePopover(false); // silencing is per-service; it has no meaning here
 
   view.memoryCap = view.globalRetention; // merged snapshots are capped globally
   const token = beginLoad();
@@ -93,12 +88,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   view.groupSources = new Map(res.sources.map((s) => [s.id, s]));
   view.displayName = groupId ? 'todos' : '';
   view.groupName = res.groupName;
-  const heading = groupId ? `Logs — ${res.groupName} · todos` : 'Telemetría';
-  setText(titleEl, heading);
-  document.title = heading;
-  uptimeBadgeEl.classList.remove('visible');
-  runBtn.style.display = 'none';
-  renderLevelChips();
+  renderHeaderRunState();
 
   resetBuffer([...res.lines]);
   endLoad((id) => res.seqs[id] ?? 0);
@@ -117,6 +107,34 @@ function markMergedInSidebar(groupId: string | null): void {
   sideTreeEl
     .querySelector<HTMLElement>('.side-all')
     ?.classList.toggle('active', view.mergedIsAll);
+  if (groupId !== null && !logsParams.isDetached)
+    revealInSidebar(
+      sideTreeEl.querySelector<HTMLElement>(
+        `.side-group[data-group-id="${CSS.escape(groupId)}"] > summary`,
+      ),
+    );
+}
+
+/**
+ * Scroll the sidebar so what the window just opened is on screen — a link
+ * from the tray, a workflow or a notification may target a service far down
+ * the tree, or inside a group the user left folded. The group header goes
+ * first so it shows too whenever both fit; the row goes last so it always
+ * does. `nearest` leaves a row that is already visible exactly where it is.
+ */
+function revealInSidebar(target: HTMLElement | null): void {
+  if (!target) return;
+  const group = target.closest('details');
+  const header = group?.querySelector(':scope > summary');
+  // Behind «+ N parados» the row has no box either: open the fold first.
+  if (group && target.classList.contains('folded')) unfoldGroup(group);
+  // A service inside a folded group has no box to scroll to; a group header
+  // opened as a whole scope is visible folded, so it stays as the user left it.
+  if (header && header !== target) {
+    if (group && !group.open) group.open = true;
+    header.scrollIntoView({ block: 'nearest' });
+  }
+  target.scrollIntoView({ block: 'nearest' });
 }
 
 export async function selectLog(
@@ -128,7 +146,7 @@ export async function selectLog(
   view.groupSources = null;
   view.mergedGroupId = null;
   dropUnknownSources(); // held lines belong to the old scope
-  clearMutedFeeds(); // rows from the previous scope would target the wrong command
+  resetSilenceScope(); // a draft and its marks belong to the previous log
   view.mergedIsAll = false;
   for (const summary of Array.from(
     sideTreeEl.querySelectorAll<HTMLElement>('.side-group'),
@@ -184,6 +202,11 @@ export async function selectLog(
     )) {
       row.classList.toggle('active', row.dataset.id === id);
     }
+    revealInSidebar(
+      sideTreeEl.querySelector<HTMLElement>(
+        `.side-item[data-id="${CSS.escape(id)}"]`,
+      ),
+    );
   }
   renderHeaderRunState();
 }

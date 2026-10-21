@@ -3,61 +3,55 @@ import { makeActionId, makeCommandId } from '../compound-id.js';
 import type {
   GlobalSettings,
   Group,
-  PreStep,
   ProcessState,
+  Workflow,
+  WorkflowRunRecord,
 } from '../domain-types.js';
-import type { GroupState, PipelineState, TrayColor } from '../ipc-contract.js';
+import { runnableScriptCount } from '../pipeline-graph.js';
+import { nextWorkflowRun } from '../scheduler.js';
+import { workflowScheduleKey } from './schedule-runner.js';
+import type {
+  GroupState,
+  TrayColor,
+  WorkflowEntry,
+  WorkflowRunState,
+} from '../ipc-contract.js';
 
 /**
  * The two payloads every broadcast carries: the per-group runtime state and
- * the ONE global pre-script pipeline's state. Both are pure reads over the
- * config store, the process manager and the runner — no Electron — so the
- * aggregation rules (which command tints a group, which run id survives a
- * cleared badge) can be tested directly.
+ * the workflow list rows. Both are pure reads over the config store, the
+ * process manager and the workflow runner — no Electron — so the aggregation
+ * rules (which command tints a group, when a schedule fires next) can be
+ * tested directly.
  */
 
 interface SnapshotConfigStore {
   listGroups: () => Group[];
   getGlobalSettings: () => GlobalSettings;
-  getPreSteps: () => PreStep[];
+  listWorkflows: () => Workflow[];
+  getWorkflowRuns: () => Record<string, WorkflowRunRecord>;
+  getScheduleLastRun: (key: string) => string | null;
 }
 
 interface SnapshotProcessManager {
   getState: (id: string) => ProcessState;
 }
 
-interface SnapshotRunState {
-  status: PipelineState['status'];
-  currentStep: number;
-  totalSteps: number;
-  runId: number;
-  startedAt: number;
-}
-
-interface SnapshotRecentResult {
-  status: 'done' | 'error';
-  error: string | null;
-  runId: number;
-}
-
-interface SnapshotRunner {
-  getRunState: () => SnapshotRunState | null;
-  getRecentResult: () => SnapshotRecentResult | null;
-}
-
 export interface StateSnapshotDeps {
   configStore: SnapshotConfigStore;
   processManager: SnapshotProcessManager;
-  preScriptRunner: SnapshotRunner;
+  workflowRunner: {
+    runState: (workflowId: string) => WorkflowRunState | null;
+    isRunning: (workflowId: string) => boolean;
+  };
   /** Group-level transient errors (not persisted). */
   groupErrors: ReadonlyMap<string, string | null>;
+  now?: () => number;
 }
 
 export interface StateSnapshots {
   snapshotGroupStates: () => GroupState[];
-  snapshotPipelineState: () => PipelineState;
-  /** After `stopAll` wiped every buffer, a stale run id must not linger. */
-  forgetPipelineRunId: () => void;
+  workflowEntries: () => WorkflowEntry[];
 }
 
 /** Aggregate group colour: worst over running commands. */
@@ -87,10 +81,8 @@ function aggregateGroupColor(
 }
 
 export function createStateSnapshots(deps: StateSnapshotDeps): StateSnapshots {
-  const { configStore, processManager, preScriptRunner, groupErrors } = deps;
-  // Kept beyond the recent-result badge TTL so the tray can still open that
-  // run's (still-retained) log buffer.
-  let lastPipelineRunId: string | null = null;
+  const { configStore, processManager, workflowRunner, groupErrors } = deps;
+  const now = deps.now ?? Date.now;
 
   return {
     snapshotGroupStates(): GroupState[] {
@@ -144,41 +136,39 @@ export function createStateSnapshots(deps: StateSnapshotDeps): StateSnapshots {
       });
     },
 
-    snapshotPipelineState(): PipelineState {
-      const runState = preScriptRunner.getRunState();
-      const recentResult = preScriptRunner.getRecentResult();
-      const status = runState
-        ? runState.status
-        : recentResult
-          ? recentResult.status
-          : 'idle';
-      const lastError =
-        recentResult && recentResult.status === 'error'
-          ? recentResult.error
+    workflowEntries(): WorkflowEntry[] {
+      const runs = configStore.getWorkflowRuns();
+      const at = new Date(now());
+      return configStore.listWorkflows().map((workflow) => {
+        const { trigger } = workflow;
+        const next =
+          trigger.kind === 'schedule' && workflow.enabled
+            ? nextWorkflowRun(
+                trigger.schedule,
+                configStore.getScheduleLastRun(
+                  workflowScheduleKey(workflow.id),
+                ),
+                at,
+              )
+            : null;
+        const live = workflowRunner.isRunning(workflow.id)
+          ? workflowRunner.runState(workflow.id)
           : null;
-      // The live run id (running / within the recent-result TTL). Persisted
-      // beyond both so the tray's "ver logs del pipeline" button survives after
-      // the status badge clears — the aggregator log buffer itself outlives it.
-      const liveRunId = runState
-        ? String(runState.runId)
-        : recentResult
-          ? String(recentResult.runId)
-          : null;
-      if (liveRunId) lastPipelineRunId = liveRunId;
-      return {
-        status,
-        currentStep: runState ? runState.currentStep : null,
-        totalSteps: runState
-          ? runState.totalSteps
-          : configStore.getPreSteps().length,
-        lastError,
-        lastRunId: liveRunId || lastPipelineRunId,
-        startedAt: runState ? runState.startedAt : null,
-      };
-    },
-
-    forgetPipelineRunId(): void {
-      lastPipelineRunId = null;
+        return {
+          workflow,
+          lastRun: runs[workflow.id] ?? null,
+          nextRunAt: next ? next.getTime() : null,
+          scriptCount: runnableScriptCount(workflow.graph),
+          running: live
+            ? {
+                runId: live.runId,
+                doneScripts: live.doneScripts,
+                totalScripts: live.totalScripts,
+                startedAt: live.startedAt,
+              }
+            : null,
+        };
+      });
     },
   };
 }

@@ -7,6 +7,7 @@ import type {
   RemoteDeviceRow,
   RemoteStatus,
 } from '../src/ipc-contract/remote-api.js';
+import { tipOf } from './helpers/tip.js';
 
 /**
  * The «Dispositivos» list of «Control remoto», driven through the real config
@@ -156,7 +157,7 @@ describe('renderer/config/remote-devices.ts', () => {
       win = await openWith(status({ devices: [device()] }));
 
       expect(
-        rows()[0]?.querySelector<HTMLElement>('.remote-device-meta')?.title,
+        tipOf(rows()[0]?.querySelector<HTMLElement>('.remote-device-meta')),
       ).toMatch(/^Safari · iOS\nVinculado el 1 oct\.? 2026$/);
     });
 
@@ -173,7 +174,7 @@ describe('renderer/config/remote-devices.ts', () => {
       const mark = verified?.querySelector<HTMLElement>('[role="img"]');
 
       expect(mark?.getAttribute('aria-label')).toBe('Verificado');
-      expect(mark?.title).toBe('Verificado');
+      expect(tipOf(mark)).toBe('Verificado');
       expect(mark?.querySelector('[data-icon="shield-check"]')).not.toBeNull();
       expect(unverified?.querySelector('[role="img"]')).toBeNull();
       expect(squash(el('remote-devices'))).not.toMatch(/Sin verificar/);

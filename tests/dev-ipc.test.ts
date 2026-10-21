@@ -104,8 +104,10 @@ function makeHooks(): DevHooks {
         tmpDir: '/tmp',
         repoPath: null,
       }),
-      setOverlay: (groups) =>
-        void recorded.overlays.push(groups ? groups.length : null),
+      setOverlay: (overlay) =>
+        void recorded.overlays.push(overlay ? overlay.groups.length : null),
+      runningWorkflowIds: () => [],
+      stopWorkflow: () => Promise.resolve(),
       processIds: () => ['cmd:g-api:dev', 'cmd:fixture-1-services:tick'],
       stop: (id) => {
         recorded.stops.push(id);
@@ -413,7 +415,7 @@ describe('src/dev/dev-ipc.ts', () => {
       await expect(
         fire('dev:setFixtureGroups', { on: true, repeat: 2 }),
       ).resolves.toMatchObject({ ok: true, active: true, repeat: 2 });
-      expect(recorded.overlays).toEqual([6]);
+      expect(recorded.overlays).toEqual([7]);
       await expect(fire('dev:fixtureGroupsStatus')).resolves.toEqual({
         active: true,
         repeat: 2,
@@ -426,7 +428,7 @@ describe('src/dev/dev-ipc.ts', () => {
         fire('dev:setFixtureGroups', { on: false }),
       ).resolves.toMatchObject({ ok: true, active: false });
       expect(recorded.stops).toEqual(['cmd:fixture-1-services:tick']);
-      expect(recorded.overlays).toEqual([3, null]);
+      expect(recorded.overlays).toEqual([4, null]);
     });
 
     it('reads anything but on: true as off', async () => {

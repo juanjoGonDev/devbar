@@ -18,7 +18,7 @@ import { latestWins } from '../latest-wins.js';
 import { queuedAfter } from '../pending-queue.js';
 import { pushEntry } from './pane.js';
 import { queueWhilePaused } from './status.js';
-import { pausedEl } from './elements.js';
+import { isHolding } from './live-state.js';
 import { view } from './view.js';
 import type { LogEntry } from '../../src/domain-types.js';
 import type { SourcedLogEntry } from '../../src/ipc-contract.js';
@@ -132,7 +132,7 @@ async function learnSource(entry: SourcedLogEntry): Promise<void> {
 
 /** The paused-or-not path a merged line takes once its source is known. */
 function deliverMerged(entry: SourcedLogEntry): void {
-  if (pausedEl.checked) {
+  if (isHolding(view.live)) {
     queueWhilePaused(entry);
     return;
   }
@@ -157,7 +157,7 @@ function receiveLine(id: string, entry: LogEntry): void {
     return;
   }
   if (id !== view.processId) return;
-  if (pausedEl.checked) {
+  if (isHolding(view.live)) {
     queueWhilePaused(entry);
     return;
   }

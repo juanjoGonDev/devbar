@@ -2,45 +2,6 @@
   box-sizing: border-box;
 }
 
-/* Top spacer for hiddenInset windows: just tall enough to clear the traffic
-   lights (placed at y=14), so the content starts as high as possible. */
-.app-window-spacer {
-  height: 36px;
-  -webkit-app-region: drag;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /*
-   * Clear the inset traffic lights, and sit on their optical centre: they are
-   * 12px tall at trafficLightPosition.y = 14, so their middle is 20px down.
-   * Centring inside the bare 36px box would land at 18px and read as 2px high.
-   */
-  padding: 4px 12px 0 82px;
-  font-family: var(--font-ui);
-  color: #d0d0d4;
-  font-size: 12px;
-  font-weight: 600;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-/* Children stay draggable: the title is a label, not a control. Only real
-   controls opt out of the drag region. */
-.app-window-spacer button,
-.app-window-spacer input {
-  -webkit-app-region: no-drag;
-}
-/* Non-macOS windows keep the native titlebar, which already shows this same
-   title — the inset strip would duplicate it, so it is macOS-only chrome. */
-html[data-os='win32'] .app-window-spacer,
-html[data-os='linux'] .app-window-spacer {
-  display: none;
-}
-.app-window-spacer #title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 html,
 body {
   margin: 0;
@@ -77,8 +38,8 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: rgba(28, 28, 30, 0.96);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #1a1a1d;
+  border-right: 1px solid #262629;
   font-family: var(--font-ui);
   min-height: 0;
 }
@@ -86,7 +47,6 @@ body.detached #sidebar,
 body.sidebar-collapsed #sidebar {
   display: none;
 }
-body.detached #detach,
 body.detached #toggle-sidebar {
   display: none;
 }
@@ -95,47 +55,81 @@ body.sidebar-collapsed #toggle-sidebar {
 }
 
 .side-head {
-  padding: 8px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  /* On macOS the inset traffic lights sit here, so this strip clears them
+     and doubles as a handle to drag the window by. */
+  padding: 46px 8px 6px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+.side-head > * {
+  -webkit-app-region: no-drag;
+}
+html[data-os='win32'] .side-head,
+html[data-os='linux'] .side-head {
+  padding-top: 8px;
+}
+/* The service search: a field with its icon and the ⌘K hint inside. */
+.side-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: #232326;
+  border: 1px solid transparent;
+  color: #8e8e93;
+  cursor: text;
+}
+.side-search:focus-within {
+  border-color: rgba(10, 132, 255, 0.6);
+}
+.side-search-ico {
+  font-size: 13px;
   flex-shrink: 0;
 }
-.side-head input[type='search'] {
-  width: 100%;
-  background: rgba(255, 255, 255, 0.06);
-  color: #e5e5e7;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 5px 9px;
-  font-size: 12px;
-  font-family: inherit;
+.side-search input[type='search'] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: none;
+  color: #f5f5f7;
+  font: inherit;
+  font-size: 12.5px;
 }
-.side-head input[type='search']:focus {
-  outline: 2px solid rgba(0, 122, 255, 0.5);
-  outline-offset: -1px;
-  border-color: #0a84ff;
+.side-search input[type='search']::placeholder {
+  color: #8e8e93;
+}
+.side-kbd {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-family: inherit;
+  font-size: 11px;
+  color: #636366;
+}
+.side-search:focus-within .side-kbd {
+  display: none;
 }
 
 #side-tree {
   flex: 1;
   overflow: auto;
-  /* No side padding: group headers are full-bleed bands. Rows re-inset below. */
-  padding: 0 0 14px;
+  padding: 0 8px 14px;
 }
 #side-tree .empty {
   color: #8e8e93;
   font-size: 11px;
-  padding: 10px 14px;
-}
-
-.side-group + .side-group {
-  margin-top: 2px;
+  padding: 10px 6px;
 }
 
 /*
- * Group headers read as bands, not as rows: full width, own background,
- * hairlines above and below. Sticky so the group you are scrolling through
- * stays named at the top of the list — with ten services open, that label is
- * the only thing telling you whose logs you are looking at.
+ * Group headers: chevron, uppercase name, and «running/total» on the right.
+ * Sticky, so the group you are scrolling through stays named at the top of
+ * the list.
  */
 .side-group > summary {
   position: sticky;
@@ -144,382 +138,642 @@ body.sidebar-collapsed #toggle-sidebar {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  height: 30px;
+  margin-top: 6px;
+  padding: 0 6px 0 10px;
+  border-radius: 7px;
   cursor: pointer;
   user-select: none;
   list-style: none;
-  color: #e8e8ea;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.7px;
+  color: #8e8e93;
+  background: #1a1a1d;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  background: #35353a;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
-}
-.side-group:first-child > summary {
-  border-top-color: transparent;
 }
 .side-group > summary::-webkit-details-marker {
   display: none;
 }
 .side-group > summary:hover {
-  background: #3f3f45;
+  color: #d1d1d6;
 }
 .side-group > summary .chevron {
-  font-size: 9px;
-  width: 9px;
   flex-shrink: 0;
-  color: #8e8e93;
-  transition: transform 0.15s ease;
+  font-size: 10px;
+  transition: transform 0.12s ease;
 }
 .side-group[open] > summary .chevron {
   transform: rotate(90deg);
 }
 .side-group > summary .g-ico {
-  font-size: 11px;
   flex-shrink: 0;
+  font-size: 12px;
+}
+.side-group > summary .g-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .side-group > summary .g-name {
-  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Worst state inside the group — the only health cue left once it is folded. */
+.side-group > summary .g-badges,
+.side-all .a-badges,
+.side-item .s-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.side-group > summary .g-badges:empty,
+.side-all .a-badges:empty,
+.side-item .s-badges:empty {
+  display: none;
+}
+.side-group > summary .g-count {
+  flex-shrink: 0;
+  font-weight: 500;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
 .side-group > summary .g-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: transparent;
 }
 .side-group > summary .g-dot.running {
-  background: #30d158;
+  background: #34c759;
 }
 .side-group > summary .g-dot.warn {
-  background: #ffd60a;
+  background: #ff9f0a;
 }
 .side-group > summary .g-dot.error {
   background: #ff453a;
 }
 .side-group > summary .g-dot.starting,
 .side-group > summary .g-dot.stopping {
-  background: #0a84ff;
-}
-.side-group > summary .g-count {
-  flex-shrink: 0;
-  min-width: 16px;
-  padding: 1px 5px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.09);
-  color: #9a9aa0;
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
+  background: #8e8e93;
 }
 
-/*
- * The rail is the "these belong to the group above" cue: every item hangs off
- * one vertical line, indented past the header's own text.
- */
 .side-items {
-  padding: 4px 8px 7px 0;
-  margin-left: 18px;
-  border-left: 1px solid rgba(255, 255, 255, 0.16);
-}
-.side-group[open] > summary {
-  /* Let the rail meet the header instead of floating below it. */
-  border-bottom-color: rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 2px;
 }
 
+/* ── A service: one 30px line ─────────────────────────────────── */
 .side-item {
-  /* Two columns: everything about the service on the left, over two rows, and
-     the run control on the right spanning both. The counters and the clock had
-     been sharing one line with the name, which left them wrapping mid-badge. */
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
+  position: relative;
+  display: flex;
   align-items: center;
-  column-gap: 10px;
-  row-gap: 5px;
-  position: relative; /* anchors .s-open, which is the row's real hit target */
-  width: calc(100% - 6px);
-  text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
+  gap: 6px;
+  height: 30px;
+  padding: 0 6px 0 10px;
   border-radius: 7px;
-  box-sizing: border-box;
-  padding: 7px 9px;
-  margin: 1px 0 1px 6px;
-  color: #e5e5e7;
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
+  color: #d1d1d6;
+  font-size: 13px;
 }
 .side-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
 }
 .side-item.active {
-  background: rgba(10, 132, 255, 0.22);
-  border-color: rgba(10, 132, 255, 0.45);
+  background: rgba(10, 132, 255, 0.16);
+  color: #fff;
+}
+/* Stopped services follow the running ones, dimmed. */
+.side-item.stopped {
+  color: #636366;
+}
+.side-item.stopped:hover {
+  color: #a1a1a6;
 }
 .side-item .dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: #5a5a5f;
+  background: #3a3a3c;
 }
 .side-item .dot.running {
-  background: #30d158;
-}
-.side-item .dot.warn {
-  background: #ffd60a;
-}
-.side-item .dot.error {
-  background: #ff453a;
+  background: #34c759;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.2);
 }
 .side-item .dot.starting,
 .side-item .dot.stopping {
-  background: #0a84ff;
+  background: #8e8e93;
+  animation: dot-pulse 1s ease-in-out infinite alternate;
 }
-.side-item .s-ico {
-  flex-shrink: 0;
-  font-size: 12px;
+@keyframes dot-pulse {
+  to {
+    opacity: 0.35;
+  }
 }
+/* The whole row opens it; the controls on top of it stay their own. */
 .side-item .s-open {
-  /* The button that opens the log, underneath everything. Making the ROW a
-     button would nest the run control and the counters inside it, which HTML
-     forbids; this keeps one hit target without lying about the tree. */
   position: absolute;
   inset: 0;
-  z-index: 0;
-  background: transparent;
   border: 0;
   border-radius: inherit;
-  padding: 0;
+  background: transparent;
   cursor: pointer;
 }
 .side-item .s-open:focus-visible {
-  outline: 2px solid #0a84ff;
+  outline: 2px solid var(--sil-accent);
   outline-offset: -2px;
 }
 .side-item .s-head,
 .side-item .s-badges,
 .side-item .s-run {
   position: relative;
-  z-index: 1;
-}
-/* Text is not a target: let clicks through to the button underneath. Only the
-   counters and the run control take pointer events of their own. */
-.side-item .s-head,
-.side-item .s-badges {
-  pointer-events: none;
-}
-.side-item .s-badges .b,
-.side-item .s-run {
-  pointer-events: auto;
 }
 .side-item .s-head {
-  grid-area: 1 / 1;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0; /* so a long name ellipsises instead of pushing the column */
+  gap: 9px;
+  pointer-events: none;
 }
 .side-item .s-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.side-item .s-badges {
-  grid-area: 2 / 1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  /* A row of its own: the badges get real breathing room, and the runtime no
-     longer has to break between its minutes and its seconds. */
-  gap: 3px 12px;
-  padding-left: 15px; /* line up under the name, past the dot and the icon */
-  font-size: 10px;
-  color: #8e8e93;
-  font-variant-numeric: tabular-nums;
-}
-.side-item .s-badges .b {
+.side-item .s-run {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  /* As buttons these are wider than the old spans, and three of them plus the
-     runtime no longer fit 244px. Without this each one breaks between its icon
-     and its number instead of the ROW wrapping. */
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.side-item .s-badges .b.warn {
-  color: #ffd60a;
-}
-.side-item .s-badges .b.err {
-  color: #ff6961;
-}
-.side-item .s-badges .b.time.live {
-  color: #7eea9f;
-}
-.side-item .s-run {
-  grid-area: 1 / 2 / 3 / 3; /* its own column, centred across both rows */
-  align-self: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: #c8c8cc;
+  color: #a1a1a6;
   font-size: 11px;
-  line-height: 1;
-  padding: 6px 7px;
   cursor: pointer;
-  visibility: hidden;
+  opacity: 0;
 }
 .side-item:hover .s-run,
-.side-item .s-run.on {
-  visibility: visible;
+.side-item .s-run:focus-visible {
+  opacity: 1;
 }
 .side-item .s-run:hover {
   background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
-.side-item.hidden {
-  display: none;
+.side-item .s-run.on {
+  color: #ff6961;
 }
+.side-item.hidden,
 .side-group.hidden {
   display: none;
 }
-
-/* ── Header run button / uptime ─────────────────────────────────── */
-.run-btn {
-  min-width: 28px;
-}
-header .icon-btn {
-  padding: 4px 7px;
-  font-size: 12px;
-  line-height: 1.25;
-}
-.run-btn.on {
-  background: rgba(255, 69, 58, 0.18);
-  border-color: rgba(255, 69, 58, 0.4);
-  color: #ff8a8a;
-}
-.uptime-badge {
+/* Folded behind «+ N parados» — unless a search is looking for it. */
+#side-tree:not(.searching) .side-item.folded {
   display: none;
-  font-size: 11px;
-  color: #98989d;
-  font-variant-numeric: tabular-nums;
-  font-weight: normal;
 }
-.uptime-badge.visible {
-  display: inline;
+.s-fold {
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #636366;
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.s-fold:hover {
+  color: #d1d1d6;
+}
+.s-fold:focus-visible {
+  outline: 2px solid var(--sil-accent);
+}
+.s-fold[hidden],
+#side-tree.searching .s-fold {
+  display: none;
 }
 
-header {
+/* ================================================================
+   TOOLBAR — what is on screen, how it is doing, how you look at it
+   ================================================================ */
+
+/*
+ * One 56px row. It is also the window's drag strip: the titlebar is
+ * `hiddenInset`, so on macOS this row (and the sidebar's top) is the only
+ * place left to grab the window by. Controls opt out of the drag region.
+ */
+header.toolbar {
+  position: relative;
+  z-index: 6;
   display: flex;
   align-items: center;
-  gap: 6px;
-  row-gap: 6px;
-  padding: 9px 14px;
-  background: rgba(36, 36, 38, 0.92);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 8px;
+  height: 56px;
+  padding: 0 14px 0 12px;
   flex-shrink: 0;
+  border-bottom: 1px solid #262629;
+  background: #141416;
   font-family: var(--font-ui);
   font-size: 12px;
   -webkit-app-region: drag;
-  flex-wrap: wrap;
 }
-header > * {
+header.toolbar > *,
+.tb-subject > * {
   -webkit-app-region: no-drag;
 }
-header strong {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.1px;
-  max-width: 34ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* The subject itself is a label: grabbing the window by it should work. */
+.tb-subject,
+.tb-subject .crumbs,
+.tb-subject .run-pill {
+  -webkit-app-region: drag;
 }
-header input[type='search'] {
-  /* Capped: a search box wider than its query is wasted header. */
-  flex: 0 1 240px;
-  max-width: 300px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #e5e5e7;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 12px;
+header.toolbar [hidden] {
+  display: none !important;
+}
+/* Without a sidebar the inset traffic lights sit over the toolbar's left end. */
+body.detached header.toolbar,
+body.sidebar-collapsed header.toolbar {
+  padding-left: 84px;
+}
+html[data-os='win32'] body header.toolbar,
+html[data-os='linux'] body header.toolbar {
+  padding-left: 12px;
+}
+
+header.toolbar button {
   font-family: inherit;
-  min-width: 140px;
-}
-header input[type='search']:focus {
-  outline: 2px solid rgba(0, 122, 255, 0.5);
-  outline-offset: -1px;
-  border-color: #0a84ff;
-}
-header button {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e5e5e7;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 4px 9px;
   cursor: pointer;
-  font-size: 12px;
-  font-family: inherit;
-  transition: background 0.12s ease;
 }
-header button:hover {
-  background: rgba(255, 255, 255, 0.14);
+header.toolbar .icon-btn {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #a1a1a6;
+  font-size: 15px;
+  line-height: 1;
 }
-header button:active {
-  transform: scale(0.98);
+header.toolbar .icon-btn:hover,
+header.toolbar .icon-btn[aria-expanded='true'] {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5f5f7;
 }
-header .check {
+header.toolbar .icon-btn:focus-visible,
+.level-chip:focus-visible,
+.live-btn:focus-visible {
+  outline: 2px solid var(--sil-accent);
+  outline-offset: 1px;
+}
+body.sidebar-collapsed #toggle-sidebar {
+  color: #8e8e93;
+}
+
+/* ── Left: «Grupo › Servicio», the run pill, the run controls ─── */
+.tb-subject {
   display: flex;
   align-items: center;
-  gap: 4px;
-  user-select: none;
-  cursor: pointer;
-  font-size: 11px;
-  color: #c8c8cc;
+  gap: 8px;
+  /* The subject keeps its size; the search box gives way first. Long names
+     are capped by the crumbs' own max-widths instead. */
+  flex-shrink: 0;
 }
-header .check input[type='checkbox'] {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 24px;
-  height: 14px;
-  background: rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  position: relative;
-  margin: 0;
-  cursor: pointer;
-  transition: background 0.18s ease;
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
 }
-header .check input[type='checkbox']::before {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 10px;
-  height: 10px;
-  background: #fff;
+.crumb-group {
+  font-size: 13px;
+  color: #8e8e93;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 16ch;
+}
+.crumb-sep {
+  color: #5a5a5e;
+  font-size: 12px;
+  line-height: 1;
+}
+.crumb-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f5f5f7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 24ch;
+}
+.run-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: rgba(142, 142, 147, 0.14);
+  color: #a1a1a6;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.run-pill-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  transition: transform 0.18s ease;
+  background: #636366;
 }
-header .check input[type='checkbox']:checked {
-  background: #30d158;
+.run-pill[data-tone='running'] {
+  background: rgba(52, 199, 89, 0.14);
+  color: #4cd964;
 }
-header .check input[type='checkbox']:checked::before {
-  transform: translateX(10px);
+.run-pill[data-tone='running'] .run-pill-dot {
+  background: #34c759;
+}
+.run-pill[data-tone='error'] {
+  background: rgba(255, 69, 58, 0.16);
+  color: #ff6961;
+}
+.run-pill[data-tone='error'] .run-pill-dot {
+  background: #ff453a;
+}
+header.toolbar .run-btn.on {
+  color: #ff6961;
+}
+header.toolbar .run-btn.on .icon {
+  font-size: 12px;
+}
+
+.tb-grow {
+  flex: 1;
+  min-width: 8px;
+}
+
+/* ── Search, with the level chips inside it ──────────────────────── */
+.tb-search {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 440px;
+  min-width: 160px;
+  height: 32px;
+  padding: 0 3px 0 10px;
+  border-radius: 9px;
+  background: #232326;
+  border: 1px solid transparent;
+}
+.tb-search:focus-within {
+  border-color: rgba(10, 132, 255, 0.6);
+}
+.tb-search-ico {
+  color: #8e8e93;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.tb-search input[type='search'] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 0 8px;
+}
+.tb-search input[type='search']::placeholder {
+  color: #8e8e93;
+}
+.level-chips {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.level-chip {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: #a1a1a6;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.level-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.level-chip[aria-pressed='true'] {
+  background: #3a3a3c;
+  color: #fff;
+}
+.level-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.level-chip.warn .level-chip-dot {
+  background: #ff9f0a;
+}
+.level-chip.err .level-chip-dot {
+  background: #ff453a;
+}
+
+/* ── The live button: «● En directo» / «En pausa · N nuevas» ───── */
+.live-btn {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(52, 199, 89, 0.14);
+  color: #4cd964;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34c759;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.25);
+}
+.live-btn.paused {
+  background: rgba(255, 159, 10, 0.16);
+  color: #ffb340;
+}
+.live-btn.paused .live-dot {
+  background: #ff9f0a;
+  box-shadow: none;
+}
+header.toolbar .silence-toggle {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
+/* ── «⋯» menu (the remote-device menu's markup, dark like the window) ─ */
+.tb-more {
+  position: relative;
+  flex-shrink: 0;
+}
+.tb-more .remote-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: 200px;
+  padding: 5px;
+  border: 1px solid var(--sil-glass-border);
+  border-radius: 10px;
+  background: #2c2c2e;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.tb-more .remote-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #f2f2f7;
+  font-size: 13px;
+  text-align: left;
+}
+.tb-more .remote-menu-item .icon {
+  color: #a1a1a6;
+  font-size: 14px;
+}
+.tb-more .remote-menu-item:hover,
+.tb-more .remote-menu-item:focus-visible {
+  outline: none;
+  background: rgba(10, 132, 255, 0.28);
+}
+.tb-more .remote-menu-item.is-danger,
+.tb-more .remote-menu-item.is-danger .icon {
+  color: #ff6961;
+}
+.tb-more .remote-menu-check {
+  margin-left: auto;
+  color: var(--sil-accent-text);
+}
+.tb-more .remote-menu-item[aria-checked='false'] .remote-menu-check {
+  visibility: hidden;
+}
+.tb-more .remote-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--sil-sep);
+}
+
+/* ── Activity strip: lines per slice of time, under the toolbar ── */
+.activity {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+  height: 44px;
+  padding: 8px 18px 6px;
+  border-bottom: 1px solid #262629;
+  background: #1c1c1e;
+  font-family: var(--font-ui);
+}
+.activity[hidden] {
+  display: none;
+}
+.activity-bars {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+/* The whole column is the target; the bar is drawn at its foot. */
+.activity-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 14px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(
+      to top,
+      var(--activity-tone) var(--h, 0px),
+      transparent var(--h, 0px)
+    )
+    no-repeat;
+  --activity-tone: #3a3a3c;
+  cursor: pointer;
+}
+.activity-bar.tone-warn {
+  --activity-tone: var(--sil-warn);
+}
+.activity-bar.tone-error {
+  --activity-tone: var(--sil-danger);
+}
+.activity-bar.current {
+  --activity-tone: var(--sil-accent);
+}
+.activity-bar.tone-empty {
+  cursor: default;
+}
+button.activity-bar:hover {
+  --activity-tone: #636366;
+}
+button.activity-bar.tone-warn:hover {
+  --activity-tone: var(--sil-warn-text);
+}
+button.activity-bar.tone-error:hover {
+  --activity-tone: var(--sil-danger-text);
+}
+button.activity-bar.current:hover {
+  --activity-tone: var(--sil-accent-text);
+}
+.activity-bar:focus-visible {
+  outline: 2px solid var(--sil-accent);
+  outline-offset: 1px;
+}
+.activity-span {
+  align-self: flex-start;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: #636366;
+  white-space: nowrap;
 }
 
 .log-container {
@@ -566,33 +820,35 @@ main {
 }
 
 #lines {
-  white-space: pre-wrap;
-  word-break: break-word;
-  padding: 6px 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  padding: 8px 0;
 }
 
+/*
+ * Three columns — clock, level badge, everything else — so the text of every
+ * row starts at the same x whatever its level. Source tags of a merged view
+ * live in the third column, inline with the message.
+ */
 .line {
-  padding: 1px 16px;
-  display: flex;
-  gap: 6px;
-  line-height: 1.55;
-  border-left: 3px solid transparent;
+  display: grid;
+  grid-template-columns: 92px 38px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: baseline;
+  padding: 2px 16px;
+  color: #d1d1d6;
   min-width: 0;
   /* Anchor for the hover tip positioned against the row. */
   position: relative;
-}
-/* The timestamp keeps its old breathing room; the tags pack in after it. */
-.line .ts + * {
-  margin-left: 4px;
 }
 .line:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 .line .ts {
-  color: #6e7681;
-  flex-shrink: 0;
+  color: #5a5a5e;
   user-select: none;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   cursor: pointer;
 }
 /* The timestamp is the "where am I in the stream" handle: pressing it drops
@@ -602,25 +858,56 @@ main {
   text-decoration: underline;
 }
 
-.line .body {
-  flex: 1;
+.line .lv {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  border-radius: 4px;
+  text-align: center;
+  padding: 1px 0;
+  user-select: none;
+}
+.line .lv.inf {
+  color: #8e8e93;
+  background: rgba(142, 142, 147, 0.14);
+}
+.line .lv.dbg {
+  color: #636366;
+  background: rgba(99, 99, 102, 0.12);
+}
+.line .lv.wrn {
+  color: #ffb340;
+  background: rgba(255, 159, 10, 0.16);
+}
+.line .lv.err {
+  color: #ff6961;
+  background: rgba(255, 69, 58, 0.16);
+}
+
+.line .msg {
+  min-width: 0;
   white-space: pre-wrap;
   word-break: break-word;
   /* preserve runs of spaces between tokens (typical of structured logs) */
   tab-size: 2;
 }
+.line .msg > .src {
+  margin-right: 6px;
+}
 .line .body span {
   white-space: pre-wrap;
 }
-.line.stderr {
-  background: rgba(255, 90, 70, 0.04);
+.line.dbg .body {
+  color: #8e8e93;
 }
+/* A thin bar, not a tinted row: the badge already says the level. */
 .line.warn {
-  border-left-color: #ffd60a;
+  box-shadow: inset 2px 0 0 #ff9f0a;
 }
 .line.error {
-  border-left-color: #ff453a;
-  background: rgba(255, 69, 58, 0.06);
+  box-shadow: inset 2px 0 0 #ff453a;
 }
 .line.sys .body {
   color: #7adfff;
@@ -628,6 +915,121 @@ main {
 }
 .line.hidden {
   display: none;
+}
+.line .body mark.search-hit {
+  border-radius: 3px;
+  background: rgba(255, 214, 10, 0.32);
+  color: inherit;
+}
+
+/* ── Stack traces, folded under their message ──────────────────── */
+.line.folded {
+  display: none;
+}
+.line.stack .body {
+  color: #8e8e93;
+}
+/* The block keeps the bar of the line it hangs from. */
+.line.under-error {
+  box-shadow: inset 2px 0 0 #ff453a;
+}
+.line.under-warn {
+  box-shadow: inset 2px 0 0 #ff9f0a;
+}
+.line.stack-fold .msg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: #232326;
+  color: #c7c7cc;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.fold-toggle:hover {
+  background: #2c2c2e;
+  color: #fff;
+}
+.fold-toggle:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 1px;
+}
+.fold-toggle .icon {
+  font-size: 11px;
+}
+/* Open, the toggle takes the badge's place on the block's first frame. */
+.line > .fold-toggle {
+  justify-content: center;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  color: #8e8e93;
+}
+.fold-first {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #636366;
+}
+
+/* ── JSON lines: coloured on one line, opened into a block below ── */
+.line .j-key {
+  color: #64d2ff;
+}
+.line .j-str {
+  color: #a8d8a0;
+}
+.line .j-num {
+  color: #ffd60a;
+}
+.line .j-lit {
+  color: #ff9f0a;
+}
+.json-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #636366;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  cursor: pointer;
+}
+.json-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #c7c7cc;
+}
+.json-toggle .icon {
+  font-size: 10px;
+}
+.json-toggle:focus-visible {
+  outline: 2px solid #0a84ff;
+}
+.json-pretty {
+  display: block;
+  margin: 4px 0 2px;
+  padding: 8px 10px;
+  border: 1px solid #262629;
+  border-radius: 6px;
+  background: #19191b;
+  font: inherit;
+  white-space: pre;
+  overflow-x: auto;
 }
 
 /* After the level backgrounds so a selected error line still reads selected. */
@@ -641,58 +1043,55 @@ main {
 
 .line.silenced {
   opacity: 0.45;
-  border-left-color: transparent;
+  box-shadow: none;
 }
 .line.silenced .body {
   font-style: italic;
 }
-.line.silenced::before {
+.line.silenced .msg::before {
   /* Lucide bell-off (renderer/icons.css face); tests/icon-font.test.ts pins
      the codepoint against the generated table. */
   font-family: 'lucide';
   content: '\e05a';
   font-size: 10px;
   user-select: none;
-  margin-right: 2px;
+  margin-right: 4px;
 }
 
-.line .silence-btn {
-  visibility: hidden;
+/* One toolbar, moved into the row under the pointer (row-actions.ts). */
+.row-actions {
+  position: absolute;
+  top: 1px;
+  right: 14px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #3a3a3c;
+  border-radius: 7px;
+  background: #2c2c2e;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  z-index: 2;
+}
+.row-actions .ra-btn {
+  width: 24px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
   background: transparent;
-  border: 1px solid transparent;
-  color: #8a8a8a;
-  border-radius: 3px;
+  color: #c7c7cc;
+  font-size: 12px;
   cursor: pointer;
-  font-size: 10px;
-  padding: 0 4px;
-  margin-left: 6px;
-  flex-shrink: 0;
-  align-self: flex-start;
-  line-height: 1.4;
 }
-.line:hover .silence-btn {
-  visibility: visible;
+.row-actions .ra-btn[hidden] {
+  display: none;
 }
-.line .silence-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: #4a4a4a;
-  color: #d4d4d4;
-}
-.line.warn .silence-btn,
-.line.error .silence-btn {
-  visibility: visible;
-  opacity: 0.5;
-}
-.line.warn .silence-btn:hover,
-.line.error .silence-btn:hover {
-  opacity: 1;
-}
-
-header label.check {
-  white-space: nowrap;
-}
-header button {
-  white-space: nowrap;
+.row-actions .ra-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 footer {
@@ -737,239 +1136,441 @@ footer {
   color: #e5e5e7;
 }
 
+/* Right half of the footer: status, then the two display switches. */
+footer {
+  align-items: center;
+}
+.footer-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.footer-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.footer-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.footer-toggle #time-mode-value {
+  margin-left: 4px;
+  color: #c7c7cc;
+}
+.footer-toggle:hover #time-mode-value {
+  color: #fff;
+}
+
+/* «Ajustar líneas» off: one row per line, the list scrolls sideways. */
+#lines.nowrap {
+  width: max-content;
+  min-width: 100%;
+}
+#lines.nowrap .line .msg,
+#lines.nowrap .line .body span {
+  white-space: pre;
+}
+
 /* ================================================================
-   SILENCED DRAWER — in-window panel, replaces the old separate window
+   SILENCED POPOVER — composer, the rules of both levels, the switches
    ================================================================ */
 
-.drawer {
-  width: 330px;
-  flex-shrink: 0;
+/*
+ * Its own tokens. The logs window is dark in every theme, and so is the
+ * popover floating over it; the log-side pieces (the toolbar toggle, the
+ * marked rows, the footer note) read the same values from :root.
+ */
+:root {
+  --sil-accent: #0a84ff;
+  --sil-accent-soft: rgba(10, 132, 255, 0.18);
+  --sil-accent-text: #64d2ff;
+  --sil-hit-bg: rgba(10, 132, 255, 0.1);
+  --sil-mark-bg: rgba(10, 132, 255, 0.5);
+  --sil-mark-text: #fff;
+  --sil-warn: #ff9f0a;
+  --sil-warn-soft: rgba(255, 159, 10, 0.18);
+  --sil-warn-text: #ffb340;
+  --sil-danger: #ff453a;
+  --sil-danger-soft: rgba(255, 69, 58, 0.18);
+  --sil-danger-text: #ff6961;
+  --sil-glass: rgba(44, 44, 48, 0.86);
+  --sil-glass-border: rgba(255, 255, 255, 0.08);
+  --sil-field: rgba(0, 0, 0, 0.35);
+  --sil-chip: rgba(255, 255, 255, 0.06);
+  --sil-chip-hover: rgba(255, 255, 255, 0.12);
+  --sil-sep: rgba(255, 255, 255, 0.07);
+  --sil-text: #f2f2f7;
+  --sil-text-2: #c7c7cc;
+  --sil-text-3: #8e8e93;
+  --sil-switch-off: #48484a;
+  --sil-knob: #fff;
+}
+
+/* Floats over the log under its toggle; it never takes the log's width. */
+.silence-popover {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 20;
+  width: 420px;
+  max-width: calc(100% - 28px);
+  max-height: calc(100% - 16px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  background: rgba(30, 30, 32, 0.98);
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--sil-glass-border);
+  border-radius: 18px;
+  background: var(--sil-glass);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  color: var(--sil-text);
   font-family: var(--font-ui);
-  color: #e5e5e7;
+  font-size: 12px;
 }
-.drawer[hidden] {
+.silence-popover[hidden] {
   display: none;
 }
 
-.drawer-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+/* The composer: one field, its live count and the regex switch. */
+.sil-composer {
   flex-shrink: 0;
-}
-.drawer-title {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.drawer-title strong {
-  font-size: 13px;
-}
-.drawer-sub {
-  font-size: 11px;
-  color: #8e8e93;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.drawer-scroll {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.drawer-count {
-  margin-left: auto;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.09);
-  color: #9a9aa0;
-  font-size: 9.5px;
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
-}
-.lvl-tag {
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 9.5px;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.lvl-tag.warn {
-  background: rgba(255, 214, 10, 0.16);
-  color: #ffd60a;
-}
-.lvl-tag.err {
-  background: rgba(255, 69, 58, 0.16);
-  color: #ff6961;
-}
-
-/* Master switches, one row each — the whole row is the hit target. */
-.switch-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 4px;
-  border-radius: 6px;
+  height: 44px;
+  padding: 0 6px 0 12px;
+  border-radius: 12px;
+  background: var(--sil-field);
+  box-shadow: inset 0 0 0 1px var(--sil-glass-border);
+}
+.sil-composer:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--sil-accent);
+}
+.sil-composer.invalid,
+.sil-composer.invalid:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--sil-danger);
+}
+.sil-composer-icon {
+  flex-shrink: 0;
+  color: var(--sil-text-3);
+  font-size: 15px;
+}
+.sil-input {
+  flex-grow: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.sil-input::placeholder {
+  color: var(--sil-text-3);
+}
+.sil-count {
+  flex-shrink: 0;
+  color: var(--sil-accent-text);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.sil-count[hidden],
+.sil-error[hidden] {
+  display: none;
+}
+.sil-regex {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sil-chip);
+  color: var(--sil-text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.sil-regex:hover {
+  background: var(--sil-chip-hover);
+}
+.sil-regex[aria-pressed='true'] {
+  background: var(--sil-accent);
+  color: #fff;
+}
+.sil-error {
+  margin-top: -6px;
+  padding: 0 4px;
+  color: var(--sil-danger-text);
+  font-size: 11.5px;
+}
+
+/* «en [warnings] [errores] ……… [Silenciar N]» */
+.sil-row {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sil-en {
+  color: var(--sil-text-3);
+}
+.sil-grow {
+  flex-grow: 1;
+}
+.sil-pill,
+.sil-submit {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 13px;
+  font-family: inherit;
   font-size: 12px;
   cursor: pointer;
 }
-.switch-row:hover {
-  background: rgba(255, 255, 255, 0.05);
+.sil-pill {
+  background: var(--sil-chip);
+  color: var(--sil-text-3);
 }
-.switch-row input {
-  flex-shrink: 0;
-  accent-color: #0a84ff;
+.sil-pill:hover {
+  background: var(--sil-chip-hover);
+}
+.sil-pill[aria-pressed='false'] .sil-dot {
+  opacity: 0.5;
+}
+.sil-pill[data-level='warn'][aria-pressed='true'] {
+  background: var(--sil-warn-soft);
+  color: var(--sil-warn-text);
+}
+.sil-pill[data-level='error'][aria-pressed='true'] {
+  background: var(--sil-danger-soft);
+  color: var(--sil-danger-text);
+}
+.sil-submit {
+  background: var(--sil-accent);
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sil-submit:disabled {
+  background: var(--sil-chip);
+  color: var(--sil-text-3);
+  cursor: default;
 }
 
-.pattern-list {
+/* A level's colour: amber for warnings, red for errors. */
+.sil-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sil-warn);
+}
+[data-level='error'] > .sil-dot {
+  background: var(--sil-danger);
+}
+
+.sil-sep {
+  flex-shrink: 0;
+  height: 1px;
+  background: var(--sil-sep);
+}
+
+/* Saved rules of both levels; the only part that scrolls. */
+.sil-rules {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   list-style: none;
-  margin: 0 0 8px;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
-.pattern-list .empty {
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #6e6e73;
-  font-size: 11px;
+.sil-rules .empty {
+  padding: 4px 12px;
+  color: var(--sil-text-3);
 }
-.pattern-list-item {
+.rule {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 6px 5px 9px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  gap: 10px;
+  height: 40px;
+  padding: 0 8px 0 12px;
+  border-radius: 12px;
 }
-.pattern-list-item .pattern {
-  flex: 1;
+.rule:hover {
+  background: var(--sil-chip);
+}
+.rule code {
+  flex-grow: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--sil-text);
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: #d0d0d4;
+  font-size: 12.5px;
 }
-.pattern-list-item .unsilence {
-  flex-shrink: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: #8e8e93;
-  font-family: inherit;
-  font-size: 10.5px;
-  padding: 3px 6px;
-  cursor: pointer;
-  /* Revealed on hover: the list is for reading, removal is the rarer act. */
-  opacity: 0;
-}
-.pattern-list-item:hover .unsilence {
-  opacity: 1;
-}
-.pattern-list-item .unsilence:hover {
-  background: rgba(255, 69, 58, 0.2);
-  color: #ff6961;
-}
-
-.add-row {
-  display: flex;
-  gap: 6px;
-}
-.add-row input {
-  flex: 1;
-  min-width: 0;
-  background: rgba(255, 255, 255, 0.06);
-  color: #e5e5e7;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 5px 9px;
-  font-family: inherit;
-  font-size: 11px;
-}
-.add-row input:focus {
-  outline: 2px solid rgba(0, 122, 255, 0.5);
-  outline-offset: -1px;
-  border-color: #0a84ff;
-}
-.ghost-btn {
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: #e5e5e7;
-  font-family: inherit;
-  font-size: 11px;
-  padding: 5px 10px;
-  cursor: pointer;
-}
-.ghost-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.muted-feed {
-  max-height: 260px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.28);
-  padding: 6px;
-}
-.muted-feed:empty {
-  display: none;
-}
-.muted-line {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  padding: 3px 5px;
-  color: #7a7a80;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 1.45;
-  cursor: pointer;
-}
-.muted-line:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #c8c8cc;
-}
-.muted-line .ts {
-  flex-shrink: 0;
-  color: #5a5a5f;
+.rule .cnt {
+  color: var(--sil-text-3);
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
-.muted-line .body {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
+.rule .x {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sil-chip);
+  color: var(--sil-text-2);
+  font-size: 12px;
+  cursor: pointer;
 }
-.muted-line.warn .ts {
-  color: #8a7a2a;
+.rule .x:hover {
+  background: var(--sil-chip-hover);
+  color: #fff;
 }
-.muted-line.error .ts {
-  color: #8a3a34;
+
+/* "Silence everything" for each level, side by side. */
+.sil-switches {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 2px 4px 0;
+}
+.sil-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sil-text-2);
+  cursor: pointer;
+}
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 28px;
+  height: 16px;
+  margin: 0;
+  border-radius: 8px;
+  background: var(--sil-switch-off);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sil-knob);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+.switch:checked {
+  background: var(--sil-accent);
+}
+.switch:checked::after {
+  transform: translateX(12px);
+}
+.switch:focus-visible,
+.sil-regex:focus-visible,
+.sil-pill:focus-visible,
+.sil-submit:focus-visible,
+.rule .x:focus-visible,
+.silence-toggle:focus-visible {
+  outline: 2px solid var(--sil-accent);
+  outline-offset: 1px;
+}
+
+/* The toolbar control: the bell and how many rules; solid while open. */
+.silence-toggle {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sil-accent-soft);
+  color: var(--sil-accent-text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.silence-toggle:hover {
+  background: rgba(10, 132, 255, 0.28);
+}
+.silence-toggle[aria-expanded='true'] {
+  background: var(--sil-accent);
+  color: #fff;
+}
+.silence-toggle-count:empty {
+  display: none;
+}
+
+/* Rows a previewed rule would swallow: tinted and dimmed, with the runs the
+   rule matched marked so it is plain what it bites. */
+.line.would-silence,
+.line.would-silence:hover {
+  box-shadow: inset 2px 0 0 var(--sil-accent);
+  background: var(--sil-hit-bg);
+}
+.line.would-silence .body {
+  opacity: 0.4;
+}
+.line .body mark.sil-hit {
+  padding: 0 2px;
+  border-radius: 4px;
+  background: var(--sil-mark-bg);
+  color: var(--sil-mark-text);
+}
+
+.footer-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.silence-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sil-accent-text);
+}
+.silence-preview[hidden] {
+  display: none;
+}
+.silence-preview-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--sil-mark-bg);
 }
 
 /* Merged group view: open-all button + per-row source tag */
@@ -995,84 +1596,38 @@ footer {
   color: #e5e5e7;
 }
 .side-group.viewing > summary {
-  background: rgba(10, 132, 255, 0.28);
+  background: rgba(10, 132, 255, 0.16);
   color: #fff;
 }
 
-/* ── Level filter escape hatch ──────────────────────────────────── */
-/* Breathing room where the old warn/error checkboxes used to sit. */
-header .check.spaced {
-  margin-left: auto;
-}
-.level-pill {
+/* ── Counters that are also doors: pills, only when non-zero ────── */
+.b.clickable {
+  height: 17px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: 999px;
+  padding: 0 6px;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
   font-family: inherit;
   font-size: 11px;
-  cursor: pointer;
-}
-.level-pill[hidden] {
-  display: none;
-}
-.level-pill.warn {
-  background: rgba(255, 214, 10, 0.18);
-  border: 1px solid rgba(255, 214, 10, 0.55);
-  color: #ffd60a;
-}
-.level-pill.err {
-  background: rgba(255, 69, 58, 0.18);
-  border: 1px solid rgba(255, 69, 58, 0.55);
-  color: #ff6961;
-}
-.level-pill-x {
-  opacity: 0.7;
-}
-.level-pill:hover .level-pill-x {
-  opacity: 1;
-}
-
-/* ── Counters that are also doors ───────────────────────────────── */
-.b.clickable {
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  font-family: inherit;
-  font-size: 10px;
-  padding: 0 3px;
-  margin: 0;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
 }
+.b.clickable.warn {
+  color: #ffb340;
+  background: rgba(255, 159, 10, 0.14);
+}
+.b.clickable.err {
+  color: #ff6961;
+  background: rgba(255, 69, 58, 0.14);
+}
 .b.clickable:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-/* Group header: name over its group-wide counters. */
-.side-group > summary .g-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.side-group > summary .g-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-  color: #8e8e93;
-  font-variant-numeric: tabular-nums;
-}
-.side-group > summary .g-badges:empty {
-  display: none;
+  filter: brightness(1.25);
 }
 
 /* ── Source tags on merged rows ─────────────────────────────────── */
@@ -1117,127 +1672,36 @@ header .check.spaced {
   }
 }
 
-/* ── Drawer: foldable level sections ────────────────────────────── */
-/* A real close control, sized to the header instead of borrowing the
-   toolbar's icon-button look. */
-.drawer-x {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #9a9aa0;
-  font-family: var(--font-ui);
-  font-size: 10px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-}
-.drawer-x:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #e5e5e7;
-}
-
-.drawer-lvl {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.drawer-lvl > summary {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 12px;
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
-  font-size: 11px;
-  font-weight: 600;
-  color: #d0d0d4;
-}
-.drawer-lvl > summary::-webkit-details-marker {
-  display: none;
-}
-.drawer-lvl > summary:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-.drawer-lvl > summary .chevron {
-  font-size: 8px;
-  width: 8px;
-  flex-shrink: 0;
-  color: #8e8e93;
-  transition: transform 0.15s ease;
-}
-.drawer-lvl[open] > summary .chevron {
-  transform: rotate(90deg);
-}
-.drawer-lvl > summary .lvl-name {
-  flex: 1;
-}
-.drawer-lvl-body {
-  padding: 0 12px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.muted-line .rep {
-  flex-shrink: 0;
-  align-self: flex-start;
-  padding: 0 5px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #c8c8cc;
-  font-size: 9.5px;
-  font-variant-numeric: tabular-nums;
-}
-.muted-line .rep[hidden] {
-  display: none;
-}
-
 /* ── Root scope row: "Todo", above every group ──────────────────── */
 .side-all {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  text-align: left;
-  padding: 8px 10px;
+  height: 30px;
+  margin-top: 2px;
+  padding: 0 6px 0 10px;
   border: none;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
-  background: #2b2b30;
-  color: #e8e8ea;
+  border-radius: 7px;
+  background: transparent;
+  color: #d1d1d6;
   font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
 }
 .side-all:hover {
-  background: #35353a;
+  background: rgba(255, 255, 255, 0.05);
 }
 .side-all.active {
-  background: rgba(10, 132, 255, 0.28);
+  background: rgba(10, 132, 255, 0.16);
   color: #fff;
 }
 .side-all .a-ico {
   flex-shrink: 0;
-  font-size: 11px;
+  color: #a1a1a6;
+  font-size: 13px;
 }
 .side-all .a-name {
   flex: 1;
-}
-.side-all .a-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-  color: #8e8e93;
-  font-variant-numeric: tabular-nums;
 }
