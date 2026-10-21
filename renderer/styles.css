@@ -2918,8 +2918,8 @@ fieldset.schedule-group legend {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin: -16px -20px 16px;
-  padding: 18px 24px 14px;
+  margin: -16px -20px 4px;
+  padding: 18px 24px 0;
   border-bottom: 1px solid var(--border);
 }
 .detail-head-row {
@@ -3059,6 +3059,60 @@ button.detail-visibility[aria-pressed='false'] {
 }
 .icon-btn:hover {
   background: var(--bg-row-hover);
+}
+
+/* «Procesos | Pre-scripts | Entorno | Ajustes»: underlined tabs sitting on
+   the header's bottom border. */
+.detail-tabs {
+  display: flex;
+  gap: 18px;
+  margin-bottom: -1px;
+}
+button.detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 2px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+button.detail-tab:hover {
+  filter: none;
+  color: inherit;
+}
+button.detail-tab[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: inherit;
+  font-weight: 600;
+}
+button.detail-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 4px 4px 0 0;
+}
+.detail-tab-count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--badge-neutral-bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.detail-tab-count[hidden] {
+  display: none;
+}
+.detail-panel {
+  padding-top: 14px;
+}
+.detail-panel[hidden] {
+  display: none;
 }
 
 /* The name, edited in place: reads as a title until hovered or focused. */

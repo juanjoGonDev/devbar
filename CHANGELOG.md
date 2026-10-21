@@ -161,6 +161,11 @@ Todas las novedades relevantes de DevBar. El formato sigue
   menú «⋯» permite duplicar el grupo (la copia no arranca nada sola) o
   borrarlo.
 
+- **Pestañas en el detalle del grupo.** «Procesos» (comandos y acciones),
+  «Pre-scripts», «Entorno» y «Ajustes», cada una con cuántos elementos tiene.
+  Se manejan con las flechas del teclado y la ventana recuerda la última que
+  abriste. Borrar una variable de entorno ya marca el grupo como modificado.
+
 ### Corregido
 
 - **El cursor ya no parpadea al pasar por encima de los botones.** La mano
