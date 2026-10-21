@@ -1,6 +1,7 @@
-import { icon, userIcon } from '../icon.js';
-import { customIconIdOf } from '../../src/custom-icons.js';
-import { createIconColorControl } from './icon-color-control.js';
+import { icon } from '../icon.js';
+import { buildGroupHeader, type GroupHeader } from './group-header.js';
+import { createDeviceMenu } from './remote-device-menu.js';
+import type { GroupRuntime } from './group-runtime.js';
 import { buildEnvEditor, type EnvSectionElement } from './env-editor.js';
 import { setHiddenInTray } from './group-visibility.js';
 import type { Group } from '../../src/domain-types.js';
@@ -12,6 +13,7 @@ export interface GroupDetailDeps {
   /** The right pane (`#group-detail`). */
   detailEl: HTMLElement;
   store: GroupStore;
+  runtime: GroupRuntime;
   showToast: ShowToast;
   subLists: SubLists;
   openIconPicker(
@@ -25,6 +27,8 @@ export interface GroupDetailDeps {
 
 export interface GroupDetail {
   render(): void;
+  /** Repaints only what main reports live, leaving any edit in progress. */
+  refreshRuntime(): void;
 }
 
 function buildField(
@@ -66,6 +70,8 @@ function buildToggleLabel(
 
 export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
   const { store } = deps;
+  const menu = createDeviceMenu();
+  let header: GroupHeader | null = null;
 
   function buildSaveBar(): HTMLElement {
     // ── Save bar (sticky, shown when dirty) ─────────────────────────────
@@ -118,90 +124,78 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     return saveBar;
   }
 
-  function buildHeader(group: Group): void {
-    // ── Header ──────────────────────────────────────────────────────────
-    const header = document.createElement('div');
-    header.className = 'detail-header';
-
-    // Icon picker button, joined with its colour segment.
-    let iconValue = group.icon;
-    let iconColor = group.iconColor;
-    const iconBtn = document.createElement('button');
-    iconBtn.type = 'button';
-    iconBtn.className = 'icon-btn';
-    iconBtn.title = 'Cambiar icono';
-    iconBtn.setAttribute('aria-label', iconBtn.title);
-    iconBtn.dataset.groupId = group.id;
-    const colorControl = createIconColorControl(iconBtn, (value) => {
-      iconColor = value;
-      paintIcon();
-      store.mutateDraft((d) => {
-        d.iconColor = value;
-      });
-    });
-    function paintIcon(): void {
-      iconBtn.replaceChildren(userIcon(iconValue, 'package', iconColor));
-      colorControl.setImage(customIconIdOf(iconValue) !== null);
-    }
-    colorControl.set(iconColor);
-    paintIcon();
-    iconBtn.addEventListener('click', (e) => {
-      deps.openIconPicker(
-        e.currentTarget as HTMLButtonElement,
-        (value: string) => {
-          iconValue = value;
-          paintIcon();
-          store.mutateDraft((d) => {
-            d.icon = value;
-          });
+  /** «Visible en la barra»: an instant write, outside the draft. */
+  function toggleVisibility(stored: Group, visible: boolean): void {
+    void setHiddenInTray(
+      {
+        store,
+        showToast: deps.showToast,
+        repaint: () => {
+          deps.renderGroupsList();
+          renderGroupDetail();
         },
-      );
-    });
-    header.append(colorControl.el);
-
-    // Name input
-    const nameInput = document.createElement('input');
-    nameInput.className = 'detail-name-input';
-    nameInput.value = group.name || '';
-    nameInput.placeholder = 'Nombre del grupo';
-    nameInput.addEventListener('input', () => {
-      store.mutateDraft((d) => {
-        d.name = nameInput.value;
-      });
-    });
-    header.appendChild(nameInput);
-    header.appendChild(buildVisibility(group));
-
-    deps.detailEl.appendChild(header);
+      },
+      stored,
+      visible,
+    );
   }
 
-  /** «Visible / Oculto» in the tray: an instant write, outside the draft. */
-  function buildVisibility(group: Group): HTMLButtonElement {
+  /**
+   * «Duplicar»: a new group from what is on disk (never the half-edited
+   * draft), named «… (copia)». The copy starts nothing on its own — a second
+   * auto-start or schedule of the same command line would run it twice.
+   */
+  async function duplicateGroup(group: Group): Promise<void> {
     const stored = store.getGroups().find((g) => g.id === group.id) ?? group;
-    const visible = !stored.hiddenInTray;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'detail-visibility';
-    button.setAttribute('aria-pressed', String(visible));
-    button.title = visible ? 'Ocultar de la barra' : 'Mostrar en la barra';
-    const label = document.createElement('span');
-    label.textContent = visible ? 'Visible' : 'Oculto';
-    button.append(icon(visible ? 'eye' : 'eye-off'), label);
-    button.addEventListener('click', () => {
-      void setHiddenInTray(
-        {
-          store,
-          showToast: deps.showToast,
-          repaint: () => {
-            deps.renderGroupsList();
-            renderGroupDetail();
-          },
-        },
-        stored,
-        visible,
-      );
-    });
-    return button;
+    const { id: _id, order: _order, ...rest } = structuredClone(stored);
+    const copy = {
+      ...rest,
+      name: `${stored.name} (copia)`,
+      commands: rest.commands.map((c) => ({
+        ...c,
+        autoStart: false,
+        schedule: { ...c.schedule, enabled: false },
+      })),
+      actions: rest.actions.map((a) => ({
+        ...a,
+        schedule: { ...a.schedule, enabled: false },
+      })),
+    };
+    try {
+      const saved = await window.api.saveGroup(copy);
+      // Unsaved edits stay where they are: only a clean pane follows the copy.
+      if (!store.isDirty()) {
+        store.setSelectedId(saved.id);
+        store.clearDraft();
+      }
+      await deps.loadGroups();
+      renderGroupDetail();
+      deps.showToast('Grupo duplicado', 'ok');
+    } catch (err) {
+      deps.showToast(`Error: ${errorMessage(err)}`, 'error');
+    }
+  }
+
+  async function deleteGroup(group: Group): Promise<void> {
+    if (
+      !confirm(
+        `¿Borrar el grupo "${group.name}"? Se detendrán todos sus procesos.`,
+      )
+    )
+      return;
+    const res = await window.api.deleteGroup(group.id);
+    if (!res.ok) {
+      // The main side aborts the deletion when a running command cannot
+      // be stopped — surface why and leave the group visible for a retry
+      // (same contract as the sub-item deletion handler).
+      deps.showToast(res.error || 'No se pudo borrar el grupo', 'error');
+      return;
+    }
+    store.setSelectedId(null);
+    store.clearDraft();
+    await deps.loadGroups();
+    renderGroupDetail();
+    await deps.refreshPipeline(); // deleting a group prunes its refs from every workflow
   }
 
   function buildPathField(group: Group): void {
@@ -220,6 +214,7 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
       store.mutateDraft((d) => {
         d.path = pathInput.value.trim();
       });
+      header?.setPath(pathInput.value.trim());
     });
     const pathPickerContainer = document.createElement('div');
     pathPickerContainer.className = 'input-with-action';
@@ -381,27 +376,7 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'danger';
     deleteBtn.textContent = 'Borrar grupo';
-    deleteBtn.addEventListener('click', async () => {
-      if (
-        !confirm(
-          `¿Borrar el grupo "${group.name}"? Se detendrán todos sus procesos.`,
-        )
-      )
-        return;
-      const res = await window.api.deleteGroup(group.id);
-      if (!res.ok) {
-        // The main side aborts the deletion when a running command cannot
-        // be stopped — surface why and leave the group visible for a retry
-        // (same contract as the sub-item deletion handler).
-        deps.showToast(res.error || 'No se pudo borrar el grupo', 'error');
-        return;
-      }
-      store.setSelectedId(null);
-      store.clearDraft();
-      await deps.loadGroups();
-      renderGroupDetail();
-      await deps.refreshPipeline(); // deleting a group prunes its refs from every workflow
-    });
+    deleteBtn.addEventListener('click', () => void deleteGroup(group));
     btnRow.appendChild(deleteBtn);
 
     deps.detailEl.appendChild(btnRow);
@@ -419,7 +394,9 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
 
     const group = store.getDraft();
     const saveBarHost = document.getElementById('group-save-bar');
+    menu.close();
     if (!group) {
+      header = null;
       deps.detailEl.innerHTML =
         '<div class="detail-empty"><p class="muted">Selecciona un grupo para editarlo.</p></div>';
       if (saveBarHost) saveBarHost.innerHTML = '';
@@ -431,7 +408,17 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     const saveBar = buildSaveBar();
     // (saveBar is appended at the very end of the pane so it can sit sticky-bottom.)
 
-    buildHeader(group);
+    header = buildGroupHeader(group, {
+      store,
+      runtime: deps.runtime,
+      menu,
+      openIconPicker: (anchor, onSelect) =>
+        deps.openIconPicker(anchor, onSelect),
+      toggleVisibility,
+      duplicate: (g) => void duplicateGroup(g),
+      remove: (g) => void deleteGroup(g),
+    });
+    deps.detailEl.appendChild(header.el);
     buildPathField(group);
     buildModeSection(group);
     buildSilenceSection(group);
@@ -462,5 +449,8 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     store.updateSaveBar();
   }
 
-  return { render: renderGroupDetail };
+  return {
+    render: renderGroupDetail,
+    refreshRuntime: () => header?.refreshRuntime(),
+  };
 }

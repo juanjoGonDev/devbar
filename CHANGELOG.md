@@ -155,6 +155,12 @@ Todas las novedades relevantes de DevBar. El formato sigue
   seguridad presenta Exportar e Importar en dos tarjetas y recuerda que antes
   de importar se guarda una copia automática.
 
+- **Cabecera del grupo en Ajustes › Grupos.** Arriba, el icono, el nombre
+  (editable ahí mismo) y debajo su carpeta y la rama actual. Una pastilla
+  dice «N en marcha» o «Parado», el ojo lo oculta o muestra en la barra, y el
+  menú «⋯» permite duplicar el grupo (la copia no arranca nada sola) o
+  borrarlo.
+
 ### Corregido
 
 - **El cursor ya no parpadea al pasar por encima de los botones.** La mano

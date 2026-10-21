@@ -2911,12 +2911,135 @@ fieldset.schedule-group legend {
   color: var(--muted);
 }
 
-/* Detail header: icon button + name input */
+/* Detail header: who the group is (icon, name, folder · branch), whether it
+   runs, whether the tray shows it, and its «⋯» menu. The tabs sit under it,
+   inside the same bordered strip. */
 .detail-header {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: -16px -20px 16px;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.detail-head-row {
+  display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 12px;
+  min-width: 0;
+}
+.detail-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.detail-path-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.detail-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.detail-path .icon,
+.detail-branch .icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.detail-path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-path.is-empty {
+  font-family: inherit;
+  font-style: italic;
+}
+.detail-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.detail-branch::before {
+  content: '·';
+  margin-right: 2px;
+}
+.detail-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  background: var(--badge-neutral-bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.detail-status.is-running {
+  background: var(--badge-ok-bg);
+  color: var(--badge-ok-fg);
+}
+.detail-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+.detail-status.is-running .detail-status-dot {
+  background: var(--running);
+  opacity: 1;
+}
+.detail-menu-host {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.detail-menu-host > .remote-menu {
+  top: calc(100% + 4px);
+  right: 0;
+}
+/* Icon-only header buttons: the eye and the «⋯». */
+button.detail-icon-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 16px;
+}
+button.detail-icon-btn:hover,
+button.detail-icon-btn[aria-expanded='true'] {
+  filter: none;
+  background: var(--bg-row-hover);
+}
+button.detail-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+button.detail-visibility[aria-pressed='false'] {
+  color: var(--muted);
 }
 
 .icon-btn {
@@ -2938,21 +3061,27 @@ fieldset.schedule-group legend {
   background: var(--bg-row-hover);
 }
 
+/* The name, edited in place: reads as a title until hovered or focused. */
 .detail-name-input {
-  flex: 1;
-  font-size: 16px;
-  font-weight: 600;
-  padding: 6px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  background: var(--bg-card-strong);
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 20px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: inherit;
   min-width: 0;
+}
+.detail-name-input:hover {
+  border-color: var(--border);
 }
 .detail-name-input:focus {
   outline: 2px solid rgba(0, 122, 255, 0.4);
   outline-offset: -1px;
   border-color: var(--accent);
+  background: var(--bg-card-strong);
 }
 
 .detail-field {
@@ -6815,25 +6944,4 @@ label.remote-row {
 .nav-card.is-hidden-in-tray .nav-name,
 .nav-card.is-hidden-in-tray .nav-icon {
   opacity: 0.45;
-}
-.detail-visibility {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--bg-card-strong);
-  box-shadow: none;
-  color: inherit;
-  font-size: 12.5px;
-}
-.detail-visibility[aria-pressed='false'] {
-  color: var(--muted);
-}
-.detail-visibility:hover {
-  filter: none;
-  background: var(--bg-row-hover);
 }

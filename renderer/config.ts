@@ -13,6 +13,7 @@ import { createGroupStore } from './config/group-store.js';
 import { createGroupsList } from './config/groups-list.js';
 import { createGroupsSplitter } from './config/groups-splitter.js';
 import { createGroupDetail } from './config/group-detail.js';
+import { createGroupRuntime } from './config/group-runtime.js';
 import { createSubLists } from './config/sub-lists.js';
 import { createSubDialog } from './config/sub-dialog.js';
 import { subDialogElements } from './config/sub-dialog-elements.js';
@@ -188,9 +189,12 @@ const subLists = createSubLists({
   refreshPipeline,
 });
 
+const runtime = createGroupRuntime();
+
 const groupDetail = createGroupDetail({
   detailEl: groupDetailEl,
   store,
+  runtime,
   showToast,
   subLists,
   openIconPicker,
@@ -264,7 +268,22 @@ createRemotePane(remoteElements(), showToast);
 
 // ────────────────────── Live updates ───────────────────────────────────
 
-window.api.onUpdate(async () => {
+// Live process state for the group header: read once, then from every update.
+void window.api
+  .getGroupStates()
+  .then((states) => {
+    runtime.set(states);
+    groupDetail.refreshRuntime();
+  })
+  .catch(() => undefined);
+
+window.api.onUpdate(async (states) => {
+  if (Array.isArray(states)) {
+    runtime.set(states);
+    // Painted before the re-read below, and even when the pane is dirty and
+    // will not re-render: the pill reports processes, not the draft.
+    groupDetail.refreshRuntime();
+  }
   await loadGroups(); // refreshes allGroups + nav via renderGroupsList
   const selectedGroupId = store.getSelectedId();
   if (!selectedGroupId) return;

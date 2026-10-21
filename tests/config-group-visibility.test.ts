@@ -102,7 +102,7 @@ describe('renderer/config/groups-list.ts (visibility)', () => {
     const w = await boot();
     const toggle = headerToggle();
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
-    expect(toggle.textContent?.replace(/[-]/g, '').trim()).toBe('Visible');
+    expect(toggle.getAttribute('aria-label')).toBe('Visible en la barra');
     click(toggle);
     expect(w.argsFor('setGroupHiddenInTray')).toEqual([['group-api', true]]);
     await w.settle(
@@ -111,7 +111,8 @@ describe('renderer/config/groups-list.ts (visibility)', () => {
     );
     const after = headerToggle();
     expect(after.getAttribute('aria-pressed')).toBe('false');
-    expect(after.textContent?.replace(/[-]/g, '').trim()).toBe('Oculto');
+    expect(after.getAttribute('aria-label')).toBe('Oculto en la barra');
+    expect(iconText(after)).toBe('[eye-off]');
     expect(card('group-api').classList.contains('is-hidden-in-tray')).toBe(
       true,
     );
