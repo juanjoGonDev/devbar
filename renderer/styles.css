@@ -3083,7 +3083,7 @@ button.detail-tab:focus-visible {
 }
 
 /* The name, edited in place: reads as a title until hovered or focused. */
-.detail-name-input {
+input.detail-name-input {
   width: 100%;
   box-sizing: border-box;
   font-size: 20px;
@@ -3095,10 +3095,10 @@ button.detail-tab:focus-visible {
   color: inherit;
   min-width: 0;
 }
-.detail-name-input:hover {
+input.detail-name-input:hover {
   border-color: var(--border);
 }
-.detail-name-input:focus {
+input.detail-name-input:focus {
   outline: 2px solid rgba(0, 122, 255, 0.4);
   outline-offset: -1px;
   border-color: var(--accent);
