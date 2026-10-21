@@ -2,7 +2,7 @@ import { icon } from '../icon.js';
 import { buildGroupHeader, type GroupHeader } from './group-header.js';
 import { duplicateOf } from './group-copy.js';
 import { buildGroupTabs, type GroupTabId } from './group-tabs.js';
-import { createDeviceMenu } from './remote-device-menu.js';
+import type { DeviceMenu } from './remote-device-menu.js';
 import type { GroupRuntime } from './group-runtime.js';
 import { buildEnvEditor, type EnvSectionElement } from './env-editor.js';
 import { setHiddenInTray } from './group-visibility.js';
@@ -16,6 +16,8 @@ export interface GroupDetailDeps {
   detailEl: HTMLElement;
   store: GroupStore;
   runtime: GroupRuntime;
+  /** The one «⋯» menu of the pane, shared with its lists. */
+  menu: DeviceMenu;
   showToast: ShowToast;
   subLists: SubLists;
   openIconPicker(
@@ -72,7 +74,7 @@ function buildToggleLabel(
 
 export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
   const { store } = deps;
-  const menu = createDeviceMenu();
+  const { menu } = deps;
   let header: GroupHeader | null = null;
   /** The open tab, kept across groups and repaints while the window lives. */
   let activeTab: GroupTabId = 'processes';
@@ -454,6 +456,10 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
 
   return {
     render: renderGroupDetail,
-    refreshRuntime: () => header?.refreshRuntime(),
+    refreshRuntime: () => {
+      header?.refreshRuntime();
+      const selected = store.getSelectedId();
+      if (selected) deps.subLists.refreshRunning(selected, deps.detailEl);
+    },
   };
 }

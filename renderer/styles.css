@@ -2636,28 +2636,6 @@ dialog h2 {
   background: rgba(255, 69, 58, 0.1);
 }
 
-/* Auto-start ⚡ toggle in the commands list. OFF = muted outline,
-   ON = filled accent. Hover gives an accent tint either way. */
-.small-btn.autostart-toggle {
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1;
-}
-.small-btn.autostart-toggle:hover {
-  color: var(--accent);
-  background: rgba(0, 122, 255, 0.08);
-}
-.small-btn.autostart-toggle.is-on {
-  background: var(--accent-strong);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 1px 2px rgba(0, 122, 255, 0.3);
-}
-.small-btn.autostart-toggle.is-on:hover {
-  background: #0067db;
-  color: #fff;
-}
-
 /*
  * Theme picker (General): three cards, each a miniature window drawn in the
  * theme it applies. The previews use fixed colours on purpose — "Claro" must
@@ -2738,17 +2716,6 @@ dialog h2 {
 }
 .theme-opt.is-on .theme-opt-label {
   color: var(--accent);
-}
-
-/* Schedule 🕐 badge in the commands list — informational; opens the editor. */
-.small-btn.schedule-badge.is-on {
-  font-size: 13px;
-  line-height: 1;
-  border-color: transparent;
-  background: rgba(0, 122, 255, 0.12);
-}
-.small-btn.schedule-badge.is-on:hover {
-  background: rgba(0, 122, 255, 0.22);
 }
 
 /* Schedule editor */
@@ -3169,55 +3136,194 @@ button.detail-tab:focus-visible {
   user-select: none;
 }
 
-/* Sub-item list (commands / actions inside group) */
+/* Sub-item lists (commands, actions, pre-scripts): a «TITLE · N» header with
+   a text «Añadir», then every row inside one bordered card. */
+.sub-list-section {
+  margin-bottom: 18px;
+}
 .sub-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
 }
-
+.sub-list-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+button.sub-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+}
+button.sub-add-btn:hover {
+  filter: none;
+  background: var(--accent-tint);
+}
+button.sub-add-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .sub-item-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-height: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card-strong);
+}
+.sub-list-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sub-list-help {
+  margin: -10px 0 0 2px;
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .sub-item-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px 20px minmax(0, 170px) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: var(--bg-card-strong);
-  --drop-indicator-offset: 3px;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 10px 0 8px;
+  box-sizing: border-box;
+  cursor: pointer;
+  --drop-indicator-offset: 1px;
 }
-
+.sub-item-row:not(:first-child) {
+  border-top: 1px solid var(--border);
+}
+.sub-item-row:first-child {
+  border-radius: 9px 9px 0 0;
+}
+.sub-item-row:last-child {
+  border-radius: 0 0 9px 9px;
+}
+.sub-item-row:only-child {
+  border-radius: 9px;
+}
+.sub-item-row:hover {
+  background: var(--bg-row-hover);
+}
+.sub-icon-slot {
+  display: inline-flex;
+  justify-content: center;
+}
 .sub-icon {
-  font-size: 13px;
-  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
 }
 .sub-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sub-cmd {
-  font-size: 11px;
-  flex: 1;
+  font-size: 12px;
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
   font-family: var(--font-mono);
 }
-
+.sub-trail {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+.sub-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sub-tag {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sub-tag.is-auto {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+.sub-tag.is-schedule {
+  background: var(--badge-neutral-bg);
+  color: inherit;
+}
+.sub-running-dot {
+  display: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--running);
+}
+.sub-item-row.is-running .sub-running-dot {
+  display: inline-block;
+}
+/* Row actions appear on hover or keyboard focus — and stay while their
+   menu is open, or the menu would vanish with them. Hidden ones keep their
+   width out of the layout so the tags hug the trailing edge. */
 .sub-actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
+  position: relative;
+  display: none;
+  gap: 2px;
+}
+.sub-item-row:hover .sub-actions,
+.sub-item-row:focus-within .sub-actions,
+.sub-actions:has([aria-expanded='true']) {
+  display: inline-flex;
+}
+.sub-actions > .remote-menu {
+  top: calc(100% + 4px);
+  right: 0;
+}
+button.sub-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 15px;
+}
+button.sub-action-btn:hover,
+button.sub-action-btn[aria-expanded='true'] {
+  filter: none;
+  background: var(--bg-row-hover);
+  color: inherit;
+}
+button.sub-action-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+button.sub-action-btn.autostart-toggle.is-on {
+  color: var(--accent);
 }
 
 .detail-btn-row {
@@ -3983,35 +4089,6 @@ dialog form {
 }
 
 /* Pre-script library list (group pane) */
-.prescript-list {
-  list-style: none;
-  padding: 0;
-  margin: 4px 0;
-}
-.prescript-list li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 0;
-}
-.prescript-list li strong {
-  font-size: 12px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.prescript-list li code {
-  font-size: 11px;
-  color: var(--muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.prestep-empty {
-  font-size: 11px;
-  color: var(--muted);
-  padding: 4px 0;
-}
 
 /* Add-step button */
 .add-step-btn {

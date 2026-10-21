@@ -28,6 +28,10 @@ const subListsSource = fs.readFileSync(
   path.join(rendererDir, 'config/sub-lists.ts'),
   'utf8',
 );
+const subRowSource = fs.readFileSync(
+  path.join(rendererDir, 'config/sub-list-row.ts'),
+  'utf8',
+);
 const dndHelperSource = fs.readFileSync(
   path.join(rendererDir, 'dnd-helper.ts'),
   'utf8',
@@ -186,16 +190,19 @@ describe('shared .drag-row pattern (defect 2+3 remediation)', () => {
     ).toBe(true);
   });
 
-  it('.sub-item-row overrides only the drop-indicator offset, with no extra handle rules', () => {
+  it('.sub-item-row (rows touching inside one card) overrides only the drop-indicator offset, with no extra handle rules', () => {
     const body = ruleBody(css, '.sub-item-row');
-    expect(declaresExactly(body, '--drop-indicator-offset', '3px')).toBe(true);
+    expect(declaresExactly(body, '--drop-indicator-offset', '1px')).toBe(true);
     expect(body.includes('--drag-handle-idle-opacity')).toBe(false);
     expect(/\.sub-item-row \.drag-handle:hover/.test(css)).toBe(false);
   });
 
   it('the group nav card and sub-item row creation sites opt into the shared pattern', () => {
     expect(/nav-card drag-row/.test(groupsListSource)).toBe(true);
-    expect(/['"]sub-item-row drag-row['"]/.test(subListsSource)).toBe(true);
+    // sub-lists.ts names its rows `sub-item-row`; the shared row builder
+    // appends `drag-row` to whatever class it is handed.
+    expect(/'sub-item-row'/.test(subListsSource)).toBe(true);
+    expect(subRowSource).toContain('`${className} drag-row`');
   });
 });
 

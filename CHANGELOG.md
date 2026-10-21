@@ -166,6 +166,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
   Se manejan con las flechas del teclado y la ventana recuerda la última que
   abriste. Borrar una variable de entorno ya marca el grupo como modificado.
 
+- **Listas de comandos, acciones y pre-scripts más limpias.** Cada lista
+  lleva su título con el total y un «Añadir» a la derecha, y sus filas van en
+  una sola tarjeta: icono, nombre, la orden en monoespaciada y etiquetas
+  compactas («Auto», el horario como «L–V 08:00», un punto verde si está en
+  marcha). Pulsar la fila abre el editor; el rayo, Editar y el menú «⋯»
+  (Duplicar, Borrar) aparecen al pasar el ratón o con el teclado.
+
 ### Corregido
 
 - **El cursor ya no parpadea al pasar por encima de los botones.** La mano

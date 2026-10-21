@@ -14,6 +14,7 @@ import { createGroupsList } from './config/groups-list.js';
 import { createGroupsSplitter } from './config/groups-splitter.js';
 import { createGroupDetail } from './config/group-detail.js';
 import { createGroupRuntime } from './config/group-runtime.js';
+import { createDeviceMenu } from './config/remote-device-menu.js';
 import { createSubLists } from './config/sub-lists.js';
 import { createSubDialog } from './config/sub-dialog.js';
 import { subDialogElements } from './config/sub-dialog-elements.js';
@@ -180,8 +181,13 @@ const subDialog = createSubDialog({
   refreshPipeline,
 });
 
+const runtime = createGroupRuntime();
+const detailMenu = createDeviceMenu();
+
 const subLists = createSubLists({
   store,
+  runtime,
+  menu: detailMenu,
   showToast,
   openSubDialog: (item, kind, groupId) => subDialog.open(item, kind, groupId),
   loadGroups,
@@ -189,12 +195,11 @@ const subLists = createSubLists({
   refreshPipeline,
 });
 
-const runtime = createGroupRuntime();
-
 const groupDetail = createGroupDetail({
   detailEl: groupDetailEl,
   store,
   runtime,
+  menu: detailMenu,
   showToast,
   subLists,
   openIconPicker,
