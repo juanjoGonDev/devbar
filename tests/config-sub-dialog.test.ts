@@ -74,6 +74,8 @@ describe('renderer/config/sub-dialog.ts', () => {
     win?.close();
     win = null;
     vi.restoreAllMocks();
+    // The sheet remembers which sections were open, per kind.
+    localStorage.clear();
   });
 
   async function open(extra: Partial<Group> = {}): Promise<RendererWindow> {
@@ -87,9 +89,9 @@ describe('renderer/config/sub-dialog.ts', () => {
       await open({});
       click(addButton('Añadir comando'));
       expect(dialog().open).toBe(true);
-      expect(el('cmd-only-fields').style.display).toBe('');
-      expect(el('sf-inherit-group-env-row').style.display).toBe('none');
-      expect(el('sf-timeout-row').style.display).toBe('none');
+      expect(el('sf-sec-logs').hidden).toBe(false);
+      expect(el('sf-inherit-group-env-row').hidden).toBe(true);
+      expect(el('sf-timeout-row').hidden).toBe(true);
       expect(el<HTMLElement>('sf-schedule-group').style.display).toBe('');
       expect(iconText(input('sf-icon-btn'))).toBe('[terminal]');
       expect(input('sf-warn').value).toContain('warn');
@@ -147,8 +149,8 @@ describe('renderer/config/sub-dialog.ts', () => {
     it('hides the command-only fields and offers the inherit toggle', async () => {
       await open({ actions: [action('seed', { inheritGroupEnv: true })] });
       click(editButtonIn('.sub-item-list[data-kind="action"] .sub-item-row'));
-      expect(el('cmd-only-fields').style.display).toBe('none');
-      expect(el('sf-inherit-group-env-row').style.display).toBe('');
+      expect(el('sf-sec-logs').hidden).toBe(true);
+      expect(el('sf-inherit-group-env-row').hidden).toBe(false);
       expect(input('sf-inherit-group-env').checked).toBe(true);
       expect(el<HTMLElement>('sf-schedule-group').style.display).toBe('');
     });
@@ -165,18 +167,167 @@ describe('renderer/config/sub-dialog.ts', () => {
     it('offers the timeout and hides the icon and the schedule', async () => {
       await open({ preScripts: [preScript('seed', { timeoutMs: 90_000 })] });
       click(editButtonIn('.prescript-row'));
-      expect(el('sf-timeout-row').style.display).toBe('');
+      expect(el('sf-timeout-row').hidden).toBe(false);
       expect(input('sf-timeout-secs').value).toBe('90');
       expect(el<HTMLElement>('sf-schedule-group').style.display).toBe('none');
-      expect(
-        document.querySelector<HTMLElement>('.sf-icon-field')?.style.display,
-      ).toBe('none');
+      expect(el('sf-icon-field').hidden).toBe(true);
+      expect(el('sf-kind-tile').hidden).toBe(false);
     });
 
     it('leaves the timeout blank when the script has none', async () => {
       await open({});
       click(addButton('Añadir pre-script'));
       expect(input('sf-timeout-secs').value).toBe('');
+    });
+  });
+
+  describe('the side sheet', () => {
+    function section(name: string): HTMLElement {
+      const found = dialog().querySelector<HTMLElement>(
+        `.sheet-section[data-section="${name}"]`,
+      );
+      if (!found) throw new Error(`no section ${name}`);
+      return found;
+    }
+
+    function toggleOf(name: string): HTMLButtonElement {
+      const found = section(name).querySelector<HTMLButtonElement>(
+        '.sheet-section-toggle',
+      );
+      if (!found) throw new Error(`no toggle in ${name}`);
+      return found;
+    }
+
+    function badgeOf(name: string): string {
+      return section(name).querySelector('.sheet-badge')?.textContent ?? '';
+    }
+
+    function isOpen(name: string): boolean {
+      const body = section(name).querySelector<HTMLElement>(
+        '.sheet-section-body',
+      );
+      return (
+        toggleOf(name).getAttribute('aria-expanded') === 'true' &&
+        body?.hidden === false
+      );
+    }
+
+    it('names the kind and the group above the item name', async () => {
+      await open({ commands: [command('web')] });
+      click(editButtonIn('.sub-item-list[data-kind="command"] .sub-item-row'));
+      expect(el('sf-overline').textContent).toBe('Comando · api');
+      expect(el('sub-dialog-title').textContent).toBe('web');
+      expect(dialog().getAttribute('aria-label')).toBe('Editar comando');
+    });
+
+    it('titles a new item by its kind until it has a name', async () => {
+      await open({});
+      click(addButton('Añadir acción'));
+      expect(el('sf-overline').textContent).toBe('Acción · api');
+      expect(el('sub-dialog-title').textContent).toBe('Nueva acción');
+      input('sf-name').value = 'Seed';
+      input('sf-name').dispatchEvent(new Event('input', { bubbles: true }));
+      expect(el('sub-dialog-title').textContent).toBe('Seed');
+    });
+
+    it('shows a static kind tile for a pre-script', async () => {
+      await open({});
+      click(addButton('Añadir pre-script'));
+      expect(el('sf-overline').textContent).toBe('Pre-script · api');
+      expect(el('sf-kind-tile').hidden).toBe(false);
+      expect(iconText(el('sf-kind-tile'))).toBe('[scroll-text]');
+      click(addButton('Añadir comando'));
+      expect(el('sf-kind-tile').hidden).toBe(true);
+      expect(el('sf-icon-field').hidden).toBe(false);
+    });
+
+    it('says where the command runs, following the cwd override', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      expect(el('sf-cwd-hint').textContent).toBe('/tmp/api');
+      input('sf-cwd').value = '/srv/web';
+      input('sf-cwd').dispatchEvent(new Event('input', { bubbles: true }));
+      expect(el('sf-cwd-hint').textContent).toBe('/srv/web');
+    });
+
+    it('runs an action in its group folder', async () => {
+      await open({ actions: [action('seed')] });
+      click(editButtonIn('.sub-item-list[data-kind="action"] .sub-item-row'));
+      expect(el('sf-cwd-hint').textContent).toBe('/tmp/api');
+    });
+
+    it('lists the sections each kind owns', async () => {
+      await open({});
+      const visible = (): string[] =>
+        [...dialog().querySelectorAll<HTMLElement>('.sheet-section')]
+          .filter((s) => !s.hidden && s.style.display !== 'none')
+          .map((s) => s.dataset.section ?? '');
+      click(addButton('Añadir comando'));
+      expect(visible()).toEqual(['env', 'exec', 'schedule', 'logs', 'args']);
+      click(addButton('Añadir acción'));
+      expect(visible()).toEqual(['env', 'exec', 'schedule', 'args']);
+      click(addButton('Añadir pre-script'));
+      expect(visible()).toEqual(['env', 'exec', 'args']);
+    });
+
+    it('collapses a section from its header and remembers it per kind', async () => {
+      await open({});
+      click(addButton('Añadir pre-script'));
+      expect(isOpen('env')).toBe(true);
+      expect(isOpen('args')).toBe(false);
+      click(toggleOf('env'));
+      click(toggleOf('args'));
+      expect(isOpen('env')).toBe(false);
+      expect(isOpen('args')).toBe(true);
+      click(addButton('Añadir comando'));
+      expect(isOpen('env'), 'a command keeps its own layout').toBe(true);
+      click(addButton('Añadir pre-script'));
+      expect(isOpen('env')).toBe(false);
+      expect(isOpen('args')).toBe(true);
+    });
+
+    it('sums up each section in its badge', async () => {
+      await open({
+        preScripts: [
+          preScript('seed', {
+            env: [{ key: 'A', value: '1', enabled: true }],
+            args: [],
+            confirm: true,
+            confirmSecs: 60,
+          }),
+        ],
+      });
+      click(editButtonIn('.prescript-row'));
+      expect(badgeOf('env')).toBe('1');
+      expect(badgeOf('exec')).toBe('confirmación · 60 s');
+      expect(badgeOf('args')).toBe('ninguno');
+      el<HTMLTextAreaElement>('sf-args').value = 'a\nb';
+      el('sf-args').dispatchEvent(new Event('input', { bubbles: true }));
+      expect(badgeOf('args')).toBe('2');
+      input('sf-confirm').checked = false;
+      input('sf-confirm').dispatchEvent(new Event('change', { bubbles: true }));
+      expect(badgeOf('exec')).toBe('sin límite');
+      input('sf-timeout-secs').value = '30';
+      input('sf-timeout-secs').dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+      expect(badgeOf('exec')).toBe('límite 30 s');
+    });
+
+    it('sums up the schedule and the log settings of a command', async () => {
+      await open({
+        commands: [
+          command('web', {
+            schedule: { enabled: true, rules: [{ time: '09:00', days: [] }] },
+            maxLogLines: 500,
+          }),
+        ],
+      });
+      click(editButtonIn('.sub-item-list[data-kind="command"] .sub-item-row'));
+      expect(badgeOf('schedule')).toBe('09:00 todos');
+      expect(badgeOf('logs')).toBe('500 líneas');
+      expect(badgeOf('env')).toBe('ninguna');
+      expect(badgeOf('exec')).toBe('sin confirmación');
     });
   });
 
@@ -338,7 +489,7 @@ describe('renderer/config/sub-dialog.ts', () => {
       expect(el('sf-group-tile').style.getPropertyValue('--tile-color')).toBe(
         '#22c55e',
       );
-      expect(el('sf-submit').textContent).toBe('Crear');
+      expect(el('sf-submit-label').textContent).toBe('Crear');
       // Not opened from a "+": there is no node to follow.
       expect(el('sf-pipeline-note').hidden).toBe(true);
     });
@@ -418,7 +569,7 @@ describe('renderer/config/sub-dialog.ts', () => {
       click(el('sub-cancel'));
       click(addButton('Añadir pre-script'));
       expect(el('sf-group-field').hidden).toBe(true);
-      expect(el('sf-submit').textContent).toBe('Guardar');
+      expect(el('sf-submit-label').textContent).toBe('Guardar');
     });
   });
 
@@ -463,16 +614,15 @@ describe('renderer/config/sub-dialog.ts', () => {
       expect(payload(saves).iconColor).toBe('#3b82f6');
     });
 
-    it('keeps the icon line compact: the split button and the hint only', async () => {
+    it('makes the header tile the icon picker, with its colour segment', async () => {
       await open({});
       click(addButton('Añadir comando'));
-      const row = dialog().querySelector('.sf-icon-row');
-      expect([...(row?.children ?? [])].map((c) => c.className)).toEqual([
+      const tile = el('sf-icon-field');
+      expect([...tile.children].map((c) => c.className)).toEqual([
         'icon-split',
-        'muted',
       ]);
       expect(
-        [...(row?.querySelector('.icon-split')?.children ?? [])].map(
+        [...(tile.querySelector('.icon-split')?.children ?? [])].map(
           (c) => c.id || c.className,
         ),
       ).toEqual([

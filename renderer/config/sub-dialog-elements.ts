@@ -3,7 +3,7 @@ import type { ScheduleEditorElements } from './schedule-editor.js';
 import type { SubDialogElements } from './sub-dialog.js';
 
 /**
- * Every control of the command / action / pre-script editor dialog and its
+ * Every control of the command / action / pre-script side sheet and its
  * schedule block, resolved in one place: config.ts calls this once, and
  * tests/renderer-dom-contract.test.ts checks each assertion against
  * config.html.
@@ -19,6 +19,10 @@ export function subDialogElements(): {
       title: byId<HTMLElement>('sub-dialog-title', HTMLElement),
       cancel: byId<HTMLButtonElement>('sub-cancel', HTMLButtonElement),
       iconBtn: byId<HTMLButtonElement>('sf-icon-btn', HTMLButtonElement),
+      iconField: byId<HTMLElement>('sf-icon-field', HTMLElement),
+      kindTile: byId<HTMLElement>('sf-kind-tile', HTMLElement),
+      overline: byId<HTMLElement>('sf-overline', HTMLElement),
+      cwdHint: byId<HTMLElement>('sf-cwd-hint', HTMLElement),
       name: byId<HTMLInputElement>('sf-name', HTMLInputElement),
       command: byId<HTMLInputElement>('sf-command', HTMLInputElement),
       args: byId<HTMLTextAreaElement>('sf-args', HTMLTextAreaElement),
@@ -38,7 +42,6 @@ export function subDialogElements(): {
       silenceWarn: byId<HTMLInputElement>('sf-silence-warn', HTMLInputElement),
       silenceErr: byId<HTMLInputElement>('sf-silence-err', HTMLInputElement),
       maxLogLines: byId<HTMLInputElement>('sf-max-log-lines', HTMLInputElement),
-      cmdOnlyFields: byId<HTMLElement>('cmd-only-fields', HTMLElement),
       timeoutRow: byId<HTMLElement>('sf-timeout-row', HTMLElement),
       timeoutSecs: byId<HTMLInputElement>('sf-timeout-secs', HTMLInputElement),
       confirmRow: byId<HTMLElement>('sf-confirm-row', HTMLElement),
@@ -55,6 +58,7 @@ export function subDialogElements(): {
       pipelineNote: byId<HTMLElement>('sf-pipeline-note', HTMLElement),
       pipelineNoteName: byId<HTMLElement>('sf-pipeline-note-name', HTMLElement),
       submit: byId<HTMLButtonElement>('sf-submit', HTMLButtonElement),
+      submitLabel: byId<HTMLElement>('sf-submit-label', HTMLElement),
     },
     schedule: {
       group: byId<HTMLElement>('sf-schedule-group', HTMLElement),

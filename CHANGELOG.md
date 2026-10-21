@@ -179,6 +179,15 @@ Todas las novedades relevantes de DevBar. El formato sigue
   móvil) y Zona de peligro, con «Borrar grupo…». El botón de borrar del final
   desaparece, y la barra de guardado marca con un punto cuándo hay cambios.
 
+- **Editor de comandos, acciones y pre-scripts en un panel lateral.** Se
+  abre desde la derecha sobre el fondo atenuado. Arriba dice qué editas y de
+  qué grupo («PRE-SCRIPT · BACK») con el nombre en vivo; el icono se elige
+  pulsando su recuadro. El comando va en un campo oscuro monoespaciado con
+  «Se ejecuta en …» debajo, y el resto se agrupa en secciones plegables
+  (Variables de entorno, Ejecución, Programación, Logs y detección,
+  Argumentos adicionales) que resumen su contenido y recuerdan cuáles dejaste
+  abiertas.
+
 ### Corregido
 
 - **El cursor ya no parpadea al pasar por encima de los botones.** La mano

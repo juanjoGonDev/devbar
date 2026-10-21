@@ -133,7 +133,7 @@ describe('renderer/config/sub-lists.ts', () => {
       );
       click(editButton(prescriptRows()[0]));
       expect(document.getElementById('sub-dialog-title')?.textContent).toBe(
-        'Editar pre-script: seed',
+        'seed',
       );
     });
 
@@ -193,7 +193,7 @@ describe('renderer/config/sub-lists.ts', () => {
       ].find((b) => tipOf(b) === 'Editar');
       click(edit);
       expect(document.getElementById('sub-dialog-title')?.textContent).toBe(
-        'Editar comando: api',
+        'api',
       );
     });
   });
@@ -336,7 +336,7 @@ describe('renderer/config/sub-lists.ts', () => {
       await open({ commands: [command('api')] });
       click(itemRows('command')[0].querySelector('.sub-cmd'));
       expect(document.getElementById('sub-dialog-title')?.textContent).toBe(
-        'Editar comando: api',
+        'api',
       );
     });
 
