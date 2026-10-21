@@ -3105,10 +3105,6 @@ button.detail-tab:focus-visible {
   background: var(--bg-card-strong);
 }
 
-.detail-field {
-  margin-bottom: 12px;
-}
-
 .detail-section {
   margin-bottom: 16px;
 }
@@ -3122,18 +3118,88 @@ button.detail-tab:focus-visible {
   margin-bottom: 6px;
 }
 
-/* Mode toggle row */
-.mode-toggle-row {
-  display: flex;
-  gap: 14px;
-}
-.mode-option {
-  display: flex;
+/* «Ajustes» tab: General's macOS settings cards, plus a few controls of
+   its own — wide text fields, the «Varios | Uno» segmented mode and a
+   red-edged danger zone. */
+.gs-control {
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  justify-content: flex-end;
+  gap: 18px;
+  min-width: 0;
+}
+.settings-row.gs-wide .gs-control {
+  flex: 1.6;
+  gap: 8px;
+}
+input.gs-input {
+  height: 28px;
+  width: 260px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-card-strong);
+  color: inherit;
+  font-size: 13px;
+}
+input.gs-input.gs-path-input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+input.gs-input:focus {
+  outline: 2px solid rgba(0, 122, 255, 0.4);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+.gs-control > .toggle.gs-inline-switch {
+  flex-direction: row-reverse;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+.mode-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--tray-tabs-bg);
+}
+.mode-segment {
+  position: relative;
   cursor: pointer;
-  user-select: none;
+}
+.mode-segment input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.mode-segment span {
+  display: block;
+  padding: 4px 14px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.mode-segment input:checked + span {
+  background: var(--tray-tab-on-bg);
+  box-shadow: var(--tray-tab-on-shadow);
+  color: inherit;
+  font-weight: 600;
+}
+.mode-segment input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.detail-danger-zone .settings-group-title {
+  color: var(--badge-error-fg);
+}
+.detail-danger-zone .settings-card {
+  border-color: var(--badge-error-bg);
 }
 
 /* Sub-item lists (commands, actions, pre-scripts): a «TITLE · N» header with
@@ -3324,15 +3390,6 @@ button.sub-action-btn:focus-visible {
 }
 button.sub-action-btn.autostart-toggle.is-on {
   color: var(--accent);
-}
-
-.detail-btn-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
 }
 
 /* ── Icon picker popover ─────────────────────────────────────────── */
@@ -3992,10 +4049,24 @@ dialog form {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 .save-bar .save-bar-message {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
   color: var(--muted);
   flex: 1;
   letter-spacing: -0.1px;
+}
+/* An orange dot while there is something to save (Guardar is enabled). */
+.save-bar .save-bar-message::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--badge-neutral-bg);
+}
+.save-bar:has(#detail-save:not([disabled])) .save-bar-message::before {
+  background: var(--badge-warn-fg);
 }
 .save-bar button {
   font-size: 12px;

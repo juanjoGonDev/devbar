@@ -20,7 +20,7 @@ function nameInput(): HTMLInputElement {
 }
 
 function pathInput(): HTMLInputElement {
-  const el = detail().querySelector<HTMLInputElement>('.detail-field input');
+  const el = detail().querySelector<HTMLInputElement>('#grp-path');
   if (!el) throw new Error('the detail pane drew no path field');
   return el;
 }
@@ -107,7 +107,7 @@ describe('renderer/config/group-detail.ts', () => {
     it('records the mode radio', async () => {
       await openWithGroup();
       const multi = detail().querySelector<HTMLInputElement>(
-        '.mode-toggle-row input[value="multi"]',
+        '.mode-segmented input[value="multi"]',
       );
       check(multi!, true);
       expect(saveDisabled()).toBe(false);
@@ -289,14 +289,14 @@ describe('renderer/config/group-detail.ts', () => {
     it('does nothing when the user backs out', async () => {
       const w = await openWithGroup();
       vi.spyOn(window, 'confirm').mockReturnValue(false);
-      click(detail().querySelector('.detail-btn-row .danger'));
+      click(detail().querySelector('.detail-danger-zone .danger'));
       expect(w.callCount('deleteGroup')).toBe(0);
     });
 
     it('keeps the group visible when main refuses', async () => {
       const w = await openWithGroup();
       vi.spyOn(window, 'confirm').mockReturnValue(true);
-      click(detail().querySelector('.detail-btn-row .danger'));
+      click(detail().querySelector('.detail-danger-zone .danger'));
       await w.settle('deleteGroup', { ok: false, error: 'still running' });
       expect(toastText()).toBe('still running');
       expect(nameInput().value).toBe('api');
@@ -305,7 +305,7 @@ describe('renderer/config/group-detail.ts', () => {
     it('falls back to a generic reason when main gives none', async () => {
       const w = await openWithGroup();
       vi.spyOn(window, 'confirm').mockReturnValue(true);
-      click(detail().querySelector('.detail-btn-row .danger'));
+      click(detail().querySelector('.detail-danger-zone .danger'));
       await w.settle('deleteGroup', { ok: false });
       expect(toastText()).toBe('No se pudo borrar el grupo');
     });
@@ -313,7 +313,7 @@ describe('renderer/config/group-detail.ts', () => {
     it('empties the pane and refreshes the pipeline once it is gone', async () => {
       const w = await openWithGroup();
       vi.spyOn(window, 'confirm').mockReturnValue(true);
-      click(detail().querySelector('.detail-btn-row .danger'));
+      click(detail().querySelector('.detail-danger-zone .danger'));
       await w.settle('deleteGroup', { ok: true });
       await w.settle('listGroups', []);
       await w.settle(

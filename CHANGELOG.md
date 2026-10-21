@@ -173,6 +173,12 @@ Todas las novedades relevantes de DevBar. El formato sigue
   marcha). Pulsar la fila abre el editor; el rayo, Editar y el menú «⋯»
   (Duplicar, Borrar) aparecen al pasar el ratón o con el teclado.
 
+- **Pestaña «Ajustes» del grupo, en tarjetas.** General (nombre, carpeta con
+  «Elegir…» y el modo como «Varios | Uno»), Comportamiento (esperar al
+  workflow de arranque, silenciar warnings o errores, visible en la barra y el
+  móvil) y Zona de peligro, con «Borrar grupo…». El botón de borrar del final
+  desaparece, y la barra de guardado marca con un punto cuándo hay cambios.
+
 ### Corregido
 
 - **El cursor ya no parpadea al pasar por encima de los botones.** La mano

@@ -1,6 +1,9 @@
-import { icon } from '../icon.js';
 import { buildGroupHeader, type GroupHeader } from './group-header.js';
 import { duplicateOf } from './group-copy.js';
+import {
+  buildGroupSettingsTab,
+  type GroupSettingsTab,
+} from './group-settings-tab.js';
 import { buildGroupTabs, type GroupTabId } from './group-tabs.js';
 import type { DeviceMenu } from './remote-device-menu.js';
 import type { GroupRuntime } from './group-runtime.js';
@@ -35,47 +38,11 @@ export interface GroupDetail {
   refreshRuntime(): void;
 }
 
-function buildField(
-  labelText: string,
-  type: string,
-  value: string,
-  placeholder = '',
-): HTMLDivElement {
-  const wrap = document.createElement('div');
-  wrap.className = 'field';
-  const lbl = document.createElement('label');
-  lbl.textContent = labelText;
-  wrap.appendChild(lbl);
-  const input = document.createElement('input');
-  input.type = type;
-  input.value = value;
-  if (placeholder) input.placeholder = placeholder;
-  wrap.appendChild(input);
-  return wrap;
-}
-
-function buildToggleLabel(
-  text: string,
-  checked: boolean,
-  cssClass: string,
-): HTMLLabelElement {
-  const lbl = document.createElement('label');
-  lbl.className = 'toggle inline';
-  const chk = document.createElement('input');
-  chk.type = 'checkbox';
-  chk.checked = !!checked;
-  chk.className = cssClass;
-  lbl.appendChild(chk);
-  const span = document.createElement('span');
-  span.textContent = text;
-  lbl.appendChild(span);
-  return lbl;
-}
-
 export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
   const { store } = deps;
   const { menu } = deps;
   let header: GroupHeader | null = null;
+  let settingsTab: GroupSettingsTab | null = null;
   /** The open tab, kept across groups and repaints while the window lives. */
   let activeTab: GroupTabId = 'processes';
 
@@ -190,123 +157,6 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     await deps.refreshPipeline(); // deleting a group prunes its refs from every workflow
   }
 
-  function buildPathField(group: Group, parent: HTMLElement): void {
-    // ── Path field ───────────────────────────────────────────────────────
-    const pathField = buildField(
-      'Path del grupo (cwd y git repo)',
-      'text',
-      group.path || '',
-      '/Users/yo/proyecto',
-    );
-    pathField.className += ' detail-field';
-    // Wrap the input in an input-with-action container and add folder picker
-    const pathInput = pathField.querySelector<HTMLInputElement>('input');
-    if (!pathInput) throw new Error('Path field input missing');
-    pathInput.addEventListener('input', () => {
-      store.mutateDraft((d) => {
-        d.path = pathInput.value.trim();
-      });
-      header?.setPath(pathInput.value.trim());
-    });
-    const pathPickerContainer = document.createElement('div');
-    pathPickerContainer.className = 'input-with-action';
-    pathField.replaceChild(pathPickerContainer, pathInput);
-    pathPickerContainer.appendChild(pathInput);
-    const grpPathPickBtn = document.createElement('button');
-    grpPathPickBtn.type = 'button';
-    grpPathPickBtn.id = 'grp-path-pick';
-    grpPathPickBtn.className = 'icon-action-btn';
-    grpPathPickBtn.title = 'Seleccionar carpeta…';
-    grpPathPickBtn.setAttribute('aria-label', grpPathPickBtn.title);
-    grpPathPickBtn.append(icon('folder-open'));
-    pathPickerContainer.appendChild(grpPathPickBtn);
-    grpPathPickBtn.addEventListener('click', async () => {
-      const res = await window.api.pickFolder(pathInput.value || undefined);
-      if (res.canceled) return;
-      if (!res.ok) {
-        deps.showToast(`Error: ${res.error || 'desconocido'}`, 'error');
-        return;
-      }
-      if (!res.path) return;
-      pathInput.value = res.path;
-      pathInput.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    parent.appendChild(pathField);
-  }
-
-  function buildModeSection(group: Group, parent: HTMLElement): void {
-    // ── Mode toggle ──────────────────────────────────────────────────────
-    const modeSection = document.createElement('div');
-    modeSection.className = 'detail-section';
-    const modeLabel = document.createElement('div');
-    modeLabel.className = 'section-label';
-    modeLabel.textContent = 'Modo';
-    modeSection.appendChild(modeLabel);
-
-    const modeRow = document.createElement('div');
-    modeRow.className = 'mode-toggle-row';
-    for (const m of ['multi', 'single'] as const) {
-      const lbl = document.createElement('label');
-      lbl.className = 'mode-option';
-      const radio = document.createElement('input');
-      radio.type = 'radio';
-      radio.name = `mode-${group.id}`;
-      radio.value = m;
-      radio.checked = (group.mode || 'multi') === m;
-      radio.addEventListener('change', () => {
-        if (radio.checked)
-          store.mutateDraft((d) => {
-            d.mode = m;
-          });
-      });
-      lbl.appendChild(radio);
-      lbl.appendChild(document.createTextNode(` ${m}`));
-      modeRow.appendChild(lbl);
-    }
-    modeSection.appendChild(modeRow);
-    parent.appendChild(modeSection);
-  }
-
-  function buildSilenceSection(group: Group, parent: HTMLElement): void {
-    // ── Silence flags ────────────────────────────────────────────────────
-    const silenceSection = document.createElement('div');
-    silenceSection.className = 'detail-section';
-    const silenceLabel = document.createElement('div');
-    silenceLabel.className = 'section-label';
-    silenceLabel.textContent = 'Silenciar en este grupo';
-    silenceSection.appendChild(silenceLabel);
-
-    const muteWarnLbl = buildToggleLabel(
-      'Warnings',
-      group.silenceWarnings,
-      'detail-silence-warn',
-    );
-    const muteErrLbl = buildToggleLabel(
-      'Errors',
-      group.silenceErrors,
-      'detail-silence-err',
-    );
-    muteWarnLbl
-      .querySelector<HTMLInputElement>('input')
-      ?.addEventListener('change', (event) => {
-        const input = event.currentTarget as HTMLInputElement;
-        store.mutateDraft((group) => {
-          group.silenceWarnings = input.checked;
-        });
-      });
-    muteErrLbl
-      .querySelector<HTMLInputElement>('input')
-      ?.addEventListener('change', (event) => {
-        const input = event.currentTarget as HTMLInputElement;
-        store.mutateDraft((group) => {
-          group.silenceErrors = input.checked;
-        });
-      });
-    silenceSection.appendChild(muteWarnLbl);
-    silenceSection.appendChild(muteErrLbl);
-    parent.appendChild(silenceSection);
-  }
-
   function buildGroupEnvSection(
     group: Group,
     parent: HTMLElement,
@@ -337,46 +187,6 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
     };
     for (const type of ['input', 'change', 'click'])
       groupEnvContainer.addEventListener(type, sync);
-  }
-
-  function buildWaitSection(group: Group, parent: HTMLElement): void {
-    // ── Startup-workflow release timing (Group.waitForPipeline) ────────────
-    // Decides WHEN this group's auto-start commands are released relative
-    // to the startup workflow.
-    const waitSection = document.createElement('div');
-    waitSection.className = 'detail-section';
-    const waitLbl = buildToggleLabel(
-      'Esperar al workflow de arranque',
-      group.waitForPipeline,
-      'detail-wait-pipeline',
-    );
-    // The why lives in the tooltip: the pane stays a list of settings.
-    waitLbl.title =
-      'Arranca los comandos de este grupo cuando termina todo el workflow de arranque: un bloque de otro grupo puede reiniciar servicios compartidos (p. ej. Docker).';
-    waitLbl
-      .querySelector<HTMLInputElement>('input')
-      ?.addEventListener('change', (event) => {
-        const input = event.currentTarget as HTMLInputElement;
-        store.mutateDraft((d) => {
-          d.waitForPipeline = input.checked;
-        });
-      });
-    waitSection.appendChild(waitLbl);
-    parent.appendChild(waitSection);
-  }
-
-  function buildDeleteRow(group: Group, parent: HTMLElement): void {
-    // ── Action buttons ────────────────────────────────────────────────────
-    const btnRow = document.createElement('div');
-    btnRow.className = 'detail-btn-row';
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'danger';
-    deleteBtn.textContent = 'Borrar grupo';
-    deleteBtn.addEventListener('click', () => void deleteGroup(group));
-    btnRow.appendChild(deleteBtn);
-
-    parent.appendChild(btnRow);
   }
 
   function renderGroupDetail(): void {
@@ -412,6 +222,7 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
       openIconPicker: (anchor, onSelect) =>
         deps.openIconPicker(anchor, onSelect),
       toggleVisibility,
+      onRename: (value) => settingsTab?.setName(value),
       duplicate: (g) => void duplicateGroup(g),
       remove: (g) => void deleteGroup(g),
     });
@@ -435,12 +246,14 @@ export function createGroupDetail(deps: GroupDetailDeps): GroupDetail {
       tabs.setCount('env', count),
     );
 
-    const settings = tabs.panel('settings');
-    buildPathField(group, settings);
-    buildModeSection(group, settings);
-    buildSilenceSection(group, settings);
-    buildWaitSection(group, settings);
-    buildDeleteRow(group, settings);
+    settingsTab = buildGroupSettingsTab(group, tabs.panel('settings'), {
+      store,
+      showToast: deps.showToast,
+      onRename: (value) => header?.setName(value),
+      onPath: (value) => header?.setPath(value),
+      toggleVisibility,
+      remove: (g) => void deleteGroup(g),
+    });
 
     // The save bar lives OUTSIDE the editor pane (below the whole two-pane
     // block) so it reads as a footer for the Grupos view, not part of the
