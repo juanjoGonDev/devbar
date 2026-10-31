@@ -73,7 +73,7 @@
     "electron-store": "11.0.2",
     "menubar": "9.5.3",
     "qrcode-generator": "2.0.4",
-    "uuid": "14.0.2"
+    "uuid": "14.0.3"
   },
   "pnpm": {
     "overrides": {
