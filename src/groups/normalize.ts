@@ -12,6 +12,9 @@ import { normalizeIconColor } from '../icon-color.js';
 import {
   DEFAULT_ERROR_REGEX,
   DEFAULT_WARN_REGEX,
+  upgradeLegacyDefaultRegex,
+} from '../log-level-defaults.js';
+import {
   isRecord,
   record,
   stringArray,
@@ -52,7 +55,7 @@ export function clampConfirmSecsOrNull(value: unknown): number | null {
   return Math.min(3600, Math.max(3, Math.round(n)));
 }
 
-function normalizeScheduleRule(value: unknown): ScheduleRule {
+export function normalizeScheduleRule(value: unknown): ScheduleRule {
   const raw = record(value);
   const match = /^(\d{1,2}):(\d{1,2})$/.exec(stringValue(raw.time).trim());
   let time = '09:00';
@@ -150,8 +153,14 @@ export function normalizeCommand(value: unknown): Command {
     args: stringArray(raw.args),
     env: normalizeEnvEntries(raw.env),
     cwd: typeof raw.cwd === 'string' && raw.cwd ? raw.cwd.trim() : null,
-    warnRegex: stringValue(raw.warnRegex) || DEFAULT_WARN_REGEX,
-    errorRegex: stringValue(raw.errorRegex) || DEFAULT_ERROR_REGEX,
+    // A detector still holding an old default is upgraded on read; the
+    // store persists the new one on its next write. Custom ones stay as-is.
+    warnRegex:
+      upgradeLegacyDefaultRegex(stringValue(raw.warnRegex)) ||
+      DEFAULT_WARN_REGEX,
+    errorRegex:
+      upgradeLegacyDefaultRegex(stringValue(raw.errorRegex)) ||
+      DEFAULT_ERROR_REGEX,
     silenceWarnings: Boolean(raw.silenceWarnings),
     silenceErrors: Boolean(raw.silenceErrors),
     silencedPatterns: {
@@ -270,5 +279,6 @@ export function normalizeGroup(value: unknown): Group {
     // Existing v4 stores have no such key, so this default IS the decision:
     // it must resolve to "wait" (see Group.waitForPipeline doc).
     waitForPipeline: raw.waitForPipeline !== false,
+    hiddenInTray: raw.hiddenInTray === true,
   };
 }

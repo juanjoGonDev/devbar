@@ -112,7 +112,9 @@ describe('renderer glyphs', () => {
 
   it('paints the silenced-line mark with the bell-off glyph', () => {
     const logsCss = readFileSync(path.join(rendererDir, 'logs.css'), 'utf8');
-    const rule = /\.line\.silenced::before\s*{([^}]*)}/.exec(logsCss)?.[1];
+    const rule = /\.line\.silenced \.msg::before\s*{([^}]*)}/.exec(
+      logsCss,
+    )?.[1];
     const hex = (ICON_CODEPOINTS['bell-off'] ?? 0).toString(16);
     expect(rule).toMatch(/font-family:\s*'lucide'/);
     expect(rule).toContain(`content: '\\${hex}'`);

@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   groupViews,
   logLine,
-  pipelineView,
+  remoteWorkflowVisible,
   settingsView,
   updateView,
+  workflowViews,
 } from '../src/main/remote/views.js';
-import type { GroupState, PipelineState } from '../src/ipc-contract.js';
+import type { GroupState, WorkflowEntry } from '../src/ipc-contract.js';
+import type { Workflow, WorkflowTrigger } from '../src/domain-types.js';
+import { graph } from './helpers/pipeline.js';
 import type { UpdateStatus } from '../src/ipc-contract/updates-api.js';
 import {
   makeAction,
@@ -93,7 +96,11 @@ const available = {
 describe('src/main/remote/views.ts', () => {
   describe('groupViews', () => {
     it('keeps what the panel paints, with the branch from the cache', () => {
-      const [view] = groupViews([groupState()], new Map([['g1', 'main']]));
+      const [view] = groupViews(
+        [groupState()],
+        new Map([['g1', 'main']]),
+        true,
+      );
 
       expect(view).toEqual({
         id: 'g1',
@@ -101,6 +108,7 @@ describe('src/main/remote/views.ts', () => {
         color: 'warn',
         branch: 'main',
         lastError: null,
+        hidden: false,
         commands: [
           {
             id: 'api',
@@ -128,7 +136,7 @@ describe('src/main/remote/views.ts', () => {
     });
 
     it('never carries an env value, a path or the env keys', () => {
-      const json = JSON.stringify(groupViews([groupState()], new Map()));
+      const json = JSON.stringify(groupViews([groupState()], new Map(), true));
 
       expect(json).not.toContain(SECRET);
       expect(json).not.toContain('secret-project');
@@ -137,37 +145,168 @@ describe('src/main/remote/views.ts', () => {
     });
 
     it('has no branch for a group the cache does not know', () => {
-      expect(groupViews([groupState()], new Map())[0]?.branch).toBeNull();
+      expect(groupViews([groupState()], new Map(), true)[0]?.branch).toBeNull();
+    });
+
+    it('lists the groups hidden from the tray last, flagged, like its fold', () => {
+      const hidden = groupState();
+      hidden.groupId = 'g0';
+      hidden.group = { ...hidden.group, id: 'g0', hiddenInTray: true };
+
+      const views = groupViews([hidden, groupState()], new Map(), true);
+
+      expect(views.map((view) => [view.id, view.hidden])).toEqual([
+        ['g1', false],
+        ['g0', true],
+      ]);
+    });
+
+    it('leaves the hidden groups out when the tray does not fold them', () => {
+      const hidden = groupState();
+      hidden.groupId = 'g0';
+      hidden.group = { ...hidden.group, id: 'g0', hiddenInTray: true };
+
+      const views = groupViews([hidden, groupState()], new Map(), false);
+
+      expect(views.map((view) => view.id)).toEqual(['g1']);
     });
 
     it('falls back to the id when a runtime entry outlived its config', () => {
       const state = groupState();
       state.group = { ...state.group, commands: [], actions: [] };
 
-      const [view] = groupViews([state], new Map());
+      const [view] = groupViews([state], new Map(), true);
 
       expect(view?.commands[0]?.name).toBe('api');
       expect(view?.actions[0]?.name).toBe('seed');
     });
   });
 
-  describe('pipelineView', () => {
-    it('drops the run id the phone has no log view for', () => {
-      const pipeline: PipelineState = {
-        status: 'running',
-        currentStep: 1,
-        totalSteps: 3,
-        lastError: null,
-        lastRunId: '7',
-        startedAt: 5,
-      };
+  describe('workflowViews', () => {
+    const MANUAL: WorkflowTrigger = { kind: 'manual', confirm: false };
+    const SCHEDULE: WorkflowTrigger = {
+      kind: 'schedule',
+      schedule: { rules: [], interval: null },
+    };
+    const workflow = (
+      id: string,
+      trigger: WorkflowTrigger,
+      hidden = false,
+      enabled = true,
+    ): Workflow => ({
+      id,
+      name: `Flujo ${id}`,
+      enabled,
+      hidden,
+      trigger,
+      graph: graph(['A'], ['trigger>A']),
+    });
+    const entry = (w: Workflow): WorkflowEntry => ({
+      workflow: w,
+      lastRun: null,
+      nextRunAt: null,
+      scriptCount: 1,
+      running: null,
+    });
 
-      expect(pipelineView(pipeline)).toEqual({
-        status: 'running',
-        currentStep: 1,
-        totalSteps: 3,
-        lastError: null,
+    it('lists what the tray lists, the hidden ones last and flagged', () => {
+      const views = workflowViews(
+        [
+          entry(workflow('cron', SCHEDULE)),
+          entry(workflow('desk', MANUAL, true)),
+          entry(workflow('off', MANUAL, false, false)),
+          entry(workflow('start', { kind: 'startup' })),
+        ],
+        true,
+      );
+      expect(views.map((view) => [view.id, view.hidden])).toEqual([
+        ['start', false],
+        ['cron', false],
+        ['desk', true],
+      ]);
+    });
+
+    it('leaves the hidden ones out when the tray does not fold them', () => {
+      const views = workflowViews(
+        [entry(workflow('desk', MANUAL, true)), entry(workflow('m', MANUAL))],
+        false,
+      );
+      expect(views.map((view) => view.id)).toEqual(['m']);
+      expect(
+        remoteWorkflowVisible(entry(workflow('desk', MANUAL, true)), false),
+      ).toBe(false);
+      expect(
+        remoteWorkflowVisible(entry(workflow('desk', MANUAL, true)), true),
+      ).toBe(true);
+    });
+
+    it('shows a running workflow even when it is hidden or off', () => {
+      const running = {
+        ...entry(workflow('desk', MANUAL, true, false)),
+        running: { runId: 1, doneScripts: 0, totalScripts: 1, startedAt: 1 },
+      };
+      expect(remoteWorkflowVisible(running, false)).toBe(true);
+      expect(workflowViews([running], false)).toMatchObject([
+        { id: 'desk', hidden: false },
+      ]);
+    });
+
+    it('carries only the name, the progress and the last result — never the graph', () => {
+      const [view] = workflowViews(
+        [
+          {
+            ...entry(workflow('start', { kind: 'startup' })),
+            lastRun: {
+              startedAt: 1,
+              finishedAt: 9,
+              durationMs: 8,
+              result: 'warning',
+            },
+            running: {
+              runId: 4,
+              doneScripts: 3,
+              totalScripts: 8,
+              startedAt: 2,
+            },
+          },
+        ],
+        true,
+      );
+      expect(view).toEqual({
+        id: 'start',
+        name: 'Flujo start',
+        startup: true,
+        trigger: 'startup',
+        running: true,
+        hidden: false,
+        doneScripts: 3,
+        totalScripts: 8,
+        startedAt: 2,
+        nextRunAt: null,
+        lastResult: 'warning',
+        lastFinishedAt: 9,
       });
+    });
+
+    it('says how each one fires, and when a scheduled one fires next', () => {
+      const views = workflowViews(
+        [
+          { ...entry(workflow('cron', SCHEDULE)), nextRunAt: 42 },
+          entry(workflow('desk', MANUAL)),
+        ],
+        false,
+      );
+      expect(
+        views.map(({ id, trigger, nextRunAt, startedAt }) => ({
+          id,
+          trigger,
+          nextRunAt,
+          startedAt,
+        })),
+      ).toEqual([
+        { id: 'desk', trigger: 'manual', nextRunAt: null, startedAt: null },
+        { id: 'cron', trigger: 'schedule', nextRunAt: 42, startedAt: null },
+      ]);
     });
   });
 

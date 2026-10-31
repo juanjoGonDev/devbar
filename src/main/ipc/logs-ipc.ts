@@ -266,7 +266,7 @@ export function registerLogsIpc(ipc: IpcRegistrar, deps: LogsIpcDeps): void {
         entry = {
           groupId: PIPELINE_LOG_GROUP_ID,
           groupName: PIPELINE_LOG_NAME,
-          groupIcon: 'dna',
+          groupIcon: 'workflow',
           groupIconColor: null,
           items: [],
         };

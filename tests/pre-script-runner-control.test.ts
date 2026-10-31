@@ -16,9 +16,11 @@ import type {
   Group,
   LogEntry,
   PreScript,
+  Pipeline,
   PreStep,
   PreStepScriptRef,
 } from '../src/domain-types.js';
+import { fromLegacySteps } from '../src/pipeline-graph.js';
 
 // ─── Mock factory ───────────────────────────────────────────────────────────
 
@@ -124,7 +126,9 @@ function makeConfigStore(groups: Group[], steps: PreStep[] = []) {
   const state = { steps };
   return {
     getGroup: (id: string): Group | null => byId.get(id) ?? null,
-    getPreSteps: (): PreStep[] => state.steps,
+    // The old ordered steps, chained from the trigger: a chain runs exactly
+    // like the list did.
+    getPipeline: (): Pipeline => fromLegacySteps(state.steps),
     setSteps: (next: PreStep[]): void => {
       state.steps = next;
     },
@@ -191,13 +195,6 @@ function getAggregatorLines(pm: MockProcessManager): string[] {
   expect(aggregatorId).toBeTruthy();
   if (!aggregatorId) throw new Error('Expected aggregator log buffer');
   return pm._logs[aggregatorId].map((entry) => entry.line);
-}
-
-function expectPresent<T>(value: T | null | undefined): T {
-  expect(value).not.toBeNull();
-  expect(value).not.toBeUndefined();
-  if (value == null) throw new Error('Expected value to be present');
-  return value;
 }
 
 // A single-group, single-script fixture used by tests that only care about
@@ -372,7 +369,7 @@ describe('createPreScriptRunner — timeout enforcement', () => {
 });
 
 describe('createPreScriptRunner — duration markers', () => {
-  it('"Pipeline completado (Xs)" present in aggregator', async () => {
+  it('"Workflow completado (Xs)" present in aggregator', async () => {
     const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
     const pm = makeMockPM({ 'pre:g1:sc1': { code: 0 } });
     const runner = createPreScriptRunner({
@@ -386,12 +383,12 @@ describe('createPreScriptRunner — duration markers', () => {
     const lines = getAggregatorLines(pm);
     expect(
       lines.some(
-        (l) => l.includes('Pipeline completado') && l.match(/\(\d+\w+.*\)/),
+        (l) => l.includes('Workflow completado') && l.match(/\(\d+\w+.*\)/),
       ),
     ).toBe(true);
   });
 
-  it('"Paso 1 completado (Xs)" present after step success', async () => {
+  it('"Bloque 1/1 completado (Xs)" present after block success', async () => {
     const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
     const pm = makeMockPM({ 'pre:g1:sc1': { code: 0 } });
     const runner = createPreScriptRunner({
@@ -403,7 +400,7 @@ describe('createPreScriptRunner — duration markers', () => {
 
     await runner.run();
     const lines = getAggregatorLines(pm);
-    expect(lines.some((l) => l.includes('Paso 1 completado'))).toBe(true);
+    expect(lines.some((l) => l.includes('Bloque 1/1 completado ('))).toBe(true);
   });
 
   it('"Script finalizado correctamente (Xs)" contains no bare "exit N"', async () => {
@@ -444,8 +441,8 @@ describe('createPreScriptRunner — duration markers', () => {
   });
 });
 
-describe('createPreScriptRunner — getRunState / getRecentResult', () => {
-  it('getRunState returns null when idle', () => {
+describe('createPreScriptRunner — getSnapshot', () => {
+  it('is null before the first run', () => {
     const pm = makeMockPM();
     const runner = createPreScriptRunner({
       processManager: pm,
@@ -453,21 +450,11 @@ describe('createPreScriptRunner — getRunState / getRecentResult', () => {
       broadcastUpdate: vi.fn(),
       onError: vi.fn(),
     });
-    expect(runner.getRunState()).toBeNull();
+    expect(runner.getSnapshot()).toBeNull();
+    expect(runner.isRunning()).toBe(false);
   });
 
-  it('getRecentResult returns null when no recent run', () => {
-    const pm = makeMockPM();
-    const runner = createPreScriptRunner({
-      processManager: pm,
-      configStore: makeConfigStore([G1], []),
-      broadcastUpdate: vi.fn(),
-      onError: vi.fn(),
-    });
-    expect(runner.getRecentResult()).toBeNull();
-  });
-
-  it('getRecentResult returns done after successful pipeline', async () => {
+  it('keeps a successful run as success once it ended', async () => {
     const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
     const pm = makeMockPM({ 'pre:g1:sc1': { code: 0 } });
     const runner = createPreScriptRunner({
@@ -478,12 +465,11 @@ describe('createPreScriptRunner — getRunState / getRecentResult', () => {
     });
 
     await runner.run();
-    expect(runner.getRunState()).toBeNull();
-    const recent = expectPresent(runner.getRecentResult());
-    expect(recent.status).toBe('done');
+    expect(runner.isRunning()).toBe(false);
+    expect(runner.getSnapshot()?.status).toBe('success');
   });
 
-  it('getRecentResult returns error after failed pipeline', async () => {
+  it('keeps a failed run as error once it ended', async () => {
     const steps = [makeStep('s1', 'parallel', [ref('g1', 'sc1')])];
     const pm = makeMockPM({ 'pre:g1:sc1': { code: 1 } });
     const runner = createPreScriptRunner({
@@ -494,8 +480,7 @@ describe('createPreScriptRunner — getRunState / getRecentResult', () => {
     });
 
     await runner.run();
-    const recent = expectPresent(runner.getRecentResult());
-    expect(recent.status).toBe('error');
+    expect(runner.getSnapshot()?.status).toBe('error');
   });
 });
 

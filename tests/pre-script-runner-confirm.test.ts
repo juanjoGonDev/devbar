@@ -16,9 +16,11 @@ import type {
   Group,
   LogEntry,
   PreScript,
+  Pipeline,
   PreStep,
   PreStepScriptRef,
 } from '../src/domain-types.js';
+import { fromLegacySteps } from '../src/pipeline-graph.js';
 
 // ─── Mock factory ───────────────────────────────────────────────────────────
 
@@ -124,7 +126,9 @@ function makeConfigStore(groups: Group[], steps: PreStep[] = []) {
   const state = { steps };
   return {
     getGroup: (id: string): Group | null => byId.get(id) ?? null,
-    getPreSteps: (): PreStep[] => state.steps,
+    // The old ordered steps, chained from the trigger: a chain runs exactly
+    // like the list did.
+    getPipeline: (): Pipeline => fromLegacySteps(state.steps),
     setSteps: (next: PreStep[]): void => {
       state.steps = next;
     },
@@ -291,8 +295,7 @@ describe('createPreScriptRunner — confirmation gate', () => {
     expect(onError).not.toHaveBeenCalled();
     expect(confirmScript).toHaveBeenCalledTimes(1);
     expect(pm.getState('pre:g1:sc1').status).toBe('stopped');
-    const rr = runner.getRecentResult();
-    expect(rr == null || rr.status !== 'error').toBe(true);
+    expect(runner.getSnapshot()?.status).toBe('cancelled');
     expect(
       getScriptLines(pm, 'pre:g1:sc1').some((l) =>
         l.includes('Cancelado por el usuario'),
@@ -333,7 +336,7 @@ describe('createPreScriptRunner — confirmation gate', () => {
       vi.fn<
         (
           error: string,
-          context: { runId?: number; failedStepIndex?: number },
+          context: { runId?: number; failedScripts?: number },
         ) => void
       >();
     const runner = createPreScriptRunner({
@@ -346,12 +349,12 @@ describe('createPreScriptRunner — confirmation gate', () => {
     const res = await runner.run();
     expectFailed(res);
     expect(res.cancelled).toBeFalsy();
-    expect(res.error).toBe('step_1_failed');
+    expect(res.error).toBe('scripts_failed:1');
     expect(onError).toHaveBeenCalledTimes(1);
     const [errorArg, contextArg] = onError.mock.calls[0] ?? [];
-    expect(errorArg).toBe('step_1_failed');
+    expect(errorArg).toBe('scripts_failed:1');
     expect(typeof contextArg?.runId).toBe('number');
-    expect(contextArg?.failedStepIndex).toBe(1);
+    expect(contextArg?.failedScripts).toBe(1);
   });
 
   it('R2.5: parallel step with 2 confirm:true scripts → confirmScript called once per script', async () => {

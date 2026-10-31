@@ -90,7 +90,8 @@ const api: DevBarApi = {
     setFixtureGroups: (on, repeat) =>
       ipcRenderer.invoke('dev:setFixtureGroups', { on, repeat }),
   },
-  openConfig: () => ipcRenderer.invoke('window:openConfig'),
+  openConfig: (...section) =>
+    ipcRenderer.invoke('window:openConfig', ...section),
   openConfigChangelog: () => ipcRenderer.invoke('window:openConfigChangelog'),
   onConfigGoto: (cb) => subscribe('config:goto', cb),
   hideTray: () => ipcRenderer.invoke('window:hideTray'),
@@ -154,34 +155,38 @@ const api: DevBarApi = {
   applyImportedConfig: (args) => ipcRenderer.invoke('config:applyImport', args),
   pickFolder: (defaultPath) =>
     ipcRenderer.invoke('dialog:pickFolder', { defaultPath }),
-  runPreScripts: () => ipcRenderer.invoke('prescripts:run'),
-  cancelPreScripts: () => ipcRenderer.invoke('prescripts:cancel'),
-  getPreSteps: () => ipcRenderer.invoke('pipeline:list'),
-  savePreStep: (data) => ipcRenderer.invoke('preSteps:save', { data }),
-  deletePreStep: (stepId) => ipcRenderer.invoke('preSteps:delete', { stepId }),
-  reorderPreSteps: (orderedIds) =>
-    ipcRenderer.invoke('preSteps:reorder', { orderedIds }),
+  listWorkflows: () => ipcRenderer.invoke('workflows:list'),
+  saveWorkflow: (workflow) =>
+    ipcRenderer.invoke('workflows:save', { workflow }),
+  createWorkflow: (name, trigger) =>
+    ipcRenderer.invoke('workflows:create', { name, trigger }),
+  deleteWorkflow: (workflowId) =>
+    ipcRenderer.invoke('workflows:delete', { workflowId }),
+  setWorkflowEnabled: (workflowId, enabled) =>
+    ipcRenderer.invoke('workflows:setEnabled', { workflowId, enabled }),
+  makeStartupWorkflow: (workflowId) =>
+    ipcRenderer.invoke('workflows:makeStartup', { workflowId }),
+  runWorkflow: (workflowId) =>
+    ipcRenderer.invoke('workflows:run', { workflowId }),
+  stopWorkflow: (workflowId) =>
+    ipcRenderer.invoke('workflows:stop', { workflowId }),
+  retryWorkflowFrom: (workflowId, blockId) =>
+    ipcRenderer.invoke('workflows:retryFrom', { workflowId, blockId }),
+  getWorkflowRunStates: () => ipcRenderer.invoke('workflows:runState'),
+  getWorkflowScriptLog: (workflowId, runId, ref) =>
+    ipcRenderer.invoke('workflows:scriptLog', { workflowId, runId, ref }),
+  openWorkflowLog: (workflowId, ref = null) =>
+    ipcRenderer.invoke('workflows:openLog', { workflowId, ref }),
+  onWorkflowsUpdate: (cb) => subscribe('workflows:update', cb),
+  onWorkflowRunState: (cb) => subscribe('workflows:runState', cb),
+  setGroupHiddenInTray: (groupId, hidden) =>
+    ipcRenderer.invoke('groups:setHiddenInTray', { groupId, hidden }),
   savePreScript: (groupId, data) =>
     ipcRenderer.invoke('preScripts:save', { groupId, data }),
   deletePreScript: (groupId, scriptId) =>
     ipcRenderer.invoke('preScripts:delete', { groupId, scriptId }),
   reorderPreScripts: (groupId, orderedIds) =>
     ipcRenderer.invoke('preScripts:reorder', { groupId, orderedIds }),
-  assignScriptToStep: (stepId, groupId, scriptId, position) =>
-    ipcRenderer.invoke('preSteps:assignScript', {
-      stepId,
-      groupId,
-      scriptId,
-      position,
-    }),
-  unassignScriptFromStep: (stepId, groupId, scriptId) =>
-    ipcRenderer.invoke('preSteps:unassignScript', {
-      stepId,
-      groupId,
-      scriptId,
-    }),
-  getPipelineState: () => ipcRenderer.invoke('pipeline:state'),
-  onPipelineUpdate: (cb) => subscribe('pipeline:update', cb),
   getPrescriptConfirmContext: (token) =>
     ipcRenderer.invoke('prescriptConfirm:getContext', token),
   resolvePrescriptConfirm: (token, decision) =>
@@ -190,6 +195,7 @@ const api: DevBarApi = {
   // Static platform value (not IPC) so renderers can adapt their text to the
   // OS synchronously at load time.
   platform: process.platform,
+  arch: process.arch,
   getAppVersion: () => ipcRenderer.invoke('app:version'),
   getChangelog: () => ipcRenderer.invoke('updates:changelog'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
@@ -209,6 +215,7 @@ const api: DevBarApi = {
   buildSilencePattern,
   onUpdate: (cb) => subscribe('groups:update', cb),
   onThemeChange: (cb) => subscribe('settings:theme', cb),
+  onSettingsChange: (cb) => subscribe('settings:changed', cb),
   onLog: (cb) => subscribe('logs:line', cb),
   onLogsSelect: (cb) => subscribe('logs:select', cb),
   onBranchesChanged: (cb) => subscribe('branches:changed', cb),

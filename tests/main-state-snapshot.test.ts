@@ -10,57 +10,72 @@ import {
 import type {
   GlobalSettings,
   Group,
-  PreStep,
   ProcessState,
+  Workflow,
+  WorkflowRunRecord,
 } from '../src/domain-types.js';
+import type { WorkflowRunState } from '../src/ipc-contract.js';
+import { graph } from './helpers/pipeline.js';
 
 interface Harness {
   groups: Group[];
   settings: GlobalSettings;
-  preSteps: PreStep[];
+  workflows: Workflow[];
+  runs: Record<string, WorkflowRunRecord>;
+  scheduleState: Record<string, string>;
+  runStates: Map<string, WorkflowRunState>;
   states: Map<string, ProcessState>;
-  runState: {
-    status: 'running' | 'done' | 'error' | 'idle';
-    currentStep: number;
-    totalSteps: number;
-    runId: number;
-    startedAt: number;
-  } | null;
-  recentResult: {
-    status: 'done' | 'error';
-    error: string | null;
-    runId: number;
-  } | null;
   groupErrors: Map<string, string | null>;
+  now: number;
 }
 
 function harness(overrides: Partial<Harness> = {}) {
   const state: Harness = {
     groups: [],
     settings: makeSettings(),
-    preSteps: [],
+    workflows: [],
+    runs: {},
+    scheduleState: {},
+    runStates: new Map(),
     states: new Map(),
-    runState: null,
-    recentResult: null,
     groupErrors: new Map(),
+    now: new Date(2026, 0, 5, 9, 0).getTime(),
     ...overrides,
   };
   const snapshots = createStateSnapshots({
     configStore: {
       listGroups: () => state.groups,
       getGlobalSettings: () => state.settings,
-      getPreSteps: () => state.preSteps,
+      listWorkflows: () => state.workflows,
+      getWorkflowRuns: () => state.runs,
+      getScheduleLastRun: (id) => state.scheduleState[id] ?? null,
     },
     processManager: {
       getState: (id) => state.states.get(id) ?? makeState({ id }),
     },
-    preScriptRunner: {
-      getRunState: () => state.runState,
-      getRecentResult: () => state.recentResult,
+    workflowRunner: {
+      runState: (id) => state.runStates.get(id) ?? null,
+      isRunning: (id) => state.runStates.get(id)?.status === 'running',
     },
     groupErrors: state.groupErrors,
+    now: () => state.now,
   });
   return { state, snapshots };
+}
+
+function workflow(id: string, extra: Partial<Workflow> = {}): Workflow {
+  return {
+    id,
+    name: id,
+    enabled: true,
+    hidden: false,
+    trigger: {
+      kind: 'manual',
+      confirm: false,
+    },
+    graph: graph(['A', 'B'], ['trigger>A', 'A>B']),
+    ...extra,
+  };
 }
 
 describe('src/main/state-snapshot.ts', () => {
@@ -180,75 +195,78 @@ describe('src/main/state-snapshot.ts', () => {
     });
   });
 
-  describe('snapshotPipelineState', () => {
-    it('is idle with the configured step count when nothing has run', () => {
+  describe('workflowEntries', () => {
+    it('lists each workflow with its runnable script count and last run', () => {
+      const run: WorkflowRunRecord = {
+        startedAt: 1,
+        finishedAt: 3,
+        durationMs: 2,
+        result: 'warning',
+      };
       const { snapshots } = harness({
-        preSteps: [{ id: 's1', mode: 'serial', scripts: [] }],
+        workflows: [workflow('w1'), workflow('w2')],
+        runs: { w1: run },
       });
-      expect(snapshots.snapshotPipelineState()).toMatchObject({
-        status: 'idle',
-        currentStep: null,
-        totalSteps: 1,
-        lastError: null,
-        lastRunId: null,
-        startedAt: null,
+      expect(snapshots.workflowEntries()).toEqual([
+        {
+          workflow: workflow('w1'),
+          lastRun: run,
+          nextRunAt: null,
+          scriptCount: 2,
+          running: null,
+        },
+        {
+          workflow: workflow('w2'),
+          lastRun: null,
+          nextRunAt: null,
+          scriptCount: 2,
+          running: null,
+        },
+      ]);
+    });
+
+    it('carries the progress of the run in flight', () => {
+      const { snapshots } = harness({
+        workflows: [workflow('w1')],
+        runStates: new Map([
+          [
+            'w1',
+            {
+              workflowId: 'w1',
+              runId: 7,
+              aggregatorId: 'pre-pipeline:7',
+              status: 'running',
+              blocks: [],
+              scripts: [],
+              doneScripts: 1,
+              totalScripts: 2,
+              startedAt: 5,
+              finishedAt: null,
+            },
+          ],
+        ]),
+      });
+      expect(snapshots.workflowEntries()[0]?.running).toEqual({
+        runId: 7,
+        doneScripts: 1,
+        totalScripts: 2,
+        startedAt: 5,
       });
     });
 
-    it('reports the live run while one is in flight', () => {
-      const { snapshots } = harness({
-        runState: {
-          status: 'running',
-          currentStep: 2,
-          totalSteps: 4,
-          runId: 7,
-          startedAt: 1000,
+    it('says when an enabled scheduled workflow fires next', () => {
+      const scheduled = workflow('w1', {
+        trigger: {
+          kind: 'schedule',
+          schedule: { rules: [{ time: '23:30', days: [] }], interval: null },
         },
       });
-      expect(snapshots.snapshotPipelineState()).toMatchObject({
-        status: 'running',
-        currentStep: 2,
-        totalSteps: 4,
-        lastRunId: '7',
-        startedAt: 1000,
-      });
-    });
-
-    it('surfaces the error of a failed recent result', () => {
-      const { snapshots } = harness({
-        recentResult: { status: 'error', error: 'vpn failed', runId: 9 },
-      });
-      expect(snapshots.snapshotPipelineState()).toMatchObject({
-        status: 'error',
-        lastError: 'vpn failed',
-        lastRunId: '9',
-      });
-    });
-
-    it('carries no error for a successful recent result', () => {
-      const { snapshots } = harness({
-        recentResult: { status: 'done', error: null, runId: 9 },
-      });
-      expect(snapshots.snapshotPipelineState().lastError).toBeNull();
-    });
-
-    it('remembers the run id after the badge TTL clears it', () => {
-      const { state, snapshots } = harness({
-        recentResult: { status: 'done', error: null, runId: 9 },
-      });
-      snapshots.snapshotPipelineState();
-      state.recentResult = null;
-      expect(snapshots.snapshotPipelineState().lastRunId).toBe('9');
-    });
-
-    it('forgets the run id once the buffers are wiped', () => {
-      const { state, snapshots } = harness({
-        recentResult: { status: 'done', error: null, runId: 9 },
-      });
-      snapshots.snapshotPipelineState();
-      state.recentResult = null;
-      snapshots.forgetPipelineRunId();
-      expect(snapshots.snapshotPipelineState().lastRunId).toBeNull();
+      const { snapshots, state } = harness({ workflows: [scheduled] });
+      expect(snapshots.workflowEntries()[0]?.nextRunAt).toBe(
+        new Date(2026, 0, 5, 23, 30).getTime(),
+      );
+      state.workflows = [{ ...scheduled, enabled: false }];
+      expect(snapshots.workflowEntries()[0]?.nextRunAt).toBeNull();
     });
   });
 });

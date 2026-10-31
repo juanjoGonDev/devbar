@@ -5,23 +5,44 @@ import {
   FIXTURE_ID_PREFIX,
   type FixtureEnvironment,
 } from './fixture-groups.js';
-import type { Group } from '../domain-types.js';
+import {
+  buildFixtureWorkflowRuns,
+  buildFixtureWorkflows,
+} from './fixture-workflows.js';
+import type { Group, Workflow, WorkflowRunRecord } from '../domain-types.js';
 
 /**
- * Turns the dev panel's "Grupos de prueba" on and off.
+ * Turns the dev panel's "Grupos y workflows de prueba" on and off.
  *
- * On: the store's groups overlay takes the fixture set, so every window shows
- * only the test groups while the user's own stay on disk untouched — and
- * their running processes keep running, out of sight.
+ * On: the store's overlay takes the fixture groups, the fixture workflows and
+ * their seeded last runs, so every window shows only the test set while the
+ * user's own groups, workflows and run history stay on disk untouched — and
+ * their running processes keep running, out of sight. Nothing is run: the
+ * startup workflow only runs at boot, and the overlay never survives one.
  *
- * Off: every fixture process is stopped and AWAITED first, then the overlay
- * goes and the real groups come back. A stop that fails keeps the overlay
- * up: dropping it would leave a running child that no window can reach.
+ * Off: every workflow run still going is cancelled and AWAITED (so its last
+ * run lands in the overlay, not in the real history), then every fixture
+ * process is stopped and awaited, then the overlay goes and the real groups
+ * and workflows come back. A stop that fails keeps the overlay up: dropping
+ * it would leave a running child that no window can reach.
+ *
+ * Nothing is persisted, so a restart while it is on comes back on the real
+ * configuration too.
  */
+
+export interface FixtureOverlay {
+  groups: readonly Group[];
+  workflows: readonly Workflow[];
+  workflowRuns: Readonly<Record<string, WorkflowRunRecord>>;
+}
 
 export interface FixtureHost {
   environment: () => FixtureEnvironment;
-  setOverlay: (groups: readonly Group[] | null) => void;
+  setOverlay: (overlay: FixtureOverlay | null) => void;
+  /** The listed workflows (the overlay's, while it is on) running now. */
+  runningWorkflowIds: () => string[];
+  /** Cancels a workflow run and resolves once it has settled. */
+  stopWorkflow: (id: string) => Promise<void>;
   /** Every process id the process manager tracks. */
   processIds: () => string[];
   stop: (id: string) => Promise<{ ok: boolean; error?: string | undefined }>;
@@ -60,8 +81,11 @@ export function createFixtureMode(host: FixtureHost): {
   let repeat = 1;
   const status = (): FixtureStatus => ({ active, repeat });
 
-  /** Stops every fixture process; the ids that would not stop. */
+  /** Stops the demo runs, then every fixture process; what would not stop. */
   async function stopFixtures(): Promise<string[]> {
+    await Promise.all(
+      host.runningWorkflowIds().map((id) => host.stopWorkflow(id)),
+    );
     const ids = host.processIds().filter(isFixtureProcess);
     const results = await Promise.all(ids.map((id) => host.stop(id)));
     const failed = ids.filter((_, index) => !results[index]?.ok);
@@ -85,7 +109,11 @@ export function createFixtureMode(host: FixtureHost): {
         const failed = await stopFixtures();
         if (failed.length) return refused(failed);
       }
-      host.setOverlay(buildFixtureGroups(host.environment(), copies));
+      host.setOverlay({
+        groups: buildFixtureGroups(host.environment(), copies),
+        workflows: buildFixtureWorkflows(),
+        workflowRuns: buildFixtureWorkflowRuns(Date.now()),
+      });
       active = true;
       repeat = copies;
       host.refresh();

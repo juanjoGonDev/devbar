@@ -4,11 +4,16 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openConfigWindow, updateStatus } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
 import type { UpdatePhase, UpdateStatus } from '../src/ipc-contract.js';
+import { tipOf } from './helpers/tip.js';
 
 function button(id: string): HTMLButtonElement {
   const el = document.getElementById(id);
   if (!(el instanceof HTMLButtonElement)) throw new Error(`no #${id}`);
   return el;
+}
+
+function checkLabel(): string {
+  return document.querySelector('#check-updates .btn-label')?.textContent ?? '';
 }
 
 function statusText(): string {
@@ -29,6 +34,15 @@ function el(id: string): HTMLElement {
   const found = document.getElementById(id);
   if (!found) throw new Error(`no #${id}`);
   return found;
+}
+
+/** The badge state of the update card, which picks its colour and glyph. */
+function cardState(): string | undefined {
+  return el('update-card').dataset.state;
+}
+
+function cardTitle(): string {
+  return el('update-title').textContent ?? '';
 }
 
 function progressBar(): HTMLProgressElement {
@@ -69,11 +83,22 @@ describe('renderer/config/updates-pane.ts', () => {
     it('says "al día" and hides the install button with no release', async () => {
       win = await openConfigWindow();
       await win.settle('getUpdateStatus', updateStatus(null));
-      expect(statusText()).toContain('Al día');
-      expect(statusText()).toContain('nunca');
+      expect(statusText()).toBe('Aún no se ha buscado ninguna actualización');
       expect(button('apply-update').style.display).toBe('none');
       expect(versionChip().classList.contains('has-update')).toBe(false);
-      expect(versionChip().title).toBe('Ver changelog');
+      expect(tipOf(versionChip())).toBe('Ver changelog');
+    });
+
+    it('dates the last check without repeating the headline', async () => {
+      win = await openConfigWindow();
+      const at = new Date();
+      at.setHours(14, 41, 0, 0);
+      await win.settle('getUpdateStatus', {
+        ...updateStatus(null),
+        lastCheckAt: at.getTime(),
+      });
+      expect(cardTitle()).toBe('Estás al día');
+      expect(statusText()).toBe('Última búsqueda hoy a las 14:41');
     });
 
     it('offers the download when a release is available', async () => {
@@ -86,7 +111,7 @@ describe('renderer/config/updates-pane.ts', () => {
       expect(statusText()).not.toContain('nunca');
       expect(button('apply-update').textContent).toBe('Actualizar a v9.9.9');
       expect(versionChip().classList.contains('has-update')).toBe(true);
-      expect(versionChip().title).toContain('v9.9.9 disponible');
+      expect(tipOf(versionChip())).toContain('v9.9.9 disponible');
     });
 
     it('offers the restart once the release is staged', async () => {
@@ -111,16 +136,94 @@ describe('renderer/config/updates-pane.ts', () => {
     });
   });
 
+  describe('status badge', () => {
+    it('shows a check when there is nothing to install', async () => {
+      win = await openConfigWindow();
+      await win.settle('getUpdateStatus', updateStatus(null));
+      expect(cardState()).toBe('ok');
+      expect(cardTitle()).toBe('Estás al día');
+    });
+
+    it('stands out when a release is waiting', async () => {
+      win = await openConfigWindow();
+      await win.settle('getUpdateStatus', updateStatus('9.9.9'));
+      expect(cardState()).toBe('available');
+      expect(cardTitle()).toBe('Actualización disponible');
+    });
+
+    it('spins while a download runs', async () => {
+      win = await openConfigWindow();
+      await withPhase(win, {
+        state: 'downloading',
+        version: '9.9.9',
+        received: 1,
+        total: 2,
+      });
+      expect(cardState()).toBe('busy');
+      expect(cardTitle()).toBe('Actualizando DevBar');
+    });
+
+    it('spins while a check runs', async () => {
+      win = await openConfigWindow();
+      await withPhase(win, { state: 'checking' });
+      expect(cardState()).toBe('busy');
+      expect(cardTitle()).toBe('Buscando actualizaciones');
+    });
+
+    it('turns red when a step failed', async () => {
+      win = await openConfigWindow();
+      await withPhase(win, {
+        state: 'download-failed',
+        version: '9.9.9',
+        reason: 'ECONNRESET',
+      });
+      expect(cardState()).toBe('error');
+      expect(cardTitle()).toBe('No se pudo actualizar');
+    });
+
+    it('says the check itself failed', async () => {
+      win = await openConfigWindow();
+      await withPhase(win, { state: 'check-failed', reason: 'sin red' });
+      expect(cardState()).toBe('error');
+      expect(cardTitle()).toBe('No se pudo comprobar');
+    });
+
+    it('offers the downloaded package as ready to install', async () => {
+      win = await openConfigWindow();
+      await withPhase(win, {
+        state: 'ready-to-install',
+        version: '9.9.9',
+        install: 'manual',
+        path: '/home/pi/Downloads/DevBar.AppImage',
+        command: null,
+      });
+      expect(cardState()).toBe('available');
+      expect(cardTitle()).toBe('Lista para instalar');
+    });
+
+    it('keeps the card neutral until a status arrives', async () => {
+      win = await openConfigWindow();
+      expect(cardState()).toBeUndefined();
+    });
+  });
+
   describe('manual check', () => {
-    it('restores its own label after the check answers', async () => {
+    it('reads "Buscar ahora" next to a refresh icon', async () => {
       win = await openConfigWindow();
       const check = button('check-updates');
-      const label = check.textContent;
+      expect(checkLabel()).toBe('Buscar ahora');
+      expect(check.querySelector('[data-icon="refresh-cw"]')).not.toBeNull();
+    });
+
+    it('restores its own label and icon after the check answers', async () => {
+      win = await openConfigWindow();
+      const check = button('check-updates');
       check.click();
-      expect(check.textContent).toBe('Buscando…');
+      expect(checkLabel()).toBe('Buscando…');
       expect(check.disabled).toBe(true);
       await win.settle('checkForUpdates', updateStatus('9.9.9'));
-      expect(check.textContent).toBe(label);
+      expect(checkLabel()).toBe('Buscar ahora');
+      expect(check.querySelector('[data-icon="refresh-cw"]')).not.toBeNull();
       expect(check.disabled).toBe(false);
       expect(statusText()).toContain('v9.9.9');
     });

@@ -18,6 +18,7 @@ const STATE = {
       color: 'warn',
       branch: 'main',
       lastError: null,
+      hidden: true,
       commands: [
         {
           id: 'web',
@@ -43,12 +44,22 @@ const STATE = {
       ],
     },
   ],
-  pipeline: {
-    status: 'idle',
-    currentStep: null,
-    totalSteps: 2,
-    lastError: null,
-  },
+  workflows: [
+    {
+      id: 'w1',
+      name: 'Arranque',
+      startup: true,
+      trigger: 'startup',
+      running: true,
+      hidden: false,
+      doneScripts: 3,
+      totalScripts: 8,
+      startedAt: 5,
+      nextRunAt: null,
+      lastResult: 'warning',
+      lastFinishedAt: 9,
+    },
+  ],
   update: { currentVersion: '0.11.0', state: 'ready', version: '0.12.0' },
   confirms: [
     {
@@ -74,12 +85,7 @@ describe('renderer/remote/wire.ts', () => {
         now: 0,
         host: { name: '', version: '' },
         groups: [],
-        pipeline: {
-          status: 'idle',
-          currentStep: null,
-          totalSteps: 0,
-          lastError: null,
-        },
+        workflows: [],
         update: { currentVersion: '', state: 'current', version: null },
         confirms: [],
       });
@@ -101,6 +107,7 @@ describe('renderer/remote/wire.ts', () => {
 
       expect(state.groups).toHaveLength(1);
       expect(state.groups[0]?.color).toBe('stopped');
+      expect(state.groups[0]?.hidden).toBe(false);
       expect(state.groups[0]?.commands).toEqual([
         {
           id: 'c',
@@ -166,5 +173,77 @@ describe('renderer/remote/wire.ts', () => {
         silenceErrors: false,
       });
     });
+  });
+});
+
+describe('renderer/remote/wire.ts workflows', () => {
+  it('narrows each workflow, dropping malformed entries', () => {
+    const state = stateView({
+      ...STATE,
+      workflows: [
+        null,
+        { id: 7 },
+        { id: 'w2', name: 'X', lastResult: 'weird', running: 'yes' },
+        {
+          id: 'w3',
+          name: 'Y',
+          hidden: true,
+          trigger: 'schedule',
+          nextRunAt: 42,
+        },
+        {
+          id: 'w4',
+          name: 'Z',
+          startup: true,
+          trigger: 'weird',
+          startedAt: 'x',
+        },
+      ],
+    });
+    expect(state.workflows).toEqual([
+      {
+        id: 'w2',
+        name: 'X',
+        startup: false,
+        trigger: 'manual',
+        running: false,
+        hidden: false,
+        doneScripts: null,
+        totalScripts: 0,
+        startedAt: null,
+        nextRunAt: null,
+        lastResult: 'error',
+        lastFinishedAt: null,
+      },
+      {
+        id: 'w3',
+        name: 'Y',
+        startup: false,
+        trigger: 'schedule',
+        running: false,
+        hidden: true,
+        doneScripts: null,
+        totalScripts: 0,
+        startedAt: null,
+        nextRunAt: 42,
+        lastResult: null,
+        lastFinishedAt: null,
+      },
+      {
+        id: 'w4',
+        name: 'Z',
+        startup: true,
+        // An older server only says whether it runs at startup.
+        trigger: 'startup',
+        running: false,
+        hidden: false,
+        doneScripts: null,
+        totalScripts: 0,
+        startedAt: null,
+        nextRunAt: null,
+        lastResult: null,
+        lastFinishedAt: null,
+      },
+    ]);
   });
 });

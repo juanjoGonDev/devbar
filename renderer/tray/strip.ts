@@ -1,4 +1,5 @@
 import { icon, type IconName } from '../icon.js';
+import { spinPhase } from '../spin-phase.js';
 
 /**
  * The slim status strips under the popover's header row (update phase,
@@ -66,7 +67,7 @@ export function stripTextButton(
 export function stripProgress(percent: number | null): HTMLDivElement {
   const bar = document.createElement('div');
   bar.className = 'strip-progress';
-  if (percent === null) bar.classList.add('indeterminate');
+  if (percent === null) spinPhase(bar).classList.add('indeterminate');
   else bar.style.width = `${percent}%`;
   return bar;
 }

@@ -29,6 +29,7 @@ function group(name: string, extra: Partial<Group> = {}): Group {
     actions: [],
     preScripts: [],
     waitForPipeline: true,
+    hiddenInTray: false,
     ...extra,
   };
 }

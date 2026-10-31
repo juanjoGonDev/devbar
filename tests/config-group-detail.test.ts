@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { group, openConfigWindow } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
+import { byTip } from './helpers/tip.js';
+import { startupEntries } from './helpers/startup-workflow.js';
 
 function detail(): HTMLElement {
   const el = document.getElementById('group-detail');
@@ -18,7 +20,7 @@ function nameInput(): HTMLInputElement {
 }
 
 function pathInput(): HTMLInputElement {
-  const el = detail().querySelector<HTMLInputElement>('.detail-field input');
+  const el = detail().querySelector<HTMLInputElement>('#grp-path');
   if (!el) throw new Error('the detail pane drew no path field');
   return el;
 }
@@ -105,7 +107,7 @@ describe('renderer/config/group-detail.ts', () => {
     it('records the mode radio', async () => {
       await openWithGroup();
       const multi = detail().querySelector<HTMLInputElement>(
-        '.mode-toggle-row input[value="multi"]',
+        '.mode-segmented input[value="multi"]',
       );
       check(multi!, true);
       expect(saveDisabled()).toBe(false);
@@ -157,7 +159,7 @@ describe('renderer/config/group-detail.ts', () => {
     it('colours the icon from a swatch and marks the group dirty', async () => {
       await openWithGroup();
       click(detail().querySelector('.icon-color-trigger'));
-      click(detail().querySelector('.icon-color-swatch[title="Verde"]'));
+      click(detail().querySelector(`.icon-color-swatch:is(${byTip('Verde')})`));
       expect(
         detail().querySelector<HTMLElement>('.icon-btn .icon')?.style.color,
       ).toBe('rgb(34, 197, 94)');
@@ -166,7 +168,9 @@ describe('renderer/config/group-detail.ts', () => {
 
     it('shows the stored colour and clears it with "Sin color"', async () => {
       await openWithGroup({ iconColor: '#ef4444' });
-      const red = detail().querySelector('.icon-color-swatch[title="Rojo"]');
+      const red = detail().querySelector(
+        `.icon-color-swatch:is(${byTip('Rojo')})`,
+      );
       expect(red?.getAttribute('aria-pressed')).toBe('true');
       expect(
         detail().querySelector<HTMLElement>('.icon-color-dot')?.style
@@ -285,14 +289,14 @@ describe('renderer/config/group-detail.ts', () => {
     it('does nothing when the user backs out', async () => {
       const w = await openWithGroup();
       vi.spyOn(window, 'confirm').mockReturnValue(false);
-      click(detail().querySelector('.detail-btn-row .danger'));
+      click(detail().querySelector('.detail-danger-zone .danger'));
       expect(w.callCount('deleteGroup')).toBe(0);
     });
 
     it('keeps the group visible when main refuses', async () => {
       const w = await openWithGroup();
       vi.spyOn(window, 'confirm').mockReturnValue(true);
-      click(detail().querySelector('.detail-btn-row .danger'));
+      click(detail().querySelector('.detail-danger-zone .danger'));
       await w.settle('deleteGroup', { ok: false, error: 'still running' });
       expect(toastText()).toBe('still running');
       expect(nameInput().value).toBe('api');
@@ -301,7 +305,7 @@ describe('renderer/config/group-detail.ts', () => {
     it('falls back to a generic reason when main gives none', async () => {
       const w = await openWithGroup();
       vi.spyOn(window, 'confirm').mockReturnValue(true);
-      click(detail().querySelector('.detail-btn-row .danger'));
+      click(detail().querySelector('.detail-danger-zone .danger'));
       await w.settle('deleteGroup', { ok: false });
       expect(toastText()).toBe('No se pudo borrar el grupo');
     });
@@ -309,12 +313,15 @@ describe('renderer/config/group-detail.ts', () => {
     it('empties the pane and refreshes the pipeline once it is gone', async () => {
       const w = await openWithGroup();
       vi.spyOn(window, 'confirm').mockReturnValue(true);
-      click(detail().querySelector('.detail-btn-row .danger'));
+      click(detail().querySelector('.detail-danger-zone .danger'));
       await w.settle('deleteGroup', { ok: true });
       await w.settle('listGroups', []);
-      await w.settle('getPreSteps', []);
+      await w.settle(
+        'listWorkflows',
+        startupEntries({ blocks: [], edges: [] }),
+      );
       expect(detail().querySelector('.detail-empty')).not.toBeNull();
-      expect(w.callCount('getPreSteps')).toBeGreaterThan(0);
+      expect(w.callCount('listWorkflows')).toBeGreaterThan(0);
     });
   });
 });

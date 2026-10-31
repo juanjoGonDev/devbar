@@ -21,9 +21,9 @@ function harness(overrides: Partial<ShutdownDeps> = {}) {
     smokeMode: false,
     repoWatcher: { closeAll: () => calls.push('closeAll') },
     remoteServer: { close: () => calls.push('remoteClose') },
-    preScriptRunner: {
-      isRunning: () => false,
-      cancel: () => calls.push('cancel'),
+    workflowRunner: {
+      anyRunning: () => false,
+      cancelAll: () => calls.push('cancel'),
     },
     processManager: {
       stopAll: async () => {
@@ -97,19 +97,22 @@ describe('src/main/shutdown.ts', () => {
       ]);
     });
 
-    it('cancels a running pipeline', async () => {
+    it('cancels the running workflows', async () => {
       const h = harness({
-        preScriptRunner: { isRunning: () => true, cancel: () => 'cancelled' },
+        workflowRunner: {
+          anyRunning: () => true,
+          cancelAll: () => 'cancelled',
+        },
       });
       await h.controller.cleanup();
       expect(h.controller.phase()).toBe('done');
     });
 
-    it('survives a pipeline cancel that throws', async () => {
+    it('survives a workflow cancel that throws', async () => {
       const h = harness({
-        preScriptRunner: {
-          isRunning: () => true,
-          cancel: () => {
+        workflowRunner: {
+          anyRunning: () => true,
+          cancelAll: () => {
             throw new Error('nope');
           },
         },

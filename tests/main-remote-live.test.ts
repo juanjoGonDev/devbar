@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLive, type RemoteRuntime } from '../src/main/remote/live.js';
 import type { EventSink } from '../src/main/remote/events.js';
-import type { GroupState, PipelineState } from '../src/ipc-contract.js';
+import type { GroupState, WorkflowEntry } from '../src/ipc-contract.js';
 import type { RemoteConfirmView } from '../src/ipc-contract/remote-wire.js';
 import type { UpdateStatus } from '../src/ipc-contract/updates-api.js';
 import type { LogEntry } from '../src/domain-types.js';
@@ -13,15 +13,6 @@ interface FakeTimer {
   cleared: boolean;
   repeat: boolean;
 }
-
-const PIPELINE: PipelineState = {
-  status: 'idle',
-  currentStep: null,
-  totalSteps: 0,
-  lastError: null,
-  lastRunId: null,
-  startedAt: null,
-};
 
 function groupState(id: string): GroupState {
   return {
@@ -72,6 +63,9 @@ function harness() {
   let confirmListener: (() => void) | null = null;
   let confirms: RemoteConfirmView[] = [];
   let groups = [groupState('g1')];
+  let showFold = true;
+  let workflows: WorkflowEntry[] = [];
+  let showWorkflowFold = false;
   const branches = new Map<string, string>([['g1', 'main']]);
   let branchReads = 0;
   let presence = 0;
@@ -89,7 +83,9 @@ function harness() {
   };
   const runtime: RemoteRuntime = {
     groupStates: () => groups,
-    pipelineState: () => PIPELINE,
+    showHiddenGroupsFold: () => showFold,
+    showHiddenWorkflowsFold: () => showWorkflowFold,
+    workflowEntries: () => workflows,
     currentBranch: (groupId) => {
       branchReads += 1;
       return Promise.resolve({ ok: true, branch: branches.get(groupId) });
@@ -164,6 +160,15 @@ function harness() {
     setGroups: (next: GroupState[]) => {
       groups = next;
     },
+    setShowFold: (next: boolean) => {
+      showFold = next;
+    },
+    setWorkflows: (next: WorkflowEntry[]) => {
+      workflows = next;
+    },
+    setShowWorkflowFold: (next: boolean) => {
+      showWorkflowFold = next;
+    },
     setUpdate: (next: UpdateStatus) => {
       update = next;
     },
@@ -193,12 +198,54 @@ describe('src/main/remote/live.ts', () => {
         now: 1_000,
         host: { name: 'mac-de-ana', version: '0.11.0' },
         groups: [{ id: 'g1', branch: 'main' }],
-        pipeline: { status: 'idle' },
+        workflows: [],
         update: { state: 'current' },
         confirms: [],
       });
       await h.live.state();
       expect(h.branchReads()).toBe(1);
+    });
+
+    it('follows the tray fold setting for the groups hidden from it', async () => {
+      const h = harness();
+      const hidden = groupState('g2');
+      hidden.group = { ...hidden.group, hiddenInTray: true };
+      h.setGroups([groupState('g1'), hidden]);
+
+      expect((await h.live.state()).groups.map((g) => g.hidden)).toEqual([
+        false,
+        true,
+      ]);
+      h.setShowFold(false);
+      expect((await h.live.state()).groups.map((g) => g.id)).toEqual(['g1']);
+    });
+
+    it('follows the workflows fold setting for the workflows hidden from it', async () => {
+      const h = harness();
+      const workflowEntry = (id: string, hidden: boolean): WorkflowEntry => ({
+        workflow: {
+          id,
+          name: id,
+          enabled: true,
+          hidden,
+          trigger: { kind: 'manual', confirm: false },
+          graph: { blocks: [], edges: [] },
+        },
+        lastRun: null,
+        nextRunAt: null,
+        scriptCount: 1,
+        running: null,
+      });
+      h.setWorkflows([workflowEntry('w1', false), workflowEntry('w2', true)]);
+
+      expect((await h.live.state()).workflows.map((w) => w.id)).toEqual(['w1']);
+      h.setShowWorkflowFold(true);
+      expect(
+        (await h.live.state()).workflows.map((w) => [w.id, w.hidden]),
+      ).toEqual([
+        ['w1', false],
+        ['w2', true],
+      ]);
     });
 
     it('has no branch for a group that is not a repository', async () => {
@@ -256,7 +303,7 @@ describe('src/main/remote/live.ts', () => {
       const before = phone.events().length;
 
       h.emit('groups:update');
-      h.emit('pipeline:update');
+      h.emit('workflows:update');
       h.emit('groups:update');
       h.fire(250);
 

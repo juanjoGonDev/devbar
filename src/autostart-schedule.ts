@@ -1,4 +1,5 @@
-import type { Group, PreStep } from './domain-types.js';
+import type { Group, Pipeline } from './domain-types.js';
+import { runnableBlocks } from './pipeline-graph.js';
 
 /**
  * Pure release planner for staged login auto-start (D2). Kept free of
@@ -7,85 +8,86 @@ import type { Group, PreStep } from './domain-types.js';
  * algorithm lives here instead.
  */
 export interface AutoStartPlan {
-  /** Eligible groups with no ref anywhere in the pipeline — start right away. */
+  /** Eligible groups with no ref in any runnable block — start right away. */
   immediate: string[];
-  /** stepIndex (0-based) -> eligible groups whose LAST referencing step is this one. */
-  releases: Map<number, string[]>;
+  /**
+   * groupId → the blocks that must ALL complete successfully before that
+   * group's autoStart commands start, in `eligibleGroupIds` order.
+   */
+  awaiting: Map<string, string[]>;
 }
 
 /**
- * Walks `steps` in order; for each ref whose `groupId` is eligible, the
- * ref's step index overwrites any earlier one recorded for that group
- * (later wins) — so a group's NATURAL release point is its LAST referencing
- * step. Both output lists are emitted in `eligibleGroupIds` input order,
- * never steps-walk insertion order, so assertions on the result stay
- * deterministic regardless of how the pipeline happens to be authored.
+ * A group's NATURAL release point is the moment every runnable block holding
+ * one of its scripts has completed — in a DAG there is no "last step", and
+ * the group's own blocks may sit on different branches. A ref in a block
+ * that never runs (disconnected) does not count, so a group placed only
+ * there starts immediately, like a group with no ref at all.
  *
  * `waitingGroupIds` (per-group `Group.waitForPipeline`, default `true`)
- * overrides that natural point for a group WITH at least one ref in the
- * pipeline: instead of its own last referencing step, it releases only at
- * the pipeline's FINAL step. This closes a real defect found in production
- * use — a group's own last step can succeed while a LATER step belonging to
- * a completely different group still disrupts shared infrastructure (e.g. a
- * second `make setup` restarting Docker after the first group already came
- * up and connected to it). A group with no ref anywhere in the pipeline is
- * unaffected by `waitingGroupIds` and still starts immediately (unchanged
- * "Scriptless group starts immediately" behaviour) — waiting only makes
- * sense relative to a step this group actually participates in.
+ * overrides that natural point for a group WITH at least one runnable ref:
+ * it waits for EVERY runnable block, i.e. for the whole pipeline to succeed.
+ * This closes a real defect found in production use — a group's own block
+ * can succeed while another block belonging to a completely different group
+ * still disrupts shared infrastructure (e.g. a second `make setup`
+ * restarting Docker after the first group already came up and connected to
+ * it). A group with no runnable ref is unaffected by `waitingGroupIds` and
+ * still starts immediately — waiting only makes sense relative to a block
+ * this group actually participates in.
+ *
+ * Both outputs follow `eligibleGroupIds` order, never the pipeline's, so
+ * assertions on the result stay deterministic however it was authored.
  */
 export function planAutoStartRelease(input: {
-  steps: readonly PreStep[];
+  pipeline: Pipeline;
   eligibleGroupIds: readonly string[];
   waitingGroupIds?: readonly string[];
 }): AutoStartPlan {
-  const { steps, eligibleGroupIds } = input;
-  const eligible = new Set(eligibleGroupIds);
+  const { pipeline, eligibleGroupIds } = input;
   const waiting = new Set(input.waitingGroupIds ?? []);
-  const lastStepIndexByGroup = new Map<string, number>();
-  for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
-    const step = steps[stepIndex];
-    if (!step) continue;
-    for (const scriptRef of step.scripts) {
-      if (eligible.has(scriptRef.groupId)) {
-        lastStepIndexByGroup.set(scriptRef.groupId, stepIndex);
-      }
+  const runnable = runnableBlocks(pipeline);
+  const runnableSet = new Set(runnable);
+  const ownBlocks = new Map<string, string[]>();
+  for (const block of pipeline.blocks) {
+    if (!runnableSet.has(block.id)) continue;
+    for (const ref of block.scripts) {
+      const list = ownBlocks.get(ref.groupId) ?? [];
+      if (!list.includes(block.id)) list.push(block.id);
+      ownBlocks.set(ref.groupId, list);
     }
   }
-
-  const finalStepIndex = steps.length - 1;
   const immediate: string[] = [];
-  const releases = new Map<number, string[]>();
+  const awaiting = new Map<string, string[]>();
   for (const groupId of eligibleGroupIds) {
-    let releaseStepIndex = lastStepIndexByGroup.get(groupId);
-    if (releaseStepIndex === undefined) {
-      immediate.push(groupId);
-      continue;
-    }
-    if (waiting.has(groupId)) releaseStepIndex = finalStepIndex;
-    const group = releases.get(releaseStepIndex);
-    if (group) group.push(groupId);
-    else releases.set(releaseStepIndex, [groupId]);
+    const own = ownBlocks.get(groupId);
+    if (!own) immediate.push(groupId);
+    else awaiting.set(groupId, waiting.has(groupId) ? [...runnable] : own);
   }
-  return { immediate, releases };
+  return { immediate, awaiting };
+}
+
+/** Awaiting groups every block of which is in `completed`, in plan order. */
+export function releasableGroupIds(
+  plan: AutoStartPlan,
+  completed: ReadonlySet<string>,
+): string[] {
+  return [...plan.awaiting]
+    .filter(([, blocks]) => blocks.every((id) => completed.has(id)))
+    .map(([groupId]) => groupId);
 }
 
 /**
- * Groups whose release step never fired — a genuine failure or a declined
- * confirmation both withhold identically at the same frozen `firedStepIndexes`
- * set (the decided override: one release rule, not two — see the Decided
- * Override note in the tasks artifact).
+ * Groups whose release never came — a genuine failure or a declined
+ * confirmation both withhold identically at the same frozen `completed`
+ * set (the decided override: one release rule, not two).
  */
 export function withheldGroupIds(
   plan: AutoStartPlan,
-  firedStepIndexes: ReadonlySet<number>,
+  completed: ReadonlySet<string>,
 ): string[] {
-  const withheld: string[] = [];
-  const stepIndexes = [...plan.releases.keys()].sort((a, b) => a - b);
-  for (const stepIndex of stepIndexes) {
-    if (firedStepIndexes.has(stepIndex)) continue;
-    withheld.push(...(plan.releases.get(stepIndex) ?? []));
-  }
-  return withheld;
+  return [...plan.awaiting]
+    .filter(([, blocks]) => !blocks.every((id) => completed.has(id)))
+    .map(([groupId]) => groupId);
 }
 
 /**
@@ -103,10 +105,11 @@ export function filterAutoStartEligibleGroups(
 }
 
 /**
- * Whether the ONE global pipeline should run at this boot. Deliberately has
- * NO knowledge of autoStart-eligible groups: the pipeline has value on its
- * own (a VPN tunnel, a `make setup` step) and must run whenever the login
- * gate passes, the global setting is on, and there is at least one step —
+ * Whether the startup workflow should run at this boot. Deliberately has
+ * NO knowledge of autoStart-eligible groups: the workflow has value on its
+ * own (a VPN tunnel, a `make setup` block) and must run whenever the login
+ * gate passes, the workflow is enabled («Auto al arrancar»), and there is at
+ * least one runnable script —
  * independent of whether any group has an autoStart command. This is the W2
  * fix (sdd-verify): the OLD `main.ts` code checked `eligibleGroups.length`
  * BEFORE this decision, so a pipeline never ran at login if no group had an
@@ -115,13 +118,15 @@ export function filterAutoStartEligibleGroups(
  */
 export function shouldAutoRunPipeline(input: {
   wasOpenedAtLogin: boolean;
-  preScriptsAutoRun: boolean;
-  stepCount: number;
+  /** The startup workflow's `enabled`. */
+  startupEnabled: boolean;
+  /** Scripts in runnable blocks (`runnableScriptCount`). */
+  scriptCount: number;
 }): boolean {
   return (
     input.wasOpenedAtLogin &&
-    input.preScriptsAutoRun === true &&
-    input.stepCount > 0
+    input.startupEnabled === true &&
+    input.scriptCount > 0
   );
 }
 
@@ -154,8 +159,8 @@ export function describeWithheldGroups(input: {
     .join(', ');
   const aggregatorLine =
     cause === 'failure'
-      ? `── Auto-arranque retenido para: ${names} (pipeline fallido) ──`
-      : `── Auto-arranque retenido para: ${names} (pipeline cancelado) ──`;
+      ? `── Auto-arranque retenido para: ${names} (workflow de arranque fallido) ──`
+      : `── Auto-arranque retenido para: ${names} (workflow de arranque cancelado) ──`;
   return {
     aggregatorLine,
     aggregatorLevel: cause === 'failure' ? 'error' : 'warn',

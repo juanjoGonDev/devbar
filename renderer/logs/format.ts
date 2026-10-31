@@ -18,6 +18,20 @@ export function fmtTime(ts: number): string {
   );
 }
 
+/**
+ * «hace 12 s», «hace 3 min», «hace 2 h», «hace 1 d» — for the relative clock.
+ * A stamp a little ahead of `now` (two clocks a few ms apart) reads as now.
+ */
+export function relativeTime(ts: number, now: number): string {
+  const seconds = Math.floor(Math.max(0, now - ts) / 1000);
+  if (seconds < 60) return `hace ${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  return `hace ${Math.floor(hours / 24)} d`;
+}
+
 /** Stable per-name hue, so one service keeps its tag colour between runs. */
 export function sourceColor(name: string): string {
   let hash = 0;

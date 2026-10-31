@@ -22,18 +22,17 @@
           title="Ver changelog"
         ></button>
         <span id="alerts-summary" class="alerts-summary"></span>
-        <span id="pipeline-trigger" class="pipeline-trigger-host"></span>
         <span class="spacer"></span>
         <!-- Only while the user has pinned the popover away from the icon. -->
         <button
           id="reset-tray-position"
           class="ghost icon-only"
           type="button"
-          title="Volver junto al icono"
-          aria-label="Volver junto al icono"
+          title="Restablecer posición"
+          aria-label="Restablecer posición"
           hidden
         >
-          <span class="icon" data-icon="pin-off"></span>
+          <span class="icon" data-icon="locate-fixed"></span>
         </button>
         <button
           id="open-telemetry"
@@ -60,12 +59,42 @@
           <span class="icon" data-icon="power"></span>
         </button>
       </div>
-      <!-- Slim status strips under the header row; the area collapses when
-           neither is showing (renderer/tray/strip.ts). -->
+      <!-- Slim status strip under the header row; the area collapses when
+           it is not showing (renderer/tray/strip.ts). -->
       <div id="tray-strips" class="tray-strips" hidden>
         <div id="update-strip" class="tray-strip" hidden></div>
-        <div id="pipeline-strip" class="tray-strip" hidden></div>
       </div>
+    </div>
+    <!-- «Grupos | Workflows»: hidden while there is no workflow to list
+         (renderer/tray/tabs.ts). -->
+    <div
+      id="tray-tabs"
+      class="tray-tabs"
+      role="tablist"
+      aria-label="Contenido del panel"
+      hidden
+    >
+      <button
+        id="tray-tab-groups"
+        class="tray-tab"
+        type="button"
+        role="tab"
+        aria-selected="true"
+        aria-controls="groups"
+      >
+        Grupos <span class="tray-tab-count"></span>
+      </button>
+      <button
+        id="tray-tab-workflows"
+        class="tray-tab"
+        type="button"
+        role="tab"
+        aria-selected="false"
+        aria-controls="groups"
+        tabindex="-1"
+      >
+        Workflows <span class="tray-tab-badge" hidden></span>
+      </button>
     </div>
     <div id="groups" class="groups-list"></div>
     <div id="toast" style="display: none" class="toast"></div>

@@ -46,6 +46,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         color: 'warn',
         branch: 'main',
         lastError: null,
+        hidden: false,
         commands: [
           {
             id: 'api',
@@ -87,6 +88,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         color: 'error',
         branch: null,
         lastError: null,
+        hidden: false,
         commands: [
           {
             id: 'astro',
@@ -103,12 +105,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         actions: [],
       },
     ],
-    pipeline: {
-      status: 'idle',
-      currentStep: null,
-      totalSteps: 2,
-      lastError: null,
-    },
+    workflows: [],
     update: { currentVersion: '0.11.0', state: 'current', version: null },
     confirms: [],
     ...extra,

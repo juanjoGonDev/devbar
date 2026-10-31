@@ -24,10 +24,10 @@ const pad2 = (value: number): string => String(value).padStart(2, '0');
  * drift from the other by hand-typing the same magic string twice.
  */
 export const PIPELINE_LOG_GROUP_ID = '__pipeline__';
-export const PIPELINE_LOG_NAME = 'Pipeline de pre-scripts';
+export const PIPELINE_LOG_NAME = 'Workflows';
 
 /**
- * `Pipeline · 12:47:13.815`.
+ * `Workflow · 12:47:13.815`.
  *
  * Every run lands in the same log bucket, so the start time is the only thing
  * that tells two of them apart in the sidebar.
@@ -38,15 +38,27 @@ export function formatPipelineRunName(runId: number): string {
   // cancel-and-retry lands two runs inside the same second. The sidebar shows
   // nothing but this label to tell their logs apart.
   const ms = String(at.getMilliseconds()).padStart(3, '0');
-  return `Pipeline · ${pad2(at.getHours())}:${pad2(at.getMinutes())}:${pad2(at.getSeconds())}.${ms}`;
+  return `Workflow · ${pad2(at.getHours())}:${pad2(at.getMinutes())}:${pad2(at.getSeconds())}.${ms}`;
 }
 
-/** `1 paso` / `2 pasos`. */
-export function formatStepCount(steps: number): string {
-  return `${steps} paso${steps === 1 ? '' : 's'}`;
+/** `1 script` / `8 scripts`. */
+export function formatScriptCount(scripts: number): string {
+  return `${scripts} script${scripts === 1 ? '' : 's'}`;
 }
 
-/** `serie` / `paralelo`. */
-export function formatStepMode(mode: 'parallel' | 'serial'): string {
-  return mode === 'serial' ? 'serie' : 'paralelo';
+/**
+ * The runner's failure reason (`scripts_failed:<n>`) as a sentence —
+ * `Falló 1 script de 8` — or null for any other reason, which the caller
+ * shows as it is.
+ */
+export function formatPipelineFailure(
+  reason: string | null,
+  totalScripts: number,
+): string | null {
+  const match = /^scripts_failed:(\d+)$/.exec(reason ?? '');
+  if (!match?.[1]) return null;
+  const failed = Number(match[1]);
+  return failed === 1
+    ? `Falló 1 script de ${totalScripts}`
+    : `Fallaron ${failed} scripts de ${totalScripts}`;
 }

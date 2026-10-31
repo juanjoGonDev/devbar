@@ -4,7 +4,6 @@ import { makeActionId, makeCommandId } from '../../compound-id.js';
 import {
   ipcBooleanField,
   ipcGlobalSettingsPatch,
-  ipcNumber,
   ipcRecord,
   ipcSilenceLevel,
   ipcString,
@@ -13,13 +12,13 @@ import {
   type IpcRegistrar,
 } from '../ipc-validators.js';
 import type { GroupState } from '../../ipc-contract.js';
-import type { ThemePreference } from '../../domain-types.js';
+import type { GlobalSettings, ThemePreference } from '../../domain-types.js';
 import { saveSettings } from '../settings-save.js';
 
 /**
  * Everything the configuration surfaces write: groups, commands, actions, the
- * pipeline's ordered steps and its scripts, silencing, and the global
- * settings. Each handler narrows its payload, mutates the store, and
+ * pre-script definitions, silencing, and the global settings (workflows are
+ * in workflows-ipc.ts). Each handler narrows its payload, mutates the store, and
  * broadcasts — deleting anything that owns a live process stops it FIRST, and
  * a failed stop aborts the deletion rather than leaving an untracked child.
  */
@@ -37,12 +36,6 @@ type ConfigStore = Pick<
   | 'saveAction'
   | 'deleteAction'
   | 'reorderActions'
-  | 'getPreSteps'
-  | 'savePreStep'
-  | 'deletePreStep'
-  | 'reorderPreSteps'
-  | 'assignScriptToStep'
-  | 'unassignScriptFromStep'
   | 'savePreScript'
   | 'deletePreScript'
   | 'reorderPreScripts'
@@ -68,6 +61,7 @@ export interface ConfigIpcDeps {
   applyAutostart: (enabled: boolean) => void;
   refreshWindowBackgrounds: () => void;
   sendTheme: (theme: ThemePreference) => void;
+  sendSettings: (settings: GlobalSettings) => void;
 }
 
 export function registerConfigIpc(
@@ -237,55 +231,7 @@ export function registerConfigIpc(
     return { ok: true };
   });
 
-  // ── Pipeline CONFIG ───────────────────────────────────────────────────
-  // Mirrors the groups:list/groups:save split; runtime state is broadcast
-  // separately on pipeline:update.
-  ipc.handle('pipeline:list', () => configStore.getPreSteps());
-
-  ipc.handle('preSteps:save', (_e: IpcMainInvokeEvent, payload: unknown) => {
-    const result = configStore.savePreStep(ipcRecord(payload).data);
-    broadcast();
-    return result;
-  });
-  ipc.handle('preSteps:delete', (_e: IpcMainInvokeEvent, payload: unknown) => {
-    configStore.deletePreStep(ipcStringField(payload, 'stepId'));
-    broadcast();
-    return { ok: true };
-  });
-  ipc.handle('preSteps:reorder', (_e: IpcMainInvokeEvent, payload: unknown) => {
-    configStore.reorderPreSteps(ipcStringArrayField(payload, 'orderedIds'));
-    broadcast();
-    return { ok: true };
-  });
-  ipc.handle(
-    'preSteps:assignScript',
-    (_e: IpcMainInvokeEvent, payload: unknown) => {
-      const raw = ipcRecord(payload);
-      const result = configStore.assignScriptToStep(
-        ipcString(raw.stepId, 'stepId'),
-        ipcString(raw.groupId, 'groupId'),
-        ipcString(raw.scriptId, 'scriptId'),
-        raw.position === undefined
-          ? undefined
-          : ipcNumber(raw.position, 'position'),
-      );
-      broadcast();
-      return result;
-    },
-  );
-  ipc.handle(
-    'preSteps:unassignScript',
-    (_e: IpcMainInvokeEvent, payload: unknown) => {
-      const raw = ipcRecord(payload);
-      const result = configStore.unassignScriptFromStep(
-        ipcString(raw.stepId, 'stepId'),
-        ipcString(raw.groupId, 'groupId'),
-        ipcString(raw.scriptId, 'scriptId'),
-      );
-      broadcast();
-      return result;
-    },
-  );
+  // ── Pre-script definitions (placed into workflows by their graphs) ───
   ipc.handle('preScripts:save', (_e: IpcMainInvokeEvent, payload: unknown) => {
     const raw = ipcRecord(payload);
     const result = configStore.savePreScript(

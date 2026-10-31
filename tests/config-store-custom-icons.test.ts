@@ -117,7 +117,7 @@ describe('custom icon library', () => {
     store.replaceConfig({
       version: 4,
       groups: [],
-      preSteps: [],
+      workflows: [],
       globalSettings: {},
       customIcons: [icon('abc123', 'imported'), icon('def456')],
     });

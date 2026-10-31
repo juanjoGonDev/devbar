@@ -7,13 +7,15 @@ import type {
 import { createBranchSheet } from './branch-sheet.js';
 import type { PanelContext } from './context.js';
 import type { PanelElements } from './elements.js';
+import { foldToggle } from './fold.js';
 import { countdown, mmss, plural, uptime } from './format.js';
 import { glyph } from './glyphs.js';
 import { button, el } from './view.js';
+import { spinPhase } from '../spin-phase.js';
 
 /**
- * «Grupos»: the computer, the error and warning totals, the pipeline, the
- * banners (a confirmation waiting, an update ready) and one card per group —
+ * «Grupos»: the computer, the error and warning totals, the banners (a
+ * confirmation waiting, an update ready), and one card per group —
  * an accordion with one card open — with its branch, its services and its
  * actions. Every push repaints the cards; which one is open and which
  * buttons are mid-request survive the repaint.
@@ -38,7 +40,9 @@ export function createGroupsTab(
 ): GroupsTab {
   const sheet = createBranchSheet(sheetEls, ctx);
   let open: string | null | undefined;
-  /** Process ids (and `pipeline`) with a request in flight. */
+  /** The «N oculto(s)» folds, closed like the tray's until tapped. */
+  let hiddenOpen = false;
+  /** Process ids with a request in flight. */
   const busy = new Set<string>();
   let last: RemoteStateView | null = null;
   let live = false;
@@ -145,11 +149,35 @@ export function createGroupsTab(
         ),
     );
     chip.append(
-      running ? el('span', 'spinner is-small') : glyph('play', 12),
+      running ? spinPhase(el('span', 'spinner is-small')) : glyph('play', 12),
       el('span', '', running ? `${action.name} · en curso` : action.name),
     );
     chip.disabled = running || busy.has(action.processId);
     return chip;
+  }
+
+  /** The cards in the tray's order, the hidden ones behind its fold. */
+  function cards(
+    groups: readonly RemoteGroupView[],
+    ticks: (() => void)[],
+  ): HTMLElement[] {
+    const shown = groups.filter((group) => !group.hidden);
+    const hidden = groups.filter((group) => group.hidden);
+    const nodes = shown.map((group) => card(group, ticks));
+    if (hidden.length === 0) return nodes;
+    nodes.push(
+      foldToggle(hidden.length, hiddenOpen, () => {
+        hiddenOpen = !hiddenOpen;
+        repaint();
+      }),
+    );
+    if (hiddenOpen)
+      for (const group of hidden) {
+        const box = card(group, ticks);
+        box.classList.add('is-hidden-group');
+        nodes.push(box);
+      }
+    return nodes;
   }
 
   function card(group: RemoteGroupView, ticks: (() => void)[]): HTMLElement {
@@ -214,14 +242,6 @@ export function createGroupsTab(
     els.errorChip.textContent = plural(errors, 'error', 'errores');
     els.warnChip.hidden = warnings === 0;
     els.warnChip.textContent = plural(warnings, 'warning', 'warnings');
-
-    const { pipeline } = state;
-    const running = pipeline.status === 'running';
-    els.runPipeline.hidden = pipeline.totalSteps === 0 && !running;
-    els.runPipeline.disabled = running || busy.has('pipeline');
-    els.pipelineLabel.textContent = running
-      ? `Pipeline en curso · paso ${pipeline.currentStep ?? 1} de ${pipeline.totalSteps}`
-      : 'Ejecutar pipeline';
   }
 
   function banners(state: RemoteStateView, ticks: (() => void)[]): void {
@@ -248,14 +268,13 @@ export function createGroupsTab(
 
   function render(state: RemoteStateView): void {
     last = state;
-    if (open === undefined) open = state.groups[0]?.id ?? null;
+    if (open === undefined)
+      open = state.groups.find((group) => !group.hidden)?.id ?? null;
     const ticks: (() => void)[] = [];
     header(state);
     banners(state, ticks);
     els.empty.hidden = state.groups.length > 0;
-    els.list.replaceChildren(
-      ...state.groups.map((group) => card(group, ticks)),
-    );
+    els.list.replaceChildren(...cards(state.groups, ticks));
     ctx.onTick('groups', ticks);
   }
 
@@ -274,10 +293,6 @@ export function createGroupsTab(
         );
     });
   });
-  els.runPipeline.addEventListener(
-    'click',
-    () => void send('pipeline', 'pipeline.run', {}),
-  );
   els.confirmBanner.addEventListener('click', () => {
     const token = last?.confirms[0]?.token;
     if (token) ctx.openConfirm(token);

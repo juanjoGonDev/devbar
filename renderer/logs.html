@@ -12,30 +12,32 @@
     <title>Logs</title>
   </head>
   <body>
-    <!--
-      The titlebar is `hiddenInset`, so macOS paints no title of its own and
-      this strip was 36px of dead space. It now carries the window title, which
-      frees the header row below for controls. On Windows/Linux the native
-      titlebar already shows the title, so CSS hides the strip there
-      (html[data-os] — see logs.css).
-    -->
-    <div class="app-window-spacer">
-      <strong id="title">Logs</strong>
-      <span id="uptime-badge" class="uptime-badge"></span>
-    </div>
     <div class="shell">
       <aside id="sidebar">
         <div class="side-head">
-          <input
-            id="side-filter"
-            type="search"
-            placeholder="Buscar servicio…"
-          />
+          <label class="side-search">
+            <span class="icon side-search-ico" data-icon="search"></span>
+            <input
+              id="side-filter"
+              type="search"
+              placeholder="Buscar servicio"
+              aria-label="Buscar servicio"
+              aria-keyshortcuts="Meta+K Control+K"
+            />
+            <kbd id="side-filter-key" class="side-kbd">Ctrl+K</kbd>
+          </label>
         </div>
         <div id="side-tree"></div>
       </aside>
       <div class="pane">
-        <header>
+        <!--
+          The titlebar is `hiddenInset`: on macOS the traffic lights sit over
+          the top of the sidebar (or over this toolbar's left edge when there
+          is no sidebar), so the toolbar doubles as the window's drag strip.
+          It reads left to right as what is on screen, how it is doing, and
+          what you can do to it — then how you look at it.
+        -->
+        <header class="toolbar">
           <button
             id="toggle-sidebar"
             class="icon-btn"
@@ -45,66 +47,129 @@
           >
             <span class="icon" data-icon="panel-left"></span>
           </button>
-          <button
-            id="run-toggle"
-            class="run-btn"
-            type="button"
-            title="Arrancar / parar"
-            aria-label="Arrancar / parar"
-          >
-            <span class="icon" data-icon="play"></span>
-          </button>
-          <input
-            id="filter"
-            type="search"
-            placeholder="Filtrar (texto o regex)…"
-          />
+          <div class="tb-subject">
+            <span class="crumbs">
+              <span id="crumb-group" class="crumb-group" hidden></span>
+              <span id="crumb-sep" class="crumb-sep" hidden
+                ><span class="icon" data-icon="chevron-right"></span
+              ></span>
+              <strong id="crumb-name" class="crumb-name">Logs</strong>
+            </span>
+            <span id="run-pill" class="run-pill" hidden>
+              <span class="run-pill-dot"></span>
+              <span id="run-pill-text"></span>
+            </span>
+            <button
+              id="restart"
+              class="icon-btn tb-ico"
+              type="button"
+              title="Reiniciar"
+              aria-label="Reiniciar"
+              hidden
+            >
+              <span class="icon" data-icon="rotate-cw"></span>
+            </button>
+            <button
+              id="run-toggle"
+              class="icon-btn tb-ico run-btn"
+              type="button"
+              title="Iniciar"
+              aria-label="Iniciar"
+              hidden
+            >
+              <span class="icon" data-icon="play"></span>
+            </button>
+          </div>
+          <span class="tb-grow"></span>
           <!--
-            The level filter is driven from the nav (per service, per group) and
-            from the tray. This pill is only its escape hatch: it appears when a
-            filter is active and clicking it clears it.
+            The search box carries the level chips: text and level are both
+            ways of narrowing the same lines, and every warn/error entry point
+            (the nav, the tray) lands on the chip it stands for.
           -->
-          <button id="level-pill" class="level-pill" type="button" hidden>
-            <span id="level-pill-text"></span>
-            <span class="level-pill-x"
-              ><span class="icon" data-icon="x"></span
-            ></span>
-          </button>
-          <label class="check spaced"
-            ><input type="checkbox" id="autoscroll" checked />
-            Auto-scroll</label
-          >
-          <label class="check"
-            ><input type="checkbox" id="paused" /> Pausa</label
-          >
-          <button
-            id="clear"
-            class="icon-btn"
-            title="Limpiar"
-            aria-label="Limpiar"
-          >
-            <span class="icon" data-icon="trash-2"></span>
-          </button>
-          <button id="copy" class="icon-btn" title="Copiar" aria-label="Copiar">
-            <span class="icon" data-icon="copy"></span>
+          <div class="tb-search">
+            <span class="icon tb-search-ico" data-icon="search"></span>
+            <input
+              id="filter"
+              type="search"
+              placeholder="Buscar… (texto o regex)"
+              aria-label="Buscar en el log"
+            />
+            <span class="level-chips" role="group" aria-label="Nivel">
+              <button
+                id="level-all"
+                class="level-chip"
+                type="button"
+                aria-pressed="true"
+                title="Todos los niveles"
+              >
+                Todo
+              </button>
+              <button
+                id="level-warn"
+                class="level-chip warn"
+                type="button"
+                aria-pressed="false"
+                title="Sólo warnings"
+              >
+                <span class="level-chip-dot"></span
+                ><span id="level-warn-count">0</span>
+              </button>
+              <button
+                id="level-error"
+                class="level-chip err"
+                type="button"
+                aria-pressed="false"
+                title="Sólo errores"
+              >
+                <span class="level-chip-dot"></span
+                ><span id="level-error-count">0</span>
+              </button>
+            </span>
+          </div>
+          <button id="live" class="live-btn" type="button" aria-pressed="true">
+            <span class="live-dot"></span>
+            <span id="live-text">En directo</span>
           </button>
           <button
             id="toggle-silenced"
-            class="icon-btn"
-            title="Patrones silenciados"
-            aria-label="Patrones silenciados"
+            class="silence-toggle"
+            type="button"
+            title="Silenciados"
+            aria-label="Silenciados"
+            aria-haspopup="dialog"
+            aria-controls="silence-popover"
+            aria-expanded="false"
           >
             <span class="icon" data-icon="bell-off"></span>
+            <span id="silence-toggle-count" class="silence-toggle-count"></span>
           </button>
-          <button
-            id="detach"
-            class="icon-btn"
-            title="Abrir este log en una ventana aparte"
-            aria-label="Abrir en ventana aparte"
-          >
-            <span class="icon" data-icon="app-window"></span>
-          </button>
+          <span class="tb-more">
+            <button
+              id="more"
+              class="icon-btn tb-ico"
+              type="button"
+              title="Más opciones"
+              aria-label="Más opciones"
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >
+              <span class="icon" data-icon="ellipsis"></span>
+            </button>
+          </span>
         </header>
+        <!--
+          Activity strip: one bar per slice of time for the lines on screen.
+          Hidden until the scope spans at least two slices, or when switched
+          off from the «⋯» menu. Bars are buttons that jump to their lines.
+        -->
+        <div id="activity" class="activity" role="group" hidden>
+          <div id="activity-bars" class="activity-bars"></div>
+          <span
+            id="activity-span"
+            class="activity-span"
+            aria-hidden="true"
+          ></span>
+        </div>
         <div class="log-container">
           <main>
             <div id="lines"></div>
@@ -117,113 +182,140 @@
           >
             <span class="icon" data-icon="arrow-down"></span>
           </button>
+          <!--
+            Silenced popover. Floats over the log, under its toolbar toggle, so
+            the rules and the lines they swallow are visible together: the
+            draft previews, live, which held lines it would silence, and
+            hovering a saved rule marks what it is eating.
+          -->
+          <div
+            id="silence-popover"
+            class="silence-popover"
+            role="dialog"
+            aria-label="Silenciados"
+            hidden
+          >
+            <div id="silence-composer" class="sil-composer">
+              <span class="icon sil-composer-icon" data-icon="bell-off"></span>
+              <input
+                id="silence-input"
+                class="sil-input"
+                type="text"
+                placeholder="Silenciar líneas que contengan…"
+                aria-label="Silenciar líneas que contengan"
+                spellcheck="false"
+                autocomplete="off"
+              />
+              <span id="silence-count" class="sil-count" hidden></span>
+              <button
+                id="silence-regex"
+                class="sil-regex"
+                type="button"
+                aria-pressed="false"
+                title="Usar como regex"
+              >
+                .*
+              </button>
+            </div>
+            <div id="silence-error" class="sil-error" hidden></div>
+            <div class="sil-row">
+              <span class="sil-en">en</span>
+              <button
+                id="silence-level-warn"
+                class="sil-pill"
+                type="button"
+                data-level="warn"
+                aria-pressed="true"
+              >
+                <span class="sil-dot"></span>warnings
+              </button>
+              <button
+                id="silence-level-error"
+                class="sil-pill"
+                type="button"
+                data-level="error"
+                aria-pressed="false"
+              >
+                <span class="sil-dot"></span>errores
+              </button>
+              <span class="sil-grow"></span>
+              <button
+                id="silence-submit"
+                class="sil-submit"
+                type="button"
+                disabled
+              >
+                Silenciar
+              </button>
+            </div>
+            <div class="sil-sep"></div>
+            <ul id="silence-rules" class="sil-rules"></ul>
+            <div class="sil-switches">
+              <label class="sil-switch">
+                <input
+                  id="mute-warn"
+                  class="switch"
+                  type="checkbox"
+                  role="switch"
+                />
+                Todos los warnings
+              </label>
+              <label class="sil-switch">
+                <input
+                  id="mute-err"
+                  class="switch"
+                  type="checkbox"
+                  role="switch"
+                />
+                Todos los errores
+              </label>
+            </div>
+          </div>
         </div>
         <footer>
-          <span id="counts">0 líneas</span>
-          <span class="footer-status">
-            <span id="status"></span>
+          <span class="footer-left">
+            <span id="counts">0 líneas</span>
+            <span id="silence-preview" class="silence-preview" hidden>
+              <span class="silence-preview-swatch"></span>
+              <span id="silence-preview-text"></span>
+            </span>
+          </span>
+          <span class="footer-right">
+            <span class="footer-status">
+              <span id="status"></span>
+              <button
+                id="clear-selection"
+                class="clear-selection-btn"
+                type="button"
+                title="Quitar selección (Esc)"
+                aria-label="Quitar selección"
+                hidden
+              >
+                <span class="icon" data-icon="x"></span>
+              </button>
+            </span>
+            <label class="footer-switch">
+              Ajustar líneas
+              <input
+                id="wrap-lines"
+                class="switch"
+                type="checkbox"
+                role="switch"
+                checked
+              />
+            </label>
             <button
-              id="clear-selection"
-              class="clear-selection-btn"
+              id="time-mode"
+              class="footer-toggle"
               type="button"
-              title="Quitar selección (Esc)"
-              aria-label="Quitar selección"
-              hidden
+              aria-pressed="false"
+              title="Cambiar entre hora absoluta y relativa"
             >
-              <span class="icon" data-icon="x"></span>
+              Hora <span id="time-mode-value">absoluta</span>
             </button>
           </span>
         </footer>
       </div>
-      <!--
-        Silenced drawer. Lives inside the logs window instead of a separate
-        window so the rules and the lines they swallow are visible together:
-        you can see what a pattern is actually eating, and unsilence straight
-        from the feed.
-      -->
-      <aside id="silenced-drawer" class="drawer" hidden>
-        <div class="drawer-head">
-          <div class="drawer-title">
-            <strong>Silenciados</strong>
-            <span id="drawer-target" class="drawer-sub"></span>
-          </div>
-          <button
-            id="drawer-close"
-            class="drawer-x"
-            type="button"
-            title="Cerrar"
-            aria-label="Cerrar"
-          >
-            <span class="icon" data-icon="x"></span>
-          </button>
-        </div>
-
-        <div class="drawer-scroll">
-          <!--
-            One section per level, each foldable. Inside a level live both its
-            rules and the lines they are actually swallowing — identical lines
-            collapse into one row with a counter, so a chatty pattern does not
-            bury the rest.
-          -->
-          <details class="drawer-lvl" data-level="warn" open>
-            <summary>
-              <span class="chevron"
-                ><span class="icon" data-icon="chevron-right"></span
-              ></span>
-              <span class="lvl-tag warn">warn</span>
-              <span class="lvl-name">Warnings</span>
-              <span class="drawer-count" data-count="warn">0</span>
-            </summary>
-            <div class="drawer-lvl-body">
-              <label class="switch-row">
-                <input type="checkbox" id="mute-warn" />
-                <span>Silenciar <strong>todos</strong> los warnings</span>
-              </label>
-              <ul id="warn-list" class="pattern-list"></ul>
-              <div class="add-row">
-                <input
-                  id="warn-input"
-                  type="text"
-                  placeholder="Patrón o regex…"
-                />
-                <button id="warn-add" class="ghost-btn" type="button">
-                  Añadir
-                </button>
-              </div>
-              <div id="warn-feed" class="muted-feed"></div>
-            </div>
-          </details>
-
-          <details class="drawer-lvl" data-level="error" open>
-            <summary>
-              <span class="chevron"
-                ><span class="icon" data-icon="chevron-right"></span
-              ></span>
-              <span class="lvl-tag err">error</span>
-              <span class="lvl-name">Errores</span>
-              <span class="drawer-count" data-count="error">0</span>
-            </summary>
-            <div class="drawer-lvl-body">
-              <label class="switch-row">
-                <input type="checkbox" id="mute-err" />
-                <span>Silenciar <strong>todos</strong> los errores</span>
-              </label>
-              <ul id="err-list" class="pattern-list"></ul>
-              <div class="add-row">
-                <input
-                  id="err-input"
-                  type="text"
-                  placeholder="Patrón o regex…"
-                />
-                <button id="err-add" class="ghost-btn" type="button">
-                  Añadir
-                </button>
-              </div>
-              <div id="err-feed" class="muted-feed"></div>
-            </div>
-          </details>
-        </div>
-      </aside>
     </div>
     <script type="module" src="logs.js"></script>
   </body>

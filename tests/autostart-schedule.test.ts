@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   planAutoStartRelease,
+  releasableGroupIds,
   withheldGroupIds,
   shouldAutoRunPipeline,
   filterAutoStartEligibleGroups,
@@ -8,282 +9,183 @@ import {
   shouldShowGenericFailureToast,
 } from '../src/autostart-schedule.js';
 import { normalizeGroup } from '../src/groups-model.js';
-import type { Group, PreStep } from '../src/domain-types.js';
+import type { Group, Pipeline, PipelineBlock } from '../src/domain-types.js';
 
 /**
  * autostart-schedule.test.ts
  *
  * Pure release-planner tests — no Electron, no runner, plain data in and
  * out. This is the test seam for the highest-novelty piece of the change:
- * staged auto-start release timing (D2).
+ * staged auto-start release timing (D2), over the pipeline DAG.
  */
 
-function step(
-  id: string,
-  refs: Array<{ groupId: string; scriptId: string }>,
-): PreStep {
-  return { id, mode: 'parallel', scripts: refs };
+/** A block holding one script of each group named. */
+function blk(id: string, groupIds: string[]): PipelineBlock {
+  return {
+    id,
+    scripts: groupIds.map((groupId) => ({ groupId, scriptId: `${id}-sc` })),
+    x: 0,
+    y: 0,
+    requireAll: true,
+  };
 }
+
+function pipe(blocks: PipelineBlock[], edges: string[]): Pipeline {
+  return {
+    blocks,
+    edges: edges.map((edge) => {
+      const [from = '', to = ''] = edge.split('>');
+      return { from, to };
+    }),
+  };
+}
+
+/** trigger → b1(gA) → b2(gB) → b3(gC) */
+const CHAIN = pipe(
+  [blk('b1', ['gA']), blk('b2', ['gB']), blk('b3', ['gC'])],
+  ['trigger>b1', 'b1>b2', 'b2>b3'],
+);
 
 describe('planAutoStartRelease', () => {
   it('places a group with no ref anywhere in the pipeline into immediate', () => {
-    const steps = [step('s1', [{ groupId: 'gA', scriptId: 'sc1' }])];
     const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gC'],
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gA', 'gZ'],
     });
-    expect(plan.immediate).toEqual(['gC']);
+    expect(plan.immediate).toEqual(['gZ']);
   });
 
-  it('a later ref overwrites an earlier lastStepIndex for the same group (last wins)', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
-      step('s3', [{ groupId: 'gA', scriptId: 'sc3' }]),
-    ];
+  it('makes a group wait for EVERY runnable block holding one of its scripts', () => {
+    const pipeline = pipe(
+      [blk('b1', ['gA']), blk('b2', ['gB']), blk('b3', ['gA'])],
+      ['trigger>b1', 'trigger>b2', 'b2>b3'],
+    );
     const plan = planAutoStartRelease({
-      steps,
+      pipeline,
       eligibleGroupIds: ['gA', 'gB'],
     });
-    expect(plan.releases.get(2)).toEqual(['gA']);
-    expect(plan.releases.get(0)).toBeUndefined();
+    expect(plan.awaiting.get('gA')).toEqual(['b1', 'b3']);
+    expect(plan.awaiting.get('gB')).toEqual(['b2']);
   });
 
-  it('emits immediate and releases in eligibleGroupIds input order, not steps-walk order', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gB', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gA', scriptId: 'sc2' }]),
-    ];
+  it('starts at once a group whose scripts sit only in disconnected blocks', () => {
+    const pipeline = pipe(
+      [blk('b1', ['gA']), blk('x', ['gB'])],
+      ['trigger>b1'],
+    );
     const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB', 'gC'],
-    });
-    expect(plan.releases.get(1)).toEqual(['gA']);
-    expect(plan.releases.get(0)).toEqual(['gB']);
-    expect(plan.immediate).toEqual(['gC']);
-  });
-
-  it('groups two eligible groups releasing at the same step, in eligibleGroupIds order', () => {
-    const steps = [
-      step('s1', [
-        { groupId: 'gB', scriptId: 'sc1' },
-        { groupId: 'gA', scriptId: 'sc2' },
-      ]),
-    ];
-    const plan = planAutoStartRelease({
-      steps,
+      pipeline,
       eligibleGroupIds: ['gA', 'gB'],
     });
-    expect(plan.releases.get(0)).toEqual(['gA', 'gB']);
+    expect(plan.immediate).toEqual(['gB']);
+    expect([...plan.awaiting.keys()]).toEqual(['gA']);
+  });
+
+  it('emits immediate and awaiting in eligibleGroupIds input order', () => {
+    const plan = planAutoStartRelease({
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gC', 'gZ', 'gA'],
+    });
+    expect([...plan.awaiting.keys()]).toEqual(['gC', 'gA']);
+    expect(plan.immediate).toEqual(['gZ']);
   });
 
   it('ignores a ref whose groupId is not in eligibleGroupIds', () => {
-    const steps = [step('s1', [{ groupId: 'gNotEligible', scriptId: 'sc1' }])];
-    const plan = planAutoStartRelease({ steps, eligibleGroupIds: ['gA'] });
-    expect(plan.immediate).toEqual(['gA']);
-    expect(plan.releases.size).toBe(0);
+    const plan = planAutoStartRelease({
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gNotInPipeline'],
+    });
+    expect(plan.immediate).toEqual(['gNotInPipeline']);
+    expect(plan.awaiting.size).toBe(0);
   });
 });
 
 describe('planAutoStartRelease — waitingGroupIds (per-group wait-for-pipeline)', () => {
-  // The flaw this covers: a group's own last referencing step can succeed
-  // while a LATER step belonging to a DIFFERENT group still disrupts shared
+  // The flaw this covers: a group's own blocks can succeed while a LATER or
+  // independent block belonging to a DIFFERENT group still disrupts shared
   // infra (e.g. a second `make setup` restarting Docker). A waiting group
-  // must release only at the pipeline's FINAL step, not its own last one.
-  it('forces a waiting group to release at the pipeline final step instead of its own last referencing step', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
-      step('s3', [{ groupId: 'gC', scriptId: 'sc3' }]),
-    ];
+  // releases only once the WHOLE pipeline succeeded.
+  it('makes a waiting group wait for every runnable block', () => {
     const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB', 'gC'],
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gA'],
       waitingGroupIds: ['gA'],
     });
-    expect(plan.releases.get(2)).toContain('gA');
-    expect(plan.releases.get(0)).toBeUndefined();
+    expect(plan.awaiting.get('gA')).toEqual(['b1', 'b2', 'b3']);
   });
 
-  it('leaves a waiting group unaffected when its own last referencing step is already the final step', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gB', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gA', scriptId: 'sc2' }]),
-    ];
+  it('a non-waiting group still waits only for its own blocks', () => {
     const plan = planAutoStartRelease({
-      steps,
+      pipeline: CHAIN,
       eligibleGroupIds: ['gA', 'gB'],
-      waitingGroupIds: ['gA'],
+      waitingGroupIds: ['gB'],
     });
-    expect(plan.releases.get(1)).toEqual(['gA']);
-    expect(plan.releases.get(0)).toEqual(['gB']);
+    expect(plan.awaiting.get('gA')).toEqual(['b1']);
   });
 
-  it('a non-waiting group still releases at its own last referencing step even when a sibling group waits', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
-      step('s3', []),
-    ];
+  it('does not affect a waiting group with no ref anywhere — it still starts immediately', () => {
     const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB'],
-      waitingGroupIds: ['gA'],
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gA', 'gScriptless'],
+      waitingGroupIds: ['gScriptless'],
     });
-    expect(plan.releases.get(2)).toEqual(['gA']);
-    expect(plan.releases.get(1)).toEqual(['gB']);
+    expect(plan.immediate).toEqual(['gScriptless']);
   });
 
-  it('collapses two waiting groups with different natural release steps into the same final-step bucket, in eligibleGroupIds order', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gB', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gA', scriptId: 'sc2' }]),
-      step('s3', []),
-    ];
-    const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB'],
-      waitingGroupIds: ['gA', 'gB'],
-    });
-    expect(plan.releases.get(2)).toEqual(['gA', 'gB']);
-  });
-
-  it('does not affect a waiting group with no ref anywhere in the pipeline — it still starts immediately', () => {
-    const steps = [step('s1', [{ groupId: 'gOther', scriptId: 'sc1' }])];
-    const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gOther', 'gWaitingScriptless'],
-      waitingGroupIds: ['gWaitingScriptless'],
-    });
-    expect(plan.immediate).toContain('gWaitingScriptless');
-    expect(plan.releases.size).toBe(1);
-  });
-
-  it('behaves exactly like before when waitingGroupIds is omitted (backward compatible)', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
-    ];
-    const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB'],
-    });
-    expect(plan.releases.get(0)).toEqual(['gA']);
-    expect(plan.releases.get(1)).toEqual(['gB']);
-  });
-
-  // The exact reported scenario: Back's (gA) own step succeeds early, but
-  // Automator's (gB) LATER step restarts Docker again and fails. Back must
+  // The exact reported scenario: Back's (gA) own block succeeds early, but
+  // Automator's (gC) LATER block restarts Docker again and fails. Back must
   // stay withheld, not already running with a broken DB connection.
-  it('withholds a waiting group whose own step already succeeded when a later, different step fails', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gIrrelevant', scriptId: 'sc2' }]),
-      step('s3', [{ groupId: 'gB', scriptId: 'sc3' }]),
-    ];
+  it('withholds a waiting group whose own block succeeded when another block fails', () => {
     const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB'],
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gA', 'gC'],
       waitingGroupIds: ['gA'],
     });
-    // Step 1 (gA) and step 2 (gIrrelevant) succeeded; step 3 (gB) failed —
-    // its onStepComplete never fires.
-    const fired = new Set([0, 1]);
-    const withheld = withheldGroupIds(plan, fired);
-    expect(withheld).toContain('gA');
-    expect(withheld).toContain('gB');
+    const completed = new Set(['b1', 'b2']);
+    expect(releasableGroupIds(plan, completed)).toEqual([]);
+    expect(withheldGroupIds(plan, completed)).toEqual(['gA', 'gC']);
   });
 
-  it('releases a waiting group only once the whole pipeline, including a later different group step, succeeds', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gIrrelevant', scriptId: 'sc2' }]),
-      step('s3', [{ groupId: 'gB', scriptId: 'sc3' }]),
-    ];
+  it('releases a waiting group once every block succeeded', () => {
     const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB'],
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gA', 'gC'],
       waitingGroupIds: ['gA'],
     });
-    expect(plan.releases.get(2)).toEqual(['gA', 'gB']);
-    const fired = new Set([0, 1, 2]);
-    expect(withheldGroupIds(plan, fired)).toEqual([]);
+    const completed = new Set(['b1', 'b2', 'b3']);
+    expect(releasableGroupIds(plan, completed)).toEqual(['gA', 'gC']);
+    expect(withheldGroupIds(plan, completed)).toEqual([]);
   });
 });
 
-describe('withheldGroupIds', () => {
-  it('is empty when every release key fired', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
-    ];
+describe('releasableGroupIds / withheldGroupIds', () => {
+  it('releases a group as soon as its own blocks are done, whatever else runs', () => {
+    const pipeline = pipe(
+      [blk('b1', ['gA']), blk('b2', ['gB'])],
+      ['trigger>b1', 'trigger>b2'],
+    );
     const plan = planAutoStartRelease({
-      steps,
+      pipeline,
       eligibleGroupIds: ['gA', 'gB'],
     });
-    expect(withheldGroupIds(plan, new Set([0, 1]))).toEqual([]);
-  });
-
-  it('names groups whose release step never fired', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
-      step('s3', [{ groupId: 'gC', scriptId: 'sc3' }]),
-    ];
-    const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB', 'gC'],
-    });
-    // Only step 0 fired (e.g. a failure at step 1).
-    expect(withheldGroupIds(plan, new Set([0]))).toEqual(['gB', 'gC']);
+    expect(releasableGroupIds(plan, new Set(['b2']))).toEqual(['gB']);
+    expect(withheldGroupIds(plan, new Set(['b2']))).toEqual(['gA']);
   });
 
   it('never withholds a group that has no ref anywhere (already started immediately)', () => {
-    const steps = [step('s1', [{ groupId: 'gA', scriptId: 'sc1' }])];
     const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gScriptless'],
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gZ'],
     });
-    const withheld = withheldGroupIds(plan, new Set());
-    expect(withheld).toEqual(['gA']);
-    expect(withheld).not.toContain('gScriptless');
-  });
-
-  it('is empty for a pipeline where nothing is withheld and nothing fired (no releases at all)', () => {
-    const plan = planAutoStartRelease({ steps: [], eligibleGroupIds: ['gA'] });
     expect(withheldGroupIds(plan, new Set())).toEqual([]);
   });
-});
 
-describe('withheldGroupIds — release rule applies identically regardless of why the run stopped', () => {
-  // withheldGroupIds has no "cause" parameter by design: a genuine failure
-  // and a declined confirmation freeze the SAME fired set at the SAME
-  // stopping point, so main.ts calls this with identical inputs for both.
-  // The cause-DEPENDENT part (wording, toast severity) lives entirely in
-  // `describeWithheldGroups` below — proven there, and end to end (with a
-  // real declined confirmation) in `pre-script-runner.test.ts`.
-  it('releases a group whose last step already fired before the stopping point, and withholds every group whose release step comes at or after it', () => {
-    const steps = [
-      step('s1', [{ groupId: 'gA', scriptId: 'sc1' }]),
-      step('s2', [{ groupId: 'gB', scriptId: 'sc2' }]),
-      step('s3', [{ groupId: 'gC', scriptId: 'sc3' }]),
-    ];
+  it('withholds every awaiting group when nothing completed', () => {
     const plan = planAutoStartRelease({
-      steps,
-      eligibleGroupIds: ['gA', 'gB', 'gC'],
+      pipeline: CHAIN,
+      eligibleGroupIds: ['gA', 'gB'],
     });
-
-    // Stopped (by failure OR decline) right after step 0: gA already
-    // released, gB/gC withheld.
-    const stoppedAfterStep0 = withheldGroupIds(plan, new Set([0]));
-    expect(stoppedAfterStep0).toEqual(['gB', 'gC']);
-    expect(stoppedAfterStep0).not.toContain('gA');
-
-    // Stopped later, after step 1 ALSO fired: gB is now released too. A
-    // DIFFERENT fired set genuinely produces a DIFFERENT result — proving
-    // this tracks the real fired set rather than a hardcoded answer.
-    const stoppedAfterStep1 = withheldGroupIds(plan, new Set([0, 1]));
-    expect(stoppedAfterStep1).toEqual(['gC']);
+    expect(withheldGroupIds(plan, new Set())).toEqual(['gA', 'gB']);
   });
 });
 
@@ -329,12 +231,12 @@ describe('filterAutoStartEligibleGroups', () => {
 });
 
 describe('shouldAutoRunPipeline', () => {
-  it('runs only when the login gate passes, the global setting is on, AND there is at least one step', () => {
+  it('runs only when the login gate passes, the global setting is on, AND there is at least one runnable script', () => {
     expect(
       shouldAutoRunPipeline({
         wasOpenedAtLogin: true,
-        preScriptsAutoRun: true,
-        stepCount: 1,
+        startupEnabled: true,
+        scriptCount: 1,
       }),
     ).toBe(true);
   });
@@ -343,8 +245,8 @@ describe('shouldAutoRunPipeline', () => {
     expect(
       shouldAutoRunPipeline({
         wasOpenedAtLogin: false,
-        preScriptsAutoRun: true,
-        stepCount: 1,
+        startupEnabled: true,
+        scriptCount: 1,
       }),
     ).toBe(false);
   });
@@ -353,18 +255,18 @@ describe('shouldAutoRunPipeline', () => {
     expect(
       shouldAutoRunPipeline({
         wasOpenedAtLogin: true,
-        preScriptsAutoRun: false,
-        stepCount: 1,
+        startupEnabled: false,
+        scriptCount: 1,
       }),
     ).toBe(false);
   });
 
-  it('does not run when the pipeline has zero steps', () => {
+  it('does not run when the pipeline has no runnable script', () => {
     expect(
       shouldAutoRunPipeline({
         wasOpenedAtLogin: true,
-        preScriptsAutoRun: true,
-        stepCount: 0,
+        startupEnabled: true,
+        scriptCount: 0,
       }),
     ).toBe(false);
   });
@@ -379,8 +281,8 @@ describe('shouldAutoRunPipeline', () => {
     expect(
       shouldAutoRunPipeline({
         wasOpenedAtLogin: true,
-        preScriptsAutoRun: true,
-        stepCount: 3,
+        startupEnabled: true,
+        scriptCount: 3,
       }),
     ).toBe(true);
   });
@@ -407,7 +309,7 @@ describe('describeWithheldGroups', () => {
     expect(report).not.toBeNull();
     expect(report?.toastKind).toBe('error');
     expect(report?.aggregatorLevel).toBe('error');
-    expect(report?.aggregatorLine).toContain('pipeline fallido');
+    expect(report?.aggregatorLine).toContain('workflow de arranque fallido');
     expect(report?.message).toContain('Group B');
     expect(report?.message).toContain('Group C');
   });
@@ -423,7 +325,7 @@ describe('describeWithheldGroups', () => {
     expect(report?.toastKind).toBe('ok');
     expect(report?.toastKind).not.toBe('error');
     expect(report?.aggregatorLevel).toBe('warn');
-    expect(report?.aggregatorLine).toContain('pipeline cancelado');
+    expect(report?.aggregatorLine).toContain('workflow de arranque cancelado');
   });
 
   it('falls back to the raw id when a group is not present in groupsById', () => {

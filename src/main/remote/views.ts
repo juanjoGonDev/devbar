@@ -1,14 +1,19 @@
 import type { GlobalSettings, LogEntry } from '../../domain-types.js';
-import type { GroupState, PipelineState } from '../../ipc-contract.js';
+import type { GroupState, WorkflowEntry } from '../../ipc-contract.js';
 import type { UpdateStatus } from '../../ipc-contract/updates-api.js';
 import type {
   RemoteGroupView,
   RemoteLogLine,
-  RemotePipelineView,
   RemoteSettingsView,
   RemoteUpdateView,
+  RemoteWorkflowView,
 } from '../../ipc-contract/remote-wire.js';
 import { stripAnsi } from '../../process/log-filters.js';
+import {
+  trayGroupLayout,
+  trayWorkflowLayout,
+  workflowListed,
+} from '../../tray-layout.js';
 import { isBusyPhase, phaseVersion } from '../update-phase.js';
 
 /**
@@ -18,11 +23,17 @@ import { isBusyPhase, phaseVersion } from '../update-phase.js';
  * after someone adds a field to the config shapes.
  */
 
+/**
+ * The groups in the tray's order: the hidden ones last and flagged, behind
+ * the same fold — or left out when the tray does not list them either.
+ */
 export function groupViews(
   groups: readonly GroupState[],
   branches: ReadonlyMap<string, string | null>,
+  showHiddenGroupsFold: boolean,
 ): RemoteGroupView[] {
-  return groups.map((state) => {
+  const { shown, folded } = trayGroupLayout(groups, showHiddenGroupsFold);
+  return [...shown, ...folded].map((state) => {
     const { group } = state;
     const commandName = (id: string): string =>
       group.commands.find((command) => command.id === id)?.name ?? id;
@@ -34,6 +45,7 @@ export function groupViews(
       color: state.color,
       branch: branches.get(state.groupId) ?? null,
       lastError: state.lastError,
+      hidden: group.hiddenInTray,
       commands: state.commands.map((command) => ({
         id: command.commandId,
         processId: command.processId,
@@ -57,13 +69,47 @@ export function groupViews(
   });
 }
 
-export function pipelineView(pipeline: PipelineState): RemotePipelineView {
-  return {
-    status: pipeline.status,
-    currentStep: pipeline.currentStep,
-    totalSteps: pipeline.totalSteps,
-    lastError: pipeline.lastError,
-  };
+/**
+ * The workflows a phone may see, run and stop: exactly the ones the tray
+ * lists — a running one always, the hidden ones only behind its fold.
+ */
+export function remoteWorkflowVisible(
+  entry: WorkflowEntry,
+  showHiddenWorkflowsFold: boolean,
+): boolean {
+  return workflowListed(entry, showHiddenWorkflowsFold);
+}
+
+/** In the tray's order: the hidden ones last and flagged, behind its fold. */
+export function workflowViews(
+  entries: readonly WorkflowEntry[],
+  showHiddenWorkflowsFold: boolean,
+): RemoteWorkflowView[] {
+  const { shown, folded } = trayWorkflowLayout(
+    entries,
+    showHiddenWorkflowsFold,
+  );
+  const view = (
+    { workflow, running, scriptCount, lastRun, nextRunAt }: WorkflowEntry,
+    hidden: boolean,
+  ): RemoteWorkflowView => ({
+    id: workflow.id,
+    name: workflow.name,
+    startup: workflow.trigger.kind === 'startup',
+    trigger: workflow.trigger.kind,
+    running: running !== null,
+    hidden,
+    doneScripts: running ? running.doneScripts : null,
+    totalScripts: running ? running.totalScripts : scriptCount,
+    startedAt: running ? running.startedAt : null,
+    nextRunAt,
+    lastResult: lastRun ? lastRun.result : null,
+    lastFinishedAt: lastRun ? lastRun.finishedAt : null,
+  });
+  return [
+    ...shown.map((entry) => view(entry, false)),
+    ...folded.map((entry) => view(entry, true)),
+  ];
 }
 
 /**

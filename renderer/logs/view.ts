@@ -2,15 +2,17 @@
  * The state every pane of the logs window reads, in one place.
  *
  * The window is one screen made of several panes — the line list, the
- * sidebar, the silenced drawer, the header — and they all answer questions
+ * sidebar, the silenced popover, the header — and they all answer questions
  * about the SAME thing: which scope is on screen, which levels it is pinned
  * to, what main last told us about the services. Splitting that state per
  * pane would mean each one holding its own copy and the copies drifting; this
  * module keeps a single answer and no pane owns it.
  *
- * It imports nothing but types on purpose: it is the bottom of the graph, so
- * any pane may read it without creating a cycle.
+ * It imports nothing but types — and the pure live-state module, which imports
+ * nothing at all — on purpose: it is the bottom of the graph, so any pane may
+ * read it without creating a cycle.
  */
+import type { LogEntry } from '../../src/domain-types.js';
 import type {
   LogListGroup,
   LogListItem,
@@ -18,6 +20,8 @@ import type {
   LogsTarget,
   SilenceLevel,
 } from '../../src/ipc-contract.js';
+import type { PatternMatcher } from './silence-preview.js';
+import { LIVE, type LiveState } from './live-state.js';
 
 /**
  * The three scopes the window can show. Every entry point — nav counters, tray
@@ -78,6 +82,20 @@ export interface LogsView {
   /** Name of what is on screen, and of the group it belongs to. */
   displayName: string;
   groupName: string;
+  /**
+   * The rule the silenced popover is previewing — a draft being typed, or a
+   * saved rule under the pointer. Rows it would swallow are drawn marked, so
+   * a row built later (scrolling, a new line) is marked the same way.
+   */
+  silencePreview: SilencePreview | null;
+  /** Following the tail, or paused — and why (see `live-state.ts`). */
+  live: LiveState;
+}
+
+/** A rule being previewed: which lines it swallows, and where it bites. */
+export interface SilencePreview {
+  swallows(entry: LogEntry): boolean;
+  matcher: PatternMatcher;
 }
 
 export const view: LogsView = {
@@ -96,6 +114,8 @@ export const view: LogsView = {
   sideData: [],
   displayName: '',
   groupName: '',
+  silencePreview: null,
+  live: LIVE,
 };
 
 export function itemById(id: string): LogListItem | null {
@@ -127,4 +147,36 @@ export const nav = {} as LogsNav;
 
 export function installNav(next: LogsNav): void {
   Object.assign(nav, next);
+}
+
+/**
+ * The silenced popover's entry points, handed in for the same reason as `nav`:
+ * a row's silence action prefills the popover's draft, and `row-actions.ts`
+ * sits below the popover. The popover installs itself when it loads.
+ */
+export interface SilenceHooks {
+  /** Open the popover on `level` with `pattern` (in storage form) as the draft. */
+  prefill(level: SilenceLevel, pattern: string): void;
+}
+
+export const silenceHooks = {} as SilenceHooks;
+
+export function installSilenceHooks(next: SilenceHooks): void {
+  Object.assign(silenceHooks, next);
+}
+
+/**
+ * The pane's repaint, handed to the rows for the same reason as `nav`: a row
+ * that folds or unfolds itself (a stack trace, a JSON line) changes what the
+ * rows around it look like, and `rows.ts` sits below the pane that draws them.
+ */
+export interface RowHooks {
+  /** Rebuild the drawn rows in place, keeping the reader where they were. */
+  repaint(): void;
+}
+
+export const rowHooks = {} as RowHooks;
+
+export function installRowHooks(next: RowHooks): void {
+  Object.assign(rowHooks, next);
 }
