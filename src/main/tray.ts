@@ -210,6 +210,11 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
   // Reapplied to every rebuilt tray: a fresh item would otherwise come up
   // with menubar's creation-time tooltip.
   let lastTooltip = 'DevBar';
+  // What the status item shows right now. Running processes push state many
+  // times a second; touching the item on every push makes macOS reset the
+  // pointer in every other DevBar window, so only a real change reaches it.
+  let shownTitle: string | null = null;
+  let shownTooltip: string | null = null;
 
   function activeTray(): TrayLike | null {
     if (currentTray) return currentTray;
@@ -373,6 +378,8 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
     attach(next): void {
       menuBar = next;
       currentTray = null;
+      shownTitle = null;
+      shownTooltip = null;
     },
     refreshIcon,
     simulatedCount: () => devTrayCount,
@@ -386,13 +393,20 @@ export function createTrayController(deps: TrayControllerDeps): TrayController {
       const count = badgeCount(errs, warns);
       const shown = devTrayCount ?? count;
       if (deps.isMac) {
-        tray.setTitle(trayTitleText(shown));
+        const title = trayTitleText(shown);
+        if (title !== shownTitle || tray !== currentTray) {
+          tray.setTitle(title);
+          shownTitle = title;
+        }
       } else {
         lastTrayCount = count;
       }
       // The dev-panel override keeps "error" — that is what the panel forces.
       lastTooltip = trayTooltip(shown, devTrayCount != null || errs > 0);
-      tray.setToolTip(lastTooltip);
+      if (lastTooltip !== shownTooltip || tray !== currentTray) {
+        tray.setToolTip(lastTooltip);
+        shownTooltip = lastTooltip;
+      }
       refreshIcon();
     },
 
