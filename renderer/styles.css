@@ -7738,3 +7738,401 @@ dialog.sub-sheet::backdrop {
   font-weight: 400;
   opacity: 0.7;
 }
+
+/* ── Schedule editor (renderer/schedule/*.ts) ─────────────────────────
+ * One component for the command / action sheet and the workflow trigger
+ * popover: «A una hora | Cada…», the «08 : 00» time field and its picker,
+ * the 7-cell weekday control, presets and the «PRÓXIMAS» footer. One token
+ * set, redefined for dark below. */
+.sched-editor {
+  --sched-text-2: #6e6e73;
+  --sched-field-bg: #ffffff;
+  --sched-field-border: #d2d2d7;
+  --sched-seg-bg: #f0f0f3;
+  --sched-seg-on: #ffffff;
+  --sched-rule-bg: #f7f7f9;
+  --sched-rule-border: #ececef;
+  --sched-chip-bg: #f0f0f3;
+  --sched-chip-fg: #3a3a3c;
+  --sched-chip-on-bg: #e6f0ff;
+  --sched-chip-on-fg: #0062cc;
+  --sched-days-bg: #f0f0f3;
+  --sched-days-line: #e5e5ea;
+  --sched-fill: var(--accent-strong);
+  --sched-part-on-bg: #e6f0ff;
+  --sched-part-on-fg: #0062cc;
+  --sched-summary-bg: #f5f8ff;
+  --sched-run-bg: #ffffff;
+  --sched-run-border: #dfe8fb;
+  --sched-pop-bg: #ffffff;
+  --sched-pop-border: #dcdce0;
+  --sched-pop-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+  --sched-opt-hover: #f2f2f7;
+  --sched-error: #d70015;
+  --sched-focus: rgba(0, 122, 255, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+:root[data-theme='dark'] .sched-editor {
+  --sched-text-2: #a1a1a6;
+  --sched-field-bg: #141416;
+  --sched-field-border: #3a3a3c;
+  --sched-seg-bg: rgba(255, 255, 255, 0.08);
+  --sched-seg-on: #48484a;
+  --sched-rule-bg: #232326;
+  --sched-rule-border: #2f2f33;
+  --sched-chip-bg: #2c2c2e;
+  --sched-chip-fg: #e5e5ea;
+  --sched-chip-on-bg: rgba(10, 132, 255, 0.22);
+  --sched-chip-on-fg: #64aaff;
+  --sched-days-bg: #2c2c2e;
+  --sched-days-line: #3a3a3c;
+  --sched-part-on-bg: rgba(10, 132, 255, 0.3);
+  --sched-part-on-fg: #ffffff;
+  --sched-summary-bg: rgba(10, 132, 255, 0.12);
+  --sched-run-bg: rgba(255, 255, 255, 0.06);
+  --sched-run-border: rgba(255, 255, 255, 0.1);
+  --sched-pop-bg: #2c2c2e;
+  --sched-pop-border: #3a3a3c;
+  --sched-pop-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  --sched-opt-hover: rgba(255, 255, 255, 0.08);
+  --sched-error: #ff6961;
+}
+.sched-editor [hidden] {
+  display: none !important;
+}
+/* Every control here is chromeless: no app bezel, shadow or hover dim. */
+.sched-editor button {
+  box-shadow: none;
+  filter: none;
+  transform: none;
+  font-weight: 500;
+}
+.sched-editor button:focus-visible,
+.sched-editor select:focus-visible,
+.sched-editor input:focus-visible {
+  outline: 2px solid var(--sched-focus);
+  outline-offset: 1px;
+}
+.sched-grow {
+  flex: 1;
+}
+.sched-label {
+  color: var(--sched-text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* «A una hora | Cada…» */
+.sched-seg {
+  display: flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--sched-seg-bg);
+}
+.sched-editor .sched-seg-option {
+  flex: 1;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--sched-text-2);
+  font-size: 12.5px;
+}
+.sched-editor .sched-seg-option[aria-selected='true'] {
+  background: var(--sched-seg-on);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  color: inherit;
+  font-weight: 600;
+}
+
+/* Rules */
+.sched-at,
+.sched-rules,
+.sched-every {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sched-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid var(--sched-rule-border);
+  border-radius: 10px;
+  background: var(--sched-rule-bg);
+}
+.sched-editor .sched-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--sched-text-2);
+}
+.sched-editor .sched-remove:hover {
+  background: var(--sched-opt-hover);
+}
+.sched-at-foot,
+.sched-presets,
+.sched-quick,
+.sched-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sched-row {
+  gap: 8px;
+}
+.sched-editor .sched-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 12.5px;
+}
+.sched-editor .sched-add:hover {
+  background: var(--accent-tint);
+}
+
+/* Preset and quick chips */
+.sched-editor .sched-chip {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--sched-chip-bg);
+  color: var(--sched-chip-fg);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.sched-editor .sched-chip[aria-pressed='true'] {
+  background: var(--sched-chip-on-bg);
+  color: var(--sched-chip-on-fg);
+  font-weight: 600;
+}
+
+/* Weekdays: seven equal cells, letters centred. */
+.sched-days {
+  display: grid;
+  grid-template-columns: repeat(7, 30px);
+  height: 30px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--sched-days-bg);
+  box-shadow: inset 0 0 0 1px var(--sched-days-line);
+}
+.sched-editor .sched-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--sched-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sched-editor .sched-day + .sched-day {
+  box-shadow: inset 1px 0 0 var(--sched-days-line);
+}
+.sched-editor .sched-day[aria-pressed='true'] {
+  background: var(--sched-fill);
+  color: #fff;
+}
+.sched-editor
+  .sched-day[aria-pressed='true']
+  + .sched-day[aria-pressed='true'] {
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.25);
+}
+.sched-editor .sched-day:focus-visible {
+  outline-offset: -2px;
+}
+
+/* «08 : 00» and its picker */
+.sched-time-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.sched-editor .sched-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 30px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--sched-field-border);
+  border-radius: 8px;
+  background: var(--sched-field-bg);
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+.sched-editor .sched-time[aria-expanded='true'],
+.sched-editor .sched-time:focus-visible {
+  border-color: var(--accent);
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--sched-focus);
+}
+.sched-time-part {
+  padding: 1px 3px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.sched-time:focus .sched-time-part.is-active,
+.sched-time[aria-expanded='true'] .sched-time-part.is-active {
+  background: var(--sched-part-on-bg);
+  color: var(--sched-part-on-fg);
+}
+.sched-time > .icon {
+  margin-left: 4px;
+  color: var(--sched-text-2);
+  font-size: 12px;
+}
+.sched-time-pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  grid-template-columns: 52px 52px;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--sched-pop-border);
+  border-radius: 10px;
+  background: var(--sched-pop-bg);
+  box-shadow: var(--sched-pop-shadow);
+}
+.sched-time-head {
+  padding: 2px 0 4px;
+  color: var(--sched-text-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+.sched-time-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 196px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.sched-editor .sched-time-opt {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.sched-editor .sched-time-opt:hover {
+  background: var(--sched-opt-hover);
+}
+.sched-editor .sched-time-opt[aria-selected='true'] {
+  background: var(--sched-fill);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* «Cada…» */
+.sched-editor .sched-every-n,
+.sched-editor .sched-unit {
+  height: 30px;
+  border: 1px solid var(--sched-field-border);
+  border-radius: 8px;
+  background: var(--sched-field-bg);
+  color: inherit;
+}
+.sched-editor .sched-every-n {
+  width: 60px;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  text-align: center;
+}
+.sched-editor .sched-every-n[aria-invalid='true'] {
+  border-color: var(--sched-error);
+}
+.sched-editor .sched-unit {
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+.sched-every-error {
+  margin-top: -4px;
+  color: var(--sched-error);
+  font-size: 11.5px;
+}
+.sched-quick > .sched-label {
+  margin-right: 2px;
+}
+.sched-divider {
+  height: 1px;
+  background: var(--sched-rule-border);
+}
+.sched-window.is-off > .sched-time-wrap,
+.sched-window.is-off > span {
+  opacity: 0.45;
+}
+.sched-window-hint {
+  color: var(--sched-text-2);
+  font-size: 11.5px;
+}
+
+/* Sentence and next runs */
+.sched-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sched-summary-bg);
+}
+.sched-sentence {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.sched-next {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+}
+.sched-run {
+  padding: 2px 8px;
+  border: 1px solid var(--sched-run-border);
+  border-radius: 6px;
+  background: var(--sched-run-bg);
+  font-family: var(--font-mono);
+}
+.sched-none {
+  color: var(--sched-text-2);
+}
+/* ── End Schedule editor ───────────────────────────────────────────── */
