@@ -284,18 +284,18 @@ const wiring = {
   repaintWindows,
   registry,
   ...settingsPushes(registry),
-  // MCP: the local endpoint AI assistants connect through, off unless enabled.
-  mcp: mcpFor({ configStore, registry, appWindows }),
 };
 
 // «Control remoto»: the LAN server for linked phones, off unless enabled.
 const remote = remoteControlFor({ ...wiring, notifications });
+// MCP: the local endpoint AI assistants connect through, off unless enabled.
+const mcp = mcpFor({ ...wiring, appWindows });
 
 const shutdown = createShutdownController({
   isPrimary,
   smokeMode: SMOKE_MODE,
   repoWatcher,
-  remoteServer: withMcpShutdown(remote, wiring.mcp),
+  remoteServer: withMcpShutdown(remote, mcp),
   workflowRunner,
   processManager,
   sessionResume: () => sessionResume,
@@ -369,6 +369,7 @@ function registerIpc(): void {
     customIconsChanged: (icons) =>
       sendToRenderers(registry, 'customIcons:changed', icons),
     remote,
+    mcp,
     portsOf: ports.portsOf,
   });
   registerDevPanel(
@@ -387,8 +388,7 @@ function registerIpc(): void {
  * tray popover.
  */
 function scheduleBootWork(): void {
-  void remote.startIfEnabled();
-  void wiring.mcp.startIfEnabled();
+  void Promise.all([remote.startIfEnabled(), mcp.startIfEnabled()]);
   setTimeout(() => void startup.autoStartAllMarkedCommands(), 300);
   setTimeout(() => void schedules.checkSchedules(new Date()), 1000);
   schedules.startScheduleLoop();

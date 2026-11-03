@@ -60,7 +60,7 @@ export interface ClientStore {
   /** Writes any coalesced usage now (quit, tests). */
   flush(): void;
   /** Status or permissions changed: live sessions re-check their tools. */
-  onChange(listener: (client: McpClient) => void): void;
+  onChange(listener: (client: McpClient) => void): () => void;
 }
 
 /** How long usage counters wait before they are written. */
@@ -190,7 +190,7 @@ export function createClientStore(deps: ClientStoreDeps): ClientStore {
   const records: McpClientRecord[] = (Array.isArray(raw) ? raw : [])
     .map(normalizeClientRecord)
     .filter((record): record is McpClientRecord => record !== null);
-  const listeners: ((client: McpClient) => void)[] = [];
+  const listeners = new Set<(client: McpClient) => void>();
   let pendingWrite: unknown = null;
 
   const view = (record: McpClientRecord): McpClient => {
@@ -322,7 +322,8 @@ export function createClientStore(deps: ClientStoreDeps): ClientStore {
       if (pendingWrite !== null) writeNow();
     },
     onChange: (listener) => {
-      listeners.push(listener);
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
 }

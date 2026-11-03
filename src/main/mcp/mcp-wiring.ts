@@ -1,14 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appHome } from '../../app-paths.js';
 import type { GlobalSettings } from '../../domain-types.js';
-import {
-  sendToRenderers,
-  settingsPushes,
-  type WindowRegistry,
-} from '../renderer-bus.js';
+import { sendToRenderers, settingsPushes } from '../renderer-bus.js';
 import { createAuditLog, type AuditLog } from './audit-log.js';
 import { createClientStore, type ClientStore } from './client-store.js';
 import { createConfirmDesk, type ConfirmDesk } from './confirm-desk.js';
@@ -18,6 +15,14 @@ import {
   type McpControl,
   type McpEndpoint,
 } from './mcp-control.js';
+import {
+  mcpRuntime,
+  type McpRuntime,
+  type McpRuntimeWiring,
+} from './runtime.js';
+import { createSession, type Session } from './session.js';
+import { createSocketEndpoint } from './socket-endpoint.js';
+import { MCP_TOOLS } from './tools/catalog.js';
 
 /**
  * The MCP server wired to the real collaborators: the config store, the disk,
@@ -63,12 +68,8 @@ const timers = {
     clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
-/** Not listening yet: the local endpoint arrives with the server itself. */
-const OFFLINE_ENDPOINT: McpEndpoint = {
-  start: () => Promise.resolve(),
-  stop: () => Promise.resolve(),
-  listening: () => false,
-};
+/** What a local endpoint is built from. */
+type McpCore = Omit<McpParts, 'control'>;
 
 function ownerOnlyDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true, mode: OWNER_ONLY_DIR });
@@ -78,7 +79,7 @@ function ownerOnlyDir(dir: string): void {
 
 export function createMcp(
   wiring: McpWiring,
-  endpoint: McpEndpoint = OFFLINE_ENDPOINT,
+  endpointFor: (core: McpCore) => McpEndpoint,
 ): McpParts {
   const home = path.join(wiring.appHome, 'mcp');
   ownerOnlyDir(home);
@@ -126,7 +127,7 @@ export function createMcp(
     clients,
     audit,
     desk,
-    endpoint,
+    endpoint: endpointFor({ clients, audit, desk, home }),
     connectCommand: () =>
       connectCommands({
         platform: wiring.platform,
@@ -144,30 +145,92 @@ export function createMcp(
   return { control, clients, audit, desk, home };
 }
 
+/** The real local endpoint: the socket (or pipe) and a session per assistant. */
+export function localEndpoint(
+  core: McpCore,
+  runtime: McpRuntime,
+  version: string,
+): McpEndpoint {
+  const firstApprovals = new Set<string>();
+  const sessions = new Set<Session>();
+  const endpoint = createSocketEndpoint({
+    home: core.home,
+    platform: process.platform,
+    createServer: (onConnection) => net.createServer(onConnection),
+    probe: (socketPath) =>
+      new Promise((resolve) => {
+        const socket = net.connect(socketPath);
+        socket.once('connect', () => {
+          socket.destroy();
+          resolve(true);
+        });
+        socket.once('error', () => resolve(false));
+      }),
+    writeToken: (tokenPath, token) =>
+      fs.writeFileSync(tokenPath, token, { mode: OWNER_ONLY_FILE }),
+    removeSocket: (socketPath) => fs.rmSync(socketPath, { force: true }),
+    restrictSocket: (socketPath) => fs.chmodSync(socketPath, OWNER_ONLY_FILE),
+    newToken: () => randomBytes(32).toString('base64url'),
+    ...timers,
+    session: (transport) => {
+      const session = createSession(transport, {
+        ...core,
+        runtime,
+        tools: MCP_TOOLS,
+        version,
+        firstApprovals,
+        now: () => Date.now(),
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        setTimer: timers.setTimer,
+      });
+      sessions.add(session);
+      session.server.server.onclose = () => {
+        sessions.delete(session);
+        void session.close();
+      };
+    },
+  });
+  return {
+    ...endpoint,
+    stop: async () => {
+      // An open session would otherwise keep answering until it hangs up.
+      await Promise.all([...sessions].map((session) => session.close()));
+      sessions.clear();
+      await endpoint.stop();
+    },
+  };
+}
+
 /** What main.ts already has at hand. */
-interface McpAppWiring {
-  configStore: McpWiring['configStore'];
-  registry: WindowRegistry;
+interface McpAppWiring extends McpRuntimeWiring {
+  configStore: McpWiring['configStore'] & McpRuntimeWiring['configStore'];
+  host: { appVersion(): string };
   appWindows: { ensureConfigWindow(options?: { goto?: string }): void };
 }
 
-/** The MCP control surface over the real disk, store and windows. */
+/** The MCP server over the real disk, store, windows and runtime. */
 export function mcpFor(app: McpAppWiring): McpControl {
-  return createMcp({
-    appHome: appHome(),
-    // This file is build/src/main/mcp/mcp-wiring.js; the main dir is build/src.
-    mainDir: path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '..',
-      '..',
-    ),
-    execPath: process.execPath,
-    platform: process.platform,
-    configStore: app.configStore,
-    send: (channel, payload) => sendToRenderers(app.registry, channel, payload),
-    sendSettings: settingsPushes(app.registry).sendSettings,
-    showConfirmations: () => app.appWindows.ensureConfigWindow({ goto: 'mcp' }),
-  }).control;
+  const runtime = mcpRuntime(app);
+  return createMcp(
+    {
+      appHome: appHome(),
+      // This file is build/src/main/mcp/mcp-wiring.js; the main dir is build/src.
+      mainDir: path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        '..',
+        '..',
+      ),
+      execPath: process.execPath,
+      platform: process.platform,
+      configStore: app.configStore,
+      send: (channel, payload) =>
+        sendToRenderers(app.registry, channel, payload),
+      sendSettings: settingsPushes(app.registry).sendSettings,
+      showConfirmations: () =>
+        app.appWindows.ensureConfigWindow({ goto: 'mcp' }),
+    },
+    (core) => localEndpoint(core, runtime, app.host.appVersion()),
+  ).control;
 }
 
 /** «Control remoto»'s close, with the MCP endpoint closing alongside. */

@@ -22,28 +22,35 @@ function harness() {
   const sent: { channel: string; payload: unknown }[] = [];
   const pushedSettings: GlobalSettings[] = [];
   let confirmationsShown = 0;
-  const parts = createMcp({
-    appHome,
-    mainDir: '/app/build/src',
-    execPath: '/app/DevBar',
-    platform: 'darwin',
-    configStore: {
-      getGlobalSettings: () => settings,
-      saveGlobalSettings: (patch) => {
-        settings = { ...settings, ...patch };
-        return settings;
+  const parts = createMcp(
+    {
+      appHome,
+      mainDir: '/app/build/src',
+      execPath: '/app/DevBar',
+      platform: 'darwin',
+      configStore: {
+        getGlobalSettings: () => settings,
+        saveGlobalSettings: (patch) => {
+          settings = { ...settings, ...patch };
+          return settings;
+        },
+        getMcpClients: () => clients,
+        saveMcpClients: (value) => {
+          clients = value;
+        },
       },
-      getMcpClients: () => clients,
-      saveMcpClients: (value) => {
-        clients = value;
+      send: (channel, payload) => sent.push({ channel, payload }),
+      sendSettings: (next) => pushedSettings.push(next),
+      showConfirmations: () => {
+        confirmationsShown += 1;
       },
     },
-    send: (channel, payload) => sent.push({ channel, payload }),
-    sendSettings: (next) => pushedSettings.push(next),
-    showConfirmations: () => {
-      confirmationsShown += 1;
-    },
-  });
+    () => ({
+      start: () => Promise.resolve(),
+      stop: () => Promise.resolve(),
+      listening: () => false,
+    }),
+  );
   return {
     parts,
     appHome,
