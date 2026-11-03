@@ -5843,6 +5843,266 @@ label.remote-row {
   text-align: center;
 }
 
+/* ── MCP: confirm (renderer/config/mcp-confirm.ts) ────────────────────
+   An assistant's risky call, waiting for the user: risk tile and tag, a
+   GitHub-like diff, the assistant's reason and a countdown. Colours are the
+   block's own tokens, redefined for dark below. */
+.mcp-confirm {
+  --mcp-tile-bg: rgba(142, 142, 147, 0.16);
+  --mcp-tile-fg: #6e6e73;
+  --mcp-tag-bg: var(--badge-neutral-bg);
+  --mcp-tag-fg: #6e6e73;
+  --mcp-diff-border: #d0d7de;
+  --mcp-diff-head-bg: #f6f8fa;
+  --mcp-diff-bg: #ffffff;
+  --mcp-diff-ctx-fg: #57606a;
+  --mcp-diff-del-bg: #ffebe9;
+  --mcp-diff-del-fg: #82071e;
+  --mcp-diff-add-bg: #e6ffec;
+  --mcp-diff-add-fg: #116329;
+  --mcp-reason-bg: rgba(0, 0, 0, 0.04);
+  --mcp-reason-fg: #3a3a3c;
+  --mcp-footer-bg: rgba(0, 0, 0, 0.02);
+  /* White on this red: 5.6:1, in both themes. */
+  --mcp-danger-fill: #d70015;
+  width: 620px;
+}
+.mcp-confirm[data-risk='executes'] {
+  --mcp-tile-bg: #fff1d6;
+  --mcp-tile-fg: #a05a00;
+  --mcp-tag-bg: var(--badge-error-bg);
+  --mcp-tag-fg: var(--badge-error-fg);
+}
+.mcp-confirm[data-risk='destructive'] {
+  --mcp-tile-bg: var(--badge-error-bg);
+  --mcp-tile-fg: var(--badge-error-fg);
+  --mcp-tag-bg: var(--badge-error-bg);
+  --mcp-tag-fg: var(--badge-error-fg);
+}
+:root[data-theme='dark'] .mcp-confirm {
+  /* Dark scrollbars for the diff's sideways and downward scroll. */
+  color-scheme: dark;
+  --mcp-tile-fg: #aeaeb2;
+  --mcp-tag-fg: #aeaeb2;
+  --mcp-diff-border: rgba(255, 255, 255, 0.14);
+  --mcp-diff-head-bg: rgba(255, 255, 255, 0.05);
+  --mcp-diff-bg: rgba(0, 0, 0, 0.22);
+  --mcp-diff-ctx-fg: #8b949e;
+  --mcp-diff-del-bg: rgba(248, 81, 73, 0.16);
+  --mcp-diff-del-fg: #ffa198;
+  --mcp-diff-add-bg: rgba(46, 160, 67, 0.18);
+  --mcp-diff-add-fg: #7ee787;
+  --mcp-reason-bg: rgba(255, 255, 255, 0.06);
+  --mcp-reason-fg: #d1d1d6;
+  --mcp-footer-bg: rgba(255, 255, 255, 0.03);
+}
+:root[data-theme='dark'] .mcp-confirm[data-risk='executes'] {
+  --mcp-tile-bg: rgba(255, 159, 10, 0.2);
+  --mcp-tile-fg: #ffb340;
+  --mcp-tag-bg: var(--badge-error-bg);
+  --mcp-tag-fg: var(--badge-error-fg);
+}
+:root[data-theme='dark'] .mcp-confirm[data-risk='destructive'] {
+  --mcp-tile-fg: var(--badge-error-fg);
+  --mcp-tag-fg: var(--badge-error-fg);
+}
+.mcp-confirm-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 14px;
+}
+.mcp-confirm-tile {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--mcp-tile-bg);
+  color: var(--mcp-tile-fg);
+  font-size: 20px;
+}
+.mcp-confirm-heading {
+  flex: 1;
+  min-width: 0;
+}
+.mcp-confirm-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+}
+.mcp-confirm-subtitle {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.mcp-confirm-badges {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 6px;
+}
+.mcp-confirm-risk {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--mcp-tag-bg);
+  color: var(--mcp-tag-fg);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mcp-confirm-queue {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mcp-confirm-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px 6px;
+}
+.mcp-diff-box {
+  overflow: hidden;
+  border: 1px solid var(--mcp-diff-border);
+  border-radius: 8px;
+  background: var(--mcp-diff-bg);
+}
+.mcp-diff-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--mcp-diff-border);
+  background: var(--mcp-diff-head-bg);
+}
+.mcp-diff-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mcp-diff-count {
+  font-size: 11.5px;
+  color: var(--mcp-diff-ctx-fg);
+}
+/* Long lines scroll sideways together; a long list scrolls down. */
+.mcp-diff {
+  display: grid;
+  grid-template-columns: minmax(100%, max-content);
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.mcp-diff:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.mcp-diff-line {
+  padding: 0 12px;
+  white-space: pre;
+  color: var(--mcp-diff-ctx-fg);
+}
+/* The − / + markers: pseudo-content, so a copy carries only the value. */
+.mcp-diff-line::before {
+  content: '';
+  display: inline-block;
+  width: 2ch;
+}
+.mcp-diff-line[data-kind='del'] {
+  background: var(--mcp-diff-del-bg);
+  color: var(--mcp-diff-del-fg);
+}
+.mcp-diff-line[data-kind='del']::before {
+  content: '\2212';
+}
+.mcp-diff-line[data-kind='add'] {
+  background: var(--mcp-diff-add-bg);
+  color: var(--mcp-diff-add-fg);
+}
+.mcp-diff-line[data-kind='add']::before {
+  content: '\002B';
+}
+.mcp-diff-field {
+  display: inline-block;
+}
+.mcp-confirm-reason {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--mcp-reason-bg);
+  color: var(--mcp-reason-fg);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.mcp-confirm-reason[hidden] {
+  display: none;
+}
+.mcp-confirm-reason .icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.mcp-confirm-note {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.mcp-confirm-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--mcp-footer-bg);
+}
+.mcp-confirm-countdown,
+.mcp-confirm-notice {
+  flex: 1;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mcp-confirm-notice {
+  color: inherit;
+  font-weight: 600;
+}
+.mcp-confirm-countdown[hidden],
+.mcp-confirm-notice[hidden] {
+  display: none;
+}
+.mcp-confirm-footer button {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+.mcp-confirm-apply {
+  font-weight: 600;
+}
+button.primary.mcp-confirm-apply.is-destructive {
+  background: var(--mcp-danger-fill);
+  box-shadow: 0 1px 2px rgba(215, 0, 21, 0.35);
+}
+.mcp-confirm-footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* ── End MCP: confirm ──────────────────────────────────────────────── */
+
 /* ── Settings: MCP (renderer/config/mcp-*.ts) ─────────────────────────
    The server card, the connect block, the client list with its
    permissions sheet and the activity log. One token set for the section
