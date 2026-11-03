@@ -819,6 +819,37 @@ header.toolbar .live-btn {
   border-radius: 8px;
 }
 
+/*
+ * Narrow: the group name, the status text and the live text go, the status
+ * and live buttons shrink to their dots, and Reiniciar, Parar and
+ * Silenciados (`.tb-wide`) move into the «⋯» menu — `menu.ts` adds them
+ * there when it finds them not drawn.
+ */
+@container logs-toolbar (max-width: 759px) {
+  header.toolbar .crumb-group,
+  header.toolbar .crumb-sep,
+  header.toolbar .tb-wide,
+  header.toolbar #run-pill-text,
+  header.toolbar #live-text {
+    display: none;
+  }
+  header.toolbar .run-pill,
+  header.toolbar .run-pill[data-tone] {
+    padding: 0 4px;
+    background: none;
+  }
+  header.toolbar .run-pill[data-tone='running'] .run-pill-dot {
+    box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.25);
+  }
+  header.toolbar .live-btn,
+  header.toolbar .live-btn.paused {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    justify-content: center;
+    background: none;
+  }
+}
 /* ======================== end of Logs: header ======================== */
 
 /* ── Activity strip: lines per slice of time, under the toolbar ── */

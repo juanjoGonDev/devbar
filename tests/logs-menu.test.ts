@@ -125,4 +125,65 @@ describe('renderer/logs/menu.ts', () => {
     expect(dom.argsFor('clearLogs')).toEqual([['api']]);
     expect(elements.linesEl.childElementCount).toBe(0);
   });
+
+  describe('on a narrow toolbar', () => {
+    /** What the «Logs: header» container query does to a folded button. */
+    function fold(...buttons: HTMLButtonElement[]): void {
+      for (const button of buttons) {
+        button.hidden = false;
+        button.style.display = 'none';
+      }
+    }
+
+    function clicksOn(button: HTMLButtonElement): () => number {
+      let count = 0;
+      button.addEventListener('click', () => (count += 1));
+      return () => count;
+    }
+
+    it('offers nothing extra while every button is drawn', () => {
+      elements.restartBtn.hidden = false;
+      elements.runBtn.hidden = false;
+      elements.moreBtn.click();
+      expect(labels()).not.toContain('Reiniciar');
+      expect(labels()).not.toContain('Silenciados');
+    });
+
+    it('takes in the folded run controls and the silenced toggle, first', () => {
+      elements.runBtn.setAttribute('aria-label', 'Parar');
+      elements.silenceToggleCountEl.textContent = '2';
+      fold(elements.restartBtn, elements.runBtn, elements.silenceToggleBtn);
+      elements.moreBtn.click();
+      expect(labels()).toEqual([
+        'Reiniciar',
+        'Parar',
+        'Silenciados (2)',
+        'Copiar todo',
+        'Vaciar',
+        'Mostrar actividad',
+      ]);
+      // Set apart from the view's own actions by a line of their own.
+      expect(document.querySelectorAll('[role="separator"]')).toHaveLength(2);
+    });
+
+    it('leaves out a run control the service does not have', () => {
+      fold(elements.silenceToggleBtn);
+      elements.restartBtn.hidden = true;
+      elements.runBtn.hidden = true;
+      elements.moreBtn.click();
+      expect(labels()[0]).toBe('Silenciados');
+    });
+
+    it('acts through the folded buttons themselves', () => {
+      fold(elements.restartBtn, elements.runBtn, elements.silenceToggleBtn);
+      const restarts = clicksOn(elements.restartBtn);
+      const runs = clicksOn(elements.runBtn);
+      const silences = clicksOn(elements.silenceToggleBtn);
+      for (const label of ['Reiniciar', 'Iniciar', 'Silenciados']) {
+        elements.moreBtn.click();
+        choose(label);
+      }
+      expect([restarts(), runs(), silences()]).toEqual([1, 1, 1]);
+    });
+  });
 });
