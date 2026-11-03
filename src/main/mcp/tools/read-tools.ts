@@ -68,16 +68,21 @@ export const READ_TOOLS: readonly ToolDef[] = [
         .describe('Group id or name; all when omitted.'),
     },
     annotations: READ_ONLY,
-    run: ({ group }, ctx) => {
-      const states = visibleStates(ctx, group);
+    run: async ({ group }, ctx) => {
+      const states = await Promise.all(
+        visibleStates(ctx, group).map(async (state) => ({
+          ...state,
+          currentBranch: await ctx.runtime.currentBranch(state.groupId),
+        })),
+      );
       const running = states
         .flatMap((s) => s.commands)
         .filter((c) => c.status === 'running').length;
-      return Promise.resolve({
+      return {
         data: states.map(statusView),
         target: group ? (states[0]?.group.name ?? group) : 'Todos los grupos',
         summary: `${running} en marcha`,
-      });
+      };
     },
   }),
   defineTool({

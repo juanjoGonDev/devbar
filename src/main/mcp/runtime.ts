@@ -5,6 +5,7 @@ import type {
   WorkflowRunState,
 } from '../../ipc-contract.js';
 import type { WindowRegistry } from '../renderer-bus.js';
+import { record } from '../remote/validate.js';
 import {
   createRuntimeActions,
   type RuntimeActions,
@@ -26,6 +27,8 @@ export interface McpRuntime {
   groupStates(): GroupState[];
   workflowEntries(): WorkflowEntry[];
   workflowRunState(workflowId: string): WorkflowRunState | null;
+  /** The group's git branch, asked now: the snapshots never carry it. */
+  currentBranch(groupId: string): Promise<string | null>;
   logs(processId: string): readonly LogEntry[];
   processState(
     processId: string,
@@ -83,6 +86,15 @@ export function mcpRuntime(app: McpRuntimeWiring): McpRuntime {
     groupStates: () => app.snapshots.snapshotGroupStates(),
     workflowEntries: () => app.snapshots.workflowEntries(),
     workflowRunState: (id) => app.workflowRunner.runState(id),
+    currentBranch: async (groupId) => {
+      // git owns its failures (ok: false); a rejection reads the same way.
+      const answer = record(
+        await actions.currentBranch(groupId).catch(() => null),
+      );
+      return answer?.ok === true && typeof answer.branch === 'string'
+        ? answer.branch
+        : null;
+    },
     logs: (id) => app.processManager.getLogs(id),
     processState: (id) => app.processManager.getState(id),
     startProcess: (id) => actions.startProcess(id),

@@ -3,7 +3,9 @@ import { createWindowRegistry } from '../src/main/renderer-bus.js';
 import { mcpRuntime, type McpRuntimeWiring } from '../src/main/mcp/runtime.js';
 import { makeCommand, makeGroup, makeState } from './helpers/main-fakes.js';
 
-function harness() {
+type GitAnswer = { ok: boolean; branch?: string; error?: string };
+
+function harness(git: GitAnswer = { ok: false, error: 'not a repo' }) {
   const calls: string[] = [];
   const group = makeGroup({ commands: [makeCommand()] });
   const registry = createWindowRegistry(() => null);
@@ -37,7 +39,7 @@ function harness() {
     },
     gitManager: {
       listBranches: () => Promise.resolve([]),
-      currentBranch: () => Promise.resolve(null),
+      currentBranch: () => Promise.resolve(git),
       switchBranch: () => Promise.resolve({ ok: true }),
       refreshRemotes: () => Promise.resolve({ changed: false }),
     },
@@ -95,5 +97,16 @@ describe('src/main/mcp/runtime.ts', () => {
     expect(h.runtime.logs('cmd:g1:c1')).toHaveLength(1);
     expect(h.runtime.processState('act:g1:a1').lastExitCode).toBe(3);
     expect(h.runtime.workflowRunState('w1')).toBeNull();
+  });
+
+  it("answers a group's git branch, or null when git has none", async () => {
+    const onBranch = harness({ ok: true, branch: 'fix/date-index' });
+    const noRepo = harness();
+
+    await expect(onBranch.runtime.currentBranch('g1')).resolves.toBe(
+      'fix/date-index',
+    );
+    await expect(noRepo.runtime.currentBranch('g1')).resolves.toBeNull();
+    await expect(onBranch.runtime.currentBranch('missing')).resolves.toBeNull();
   });
 });

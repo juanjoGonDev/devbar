@@ -190,6 +190,23 @@ describe('src/main/mcp/session.ts', () => {
       });
     });
 
+    it("reports each group's git branch, asked from git", async () => {
+      const h = await harness();
+      h.runtime.branches.set('back', 'fix/date-index');
+      h.approve();
+      await settle();
+
+      const result = await h.client.callTool({
+        name: 'get_status',
+        arguments: {},
+      });
+
+      expect(resultData(result)).toMatchObject([
+        { name: 'Back', branch: 'fix/date-index' },
+        { name: 'Front', branch: null },
+      ]);
+    });
+
     it('turns a ToolError into an error result the assistant can read', async () => {
       const h = await harness([FAILING]);
       h.approve();
