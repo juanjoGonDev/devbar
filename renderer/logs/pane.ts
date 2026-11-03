@@ -14,7 +14,7 @@ import {
   windowAround,
 } from '../log-window.js';
 import { stripAnsi } from './ansi.js';
-import { buildFilter, clientMatchesPattern, matchesFilter } from './filters.js';
+import { clientMatchesPattern, matchesFilter } from './filters.js';
 import {
   buffer,
   recomputeVisible,
@@ -29,7 +29,6 @@ import { isHolding } from './live-state.js';
 import { addToTally, tallyLevels, type LevelTally } from './toolbar-model.js';
 import {
   countsEl,
-  filterEl,
   levelAllBtn,
   levelErrorChip,
   levelErrorCountEl,
@@ -41,7 +40,7 @@ import {
   scrollBtn,
   setText,
 } from './elements.js';
-import { installRowHooks, view } from './view.js';
+import { findHooks, installRowHooks, view } from './view.js';
 import type { LogEntry } from '../../src/domain-types.js';
 import type { SilenceLevel } from '../../src/ipc-contract.js';
 
@@ -168,9 +167,13 @@ export function flashEntry(entryIndex: number): void {
  */
 function showInContext(row: HTMLElement): void {
   const entryIndex = Number(row.dataset.eidx);
-  filterEl.value = '';
-  // Clearing the filter re-renders, so the row handed in here is discarded —
-  // the entry index is what survives, and the window is rebuilt around it.
+  // The find query stays marked; it just stops hiding the lines around it.
+  if (view.filterRe) {
+    view.filterRe = null;
+    findHooks.filterDropped();
+  }
+  // Re-filtering re-renders, so the row handed in here is discarded — the
+  // entry index is what survives, and the window is rebuilt around it.
   setLevelFilter([]);
   // Always respond, even when nothing was filtered. A control that looks
   // pressable and answers with silence teaches you to stop pressing it; with
@@ -199,13 +202,40 @@ export function setLevelFilter(levels: readonly SilenceLevel[]): void {
   for (const level of levels) view.levelFilter.add(level);
   renderLevelChips();
   applyFilter();
+  // The chips live in the find widget: a pinned level nobody can see would
+  // read as lines that went missing.
+  if (levels.length) findHooks.levelPinned();
 }
 
-export function applyFilter(): void {
-  view.filterRe = buildFilter(filterEl.value);
+/**
+ * Re-decide which held lines pass the filters, and redraw. At the tail by
+ * default; around `anchor` when the reader was on a line that still passes —
+ * toggling «Solo coincidencias» on a match must not throw them to the end.
+ */
+export function applyFilter(anchor?: number): void {
   recomputeVisible(view.filterRe, view.levelFilter);
-  renderAtBottom();
+  findHooks.recount();
+  const row = anchor === undefined ? null : renderAroundEntry(anchor);
+  if (row) row.scrollIntoView({ block: 'center' });
+  else renderAtBottom();
   reportSelection();
+}
+
+/**
+ * Make sure `entryIndex` is drawn and centre it, for the find widget landing
+ * on a hit. A row already in the window is reused rather than redrawn: going
+ * from one hit to the next must not rebuild six hundred rows. Null when the
+ * filters hide the line.
+ */
+export function revealEntry(entryIndex: number): HTMLElement | null {
+  const drawn = linesEl.querySelector<HTMLElement>(
+    `.line[data-eidx="${entryIndex}"]`,
+  );
+  const row = drawn ?? renderAroundEntry(entryIndex);
+  if (!row) return null;
+  const target = row.querySelector<HTMLElement>('mark.find-hit.current') ?? row;
+  target.scrollIntoView({ block: 'center', inline: 'nearest' });
+  return row;
 }
 
 /** Point the view at a fresh set of lines (a scope switch or a snapshot). */
@@ -213,6 +243,7 @@ export function resetBuffer(next: LogEntry[]): void {
   replaceEntries(next, view.filterRe, view.levelFilter);
   indexStacks(buffer.entries);
   recount();
+  findHooks.recount();
   renderAtBottom();
   reportSelection();
 }
@@ -248,6 +279,7 @@ export function pushEntry(entry: LogEntry): void {
     return;
   }
   buffer.visible.push(entryIndex);
+  findHooks.appended(entryIndex);
   if (!wasAtEnd) {
     renderCounts();
     return;
@@ -303,9 +335,11 @@ installRowHooks({ repaint: repaintInPlace });
 
 /** Drop the oldest lines once memory is past its cap, and redraw. */
 export function trimMemory(): boolean {
+  const held = buffer.entries.length;
   const trim = trimBuffer(view.memoryCap, view.filterRe, view.levelFilter);
   if (!trim) return false;
   recount();
+  findHooks.trimmed(held - buffer.entries.length);
   // Only jump to the tail if that is where the reader already was. Forcing it
   // would drag anyone scrolled back to the end every few hundred lines.
   if (trim.wasFollowing) {
@@ -424,7 +458,6 @@ liveBtn.addEventListener('click', () => {
 });
 paintLive();
 
-filterEl.addEventListener('input', applyFilter);
 levelAllBtn.addEventListener('click', () => setLevelFilter([]));
 levelWarnChip.addEventListener('click', () => toggleLevelChip('warn'));
 levelErrorChip.addEventListener('click', () => toggleLevelChip('error'));

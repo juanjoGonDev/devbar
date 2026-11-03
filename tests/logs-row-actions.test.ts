@@ -133,7 +133,7 @@ describe('renderer/logs/row-actions.ts', () => {
       window.getSelection()?.removeAllRanges();
       window.getSelection()?.addRange(range);
       button(row, 'Filtrar por esto')?.click();
-      expect(elements.filterEl.value).toBe('/api/users');
+      expect(elements.findInputEl.value).toBe('/api/users');
       window.getSelection()?.removeAllRanges();
     });
 
@@ -143,7 +143,7 @@ describe('renderer/logs/row-actions.ts', () => {
         '(node:28634) DeprecationWarning: punycode',
       );
       button(row, 'Filtrar por esto')?.click();
-      expect(elements.filterEl.value).toBe('DeprecationWarning');
+      expect(elements.findInputEl.value).toBe('DeprecationWarning');
       expect(
         Array.from(
           elements.linesEl.querySelectorAll<HTMLElement>('.line'),

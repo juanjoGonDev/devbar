@@ -16,6 +16,7 @@ type SelectionUiModule = typeof import('../renderer/logs/selection-ui.js');
 type BufferModule = typeof import('../renderer/logs/buffer.js');
 type ElementsModule = typeof import('../renderer/logs/elements.js');
 type PaneModule = typeof import('../renderer/logs/pane.js');
+type ViewModule = typeof import('../renderer/logs/view.js');
 
 /**
  * `fmtTime` prints LOCAL time, so a fixed epoch offset would read differently
@@ -37,6 +38,7 @@ describe('renderer/logs/selection-ui.ts', () => {
   let buffer: BufferModule;
   let elements: ElementsModule;
   let pane: PaneModule;
+  let view: ViewModule;
   let written: string[];
   let clipboardFails: boolean;
 
@@ -58,6 +60,7 @@ describe('renderer/logs/selection-ui.ts', () => {
     ui = await import('../renderer/logs/selection-ui.js');
     buffer = await import('../renderer/logs/buffer.js');
     elements = await import('../renderer/logs/elements.js');
+    view = await import('../renderer/logs/view.js');
     pane = await import('../renderer/logs/pane.js');
   });
 
@@ -168,7 +171,7 @@ describe('renderer/logs/selection-ui.ts', () => {
         entry('b 3'),
         entry('a 4'),
       ]);
-      elements.filterEl.value = '^b';
+      view.view.filterRe = /^b/i;
       pane.applyFilter();
       clickRow(1);
       expect(selectedEntries()).toEqual([3]);
@@ -207,18 +210,9 @@ describe('renderer/logs/selection-ui.ts', () => {
   });
 
   describe('the keyboard', () => {
-    it('⌘F puts the cursor in the search box', () => {
-      const focus = vi.spyOn(elements.filterEl, 'focus');
-      const select = vi.spyOn(elements.filterEl, 'select');
-      const event = key('f', { metaKey: true });
-      expect(focus).toHaveBeenCalled();
-      expect(select).toHaveBeenCalled();
-      expect(event.defaultPrevented).toBe(true);
-    });
-
     it('⌘A takes everything the filter leaves', () => {
       pane.resetBuffer([entry('a 0'), entry('b 1'), entry('a 2')]);
-      elements.filterEl.value = '^a';
+      view.view.filterRe = /^a/i;
       pane.applyFilter();
       key('a', { metaKey: true });
       expect(selectedEntries()).toEqual([0, 2]);
@@ -227,7 +221,7 @@ describe('renderer/logs/selection-ui.ts', () => {
 
     it('leaves the shortcuts alone while someone is typing in a box', () => {
       pane.resetBuffer(lines(3));
-      elements.filterEl.focus();
+      elements.sideFilterEl.focus();
       key('a', { metaKey: true });
       expect(selectedEntries()).toEqual([]);
     });
@@ -314,7 +308,7 @@ describe('renderer/logs/selection-ui.ts', () => {
     it('leaves Esc alone while typing in the search box', () => {
       pane.resetBuffer(lines(3));
       clickRow(1);
-      elements.filterEl.focus();
+      elements.sideFilterEl.focus();
       key('Escape');
       expect(selectedEntries()).toEqual([1]);
     });
@@ -339,7 +333,7 @@ describe('renderer/logs/selection-ui.ts', () => {
         entry('b 1', { ts: at(1) }),
         entry('a 2', { ts: at(2) }),
       ]);
-      elements.filterEl.value = '^a';
+      view.view.filterRe = /^a/i;
       pane.applyFilter();
       ui.copyPicked();
       await vi.advanceTimersByTimeAsync(0);

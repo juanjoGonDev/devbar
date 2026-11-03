@@ -72,3 +72,40 @@ describe('renderer/logs/pane.ts (large buffers)', () => {
     expect(burstMs, timing).toBeLessThan(15_000);
   }, 60_000);
 });
+
+describe('renderer/logs/find.ts (large buffers)', () => {
+  beforeEach(() => {
+    mountLogsDom();
+  });
+
+  it('searches 50k lines once, then counts a 5k-line burst a line at a time', async () => {
+    const pane = await import('../renderer/logs/pane.js');
+    const find = await import('../renderer/logs/find.js');
+    const { findCountEl, findInputEl, linesEl } =
+      await import('../renderer/logs/elements.js');
+    const { view } = await import('../renderer/logs/view.js');
+    view.memoryCap = HELD + BURST;
+    pane.resetBuffer(Array.from({ length: HELD }, (_, i) => mixed(i)));
+
+    // «api» is on half the lines: about the worst query a person types.
+    const t0 = performance.now();
+    findInputEl.value = 'api';
+    find.openFind(false);
+    const searchMs = performance.now() - t0;
+
+    const t1 = performance.now();
+    for (let i = 0; i < BURST; i += 1) pane.pushEntry(mixed(HELD + i));
+    const burstMs = performance.now() - t1;
+
+    const timing = `search ${searchMs.toFixed(0)} ms, burst ${burstMs.toFixed(0)} ms`;
+    if (process.env.LOGS_PERF) process.stdout.write(`${timing}\n`);
+    expect(findCountEl.textContent, timing).toMatch(/ de 27500$/);
+    // Only the drawn window is ever marked, never the whole buffer.
+    expect(
+      linesEl.querySelectorAll('mark.find-hit').length,
+      timing,
+    ).toBeLessThanOrEqual(DOM_BUDGET);
+    expect(searchMs, timing).toBeLessThan(5_000);
+    expect(burstMs, timing).toBeLessThan(15_000);
+  }, 60_000);
+});

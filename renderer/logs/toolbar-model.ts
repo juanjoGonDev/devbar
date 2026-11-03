@@ -1,6 +1,6 @@
 /**
  * What the toolbar says, worked out without touching it: the breadcrumb, the
- * run-state pill and the per-level counts behind the chips in the search box.
+ * run-state pill and the per-level counts behind the chips in the find widget.
  *
  * `renderToolbar` repaints once a second for the ticking uptime, so these are
  * plain functions of the state handed in — cheap, and checkable without a

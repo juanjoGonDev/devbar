@@ -21,6 +21,7 @@ import type {
   SilenceLevel,
 } from '../../src/ipc-contract.js';
 import type { PatternMatcher } from './silence-preview.js';
+import type { FindCursor } from './find-model.js';
 import { LIVE, type LiveState } from './live-state.js';
 
 /**
@@ -57,8 +58,15 @@ export interface LogsView {
    * both must pass.
    */
   levelFilter: Set<SilenceLevel>;
-  /** The compiled text filter, or null when the box is empty. */
+  /**
+   * What hides the lines that do not match: the find query while «Solo
+   * coincidencias» is on, null otherwise. Non-global, so `test` keeps no state.
+   */
   filterRe: RegExp | null;
+  /** The find query, global, for marking its hits; null while nothing is searched. */
+  findRe: RegExp | null;
+  /** The hit the find widget is on, drawn brighter than the rest. */
+  findCurrent: FindCursor | null;
   /**
    * Lines held in memory. Mirrors what ProcessManager actually keeps for the
    * target on screen — a number only main can give us, since a running process
@@ -108,6 +116,8 @@ export const view: LogsView = {
   mergedGroupId: null,
   levelFilter: new Set<SilenceLevel>(),
   filterRe: null,
+  findRe: null,
+  findCurrent: null,
   memoryCap: 20_000,
   globalRetention: 20_000,
   watchedStartedAt: null,
@@ -179,4 +189,35 @@ export const rowHooks = {} as RowHooks;
 
 export function installRowHooks(next: RowHooks): void {
   Object.assign(rowHooks, next);
+}
+
+/**
+ * The find widget's side of the pane, handed in for the same reason as `nav`:
+ * the widget drives the pane (it re-filters, scrolls, repaints), so the pane
+ * cannot import it back. Until the widget installs itself nothing is searched,
+ * and every hook is a no-op.
+ */
+export interface FindHooks {
+  /** `visible` was rebuilt from scratch: count the matches again. */
+  recount(): void;
+  /** A line joined the end of `visible`. */
+  appended(entryIndex: number): void;
+  /** The `dropped` oldest entries left the buffer; `visible` kept its filters. */
+  trimmed(dropped: number): void;
+  /** «Ver en contexto» stopped hiding the lines that do not match. */
+  filterDropped(): void;
+  /** An entry point pinned a level: the chips saying so must be on screen. */
+  levelPinned(): void;
+}
+
+export const findHooks: FindHooks = {
+  recount: () => undefined,
+  appended: () => undefined,
+  trimmed: () => undefined,
+  filterDropped: () => undefined,
+  levelPinned: () => undefined,
+};
+
+export function installFindHooks(next: FindHooks): void {
+  Object.assign(findHooks, next);
 }

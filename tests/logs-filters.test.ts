@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildFilter,
   clientMatchesPattern,
   levelOf,
   matchesFilter,
@@ -23,28 +22,6 @@ function line(partial: Partial<LogEntry> = {}): LogEntry {
 }
 
 describe('renderer/logs/filters.ts', () => {
-  describe('buildFilter', () => {
-    it('treats an empty box as no filter at all', () => {
-      expect(buildFilter('   ')).toBeNull();
-    });
-
-    it('compiles what was typed as a case-insensitive regex', () => {
-      const re = buildFilter('ERR.R');
-      expect(re?.test('error')).toBe(true);
-    });
-
-    it('falls back to the literal text when the regex will not compile', () => {
-      // Someone halfway through typing `(foo)` is not an error to report.
-      const re = buildFilter('(foo');
-      expect(re?.test('a (foo bar')).toBe(true);
-    });
-
-    it('escapes every metacharacter in that fallback', () => {
-      const re = buildFilter('[a+b');
-      expect(re?.test('x[a+b y')).toBe(true);
-    });
-  });
-
   describe('levelOf', () => {
     it('reports the level a silenced line would have had', () => {
       expect(levelOf(line({ level: null, originalLevel: 'warn' }))).toBe(

@@ -13,7 +13,8 @@ import { closestElement } from '../dom.js';
 import { icon, iconButton } from '../icon.js';
 import { stripAnsi } from './ansi.js';
 import { buffer } from './buffer.js';
-import { filterEl, linesEl, mainEl, statusEl } from './elements.js';
+import { linesEl, mainEl, statusEl } from './elements.js';
+import { filterBy } from './find.js';
 import { reportSelection } from './status.js';
 import { silenceHooks, view } from './view.js';
 import type { LogEntry } from '../../src/domain-types.js';
@@ -118,8 +119,7 @@ act(filterBtn, () => {
   const query = selectedIn(target.row) || filterTokenFor(target.entry.line);
   if (!query) return;
   window.getSelection()?.removeAllRanges();
-  filterEl.value = query;
-  filterEl.dispatchEvent(new Event('input')); // the pane re-filters on input
+  filterBy(query);
 });
 
 act(silenceBtn, () => {

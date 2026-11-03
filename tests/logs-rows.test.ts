@@ -125,13 +125,27 @@ describe('renderer/logs/rows.ts', () => {
       expect(row.classList.contains('dbg')).toBe(true);
     });
 
-    it('marks where the search box matches inside the text', () => {
-      viewModule.view.filterRe = /ruido/i;
+    it('marks where the find query matches inside the text', () => {
+      viewModule.view.findRe = /ruido/gi;
       const { row } = build(line('mucho ruido aquí'));
-      expect(row.querySelector('.body mark.search-hit')?.textContent).toBe(
+      expect(row.querySelector('.body mark.find-hit')?.textContent).toBe(
         'ruido',
       );
-      viewModule.view.filterRe = null;
+      viewModule.view.findRe = null;
+    });
+
+    it('lights up the hit the find widget is on, and its row', () => {
+      viewModule.view.findRe = /a/gi;
+      viewModule.view.findCurrent = { entry: 0, hit: 1 };
+      const { row } = build(line('a b a'));
+      const marks = Array.from(row.querySelectorAll('mark.find-hit'));
+      expect(marks.map((m) => m.classList.contains('current'))).toEqual([
+        false,
+        true,
+      ]);
+      expect(row.classList.contains('find-current')).toBe(true);
+      viewModule.view.findRe = null;
+      viewModule.view.findCurrent = null;
     });
 
     it('carries the stream, the level and the silenced mark as classes', () => {

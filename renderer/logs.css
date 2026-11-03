@@ -439,7 +439,6 @@ header.toolbar .icon-btn[aria-expanded='true'] {
   color: #f5f5f7;
 }
 header.toolbar .icon-btn:focus-visible,
-.level-chip:focus-visible,
 .live-btn:focus-visible {
   outline: 2px solid var(--sil-accent);
   outline-offset: 1px;
@@ -453,8 +452,8 @@ body.sidebar-collapsed #toggle-sidebar {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* The subject keeps its size; the search box gives way first. Long names
-     are capped by the crumbs' own max-widths instead. */
+  /* The subject keeps its size; long names are capped by the crumbs' own
+     max-widths instead. */
   flex-shrink: 0;
 }
 .crumbs {
@@ -568,79 +567,6 @@ header.toolbar .run-btn.on .icon {
   min-width: 8px;
 }
 
-/* ── Search, with the level chips inside it ──────────────────────── */
-.tb-search {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex: 0 1 440px;
-  min-width: 160px;
-  height: 32px;
-  padding: 0 3px 0 10px;
-  border-radius: 9px;
-  background: #232326;
-  border: 1px solid transparent;
-}
-.tb-search:focus-within {
-  border-color: rgba(10, 132, 255, 0.6);
-}
-.tb-search-ico {
-  color: #8e8e93;
-  font-size: 13px;
-  flex-shrink: 0;
-}
-.tb-search input[type='search'] {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: none;
-  color: #fff;
-  font: inherit;
-  font-size: 12.5px;
-  padding: 0 8px;
-}
-.tb-search input[type='search']::placeholder {
-  color: #8e8e93;
-}
-.level-chips {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-.level-chip {
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: #a1a1a6;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.level-chip:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-.level-chip[aria-pressed='true'] {
-  background: #3a3a3c;
-  color: #fff;
-}
-.level-chip-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-.level-chip.warn .level-chip-dot {
-  background: #ff9f0a;
-}
-.level-chip.err .level-chip-dot {
-  background: #ff453a;
-}
-
 /* ── The live button: «● En directo» / «En pausa · N nuevas» ───── */
 .live-btn {
   height: 32px;
@@ -752,8 +678,8 @@ header.toolbar .run-btn.on .icon {
 
 /* ================================================================
    Logs: header — identity on the left, icon-only actions on the right.
-   Everything the lean toolbar changes lives in this block; the search box
-   and its level chips are not part of it.
+   Everything the lean toolbar changes lives in this block; search and its
+   level chips float over the log instead («Logs: find»).
    ================================================================ */
 header.toolbar {
   container: logs-toolbar / inline-size;
@@ -1068,11 +994,6 @@ main {
 }
 .line.hidden {
   display: none;
-}
-.line .body mark.search-hit {
-  border-radius: 3px;
-  background: rgba(255, 214, 10, 0.32);
-  color: inherit;
 }
 
 /* ── Stack traces, folded under their message ──────────────────── */
@@ -1828,4 +1749,265 @@ footer {
 }
 .side-all .a-name {
   flex: 1;
+}
+
+/* ================================================================
+   Logs: find
+   «Buscar en el log» (find.ts): the widget floating over the top-right of
+   the log, the marks it leaves in the rows, and the ticks on the right edge.
+   Dark in every theme, like the rest of the window.
+   ================================================================ */
+main:focus {
+  outline: none;
+}
+.find {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 6;
+  width: 520px;
+  max-width: calc(100% - 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid #3a3a3c;
+  border-radius: 10px;
+  background: #252528;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.find[hidden] {
+  display: none;
+}
+/* Row 1: the field, with the three match toggles inside it. */
+.find-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border-radius: 7px;
+  background: #1c1c1e;
+}
+.find-field:focus-within {
+  box-shadow: inset 0 0 0 1.5px #0a84ff;
+}
+.find-field.invalid,
+.find-field.invalid:focus-within {
+  box-shadow: inset 0 0 0 1.5px #ff453a;
+}
+.find-ico {
+  flex-shrink: 0;
+  color: #8e8e93;
+  font-size: 13px;
+}
+.find-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.find-input::placeholder {
+  color: #8e8e93;
+}
+.find-tog {
+  flex-shrink: 0;
+  width: 24px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: #8e8e93;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.find-tog:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e5ea;
+}
+.find-tog[aria-pressed='true'] {
+  background: rgba(10, 132, 255, 0.25);
+  color: #64d2ff;
+  box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.6);
+}
+/* Row 2: levels, «Solo coincidencias», then where you are and how to move. */
+.find-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.level-chips {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.level-chip {
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #a1a1a6;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.level-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.level-chip[aria-pressed='true'] {
+  background: #3a3a3c;
+  color: #fff;
+}
+.level-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.level-chip.warn .level-chip-dot {
+  background: #ff9f0a;
+}
+.level-chip.err .level-chip-dot {
+  background: #ff453a;
+}
+.find-only .icon {
+  font-size: 12px;
+}
+.find-sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: #3a3a3c;
+}
+.find-grow {
+  flex: 1;
+  min-width: 4px;
+}
+.find-count {
+  flex-shrink: 0;
+  padding: 0 4px;
+  color: #a1a1a6;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.find-nav {
+  flex-shrink: 0;
+  width: 24px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #c7c7cc;
+  font-size: 13px;
+}
+.find-nav:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.find-nav:disabled {
+  color: #5a5a5e;
+}
+.find-tog:focus-visible,
+.find-nav:focus-visible,
+.level-chip:focus-visible {
+  outline: 2px solid var(--sil-accent);
+  outline-offset: 1px;
+}
+/* A narrow window: one row across the panel — the field, Aa, .*, the count
+   and close. Both rows dissolve into the widget's own; the rest steps out. */
+@media (max-width: 759px) {
+  .find {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+  }
+  .find-field {
+    flex: 1;
+    min-width: 0;
+  }
+  .find-bar {
+    display: contents;
+  }
+  .find-word,
+  .find-bar > .level-chips,
+  .find-sep,
+  .find-only,
+  .find-grow,
+  #find-prev,
+  #find-next {
+    display: none;
+  }
+}
+
+/* The hits in a row; the current one solid, its row faintly lit. */
+.line .body mark.find-hit {
+  border-radius: 3px;
+  background: rgba(255, 214, 10, 0.28);
+  color: #fff;
+}
+.line .body mark.find-hit.current {
+  background: #ffd60a;
+  color: #1c1c1e;
+}
+.line.find-current {
+  background: rgba(255, 214, 10, 0.06);
+}
+
+/* Where the hits sit in the whole log, on the right edge of the panel. */
+.find-ticks {
+  position: absolute;
+  top: 8px;
+  right: 3px;
+  bottom: 8px;
+  z-index: 4;
+  width: 6px;
+  pointer-events: none;
+}
+.find-ticks[hidden] {
+  display: none;
+}
+.find-tick {
+  position: absolute;
+  left: 0;
+  width: 6px;
+  height: 2px;
+  margin-top: -1px;
+  background: #ffd60a;
+  opacity: 0.55;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.find-tick:hover,
+.find-tick.current {
+  opacity: 1;
+}
+.find-tick.current {
+  height: 3px;
 }

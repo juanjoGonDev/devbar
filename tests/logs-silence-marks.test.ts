@@ -37,6 +37,21 @@ describe('renderer/logs/silence-marks.ts', () => {
       expect(node.textContent).toBe('Successfully compiled');
     });
 
+    it('numbers the pieces of each match when asked to, so they are found together', () => {
+      const node = body('<span>ab</span>c abc');
+      markMatches(node, compilePattern('abc'), 'find-hit', true);
+      expect(
+        Array.from(node.querySelectorAll('mark'), (m) => [
+          m.textContent,
+          m.dataset.hit,
+        ]),
+      ).toEqual([
+        ['ab', '0'],
+        ['c', '0'],
+        ['abc', '1'],
+      ]);
+    });
+
     it('leaves a line it does not match untouched', () => {
       const node = body('<b>otra</b> cosa');
       markMatches(node, compilePattern('nada'));

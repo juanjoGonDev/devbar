@@ -2,30 +2,14 @@
  * What a line has to pass to stay on screen, and how the active level pin
  * describes itself.
  *
- * The two filters are independent and both must pass: the text box is manual
- * searching, the level pin is what every warn/error entry point sets. Keeping
- * them here — pure, with the state handed in — is what lets a test ask "does
- * this line survive?" without a window.
+ * The two filters are independent and both must pass: the find query (while
+ * «Solo coincidencias» is on), and the level pin every warn/error entry point
+ * sets. Keeping them here — pure, with the state handed in — is what lets a
+ * test ask "does this line survive?" without a window.
  */
 import { stripAnsi } from './ansi.js';
 import type { LogEntry } from '../../src/domain-types.js';
 import type { SilenceLevel } from '../../src/ipc-contract.js';
-
-/**
- * A search box that is also a regex box. An unparseable pattern is not an
- * error to report: it is someone halfway through typing one, so it falls back
- * to matching the literal text.
- */
-export function buildFilter(value: string): RegExp | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  try {
-    return new RegExp(trimmed, 'i');
-  } catch (_) {
-    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(escaped, 'i');
-  }
-}
 
 /** The level a line counts as, ignoring whether it was silenced. */
 export function levelOf(entry: LogEntry): string {

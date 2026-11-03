@@ -95,7 +95,7 @@ describe('renderer/logs/pane.ts', () => {
 
     it('says how many of how many once a filter narrows it', () => {
       pane.resetBuffer([entry('api ok'), entry('web ok'), entry('api mal')]);
-      elements.filterEl.value = 'api';
+      view.view.filterRe = /api/i;
       pane.applyFilter();
       expect(elements.countsEl.textContent).toBe('2 de 3 líneas');
     });
@@ -180,9 +180,9 @@ describe('renderer/logs/pane.ts', () => {
       expect(foldButton()?.textContent).toContain('+2 líneas de stack');
     });
 
-    it('shows a folded line the search finds, by opening its block', () => {
+    it('draws a folded line «Solo coincidencias» keeps as itself', () => {
       pane.resetBuffer(crash());
-      elements.filterEl.value = 'at b';
+      view.view.filterRe = /at b/i;
       pane.applyFilter();
       expect(drawnText()).toEqual(['    at b (x:2)']);
       expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(false);
@@ -193,28 +193,14 @@ describe('renderer/logs/pane.ts', () => {
   describe('applyFilter', () => {
     it('redraws the list from the whole buffer, not from what is on screen', () => {
       pane.resetBuffer([entry('uno'), entry('dos'), entry('tres')]);
-      elements.filterEl.value = 'os$';
+      view.view.filterRe = /os$/i;
       pane.applyFilter();
       expect(drawnText()).toEqual(['dos']);
     });
 
-    it('treats a half-typed regex as literal text instead of failing', () => {
-      pane.resetBuffer([entry('a[b'), entry('otra')]);
-      elements.filterEl.value = 'a[';
-      pane.applyFilter();
-      expect(drawnText()).toEqual(['a[b']);
-    });
-
-    it('runs on every keystroke in the filter box', () => {
-      pane.resetBuffer([entry('uno'), entry('dos')]);
-      elements.filterEl.value = 'uno';
-      elements.filterEl.dispatchEvent(new Event('input'));
-      expect(drawnText()).toEqual(['uno']);
-    });
-
     it('searches the text, not the ANSI escapes wrapped around it', () => {
       pane.resetBuffer([entry('[31mrojo[0m'), entry('azul')]);
-      elements.filterEl.value = 'rojo';
+      view.view.filterRe = /rojo/i;
       pane.applyFilter();
       expect(drawnText()).toEqual(['[31mrojo[0m']);
     });
@@ -356,7 +342,7 @@ describe('renderer/logs/pane.ts', () => {
 
     it('stays out of the DOM when the filter does not want it', () => {
       pane.resetBuffer([entry('api')]);
-      elements.filterEl.value = 'api';
+      view.view.filterRe = /api/i;
       pane.applyFilter();
       pane.pushEntry(entry('web'));
       expect(drawnText()).toEqual(['api']);
@@ -454,7 +440,7 @@ describe('renderer/logs/pane.ts', () => {
 
     it('does nothing for a line the current filter hides', () => {
       pane.resetBuffer([entry('api'), entry('web')]);
-      elements.filterEl.value = 'api';
+      view.view.filterRe = /api/i;
       pane.applyFilter();
       pane.flashEntry(1);
       expect(scrolledIntoView).toHaveLength(0);
@@ -468,14 +454,14 @@ describe('renderer/logs/pane.ts', () => {
         entry('fallo', { originalLevel: 'error' }),
         entry('después'),
       ]);
-      elements.filterEl.value = 'fallo';
+      view.view.filterRe = /fallo/i;
       pane.applyFilter();
       pane.setLevelFilter(['error']);
       expect(drawnText()).toEqual(['fallo']);
 
       drawnRows()[0]?.querySelector<HTMLElement>('.ts')?.click();
 
-      expect(elements.filterEl.value).toBe('');
+      expect(view.view.filterRe).toBeNull();
       expect(view.view.levelFilter.size).toBe(0);
       expect(drawnText()).toEqual(['antes', 'fallo', 'después']);
       // Otherwise the tail yanks us straight back off the line we asked for.

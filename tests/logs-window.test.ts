@@ -177,7 +177,7 @@ describe('renderer/logs.ts', () => {
         mergedSnapshot([line('fallo 1'), line('ok')]),
       );
       expect(
-        (document.getElementById('filter') as HTMLInputElement).value,
+        (document.getElementById('find-input') as HTMLInputElement).value,
       ).toBe('fallo');
       expect(drawn()).toEqual(['fallo 1']);
     });

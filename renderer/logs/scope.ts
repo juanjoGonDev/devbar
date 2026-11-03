@@ -9,7 +9,6 @@
  * second switch started meanwhile wins, and the first one's answer is dropped
  * on arrival instead of being appended to a buffer it no longer owns.
  */
-import { buildFilter } from './filters.js';
 import { buffer } from './buffer.js';
 import { logsParams } from './params.js';
 import {
@@ -34,7 +33,8 @@ import {
 import { dropPendingQueue, keepQueuedAfter } from './status.js';
 import { dispatchLive } from './live.js';
 import { unfoldGroup } from './sidebar-fold.js';
-import { filterEl, muteErrEl, muteWarnEl, sideTreeEl } from './elements.js';
+import { clearFindQuery, filterBy } from './find.js';
+import { muteErrEl, muteWarnEl, sideTreeEl } from './elements.js';
 import { view, type Scope } from './view.js';
 import type { SilenceLevel } from '../../src/ipc-contract.js';
 
@@ -162,13 +162,12 @@ export async function selectLog(
   view.currentCommandId = null;
   muteWarnEl.checked = false;
   muteErrEl.checked = false;
-  if (filter !== undefined) filterEl.value = filter;
-  else if (level)
+  if (filter) filterBy(filter);
+  else if (filter !== undefined || level)
     // A severity entry point (tray counter) pins the level chip but sent no
     // filter: a stale text filter from the previous view would hide the very
     // entries the counter represents.
-    filterEl.value = '';
-  view.filterRe = buildFilter(filterEl.value);
+    clearFindQuery();
   // A counter-button entry point (tray, in-window nav) pins the level chip;
   // a plain log switch keeps whatever the user has on screen.
   if (level) setLevelFilter([level]);

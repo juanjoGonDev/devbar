@@ -16,6 +16,7 @@ import { fmtTime, relativeTime, sourceColor } from './format.js';
 import { rowPrefs } from './row-prefs.js';
 import { buffer } from './buffer.js';
 import { markMatches } from './silence-marks.js';
+import { hitRanges } from './find-model.js';
 import { BADGE_LABEL, badgeOf } from './line-level.js';
 import {
   compactJson,
@@ -130,9 +131,6 @@ export function stampText(ts: number): string {
   return rowPrefs.relativeTime ? relativeTime(ts, Date.now()) : fmtTime(ts);
 }
 
-/** Enough to see where the search bites without marking a 20 KB line solid. */
-const MAX_SEARCH_HITS = 50;
-
 /** Drop every filter and land on this row, in sequence with its neighbours. */
 export type ShowInContext = (row: HTMLElement) => void;
 
@@ -161,9 +159,10 @@ export function buildRow(
   div.dataset.eidx = String(entryIndex); // position in `entries`
   if (entry.originalLevel) div.dataset.originalLevel = entry.originalLevel;
 
-  // A stack is only folded while nothing is searched for: with a search on,
-  // a frame that matches is drawn as itself, which is what opening its block
-  // would show anyway.
+  // A stack is only folded while «Solo coincidencias» hides nothing: with it
+  // on, a frame that matches is drawn as itself, which is what opening its
+  // block would show anyway. A plain search leaves blocks folded; landing on
+  // a hit inside one opens it (see `find.ts`).
   const block = view.filterRe ? undefined : stackOf(entry);
   const foldable = block !== undefined && block.members.length > 1;
   const folded = block !== undefined && isFolded(block);
@@ -275,8 +274,7 @@ export function buildRow(
   const json = jsonOf(entry);
   if (json) fillJson(body, json);
   else body.innerHTML = ansiToHtml(entry.line);
-  if (view.filterRe)
-    markMatches(body, searchMatcher(view.filterRe), 'search-hit');
+  if (view.findRe) markFindHits(div, body, entryIndex, view.findRe);
   if (previewed && view.silencePreview)
     markMatches(body, view.silencePreview.matcher);
   msg.appendChild(body);
@@ -286,34 +284,28 @@ export function buildRow(
   return div;
 }
 
-/** Every non-empty run the search box's regex finds, for highlighting. */
-interface Ranges {
-  ranges(text: string): Array<[number, number]>;
-}
-
-// One compiled matcher per filter: rows are built hundreds at a time and the
-// filter only changes on a keystroke.
-let searchCache: { re: RegExp; matcher: Ranges } | null = null;
-
-function searchMatcher(re: RegExp): Ranges {
-  if (searchCache?.re === re) return searchCache.matcher;
-  const global = new RegExp(re.source, `${re.flags.replace('g', '')}g`);
-  const matcher: Ranges = {
-    ranges(text) {
-      const out: Array<[number, number]> = [];
-      global.lastIndex = 0;
-      while (out.length < MAX_SEARCH_HITS) {
-        const match = global.exec(text);
-        if (!match) break;
-        if (match[0].length === 0) {
-          global.lastIndex += 1;
-          continue;
-        }
-        out.push([match.index, match.index + match[0].length]);
-      }
-      return out;
-    },
-  };
-  searchCache = { re, matcher };
-  return matcher;
+/**
+ * Mark where the find query bites, and light up the hit the widget is on.
+ * The ranges come from the same function that counted them, so «3 de 27»
+ * and the third mark agree.
+ */
+function markFindHits(
+  row: HTMLElement,
+  body: HTMLElement,
+  entryIndex: number,
+  re: RegExp,
+): void {
+  markMatches(
+    body,
+    { ranges: (text) => hitRanges(text, re) },
+    'find-hit',
+    true,
+  );
+  const current = view.findCurrent;
+  if (current?.entry !== entryIndex) return;
+  row.classList.add('find-current');
+  for (const mark of Array.from(
+    body.querySelectorAll(`mark.find-hit[data-hit="${current.hit}"]`),
+  ))
+    mark.classList.add('current');
 }

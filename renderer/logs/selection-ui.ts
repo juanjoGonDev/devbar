@@ -16,13 +16,7 @@ import {
 } from './buffer.js';
 import { repaintSelection, reportSelection } from './status.js';
 import { updateScrollButton } from './pane.js';
-import {
-  clearSelectionBtn,
-  filterEl,
-  linesEl,
-  mainEl,
-  statusEl,
-} from './elements.js';
+import { clearSelectionBtn, linesEl, mainEl, statusEl } from './elements.js';
 
 function clearSelection(): void {
   buffer.selected.clear();
@@ -88,13 +82,8 @@ clearSelectionBtn.addEventListener('click', clearSelection);
 
 document.addEventListener('keydown', (e) => {
   const accel = e.metaKey || e.ctrlKey;
-  if (accel && (e.key === 'f' || e.key === 'F')) {
-    e.preventDefault();
-    filterEl.focus();
-    filterEl.select();
-    return;
-  }
-  // Leave the shortcuts alone while typing in the filter or the search box.
+  // ⌘F belongs to the find widget (`find.ts`). Leave the shortcuts alone
+  // while typing in the find box or the service search.
   if (document.activeElement instanceof HTMLInputElement) return;
   if (accel && (e.key === 'a' || e.key === 'A')) {
     e.preventDefault();

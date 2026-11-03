@@ -14,8 +14,8 @@ import { watchCustomIcons } from './custom-icons.js';
 import { installTooltips } from './tooltip.js';
 import { logsParams } from './logs/params.js';
 import { installNav, view } from './logs/view.js';
-import { filterEl } from './logs/elements.js';
-import { applyFilter, rerenderExistingLines } from './logs/pane.js';
+import { filterBy } from './logs/find.js';
+import { rerenderExistingLines } from './logs/pane.js';
 import { renderSilencePopover } from './logs/silence-popover.js';
 import { jumpToLine, openScope, selectLog } from './logs/scope.js';
 import { refreshSidebar } from './logs/sidebar.js';
@@ -48,9 +48,11 @@ installNav({ openScope, jumpToLine });
   const settings = await window.api.getSettings();
   view.globalRetention = settings?.maxLogLines || DEFAULT_MAX_LOG_LINES;
   view.memoryCap = view.globalRetention;
-  if (logsParams.filter) filterEl.value = logsParams.filter;
   await refreshSidebar();
   if (logsParams.scope) {
+    // A merged scope never goes through `selectLog`, the one that applies a
+    // filter the entry point carried, so it is applied here.
+    if (logsParams.filter) filterBy(logsParams.filter);
     await openScope(
       logsParams.scope,
       logsParams.level ? [logsParams.level] : [],
@@ -79,8 +81,7 @@ window.api.onLogsSelect((payload) => {
   if (!pid) return;
   if (logsParams.isDetached) {
     if (pid !== view.processId || payload.filter === undefined) return;
-    filterEl.value = payload.filter;
-    applyFilter();
+    filterBy(payload.filter);
     return;
   }
   void selectLog(pid, payload.filter, payload.level ?? undefined);

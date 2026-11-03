@@ -234,22 +234,25 @@ describe('renderer/logs/scope.ts', () => {
 
     it('pre-fills the search box when the entry point carried one', async () => {
       await scope.selectLog('api', 'fallo');
-      expect(elements.filterEl.value).toBe('fallo');
+      expect(elements.findInputEl.value).toBe('fallo');
+      // A filter that came with the entry point hides what does not match.
+      expect(view.view.filterRe?.source).toBe('fallo');
     });
 
     it('clears a stale search box when the entry point carried only a level', async () => {
       // A severity entry point pins the chip; a leftover text filter would
       // hide the very entries the counter stands for.
-      elements.filterEl.value = 'viejo';
+      elements.findInputEl.value = 'viejo';
       await scope.selectLog('api', undefined, 'warn');
-      expect(elements.filterEl.value).toBe('');
+      expect(elements.findInputEl.value).toBe('');
       expect([...view.view.levelFilter]).toEqual(['warn']);
     });
 
     it('keeps whatever is on screen for a plain switch', async () => {
-      elements.filterEl.value = 'mío';
+      const find = await import('../renderer/logs/find.js');
+      find.filterBy('mío');
       await scope.selectLog('api');
-      expect(elements.filterEl.value).toBe('mío');
+      expect(elements.findInputEl.value).toBe('mío');
       expect(view.view.filterRe?.source).toBe('mío');
     });
 

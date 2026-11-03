@@ -19,7 +19,42 @@ export const linesEl = byId<HTMLElement>('lines', HTMLElement);
 export const activityEl = byId<HTMLElement>('activity', HTMLElement);
 export const activityBarsEl = byId<HTMLElement>('activity-bars', HTMLElement);
 export const activitySpanEl = byId<HTMLElement>('activity-span', HTMLElement);
-export const filterEl = byId<HTMLInputElement>('filter', HTMLInputElement);
+export const findEl = byId<HTMLElement>('find', HTMLElement);
+export const findFieldEl = byId<HTMLElement>('find-field', HTMLElement);
+export const findInputEl = byId<HTMLInputElement>(
+  'find-input',
+  HTMLInputElement,
+);
+export const findCaseBtn = byId<HTMLButtonElement>(
+  'find-case',
+  HTMLButtonElement,
+);
+export const findWordBtn = byId<HTMLButtonElement>(
+  'find-word',
+  HTMLButtonElement,
+);
+export const findRegexBtn = byId<HTMLButtonElement>(
+  'find-regex',
+  HTMLButtonElement,
+);
+export const findOnlyBtn = byId<HTMLButtonElement>(
+  'find-only',
+  HTMLButtonElement,
+);
+export const findCountEl = byId<HTMLElement>('find-count', HTMLElement);
+export const findPrevBtn = byId<HTMLButtonElement>(
+  'find-prev',
+  HTMLButtonElement,
+);
+export const findNextBtn = byId<HTMLButtonElement>(
+  'find-next',
+  HTMLButtonElement,
+);
+export const findCloseBtn = byId<HTMLButtonElement>(
+  'find-close',
+  HTMLButtonElement,
+);
+export const findTicksEl = byId<HTMLElement>('find-ticks', HTMLElement);
 export const levelAllBtn = byId<HTMLButtonElement>(
   'level-all',
   HTMLButtonElement,
