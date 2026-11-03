@@ -5856,6 +5856,12 @@ label.remote-row {
   --mcp-tile-fg: #5e5ce6;
   --mcp-code-bg: #1d1d1f;
   --mcp-code-fg: #e5e5ea;
+  --mcp-pending-bg: rgba(255, 159, 10, 0.08);
+  --mcp-danger-wash: rgba(255, 59, 48, 0.04);
+  --mcp-avatar-bg: rgba(142, 142, 147, 0.16);
+  --mcp-avatar-fg: #3a3a3c;
+  --mcp-claude-bg: rgba(193, 95, 60, 0.12);
+  --mcp-claude-fg: #c15f3c;
 }
 :root[data-theme='dark'] {
   --mcp-surface: #2a2a2c;
@@ -5866,6 +5872,12 @@ label.remote-row {
   --mcp-tile-fg: #a5a3ff;
   --mcp-code-bg: #0d0d0f;
   --mcp-code-fg: #e5e5ea;
+  --mcp-pending-bg: rgba(255, 159, 10, 0.1);
+  --mcp-danger-wash: rgba(255, 69, 58, 0.06);
+  --mcp-avatar-bg: rgba(142, 142, 147, 0.24);
+  --mcp-avatar-fg: #e5e5ea;
+  --mcp-claude-bg: rgba(217, 119, 87, 0.2);
+  --mcp-claude-fg: #e8916f;
 }
 .config-section[data-section='mcp'].active {
   display: flex;
@@ -6017,7 +6029,10 @@ label.remote-row {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
-  white-space: pre;
+  /* The whole command stays in view: a long path wraps instead of hiding
+     behind a scrollbar; the JSON keeps its indentation. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   user-select: text;
 }
 .mcp-connect-foot {
@@ -6032,6 +6047,312 @@ label.remote-row {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+/* «CLIENTES»: avatar, name over its use, scope tags and the actions. */
+.mcp-clients {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mcp-client {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+}
+.mcp-client + .mcp-client {
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-client.is-pending {
+  background: var(--mcp-pending-bg);
+}
+.mcp-clients .mcp-client.is-pending:first-child {
+  border-radius: 9px 9px 0 0;
+}
+.mcp-clients .mcp-client.is-pending:only-child {
+  border-radius: 9px;
+}
+.mcp-client.is-revoked {
+  opacity: 0.55;
+}
+.mcp-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--mcp-avatar-bg);
+  color: var(--mcp-avatar-fg);
+  font-size: 14px;
+  font-weight: 700;
+}
+.mcp-avatar[data-kind='claude-code'],
+.mcp-avatar[data-kind='claude-desktop'] {
+  background: var(--mcp-claude-bg);
+  color: var(--mcp-claude-fg);
+}
+.mcp-avatar.is-pending {
+  background: var(--badge-warn-bg);
+  color: var(--badge-warn-fg);
+  font-size: 16px;
+}
+.mcp-client-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.mcp-client-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mcp-client-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-client-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mcp-tag-new {
+  background: var(--badge-warn-bg);
+  color: var(--badge-warn-fg);
+}
+.mcp-scope-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.mcp-scope-tag[data-scope='read'] {
+  background: var(--badge-ok-bg);
+  color: var(--badge-ok-fg);
+}
+.mcp-scope-tag[data-scope='control'] {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+.mcp-scope-tag[data-scope='workflows'] {
+  background: var(--mcp-tile-bg);
+  color: var(--mcp-tile-fg);
+}
+.mcp-scope-tag[data-scope='config'] {
+  background: var(--badge-error-bg);
+  color: var(--badge-error-fg);
+}
+button.mcp-link-btn {
+  flex-shrink: 0;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+button.mcp-link-btn:hover {
+  text-decoration: underline;
+  filter: none;
+}
+.mcp-empty {
+  margin: 0;
+  padding: 18px 16px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.mcp-empty[hidden] {
+  display: none;
+}
+.mcp-revoked[hidden] {
+  display: none;
+}
+.mcp-revoked > summary {
+  padding: 6px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.mcp-revoked[open] > summary {
+  margin-bottom: 6px;
+}
+
+/* The permissions sheet: the settings side sheet, a little wider. */
+dialog.sub-sheet.mcp-sheet {
+  width: 600px;
+}
+.mcp-sheet .sheet-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+}
+.mcp-sheet .mcp-group-title {
+  margin-top: 14px;
+}
+.mcp-sheet .mcp-card {
+  background: var(--mcp-surface);
+}
+.mcp-avatar-lg {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  font-size: 15px;
+}
+.mcp-scope {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 200px 32px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.mcp-scope + .mcp-scope {
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-scope[data-scope='config'] {
+  background: var(--mcp-danger-wash);
+  border-radius: 0 0 9px 9px;
+}
+.mcp-scope-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 15px;
+}
+.mcp-scope[data-scope='read'] .mcp-scope-tile {
+  background: var(--badge-ok-bg);
+  color: var(--badge-ok-fg);
+}
+.mcp-scope[data-scope='control'] .mcp-scope-tile {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+.mcp-scope[data-scope='workflows'] .mcp-scope-tile {
+  background: var(--mcp-tile-bg);
+  color: var(--mcp-tile-fg);
+}
+.mcp-scope[data-scope='config'] .mcp-scope-tile {
+  background: var(--badge-error-bg);
+  color: var(--badge-error-fg);
+}
+.mcp-scope-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mcp-scope-title {
+  font-weight: 600;
+}
+.mcp-scope-warning {
+  color: var(--mcp-danger);
+  font-weight: 600;
+}
+.mcp-select {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--mcp-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+.mcp-select:disabled {
+  opacity: 0.7;
+}
+.mcp-scope .remote-switch {
+  justify-self: end;
+}
+.mcp-sheet-note {
+  margin: 2px 4px 0;
+}
+.mcp-access {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.mcp-access-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mcp-access-row + .mcp-access-row {
+  padding-top: 10px;
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mcp-group-chips[hidden] {
+  display: none;
+}
+button.mcp-group-chip {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--badge-neutral-bg);
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button.mcp-group-chip[aria-pressed='true'] {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+  font-weight: 600;
+}
+.mcp-connection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.mcp-connection-line {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+}
+button.mcp-danger-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--badge-error-bg);
+  border-radius: 7px;
+  background: var(--mcp-surface);
+  box-shadow: none;
+  color: var(--mcp-danger);
+  font-size: 12.5px;
+}
+button.mcp-danger-btn[hidden] {
+  display: none;
 }
 /* ── End Settings: MCP ─────────────────────────────────────────────── */
 

@@ -690,6 +690,26 @@
                 </div>
               </div>
             </section>
+
+            <section class="mcp-group" aria-labelledby="mcp-clients-title">
+              <div class="mcp-group-head">
+                <h2 id="mcp-clients-title" class="mcp-group-title">Clientes</h2>
+                <span class="mcp-group-note"
+                  >Por defecto: lectura, control y workflows</span
+                >
+              </div>
+              <div class="mcp-card">
+                <ul id="mcp-clients" class="mcp-clients"></ul>
+                <p id="mcp-clients-empty" class="mcp-empty">
+                  Ningún cliente todavía. Copia el comando de arriba en tu
+                  asistente.
+                </p>
+              </div>
+              <details id="mcp-revoked" class="mcp-revoked" hidden>
+                <summary id="mcp-revoked-summary">Revocados (0)</summary>
+                <ul id="mcp-revoked-list" class="mcp-card mcp-clients"></ul>
+              </details>
+            </section>
           </div>
         </section>
 
@@ -1511,6 +1531,95 @@
           Vincular
         </button>
       </div>
+    </dialog>
+
+    <!-- «MCP»: one client's permissions (renderer/config/mcp-client-sheet.ts) -->
+    <dialog
+      id="mcp-client-sheet"
+      class="sub-sheet mcp-sheet"
+      aria-labelledby="mcp-sheet-title"
+    >
+      <header class="sheet-header">
+        <span id="mcp-sheet-avatar" class="mcp-avatar mcp-avatar-lg"></span>
+        <div class="sheet-heading">
+          <div class="sheet-overline">Cliente MCP</div>
+          <h2 id="mcp-sheet-title">Cliente</h2>
+        </div>
+        <button
+          type="button"
+          class="modal-close sheet-close"
+          data-close
+          aria-label="Cerrar"
+        >
+          <span class="icon" data-icon="x"></span>
+        </button>
+      </header>
+      <form id="mcp-sheet-form" method="dialog">
+        <div class="sheet-body">
+          <h3 class="mcp-group-title">Qué puede hacer</h3>
+          <div id="mcp-sheet-scopes" class="mcp-card mcp-scopes"></div>
+          <p class="mcp-hint mcp-sheet-note">
+            Los cambios en líneas de comando, variables o carpetas siempre se
+            confirman en DevBar, aunque elijas otra opción.
+          </p>
+
+          <h3 class="mcp-group-title">A qué puede acceder</h3>
+          <div class="mcp-card mcp-access">
+            <div class="mcp-access-row">
+              <span class="mcp-row-label">Grupos</span>
+              <div class="mode-segmented" role="radiogroup" aria-label="Grupos">
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="mcp-sheet-groups-mode"
+                    id="mcp-sheet-groups-all"
+                    value="all"
+                    checked
+                  />
+                  <span>Todos</span>
+                </label>
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="mcp-sheet-groups-mode"
+                    id="mcp-sheet-groups-some"
+                    value="some"
+                  />
+                  <span>Elegidos</span>
+                </label>
+              </div>
+            </div>
+            <div id="mcp-sheet-groups" class="mcp-group-chips" hidden></div>
+            <label class="mcp-access-row">
+              <span class="mcp-row-label"
+                >Ocultar secretos (variables, tokens)</span
+              >
+              <input
+                type="checkbox"
+                role="switch"
+                id="mcp-sheet-redact"
+                class="remote-switch"
+              />
+            </label>
+          </div>
+
+          <h3 class="mcp-group-title">Conexión</h3>
+          <div class="mcp-card mcp-connection">
+            <span id="mcp-sheet-connection" class="mcp-connection-line"></span>
+            <button type="button" id="mcp-sheet-revoke" class="mcp-danger-btn">
+              Revocar acceso
+            </button>
+          </div>
+        </div>
+        <footer class="sheet-footer">
+          <span class="spacer"></span>
+          <button type="button" data-close>Cancelar</button>
+          <button type="submit" id="mcp-sheet-submit" class="primary">
+            <span id="mcp-sheet-submit-label">Guardar</span>
+            <kbd id="mcp-sheet-key" class="sheet-kbd">Ctrl+S</kbd>
+          </button>
+        </footer>
+      </form>
     </dialog>
 
     <div id="toast" style="display: none" class="toast"></div>

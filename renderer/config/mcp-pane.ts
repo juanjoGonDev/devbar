@@ -1,17 +1,30 @@
 import type {
   McpClientKind,
+  McpMutationResult,
   McpState,
 } from '../../src/ipc-contract/mcp-api.js';
+import { createMcpClientSheet } from './mcp-client-sheet.js';
+import { createMcpClientList } from './mcp-clients.js';
 import type { McpElements } from './mcp-elements.js';
 import { connectSnippet, serverStatus } from './mcp-format.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
- * «MCP»: the server card (switch, status, transport) and the ready-to-paste
- * commands that connect an assistant. Main owns the state; this paints
- * whatever `McpState` it last reported (answers and `mcp:update` pushes
- * alike) and forwards the clicks.
+ * «MCP»: the server card (switch, status, transport), the ready-to-paste
+ * commands that connect an assistant, and the clients with their
+ * permissions sheet. Main owns the state; this paints whatever `McpState`
+ * it last reported (answers and `mcp:update` pushes alike) and forwards the
+ * clicks.
  */
+
+export interface McpPaneDeps {
+  showToast: ShowToast;
+  getGroups(): readonly { id: string; name: string }[];
+  platform: string;
+}
+
+/** Repaint cadence, so «Último uso: hace …» keeps counting. */
+const USAGE_REFRESH_MS = 30_000;
 
 const KINDS: readonly McpClientKind[] = [
   'claude-code',
@@ -24,9 +37,32 @@ function isKind(value: string): value is McpClientKind {
   return (KINDS as readonly string[]).includes(value);
 }
 
-export function createMcpPane(els: McpElements, showToast: ShowToast): void {
+export function createMcpPane(els: McpElements, deps: McpPaneDeps): void {
+  const { showToast } = deps;
   let state: McpState | null = null;
   let kind: McpClientKind = 'claude-code';
+
+  const sheet = createMcpClientSheet(els.sheet, {
+    showToast,
+    getGroups: () => deps.getGroups(),
+    platform: deps.platform,
+    onState: (next) => apply(next),
+  });
+  const clients = createMcpClientList(els.clients, {
+    onReject: (client) => void mutate(window.api.rejectMcpClient(client.id)),
+    onAllow: (client) => sheet.open(client),
+    onPermissions: (client) => sheet.open(client),
+  });
+
+  async function mutate(call: Promise<McpMutationResult>): Promise<void> {
+    try {
+      const result = await call;
+      if (result.ok) apply(result.state);
+      else showToast(result.error, 'error');
+    } catch (err) {
+      showToast(`Error: ${errorMessage(err)}`, 'error');
+    }
+  }
 
   function renderServer(current: McpState): void {
     const { enabled, status, error } = els.server;
@@ -50,6 +86,7 @@ export function createMcpPane(els: McpElements, showToast: ShowToast): void {
     state = next;
     renderServer(next);
     renderConnect(next);
+    clients.render(next.clients, Date.now());
   }
 
   els.server.enabled.addEventListener('change', async () => {
@@ -83,6 +120,9 @@ export function createMcpPane(els: McpElements, showToast: ShowToast): void {
   });
 
   window.api.onMcpUpdate(apply);
+  setInterval(() => {
+    if (state) clients.render(state.clients, Date.now());
+  }, USAGE_REFRESH_MS);
   window.api
     .getMcpState()
     .then(apply)

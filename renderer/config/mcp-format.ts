@@ -2,12 +2,15 @@ import type {
   McpClient,
   McpClientKind,
   McpConnectCommands,
+  McpScopes,
   McpState,
 } from '../../src/ipc-contract/mcp-api.js';
+import { lastSeen } from './remote-format.js';
 
 /**
  * The words of the «MCP» section that come out of its data: the status line
- * of the server card and the ready-to-paste block for each assistant.
+ * of the server card, the ready-to-paste block for each assistant and the
+ * lines that say when a client connected and was last used.
  */
 
 export interface ConnectSnippet {
@@ -67,4 +70,54 @@ export function serverStatus(state: McpState): ServerStatus {
     text: `Activo · ${allowed} cliente${allowed === 1 ? '' : 's'}`,
     tone: 'on',
   };
+}
+
+/** The four scope families, in the order every list shows them. */
+export const SCOPE_KEYS: readonly (keyof McpScopes)[] = [
+  'read',
+  'control',
+  'workflows',
+  'config',
+];
+
+export const SCOPE_LABELS: Readonly<Record<keyof McpScopes, string>> = {
+  read: 'Lectura',
+  control: 'Control',
+  workflows: 'Workflows',
+  config: 'Configuración',
+};
+
+const SHORT_DATE = new Intl.DateTimeFormat('es-ES', {
+  day: 'numeric',
+  month: 'short',
+});
+
+/** The letter of a client's avatar. */
+export function clientInitial(name: string): string {
+  return (name.trim()[0] ?? '?').toUpperCase();
+}
+
+/** «Último uso: hace 3 min · 128 llamadas hoy», or that it never ran. */
+export function usageLine(client: McpClient, now: number): string {
+  if (client.lastUsedAt === null) return 'Sin usar todavía';
+  const used = `Último uso: ${lastSeen(client.lastUsedAt, now)}`;
+  const calls = client.callsToday;
+  if (calls === 0) return used;
+  return `${used} · ${calls} llamada${calls === 1 ? '' : 's'} hoy`;
+}
+
+/** «Quiere conectarse · hace 1 min», for a client still waiting. */
+export function pendingLine(client: McpClient, now: number): string {
+  return `Quiere conectarse · ${lastSeen(client.createdAt, now)}`;
+}
+
+/** The «CONEXIÓN» line of the sheet. */
+export function connectionLine(client: McpClient, now: number): string {
+  const parts = [
+    'Local (stdio)',
+    `vinculado el ${SHORT_DATE.format(client.createdAt)}`,
+  ];
+  if (client.lastUsedAt !== null)
+    parts.push(`último uso ${lastSeen(client.lastUsedAt, now)}`);
+  return parts.join(' · ');
 }

@@ -281,7 +281,11 @@ wireBackupButtons({
 });
 
 createRemotePane(remoteElements(), showToast);
-createMcpPane(mcpElements(), showToast);
+createMcpPane(mcpElements(), {
+  showToast,
+  getGroups: () => store.getGroups(),
+  platform: window.api.platform,
+});
 
 // ────────────────────── Live updates ───────────────────────────────────
 
