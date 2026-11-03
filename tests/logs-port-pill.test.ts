@@ -160,7 +160,7 @@ describe('renderer/logs/port-pill.ts', () => {
       header.renderHeaderRunState();
       const button = slot().querySelector('button');
       expect(slot().hidden).toBe(false);
-      expect(iconText(button)).toBe('localhost:3000[external-link]');
+      expect(iconText(button)).toBe('localhost:3000[arrow-up-right]');
       button?.click();
       expect(dom.argsFor('openPort')).toEqual([['g1', 'web']]);
     });
@@ -203,8 +203,8 @@ describe('renderer/logs/port-pill.ts', () => {
       slot().querySelector('button')?.click();
       const items = [...slot().querySelectorAll('[role="menuitem"]')];
       expect(items.map((el) => iconText(el))).toEqual([
-        '[external-link]localhost:3000 · Vite',
-        '[external-link]localhost:6006',
+        '[arrow-up-right]localhost:3000 · Vite',
+        '[arrow-up-right]localhost:6006',
       ]);
       (items[1] as HTMLButtonElement).click();
       expect(dom.argsFor('openPort')).toEqual([['g1', 'web', 6006]]);

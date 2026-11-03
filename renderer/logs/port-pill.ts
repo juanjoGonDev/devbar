@@ -76,7 +76,7 @@ export function portPillFor(ports: readonly DetectedPort[]): PortPill | null {
 function menuEntries(owner: PortOwner): MenuEntry[] {
   return owner.ports.filter(openable).map((port) => ({
     label: port.label ? `${hostOf(port)} · ${port.label}` : hostOf(port),
-    icon: 'external-link',
+    icon: 'arrow-up-right',
     run: () =>
       void window.api.openPort(owner.groupId, owner.commandId, port.port),
   }));
@@ -88,7 +88,7 @@ function buildButton(owner: PortOwner, pill: PortPill): HTMLButtonElement {
   button.className = 'port-open';
   const text = document.createElement('span');
   text.textContent = pill.text;
-  button.append(text, icon('external-link'));
+  button.append(text, icon('arrow-up-right'));
   if (pill.kind === 'open' && pill.menu) {
     button.title = 'Elegir puerto';
     button.setAttribute('aria-haspopup', 'menu');
