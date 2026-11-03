@@ -105,6 +105,13 @@ describe('renderer/config/mcp-clients.ts', () => {
       expect(el('mcp-revoked').hidden).toBe(true);
     });
 
+    it('says plainly what the permissions do not separate', async () => {
+      win = await openWith([]);
+      expect(visible(el('mcp-clients-trust'))).toContain(
+        'por el nombre que anuncia',
+      );
+    });
+
     it('highlights a client asking to connect', async () => {
       win = await openWith([PENDING]);
       const r = row('Cursor');

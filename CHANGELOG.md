@@ -13,7 +13,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
   y editar la configuración (grupos, comandos, acciones y workflows, con su
   icono, color y carpeta, e importar y exportar). Está apagado por defecto y se
   activa en Ajustes › MCP, que también da el comando para conectar cada
-  cliente. Solo escucha en local, para el usuario del equipo.
+  cliente. Solo acepta conexiones de este equipo, y cada una debe presentar
+  un token que DevBar renueva en cada arranque.
 - **Permisos por cliente.** Cada cliente nuevo queda pendiente hasta que lo
   permites, y eliges qué puede hacer (lectura, control, workflows,
   configuración), a qué grupos accede, si se ocultan los secretos de los logs
