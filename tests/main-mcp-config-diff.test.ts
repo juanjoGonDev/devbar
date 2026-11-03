@@ -87,6 +87,19 @@ describe('src/main/mcp/config-diff.ts', () => {
     expect(deleted.risk).toBe('destructive');
   });
 
+  it('spells out the invisible characters that could disguise a value', () => {
+    const before = makeCommand({ command: 'pnpm dev' });
+    const after = makeCommand({ command: 'pnpm dev\u202E;rm -rf ~\u200F' });
+
+    const { diff } = diffEntity(COMMAND_FIELDS, before, after);
+
+    expect(diff).toContainEqual({
+      kind: 'add',
+      field: 'comando',
+      text: 'pnpm dev⟨U+202E⟩;rm -rf ~⟨U+200F⟩',
+    });
+  });
+
   it('changes nothing for identical entities', () => {
     const command = makeCommand();
 

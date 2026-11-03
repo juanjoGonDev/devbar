@@ -31,6 +31,22 @@ interface Field<T> {
 
 const yesNo = (value: boolean): string => (value ? 'sí' : 'no');
 
+/** Controls and bidi overrides/isolates that could reorder or hide a value. */
+const INVISIBLE =
+  /[\u0000-\u0008\u000B-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
+/**
+ * Spelled out (`⟨U+202E⟩`) rather than dropped: a value that carries one is
+ * odd on purpose, and the user should see that before approving it.
+ */
+function visible(text: string): string {
+  return text.replace(
+    INVISIBLE,
+    (char) =>
+      `⟨U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}⟩`,
+  );
+}
+
 function envLines(env: readonly EnvEntry[]): string[] {
   return env.map(
     (entry) =>
@@ -242,17 +258,17 @@ export function diffEntity<T>(
     if (same) {
       if (field.context && before !== null && after !== null)
         for (const text of next)
-          diff.push({ kind: 'ctx', field: field.label, text });
+          diff.push({ kind: 'ctx', field: field.label, text: visible(text) });
       continue;
     }
     changed.push(field.label);
     if (field.executes) executes = true;
     for (const text of old)
       if (!next.includes(text))
-        diff.push({ kind: 'del', field: field.label, text });
+        diff.push({ kind: 'del', field: field.label, text: visible(text) });
     for (const text of next)
       if (!old.includes(text))
-        diff.push({ kind: 'add', field: field.label, text });
+        diff.push({ kind: 'add', field: field.label, text: visible(text) });
   }
   const risk: McpRisk =
     after === null ? 'destructive' : executes ? 'executes' : 'cosmetic';
