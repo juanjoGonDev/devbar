@@ -186,8 +186,11 @@ export function createTimeField(options: TimeFieldOptions): TimeField {
       const current = part === 'hour' ? hour : minute;
       const selected = Number(option.dataset.value) === current;
       option.setAttribute('aria-selected', String(selected));
-      if (selected && typeof option.scrollIntoView === 'function')
-        option.scrollIntoView({ block: 'nearest' });
+      // Centre the pick in its own column, without scrolling the page.
+      const list = option.parentElement;
+      if (selected && list)
+        list.scrollTop =
+          option.offsetTop - list.offsetTop - list.clientHeight / 2 + 14;
     }
   }
 
