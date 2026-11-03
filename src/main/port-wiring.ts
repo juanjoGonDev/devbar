@@ -8,9 +8,11 @@ import os from 'node:os';
 import type { LogEntry } from '../domain-types.js';
 import {
   createPortClassifier,
+  isProbeNoise,
   type PortClassifier,
 } from '../ports/http-probe.js';
 import { createPortDetection } from '../ports/port-detection.js';
+import type { ProbeNoise } from '../ports/probe-noise.js';
 import type { PortRegistry } from '../ports/port-registry.js';
 import { createPortWatcher } from '../ports/port-watcher.js';
 import type { ListenSocket } from '../ports/socket-parsers.js';
@@ -31,7 +33,11 @@ interface PortEventSource {
     listener: (payload: { id: string; entry: LogEntry }) => void,
   ): unknown;
   runningCommandRoots(): Array<{ id: string; pid: number }>;
+  probeNoise: Pick<ProbeNoise, 'mute'>;
 }
+
+/** How long after a probe answers its echo may still reach the log. */
+const PROBE_ECHO_MS = 3000;
 
 export interface PortWiringOverrides {
   scan?: (roots: number[]) => Promise<Map<number, ListenSocket[]>>;
@@ -53,9 +59,25 @@ export function attachPortDetection(
     ...(overrides.setTimer ? { setTimer: overrides.setTimer } : {}),
     ...(overrides.clearTimer ? { clearTimer: overrides.clearTimer } : {}),
   });
+  const base = overrides.classifier ?? createPortClassifier();
+  // The service answers our `GET /`, often with a 404 it logs as an error:
+  // muted while the probe runs and for a moment after.
+  const mute = (id: string): void =>
+    processManager.probeNoise.mute(
+      id,
+      Date.now() + PROBE_ECHO_MS,
+      isProbeNoise,
+    );
+  const classifier: PortClassifier = {
+    ...base,
+    kind: (id, port, url) => {
+      mute(id);
+      return base.kind(id, port, url).finally(() => mute(id));
+    },
+  };
   const detection = createPortDetection({
     setPorts: registry.setProcessPorts,
-    classifier: overrides.classifier ?? createPortClassifier(),
+    classifier,
     hostNames: () => ({
       hostname: os.hostname() || null,
       lanAddresses: lanAddresses(os.networkInterfaces()),
