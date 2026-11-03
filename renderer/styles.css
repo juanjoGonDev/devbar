@@ -2805,17 +2805,25 @@ button.port-menu-item .icon {
   height: 56px;
   padding: 0 12px;
   border-radius: 6px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   overflow: hidden;
 }
+/* Each preview is a tiny window of ITS theme, so its border is that theme's
+   --border-strong over its own background (opaque, so the card behind never
+   tints it): the same in a light or a dark Settings window. */
 .theme-preview-light {
   background: #f5f5f7;
+  border-color: #d3d3d4;
 }
 .theme-preview-dark {
   background: #2c2c2e;
+  border-color: #525254;
 }
+/* Half and half, border included: it splits where the background does. */
 .theme-preview-auto {
-  background: linear-gradient(90deg, #f5f5f7 50%, #2c2c2e 50%);
+  background:
+    linear-gradient(90deg, #f5f5f7 50%, #2c2c2e 50%) padding-box,
+    linear-gradient(90deg, #d3d3d4 50%, #525254 50%) border-box;
 }
 .tp-bar {
   height: 6px;
