@@ -2,6 +2,7 @@ import type {
   RemoteActionView,
   RemoteCommandView,
   RemoteGroupView,
+  RemotePortView,
   RemoteStateView,
 } from '../../src/ipc-contract/remote-wire.js';
 import { createBranchSheet } from './branch-sheet.js';
@@ -32,6 +33,14 @@ export interface GroupsTab {
 const isUp = (status: string): boolean =>
   status === 'running' || status === 'starting';
 
+const LOCAL_ONLY = 'Solo accesible desde el equipo';
+
+/** The port a row shows: its first web/http one, else its first at all. */
+const primaryPort = (
+  ports: readonly RemotePortView[],
+): RemotePortView | undefined =>
+  ports.find((port) => port.kind !== 'other') ?? ports[0];
+
 export function createGroupsTab(
   els: PanelElements['groups'],
   sheetEls: PanelElements['branches'],
@@ -44,6 +53,8 @@ export function createGroupsTab(
   let hiddenOpen = false;
   /** Process ids with a request in flight. */
   const busy = new Set<string>();
+  /** Process ids whose «solo desde el equipo» note is open. */
+  const notes = new Set<string>();
   let last: RemoteStateView | null = null;
   let live = false;
   let everLive = false;
@@ -113,6 +124,9 @@ export function createGroupsTab(
       sub.textContent = 'Error · mira los logs';
     else sub.textContent = 'Detenido';
     textBox.append(title, sub);
+    const port = up ? primaryPort(command.ports) : undefined;
+    if (port && !port.lanReachable && notes.has(command.processId))
+      textBox.append(el('span', 'port-note', LOCAL_ONLY));
 
     const logs = button('square-button', `Ver logs de ${command.name}`, () =>
       ctx.openLogs(command.processId),
@@ -131,8 +145,47 @@ export function createGroupsTab(
     );
     toggle.append(glyph(up ? 'stop' : 'play', 16));
     toggle.disabled = busy.has(command.processId);
-    row.append(dot, textBox, logs, toggle);
+    row.append(dot, textBox);
+    if (port) row.append(portPill(command, port));
+    row.append(logs, toggle);
     return row;
+  }
+
+  /**
+   * `:3000` and an arrow, opening the port on the host this page came from —
+   * the computer, as the phone reaches it. A port bound to loopback only is
+   * muted and explains itself on tap; one that is not web is just text.
+   */
+  function portPill(
+    command: RemoteCommandView,
+    port: RemotePortView,
+  ): HTMLElement {
+    const text = `:${port.port}`;
+    if (port.kind === 'other') return el('span', 'port-pill is-muted', text);
+    if (!port.lanReachable) {
+      const key = command.processId;
+      const shown = notes.has(key);
+      const pill = button(
+        'port-pill is-muted',
+        `${text}: ${LOCAL_ONLY}`,
+        () => {
+          if (shown) notes.delete(key);
+          else notes.add(key);
+          repaint();
+        },
+      );
+      pill.title = LOCAL_ONLY;
+      pill.setAttribute('aria-expanded', String(shown));
+      pill.append(el('span', '', text));
+      return pill;
+    }
+    const link = el('a', 'port-pill');
+    link.href = `http://${ctx.env.hostname}:${port.port}/`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.setAttribute('aria-label', `Abrir ${command.name} en ${text}`);
+    link.append(el('span', '', text), glyph('external', 12));
+    return link;
   }
 
   function actionChip(group: RemoteGroupView, action: RemoteActionView) {

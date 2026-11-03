@@ -26,6 +26,7 @@ const PATHS = {
     'M16 17H8',
   ],
   chevron: ['m9 18 6-6-6-6'],
+  external: ['M7 7h10v10', 'M7 17 17 7'],
   menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
   workflow: [
     'M5 3h4a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',

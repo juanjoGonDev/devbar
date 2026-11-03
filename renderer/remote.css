@@ -1030,6 +1030,44 @@ body[data-screen='linked'] .app {
   font-size: 11px;
   white-space: nowrap;
 }
+/* A service's port: an accent pill that opens it on the computer, or muted
+   when the phone cannot reach it (or it is not a web page). */
+.port-pill {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.port-pill.is-muted {
+  background: transparent;
+  color: var(--muted);
+  padding: 0 4px;
+}
+button.port-pill.is-muted {
+  padding: 0 10px;
+  border: 1px dashed var(--separator);
+  cursor: pointer;
+}
+.port-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.port-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .action-chips {
   display: flex;
   flex-wrap: wrap;
