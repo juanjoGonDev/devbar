@@ -61,12 +61,23 @@ function groupLines(old: Group | null, next: Group): McpDiffLine[] {
   return [header, ...lines];
 }
 
+/** The one global setting an import may change that starts something. */
+const AUTOSTART = 'abrir al iniciar sesión';
+const yesNo = (value: boolean): string => (value ? 'sí' : 'no');
+
 export function importDiff(
   current: readonly Group[],
   currentWorkflows: readonly Workflow[],
+  currentAutostart: boolean,
   incoming: ImportPayload,
 ): EntityDiff {
   const diff: McpDiffLine[] = [];
+  const autostart = incoming.globalSettings.autostart;
+  if (typeof autostart === 'boolean' && autostart !== currentAutostart)
+    diff.push(
+      { kind: 'del', field: AUTOSTART, text: yesNo(currentAutostart) },
+      { kind: 'add', field: AUTOSTART, text: yesNo(autostart) },
+    );
   for (const next of incoming.groups)
     diff.push(
       ...groupLines(current.find((g) => g.id === next.id) ?? null, next),

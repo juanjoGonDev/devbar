@@ -277,6 +277,7 @@ export const WORKFLOW_CONFIG_TOOLS: readonly ToolDef[] = [
         change: importDiff(
           ctx.runtime.listGroups(),
           ctx.runtime.workflowEntries().map((entry) => entry.workflow),
+          ctx.changes.port.snapshot().globalSettings.autostart,
           parsed.payload,
         ),
         reason: args.reason,

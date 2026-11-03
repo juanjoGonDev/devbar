@@ -474,6 +474,36 @@ describe('src/main/mcp/tools/config-*-tools.ts', () => {
       );
     });
 
+    it('shows when an import would change whether DevBar opens at login', async () => {
+      const h = await harness();
+      const config = (autostart: boolean) => ({
+        version: 4,
+        groups: [],
+        globalSettings: { autostart },
+      });
+
+      const asked = async (autostart: boolean) => {
+        const before = h.requests.length;
+        const pending = call(h, 'import_config', { config: config(autostart) });
+        for (let i = 0; i < 20 && h.requests.length === before; i++)
+          await settle();
+        const request = h.requests.at(-1);
+        if (request) h.desk.answer(request.id, 'reject');
+        await pending;
+        return request?.diff ?? [];
+      };
+
+      expect(await asked(true)).toEqual(
+        expect.arrayContaining([
+          { kind: 'del', field: 'abrir al iniciar sesión', text: 'no' },
+          { kind: 'add', field: 'abrir al iniciar sesión', text: 'sí' },
+        ]),
+      );
+      expect(
+        (await asked(false)).some((l) => l.field === 'abrir al iniciar sesión'),
+      ).toBe(false);
+    });
+
     it('refuses an invalid configuration before asking anyone', async () => {
       const h = await harness();
 

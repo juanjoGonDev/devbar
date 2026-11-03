@@ -16,6 +16,8 @@ export interface FakeConfigPort extends McpConfigPort {
   backups: Map<string, unknown>;
   /** Makes the next handler call answer this instead. */
   failNext: unknown;
+  /** The global settings a snapshot reports. */
+  settings: Partial<ConfigSnapshot['globalSettings']>;
 }
 
 function upsert<T extends { id: string }>(list: T[], item: T): void {
@@ -107,12 +109,13 @@ export function fakeConfigPort(runtime: FakeRuntime): FakeConfigPort {
     version: 4,
     groups: structuredClone(runtime.groups),
     workflows: structuredClone(runtime.workflows),
-    globalSettings: {} as ConfigSnapshot['globalSettings'],
+    globalSettings: port.settings as ConfigSnapshot['globalSettings'],
     customIcons: [],
   });
   const port: FakeConfigPort = {
     invocations: [],
     backups: new Map(),
+    settings: { autostart: false },
     failNext: undefined,
     invoke: (channel, payload) => {
       port.invocations.push({ channel, payload });
