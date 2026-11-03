@@ -1,12 +1,16 @@
 import type { Duplex, Readable, Writable } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import { helloLine, mcpSocketPath, mcpTokenPath } from './endpoint.js';
 
 /**
  * The stdio bridge an assistant launches (`cli.ts`): it speaks MCP on its
- * stdin/stdout and forwards every byte to the running app's local endpoint
- * after presenting the token. It understands nothing of MCP itself — except
- * when DevBar cannot be reached, where it answers every request with a clear
- * error instead of leaving the assistant waiting.
+ * stdin/stdout and forwards every line to the running app's local endpoint
+ * after presenting the token. It understands little of MCP itself: enough to
+ * answer a request with a clear error while DevBar cannot be reached, and to
+ * survive DevBar restarting. The assistant keeps this process for its whole
+ * session, so when DevBar goes away the bridge waits; the next request
+ * reconnects (with the new start's token) and first replays the assistant's
+ * own `initialize`, which the new DevBar needs before anything else.
  *
  * Self-contained on purpose: it runs in a fresh Node process for every
  * assistant session and must start fast, so it imports neither the SDK nor
@@ -30,6 +34,13 @@ const UNREACHABLE_CODE = -32000;
 export const UNREACHABLE_MESSAGE =
   'DevBar no está abierto, o su servidor MCP está desactivado (Ajustes › MCP). Ábrelo y vuelve a intentarlo.';
 
+/** What a request gets when DevBar went away before answering it. */
+export const RESTARTED_MESSAGE =
+  'DevBar se ha cerrado o reiniciado antes de responder. Vuelve a intentarlo.';
+
+/** The id the replayed `initialize` carries, so its answer is not relayed. */
+const REPLAY_ID_PREFIX = 'devbar-bridge-replay-';
+
 /** `--home <dir>`, the app's MCP folder. */
 export function homeArgument(argv: readonly string[]): string | null {
   const index = argv.indexOf('--home');
@@ -37,37 +48,38 @@ export function homeArgument(argv: readonly string[]): string | null {
   return value ? value : null;
 }
 
-/** Answers each request on `stdin` with the «not open» error, forever. */
-function answerUnreachable(deps: BridgeDeps): void {
+interface Message {
+  id?: unknown;
+  method?: unknown;
+}
+
+function parse(line: string): Message | null {
+  try {
+    const message = JSON.parse(line) as unknown;
+    return typeof message === 'object' && message !== null ? message : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Notifications carry no id and expect no answer. */
+const isRequest = (message: Message | null): message is Message =>
+  message?.id !== undefined && message.method !== undefined;
+
+/** Calls `onLine` for every complete, non-empty line `stream` delivers. */
+function eachLine(stream: Readable, onLine: (line: string) => void): void {
+  const decoder = new StringDecoder('utf8');
   let pending = '';
-  deps.stdin.setEncoding('utf8');
-  deps.stdin.on('data', (chunk: string) => {
-    pending += chunk;
+  stream.on('data', (chunk: Buffer | string) => {
+    pending += typeof chunk === 'string' ? chunk : decoder.write(chunk);
     let newline = pending.indexOf('\n');
     while (newline !== -1) {
       const line = pending.slice(0, newline).trim();
       pending = pending.slice(newline + 1);
       newline = pending.indexOf('\n');
-      if (!line) continue;
-      let id: unknown;
-      try {
-        const message = JSON.parse(line) as { id?: unknown; method?: unknown };
-        // Notifications carry no id and expect no answer.
-        if (message.id === undefined || message.method === undefined) continue;
-        id = message.id;
-      } catch {
-        continue;
-      }
-      deps.stdout.write(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id,
-          error: { code: UNREACHABLE_CODE, message: UNREACHABLE_MESSAGE },
-        }) + '\n',
-      );
+      if (line) onLine(line);
     }
   });
-  deps.stdin.on('end', () => deps.exit(0));
 }
 
 export async function runBridge(deps: BridgeDeps): Promise<void> {
@@ -77,19 +89,99 @@ export async function runBridge(deps: BridgeDeps): Promise<void> {
     deps.exit(2);
     return;
   }
-  let socket: Duplex;
-  let token: string;
-  try {
-    token = deps.readFile(mcpTokenPath(home, deps.platform)).trim();
-    socket = await deps.connect(mcpSocketPath(home, deps.platform));
-  } catch {
-    deps.stderr.write(`devbar mcp: ${UNREACHABLE_MESSAGE}\n`);
-    answerUnreachable(deps);
-    return;
+  const socketPath = mcpSocketPath(home, deps.platform);
+  const tokenPath = mcpTokenPath(home, deps.platform);
+  let socket: Duplex | null = null;
+  let warned = false;
+  let replays = 0;
+  /** The assistant's `initialize` and `initialized`, for a restarted DevBar. */
+  let handshake: string[] = [];
+  /** Requests sent to DevBar and not answered yet. */
+  const inFlight = new Set<unknown>();
+  const replayIds = new Set<unknown>();
+
+  const fail = (id: unknown, message: string): void => {
+    deps.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        error: { code: UNREACHABLE_CODE, message },
+      }) + '\n',
+    );
+  };
+
+  const fromApp = (line: string): void => {
+    const message = parse(line);
+    if (message?.id !== undefined && message.method === undefined) {
+      if (replayIds.delete(message.id)) return;
+      inFlight.delete(message.id);
+    }
+    deps.stdout.write(line + '\n');
+  };
+
+  async function open(): Promise<Duplex | null> {
+    try {
+      // Read on every connect: each DevBar start writes a new token.
+      const token = deps.readFile(tokenPath).trim();
+      const next = await deps.connect(socketPath);
+      next.write(helloLine(token));
+      eachLine(next, fromApp);
+      const drop = (): void => {
+        if (socket !== next) return;
+        socket = null;
+        for (const id of inFlight) fail(id, RESTARTED_MESSAGE);
+        inFlight.clear();
+        replayIds.clear();
+      };
+      next.on('error', drop);
+      next.on('close', drop);
+      warned = false;
+      return next;
+    } catch {
+      if (!warned) deps.stderr.write(`devbar mcp: ${UNREACHABLE_MESSAGE}\n`);
+      warned = true;
+      return null;
+    }
   }
-  socket.write(helloLine(token));
-  deps.stdin.pipe(socket);
-  socket.pipe(deps.stdout);
-  socket.on('error', () => deps.exit(1));
-  socket.on('close', () => deps.exit(0));
+
+  function replayHandshake(target: Duplex): void {
+    const [initialize, initialized] = handshake;
+    const message = initialize ? parse(initialize) : null;
+    if (!message) return;
+    replays += 1;
+    const id = `${REPLAY_ID_PREFIX}${String(replays)}`;
+    replayIds.add(id);
+    target.write(JSON.stringify({ ...message, id }) + '\n');
+    if (initialized) target.write(initialized + '\n');
+  }
+
+  async function forward(line: string): Promise<void> {
+    const message = parse(line);
+    if (!socket) {
+      socket = await open();
+      if (socket && message?.method !== 'initialize') replayHandshake(socket);
+    }
+    if (message?.method === 'initialize') handshake = [line];
+    else if (
+      message?.method === 'notifications/initialized' &&
+      handshake.length === 1
+    )
+      handshake.push(line);
+    if (!socket) {
+      if (isRequest(message)) fail(message.id, UNREACHABLE_MESSAGE);
+      return;
+    }
+    if (isRequest(message)) inFlight.add(message.id);
+    socket.write(line + '\n');
+  }
+
+  socket = await open();
+  // One line at a time: a reconnect must finish before the next line goes.
+  let queue = Promise.resolve();
+  eachLine(deps.stdin, (line) => {
+    queue = queue.then(() => forward(line));
+  });
+  deps.stdin.on('end', () => {
+    void queue.then(() => deps.exit(0));
+  });
 }
