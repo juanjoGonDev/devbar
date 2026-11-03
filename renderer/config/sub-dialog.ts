@@ -8,12 +8,13 @@ import { createIconColorControl } from './icon-color-control.js';
 import { wireSheetChrome } from './sheet-chrome.js';
 import { buildEnvEditor, type EnvEditorHandle } from './env-editor.js';
 import type { ScheduleEditor } from './schedule-editor.js';
-import type { Group, PreScript } from '../../src/domain-types.js';
+import type { DetectedPort, Group, PreScript } from '../../src/domain-types.js';
 import type { GroupStore } from './group-store.js';
 import { errorMessage, type ShowToast } from './toast.js';
 import { fillGroupTile } from '../pipeline/group-tile.js';
 import { createSheetSections } from './sheet-sections.js';
 import { paintSummaries } from './sheet-summaries.js';
+import { createSheetLink, type SheetLinkElements } from './sheet-link.js';
 import {
   persistItem,
   type EditableItem,
@@ -69,6 +70,8 @@ export interface SubDialogElements {
   submitKey: HTMLElement;
   /** «Eliminar», only when editing an item that exists. */
   deleteBtn: HTMLButtonElement;
+  /** The «Enlace» section, commands only. */
+  link: SheetLinkElements;
 }
 
 export interface SubDialogDeps {
@@ -93,6 +96,8 @@ export interface SubDialogDeps {
     onConfirmed: () => void,
   ): Promise<void>;
   loadGroups(): Promise<void>;
+  /** The ports a command listens on now, primary first. */
+  commandPorts(groupId: string, commandId: string): readonly DetectedPort[];
   renderGroupDetail(): void;
   refreshPipeline(): Promise<void>;
 }
@@ -134,6 +139,9 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     group: () => Group | null;
   } = { kind: 'command', isNew: true, group: () => null };
   const sections = createSheetSections(els.dialog);
+  const link = createSheetLink(els.link);
+  /** A command with an invalid custom URL cannot be saved. */
+  const canSave = (): boolean => current.kind !== 'command' || link.isValid();
   // The item «Eliminar» would delete, and what the fields held on opening.
   let deleteTarget: {
     groupId: string;
@@ -183,6 +191,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     els.cwdHint.textContent = cwd || group?.path || '';
 
     paintSummaries(sections, kind, readFormData());
+    els.submit.disabled = !canSave();
   }
 
   function fillCommonFields(item: EditableItem | null, kind: SubKind): void {
@@ -337,9 +346,18 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     paintTile();
   }
 
-  function fill(item: EditableItem | null, kind: SubKind): void {
+  function fill(
+    item: EditableItem | null,
+    kind: SubKind,
+    groupId: string,
+  ): void {
     fillCommonFields(item, kind);
     fillGateFields(item, kind);
+    const command = kind === 'command' && item && 'cwd' in item ? item : null;
+    link.fill(
+      command?.link,
+      command ? deps.commandPorts(groupId, command.id) : [],
+    );
     // Schedule editor — commands and actions, not pre-scripts.
     deps.schedule.setup(item, kind === 'prescript');
     sections.show(kind);
@@ -351,7 +369,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     groupId: string,
   ): void {
     current = { kind, isNew: item === null, group: () => groupById(groupId) };
-    fill(item, kind);
+    fill(item, kind, groupId);
     showCreateChrome(null);
     refreshLive();
     subDialogCallback = makeSubmitCallback(item, kind, () => groupId);
@@ -373,7 +391,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
       group: () =>
         request.groups.find((group) => group.id === els.group.value) ?? null,
     };
-    fill(null, 'prescript');
+    fill(null, 'prescript', request.groupId);
     showCreateChrome(request);
     refreshLive();
     subDialogCallback = makeSubmitCallback(
@@ -419,6 +437,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
       confirmOnTimeout:
         els.confirmOnTimeout.value === 'confirm' ? 'confirm' : 'cancel',
       schedule: deps.schedule.readSchedule(),
+      link: link.read(),
     };
   }
 
@@ -446,6 +465,8 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
 
   els.form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    // Cmd/Ctrl+S submits past the disabled button.
+    if (!canSave()) return;
     const data = readFormData();
     els.dialog.close();
     if (subDialogCallback) await subDialogCallback(data);

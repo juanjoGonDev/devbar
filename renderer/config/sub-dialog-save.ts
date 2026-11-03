@@ -5,6 +5,7 @@ import {
 import type {
   Action,
   Command,
+  CommandLink,
   EnvEntry,
   PreScript,
   Schedule,
@@ -34,6 +35,8 @@ export interface SubFormData {
   confirmSecs: number | null;
   confirmOnTimeout: 'confirm' | 'cancel';
   schedule: Schedule;
+  /** Commands only: what «abrir» opens. */
+  link: CommandLink;
 }
 
 /**
@@ -87,6 +90,7 @@ export async function persistItem(
         item && 'silencedPatterns' in item
           ? item.silencedPatterns
           : { warn: [], error: [] },
+      link: data.link,
     });
     return null;
   }

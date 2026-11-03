@@ -185,6 +185,7 @@ const subDialog = createSubDialog({
   removeItem: (groupId, kind, item, onConfirmed) =>
     subLists.remove(groupId, kind, item, onConfirmed),
   loadGroups,
+  commandPorts: (groupId, commandId) => runtime.ports(groupId, commandId),
   renderGroupDetail: () => groupDetail.render(),
   refreshPipeline,
 });

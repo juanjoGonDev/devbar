@@ -3,6 +3,7 @@ import {
   DEFAULT_WARN_REGEX,
 } from '../../src/log-level-defaults.js';
 import { summarizeSchedule } from './schedule-editor.js';
+import { linkSummary } from './sheet-link.js';
 import type { SheetKind, SheetSections } from './sheet-sections.js';
 import type { SubFormData } from './sub-dialog-save.js';
 
@@ -64,6 +65,7 @@ export function paintSummaries(
 ): void {
   sections.setBadge('env', envSummary(data.env.length));
   sections.setBadge('args', argsSummary(data.args.length));
+  sections.setBadge('link', linkSummary(data.link.mode));
   sections.setBadge(
     'exec',
     execSummary({

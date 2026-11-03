@@ -61,6 +61,21 @@ export function subDialogElements(): {
       submitLabel: byId<HTMLElement>('sf-submit-label', HTMLElement),
       submitKey: byId<HTMLElement>('sf-submit-key', HTMLElement),
       deleteBtn: byId<HTMLButtonElement>('sf-delete', HTMLButtonElement),
+      link: {
+        modes: [
+          byId<HTMLInputElement>('sf-link-mode-auto', HTMLInputElement),
+          byId<HTMLInputElement>('sf-link-mode-custom', HTMLInputElement),
+          byId<HTMLInputElement>('sf-link-mode-none', HTMLInputElement),
+        ],
+        autoPane: byId<HTMLElement>('sf-link-auto', HTMLElement),
+        customPane: byId<HTMLElement>('sf-link-custom', HTMLElement),
+        nonePane: byId<HTMLElement>('sf-link-none', HTMLElement),
+        detected: byId<HTMLElement>('sf-link-detected', HTMLElement),
+        prefix: byId<HTMLElement>('sf-link-prefix', HTMLElement),
+        path: byId<HTMLInputElement>('sf-link-path', HTMLInputElement),
+        url: byId<HTMLInputElement>('sf-link-url', HTMLInputElement),
+        urlError: byId<HTMLElement>('sf-link-url-error', HTMLElement),
+      },
     },
     schedule: {
       group: byId<HTMLElement>('sf-schedule-group', HTMLElement),

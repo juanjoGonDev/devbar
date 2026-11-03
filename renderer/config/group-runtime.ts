@@ -1,4 +1,4 @@
-import type { ProcessStatus } from '../../src/domain-types.js';
+import type { DetectedPort, ProcessStatus } from '../../src/domain-types.js';
 import type { GroupState } from '../../src/ipc-contract.js';
 
 /**
@@ -14,6 +14,8 @@ export interface GroupRuntime {
   /** The folder's checked-out branch, or null when main reports none. */
   branch(groupId: string): string | null;
   isRunning(groupId: string, itemId: string): boolean;
+  /** The ports a command listens on now, primary first; [] when none. */
+  ports(groupId: string, commandId: string): readonly DetectedPort[];
 }
 
 function inProgress(status: ProcessStatus | 'idle' | undefined): boolean {
@@ -44,5 +46,10 @@ export function createGroupRuntime(): GroupRuntime {
     runningCount: (groupId) => liveIds(groupId).length,
     branch: (groupId) => byGroup.get(groupId)?.currentBranch ?? null,
     isRunning: (groupId, itemId) => liveIds(groupId).includes(itemId),
+    ports: (groupId, commandId) =>
+      byGroup
+        .get(groupId)
+        ?.commands?.find((command) => command.commandId === commandId)?.ports ??
+      [],
   };
 }

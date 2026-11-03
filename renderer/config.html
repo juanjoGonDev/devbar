@@ -1088,6 +1088,102 @@
             </div>
           </section>
 
+          <!-- Commands only: what «abrir» opens. -->
+          <section class="sheet-section" data-section="link" id="sf-sec-link">
+            <div class="sheet-section-header">
+              <button
+                type="button"
+                class="sheet-section-toggle"
+                aria-expanded="false"
+                aria-controls="sf-sec-link-body"
+              >
+                <span class="icon" data-icon="chevron-right"></span>
+                <span class="sheet-section-title">Enlace</span>
+                <span class="sheet-badge"></span>
+              </button>
+            </div>
+            <div class="sheet-section-body" id="sf-sec-link-body">
+              <div
+                class="mode-segmented sheet-link-modes"
+                role="radiogroup"
+                aria-label="Enlace"
+              >
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="sf-link-mode"
+                    id="sf-link-mode-auto"
+                    value="auto"
+                    checked
+                  />
+                  <span>Automático</span>
+                </label>
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="sf-link-mode"
+                    id="sf-link-mode-custom"
+                    value="custom"
+                  />
+                  <span>Personalizado</span>
+                </label>
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="sf-link-mode"
+                    id="sf-link-mode-none"
+                    value="none"
+                  />
+                  <span>Ninguno</span>
+                </label>
+              </div>
+              <div id="sf-link-auto" class="sheet-link-pane">
+                <p class="sheet-link-detected" id="sf-link-detected"></p>
+                <div class="field">
+                  <label for="sf-link-path"
+                    >Ruta a abrir
+                    <span class="sheet-link-optional">(opcional)</span></label
+                  >
+                  <div class="sheet-link-path">
+                    <span class="sheet-link-prefix" id="sf-link-prefix"></span>
+                    <input
+                      id="sf-link-path"
+                      class="mono"
+                      placeholder="/"
+                      spellcheck="false"
+                      autocomplete="off"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div id="sf-link-custom" class="sheet-link-pane" hidden>
+                <div class="field">
+                  <label for="sf-link-url">URL</label>
+                  <input
+                    id="sf-link-url"
+                    class="mono"
+                    inputmode="url"
+                    placeholder="http://localhost:3000"
+                    spellcheck="false"
+                    autocomplete="off"
+                    aria-describedby="sf-link-url-error"
+                  />
+                  <small
+                    class="sheet-link-error"
+                    id="sf-link-url-error"
+                    role="alert"
+                    hidden
+                  ></small>
+                </div>
+              </div>
+              <div id="sf-link-none" class="sheet-link-pane" hidden>
+                <small class="sheet-hint"
+                  >Este comando no mostrará ningún enlace.</small
+                >
+              </div>
+            </div>
+          </section>
+
           <section class="sheet-section" data-section="args">
             <div class="sheet-section-header">
               <button

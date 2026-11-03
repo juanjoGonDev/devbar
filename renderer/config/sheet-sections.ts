@@ -5,7 +5,7 @@
  * apart from a command's.
  */
 export type SheetKind = 'command' | 'action' | 'prescript';
-type SheetSectionName = 'env' | 'exec' | 'schedule' | 'logs' | 'args';
+type SheetSectionName = 'env' | 'exec' | 'schedule' | 'logs' | 'link' | 'args';
 
 export interface SheetSections {
   /** Shows the sections `kind` owns, opened as that kind last left them. */
@@ -15,7 +15,7 @@ export interface SheetSections {
 
 /** The sections each kind owns, in their order on the sheet. */
 const OWNED: Record<SheetKind, readonly SheetSectionName[]> = {
-  command: ['env', 'exec', 'schedule', 'logs', 'args'],
+  command: ['env', 'exec', 'schedule', 'logs', 'link', 'args'],
   action: ['env', 'exec', 'schedule', 'args'],
   prescript: ['env', 'exec', 'args'],
 };

@@ -263,7 +263,14 @@ describe('renderer/config/sub-dialog.ts', () => {
           .filter((s) => !s.hidden && s.style.display !== 'none')
           .map((s) => s.dataset.section ?? '');
       click(addButton('Añadir comando'));
-      expect(visible()).toEqual(['env', 'exec', 'schedule', 'logs', 'args']);
+      expect(visible()).toEqual([
+        'env',
+        'exec',
+        'schedule',
+        'logs',
+        'link',
+        'args',
+      ]);
       click(addButton('Añadir acción'));
       expect(visible()).toEqual(['env', 'exec', 'schedule', 'args']);
       click(addButton('Añadir pre-script'));
