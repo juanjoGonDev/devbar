@@ -58,6 +58,7 @@ import { createUpdater } from './main/updater.js';
 import { workflowFeedback } from './main/workflow-wiring.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
 import { createPortRegistry } from './ports/port-registry.js';
+import { attachPortDetection } from './main/port-wiring.js';
 
 /**
  * Wiring only. Every decision this process makes lives under `src/main/`; what
@@ -128,6 +129,7 @@ const workflowRunner = createWorkflowRunner({
 
 // Detected ports per running command; detection feeds it, broadcasts read it.
 const ports = createPortRegistry(() => broadcast());
+attachPortDetection(processManager, ports);
 
 const snapshots = createStateSnapshots({
   configStore,

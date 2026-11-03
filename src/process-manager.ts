@@ -189,6 +189,13 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       .filter((entry) => entry.kind === 'command' && entry.status === 'running')
       .map((entry) => entry.id);
   }
+  /** Root pid of every running command: what a socket scan walks down from. */
+  runningCommandRoots(): Array<{ id: string; pid: number }> {
+    return this.runningCommandIds().flatMap((id) => {
+      const pid = this.states.get(id)?.child?.pid;
+      return pid ? [{ id, pid }] : [];
+    });
+  }
   private readonly logSeqs = new Map<string, number>();
   private resolveLogLimit(resolved: ResolvedTarget): number {
     if (resolved.kind === 'command' && resolved.target.maxLogLines != null)

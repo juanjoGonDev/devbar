@@ -7,6 +7,13 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Añadido
 
+- **Puertos de cada comando.** DevBar detecta en qué puertos escucha cada
+  comando en marcha, tanto por lo que anuncia en su log («Local:
+  http://localhost:5173/») como por los sockets de su árbol de procesos, y
+  distingue si es una página web, una API o otro servicio (como Postgres).
+  Cada comando tiene además un enlace configurable (automático, una URL propia
+  o ninguno) que abre la página en el navegador.
+
 - **Workflows: varios, cada uno con su desencadenante.** Los pre-scripts se
   organizan ahora en workflows, con una lista propia en Ajustes para buscarlos,
   filtrarlos, crearlos, duplicarlos y activarlos o desactivarlos. Cada uno se
