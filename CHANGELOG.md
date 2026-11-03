@@ -72,13 +72,20 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ### Cambiado
 
-- **Barra de la ventana de logs más clara.** Arriba se lee qué estás viendo
-  («Grupo › Servicio»), cómo va («En marcha · 8m 26s», «Parado», «Con
-  errores») y, para un servicio, Reiniciar y Parar/Iniciar. El buscador lleva
-  dentro los filtros «Todo», warnings y errores, cada uno con cuántas líneas
-  hay. «Auto-scroll» y «Pausa» son ahora un solo botón: «En directo» sigue el
+- **Barra de la ventana de logs más clara.** A la izquierda, qué estás viendo
+  («Grupo › Servicio»), cuánto lleva en marcha y su puerto; a la derecha, solo
+  iconos: Reiniciar, Parar/Iniciar, Buscar, Silenciados (con su número) y «⋯».
+  «Auto-scroll» y «Pausa» son ahora un solo botón: «En directo» sigue el
   final; al subir o pulsarlo pasa a «En pausa · N nuevas», y pulsarlo de nuevo
-  te devuelve al final. Vaciar, Copiar y Separar ventana están en el menú «⋯».
+  te devuelve al final. En ventanas estrechas la barra se recoge y lo que no
+  cabe pasa al menú «⋯».
+
+- **Buscar dentro del log, como en un editor.** Cmd+F (Ctrl+F) abre un
+  buscador flotante sobre el log que resalta todas las coincidencias sin
+  ocultar el resto, con «3 de 27», anterior/siguiente, distinguir mayúsculas,
+  palabra completa y expresiones regulares, y marcas en el borde para saltar a
+  cada una. Lleva dentro los filtros «Todo», warnings y errores, y «Solo
+  coincidencias» para ver únicamente las líneas que coinciden.
 
 - **Lista de servicios más compacta en los logs.** Cada servicio ocupa una
   línea: su punto de estado y los avisos y errores solo si los hay. En cada
