@@ -30,8 +30,8 @@ function harness() {
       platform: 'darwin',
       configStore: {
         getGlobalSettings: () => settings,
-        saveGlobalSettings: (patch) => {
-          settings = { ...settings, ...patch };
+        saveMcpSettings: (mcp) => {
+          settings = { ...settings, mcp };
           return settings;
         },
         getMcpClients: () => clients,

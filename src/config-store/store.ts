@@ -344,7 +344,14 @@ export function saveGlobalSettings(
   next.notifySuccess = Boolean(next.notifySuccess);
   next.showHiddenGroupsFold = Boolean(next.showHiddenGroupsFold);
   next.showHiddenWorkflowsFold = Boolean(next.showHiddenWorkflowsFold);
-  next.mcp = normalizeMcpSettings(next.mcp);
+  // Only saveMcpSettings (Settings › MCP's switch) moves the MCP server: not
+  // the general settings save, nor an imported backup, nor an assistant.
+  next.mcp = getGlobalSettings().mcp;
+  store.set('globalSettings', next);
+  return next;
+}
+export function saveMcpSettings(mcp: McpSettings): GlobalSettings {
+  const next = { ...getGlobalSettings(), mcp: normalizeMcpSettings(mcp) };
   store.set('globalSettings', next);
   return next;
 }

@@ -46,6 +46,7 @@ export {
   setGroupsOverlay,
   saveGlobalSettings,
   saveMcpClients,
+  saveMcpSettings,
   saveRemoteControl,
   saveTrayPopover,
   setScheduleLastRun,

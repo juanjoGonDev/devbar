@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appHome } from '../../app-paths.js';
-import type { GlobalSettings } from '../../domain-types.js';
+import type { GlobalSettings, McpSettings } from '../../domain-types.js';
 import type { McpAuditEntry } from '../../ipc-contract/mcp-api.js';
 import type { SimpleResult } from '../../ipc-contract/simple-result.js';
 import type { IpcRegistrar } from '../ipc-validators.js';
@@ -41,7 +41,7 @@ export interface McpWiring {
   platform: NodeJS.Platform;
   configStore: {
     getGlobalSettings(): GlobalSettings;
-    saveGlobalSettings(patch: Partial<GlobalSettings>): GlobalSettings;
+    saveMcpSettings(mcp: McpSettings): GlobalSettings;
     getMcpClients(): unknown;
     saveMcpClients(value: readonly unknown[]): void;
   };
@@ -132,7 +132,7 @@ export function createMcp(wiring: McpWiring, server: McpServerParts): McpParts {
     settings: {
       get: () => wiring.configStore.getGlobalSettings().mcp,
       save: (mcp) =>
-        wiring.sendSettings(wiring.configStore.saveGlobalSettings({ mcp })),
+        wiring.sendSettings(wiring.configStore.saveMcpSettings(mcp)),
     },
     clients,
     audit,

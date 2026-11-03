@@ -52,13 +52,25 @@ describe('src/config-store/store.ts (MCP)', () => {
     const store = await harness.open();
 
     const unknown = 'http' as McpTransport;
-    const saved = store.saveGlobalSettings({
-      mcp: { enabled: true, transport: unknown },
-    });
+    const saved = store.saveMcpSettings({ enabled: true, transport: unknown });
 
     expect(saved.mcp).toEqual({ enabled: true, transport: 'stdio' });
     const reopened = await harness.open({ home: harness.home() });
     expect(reopened.getGlobalSettings().mcp.enabled).toBe(true);
+  });
+
+  it('never lets the general settings save, nor an import, flip the switch', async () => {
+    const store = await harness.open();
+    store.saveMcpSettings({ enabled: true, transport: 'stdio' });
+
+    const saved = store.saveGlobalSettings({
+      theme: 'dark',
+      mcp: { enabled: false, transport: 'stdio' },
+    });
+
+    expect(saved.theme).toBe('dark');
+    expect(saved.mcp.enabled).toBe(true);
+    expect(store.getGlobalSettings().mcp.enabled).toBe(true);
   });
 
   it('reads a hand-edited switch as off', async () => {
