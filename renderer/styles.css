@@ -5967,13 +5967,13 @@ label.remote-row {
   overflow-y: auto;
   padding: 0 20px 6px;
 }
-.mcp-diff-box {
+.mcp-confirm .mcp-diff-box {
   overflow: hidden;
   border: 1px solid var(--mcp-diff-border);
   border-radius: 8px;
   background: var(--mcp-diff-bg);
 }
-.mcp-diff-head {
+.mcp-confirm .mcp-diff-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5982,19 +5982,19 @@ label.remote-row {
   border-bottom: 1px solid var(--mcp-diff-border);
   background: var(--mcp-diff-head-bg);
 }
-.mcp-diff-label {
+.mcp-confirm .mcp-diff-label {
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.mcp-diff-count {
+.mcp-confirm .mcp-diff-count {
   font-size: 11.5px;
   color: var(--mcp-diff-ctx-fg);
 }
 /* Long lines scroll sideways together; a long list scrolls down. */
-.mcp-diff {
+.mcp-confirm .mcp-diff {
   display: grid;
   grid-template-columns: minmax(100%, max-content);
   max-height: 220px;
@@ -6003,36 +6003,36 @@ label.remote-row {
   font-size: 12.5px;
   line-height: 1.7;
 }
-.mcp-diff:focus-visible {
+.mcp-confirm .mcp-diff:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.mcp-diff-line {
+.mcp-confirm .mcp-diff-line {
   padding: 0 12px;
   white-space: pre;
   color: var(--mcp-diff-ctx-fg);
 }
 /* The − / + markers: pseudo-content, so a copy carries only the value. */
-.mcp-diff-line::before {
+.mcp-confirm .mcp-diff-line::before {
   content: '';
   display: inline-block;
   width: 2ch;
 }
-.mcp-diff-line[data-kind='del'] {
+.mcp-confirm .mcp-diff-line[data-kind='del'] {
   background: var(--mcp-diff-del-bg);
   color: var(--mcp-diff-del-fg);
 }
-.mcp-diff-line[data-kind='del']::before {
+.mcp-confirm .mcp-diff-line[data-kind='del']::before {
   content: '\2212';
 }
-.mcp-diff-line[data-kind='add'] {
+.mcp-confirm .mcp-diff-line[data-kind='add'] {
   background: var(--mcp-diff-add-bg);
   color: var(--mcp-diff-add-fg);
 }
-.mcp-diff-line[data-kind='add']::before {
+.mcp-confirm .mcp-diff-line[data-kind='add']::before {
   content: '\002B';
 }
-.mcp-diff-field {
+.mcp-confirm .mcp-diff-field {
   display: inline-block;
 }
 .mcp-confirm-reason {
@@ -6828,7 +6828,7 @@ button.mcp-entry-toggle[aria-expanded='true'] .icon {
   transform: rotate(90deg);
 }
 /* Lined up under «Acción»: padding + time + client + two gaps. */
-.mcp-diff {
+.mcp-log-rows .mcp-diff {
   margin: 0 16px 0 214px;
   overflow: hidden;
   border: 1px solid var(--border-strong);
@@ -6837,19 +6837,19 @@ button.mcp-entry-toggle[aria-expanded='true'] .icon {
   font-size: 11.5px;
   line-height: 1.6;
 }
-.mcp-diff[hidden] {
+.mcp-log-rows .mcp-diff[hidden] {
   display: none;
 }
-.mcp-diff-line {
+.mcp-log-rows .mcp-diff-line {
   padding: 0 8px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.mcp-diff-line[data-kind='del'] {
+.mcp-log-rows .mcp-diff-line[data-kind='del'] {
   background: var(--mcp-diff-del-bg);
   color: var(--mcp-diff-del-fg);
 }
-.mcp-diff-line[data-kind='add'] {
+.mcp-log-rows .mcp-diff-line[data-kind='add'] {
   background: var(--mcp-diff-add-bg);
   color: var(--mcp-diff-add-fg);
 }

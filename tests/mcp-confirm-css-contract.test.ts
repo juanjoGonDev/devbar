@@ -35,12 +35,20 @@ const tokens = (body: string): string[] =>
 
 describe('MCP confirm dialog (renderer/styles.css)', () => {
   it('draws the removal and addition markers as pseudo-content', () => {
-    expect(declarations(".mcp-diff-line[data-kind='del']::before")).toMatch(
-      /content:\s*'\\2212'/,
-    );
-    expect(declarations(".mcp-diff-line[data-kind='add']::before")).toMatch(
-      /content:\s*'\\002B'/,
-    );
+    expect(
+      declarations(".mcp-confirm .mcp-diff-line[data-kind='del']::before"),
+    ).toMatch(/content:\s*'\\2212'/);
+    expect(
+      declarations(".mcp-confirm .mcp-diff-line[data-kind='add']::before"),
+    ).toMatch(/content:\s*'\\002B'/);
+  });
+
+  it('scopes every diff rule to its own dialog or log, so neither restyles the other', () => {
+    const unscoped = [
+      ...css.matchAll(/(?:^|\n|})\s*(\.mcp-diff[^{,]*)\{/g),
+    ].map((match) => match[1]?.trim());
+
+    expect(unscoped).toEqual([]);
   });
 
   it('redefines the diff colours for the dark theme', () => {
