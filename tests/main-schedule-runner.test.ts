@@ -27,6 +27,7 @@ function harness(groups: Group[] = [], workflows: Workflow[] = []) {
   const states = new Map<string, ProcessState>();
   const started: string[] = [];
   const stopped: string[] = [];
+  const logs: { id: string; line: string }[] = [];
   const timers: { fn: () => void; ms: number; repeating: boolean }[] = [];
   const broadcast = vi.fn();
   const confirmIfNeeded = vi.fn<() => Promise<boolean>>(() =>
@@ -51,6 +52,7 @@ function harness(groups: Group[] = [], workflows: Workflow[] = []) {
         stopped.push(pid);
         return Promise.resolve({ ok: true });
       },
+      pushLog: (id, entry) => logs.push({ id, line: entry.line }),
     },
     confirmIfNeeded,
     broadcast,
@@ -73,6 +75,7 @@ function harness(groups: Group[] = [], workflows: Workflow[] = []) {
     states,
     started,
     stopped,
+    logs,
     timers,
     broadcast,
     confirmIfNeeded,
@@ -87,6 +90,19 @@ function harness(groups: Group[] = [], workflows: Workflow[] = []) {
 // occurrence would fall outside the window on most machines.
 const AT = new Date(2026, 4, 4, 9, 5, 0, 0);
 const BEFORE = new Date(2026, 4, 4, 8, 0, 0, 0).toISOString();
+/** «Cada 15 minutos, de 9:00 a 18:00», the rules kept but ignored. */
+const EVERY_15: Schedule = {
+  enabled: true,
+  rules: [{ time: '09:05', days: [] }],
+  interval: {
+    every: 15,
+    unit: 'minutes',
+    window: { from: '09:00', to: '18:00' },
+    days: [],
+  },
+};
+const local = (h: number, m: number, d = 4): Date =>
+  new Date(2026, 4, d, h, m, 0, 0);
 
 describe('src/main/schedule-runner.ts', () => {
   describe('evaluateSchedule', () => {
@@ -285,6 +301,83 @@ describe('src/main/schedule-runner.ts', () => {
     });
   });
 
+  describe('interval («Cada…») schedules', () => {
+    const api = (): Group =>
+      makeGroup({
+        commands: [makeCommand({ id: 'web', schedule: EVERY_15 })],
+      });
+
+    it('fires a command on the computed times, not on the kept rules', async () => {
+      const h = harness([api()]);
+      h.lastRuns.set('cmd:g1:web', local(9, 0).toISOString());
+      await h.runner.checkSchedules(local(9, 5));
+      expect(h.started).toEqual([]);
+      await h.runner.checkSchedules(local(9, 15));
+      expect(h.started).toEqual(['cmd:g1:web']);
+      expect(h.lastRuns.get('cmd:g1:web')).toBe(local(9, 15).toISOString());
+    });
+
+    it('fires an action on the computed times', async () => {
+      const group = makeGroup({
+        actions: [makeAction({ id: 'pull', schedule: EVERY_15 })],
+      });
+      const h = harness([group]);
+      h.lastRuns.set('act:g1:pull', local(9, 0).toISOString());
+      await h.runner.checkSchedules(local(9, 15));
+      expect(h.started).toEqual(['act:g1:pull']);
+    });
+
+    it('stays quiet outside the window', async () => {
+      const h = harness([api()]);
+      h.lastRuns.set('cmd:g1:web', local(18, 0).toISOString());
+      await h.runner.checkSchedules(local(23, 30));
+      expect(h.started).toEqual([]);
+    });
+
+    it('catches up at most ONE missed run after waking from sleep', async () => {
+      const h = harness([api()]);
+      // Asleep from 10:00 to 13:07: twelve runs missed.
+      h.lastRuns.set('cmd:g1:web', local(10, 0).toISOString());
+      await h.runner.checkSchedules(local(13, 7));
+      expect(h.started).toEqual(['cmd:g1:web']);
+      h.states.set('cmd:g1:web', makeState({ status: 'stopped' }));
+      await h.runner.checkSchedules(local(13, 8));
+      expect(h.started).toEqual(['cmd:g1:web']);
+      await h.runner.checkSchedules(local(13, 15));
+      expect(h.started).toEqual(['cmd:g1:web', 'cmd:g1:web']);
+    });
+
+    it('skips a run that is still going, with a log line, and never queues it', async () => {
+      const h = harness([api()]);
+      h.lastRuns.set('cmd:g1:web', local(9, 0).toISOString());
+      h.states.set('cmd:g1:web', makeState({ status: 'running' }));
+      await h.runner.checkSchedules(local(9, 15));
+      expect(h.started).toEqual([]);
+      expect(h.logs).toEqual([
+        {
+          id: 'cmd:g1:web',
+          line: expect.stringContaining('saltada: sigue en marcha') as string,
+        },
+      ]);
+      // It ends at 09:16: the skipped 09:15 run does not fire late.
+      h.states.set('cmd:g1:web', makeState({ status: 'stopped' }));
+      await h.runner.checkSchedules(local(9, 16));
+      expect(h.started).toEqual([]);
+      await h.runner.checkSchedules(local(9, 30));
+      expect(h.started).toEqual(['cmd:g1:web']);
+    });
+
+    it('logs nothing when a due rule-mode target simply starts', async () => {
+      const group = makeGroup({
+        commands: [makeCommand({ id: 'web', schedule: EVERY_DAY })],
+      });
+      const h = harness([group]);
+      h.lastRuns.set('cmd:g1:web', BEFORE);
+      await h.runner.checkSchedules(AT);
+      expect(h.logs).toEqual([]);
+    });
+  });
+
   describe('startScheduleLoop', () => {
     it('aligns the first tick to the next wall-clock minute, then ticks every 60s', () => {
       const h = harness();
@@ -309,6 +402,7 @@ describe('src/main/schedule-runner.ts', () => {
           getState: (id) => makeState({ id }),
           start: () => ({ ok: true }),
           stop: () => Promise.resolve({ ok: true }),
+          pushLog: () => undefined,
         },
         confirmIfNeeded: () => Promise.resolve(true),
         broadcast: () => undefined,
@@ -351,7 +445,7 @@ describe('src/main/schedule-runner.ts', () => {
       expect(broadcast).toHaveBeenCalled();
     });
 
-    it('fires an interval schedule once the interval elapsed', async () => {
+    it('fires an interval schedule on its anchored runs', async () => {
       const every: Workflow = scheduled('w1', {
         trigger: {
           kind: 'schedule',
@@ -362,12 +456,54 @@ describe('src/main/schedule-runner.ts', () => {
         },
       });
       const { runner, workflowRuns, lastRuns } = harness([], [every]);
-      lastRuns.set('wf:w1', new Date(2026, 4, 4, 8, 40).toISOString());
+      lastRuns.set('wf:w1', new Date(2026, 4, 4, 9, 1).toISOString());
       await runner.checkSchedules(AT);
       expect(workflowRuns).toEqual([]);
-      lastRuns.set('wf:w1', new Date(2026, 4, 4, 8, 30).toISOString());
+      lastRuns.set('wf:w1', new Date(2026, 4, 4, 8, 59).toISOString());
       await runner.checkSchedules(AT);
       expect(workflowRuns).toEqual(['w1:schedule']);
+    });
+
+    it('honours the window and weekdays of a workflow interval', async () => {
+      const office: Workflow = scheduled('w1', {
+        trigger: {
+          kind: 'schedule',
+          schedule: {
+            rules: [],
+            interval: {
+              every: 1,
+              unit: 'hours',
+              window: { from: '09:00', to: '18:00' },
+              days: [1, 2, 3, 4, 5],
+            },
+          },
+        },
+      });
+      const { runner, workflowRuns, lastRuns } = harness([], [office]);
+      // 2026-05-09 is a Saturday: the whole day stays quiet.
+      lastRuns.set('wf:w1', local(8, 0, 9).toISOString());
+      await runner.checkSchedules(local(12, 0, 9));
+      expect(workflowRuns).toEqual([]);
+      // Monday 09:00 fires.
+      await runner.checkSchedules(local(9, 0, 11));
+      expect(workflowRuns).toEqual(['w1:schedule']);
+    });
+
+    it('skips a workflow still running when its run comes, with a log line', async () => {
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+      const { runner, workflowRuns, lastRuns, runningWorkflows } = harness(
+        [],
+        [scheduled('w1')],
+      );
+      lastRuns.set('wf:w1', BEFORE);
+      runningWorkflows.add('w1');
+      await runner.checkSchedules(AT);
+      expect(workflowRuns).toEqual([]);
+      expect(lastRuns.get('wf:w1')).toBe(AT.toISOString());
+      expect(info).toHaveBeenCalledWith(
+        expect.stringContaining('saltada: sigue en marcha'),
+      );
+      info.mockRestore();
     });
 
     it('leaves disabled, running and non-scheduled workflows alone', async () => {

@@ -4,6 +4,7 @@ import type {
   Action,
   Command,
   Group,
+  LogEntry,
   ProcessState,
   Schedule,
   Workflow,
@@ -24,6 +25,10 @@ export function workflowScheduleKey(workflowId: string): string {
  *
  * The lastRun bookkeeping (config-store.scheduleState) survives sleep AND app
  * restarts, so a machine asleep at 09:00 that wakes at 09:30 still catches up.
+ * An interval («Cada…») schedule fires on the runs `nextRuns` plans (what the
+ * editor previews) and catches up on at most one missed run, however many it
+ * slept through. A run that comes while the target is still going is skipped
+ * with a log line, never queued.
  * Unlike boot auto-start, scheduled commands do NOT execute pre-scripts; a
  * workflow with the `schedule` trigger is the scheduled way to run them, and
  * it follows the same bookkeeping (keyed `wf:<id>`) while it is enabled.
@@ -40,7 +45,12 @@ interface ScheduleProcessManager {
   getState: (id: string) => Pick<ProcessState, 'status'>;
   start: (processId: string) => { ok: boolean; error?: string | undefined };
   stop: (id: string) => Promise<{ ok: boolean; error?: string | undefined }>;
+  /** Where a skipped run is noted, in the target's own log. */
+  pushLog: (id: string, entry: LogEntry) => void;
 }
+
+/** What a run that comes while the previous one is still going says. */
+const SKIPPED_STILL_RUNNING = 'Ejecución programada saltada: sigue en marcha';
 
 export interface ScheduleRunnerDeps {
   configStore: ScheduleConfigStore;
@@ -86,8 +96,10 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
   /**
    * Evaluate one schedulable target (command or action) at `now`. Seeds
    * lastRun on first sight (no retroactive fire), otherwise fires `startFn`
-   * when a scheduled occurrence has elapsed since lastRun and it is not
-   * already running. `startFn` must swallow its own errors.
+   * when a scheduled occurrence has elapsed since lastRun. A target still
+   * running then is skipped (`onSkip` notes it), never queued: the marker
+   * moves on all the same, so the run does not fire late once it stops.
+   * `startFn` must swallow its own errors.
    */
   async function evaluate(
     key: string,
@@ -95,6 +107,7 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
     at: Date,
     running: () => boolean,
     startFn: () => Promise<boolean>,
+    onSkip: () => void,
   ): Promise<boolean> {
     const last = configStore.getScheduleLastRun(key);
     if (last == null) {
@@ -103,7 +116,8 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
     }
     if (!due(last)) return false;
     let didStart = false;
-    if (!running()) didStart = (await startFn()) === true;
+    if (running()) onSkip();
+    else didStart = (await startFn()) === true;
     // Advance the marker even on a declined confirmation, so we don't re-prompt
     // for the same occurrence on every tick.
     configStore.setScheduleLastRun(key, at.toISOString());
@@ -123,6 +137,13 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
       at,
       () => processManager.getState(pid).status === 'running',
       startFn,
+      () =>
+        processManager.pushLog(pid, {
+          ts: at.getTime(),
+          stream: 'sys',
+          level: null,
+          line: `── ${SKIPPED_STILL_RUNNING} ──`,
+        }),
     );
   }
 
@@ -146,6 +167,9 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
         () => {
           void runner.run(workflow.id, 'schedule');
           return Promise.resolve(true);
+        },
+        () => {
+          console.info(`[schedule] ${workflow.name}: ${SKIPPED_STILL_RUNNING}`);
         },
       );
       started = started || ran;

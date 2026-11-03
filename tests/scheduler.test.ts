@@ -133,6 +133,41 @@ describe('scheduler.isDue', () => {
     const s = sched(true, [rule('09:00'), rule('14:00')]);
     expect(isDue(s, lastRun, at(2026, 0, 5, 12, 0))).toBe(false);
   });
+
+  describe('interval («Cada…») mode', () => {
+    const every15: Schedule = {
+      enabled: true,
+      // Kept for «A una hora», ignored while the interval is set.
+      rules: [rule('09:05')],
+      interval: {
+        every: 15,
+        unit: 'minutes',
+        window: { from: '09:00', to: '18:00' },
+        days: [],
+      },
+    };
+
+    it('is due on the first computed run after the last one', () => {
+      const last = at(2026, 0, 5, 9, 0).toISOString();
+      expect(isDue(every15, last, at(2026, 0, 5, 9, 14))).toBe(false);
+      expect(isDue(every15, last, at(2026, 0, 5, 9, 15))).toBe(true);
+    });
+
+    it('ignores the kept rules', () => {
+      const last = at(2026, 0, 5, 9, 0).toISOString();
+      expect(isDue(every15, last, at(2026, 0, 5, 9, 6))).toBe(false);
+    });
+
+    it('is not due outside the window', () => {
+      const last = at(2026, 0, 5, 18, 0).toISOString();
+      expect(isDue(every15, last, at(2026, 0, 5, 23, 0))).toBe(false);
+    });
+
+    it('is not due while disabled or before the first run was seeded', () => {
+      expect(isDue({ ...every15, enabled: false }, null, MON)).toBe(false);
+      expect(isDue(every15, null, MON)).toBe(false);
+    });
+  });
 });
 
 describe('scheduler workflow schedules', () => {
@@ -155,8 +190,9 @@ describe('scheduler workflow schedules', () => {
     );
   });
 
-  it('is due once the interval elapsed since the last run', () => {
-    const last = at(2026, 0, 5, 9, 0).toISOString();
+  it('is due once an anchored interval run passed since the last run', () => {
+    // every 30 min anchored to midnight: 09:00, 09:30, … whatever the last run.
+    const last = at(2026, 0, 5, 9, 10).toISOString();
     expect(isWorkflowScheduleDue(every30, last, at(2026, 0, 5, 9, 29))).toBe(
       false,
     );
@@ -170,13 +206,42 @@ describe('scheduler workflow schedules', () => {
       rules: [],
       interval: { every: 2, unit: 'hours', window: null, days: [] },
     };
-    const last = at(2026, 0, 5, 9, 0).toISOString();
-    expect(isWorkflowScheduleDue(hourly, last, at(2026, 0, 5, 10, 59))).toBe(
+    const last = at(2026, 0, 5, 8, 0).toISOString();
+    expect(isWorkflowScheduleDue(hourly, last, at(2026, 0, 5, 9, 59))).toBe(
       false,
     );
-    expect(isWorkflowScheduleDue(hourly, last, at(2026, 0, 5, 11, 0))).toBe(
+    expect(isWorkflowScheduleDue(hourly, last, at(2026, 0, 5, 10, 0))).toBe(
       true,
     );
+  });
+
+  it('honours the window and the weekdays of an interval', () => {
+    const office: WorkflowSchedule = {
+      rules: [],
+      interval: {
+        every: 15,
+        unit: 'minutes',
+        window: { from: '09:00', to: '18:00' },
+        days: [1, 2, 3, 4, 5],
+      },
+    };
+    // Mon 18:00 ran; nothing more until Tue 09:00.
+    const last = at(2026, 0, 5, 18, 0).toISOString();
+    expect(isWorkflowScheduleDue(office, last, at(2026, 0, 6, 8, 59))).toBe(
+      false,
+    );
+    expect(isWorkflowScheduleDue(office, last, at(2026, 0, 6, 9, 0))).toBe(
+      true,
+    );
+    // Fri 18:00 ran; the weekend never fires.
+    const friday = at(2026, 0, 9, 18, 0).toISOString();
+    expect(isWorkflowScheduleDue(office, friday, at(2026, 0, 11, 23, 59))).toBe(
+      false,
+    );
+  });
+
+  it('is not due before the first run was seeded', () => {
+    expect(isWorkflowScheduleDue(every30, null, MON)).toBe(false);
   });
 
   it('is never due with neither rules nor an interval', () => {
@@ -196,14 +261,14 @@ describe('scheduler workflow schedules', () => {
     );
   });
 
-  it('takes the earliest of the rules and the interval', () => {
+  it('takes the next anchored interval run, ignoring the kept rules', () => {
     const both: WorkflowSchedule = {
-      rules: [{ time: '23:30', days: [] }],
+      rules: [{ time: '09:10', days: [] }],
       interval: { every: 30, unit: 'minutes', window: null, days: [] },
     };
     const last = at(2026, 0, 5, 8, 50).toISOString();
     expect(nextWorkflowRun(both, last, MON)?.getTime()).toBe(
-      at(2026, 0, 5, 9, 20).getTime(),
+      at(2026, 0, 5, 9, 30).getTime(),
     );
   });
 

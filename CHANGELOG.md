@@ -14,6 +14,15 @@ Todas las novedades relevantes de DevBar. El formato sigue
   Cada comando tiene además un enlace configurable (automático, una URL propia
   o ninguno) que abre la página en el navegador.
 
+- **Programar «Cada…».** Además de «A una hora», comandos, acciones y
+  workflows pueden repetirse cada N minutos, horas o días, opcionalmente solo
+  dentro de una franja horaria (también de noche, cruzando la medianoche) y
+  en los días de la semana que elijas, sin escribir cron. El editor muestra la
+  programación en palabras («Cada 15 minutos, de 9:00 a 18:00, de lunes a
+  viernes») y las próximas ejecuciones, que son exactamente las que se lanzan.
+  Si una ejecución sigue en marcha cuando toca la siguiente, esa se salta y
+  queda anotada en el log; al despertar del reposo se recupera como mucho una.
+
 - **Workflows: varios, cada uno con su desencadenante.** Los pre-scripts se
   organizan ahora en workflows, con una lista propia en Ajustes para buscarlos,
   filtrarlos, crearlos, duplicarlos y activarlos o desactivarlos. Cada uno se
