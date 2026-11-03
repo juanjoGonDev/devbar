@@ -330,13 +330,22 @@ export function initPipelineEditor(
     followCanvas();
   }
 
+  function stopTicker(): void {
+    if (ticker === null) return;
+    clearInterval(ticker);
+    ticker = null;
+  }
+
   function tick(): void {
     const running = run?.status === 'running';
-    if (running && ticker === null) ticker = setInterval(render, 1000);
-    if (!running && ticker !== null) {
-      clearInterval(ticker);
-      ticker = null;
-    }
+    if (running && ticker === null)
+      // An editor replaced or a window closed mid-run leaves the interval
+      // behind: stop it instead of repainting a canvas nobody can see.
+      ticker = setInterval(() => {
+        if (root.isConnected) render();
+        else stopTicker();
+      }, 1000);
+    if (!running) stopTicker();
   }
 
   const placement = createPlacement({

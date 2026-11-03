@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { iconText } from './helpers/icon-text.js';
 import { tipOf } from './helpers/tip.js';
 import {
@@ -57,6 +57,26 @@ describe('renderer/pipeline-editor.ts (runs)', () => {
     opened.editor.setRun(runState('w-start', pipeline, status, blocks));
     return opened;
   }
+
+  describe('the running clock', () => {
+    it('stops ticking once the editor has left the page', async () => {
+      const ticks: Array<() => void> = [];
+      vi.spyOn(globalThis, 'setInterval').mockImplementation(((
+        fn: () => void,
+      ) => {
+        ticks.push(fn);
+        return 7;
+      }) as unknown as typeof setInterval);
+      const cleared = vi.spyOn(globalThis, 'clearInterval');
+      await openRun(chain(), 'running', { a: 'running' });
+      expect(ticks).toHaveLength(1);
+      // A window closing or the editor being replaced leaves the interval
+      // behind; its next tick must not repaint a canvas nobody can see.
+      query('.pipeline-editor').remove();
+      expect(() => ticks[0]?.()).not.toThrow();
+      expect(cleared).toHaveBeenCalledWith(7);
+    });
+  });
 
   describe('the canvas', () => {
     it('paints each node with how its script is doing', async () => {
