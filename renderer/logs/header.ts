@@ -10,6 +10,7 @@ import { canRun, isRunning, runtimeOf } from '../log-status.js';
 import { icon } from '../icon.js';
 import { dropPendingQueue } from './status.js';
 import { renderLevelChips, resetBuffer } from './pane.js';
+import { renderPortPill } from './port-pill.js';
 import { crumbsFor, runPillFor } from './toolbar-model.js';
 import {
   crumbGroupEl,
@@ -78,6 +79,7 @@ function renderRunControls(item: LogListItem | null): void {
     runPillEl.title = pill.title;
     runPillEl.dataset.tone = pill.tone;
   }
+  renderPortPill(item);
   const runnable = canRun(item);
   const running = isRunning(item);
   runBtn.hidden = !runnable;

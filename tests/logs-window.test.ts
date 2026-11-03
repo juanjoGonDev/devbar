@@ -283,6 +283,60 @@ describe('renderer/logs.ts', () => {
     });
   });
 
+  describe('port pill', () => {
+    it('shows the port a state push reports for the service on screen', async () => {
+      const win = await openLogs('?id=g1:web');
+      await win.settle('listLogs', [
+        {
+          ...logGroup('Back'),
+          groupId: 'g1',
+          items: [
+            {
+              id: 'g1:web',
+              type: 'command',
+              name: 'web',
+              icon: null,
+              iconColor: null,
+              lineCount: 0,
+              status: 'running',
+              warnCount: 0,
+              errorCount: 0,
+              startedAt: Date.now(),
+              lastFinishedAt: null,
+              logLimit: 5000,
+            },
+          ],
+        },
+      ]);
+      // The boot selects it, and the sidebar's first paint reloads it too.
+      await win.settle('getLogs', snapshot());
+      await win.settle('getLogs', snapshot());
+      await win.push('onUpdate', [
+        {
+          groupId: 'g1',
+          commands: [
+            {
+              commandId: 'web',
+              processId: 'g1:web',
+              ports: [
+                {
+                  port: 3000,
+                  url: 'http://localhost:3000/',
+                  kind: 'web',
+                  source: 'log',
+                  lanReachable: false,
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+      const pill = document.getElementById('port-pill');
+      expect(pill?.hidden).toBe(false);
+      expect(pill?.textContent).toContain('localhost:3000');
+    });
+  });
+
   describe('the panes it wires together', () => {
     it('hands the scope switcher to the rows that sit below it', async () => {
       // A row that opens another scope cannot import the switcher back without

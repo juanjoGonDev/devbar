@@ -13,6 +13,7 @@ export const crumbSepEl = byId<HTMLElement>('crumb-sep', HTMLElement);
 export const crumbNameEl = byId<HTMLElement>('crumb-name', HTMLElement);
 export const runPillEl = byId<HTMLElement>('run-pill', HTMLElement);
 export const runPillTextEl = byId<HTMLElement>('run-pill-text', HTMLElement);
+export const portPillEl = byId<HTMLElement>('port-pill', HTMLElement);
 export const restartBtn = byId<HTMLButtonElement>('restart', HTMLButtonElement);
 export const linesEl = byId<HTMLElement>('lines', HTMLElement);
 export const activityEl = byId<HTMLElement>('activity', HTMLElement);

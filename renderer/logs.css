@@ -519,6 +519,43 @@ body.sidebar-collapsed #toggle-sidebar {
 .run-pill[data-tone='error'] .run-pill-dot {
   background: #ff453a;
 }
+/* The service's port: an accent pill that opens it, or a muted «:5432». */
+.port-pill {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+header.toolbar .port-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(10, 132, 255, 0.18);
+  color: #64d2ff;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+header.toolbar .port-open .icon {
+  font-size: 11px;
+}
+header.toolbar .port-open:hover,
+header.toolbar .port-open[aria-expanded='true'] {
+  background: rgba(10, 132, 255, 0.28);
+}
+header.toolbar .port-open:focus-visible {
+  outline: 2px solid var(--sil-accent);
+  outline-offset: 1px;
+}
+.port-muted {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: #8e8e93;
+  white-space: nowrap;
+}
 header.toolbar .run-btn.on {
   color: #ff6961;
 }
@@ -648,7 +685,8 @@ header.toolbar .silence-toggle {
   position: relative;
   flex-shrink: 0;
 }
-.tb-more .remote-menu {
+.tb-more .remote-menu,
+.port-pill .remote-menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
@@ -660,7 +698,8 @@ header.toolbar .silence-toggle {
   background: #2c2c2e;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
-.tb-more .remote-menu-item {
+.tb-more .remote-menu-item,
+.port-pill .remote-menu-item {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -673,30 +712,48 @@ header.toolbar .silence-toggle {
   font-size: 13px;
   text-align: left;
 }
-.tb-more .remote-menu-item .icon {
+.tb-more .remote-menu-item .icon,
+.port-pill .remote-menu-item .icon {
   color: #a1a1a6;
   font-size: 14px;
 }
 .tb-more .remote-menu-item:hover,
-.tb-more .remote-menu-item:focus-visible {
+.port-pill .remote-menu-item:hover,
+.tb-more .remote-menu-item:focus-visible,
+.port-pill .remote-menu-item:focus-visible {
   outline: none;
   background: rgba(10, 132, 255, 0.28);
 }
 .tb-more .remote-menu-item.is-danger,
-.tb-more .remote-menu-item.is-danger .icon {
+.port-pill .remote-menu-item.is-danger,
+.tb-more .remote-menu-item.is-danger .icon,
+.port-pill .remote-menu-item.is-danger .icon {
   color: #ff6961;
 }
-.tb-more .remote-menu-check {
+.tb-more .remote-menu-check,
+.port-pill .remote-menu-check {
   margin-left: auto;
   color: var(--sil-accent-text);
 }
-.tb-more .remote-menu-item[aria-checked='false'] .remote-menu-check {
+.tb-more .remote-menu-item[aria-checked='false'] .remote-menu-check,
+.port-pill .remote-menu-item[aria-checked='false'] .remote-menu-check {
   visibility: hidden;
 }
-.tb-more .remote-menu-separator {
+.tb-more .remote-menu-separator,
+.port-pill .remote-menu-separator {
   height: 1px;
   margin: 4px 6px;
   background: var(--sil-sep);
+}
+.port-pill .remote-menu {
+  right: auto;
+  left: 0;
+  width: max-content;
+  min-width: 180px;
+}
+.port-pill .remote-menu-item {
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 /* ── Activity strip: lines per slice of time, under the toolbar ── */

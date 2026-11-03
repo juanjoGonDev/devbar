@@ -19,6 +19,8 @@ import { applyFilter, rerenderExistingLines } from './logs/pane.js';
 import { renderSilencePopover } from './logs/silence-popover.js';
 import { jumpToLine, openScope, selectLog } from './logs/scope.js';
 import { refreshSidebar } from './logs/sidebar.js';
+import { renderHeaderRunState } from './logs/header.js';
+import { adoptGroupStates } from './logs/port-pill.js';
 import { receivePush } from './logs/stream.js';
 import './logs/selection-ui.js';
 import './logs/row-actions.js';
@@ -88,9 +90,21 @@ window.api.onLog((payload) => {
   receivePush(payload);
 });
 
+// The header's port pill reads the same group states `onUpdate` pushes; the
+// first read only counts until a push has already said something newer.
+let statesPushed = false;
+void window.api.getGroupStates().then((states) => {
+  if (statesPushed) return;
+  adoptGroupStates(states);
+  renderHeaderRunState();
+});
+
 // Any state change (start, stop, new warn/error) → refresh the live numbers.
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-window.api.onUpdate(() => {
+window.api.onUpdate((states) => {
+  statesPushed = true;
+  adoptGroupStates(states);
+  renderHeaderRunState(); // a port opening or closing shows at once
   rerenderExistingLines();
   renderSilencePopover(); // patterns may have just been added or removed
   invalidateActivity(); // a silenced warning no longer colours its bar
