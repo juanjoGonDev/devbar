@@ -143,14 +143,20 @@ describe('renderer/workflows/trigger-popover.ts', () => {
       click(option('Cada…'));
       expect(await lastTrigger(win)).toEqual({
         kind: 'schedule',
-        schedule: { rules: [], interval: { every: 1, unit: 'hours' } },
+        schedule: {
+          rules: [],
+          interval: { every: 1, unit: 'hours', window: null, days: [] },
+        },
       });
     });
 
     it('edits the interval of an every-N schedule', async () => {
       const { win } = await openOn({
         kind: 'schedule',
-        schedule: { rules: [], interval: { every: 2, unit: 'hours' } },
+        schedule: {
+          rules: [],
+          interval: { every: 2, unit: 'hours', window: null, days: [] },
+        },
       });
       const every = query<HTMLInputElement>('.wf-every');
       expect(every.value).toBe('2');
@@ -159,7 +165,10 @@ describe('renderer/workflows/trigger-popover.ts', () => {
       every.dispatchEvent(new Event('change'));
       expect(await lastTrigger(win)).toEqual({
         kind: 'schedule',
-        schedule: { rules: [], interval: { every: 15, unit: 'minutes' } },
+        schedule: {
+          rules: [],
+          interval: { every: 15, unit: 'minutes', window: null, days: [] },
+        },
       });
       click(option('A una hora'));
       expect(await lastTrigger(win)).toMatchObject({

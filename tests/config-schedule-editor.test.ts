@@ -74,6 +74,7 @@ describe('renderer/config/schedule-editor.ts', () => {
         summarizeSchedule({
           enabled: true,
           rules: [{ time: '09:00', days: [1, 5] }],
+          interval: null,
         }),
       ).toBe('09:00 LV');
     });
@@ -83,6 +84,7 @@ describe('renderer/config/schedule-editor.ts', () => {
         summarizeSchedule({
           enabled: true,
           rules: [{ time: '14:00', days: [] }],
+          interval: null,
         }),
       ).toBe('14:00 todos');
     });
@@ -95,6 +97,7 @@ describe('renderer/config/schedule-editor.ts', () => {
             { time: '09:00', days: [1] },
             { time: '14:00', days: [] },
           ],
+          interval: null,
         }),
       ).toBe('09:00 L · 14:00 todos');
     });
@@ -104,6 +107,7 @@ describe('renderer/config/schedule-editor.ts', () => {
         summarizeSchedule({
           enabled: true,
           rules: [{ time: '09:00', days: [9] }],
+          interval: null,
         }),
       ).toBe('09:00 ');
     });
@@ -135,6 +139,7 @@ describe('renderer/config/schedule-editor.ts', () => {
             { time: '09:00', days: [1, 2] },
             { time: '18:30', days: [] },
           ],
+          interval: null,
         }),
         false,
       );
@@ -150,7 +155,11 @@ describe('renderer/config/schedule-editor.ts', () => {
     it('falls back to one empty row when rules is not an array', () => {
       const h = harness();
       h.editor.setup(
-        command({ enabled: true, rules: null } as unknown as Schedule),
+        command({
+          enabled: true,
+          rules: null,
+          interval: null,
+        } as unknown as Schedule),
         false,
       );
       expect(ruleRows(h)).toHaveLength(1);
@@ -162,6 +171,7 @@ describe('renderer/config/schedule-editor.ts', () => {
         command({
           enabled: true,
           rules: [{ time: '', days: null }] as unknown as Schedule['rules'],
+          interval: null,
         }),
         false,
       );
@@ -222,6 +232,7 @@ describe('renderer/config/schedule-editor.ts', () => {
       expect(h.editor.readSchedule()).toEqual({
         enabled: true,
         rules: [{ time: '07:45', days: [1, 3] }],
+        interval: null,
       });
     });
 

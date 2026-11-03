@@ -68,6 +68,7 @@ describe('scheduler.isDue', () => {
   const sched = (enabled: boolean, rules: ScheduleRule[]): Schedule => ({
     enabled,
     rules,
+    interval: null,
   });
 
   it('is not due when the schedule is disabled', () => {
@@ -141,7 +142,7 @@ describe('scheduler workflow schedules', () => {
   };
   const every30: WorkflowSchedule = {
     rules: [],
-    interval: { every: 30, unit: 'minutes' },
+    interval: { every: 30, unit: 'minutes', window: null, days: [] },
   };
 
   it('is due once a rule occurrence passed since the last run', () => {
@@ -167,7 +168,7 @@ describe('scheduler workflow schedules', () => {
   it('counts hours as hours', () => {
     const hourly: WorkflowSchedule = {
       rules: [],
-      interval: { every: 2, unit: 'hours' },
+      interval: { every: 2, unit: 'hours', window: null, days: [] },
     };
     const last = at(2026, 0, 5, 9, 0).toISOString();
     expect(isWorkflowScheduleDue(hourly, last, at(2026, 0, 5, 10, 59))).toBe(
@@ -198,7 +199,7 @@ describe('scheduler workflow schedules', () => {
   it('takes the earliest of the rules and the interval', () => {
     const both: WorkflowSchedule = {
       rules: [{ time: '23:30', days: [] }],
-      interval: { every: 30, unit: 'minutes' },
+      interval: { every: 30, unit: 'minutes', window: null, days: [] },
     };
     const last = at(2026, 0, 5, 8, 50).toISOString();
     expect(nextWorkflowRun(both, last, MON)?.getTime()).toBe(

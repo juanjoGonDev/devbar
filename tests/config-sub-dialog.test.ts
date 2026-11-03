@@ -325,7 +325,11 @@ describe('renderer/config/sub-dialog.ts', () => {
       await open({
         commands: [
           command('web', {
-            schedule: { enabled: true, rules: [{ time: '09:00', days: [] }] },
+            schedule: {
+              enabled: true,
+              rules: [{ time: '09:00', days: [] }],
+              interval: null,
+            },
             maxLogLines: 500,
           }),
         ],
@@ -445,6 +449,7 @@ describe('renderer/config/sub-dialog.ts', () => {
       expect(payload(saves).schedule).toEqual({
         enabled: true,
         rules: [{ time: '09:00', days: [1] }],
+        interval: null,
       });
     });
 

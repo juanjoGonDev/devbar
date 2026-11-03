@@ -7,7 +7,11 @@ import {
 
 describe('normalizeSchedule', () => {
   it('defaults to disabled with no rules when input is missing', () => {
-    expect(normalizeSchedule(undefined)).toEqual({ enabled: false, rules: [] });
+    expect(normalizeSchedule(undefined)).toEqual({
+      enabled: false,
+      rules: [],
+      interval: null,
+    });
   });
 
   it('coerces enabled to a boolean', () => {
@@ -40,7 +44,81 @@ describe('normalizeSchedule', () => {
   it('migrates a legacy single {time,days} schedule into one rule', () => {
     expect(
       normalizeSchedule({ enabled: true, time: '8:30', days: [1, 2] }),
-    ).toEqual({ enabled: true, rules: [{ time: '08:30', days: [1, 2] }] });
+    ).toEqual({
+      enabled: true,
+      rules: [{ time: '08:30', days: [1, 2] }],
+      interval: null,
+    });
+  });
+});
+
+describe('normalizeSchedule interval («Cada…» mode)', () => {
+  it.each([
+    ['a missing interval', undefined, null],
+    ['a null interval', null, null],
+    [
+      'an old {every, unit} interval (no window, every day)',
+      { every: 15, unit: 'minutes' },
+      { every: 15, unit: 'minutes', window: null, days: [] },
+    ],
+    [
+      'a full interval',
+      {
+        every: 2,
+        unit: 'hours',
+        window: { from: '9:00', to: '18:0' },
+        days: [5, 1, 1],
+      },
+      {
+        every: 2,
+        unit: 'hours',
+        window: { from: '09:00', to: '18:00' },
+        days: [1, 5],
+      },
+    ],
+    [
+      'a days interval',
+      { every: 3, unit: 'days', window: null, days: [] },
+      { every: 3, unit: 'days', window: null, days: [] },
+    ],
+    [
+      'a garbage window and days',
+      {
+        every: 1,
+        unit: 'hours',
+        window: { from: '25:00', to: 'x' },
+        days: 'x',
+      },
+      { every: 1, unit: 'hours', window: null, days: [] },
+    ],
+    [
+      'an out-of-range every and unknown unit',
+      { every: 0, unit: 'weeks' },
+      { every: 1, unit: 'minutes', window: null, days: [] },
+    ],
+    [
+      'an every above the unit limit',
+      { every: 9999, unit: 'days' },
+      { every: 365, unit: 'days', window: null, days: [] },
+    ],
+  ])('normalizes %s', (_label, interval, expected) => {
+    expect(
+      normalizeSchedule({ enabled: true, rules: [], interval }).interval,
+    ).toEqual(expected);
+  });
+
+  it('keeps the rules next to an interval so switching back restores them', () => {
+    expect(
+      normalizeSchedule({
+        enabled: true,
+        rules: [{ time: '08:00', days: [] }],
+        interval: { every: 5, unit: 'minutes' },
+      }),
+    ).toEqual({
+      enabled: true,
+      rules: [{ time: '08:00', days: [] }],
+      interval: { every: 5, unit: 'minutes', window: null, days: [] },
+    });
   });
 });
 
@@ -49,6 +127,7 @@ describe('normalizeCommand carries schedule', () => {
     expect(normalizeCommand({ command: 'x' }).schedule).toEqual({
       enabled: false,
       rules: [],
+      interval: null,
     });
   });
 
@@ -69,6 +148,7 @@ describe('normalizeCommand carries schedule', () => {
         { time: '07:00', days: [1, 5] },
         { time: '14:00', days: [] },
       ],
+      interval: null,
     });
   });
 });
@@ -78,6 +158,7 @@ describe('normalizeAction carries schedule', () => {
     expect(normalizeAction({ command: 'pnpm install' }).schedule).toEqual({
       enabled: false,
       rules: [],
+      interval: null,
     });
   });
 
@@ -92,6 +173,7 @@ describe('normalizeAction carries schedule', () => {
     expect(act.schedule).toEqual({
       enabled: true,
       rules: [{ time: '08:30', days: [1, 2, 3, 4, 5] }],
+      interval: null,
     });
   });
 });

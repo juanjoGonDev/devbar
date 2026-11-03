@@ -108,7 +108,9 @@ describe('src/dev/fixture-workflows.ts', () => {
         ),
       ).toBe(true);
       expect(intervals).toContainEqual(
-        expect.objectContaining({ interval: { every: 6, unit: 'hours' } }),
+        expect.objectContaining({
+          interval: { every: 6, unit: 'hours', window: null, days: [] },
+        }),
       );
       for (const { workflow, interval } of intervals)
         if (interval.unit === 'minutes' && interval.every < 60)

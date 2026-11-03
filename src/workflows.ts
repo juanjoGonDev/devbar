@@ -14,14 +14,16 @@ import type {
   Group,
   Pipeline,
   PreStepScriptRef,
-  ScheduleInterval,
   Workflow,
   WorkflowSchedule,
   WorkflowTrigger,
 } from './domain-types.js';
 import { normalizePipeline, validatePipeline } from './pipeline-graph.js';
 import { prunePipelineRefs } from './groups/pipeline-ops.js';
-import { normalizeScheduleRule } from './groups/normalize.js';
+import {
+  normalizeScheduleInterval,
+  normalizeScheduleRule,
+} from './groups/normalize.js';
 
 /** What the migrated single pipeline is called. */
 export const STARTUP_WORKFLOW_NAME = 'Arranque';
@@ -59,26 +61,11 @@ function readHidden(raw: Raw): boolean {
   return typeof legacy === 'boolean' ? !legacy : false;
 }
 
-const INTERVAL_LIMITS = { minutes: 1440, hours: 168 } as const;
-
-function normalizeInterval(value: unknown): ScheduleInterval | null {
-  if (value === null || value === undefined) return null;
-  const raw = record(value);
-  const unit = raw.unit === 'hours' ? 'hours' : 'minutes';
-  const every = Math.round(Number(raw.every));
-  return {
-    every: Number.isFinite(every)
-      ? Math.min(INTERVAL_LIMITS[unit], Math.max(1, every))
-      : 1,
-    unit,
-  };
-}
-
 function normalizeSchedule(value: unknown): WorkflowSchedule {
   const raw = record(value);
   return {
     rules: Array.isArray(raw.rules) ? raw.rules.map(normalizeScheduleRule) : [],
-    interval: normalizeInterval(raw.interval),
+    interval: normalizeScheduleInterval(raw.interval),
   };
 }
 

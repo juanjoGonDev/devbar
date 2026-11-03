@@ -267,13 +267,16 @@ describe('renderer/config/sub-lists.ts', () => {
     const scheduled = {
       enabled: true,
       rules: [{ time: '09:00', days: [1, 5] }],
+      interval: null,
     };
 
     it('appears only for an item with a live schedule', async () => {
       await open({
         commands: [
           command('api', { schedule: scheduled }),
-          command('web', { schedule: { enabled: false, rules: [] } }),
+          command('web', {
+            schedule: { enabled: false, rules: [], interval: null },
+          }),
         ],
       });
       const [withTag, without] = itemRows('command');
@@ -293,6 +296,7 @@ describe('renderer/config/sub-lists.ts', () => {
                 { time: '08:00', days: [1, 2, 3, 4, 5] },
                 { time: '20:00', days: [] },
               ],
+              interval: null,
             },
           }),
         ],
@@ -305,7 +309,11 @@ describe('renderer/config/sub-lists.ts', () => {
 
     it('stays away when the schedule is on but empty', async () => {
       await open({
-        commands: [command('api', { schedule: { enabled: true, rules: [] } })],
+        commands: [
+          command('api', {
+            schedule: { enabled: true, rules: [], interval: null },
+          }),
+        ],
       });
       expect(
         itemRows('command')[0].querySelector('.sub-tag.is-schedule'),

@@ -189,7 +189,10 @@ describe('renderer/workflows/list-model.ts', () => {
 
     it('words an interval, singular included', () => {
       const every = (n: number, unit: 'minutes' | 'hours') =>
-        scheduleSummary({ rules: [], interval: { every: n, unit } });
+        scheduleSummary({
+          rules: [],
+          interval: { every: n, unit, window: null, days: [] },
+        });
       expect(every(2, 'hours')).toBe('cada 2 horas');
       expect(every(1, 'hours')).toBe('cada hora');
       expect(every(15, 'minutes')).toBe('cada 15 minutos');
@@ -200,7 +203,7 @@ describe('renderer/workflows/list-model.ts', () => {
       expect(
         scheduleSummary({
           rules: [{ time: '09:00', days: [1] }],
-          interval: { every: 3, unit: 'hours' },
+          interval: { every: 3, unit: 'hours', window: null, days: [] },
         }),
       ).toBe('L a las 09:00 · cada 3 horas');
       expect(scheduleSummary({ rules: [], interval: null })).toBe(

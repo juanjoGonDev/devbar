@@ -17,6 +17,7 @@ import { graph } from './helpers/pipeline.js';
 const EVERY_DAY: Schedule = {
   enabled: true,
   rules: [{ time: '09:00', days: [0, 1, 2, 3, 4, 5, 6] }],
+  interval: null,
 };
 
 function harness(groups: Group[] = [], workflows: Workflow[] = []) {
@@ -98,7 +99,7 @@ describe('src/main/schedule-runner.ts', () => {
       await expect(
         runner.evaluateSchedule(
           'p',
-          { enabled: false, rules: [] },
+          { enabled: false, rules: [], interval: null },
           AT,
           startFn,
         ),
@@ -354,7 +355,10 @@ describe('src/main/schedule-runner.ts', () => {
       const every: Workflow = scheduled('w1', {
         trigger: {
           kind: 'schedule',
-          schedule: { rules: [], interval: { every: 30, unit: 'minutes' } },
+          schedule: {
+            rules: [],
+            interval: { every: 30, unit: 'minutes', window: null, days: [] },
+          },
         },
       });
       const { runner, workflowRuns, lastRuns } = harness([], [every]);

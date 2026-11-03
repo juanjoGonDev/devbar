@@ -32,7 +32,9 @@ import type {
   PreStep,
   PreStepScriptRef,
   Schedule,
+  ScheduleInterval,
   ScheduleRule,
+  ScheduleWindow,
 } from '../domain-types.js';
 
 export function clampMaxLogLinesOrNull(value: unknown): number | null {
@@ -56,30 +58,71 @@ export function clampConfirmSecsOrNull(value: unknown): number | null {
   return Math.min(3600, Math.max(3, Math.round(n)));
 }
 
+/** `'H:M'` → `'HH:MM'`, or null when it is not a valid wall-clock time. */
+function normalizeScheduleTime(value: unknown): string | null {
+  const match = /^(\d{1,2}):(\d{1,2})$/.exec(stringValue(value).trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+/** Unique weekdays 0..6, sorted; anything else (or no list) → `[]`. */
+function normalizeScheduleDays(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .filter(
+          (day): day is number =>
+            Number.isInteger(day) && Number(day) >= 0 && Number(day) <= 6,
+        )
+        .map(Number),
+    ),
+  ].sort((a, b) => a - b);
+}
+
 export function normalizeScheduleRule(value: unknown): ScheduleRule {
   const raw = record(value);
-  const match = /^(\d{1,2}):(\d{1,2})$/.exec(stringValue(raw.time).trim());
-  let time = '09:00';
-  if (match) {
-    const hour = Number(match[1]);
-    const minute = Number(match[2]);
-    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
-      time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-    }
-  }
-  const days = Array.isArray(raw.days)
-    ? [
-        ...new Set(
-          raw.days
-            .filter(
-              (day): day is number =>
-                Number.isInteger(day) && Number(day) >= 0 && Number(day) <= 6,
-            )
-            .map(Number),
-        ),
-      ].sort((a, b) => a - b)
-    : [];
-  return { time, days };
+  return {
+    time: normalizeScheduleTime(raw.time) ?? '09:00',
+    days: normalizeScheduleDays(raw.days),
+  };
+}
+
+function normalizeScheduleWindow(value: unknown): ScheduleWindow | null {
+  const raw = record(value);
+  const from = normalizeScheduleTime(raw.from);
+  const to = normalizeScheduleTime(raw.to);
+  return from && to ? { from, to } : null;
+}
+
+const INTERVAL_LIMITS = { minutes: 1440, hours: 168, days: 365 } as const;
+
+function intervalUnit(value: unknown): ScheduleInterval['unit'] {
+  return value === 'hours' || value === 'days' ? value : 'minutes';
+}
+
+/**
+ * The «Cada…» interval of a schedule, or null when there is none. An interval
+ * stored before windows and weekdays existed reads as all day, every day.
+ */
+export function normalizeScheduleInterval(
+  value: unknown,
+): ScheduleInterval | null {
+  if (value === null || value === undefined) return null;
+  const raw = record(value);
+  const unit = intervalUnit(raw.unit);
+  const every = Math.round(Number(raw.every));
+  return {
+    every: Number.isFinite(every)
+      ? Math.min(INTERVAL_LIMITS[unit], Math.max(1, every))
+      : 1,
+    unit,
+    window: normalizeScheduleWindow(raw.window),
+    days: normalizeScheduleDays(raw.days),
+  };
 }
 
 export function normalizeSchedule(value: unknown): Schedule {
@@ -89,7 +132,11 @@ export function normalizeSchedule(value: unknown): Schedule {
   else if (raw.time !== undefined || raw.days !== undefined)
     rules = [normalizeScheduleRule(raw)];
   else rules = [];
-  return { enabled: Boolean(raw.enabled), rules };
+  return {
+    enabled: Boolean(raw.enabled),
+    rules,
+    interval: normalizeScheduleInterval(raw.interval),
+  };
 }
 
 function normalizeConfirm(value: UnknownRecord): ConfirmConfig {

@@ -57,7 +57,12 @@ const DAYS: ReadonlyArray<[string, number]> = [
 ];
 
 const DEFAULT_RULE: ScheduleRule = { time: '09:00', days: [1, 2, 3, 4, 5] };
-const DEFAULT_INTERVAL: ScheduleInterval = { every: 1, unit: 'hours' };
+const DEFAULT_INTERVAL: ScheduleInterval = {
+  every: 1,
+  unit: 'hours',
+  window: null,
+  days: [],
+};
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -244,6 +249,7 @@ export function createTriggerPopover(deps: TriggerPopoverDeps): TriggerPopover {
         save({
           rules: schedule.rules,
           interval: {
+            ...interval,
             every: n,
             unit: unit.value === 'minutes' ? 'minutes' : 'hours',
           },

@@ -9,9 +9,15 @@ export interface ScheduleRule {
   days: number[];
 }
 
+/**
+ * When a command or action runs on its own. `interval !== null` means the
+ * «Cada…» mode (the rules are kept, but ignored, so switching back restores
+ * them); otherwise the weekday + time rules decide.
+ */
 export interface Schedule {
   enabled: boolean;
   rules: ScheduleRule[];
+  interval: ScheduleInterval | null;
 }
 
 type ConfirmOnTimeout = 'confirm' | 'cancel';
@@ -157,15 +163,31 @@ export interface Pipeline {
   edges: PipelineEdge[];
 }
 
-/** «Cada N minutos/horas», next to (or instead of) the weekday rules. */
+/** A daily time window, `'HH:MM'` local; `to <= from` crosses midnight. */
+export interface ScheduleWindow {
+  from: string;
+  to: string;
+}
+
+/**
+ * «Cada N minutos/horas/días». Runs are anchored to the start of `window`
+ * (or to midnight) and step `every` units from there; src/schedule-plan.ts
+ * holds every rule.
+ */
 export interface ScheduleInterval {
+  /** >= 1. */
   every: number;
-  unit: 'minutes' | 'hours';
+  unit: 'minutes' | 'hours' | 'days';
+  /** Only fire inside it; null = all day. */
+  window: ScheduleWindow | null;
+  /** 0=Sun..6=Sat; [] = every day. */
+  days: number[];
 }
 
 /**
  * When a scheduled workflow runs: the same weekday + time rules commands and
- * actions use (`ScheduleRule`), plus an optional fixed interval. Whether it is
+ * actions use (`ScheduleRule`), or a fixed interval (`interval !== null`
+ * means the «Cada…» mode, exactly as in `Schedule`). Whether it is
  * armed at all is the workflow's own `enabled`, so there is no flag here.
  */
 export interface WorkflowSchedule {

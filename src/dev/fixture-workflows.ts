@@ -62,7 +62,7 @@ const manual = (confirm = false): WorkflowTrigger => ({
 });
 const every = (n: number, unit: 'minutes' | 'hours'): WorkflowTrigger => ({
   kind: 'schedule',
-  schedule: { rules: [], interval: { every: n, unit } },
+  schedule: { rules: [], interval: { every: n, unit, window: null, days: [] } },
 });
 const at = (time: string, days: number[]): WorkflowTrigger => ({
   kind: 'schedule',

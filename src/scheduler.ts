@@ -72,7 +72,13 @@ export function isWorkflowScheduleDue(
   lastRun: string | null | undefined,
   now: Date,
 ): boolean {
-  if (isDue({ enabled: true, rules: schedule.rules }, lastRun, now))
+  if (
+    isDue(
+      { enabled: true, rules: schedule.rules, interval: null },
+      lastRun,
+      now,
+    )
+  )
     return true;
   if (!schedule.interval || !lastRun) return false;
   return (

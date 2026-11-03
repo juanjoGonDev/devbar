@@ -51,7 +51,12 @@ describe('src/workflows.ts', () => {
           kind: 'schedule',
           schedule: {
             rules: [{ time: '23:30', days: [1, 2] }],
-            interval: { every: 2, unit: 'hours' },
+            interval: {
+              every: 2,
+              unit: 'hours',
+              window: { from: '09:00', to: '18:00' },
+              days: [1, 2, 3, 4, 5],
+            },
           },
         }),
         workflow('c'),
@@ -95,7 +100,10 @@ describe('src/workflows.ts', () => {
       ]);
       expect(only?.trigger).toEqual({
         kind: 'schedule',
-        schedule: { rules: [], interval: { every: 1, unit: 'minutes' } },
+        schedule: {
+          rules: [],
+          interval: { every: 1, unit: 'minutes', window: null, days: [] },
+        },
       });
     });
   });

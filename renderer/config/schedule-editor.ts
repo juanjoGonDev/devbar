@@ -111,6 +111,9 @@ export function createScheduleEditor(
     addScheduleRuleRow(els.rules, { time: '09:00', days: [] }),
   );
 
+  // This editor only edits the rules; an interval set elsewhere is kept.
+  let interval: Schedule['interval'] = null;
+
   function setup(
     item: Command | Action | PreScript | null | undefined,
     isPreScript: boolean,
@@ -120,7 +123,8 @@ export function createScheduleEditor(
     const sched: Schedule =
       item && 'schedule' in item
         ? item.schedule
-        : { enabled: false, rules: [] };
+        : { enabled: false, rules: [], interval: null };
+    interval = sched.interval;
     els.enabled.checked = sched.enabled;
     {
       els.rules.innerHTML = '';
@@ -150,7 +154,7 @@ export function createScheduleEditor(
   }
 
   function readSchedule(): Schedule {
-    return { enabled: els.enabled.checked, rules: readRules() };
+    return { enabled: els.enabled.checked, rules: readRules(), interval };
   }
 
   return { setup, readRules, readSchedule };
