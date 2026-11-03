@@ -250,6 +250,8 @@ export function createMcpClientSheet(
     }
     if (!(await commit(window.api.approveMcpClient(current.id, draft.scopes))))
       return false;
+    // Approved now: should the second save fail, a retry must not approve again.
+    client = { ...current, status: 'allowed', scopes: draft.scopes };
     if (!restChanged(current, draft)) return true;
     return commit(
       window.api.updateMcpClient(current.id, {

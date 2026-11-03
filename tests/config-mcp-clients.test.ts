@@ -257,6 +257,29 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
       expect(sheet().open).toBe(false);
     });
 
+    it('retries only the rest once approved, when that second save failed', async () => {
+      win = await openWith([PENDING]);
+      click(button(row('Cursor'), 'Permitir…'));
+      policy('control').value = 'always';
+      submit();
+      await win.settle('approveMcpClient', {
+        ok: true,
+        state: mcpState({ clients: [{ ...PENDING, status: 'allowed' }] }),
+      });
+      await win.settle('updateMcpClient', { ok: false, error: 'Ocupado.' });
+      expect(sheet().open).toBe(true);
+
+      submit();
+      await win.settle('updateMcpClient', { ok: true, state: mcpState() });
+
+      expect(win.argsFor('approveMcpClient')).toHaveLength(1);
+      expect(win.argsFor('updateMcpClient')[1]?.[1]).toMatchObject({
+        scopes: { read: true },
+        confirm: { control: 'always' },
+      });
+      expect(sheet().open).toBe(false);
+    });
+
     it('keeps the sheet open and says why main refused', async () => {
       win = await openWith([PENDING]);
       click(button(row('Cursor'), 'Permitir…'));
