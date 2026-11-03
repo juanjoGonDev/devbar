@@ -49,6 +49,7 @@ function groupState(): GroupState {
     lastError: null,
     commands: [
       {
+        ports: [],
         commandId: 'api',
         processId: 'cmd:g1:api',
         status: 'running',
@@ -120,6 +121,7 @@ describe('src/main/remote/views.ts', () => {
             errorCount: 0,
             lastError: null,
             startedAt: 1000,
+            ports: [],
           },
         ],
         actions: [

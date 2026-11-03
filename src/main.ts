@@ -57,6 +57,7 @@ import { createTrayHost } from './main/tray-host.js';
 import { createUpdater } from './main/updater.js';
 import { workflowFeedback } from './main/workflow-wiring.js';
 import { registerAllIpc } from './main/ipc/register-all.js';
+import { createPortRegistry } from './ports/port-registry.js';
 
 /**
  * Wiring only. Every decision this process makes lives under `src/main/`; what
@@ -125,11 +126,15 @@ const workflowRunner = createWorkflowRunner({
   cancelConfirm: () => confirms.cancelConfirm(),
 });
 
+// Detected ports per running command; detection feeds it, broadcasts read it.
+const ports = createPortRegistry(() => broadcast());
+
 const snapshots = createStateSnapshots({
   configStore,
   processManager,
   workflowRunner,
   groupErrors,
+  portsOf: ports.portsOf,
 });
 
 function broadcast(): void {
@@ -260,14 +265,6 @@ const schedules = createScheduleRunner({
   workflowRunner,
 });
 
-/** The command services currently running (actions/pre-scripts are one-shots). */
-function runningCommandIds(): string[] {
-  return processManager
-    .allStates()
-    .filter((entry) => entry.kind === 'command' && entry.status === 'running')
-    .map((entry) => entry.id);
-}
-
 /** What both the IPC handlers and «Control remoto» drive. */
 const wiring = {
   host,
@@ -297,7 +294,7 @@ const shutdown = createShutdownController({
   workflowRunner,
   processManager,
   sessionResume: () => sessionResume,
-  runningCommandIds,
+  runningCommandIds: () => processManager.runningCommandIds(),
   releaseConfigCloseGuard: appWindows.releaseConfigCloseGuard,
   appQuit: () => app.quit(),
   processExit: (code) => process.exit(code),
@@ -368,6 +365,7 @@ function registerIpc(): void {
     customIconsChanged: (icons) =>
       sendToRenderers(registry, 'customIcons:changed', icons),
     remote,
+    portsOf: ports.portsOf,
   });
   registerDevPanel(
     host.devPanelAvailable,
@@ -436,7 +434,7 @@ app.whenReady().then(() => {
     // would overwrite the authoritative kill/update snapshot.
     trackResume: () => {
       if (!SMOKE_MODE && sessionResume && shutdown.phase() === 'idle')
-        sessionResume.track(runningCommandIds());
+        sessionResume.track(processManager.runningCommandIds());
     },
   });
   syncRepoWatchers();

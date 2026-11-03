@@ -30,6 +30,7 @@ const STATE = {
           errorCount: 0,
           lastError: null,
           startedAt: 1,
+          ports: [{ port: 3000, kind: 'web', lanReachable: true }],
         },
       ],
       actions: [
@@ -119,6 +120,7 @@ describe('renderer/remote/wire.ts', () => {
           errorCount: 0,
           lastError: null,
           startedAt: null,
+          ports: [],
         },
       ]);
     });

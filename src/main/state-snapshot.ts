@@ -1,6 +1,7 @@
 import { deriveColor } from '../process-manager.js';
 import { makeActionId, makeCommandId } from '../compound-id.js';
 import type {
+  DetectedPort,
   GlobalSettings,
   Group,
   ProcessState,
@@ -37,6 +38,9 @@ interface SnapshotProcessManager {
   getState: (id: string) => ProcessState;
 }
 
+/** Detected ports per process id, primary first ([] when none). */
+type PortsOf = (processId: string) => DetectedPort[];
+
 export interface StateSnapshotDeps {
   configStore: SnapshotConfigStore;
   processManager: SnapshotProcessManager;
@@ -46,6 +50,7 @@ export interface StateSnapshotDeps {
   };
   /** Group-level transient errors (not persisted). */
   groupErrors: ReadonlyMap<string, string | null>;
+  portsOf?: PortsOf;
   now?: () => number;
 }
 
@@ -83,6 +88,7 @@ function aggregateGroupColor(
 export function createStateSnapshots(deps: StateSnapshotDeps): StateSnapshots {
   const { configStore, processManager, workflowRunner, groupErrors } = deps;
   const now = deps.now ?? Date.now;
+  const portsOf: PortsOf = deps.portsOf ?? (() => []);
 
   return {
     snapshotGroupStates(): GroupState[] {
@@ -110,6 +116,7 @@ export function createStateSnapshots(deps: StateSnapshotDeps): StateSnapshots {
               group.silenceErrors ||
               cmd.silenceErrors
             ),
+            ports: state.status === 'running' ? portsOf(pid) : [],
           };
         });
         const actionStates = (group.actions || []).map((act) => {

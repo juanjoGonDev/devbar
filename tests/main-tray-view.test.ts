@@ -18,6 +18,7 @@ function groupState(
     currentBranch: null,
     color: 'running',
     commands: commands.map((command, index) => ({
+      ports: [],
       commandId: `c${index}`,
       processId: `g1:c${index}`,
       status: 'running',

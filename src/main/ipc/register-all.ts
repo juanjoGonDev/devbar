@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { openNotificationSettings } from '../notification-settings.js';
 import type { IpcRegistrar } from '../ipc-validators.js';
 import { registerAppIpc, type AppIpcDeps } from './app-ipc.js';
@@ -8,6 +9,7 @@ import {
   type CustomIconUploadDeps,
 } from '../custom-icon-upload.js';
 import { registerLogsIpc, type LogsIpcDeps } from './logs-ipc.js';
+import { registerPortsIpc, type PortsIpcDeps } from './ports-ipc.js';
 import { registerRemoteIpc, type RemoteIpcDeps } from './remote-ipc.js';
 import { registerRuntimeIpc, type RuntimeIpcDeps } from './runtime-ipc.js';
 import { registerWindowIpc, type WindowIpcDeps } from './window-ipc.js';
@@ -90,6 +92,7 @@ export interface RegisterAllDeps {
   iconBattery: unknown;
   customIconsChanged: IconsIpcDeps['customIconsChanged'];
   remote: RemoteIpcDeps['remote'];
+  portsOf: PortsIpcDeps['portsOf'];
 }
 
 export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
@@ -128,6 +131,12 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
     customIconsChanged: deps.customIconsChanged,
   });
   registerRemoteIpc(ipc, deps);
+  registerPortsIpc(ipc, {
+    configStore: deps.configStore,
+    portsOf: deps.portsOf,
+    openExternal: host.openExternal,
+    machineHostname: () => os.hostname() || null,
+  });
   registerAppIpc(ipc, {
     ...deps,
     files: host.files,

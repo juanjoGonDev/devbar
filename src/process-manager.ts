@@ -183,6 +183,12 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     }
     return entries;
   }
+  /** The command services currently running (actions/pre-scripts are one-shots). */
+  runningCommandIds(): string[] {
+    return this.allStates()
+      .filter((entry) => entry.kind === 'command' && entry.status === 'running')
+      .map((entry) => entry.id);
+  }
   private readonly logSeqs = new Map<string, number>();
   private resolveLogLimit(resolved: ResolvedTarget): number {
     if (resolved.kind === 'command' && resolved.target.maxLogLines != null)

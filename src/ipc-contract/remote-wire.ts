@@ -1,4 +1,8 @@
-import type { ProcessStatus, WorkflowRunResult } from '../domain-types.js';
+import type {
+  DetectedPortKind,
+  ProcessStatus,
+  WorkflowRunResult,
+} from '../domain-types.js';
 
 /**
  * What the «Control remoto» server sends a linked phone, over /api/* and the
@@ -37,6 +41,15 @@ export interface RemoteCommandView {
   errorCount: number;
   lastError: string | null;
   startedAt: number | null;
+  /** Its detected ports, primary first. Never a URL: the phone builds
+   *  `http://<the host it reached>:<port>`, and only when `lanReachable`. */
+  ports: RemotePortView[];
+}
+
+export interface RemotePortView {
+  port: number;
+  kind: DetectedPortKind;
+  lanReachable: boolean;
 }
 
 export interface RemoteActionView {

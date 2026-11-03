@@ -1,4 +1,5 @@
 import type {
+  DetectedPortKind,
   ProcessStatus,
   WorkflowRunResult,
 } from '../../src/domain-types.js';
@@ -11,6 +12,7 @@ import type {
   RemoteLogLine,
   RemoteNotice,
   RemoteNoticeKind,
+  RemotePortView,
   RemoteWorkflowTrigger,
   RemoteWorkflowView,
   RemoteSettingsView,
@@ -70,6 +72,24 @@ const STATUSES: readonly ProcessStatus[] = [
   'done',
 ];
 
+const PORT_KINDS: readonly DetectedPortKind[] = ['web', 'http', 'other'];
+
+/** Valid ports only (1–65535); anything else is dropped. */
+const ports = (value: unknown): RemotePortView[] =>
+  (Array.isArray(value) ? value : [])
+    .filter(
+      (entry): entry is Raw =>
+        isRecord(entry) &&
+        Number.isInteger(entry.port) &&
+        (entry.port as number) >= 1 &&
+        (entry.port as number) <= 65535,
+    )
+    .map((raw) => ({
+      port: raw.port as number,
+      kind: oneOf(raw.kind, PORT_KINDS, 'other'),
+      lanReachable: raw.lanReachable === true,
+    }));
+
 const command = (raw: Raw): RemoteCommandView => ({
   id: str(raw.id),
   processId: str(raw.processId),
@@ -80,6 +100,7 @@ const command = (raw: Raw): RemoteCommandView => ({
   errorCount: num(raw.errorCount),
   lastError: strOrNull(raw.lastError),
   startedAt: numOrNull(raw.startedAt),
+  ports: ports(raw.ports),
 });
 
 const action = (raw: Raw): RemoteActionView => ({

@@ -1,6 +1,7 @@
 import type {
   Action,
   Command,
+  DetectedPort,
   GlobalSettings,
   Group,
   LogEntry,
@@ -44,6 +45,8 @@ export interface CommandRuntimeState {
   color: TrayColor;
   muteWarn: boolean;
   muteErr: boolean;
+  /** Detected listening ports, primary first; [] when none or not running. */
+  ports: DetectedPort[];
 }
 export interface ActionRuntimeState {
   actionId: string;
@@ -255,6 +258,16 @@ export interface DevBarApi
   runAction(groupId: string, actionId: string): Promise<ProcessResult>;
   startProcess(processId: string): Promise<ProcessResult>;
   stopProcess(processId: string): Promise<ProcessResult>;
+  /**
+   * Opens a command's link in the browser: `port` opens that detected port,
+   * otherwise the command's `link` decides (auto: primary web port + path;
+   * custom: its URL). Only http(s) URLs on this machine or the LAN open.
+   */
+  openPort(
+    groupId: string,
+    commandId: string,
+    port?: number,
+  ): Promise<{ ok: boolean; error?: string }>;
   listBranches(groupId: string): Promise<BranchListResult>;
   currentBranch(groupId: string): Promise<BranchResult>;
   switchBranch(groupId: string, branch: string): Promise<SimpleResult>;

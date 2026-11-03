@@ -56,6 +56,11 @@ export function groupViews(
         errorCount: command.errorCount,
         lastError: command.lastError,
         startedAt: command.startedAt,
+        ports: command.ports.map((port) => ({
+          port: port.port,
+          kind: port.kind,
+          lanReachable: port.lanReachable,
+        })),
       })),
       actions: state.actions.map((action) => ({
         id: action.actionId,

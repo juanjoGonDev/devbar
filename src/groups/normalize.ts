@@ -5,6 +5,7 @@
  * default chosen here IS the migration for stores written before the field
  * existed.
  */
+import { normalizeCommandLink } from '../ports/port-links.js';
 import { v4 as uuidv4 } from 'uuid';
 import { makePreScriptId } from '../compound-id.js';
 import { DEFAULT_GROUP_ICON } from './icon-migration.js';
@@ -170,6 +171,7 @@ export function normalizeCommand(value: unknown): Command {
     autoStart: Boolean(raw.autoStart),
     schedule: normalizeSchedule(raw.schedule),
     maxLogLines: clampMaxLogLinesOrNull(raw.maxLogLines),
+    link: normalizeCommandLink(raw.link),
     ...normalizeConfirm(raw),
   };
 }

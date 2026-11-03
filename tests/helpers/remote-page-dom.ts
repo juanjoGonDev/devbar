@@ -50,6 +50,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         commands: [
           {
             id: 'api',
+            ports: [],
             processId: 'cmd:g1:api',
             name: 'API',
             status: 'running',
@@ -61,6 +62,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
           },
           {
             id: 'jobs',
+            ports: [],
             processId: 'cmd:g1:jobs',
             name: 'Cola de jobs',
             status: 'stopped',
@@ -92,6 +94,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         commands: [
           {
             id: 'astro',
+            ports: [],
             processId: 'cmd:g2:astro',
             name: 'Astro dev',
             status: 'error',

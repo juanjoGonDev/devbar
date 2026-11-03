@@ -39,6 +39,7 @@ function commandState(
   overrides: Partial<CommandRuntimeState> = {},
 ): CommandRuntimeState {
   return {
+    ports: [],
     commandId: 'c1',
     processId: 'g1:c1',
     status: 'stopped',

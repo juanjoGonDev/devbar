@@ -39,6 +39,8 @@ const api: DevBarApi = {
     ipcRenderer.invoke('actions:run', { groupId, actionId }),
   startProcess: (processId) => ipcRenderer.invoke('process:start', processId),
   stopProcess: (processId) => ipcRenderer.invoke('process:stop', processId),
+  openPort: (groupId, commandId, port) =>
+    ipcRenderer.invoke('ports:open', { groupId, commandId, port }),
   listBranches: (groupId) => ipcRenderer.invoke('git:listBranches', groupId),
   currentBranch: (groupId) => ipcRenderer.invoke('git:currentBranch', groupId),
   switchBranch: (groupId, branch) =>

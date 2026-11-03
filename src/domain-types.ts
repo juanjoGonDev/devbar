@@ -27,6 +27,34 @@ export interface SilencedPatterns {
   error: string[];
 }
 
+export type DetectedPortKind = 'web' | 'http' | 'other';
+
+/**
+ * A TCP port a running command listens on, as main detected it (from its log
+ * or from the OS socket table) and classified it with an HTTP probe.
+ */
+export interface DetectedPort {
+  port: number;
+  /** Where to open it, e.g. `http://localhost:5173/`. */
+  url: string;
+  kind: DetectedPortKind;
+  source: 'log' | 'socket';
+  /** The dev tool that announced it («Vite», «Storybook»), when known. */
+  label?: string;
+  /** Bound beyond loopback (`*`, `0.0.0.0`, the LAN address): a phone can reach it. */
+  lanReachable: boolean;
+}
+
+/**
+ * What «abrir» does for a command: `auto` opens its primary detected web port
+ * (plus `path`), `custom` opens `url`, `none` shows no link at all.
+ */
+export interface CommandLink {
+  mode: 'auto' | 'custom' | 'none';
+  path?: string;
+  url?: string;
+}
+
 export interface Command extends ConfirmConfig {
   id: string;
   name: string;
@@ -45,6 +73,8 @@ export interface Command extends ConfirmConfig {
   autoStart: boolean;
   schedule: Schedule;
   maxLogLines: number | null;
+  /** Absent in old stores and backups; the normaliser fills `{ mode: 'auto' }`. */
+  link?: CommandLink;
 }
 
 export interface Action extends ConfirmConfig {
