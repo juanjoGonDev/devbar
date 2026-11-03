@@ -38,12 +38,14 @@ import {
 
 export {
   getGlobalSettings,
+  getMcpClients,
   getRemoteControl,
   getScheduleLastRun,
   getTrayPopover,
   groupsOverlayActive,
   setGroupsOverlay,
   saveGlobalSettings,
+  saveMcpClients,
   saveRemoteControl,
   saveTrayPopover,
   setScheduleLastRun,

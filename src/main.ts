@@ -46,6 +46,7 @@ import {
   settingsPushes,
 } from './main/renderer-bus.js';
 import { remoteControlFor } from './main/remote/remote-wiring.js';
+import { mcpFor, withMcpShutdown } from './main/mcp/mcp-wiring.js';
 import { createScheduleRunner } from './main/schedule-runner.js';
 import { createShutdownController } from './main/shutdown.js';
 import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
@@ -283,6 +284,8 @@ const wiring = {
   repaintWindows,
   registry,
   ...settingsPushes(registry),
+  // MCP: the local endpoint AI assistants connect through, off unless enabled.
+  mcp: mcpFor({ configStore, registry, appWindows }),
 };
 
 // «Control remoto»: the LAN server for linked phones, off unless enabled.
@@ -292,7 +295,7 @@ const shutdown = createShutdownController({
   isPrimary,
   smokeMode: SMOKE_MODE,
   repoWatcher,
-  remoteServer: remote,
+  remoteServer: withMcpShutdown(remote, wiring.mcp),
   workflowRunner,
   processManager,
   sessionResume: () => sessionResume,
@@ -302,10 +305,9 @@ const shutdown = createShutdownController({
   processExit: (code) => process.exit(code),
 });
 
-function syncRepoWatchers(): void {
-  const paths = configStore.listGroups().map((g) => expandTilde(g.path));
-  repoWatcher.sync([...new Set(paths.filter(Boolean))]);
-}
+// `sync` expands each `~` and ignores blanks and repeats itself.
+const syncRepoWatchers = (): void =>
+  repoWatcher.sync(configStore.listGroups().map((group) => group.path));
 
 const trayHost = createTrayHost(() => menuBar, host, configStore);
 
@@ -386,6 +388,7 @@ function registerIpc(): void {
  */
 function scheduleBootWork(): void {
   void remote.startIfEnabled();
+  void wiring.mcp.startIfEnabled();
   setTimeout(() => void startup.autoStartAllMarkedCommands(), 300);
   setTimeout(() => void schedules.checkSchedules(new Date()), 1000);
   schedules.startScheduleLoop();

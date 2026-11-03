@@ -1,0 +1,96 @@
+import { describe, expect, it } from 'vitest';
+import { registerMcpIpc, type McpIpcDeps } from '../src/main/ipc/mcp-ipc.js';
+import type { McpState } from '../src/ipc-contract/mcp-api.js';
+import { recordingIpc } from './helpers/main-fakes.js';
+
+const STATE: McpState = {
+  settings: { enabled: true, transport: 'stdio' },
+  clients: [],
+  connectCommand: {
+    claudeCode: '',
+    claudeDesktopJson: '',
+    cursorJson: '',
+    generic: '',
+  },
+  listening: true,
+  error: null,
+};
+
+function harness() {
+  const calls: unknown[][] = [];
+  const record =
+    <T>(name: string, answer: T) =>
+    (...args: unknown[]): T => {
+      calls.push([name, ...args]);
+      return answer;
+    };
+  const mutation = { ok: true as const, state: STATE };
+  const mcp: McpIpcDeps['mcp'] = {
+    state: record('state', STATE),
+    setEnabled: record('setEnabled', Promise.resolve(STATE)),
+    approve: record('approve', mutation),
+    reject: record('reject', mutation),
+    update: record('update', mutation),
+    revoke: record('revoke', mutation),
+    listAudit: record('listAudit', []),
+    undo: record('undo', Promise.resolve({ ok: true as const })),
+    answerConfirm: record('answerConfirm', { ok: true as const }),
+    listConfirms: record('listConfirms', []),
+  };
+  const ipc = recordingIpc();
+  registerMcpIpc(ipc, { mcp });
+  return { ipc, calls };
+}
+
+describe('src/main/ipc/mcp-ipc.ts', () => {
+  it.each<[string, unknown, unknown[]]>([
+    ['mcp:getState', undefined, ['state']],
+    ['mcp:setEnabled', { enabled: true }, ['setEnabled', true]],
+    [
+      'mcp:approveClient',
+      { id: 'c1', scopes: { config: true, root: true } },
+      ['approve', 'c1', { config: true }],
+    ],
+    ['mcp:approveClient', { id: 'c1' }, ['approve', 'c1', undefined]],
+    ['mcp:rejectClient', { id: 'c1' }, ['reject', 'c1']],
+    [
+      'mcp:updateClient',
+      { id: 'c1', patch: { redactSecrets: false } },
+      ['update', 'c1', { redactSecrets: false }],
+    ],
+    ['mcp:revokeClient', { id: 'c1' }, ['revoke', 'c1']],
+    [
+      'mcp:listAudit',
+      { limit: 10, filter: 'changes' },
+      ['listAudit', { limit: 10, filter: 'changes' }],
+    ],
+    ['mcp:undo', { undoToken: 'u1' }, ['undo', 'u1']],
+    [
+      'mcp:answerConfirm',
+      { id: 'r1', answer: 'reject' },
+      ['answerConfirm', 'r1', 'reject'],
+    ],
+    ['mcp:listConfirms', undefined, ['listConfirms']],
+  ])('%s narrows %j before it acts', (channel, payload, call) => {
+    const h = harness();
+
+    void h.ipc.invoke(channel, payload);
+
+    expect(h.calls).toEqual([call]);
+  });
+
+  it.each<[string, unknown]>([
+    ['mcp:setEnabled', { enabled: 'yes' }],
+    ['mcp:approveClient', { id: 'c1', scopes: { read: 1 } }],
+    ['mcp:rejectClient', {}],
+    ['mcp:updateClient', { id: 'c1', patch: { groups: 'some' } }],
+    ['mcp:listAudit', { limit: 9999 }],
+    ['mcp:undo', { undoToken: 7 }],
+    ['mcp:answerConfirm', { id: 'r1', answer: 'yes' }],
+  ])('%s refuses %j without acting', (channel, payload) => {
+    const h = harness();
+
+    expect(() => h.ipc.invoke(channel, payload)).toThrow(TypeError);
+    expect(h.calls).toEqual([]);
+  });
+});

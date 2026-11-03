@@ -151,6 +151,23 @@ const api: DevBarApi = {
     subscribe('remote:pairCodeClaimed', () => cb()),
   onRemotePairRequest: (cb) => subscribe('remote:pairRequest', cb),
   onRemotePairRequestClosed: (cb) => subscribe('remote:pairRequestClosed', cb),
+  getMcpState: () => ipcRenderer.invoke('mcp:getState'),
+  setMcpEnabled: (enabled) => ipcRenderer.invoke('mcp:setEnabled', { enabled }),
+  approveMcpClient: (id, scopes) =>
+    ipcRenderer.invoke('mcp:approveClient', { id, scopes }),
+  rejectMcpClient: (id) => ipcRenderer.invoke('mcp:rejectClient', { id }),
+  updateMcpClient: (id, patch) =>
+    ipcRenderer.invoke('mcp:updateClient', { id, patch }),
+  revokeMcpClient: (id) => ipcRenderer.invoke('mcp:revokeClient', { id }),
+  listMcpAudit: (query) => ipcRenderer.invoke('mcp:listAudit', query),
+  undoMcpChange: (undoToken) => ipcRenderer.invoke('mcp:undo', { undoToken }),
+  answerMcpConfirm: (id, answer) =>
+    ipcRenderer.invoke('mcp:answerConfirm', { id, answer }),
+  listMcpConfirms: () => ipcRenderer.invoke('mcp:listConfirms'),
+  onMcpUpdate: (cb) => subscribe('mcp:update', cb),
+  onMcpConfirmRequest: (cb) => subscribe('mcp:confirmRequest', cb),
+  onMcpConfirmClosed: (cb) => subscribe('mcp:confirmClosed', cb),
+  onMcpAudit: (cb) => subscribe('mcp:audit', cb),
   exportConfig: () => ipcRenderer.invoke('config:export'),
   importConfig: () => ipcRenderer.invoke('config:import'),
   confirmImport: (args) => ipcRenderer.invoke('config:confirmImport', args),

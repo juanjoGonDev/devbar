@@ -61,6 +61,7 @@ const GLOBAL_SETTINGS: GlobalSettings = {
   notifySuccess: true,
   showHiddenGroupsFold: true,
   showHiddenWorkflowsFold: false,
+  mcp: { enabled: false, transport: 'stdio' },
 };
 
 function makeConfigStoreStub(group: Group = GROUP) {
