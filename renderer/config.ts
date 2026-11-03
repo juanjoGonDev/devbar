@@ -26,6 +26,8 @@ import { aboutVersionLine } from './config/about-pane.js';
 import { showReleaseNotes } from './config/about-notes.js';
 import { createRemotePane } from './config/remote-pane.js';
 import { remoteElements } from './config/remote-elements.js';
+import { createMcpPane } from './config/mcp-pane.js';
+import { mcpElements } from './config/mcp-elements.js';
 initTheme();
 hydrateIcons(document);
 
@@ -279,6 +281,7 @@ wireBackupButtons({
 });
 
 createRemotePane(remoteElements(), showToast);
+createMcpPane(mcpElements(), showToast);
 
 // ────────────────────── Live updates ───────────────────────────────────
 

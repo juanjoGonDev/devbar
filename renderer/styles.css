@@ -5843,6 +5843,198 @@ label.remote-row {
   text-align: center;
 }
 
+/* ── Settings: MCP (renderer/config/mcp-*.ts) ─────────────────────────
+   The server card, the connect block, the client list with its
+   permissions sheet and the activity log. One token set for the section
+   and its sheet, redefined for dark right below. */
+:root {
+  --mcp-surface: #ffffff;
+  --mcp-hairline: rgba(0, 0, 0, 0.06);
+  --mcp-ok: #1f8a3c;
+  --mcp-danger: #d70015;
+  --mcp-tile-bg: rgba(94, 92, 230, 0.12);
+  --mcp-tile-fg: #5e5ce6;
+  --mcp-code-bg: #1d1d1f;
+  --mcp-code-fg: #e5e5ea;
+}
+:root[data-theme='dark'] {
+  --mcp-surface: #2a2a2c;
+  --mcp-hairline: rgba(255, 255, 255, 0.07);
+  --mcp-ok: #30d158;
+  --mcp-danger: #ff6961;
+  --mcp-tile-bg: rgba(125, 122, 255, 0.2);
+  --mcp-tile-fg: #a5a3ff;
+  --mcp-code-bg: #0d0d0f;
+  --mcp-code-fg: #e5e5ea;
+}
+.config-section[data-section='mcp'].active {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.mcp-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.mcp-view[hidden] {
+  display: none;
+}
+.mcp-card {
+  background: var(--bg-card-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.mcp-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+}
+.mcp-row + .mcp-row,
+.mcp-error + .mcp-row {
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.mcp-title {
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mcp-row-label {
+  font-size: 13px;
+}
+.mcp-hint {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.mcp-tile {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--mcp-tile-bg);
+  color: var(--mcp-tile-fg);
+  font-size: 18px;
+}
+.mcp-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mcp-status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.mcp-status.is-on {
+  color: var(--mcp-ok);
+}
+.mcp-status.is-on::before {
+  background: var(--running);
+}
+.mcp-status.is-error {
+  color: var(--mcp-danger);
+}
+.mcp-status.is-error::before {
+  background: var(--error);
+}
+.mcp-error {
+  margin: -4px 16px 10px 64px;
+  color: var(--mcp-danger);
+  font-size: 12px;
+}
+.mcp-error[hidden] {
+  display: none;
+}
+.config-section[data-section='mcp'] .mode-segment:has(input:disabled) {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Section titles: the small caps line over a card, with an optional note. */
+.mcp-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mcp-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mcp-group-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mcp-group-note {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* «Conectar un cliente»: the kind switch, the block to paste and «Copiar». */
+.mcp-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.mcp-connect .mode-segmented {
+  align-self: flex-start;
+}
+.mcp-code {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--mcp-code-bg);
+  color: var(--mcp-code-fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  user-select: text;
+}
+.mcp-connect-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mcp-connect-foot .mcp-hint {
+  margin: 0;
+}
+#mcp-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* ── End Settings: MCP ─────────────────────────────────────────────── */
+
 /* ── Workflows: list, editor chrome, run states, log drawer ────────────
  * Built by renderer/workflows/*.ts and the pipeline editor. One token set
  * for the whole section, redefined for dark below. */

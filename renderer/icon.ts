@@ -60,6 +60,7 @@ export type IconName =
   | 'panel-top'
   | 'pencil'
   | 'play'
+  | 'plug'
   | 'plus'
   | 'power'
   | 'puzzle'
