@@ -135,34 +135,59 @@ function currentKey(): number {
   return entry ? bucketKeyOf(model, entry.ts) : model.maxKey;
 }
 
-function buildBars(current: number): DocumentFragment {
-  const fragment = document.createDocumentFragment();
+/** Sets an attribute only when it differs, so an unchanged bar stays quiet. */
+function setAttr(el: Element, name: string, value: string | null): void {
+  if (value === null) {
+    if (el.hasAttribute(name)) el.removeAttribute(name);
+  } else if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+}
+
+/**
+ * Brings the bars up to date IN PLACE. Rebuilding them a few times a second
+ * swapped the element under the pointer: its tooltip blinked and macOS
+ * dropped the hand cursor. A slot is only replaced when it turns from a gap
+ * into a bar or back.
+ */
+function syncBars(current: number): void {
   const bars = activityBars(model, BAR_MAX_PX);
   const stop =
     focusKey !== null && model.buckets.has(focusKey) ? focusKey : current;
-  for (const bar of bars) {
+  bars.forEach((bar, index) => {
     const isCurrent = bar.key === current;
-    const classes = `activity-bar tone-${bar.tone}${isCurrent ? ' current' : ''}`;
-    if (!bar.count) {
-      const gap = document.createElement('span');
-      gap.className = classes;
-      gap.setAttribute('aria-hidden', 'true');
-      fragment.appendChild(gap);
-      continue;
+    const tag = bar.count ? 'BUTTON' : 'SPAN';
+    let el = activityBarsEl.children[index];
+    if (!el || el.tagName !== tag) {
+      const fresh = document.createElement(
+        tag === 'BUTTON' ? 'button' : 'span',
+      );
+      if (fresh instanceof HTMLButtonElement) fresh.type = 'button';
+      if (el) el.replaceWith(fresh);
+      else activityBarsEl.appendChild(fresh);
+      el = fresh;
     }
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = classes;
-    button.dataset.key = String(bar.key);
-    button.style.setProperty('--h', `${bar.height}px`);
+    setAttr(
+      el,
+      'class',
+      `activity-bar tone-${bar.tone}${isCurrent ? ' current' : ''}`,
+    );
+    if (!(el instanceof HTMLButtonElement)) {
+      setAttr(el, 'aria-hidden', 'true');
+      return;
+    }
+    setAttr(el, 'data-key', String(bar.key));
+    if (el.style.getPropertyValue('--h') !== `${bar.height}px`)
+      el.style.setProperty('--h', `${bar.height}px`);
     const title = barTitle(bar, model.step);
-    button.title = title;
-    button.setAttribute('aria-label', title);
-    if (isCurrent) button.setAttribute('aria-current', 'true');
-    button.tabIndex = bar.key === stop ? 0 : -1;
-    fragment.appendChild(button);
-  }
-  return fragment;
+    // data-tip, not title: the tooltip reads it as is, with no attribute
+    // juggling on the hovered element.
+    setAttr(el, 'data-tip', title);
+    setAttr(el, 'aria-label', title);
+    setAttr(el, 'aria-current', isCurrent ? 'true' : null);
+    const tabIndex = bar.key === stop ? 0 : -1;
+    if (el.tabIndex !== tabIndex) el.tabIndex = tabIndex;
+  });
+  while (activityBarsEl.children.length > bars.length)
+    activityBarsEl.lastElementChild?.remove();
 }
 
 /** Bring the strip up to date; a no-op when nothing it draws changed. */
@@ -186,7 +211,7 @@ export function paintActivity(): void {
   paintedSignature = signature;
   const hadFocus = activityBarsEl.contains(document.activeElement);
   repainting = true;
-  activityBarsEl.replaceChildren(buildBars(current));
+  syncBars(current);
   repainting = false;
   setText(activitySpanEl, spanLabel(model));
   activityEl.setAttribute('aria-label', activitySummary(model));

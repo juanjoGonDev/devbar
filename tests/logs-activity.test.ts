@@ -111,6 +111,19 @@ describe('renderer/logs/activity.ts', () => {
     expect(bars().at(-1)?.classList.contains('tone-warn')).toBe(true);
   });
 
+  it('updates the bars in place, so the one under the pointer survives a repaint', () => {
+    pane.resetBuffer(minutes(10));
+    activity.paintActivity();
+    const hovered = buttons()[2];
+    const before = hovered?.getAttribute('aria-label');
+    // A new line in the same minute as bar 2: replacing the buttons made its
+    // tooltip blink and the hand cursor drop on every repaint.
+    pane.pushEntry(entry('again', { ts: BASE + 2 * MINUTE + 1_000 }));
+    activity.paintActivity();
+    expect(buttons()[2]).toBe(hovered);
+    expect(hovered?.getAttribute('aria-label')).not.toBe(before);
+  });
+
   it('repaints on its own a few times a second, not once per line', () => {
     pane.resetBuffer(minutes(10));
     expect(bars()).toHaveLength(0);
