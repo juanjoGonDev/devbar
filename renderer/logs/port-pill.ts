@@ -15,13 +15,15 @@ import {
   type MenuEntry,
 } from '../config/remote-device-menu.js';
 import { portPillEl } from './elements.js';
-import type { DetectedPort } from '../../src/domain-types.js';
+import type { CommandLink, DetectedPort } from '../../src/domain-types.js';
+import { resolveOpenUrl } from '../../src/ports/port-links.js';
 import type { GroupState, LogListItem } from '../../src/ipc-contract.js';
 
 interface PortOwner {
   groupId: string;
   commandId: string;
   ports: DetectedPort[];
+  link: CommandLink | undefined;
 }
 
 const owners = new Map<string, PortOwner>();
@@ -39,6 +41,8 @@ export function adoptGroupStates(
         groupId: group.groupId,
         commandId: command.commandId,
         ports: Array.isArray(command.ports) ? command.ports : [],
+        link: group.group?.commands?.find((c) => c.id === command.commandId)
+          ?.link,
       });
     }
   }
@@ -65,12 +69,17 @@ function hostOf(port: DetectedPort): string {
  * browser can open (a menu when there are more), else the first one muted.
  * The pill only reads «:3000»; the full URL is in its tooltip.
  */
-export function portPillFor(ports: readonly DetectedPort[]): PortPill | null {
+export function portPillFor(
+  ports: readonly DetectedPort[],
+  link?: CommandLink,
+): PortPill | null {
   const open = ports.filter(openable);
   const first = open[0];
   if (first) {
     const menu = open.length > 1;
-    const title = menu ? 'Elegir puerto' : `Abrir ${first.url}`;
+    const target = resolveOpenUrl(link, ports, first.port);
+    const url = target.ok ? target.url : first.url;
+    const title = menu ? 'Elegir puerto' : `Abrir ${url}`;
     return { kind: 'open', text: `:${first.port}`, title, menu };
   }
   const other = ports[0];
@@ -123,7 +132,7 @@ function buildMuted(pill: PortPill): HTMLElement {
 export function renderPortPill(item: LogListItem | null): void {
   const owner =
     item?.type === 'command' && isRunning(item) ? owners.get(item.id) : null;
-  const pill = owner ? portPillFor(owner.ports) : null;
+  const pill = owner ? portPillFor(owner.ports, owner.link) : null;
   const signature =
     owner && pill
       ? JSON.stringify([owner.groupId, owner.commandId, owner.ports, pill])

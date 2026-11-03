@@ -172,6 +172,21 @@ describe('renderer/logs/port-pill.ts', () => {
       expect(dom.argsFor('openPort')).toEqual([['g1', 'web']]);
     });
 
+    it("names the auto link's path in its tooltip", () => {
+      showing();
+      const withLink = states([port()]);
+      const first = withLink[0];
+      if (first)
+        first.group = {
+          commands: [{ id: 'web', link: { mode: 'auto', path: '/admin' } }],
+        } as GroupState['group'];
+      pill.adoptGroupStates(withLink);
+      header.renderHeaderRunState();
+      expect(slot().querySelector('button')?.title).toBe(
+        'Abrir http://localhost:3000/admin',
+      );
+    });
+
     it('hides it while the command is stopped', () => {
       showing({ status: 'stopped' });
       pill.adoptGroupStates(states([port()]));
