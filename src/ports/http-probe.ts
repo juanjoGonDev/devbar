@@ -28,10 +28,34 @@ const PROBE_TIMEOUT_MS = 800;
 const MAX_REDIRECTS = 3;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
+/** TLS refusals that still prove an HTTPS server answered the handshake. */
+const UNTRUSTED_CERT_CODES = new Set([
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'CERT_HAS_EXPIRED',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
 /**
- * The production GET: headers only (the body is never read), any TLS
- * certificate accepted because a dev server's is self-signed, and every
- * failure — refused, timed out, not HTTP — folded into null.
+ * What a failed GET still tells us. A dev server's certificate is usually
+ * self-signed: rather than turn certificate checks off, an untrusted one is
+ * read as what it proves — an HTTPS server is there — and offered as a page;
+ * the browser makes its own call when the user opens it. Anything else
+ * (refused, reset, not TLS) means nothing HTTP answered.
+ */
+export function responseForError(error: unknown): ProbeResponse | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && UNTRUSTED_CERT_CODES.has(code)
+    ? { status: 0, contentType: 'text/html', location: null }
+    : null;
+}
+
+/**
+ * The production GET: headers only (the body is never read), certificates
+ * checked as usual, and every failure — refused, timed out, not HTTP — folded
+ * into null except an untrusted certificate (see `responseForError`).
  */
 const nodeHttpGet: HttpGet = (url, timeoutMs) =>
   new Promise((resolve) => {
@@ -48,7 +72,6 @@ const nodeHttpGet: HttpGet = (url, timeoutMs) =>
         {
           timeout: timeoutMs,
           headers: { accept: 'text/html,*/*;q=0.8' },
-          rejectUnauthorized: false,
         },
         (response) => {
           done({
@@ -60,7 +83,7 @@ const nodeHttpGet: HttpGet = (url, timeoutMs) =>
         },
       );
       request.on('timeout', () => request.destroy());
-      request.on('error', () => done(null));
+      request.on('error', (error) => done(responseForError(error)));
       request.on('close', () => done(null));
     } catch {
       done(null);

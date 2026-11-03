@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   classifyResponse,
   createPortClassifier,
+  responseForError,
   probePort,
   type HttpGet,
   type PortKind,
@@ -144,6 +145,32 @@ describe('src/ports/http-probe.ts', () => {
       expect(await classifier.kind('cmd:g:a', 1, 'http://localhost:1/')).toBe(
         'other',
       );
+    });
+  });
+
+  describe('responseForError', () => {
+    it('reads an untrusted certificate as an HTTPS server, without trusting it', () => {
+      for (const code of [
+        'DEPTH_ZERO_SELF_SIGNED_CERT',
+        'SELF_SIGNED_CERT_IN_CHAIN',
+        'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+        'CERT_HAS_EXPIRED',
+        'ERR_TLS_CERT_ALTNAME_INVALID',
+      ]) {
+        const response = responseForError(
+          Object.assign(new Error(code), { code }),
+        );
+        expect(classifyResponse(response), code).toBe('web');
+      }
+    });
+
+    it('reads any other failure as nothing HTTP', () => {
+      for (const code of ['ECONNREFUSED', 'ECONNRESET', 'EPROTO', undefined]) {
+        expect(
+          responseForError(Object.assign(new Error('x'), { code })),
+          String(code),
+        ).toBeNull();
+      }
     });
   });
 });
