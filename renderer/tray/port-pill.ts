@@ -18,6 +18,7 @@ import type {
   GroupState,
 } from '../../src/ipc-contract.js';
 import type { DetectedPort } from '../../src/domain-types.js';
+import { resolveOpenUrl } from '../../src/ports/port-links.js';
 
 /** How long a running command with no port yet shows «buscando puerto…». */
 export const PORT_SEARCH_WINDOW_MS = 30_000;
@@ -27,6 +28,22 @@ interface PortEntry {
   groupId: string;
   commandId: string;
   port: DetectedPort;
+  /** Where opening it goes: the primary one carries the link's auto path. */
+  url: string;
+}
+
+function entriesOf(gs: GroupState, cs: CommandRuntimeState): PortEntry[] {
+  const link = gs.group?.commands.find((c) => c.id === cs.commandId)?.link;
+  const ports = cs.ports ?? [];
+  return ports.map((port) => {
+    const target = resolveOpenUrl(link, ports, port.port);
+    return {
+      groupId: gs.groupId,
+      commandId: cs.commandId,
+      port,
+      url: target.ok ? target.url : port.url,
+    };
+  });
 }
 
 export interface PortsUi {
@@ -101,7 +118,7 @@ function openButton(entry: PortEntry): HTMLButtonElement {
   btn.type = 'button';
   btn.className = 'port-pill-open';
   btn.append(`:${entry.port.port}`, icon('arrow-up-right'));
-  btn.setAttribute('aria-label', `Abrir ${entry.port.url}`);
+  btn.setAttribute('aria-label', `Abrir ${entry.url}`);
   btn.title = btn.getAttribute('aria-label') ?? '';
   btn.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -172,7 +189,7 @@ function buildMenu(
       item.type = 'button';
       item.className = 'port-menu-item';
       item.setAttribute('role', 'menuitem');
-      item.setAttribute('aria-label', `Abrir ${entry.port.url}`);
+      item.setAttribute('aria-label', `Abrir ${entry.url}`);
       item.append(...parts, icon('arrow-up-right'));
       item.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -197,7 +214,7 @@ function buildMenu(
   copy.append(icon('copy'), 'Copiar URL');
   copy.addEventListener('click', (event) => {
     event.stopPropagation();
-    void copyUrl(primary.port.url);
+    void copyUrl(primary.url);
   });
   menu.append(copy);
   return menu;
@@ -249,11 +266,7 @@ export function commandPorts(
   return buildPill(
     `command:${gs.groupId}:${cs.commandId}`,
     commandName,
-    ports.map((port) => ({
-      groupId: gs.groupId,
-      commandId: cs.commandId,
-      port,
-    })),
+    entriesOf(gs, cs),
   );
 }
 
@@ -265,11 +278,7 @@ export function groupPorts(gs: GroupState): PortsUi | null {
   const entries: PortEntry[] = gs.commands
     .filter((cs) => cs.status === 'running')
     .flatMap((cs) =>
-      (cs.ports ?? []).filter(isOpenable).map((port) => ({
-        groupId: gs.groupId,
-        commandId: cs.commandId,
-        port,
-      })),
+      entriesOf(gs, cs).filter((entry) => isOpenable(entry.port)),
     );
   const primary = entries.find((entry) => entry.port.kind === 'web');
   if (!primary) return null;

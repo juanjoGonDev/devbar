@@ -117,6 +117,24 @@ describe('src/ports/port-links.ts + port-registry + ports-ipc', () => {
       ).toEqual({ ok: true, url: 'http://app.localhost' });
     });
 
+    it('the primary port, opened by itself, still gets the auto path', () => {
+      expect(
+        resolveOpenUrl({ mode: 'auto', path: '/admin' }, ports, 5173),
+      ).toEqual({
+        ok: true,
+        url: 'http://localhost:5173/admin',
+      });
+    });
+
+    it('any other port opens bare, even with an auto path', () => {
+      expect(
+        resolveOpenUrl({ mode: 'auto', path: '/admin' }, ports, 5432),
+      ).toEqual({
+        ok: true,
+        url: 'http://localhost:5432/',
+      });
+    });
+
     it('a specific port opens that port', () => {
       expect(resolveOpenUrl(undefined, ports, 5432)).toEqual({
         ok: true,
