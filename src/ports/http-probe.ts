@@ -108,6 +108,15 @@ function localRedirect(from: string, location: string | null): string | null {
   }
 }
 
+/**
+ * What a service prints for the probe's own `GET /`: its 404 for the root,
+ * an access-log line for it. Port detection mutes these while it probes, so
+ * the probe never turns a group red.
+ */
+export function isProbeNoise(line: string): boolean {
+  return /\bGET \/(?=[\s"'?]|$)/.test(line) || /\b404\b/.test(line);
+}
+
 export function classifyResponse(response: ProbeResponse | null): PortKind {
   if (!response) return 'other';
   if (/html/i.test(response.contentType ?? '')) return 'web';

@@ -28,6 +28,7 @@ import {
   type ResolvedTarget,
 } from './process/state.js';
 import type { LogEntry, LogLevel } from './domain-types.js';
+import { createProbeNoise } from './ports/probe-noise.js';
 
 export { buildSpawnArgs, serviceSpawnOptions } from './process/spawn.js';
 export { deriveColor } from './process/tray-color.js';
@@ -44,6 +45,8 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
   // may already have run against a replaced state) could match a REUSED
   // pid and mislabel an unrelated process's natural exit as "stopped".
   private readonly killRequested = new Set<number>();
+  /** Port detection mutes its own probe's echo here (src/ports/probe-noise). */
+  readonly probeNoise = createProbeNoise();
   constructor(private readonly configStore: ConfigStoreLike) {
     super();
   }
@@ -279,6 +282,9 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
         if (kind === 'command') {
           if (errorRegex?.test(line)) detected = 'error';
           else if (warnRegex?.test(line)) detected = 'warn';
+          // No level at all (not «silenced»): recount must never revive it.
+          if (detected && this.probeNoise.isNoise(processId, stripAnsi(line)))
+            detected = null;
         }
         let silenced = false;
         if (detected) {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  isProbeNoise,
   classifyResponse,
   createPortClassifier,
   responseForError,
@@ -145,6 +146,25 @@ describe('src/ports/http-probe.ts', () => {
       expect(await classifier.kind('cmd:g:a', 1, 'http://localhost:1/')).toBe(
         'other',
       );
+    });
+  });
+
+  describe('isProbeNoise', () => {
+    it.each([
+      '[HTTP/ERR] 45225aab Handled error (NotFoundException) Cannot GET /',
+      'NotFoundException: Cannot GET /',
+      'GET / 404 1.204 ms - 139',
+      '127.0.0.1 - - "GET / HTTP/1.1" 404 9',
+    ])('reads %s as the answer to our GET /', (line) => {
+      expect(isProbeNoise(line)).toBe(true);
+    });
+
+    it.each([
+      'ERROR: connection refused',
+      'GET /api/users 500',
+      'TypeError: Cannot read properties of undefined',
+    ])("keeps %s as the service's own", (line) => {
+      expect(isProbeNoise(line)).toBe(false);
     });
   });
 

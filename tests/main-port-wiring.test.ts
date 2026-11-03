@@ -1,14 +1,20 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DetectedPort, LogEntry } from '../src/domain-types.js';
-import { createPortClassifier } from '../src/ports/http-probe.js';
+import { createPortClassifier, isProbeNoise } from '../src/ports/http-probe.js';
 import { attachPortDetection } from '../src/main/port-wiring.js';
 
 class FakeProcessManager extends EventEmitter {
   roots: Array<{ id: string; pid: number }> = [];
+  muted: Array<{ id: string; until: number; matches: unknown }> = [];
   runningCommandRoots(): Array<{ id: string; pid: number }> {
     return this.roots;
   }
+  probeNoise = {
+    mute: (id: string, until: number, matches: (line: string) => boolean) => {
+      this.muted.push({ id, until, matches });
+    },
+  };
 }
 
 const ID = 'cmd:g:api';
@@ -80,5 +86,19 @@ describe('src/main/port-wiring.ts', () => {
     const { scan } = setup();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(scan).not.toHaveBeenCalled();
+  });
+
+  it("mutes the service's answer to the probe while it runs and a moment after", async () => {
+    const { pm } = setup();
+    pm.roots = [{ id: ID, pid: 42 }];
+    pm.emit('change', { id: ID, status: 'running', startedAt: 1 });
+    const now = Date.now();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(pm.muted.length).toBeGreaterThan(0);
+    expect(
+      pm.muted.every((m) => m.id === ID && m.matches === isProbeNoise),
+    ).toBe(true);
+    expect(pm.muted.at(-1)?.until).toBeGreaterThanOrEqual(now + 1000 + 3000);
   });
 });
