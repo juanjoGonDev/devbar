@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommandRuntimeState, GroupState } from '../src/ipc-contract.js';
 import type { DetectedPort } from '../src/domain-types.js';
 import { iconText } from './helpers/icon-text.js';
+import { makeCommand } from './helpers/main-fakes.js';
 
 /**
  * `renderer/tray/port-pill.ts` turns the ports main detected for a running
@@ -173,6 +174,37 @@ describe('renderer/tray/port-pill.ts', () => {
     it('does not offer a ports menu', () => {
       const ui = commandUi(commandState({ ports: [port()] }));
       expect(ui?.pill.querySelector('.port-pill-more')).toBeNull();
+    });
+  });
+
+  describe('a command whose auto link opens a path', () => {
+    function withPath(): {
+      pill: HTMLElement;
+      menu: HTMLElement | null;
+    } | null {
+      const cs = commandState({
+        ports: [port(), port({ port: 5432, kind: 'other' })],
+      });
+      const gs = groupState([cs]);
+      gs.group.commands = [
+        makeCommand({ id: 'c1', link: { mode: 'auto', path: '/admin' } }),
+      ];
+      const ui = pill.commandPorts(gs, cs, 'Vite dev');
+      if (ui) document.body.append(ui.pill, ...(ui.menu ? [ui.menu] : []));
+      return ui;
+    }
+
+    it('names and copies the URL with that path', async () => {
+      const ui = withPath();
+      expect(
+        q(ui?.pill ?? document, '.port-pill-open').getAttribute('aria-label'),
+      ).toBe('Abrir http://localhost:3000/admin');
+      click(q(ui?.pill ?? document, '.port-pill-more'));
+      click(q(withPath()?.menu ?? document, '.port-menu-copy'));
+      expect(writeText).toHaveBeenCalledWith('http://localhost:3000/admin');
+      await vi.waitFor(() =>
+        expect(q(document, '#toast').textContent).toBe('URL copiada'),
+      );
     });
   });
 

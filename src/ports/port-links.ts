@@ -86,29 +86,35 @@ export type OpenTarget =
   { ok: true; url: string } | { ok: false; error: string };
 
 /**
- * The URL «abrir» goes to. A specific `port` opens that detected port; else
- * the link decides: `custom` its URL, `auto` the primary web port plus its
- * optional path, `none` nothing.
+ * The URL «abrir» goes to. A specific `port` opens that detected port (with
+ * the `auto` path when it is the primary one); else the link decides:
+ * `custom` its URL, `auto` the primary web port plus its optional path,
+ * `none` nothing.
  */
 export function resolveOpenUrl(
   link: CommandLink | undefined,
   ports: readonly DetectedPort[],
   port?: number,
 ): OpenTarget {
+  const resolved = normalizeCommandLink(link);
+  const primary = sortPorts(ports).find(
+    (candidate) => candidate.kind === 'web',
+  );
   if (port !== undefined) {
     const found = ports.find((candidate) => candidate.port === port);
-    return found
-      ? { ok: true, url: found.url }
-      : { ok: false, error: `El puerto ${port} no está abierto` };
+    if (!found)
+      return { ok: false, error: `El puerto ${port} no está abierto` };
+    // The tray opens the primary port by number: it is still «the link».
+    const isLink = resolved.mode === 'auto' && found.port === primary?.port;
+    return {
+      ok: true,
+      url: isLink ? withPath(found.url, resolved.path) : found.url,
+    };
   }
-  const resolved = normalizeCommandLink(link);
   if (resolved.mode === 'none')
     return { ok: false, error: 'Este comando no tiene enlace' };
   if (resolved.mode === 'custom' && resolved.url)
     return { ok: true, url: resolved.url };
-  const primary = sortPorts(ports).find(
-    (candidate) => candidate.kind === 'web',
-  );
   return primary
     ? { ok: true, url: withPath(primary.url, resolved.path) }
     : { ok: false, error: 'No se ha detectado ninguna página web' };
