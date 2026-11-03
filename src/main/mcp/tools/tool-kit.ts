@@ -1,6 +1,11 @@
 import type { z } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
-import type { Group, Workflow } from '../../../domain-types.js';
+import type {
+  Action,
+  Command,
+  Group,
+  Workflow,
+} from '../../../domain-types.js';
 import type {
   McpAuditResult,
   McpClient,
@@ -112,6 +117,22 @@ export function findGroup(ctx: ToolContext, ref: string): Group {
   if (!group)
     throw new ToolError(`No hay ningún grupo «${ref}» al que tengas acceso`);
   return group;
+}
+
+export function findCommand(group: Group, ref: string): Command {
+  const command = byRef(group.commands, ref);
+  if (!command)
+    throw new ToolError(
+      `El grupo «${group.name}» no tiene el comando «${ref}»`,
+    );
+  return command;
+}
+
+export function findAction(group: Group, ref: string): Action {
+  const action = byRef(group.actions, ref);
+  if (!action)
+    throw new ToolError(`El grupo «${group.name}» no tiene la acción «${ref}»`);
+  return action;
 }
 
 /** Whether every script a workflow runs belongs to a group the client sees. */
