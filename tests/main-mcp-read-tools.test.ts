@@ -253,6 +253,23 @@ describe('src/main/mcp/tools/read-tools.ts', () => {
       expect(lines(limited.data)).toEqual(['Error 404']);
     });
 
+    it('gives up on a regex that would freeze DevBar, and says so', async () => {
+      const h = await harness();
+      h.runtime.logLines.set(NORMAL, [entry(`${'a'.repeat(40)}!`, 1000)]);
+
+      const started = Date.now();
+      const result = await call(h, 'search_logs', {
+        query: '(a+)+$',
+        regex: true,
+      });
+
+      expect(result).toEqual({
+        isError: true,
+        data: 'La expresión regular tarda demasiado; simplifícala',
+      });
+      expect(Date.now() - started).toBeLessThan(5000);
+    });
+
     it('refuses a broken regex and a target without its group', async () => {
       const h = await harness();
 

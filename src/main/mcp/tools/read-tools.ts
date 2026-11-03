@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { testLines } from '../regex-worker.js';
 import {
   makeActionId,
   makeCommandId,
@@ -184,7 +185,7 @@ export const READ_TOOLS: readonly ToolDef[] = [
         .describe('Most recent matches to return (default 100).'),
     },
     annotations: READ_ONLY,
-    run: (args, ctx) => {
+    run: async (args, ctx) => {
       let matcher: RegExp;
       try {
         matcher = new RegExp(
@@ -223,18 +224,30 @@ export const READ_TOOLS: readonly ToolDef[] = [
         ];
       });
       const from = sinceMs(args.since);
-      const matches = sources
-        .flatMap((source) =>
-          ctx.runtime
-            .logs(source.processId)
-            .filter((entry) => levelMatches(entry, args.level))
-            .filter((entry) => from === null || entry.ts >= from)
-            .filter((entry) => matcher.test(entry.line))
-            .map((entry) => ({ source, entry })),
-        )
+      const candidates = sources.flatMap((source) =>
+        ctx.runtime
+          .logs(source.processId)
+          .filter((entry) => levelMatches(entry, args.level))
+          .filter((entry) => from === null || entry.ts >= from)
+          .map((entry) => ({ source, entry })),
+      );
+      // A literal cannot backtrack; the assistant's own regex runs off-thread.
+      const hits = args.regex
+        ? await testLines(
+            matcher.source,
+            matcher.flags,
+            candidates.map(({ entry }) => entry.line),
+          )
+        : candidates.map(({ entry }) => matcher.test(entry.line));
+      if (!hits)
+        throw new ToolError(
+          'La expresión regular tarda demasiado; simplifícala',
+        );
+      const matches = candidates
+        .filter((_, index) => hits[index])
         .sort((a, b) => a.entry.ts - b.entry.ts)
         .slice(-(args.limit ?? 100));
-      return Promise.resolve({
+      return {
         data: matches.map(({ source, entry }) => ({
           group: source.group.name,
           target: source.name,
@@ -246,7 +259,7 @@ export const READ_TOOLS: readonly ToolDef[] = [
           `«${args.query}»`,
         ),
         summary: `${matches.length} líneas`,
-      });
+      };
     },
   }),
   defineTool({
