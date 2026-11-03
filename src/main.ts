@@ -193,6 +193,7 @@ const chrome = {
   windowIcon: host.windowIcon,
   background: host.background,
   workArea: host.workArea,
+  focusApp: host.focusApp,
   attachConsole: logger.attachWindowConsole,
   onWindowsChanged: () =>
     applyDockVisibility(isMac ? app.dock : null, anyAppWindowOpen(registry)),
@@ -218,12 +219,9 @@ const appWindows = createAppWindows({
 });
 
 const notifications = createNotifications({
-  createWindow: host.createWindow,
+  ...chrome,
   createNotification: (options) => new Notification(options),
   notificationsSupported: () => Notification.isSupported(),
-  rendererFile: host.rendererFile,
-  preloadPath: host.preloadPath,
-  workArea: host.workArea,
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
   applyUpdate: () => void updater.applyUpdateAndReport(),

@@ -17,6 +17,7 @@ function harness(overrides: Partial<AppWindowsDeps> = {}) {
   const created: Record<string, unknown>[] = [];
   const consoles: string[] = [];
   const confirmClosed: string[] = [];
+  let appFocused = 0;
   let changes = 0;
   const deps: AppWindowsDeps = {
     registry,
@@ -40,6 +41,9 @@ function harness(overrides: Partial<AppWindowsDeps> = {}) {
     commandName: (groupId, commandId) =>
       groupId === 'g1' && commandId === 'c1' ? 'web' : null,
     onConfirmWindowClosed: (token) => confirmClosed.push(token),
+    focusApp: () => {
+      appFocused += 1;
+    },
     ...overrides,
   };
   return {
@@ -50,6 +54,7 @@ function harness(overrides: Partial<AppWindowsDeps> = {}) {
     consoles,
     confirmClosed,
     changed: () => changes,
+    appFocused: () => appFocused,
   };
 }
 
@@ -73,6 +78,57 @@ describe('src/main/app-windows.ts', () => {
       h.appWindows.ensureConfigWindow();
       expect(h.created[0]?.vibrancy).toBeUndefined();
       expect(h.created[0]?.backgroundColor).toBe('#f5f5f7');
+    });
+
+    it('restores a minimized window when it is opened again', () => {
+      const h = harness();
+      h.appWindows.ensureConfigWindow();
+      const win = h.windows[0];
+      if (win) win.minimized = true;
+
+      h.appWindows.ensureConfigWindow();
+
+      expect(win?.minimized).toBe(false);
+      expect(win?.focused).toBe(true);
+      expect(h.appFocused()).toBe(0);
+      expect(win?.attention).toEqual([]);
+    });
+
+    it('brings an urgent request over every other app, minimized or not', () => {
+      const h = harness();
+      h.appWindows.ensureConfigWindow();
+      const win = h.windows[0];
+      if (win) win.minimized = true;
+
+      h.appWindows.ensureConfigWindow({ goto: 'mcp', urgent: true });
+
+      expect(win?.minimized).toBe(false);
+      expect(h.appFocused()).toBe(1);
+      expect(win?.attention).toEqual(['top:on', 'move', 'top:off']);
+      expect(win?.focused).toBe(true);
+    });
+
+    it('also flashes the taskbar button where focus can be refused (Windows)', () => {
+      const h = harness({ isMac: false });
+      h.appWindows.ensureConfigWindow();
+
+      h.appWindows.ensureConfigWindow({ goto: 'mcp', urgent: true });
+
+      expect(h.windows[0]?.attention).toEqual([
+        'top:on',
+        'move',
+        'top:off',
+        'flash',
+      ]);
+    });
+
+    it('raises a window it had to open for an urgent request too', () => {
+      const h = harness();
+
+      h.appWindows.ensureConfigWindow({ goto: 'mcp', urgent: true });
+
+      expect(h.appFocused()).toBe(1);
+      expect(h.windows[0]?.attention).toEqual(['top:on', 'move', 'top:off']);
     });
 
     it('focuses the window that is already open and deep-links into it', () => {

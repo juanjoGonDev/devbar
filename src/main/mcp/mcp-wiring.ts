@@ -162,7 +162,9 @@ interface McpAppWiring extends McpRuntimeWiring {
   workflowRunner: McpRuntimeWiring['workflowRunner'] &
     ConfigPortWiring['workflowRunner'];
   syncRepoWatchers(): void;
-  appWindows: { ensureConfigWindow(options?: { goto?: string }): void };
+  appWindows: {
+    ensureConfigWindow(options?: { goto?: string; urgent?: boolean }): void;
+  };
 }
 
 /** The MCP control surface, plus the tap its config tools write through. */
@@ -200,7 +202,7 @@ export function mcpFor(app: McpAppWiring): McpApp {
         sendToRenderers(app.registry, channel, payload),
       sendSettings: settingsPushes(app.registry).sendSettings,
       showConfirmations: () =>
-        app.appWindows.ensureConfigWindow({ goto: 'mcp' }),
+        app.appWindows.ensureConfigWindow({ goto: 'mcp', urgent: true }),
     },
     {
       endpointFor: (core) =>
