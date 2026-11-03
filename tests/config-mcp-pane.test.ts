@@ -151,13 +151,9 @@ describe('renderer/config/mcp-pane.ts', () => {
       expect(visible(status())).toBe('Activo · 0 clientes');
     });
 
-    it('offers only the local transport, the network one is coming', async () => {
+    it('offers no transport choice: assistants connect locally only', async () => {
       win = await openMcp(mcpState());
-      const http = el('mcp-transport-http');
-      expect(http.querySelector('input')?.disabled).toBe(true);
-      expect(http.getAttribute('title') ?? http.dataset.tip).toBe(
-        'Próximamente',
-      );
+      expect(document.querySelector('[name="mcp-transport"]')).toBeNull();
     });
 
     it('says so when the first read fails', async () => {
