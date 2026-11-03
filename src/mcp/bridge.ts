@@ -1,3 +1,4 @@
+import net from 'node:net';
 import type { Duplex, Readable, Writable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { helloLine, mcpSocketPath, mcpTokenPath } from './endpoint.js';
@@ -40,6 +41,18 @@ export const RESTARTED_MESSAGE =
 
 /** The id the replayed `initialize` carries, so its answer is not relayed. */
 const REPLAY_ID_PREFIX = 'devbar-bridge-replay-';
+
+/** The real `connect`: opens the socket or pipe, rejecting when nothing listens. */
+export function connectSocket(path: string): Promise<Duplex> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(path);
+    socket.once('connect', () => {
+      socket.off('error', reject);
+      resolve(socket);
+    });
+    socket.once('error', reject);
+  });
+}
 
 /** `--home <dir>`, the app's MCP folder. */
 export function homeArgument(argv: readonly string[]): string | null {

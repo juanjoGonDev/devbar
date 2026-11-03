@@ -1,6 +1,5 @@
 import fs from 'node:fs';
-import net from 'node:net';
-import { runBridge } from './bridge.js';
+import { connectSocket, runBridge } from './bridge.js';
 
 /**
  * Entry point of the stdio bridge, run by an assistant as
@@ -15,14 +14,6 @@ void runBridge({
   stdout: process.stdout,
   stderr: process.stderr,
   readFile: (file) => fs.readFileSync(file, 'utf8'),
-  connect: (path) =>
-    new Promise((resolve, reject) => {
-      const socket = net.connect(path);
-      socket.once('connect', () => {
-        socket.off('error', reject);
-        resolve(socket);
-      });
-      socket.once('error', reject);
-    }),
+  connect: connectSocket,
   exit: (code) => process.exit(code),
 });

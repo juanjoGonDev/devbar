@@ -1,6 +1,11 @@
+import fs from 'node:fs';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
+  connectSocket,
   homeArgument,
   RESTARTED_MESSAGE,
   runBridge,
@@ -265,5 +270,25 @@ describe('src/mcp/bridge.ts', () => {
       },
     ]);
     expect(devbar.app.got()).toContain(request(2));
+  });
+
+  it('connects to a real socket, and rejects when nothing listens there', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-mcp-'));
+    const socketPath = path.join(dir, 'devbar.sock');
+    const server = net.createServer((socket) => socket.end('hi\n'));
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const socket = await connectSocket(socketPath);
+      const greeting = collect(socket);
+      await new Promise((resolve) => socket.once('end', resolve));
+      expect(greeting()).toBe('hi\n');
+
+      await expect(
+        connectSocket(path.join(dir, 'nobody.sock')),
+      ).rejects.toThrow();
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
