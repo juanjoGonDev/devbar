@@ -26,6 +26,7 @@ import './logs/selection-ui.js';
 import './logs/row-actions.js';
 import './logs/footer.js';
 import './logs/menu.js';
+import './logs/find-toggle.js';
 import { invalidateActivity } from './logs/activity.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 

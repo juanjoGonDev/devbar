@@ -109,10 +109,30 @@ function currentPatterns(): Record<SilenceLevel, string[]> | null {
 /** Every rule of the command on screen, both levels; nothing without one. */
 function renderToggle(): void {
   const patterns = currentPatterns();
-  setText(
-    silenceToggleCountEl,
-    patterns ? String(patterns.warn.length + patterns.error.length) : '',
+  const count = patterns ? patterns.warn.length + patterns.error.length : 0;
+  // The badge is drawn only while something is silenced; the count goes in
+  // the button's name too, since the badge itself is hidden from readers.
+  setText(silenceToggleCountEl, count ? String(count) : '');
+  silenceToggleBtn.setAttribute(
+    'aria-label',
+    count ? `Silenciados: ${count}` : 'Silenciados',
   );
+}
+
+/**
+ * Line the popover's right edge up with the toggle's, so it opens under the
+ * button that opened it. A toggle that is not drawn (a narrow toolbar folds
+ * it into the «⋯» menu) leaves the stylesheet's place.
+ */
+function anchorToToggle(): void {
+  const container = popoverEl.parentElement;
+  const button = silenceToggleBtn.getBoundingClientRect();
+  if (!container || button.width === 0) {
+    popoverEl.style.right = '';
+    return;
+  }
+  const edge = container.getBoundingClientRect().right - button.right;
+  popoverEl.style.right = `${Math.max(8, Math.round(edge))}px`;
 }
 
 // ─────────────────────────── Preview ───────────────────────────
@@ -344,6 +364,7 @@ export function setSilencePopover(open: boolean): void {
   popoverEl.hidden = !open;
   silenceToggleBtn.setAttribute('aria-expanded', String(open));
   if (open) {
+    anchorToToggle();
     renderSilencePopover();
     draftInputEl.focus();
     return;

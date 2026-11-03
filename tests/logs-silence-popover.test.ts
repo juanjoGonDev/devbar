@@ -254,6 +254,39 @@ describe('renderer/logs/silence-popover.ts', () => {
       popover.renderSilencePopover();
       expect(elements.silenceToggleCountEl.textContent).toBe('');
     });
+
+    it('drops the badge when nothing is silenced', () => {
+      ownCommand({ warn: [], error: [] });
+      popover.renderSilencePopover();
+      expect(elements.silenceToggleCountEl.textContent).toBe('');
+      expect(elements.silenceToggleBtn.getAttribute('aria-label')).toBe(
+        'Silenciados',
+      );
+    });
+
+    it('says the count in its name, since the badge is only drawn', () => {
+      ownCommand({ warn: ['a'], error: ['b'] });
+      popover.renderSilencePopover();
+      expect(elements.silenceToggleBtn.getAttribute('aria-label')).toBe(
+        'Silenciados: 2',
+      );
+    });
+
+    it('opens the popover lined up under the toggle', () => {
+      const container = elements.popoverEl.parentElement;
+      if (!container) throw new Error('no container');
+      container.getBoundingClientRect = () => new DOMRect(0, 0, 900, 400);
+      elements.silenceToggleBtn.getBoundingClientRect = () =>
+        new DOMRect(700, 10, 30, 30);
+      elements.silenceToggleBtn.click();
+      expect(elements.popoverEl.style.right).toBe('170px');
+    });
+
+    it('keeps the default place when the toggle is not drawn', () => {
+      elements.popoverEl.style.right = '170px';
+      elements.silenceToggleBtn.click();
+      expect(elements.popoverEl.style.right).toBe('');
+    });
   });
 
   describe('applyTargetSnapshot', () => {

@@ -14,6 +14,8 @@ export function paintLive(): void {
   const label = liveLabel(view.live);
   setText(liveTextEl, label.text);
   liveBtn.title = label.title;
+  // A narrow toolbar draws only the dot, so the name has to carry the text.
+  liveBtn.setAttribute('aria-label', label.text);
   liveBtn.setAttribute('aria-pressed', String(view.live.following));
   liveBtn.classList.toggle('paused', !view.live.following);
 }

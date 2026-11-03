@@ -673,12 +673,6 @@ header.toolbar .run-btn.on .icon {
   background: #ff9f0a;
   box-shadow: none;
 }
-header.toolbar .silence-toggle {
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 9px;
-  flex-shrink: 0;
-}
 
 /* ── «⋯» menu (the remote-device menu's markup, dark like the window) ─ */
 .tb-more {
@@ -755,6 +749,77 @@ header.toolbar .silence-toggle {
   font-family: var(--font-mono);
   font-size: 12px;
 }
+
+/* ================================================================
+   Logs: header — identity on the left, icon-only actions on the right.
+   Everything the lean toolbar changes lives in this block; the search box
+   and its level chips are not part of it.
+   ================================================================ */
+header.toolbar {
+  container: logs-toolbar / inline-size;
+}
+/* The subject gives way before the actions do: long names ellipsize. */
+.tb-subject {
+  flex-shrink: 1;
+  min-width: 0;
+}
+.crumbs,
+.crumb-group,
+.crumb-name {
+  min-width: 0;
+  flex-shrink: 1;
+}
+header.toolbar .port-open {
+  height: 22px;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: 11px;
+  background: rgba(10, 132, 255, 0.16);
+}
+.tb-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  background: #2f2f33;
+}
+header.toolbar #find-toggle[aria-pressed='true'],
+header.toolbar .silence-toggle[aria-expanded='true'] {
+  background: rgba(10, 132, 255, 0.18);
+  color: #64d2ff;
+}
+/* How many rules: a small badge on the bell, gone while there are none. */
+header.toolbar .silence-toggle {
+  position: relative;
+}
+.silence-toggle-count {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #0a84ff;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.silence-toggle-count:empty {
+  display: none;
+}
+header.toolbar .live-btn {
+  height: 28px;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+/* ======================== end of Logs: header ======================== */
 
 /* ── Activity strip: lines per slice of time, under the toolbar ── */
 .activity {
@@ -1558,38 +1623,9 @@ footer {
 .sil-regex:focus-visible,
 .sil-pill:focus-visible,
 .sil-submit:focus-visible,
-.rule .x:focus-visible,
-.silence-toggle:focus-visible {
+.rule .x:focus-visible {
   outline: 2px solid var(--sil-accent);
   outline-offset: 1px;
-}
-
-/* The toolbar control: the bell and how many rules; solid while open. */
-.silence-toggle {
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--sil-accent-soft);
-  color: var(--sil-accent-text);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
-.silence-toggle:hover {
-  background: rgba(10, 132, 255, 0.28);
-}
-.silence-toggle[aria-expanded='true'] {
-  background: var(--sil-accent);
-  color: #fff;
-}
-.silence-toggle-count:empty {
-  display: none;
 }
 
 /* Rows a previewed rule would swallow: tinted and dimmed, with the runs the

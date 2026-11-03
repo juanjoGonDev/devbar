@@ -40,6 +40,10 @@ export const levelErrorCountEl = byId<HTMLElement>(
   'level-error-count',
   HTMLElement,
 );
+export const findToggleBtn = byId<HTMLButtonElement>(
+  'find-toggle',
+  HTMLButtonElement,
+);
 export const liveBtn = byId<HTMLButtonElement>('live', HTMLButtonElement);
 export const liveTextEl = byId<HTMLElement>('live-text', HTMLElement);
 export const moreBtn = byId<HTMLButtonElement>('more', HTMLButtonElement);

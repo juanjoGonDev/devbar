@@ -615,6 +615,10 @@ describe('renderer/logs/pane.ts', () => {
       expect(drawnText()).toEqual(['line 0']);
       expect(status.pendingQueue).toHaveLength(1);
       expect(elements.liveTextEl.textContent).toBe('En pausa · 1 nuevas');
+      // A narrow toolbar draws only the dot, so the name carries the text.
+      expect(elements.liveBtn.getAttribute('aria-label')).toBe(
+        'En pausa · 1 nuevas',
+      );
     });
 
     it('pressing it again flushes everything that was held, in order', async () => {

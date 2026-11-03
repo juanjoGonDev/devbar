@@ -60,26 +60,6 @@
               <span id="run-pill-text"></span>
             </span>
             <span id="port-pill" class="port-pill" hidden></span>
-            <button
-              id="restart"
-              class="icon-btn tb-ico"
-              type="button"
-              title="Reiniciar"
-              aria-label="Reiniciar"
-              hidden
-            >
-              <span class="icon" data-icon="rotate-cw"></span>
-            </button>
-            <button
-              id="run-toggle"
-              class="icon-btn tb-ico run-btn"
-              type="button"
-              title="Iniciar"
-              aria-label="Iniciar"
-              hidden
-            >
-              <span class="icon" data-icon="play"></span>
-            </button>
           </div>
           <span class="tb-grow"></span>
           <!--
@@ -127,13 +107,46 @@
               </button>
             </span>
           </div>
-          <button id="live" class="live-btn" type="button" aria-pressed="true">
-            <span class="live-dot"></span>
-            <span id="live-text">En directo</span>
+          <!--
+            Right: icon-only actions, each named by its tooltip. A narrow
+            window folds Reiniciar, Parar and Silenciados into the «⋯» menu
+            (see «Logs: header» in logs.css and menu.ts).
+          -->
+          <button
+            id="restart"
+            class="icon-btn tb-ico tb-wide"
+            type="button"
+            title="Reiniciar"
+            aria-label="Reiniciar"
+            hidden
+          >
+            <span class="icon" data-icon="rotate-cw"></span>
+          </button>
+          <button
+            id="run-toggle"
+            class="icon-btn tb-ico run-btn tb-wide"
+            type="button"
+            title="Iniciar"
+            aria-label="Iniciar"
+            hidden
+          >
+            <span class="icon" data-icon="play"></span>
+          </button>
+          <span class="tb-sep tb-wide" aria-hidden="true"></span>
+          <button
+            id="find-toggle"
+            class="icon-btn tb-ico"
+            type="button"
+            title="Buscar (Ctrl+F)"
+            aria-label="Buscar (Ctrl+F)"
+            aria-keyshortcuts="Control+F"
+            aria-pressed="false"
+          >
+            <span class="icon" data-icon="search"></span>
           </button>
           <button
             id="toggle-silenced"
-            class="silence-toggle"
+            class="icon-btn tb-ico silence-toggle tb-wide"
             type="button"
             title="Silenciados"
             aria-label="Silenciados"
@@ -142,7 +155,21 @@
             aria-expanded="false"
           >
             <span class="icon" data-icon="bell-off"></span>
-            <span id="silence-toggle-count" class="silence-toggle-count"></span>
+            <span
+              id="silence-toggle-count"
+              class="silence-toggle-count"
+              aria-hidden="true"
+            ></span>
+          </button>
+          <button
+            id="live"
+            class="live-btn"
+            type="button"
+            aria-pressed="true"
+            aria-label="En directo"
+          >
+            <span class="live-dot"></span>
+            <span id="live-text">En directo</span>
           </button>
           <span class="tb-more">
             <button
