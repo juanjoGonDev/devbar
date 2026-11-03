@@ -269,6 +269,21 @@ describe('renderer/config/groups-list.ts', () => {
       expect(navNames()).toEqual(['theirs']);
     });
 
+    it('keeps the rows under the pointer when a push changes no settings', async () => {
+      win = await openConfigWindow();
+      await win.settle('listGroups', [group('api'), group('web')]);
+      const card = cardFor('group-api');
+      const pane = document.querySelector('#group-detail')?.firstElementChild;
+      // Running processes push state many times a second. Rebuilding the rows
+      // on each one swaps the hovered element and macOS drops the hand cursor.
+      await win.push('onUpdate');
+      await win.settle('listGroups', [group('api'), group('web')]);
+      expect(cardFor('group-api')).toBe(card);
+      expect(document.querySelector('#group-detail')?.firstElementChild).toBe(
+        pane,
+      );
+    });
+
     it('does nothing more than repaint the nav with no group open', async () => {
       win = await openConfigWindow();
       await win.settle('listGroups', []);

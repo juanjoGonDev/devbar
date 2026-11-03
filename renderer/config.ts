@@ -298,7 +298,9 @@ window.api.onUpdate(async (states) => {
     // will not re-render: the pill reports processes, not the draft.
     groupDetail.refreshRuntime();
   }
-  await loadGroups(); // refreshes allGroups + nav via renderGroupsList
+  // Repaints the nav only when the stored groups changed; a push that only
+  // moved processes along leaves both the nav and the pane alone.
+  if (!(await groupsList.refresh())) return;
   const selectedGroupId = store.getSelectedId();
   if (!selectedGroupId) return;
   if (store.isDirty()) {

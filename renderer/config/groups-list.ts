@@ -20,6 +20,11 @@ export interface GroupsListDeps {
 export interface GroupsList {
   /** Re-reads every group from main and repaints the nav. */
   load(): Promise<void>;
+  /**
+   * The read a live push triggers: repaints only when the stored groups
+   * changed, and answers whether they did.
+   */
+  refresh(): Promise<boolean>;
   render(): void;
 }
 
@@ -36,18 +41,41 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
    */
   const groupListReads = latestWins();
 
-  async function loadGroups(): Promise<void> {
+  /** The groups the nav was last built from, to tell a real change apart. */
+  let renderedSnapshot: string | null = null;
+
+  async function readGroups(): Promise<Group[] | null> {
     // Issuing this read retires every older one still in flight.
     groupListReads.invalidate();
     const current = groupListReads.claim();
     const groups = await window.api.listGroups();
-    if (!current()) return; // a newer read already answered
+    return current() ? groups : null; // null: a newer read already answered
+  }
+
+  async function loadGroups(): Promise<void> {
+    const groups = await readGroups();
+    if (!groups) return;
     store.setGroups(groups);
     renderGroupsList();
   }
 
+  /*
+   * Running processes push state many times a second, and each push re-reads
+   * the groups. Rebuilding the nav and the pane for an unchanged read swaps
+   * the element under the pointer, and macOS then drops the hand cursor.
+   */
+  async function refreshGroups(): Promise<boolean> {
+    const groups = await readGroups();
+    if (!groups) return false;
+    const changed = JSON.stringify(groups) !== renderedSnapshot;
+    store.setGroups(groups);
+    if (changed) renderGroupsList();
+    return changed;
+  }
+
   function renderGroupsList(): void {
     const groups = store.getGroups();
+    renderedSnapshot = JSON.stringify(groups);
     deps.listEl.innerHTML = '';
     if (!groups.length) {
       const empty = document.createElement('div');
@@ -174,5 +202,5 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
     return eye;
   }
 
-  return { load: loadGroups, render: renderGroupsList };
+  return { load: loadGroups, refresh: refreshGroups, render: renderGroupsList };
 }
