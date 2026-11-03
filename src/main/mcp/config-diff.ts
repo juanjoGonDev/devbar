@@ -20,7 +20,7 @@ import type { McpDiffLine, McpRisk } from '../../ipc-contract/mcp-api.js';
  * `destructive`; only names, icons and colours are `cosmetic`.
  */
 
-interface Field<T> {
+export interface Field<T> {
   label: string;
   render(entity: T): string | string[];
   /** It decides what runs (or when): a change to it executes. */
@@ -39,7 +39,7 @@ const INVISIBLE =
  * Spelled out (`⟨U+202E⟩`) rather than dropped: a value that carries one is
  * odd on purpose, and the user should see that before approving it.
  */
-function visible(text: string): string {
+export function visible(text: string): string {
   return text.replace(
     INVISIBLE,
     (char) =>

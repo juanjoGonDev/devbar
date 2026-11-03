@@ -2,7 +2,9 @@ import { z } from 'zod';
 import type { Group, Workflow } from '../../../domain-types.js';
 import { PIPELINE_TRIGGER } from '../../../pipeline-graph.js';
 import { validateWorkflow } from '../../../workflows.js';
-import { diffEntity, workflowFields, type EntityDiff } from '../config-diff.js';
+import { validateImportedConfig } from '../../../config-io.js';
+import { diffEntity, workflowFields } from '../config-diff.js';
+import { importDiff } from '../import-diff.js';
 import { applyChange, given, handlerError } from './config-apply.js';
 import {
   reason,
@@ -128,28 +130,6 @@ function saveWorkflow(ctx: ToolContext, workflow: Workflow) {
 }
 
 /** What a whole-config import would replace, in diff lines. */
-function importDiff(current: Group[], incoming: unknown): EntityDiff {
-  const groups = (incoming as { groups?: unknown }).groups;
-  const names = Array.isArray(groups)
-    ? groups.map((g) => String((g as { name?: unknown }).name ?? '?'))
-    : [];
-  return {
-    diff: [
-      ...current.map((g) => ({
-        kind: 'del' as const,
-        field: 'grupo',
-        text: g.name,
-      })),
-      ...names.map((name) => ({
-        kind: 'add' as const,
-        field: 'grupo',
-        text: name,
-      })),
-    ],
-    changed: ['configuración completa'],
-    risk: 'destructive',
-  };
-}
 
 export const WORKFLOW_CONFIG_TOOLS: readonly ToolDef[] = [
   defineTool({
@@ -286,11 +266,19 @@ export const WORKFLOW_CONFIG_TOOLS: readonly ToolDef[] = [
         throw new ToolError(
           'Solo un asistente con acceso a todos los grupos puede importar una configuración',
         );
+      // Validated here, so the confirmation can show what it would run.
+      const parsed = validateImportedConfig(args.config);
+      if (!parsed.ok)
+        throw new ToolError(`Configuración no válida: ${parsed.error}`);
       return applyChange(ctx, {
         title: `${ctx.client.name} quiere reemplazar toda la configuración`,
         subtitle: 'Importar configuración',
         target: 'Configuración',
-        change: importDiff(ctx.runtime.listGroups(), args.config),
+        change: importDiff(
+          ctx.runtime.listGroups(),
+          ctx.runtime.workflowEntries().map((entry) => entry.workflow),
+          parsed.payload,
+        ),
         reason: args.reason,
         slice: { kind: 'all' },
         write: async () => {
