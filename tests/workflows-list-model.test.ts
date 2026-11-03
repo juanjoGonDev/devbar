@@ -7,7 +7,6 @@ import {
   formatPreciseDuration,
   lastRunText,
   listWorkflows,
-  nextRunText,
   paginate,
   runningCount,
   scheduleSummary,
@@ -253,11 +252,6 @@ describe('renderer/workflows/list-model.ts', () => {
       expect(formatAgo(NOW - 5 * 60_000, NOW)).toBe('hace 5 min');
       expect(formatAgo(NOW - 3 * 3_600_000, NOW)).toBe('hace 3 h');
       expect(formatAgo(at(1, 10, 0), NOW)).toBe('jue 10:00');
-    });
-
-    it('says when a schedule fires next', () => {
-      expect(nextRunText(at(5, 23, 30), NOW)).toBe('hoy a las 23:30');
-      expect(nextRunText(at(6, 8, 0), NOW)).toBe('mañana a las 08:00');
     });
   });
 

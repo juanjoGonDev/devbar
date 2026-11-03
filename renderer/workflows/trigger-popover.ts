@@ -1,9 +1,10 @@
 import { icon } from '../icon.js';
-import { nextRunText } from './list-model.js';
+import {
+  createScheduleEditor,
+  type ScheduleEditor,
+} from '../schedule/schedule-editor.js';
 import { MANUAL_TRIGGER, TRIGGER_META } from './trigger-meta.js';
-import { nextWorkflowRun } from '../../src/scheduler.js';
 import type {
-  ScheduleInterval,
   ScheduleRule,
   Workflow,
   WorkflowSchedule,
@@ -14,8 +15,8 @@ import type { WorkflowEntry } from '../../src/ipc-contract.js';
 /**
  * The trigger node's popover (the TriggerConfig mock): a segmented choice of
  * Al arrancar | Programado | Manual, then what that kind needs — the
- * «Ya lo usa …» swap for a startup slot another workflow holds, weekday chips
- * and a time or an «every N» interval for a schedule, whether a manual one
+ * «Ya lo usa …» swap for a startup slot another workflow holds, the shared
+ * schedule editor (renderer/schedule/) for a schedule, whether a manual one
  * asks first. Where the workflow shows is the list's eye, not this.
  * Every change is saved at once through `save`; main's answer repaints it.
  */
@@ -46,23 +47,9 @@ export interface TriggerPopover {
   refresh(): void;
 }
 
-const DAYS: ReadonlyArray<[string, number]> = [
-  ['L', 1],
-  ['M', 2],
-  ['X', 3],
-  ['J', 4],
-  ['V', 5],
-  ['S', 6],
-  ['D', 0],
-];
-
 const DEFAULT_RULE: ScheduleRule = { time: '09:00', days: [1, 2, 3, 4, 5] };
-const DEFAULT_INTERVAL: ScheduleInterval = {
-  every: 1,
-  unit: 'hours',
-  window: null,
-  days: [],
-};
+/** How many of its own saves the editor recognises when main echoes them. */
+const ECHOES_KEPT = 20;
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -171,111 +158,34 @@ export function createTriggerPopover(deps: TriggerPopoverDeps): TriggerPopover {
     return [warn];
   }
 
-  function scheduleBody(schedule: WorkflowSchedule): HTMLElement[] {
-    const save = (next: WorkflowSchedule): void =>
-      saveTrigger({ kind: 'schedule', schedule: next });
-    const mode =
-      schedule.rules.length === 0 && schedule.interval ? 'every' : 'at';
-    const parts: HTMLElement[] = [
-      segmented(
-        'is-sub',
-        [
-          { value: 'at', label: 'A una hora' },
-          { value: 'every', label: 'Cada…' },
-        ],
-        mode,
-        (value) => {
-          if (value === mode) return;
-          save(
-            value === 'every'
-              ? { rules: [], interval: schedule.interval ?? DEFAULT_INTERVAL }
-              : { rules: [DEFAULT_RULE], interval: null },
-          );
+  /**
+   * The schedule editor lives as long as the popover shows a schedule, so a
+   * repaint after each save keeps its focus, its open picker and the mode it
+   * is not showing. Main's answer to one of its own saves is not loaded back
+   * (a later keystroke may already be ahead of it); anything else is.
+   */
+  let editor: ScheduleEditor | null = null;
+  let echoes: string[] = [];
+
+  function scheduleEditor(schedule: WorkflowSchedule): ScheduleEditor {
+    const incoming = JSON.stringify(schedule);
+    if (!editor) {
+      echoes = [];
+      editor = createScheduleEditor({
+        value: schedule,
+        defaultRule: DEFAULT_RULE,
+        now: deps.now,
+        onChange: (next) => {
+          echoes = [...echoes, JSON.stringify(next)].slice(-ECHOES_KEPT);
+          saveTrigger({ kind: 'schedule', schedule: next });
         },
-      ),
-    ];
-    if (mode === 'at') {
-      const rule = schedule.rules[0] ?? DEFAULT_RULE;
-      const rest = schedule.rules.slice(1);
-      const setRule = (next: ScheduleRule): void =>
-        save({ rules: [next, ...rest], interval: schedule.interval });
-      const chips = el('div', 'wf-days');
-      for (const [letter, day] of DAYS) {
-        const on = rule.days.includes(day);
-        const chip = el('button', 'wf-day', letter);
-        chip.type = 'button';
-        chip.setAttribute('aria-pressed', String(on));
-        chip.addEventListener('click', () =>
-          setRule({
-            ...rule,
-            days: on
-              ? rule.days.filter((d) => d !== day)
-              : [...rule.days, day].sort((a, b) => a - b),
-          }),
-        );
-        chips.append(chip);
-      }
-      const row = el('label', 'wf-pop-row');
-      const time = el('input', 'wf-time');
-      time.type = 'time';
-      time.value = rule.time;
-      time.addEventListener('change', () => {
-        if (time.value) setRule({ ...rule, time: time.value });
       });
-      row.append(el('span', 'wf-pop-grow', 'Hora'), time);
-      parts.push(chips, row);
-    } else {
-      const interval = schedule.interval ?? DEFAULT_INTERVAL;
-      const row = el('div', 'wf-pop-row');
-      const every = el('input', 'wf-every');
-      every.type = 'number';
-      every.min = '1';
-      every.value = String(interval.every);
-      every.setAttribute('aria-label', 'Cada');
-      const unit = el('select', 'wf-unit');
-      unit.setAttribute('aria-label', 'Unidad');
-      for (const [value, label] of [
-        ['minutes', 'minutos'],
-        ['hours', 'horas'],
-      ] as const) {
-        const option = el('option', '', label);
-        option.value = value;
-        option.selected = interval.unit === value;
-        unit.append(option);
-      }
-      const commit = (): void => {
-        const n = Math.round(Number(every.value));
-        if (!Number.isFinite(n) || n < 1) return;
-        save({
-          rules: schedule.rules,
-          interval: {
-            ...interval,
-            every: n,
-            unit: unit.value === 'minutes' ? 'minutes' : 'hours',
-          },
-        });
-      };
-      every.addEventListener('change', commit);
-      unit.addEventListener('change', commit);
-      row.append(el('span', 'wf-pop-grow', 'Cada'), every, unit);
-      parts.push(row);
-    }
-    const lastRun = deps
-      .entries()
-      .find((e) => e.workflow.id === deps.workflow()?.id)?.lastRun;
-    const next = nextWorkflowRun(
-      schedule,
-      lastRun ? new Date(lastRun.startedAt).toISOString() : null,
-      new Date(deps.now()),
-    );
-    if (next) {
-      const row = el('div', 'wf-pop-next');
-      const text = el('span', '', 'Próxima: ');
-      text.append(el('strong', '', nextRunText(next.getTime(), deps.now())));
-      row.append(icon('calendar'), text);
-      parts.push(row);
-    }
-    return parts;
+    } else if (
+      !echoes.includes(incoming) &&
+      JSON.stringify(editor.value()) !== incoming
+    )
+      editor.set(schedule);
+    return editor;
   }
 
   function manualBody(
@@ -288,11 +198,16 @@ export function createTriggerPopover(deps: TriggerPopoverDeps): TriggerPopover {
     ];
   }
 
+  /** Rebuilt on every repaint, unlike `body`, which may hold the editor. */
+  const head = el('div', 'wf-pop-part');
+  const body = el('div', 'wf-pop-part');
+  root.append(head, body);
+
   function refresh(): void {
     if (root.hidden) return;
     const trigger = current();
     const shown = picked ?? trigger.kind;
-    const body: HTMLElement[] = [
+    head.replaceChildren(
       el('div', 'wf-pop-label', 'Desencadenante'),
       segmented(
         '',
@@ -303,12 +218,18 @@ export function createTriggerPopover(deps: TriggerPopoverDeps): TriggerPopover {
         shown,
         (value) => pick(value as Kind),
       ),
-    ];
-    if (shown === 'startup') body.push(...startupBody());
-    else if (trigger.kind === 'schedule')
-      body.push(...scheduleBody(trigger.schedule));
-    else if (trigger.kind === 'manual') body.push(...manualBody(trigger));
-    root.replaceChildren(...body);
+    );
+    const scheduled = shown === 'schedule' && trigger.kind === 'schedule';
+    root.classList.toggle('is-schedule', scheduled);
+    if (!scheduled) editor = null;
+    if (scheduled) {
+      const { element } = scheduleEditor(trigger.schedule);
+      if (body.firstChild !== element || body.childNodes.length !== 1)
+        body.replaceChildren(element);
+    } else if (shown === 'startup') body.replaceChildren(...startupBody());
+    else if (trigger.kind === 'manual')
+      body.replaceChildren(...manualBody(trigger));
+    else body.replaceChildren();
   }
 
   function close(): void {
@@ -338,6 +259,8 @@ export function createTriggerPopover(deps: TriggerPopoverDeps): TriggerPopover {
       root.hidden = false;
       deps.anchor()?.setAttribute('aria-expanded', 'true');
       picked = null;
+      // A fresh editor: nothing kept from the last time it was open.
+      editor = null;
       refresh();
       root.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
     },

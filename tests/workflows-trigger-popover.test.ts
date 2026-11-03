@@ -117,10 +117,18 @@ describe('renderer/workflows/trigger-popover.ts', () => {
   });
 
   describe('schedule', () => {
+    function runs(): string[] {
+      return [...popover().querySelectorAll('.sched-run')].map(textOf);
+    }
+
     it('edits the weekdays and the time, and says when it fires next', async () => {
       const { win } = await openOn(NIGHTLY);
-      expect(option('A una hora').getAttribute('aria-checked')).toBe('true');
-      expect(textOf(query('.wf-pop-next'))).toBe('Próxima: hoy a las 23:30');
+      expect(option('A una hora').getAttribute('aria-selected')).toBe('true');
+      expect(popover().querySelector('input[type="time"]')).toBeNull();
+      expect(textOf(query('.sched-sentence'))).toBe(
+        'Se ejecutará a las 23:30 de lunes a viernes.',
+      );
+      expect(runs()).toEqual(['hoy 23:30', 'mañana 23:30', 'miércoles 23:30']);
       click(option('S'));
       expect(await lastTrigger(win)).toEqual({
         kind: 'schedule',
@@ -129,16 +137,46 @@ describe('renderer/workflows/trigger-popover.ts', () => {
           interval: null,
         },
       });
-      const time = query<HTMLInputElement>('.wf-time');
-      time.value = '07:15';
-      time.dispatchEvent(new Event('change'));
+      const time = query('.wf-pop .sched-time');
+      for (const digit of ['0', '7', '1']) {
+        press(time, digit);
+        await lastSaved(win);
+      }
+      press(time, '5');
       const trigger = await lastTrigger(win);
       expect(
         trigger.kind === 'schedule' && trigger.schedule.rules[0]?.time,
       ).toBe('07:15');
     });
 
-    it('switches to an interval and edits it', async () => {
+    it('keeps the editor, and the focus in it, across the save round trip', async () => {
+      const { win } = await openOn(NIGHTLY);
+      const time = query<HTMLButtonElement>('.wf-pop .sched-time');
+      time.focus();
+      press(time, '0');
+      await lastSaved(win);
+      expect(query('.wf-pop .sched-time')).toBe(time);
+      expect(document.activeElement).toBe(time);
+      press(time, '6');
+      const trigger = await lastTrigger(win);
+      expect(
+        trigger.kind === 'schedule' && trigger.schedule.rules[0]?.time,
+      ).toBe('06:30');
+    });
+
+    it('applies a preset to the rule', async () => {
+      const { win } = await openOn(NIGHTLY);
+      click(option('Fin de semana'));
+      expect(await lastTrigger(win)).toEqual({
+        kind: 'schedule',
+        schedule: {
+          rules: [{ time: '23:30', days: [0, 6] }],
+          interval: null,
+        },
+      });
+    });
+
+    it('switches to an interval and back without losing the rules', async () => {
       const { win } = await openOn(NIGHTLY);
       click(option('Cada…'));
       expect(await lastTrigger(win)).toEqual({
@@ -148,6 +186,8 @@ describe('renderer/workflows/trigger-popover.ts', () => {
           interval: { every: 1, unit: 'hours', window: null, days: [] },
         },
       });
+      click(option('A una hora'));
+      expect(await lastTrigger(win)).toEqual(NIGHTLY);
     });
 
     it('edits the interval of an every-N schedule', async () => {
@@ -158,11 +198,14 @@ describe('renderer/workflows/trigger-popover.ts', () => {
           interval: { every: 2, unit: 'hours', window: null, days: [] },
         },
       });
-      const every = query<HTMLInputElement>('.wf-every');
+      const every = query<HTMLInputElement>('.sched-every-n');
       expect(every.value).toBe('2');
       every.value = '15';
-      query<HTMLSelectElement>('.wf-unit').value = 'minutes';
-      every.dispatchEvent(new Event('change'));
+      every.dispatchEvent(new Event('input', { bubbles: true }));
+      await lastSaved(win);
+      const unit = query<HTMLSelectElement>('.sched-unit');
+      unit.value = 'minutes';
+      unit.dispatchEvent(new Event('change', { bubbles: true }));
       expect(await lastTrigger(win)).toEqual({
         kind: 'schedule',
         schedule: {
@@ -174,6 +217,22 @@ describe('renderer/workflows/trigger-popover.ts', () => {
       expect(await lastTrigger(win)).toMatchObject({
         schedule: { interval: null },
       });
+    });
+
+    it('saves nothing for an interval under one', async () => {
+      const { win } = await openOn({
+        kind: 'schedule',
+        schedule: {
+          rules: [],
+          interval: { every: 2, unit: 'hours', window: null, days: [] },
+        },
+      });
+      const every = query<HTMLInputElement>('.sched-every-n');
+      every.value = '0';
+      every.dispatchEvent(new Event('input', { bubbles: true }));
+      await tick();
+      expect(win.callCount('saveWorkflow')).toBe(0);
+      expect(textOf(query('.sched-every-error'))).toBe('Mínimo 1');
     });
   });
 

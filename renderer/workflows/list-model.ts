@@ -181,13 +181,6 @@ export function formatAgo(ts: number, now: number): string {
   return formatWhen(ts, now);
 }
 
-/** `hoy a las 23:30`, `mañana a las 08:00`. */
-export function nextRunText(ts: number, now: number): string {
-  const when = formatWhen(ts, now);
-  const space = when.lastIndexOf(' ');
-  return `${when.slice(0, space)} a las ${when.slice(space + 1)}`;
-}
-
 export type WorkflowStatusKind =
   | 'running'
   | 'success'
