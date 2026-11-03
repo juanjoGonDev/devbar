@@ -111,6 +111,16 @@ describe('src/ports/port-links.ts + port-registry + ports-ipc', () => {
       });
     });
 
+    it('auto opens an HTTP API, with its path, when there is no web page', () => {
+      const api = [
+        port({ port: 3000, kind: 'http', url: 'http://localhost:3000' }),
+      ];
+      expect(resolveOpenUrl({ mode: 'auto', path: '/docs' }, api)).toEqual({
+        ok: true,
+        url: 'http://localhost:3000/docs',
+      });
+    });
+
     it('custom opens its own URL whatever was detected', () => {
       expect(
         resolveOpenUrl({ mode: 'custom', url: 'http://app.localhost' }, []),

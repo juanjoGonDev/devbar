@@ -88,7 +88,7 @@ export type OpenTarget =
 /**
  * The URL «abrir» goes to. A specific `port` opens that detected port (with
  * the `auto` path when it is the primary one); else the link decides:
- * `custom` its URL, `auto` the primary web port plus its optional path,
+ * `custom` its URL, `auto` the primary web port (else HTTP API) plus its optional path,
  * `none` nothing.
  */
 export function resolveOpenUrl(
@@ -97,8 +97,9 @@ export function resolveOpenUrl(
   port?: number,
 ): OpenTarget {
   const resolved = normalizeCommandLink(link);
+  // A web page first; a service that is only an HTTP API opens that.
   const primary = sortPorts(ports).find(
-    (candidate) => candidate.kind === 'web',
+    (candidate) => candidate.kind === 'web' || candidate.kind === 'http',
   );
   if (port !== undefined) {
     const found = ports.find((candidate) => candidate.port === port);
