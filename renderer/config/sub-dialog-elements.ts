@@ -80,9 +80,8 @@ export function subDialogElements(): {
     schedule: {
       group: byId<HTMLElement>('sf-schedule-group', HTMLElement),
       enabled: byId<HTMLInputElement>('sf-schedule-enabled', HTMLInputElement),
-      rules: byId<HTMLElement>('sf-schedule-rules', HTMLElement),
-      add: byId<HTMLButtonElement>('sf-schedule-add', HTMLButtonElement),
       details: byId<HTMLElement>('sf-schedule-details', HTMLElement),
+      mount: byId<HTMLElement>('sf-schedule-editor', HTMLElement),
     },
   };
 }

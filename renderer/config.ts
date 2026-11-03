@@ -6,7 +6,7 @@ import { installTooltips } from './tooltip.js';
 import { initTheme } from './theme.js';
 import { hydrateIcons } from './icon.js';
 import { createToast, errorMessage } from './config/toast.js';
-import { createScheduleEditor } from './config/schedule-editor.js';
+import { createScheduleSection } from './config/schedule-editor.js';
 import { createIconPicker } from './config/icon-picker.js';
 import { watchCustomIcons } from './custom-icons.js';
 import { createGroupStore } from './config/group-store.js';
@@ -147,7 +147,7 @@ const openIconPicker = (
 // picker re-lists the library.
 watchCustomIcons(() => iconPicker.refresh());
 
-const schedule = createScheduleEditor(subDialogEls.schedule);
+const schedule = createScheduleSection(subDialogEls.schedule);
 
 const store = createGroupStore({
   showToast,

@@ -2,7 +2,7 @@ import {
   DEFAULT_ERROR_REGEX,
   DEFAULT_WARN_REGEX,
 } from '../../src/log-level-defaults.js';
-import { summarizeSchedule } from './schedule-editor.js';
+import { shortSchedule } from '../../src/schedule-plan.js';
 import { linkSummary } from './sheet-link.js';
 import type { SheetKind, SheetSections } from './sheet-sections.js';
 import type { SubFormData } from './sub-dialog-save.js';
@@ -77,9 +77,7 @@ export function paintSummaries(
   );
   sections.setBadge(
     'schedule',
-    data.schedule.enabled
-      ? summarizeSchedule(data.schedule) || 'activada'
-      : 'desactivada',
+    data.schedule.enabled ? shortSchedule(data.schedule) : 'desactivada',
   );
   sections.setBadge(
     'logs',

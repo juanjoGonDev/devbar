@@ -7,7 +7,7 @@ import {
 import { createIconColorControl } from './icon-color-control.js';
 import { wireSheetChrome } from './sheet-chrome.js';
 import { buildEnvEditor, type EnvEditorHandle } from './env-editor.js';
-import type { ScheduleEditor } from './schedule-editor.js';
+import type { ScheduleSection } from './schedule-editor.js';
 import type { DetectedPort, Group, PreScript } from '../../src/domain-types.js';
 import type { GroupStore } from './group-store.js';
 import { errorMessage, type ShowToast } from './toast.js';
@@ -78,7 +78,7 @@ export interface SubDialogDeps {
   els: SubDialogElements;
   store: GroupStore;
   showToast: ShowToast;
-  schedule: ScheduleEditor;
+  schedule: ScheduleSection;
   openIconPicker(
     anchorEl: HTMLElement,
     onSelect: (value: string) => void,

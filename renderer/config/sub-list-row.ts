@@ -1,7 +1,7 @@
 import { icon, iconButton, userIcon, type IconName } from '../icon.js';
 import type { MenuEntry } from './remote-device-menu.js';
 import type { Schedule } from '../../src/domain-types.js';
-import { summarizeSchedule } from './schedule-editor.js';
+import { describeSchedule, shortSchedule } from '../../src/schedule-plan.js';
 
 /** One row of a group's commands, actions or pre-scripts. */
 export interface SubRowSpec {
@@ -117,17 +117,23 @@ function compactDays(days: readonly number[]): string {
   return sorted.map((d) => DAY[d] ?? '').join('');
 }
 
-/** The schedule as a tag («L–V 08:00», «+1» per extra rule), or null. */
+/**
+ * The schedule as a tag («L–V 08:00», «+1» per extra rule; an interval in
+ * its short form, «cada 15 min»), or null.
+ */
 export function scheduleTag(
   schedule: Schedule | null | undefined,
 ): HTMLSpanElement | null {
-  const rules = schedule?.enabled ? schedule.rules : [];
+  if (!schedule?.enabled) return null;
+  const tip = `Programado: ${describeSchedule(schedule)}`;
+  if (schedule.interval) return tag(shortSchedule(schedule), 'schedule', tip);
+  const rules = schedule.rules;
   const first = rules[0];
   if (!first) return null;
   const extra = rules.length > 1 ? ` +${rules.length - 1}` : '';
   return tag(
     `${compactDays(first.days ?? [])} ${first.time}${extra}`,
     'schedule',
-    `Programado: ${summarizeSchedule(schedule)}`,
+    tip,
   );
 }

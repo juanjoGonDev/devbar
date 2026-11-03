@@ -282,7 +282,7 @@ describe('renderer/config/sub-lists.ts', () => {
       const [withTag, without] = itemRows('command');
       const tag = withTag.querySelector('.sub-tag.is-schedule');
       expect(tag?.textContent).toBe('LV 09:00');
-      expect(tipOf(tag)).toContain('09:00 LV');
+      expect(tipOf(tag)).toContain('A las 09:00 los lunes y viernes');
       expect(without.querySelector('.sub-tag.is-schedule')).toBeNull();
     });
 
@@ -305,6 +305,23 @@ describe('renderer/config/sub-lists.ts', () => {
         itemRows('action')[0].querySelector('.sub-tag.is-schedule')
           ?.textContent,
       ).toBe('L–V 08:00 +1');
+    });
+
+    it('shows an interval in its short form', async () => {
+      await open({
+        commands: [
+          command('api', {
+            schedule: {
+              enabled: true,
+              rules: [],
+              interval: { every: 15, unit: 'minutes', window: null, days: [] },
+            },
+          }),
+        ],
+      });
+      const tag = itemRows('command')[0].querySelector('.sub-tag.is-schedule');
+      expect(tag?.textContent).toBe('cada 15 min');
+      expect(tipOf(tag)).toContain('Cada 15 minutos, todos los días');
     });
 
     it('stays away when the schedule is on but empty', async () => {

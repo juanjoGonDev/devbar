@@ -335,7 +335,7 @@ describe('renderer/config/sub-dialog.ts', () => {
         ],
       });
       click(editButtonIn('.sub-item-list[data-kind="command"] .sub-item-row'));
-      expect(badgeOf('schedule')).toBe('09:00 todos');
+      expect(badgeOf('schedule')).toBe('09:00');
       expect(badgeOf('logs')).toBe('500 líneas');
       expect(badgeOf('env')).toBe('ninguna');
       expect(badgeOf('exec')).toBe('sin confirmación');
@@ -442,7 +442,7 @@ describe('renderer/config/sub-dialog.ts', () => {
       click(addButton('Añadir comando'));
       input('sf-schedule-enabled').checked = true;
       document
-        .querySelector<HTMLElement>('#sf-schedule-rules .day-chip')
+        .querySelector<HTMLElement>('#sf-schedule-editor .sched-day')
         ?.click();
       const saves = recordApiCalls('saveCommand');
       submit();
