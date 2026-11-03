@@ -3,7 +3,11 @@
  * reports, one client and one audit entry, each with every field filled so a
  * test only states what it is about.
  */
-import type { McpClient, McpState } from '../../src/ipc-contract/mcp-api.js';
+import type {
+  McpAuditEntry,
+  McpClient,
+  McpState,
+} from '../../src/ipc-contract/mcp-api.js';
 import { openConfigWindow } from './config-window.js';
 import type { RendererWindow } from './renderer-dom.js';
 
@@ -39,6 +43,23 @@ export function mcpState(extra: Partial<McpState> = {}): McpState {
     },
     listening: false,
     error: null,
+    ...extra,
+  };
+}
+
+export function auditEntry(
+  id: string,
+  extra: Partial<McpAuditEntry> = {},
+): McpAuditEntry {
+  return {
+    id,
+    at: new Date(2026, 10, 3, 12, 40, 52).getTime(),
+    clientId: 'client-Claude Code',
+    clientName: 'Claude Code',
+    tool: 'restart',
+    target: 'Back › Normal',
+    result: 'ok',
+    summary: '',
     ...extra,
   };
 }

@@ -576,7 +576,35 @@
              resolved in renderer/config/mcp-elements.ts. The rows are built
              there too, from the McpState main reports. -->
         <section class="config-section" data-section="mcp">
-          <div id="mcp-setup" class="mcp-view">
+          <div class="mcp-tabs" role="tablist" aria-label="MCP">
+            <button
+              type="button"
+              role="tab"
+              id="mcp-tab-setup"
+              class="mcp-tab"
+              aria-controls="mcp-setup"
+              aria-selected="true"
+            >
+              Servidor
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="mcp-tab-activity"
+              class="mcp-tab"
+              aria-controls="mcp-activity"
+              aria-selected="false"
+            >
+              Actividad
+            </button>
+          </div>
+
+          <div
+            id="mcp-setup"
+            class="mcp-view"
+            role="tabpanel"
+            aria-labelledby="mcp-tab-setup"
+          >
             <section class="mcp-card" aria-label="Servidor">
               <div class="mcp-row mcp-server-row">
                 <span class="mcp-tile"
@@ -710,6 +738,69 @@
                 <ul id="mcp-revoked-list" class="mcp-card mcp-clients"></ul>
               </details>
             </section>
+          </div>
+
+          <div
+            id="mcp-activity"
+            class="mcp-view"
+            role="tabpanel"
+            aria-labelledby="mcp-tab-activity"
+            hidden
+          >
+            <div class="mcp-activity-bar">
+              <div
+                id="mcp-activity-filters"
+                class="mcp-filters"
+                role="group"
+                aria-label="Filtro"
+              >
+                <button
+                  type="button"
+                  class="mcp-chip"
+                  data-filter="all"
+                  aria-pressed="true"
+                >
+                  Todo
+                </button>
+                <button
+                  type="button"
+                  class="mcp-chip"
+                  data-filter="changes"
+                  aria-pressed="false"
+                >
+                  Cambios
+                </button>
+                <button
+                  type="button"
+                  class="mcp-chip"
+                  data-filter="rejected"
+                  aria-pressed="false"
+                >
+                  Rechazado
+                </button>
+              </div>
+              <select
+                id="mcp-activity-client"
+                class="mcp-select"
+                aria-label="Cliente"
+              >
+                <option value="">Todos los clientes</option>
+              </select>
+            </div>
+            <div class="mcp-card mcp-log">
+              <div class="mcp-log-head" aria-hidden="true">
+                <span>Hora</span><span>Cliente</span><span>Acción</span
+                ><span>Resultado</span><span></span>
+              </div>
+              <ul id="mcp-activity-rows" class="mcp-log-rows"></ul>
+              <p id="mcp-activity-empty" class="mcp-empty">
+                Sin actividad todavía.
+              </p>
+            </div>
+            <p class="mcp-hint">
+              Se guardan los últimos 30 días. Los logs que lee un asistente no
+              se copian aquí.
+            </p>
           </div>
         </section>
 

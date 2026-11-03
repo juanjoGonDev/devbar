@@ -1,10 +1,11 @@
 import { byId } from '../dom.js';
+import type { McpActivityElements } from './mcp-activity.js';
 import type { McpSheetElements } from './mcp-client-sheet.js';
 import type { McpClientListElements } from './mcp-clients.js';
 
 /**
- * Every element of the «MCP» section and its permissions sheet, resolved in
- * one place: config.ts calls this once, and
+ * Every element of the «MCP» section (both tabs) and its permissions sheet,
+ * resolved in one place: config.ts calls this once, and
  * tests/renderer-dom-contract.test.ts checks each assertion against
  * config.html.
  */
@@ -27,6 +28,7 @@ export interface McpElements {
   connect: McpConnectElements;
   clients: McpClientListElements;
   sheet: McpSheetElements;
+  activity: McpActivityElements;
 }
 
 export function mcpElements(): McpElements {
@@ -64,6 +66,16 @@ export function mcpElements(): McpElements {
       submit: byId('mcp-sheet-submit', HTMLButtonElement),
       submitLabel: byId('mcp-sheet-submit-label', HTMLSpanElement),
       shortcutKey: byId('mcp-sheet-key', HTMLElement),
+    },
+    activity: {
+      setupTab: byId('mcp-tab-setup', HTMLButtonElement),
+      activityTab: byId('mcp-tab-activity', HTMLButtonElement),
+      setup: byId('mcp-setup', HTMLDivElement),
+      activity: byId('mcp-activity', HTMLDivElement),
+      filters: byId('mcp-activity-filters', HTMLDivElement),
+      client: byId('mcp-activity-client', HTMLSelectElement),
+      rows: byId('mcp-activity-rows', HTMLUListElement),
+      empty: byId('mcp-activity-empty', HTMLParagraphElement),
     },
   };
 }

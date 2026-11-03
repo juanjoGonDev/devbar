@@ -3,6 +3,7 @@ import type {
   McpMutationResult,
   McpState,
 } from '../../src/ipc-contract/mcp-api.js';
+import { createMcpActivity } from './mcp-activity.js';
 import { createMcpClientSheet } from './mcp-client-sheet.js';
 import { createMcpClientList } from './mcp-clients.js';
 import type { McpElements } from './mcp-elements.js';
@@ -11,8 +12,8 @@ import { errorMessage, type ShowToast } from './toast.js';
 
 /**
  * «MCP»: the server card (switch, status, transport), the ready-to-paste
- * commands that connect an assistant, and the clients with their
- * permissions sheet. Main owns the state; this paints whatever `McpState`
+ * commands that connect an assistant, the clients with their permissions
+ * sheet, and the «Actividad» tab with the audit log. Main owns the state; this paints whatever `McpState`
  * it last reported (answers and `mcp:update` pushes alike) and forwards the
  * clicks.
  */
@@ -48,6 +49,7 @@ export function createMcpPane(els: McpElements, deps: McpPaneDeps): void {
     platform: deps.platform,
     onState: (next) => apply(next),
   });
+  const activity = createMcpActivity(els.activity, showToast);
   const clients = createMcpClientList(els.clients, {
     onReject: (client) => void mutate(window.api.rejectMcpClient(client.id)),
     onAllow: (client) => sheet.open(client),
@@ -87,6 +89,7 @@ export function createMcpPane(els: McpElements, deps: McpPaneDeps): void {
     renderServer(next);
     renderConnect(next);
     clients.render(next.clients, Date.now());
+    activity.setClients(next.clients);
   }
 
   els.server.enabled.addEventListener('change', async () => {

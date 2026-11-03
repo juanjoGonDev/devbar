@@ -79,6 +79,7 @@ export type IconName =
   | 'terminal'
   | 'timer'
   | 'trash-2'
+  | 'undo-2'
   | 'ungroup'
   | 'triangle-alert'
   | 'unlink'
