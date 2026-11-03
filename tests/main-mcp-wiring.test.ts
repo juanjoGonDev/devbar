@@ -45,11 +45,14 @@ function harness() {
         confirmationsShown += 1;
       },
     },
-    () => ({
-      start: () => Promise.resolve(),
-      stop: () => Promise.resolve(),
-      listening: () => false,
-    }),
+    {
+      endpointFor: () => ({
+        start: () => Promise.resolve(),
+        stop: () => Promise.resolve(),
+        listening: () => false,
+      }),
+      restore: () => Promise.resolve({ ok: true }),
+    },
   );
   return {
     parts,

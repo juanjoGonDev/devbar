@@ -286,9 +286,20 @@ export function replaceConfig(payload: {
     .map((group) => enforceSingleModeAutoStart(group).group ?? group);
   persistState(safeGroups, normalizeWorkflows(payload.workflows));
 }
-export function writeImportBackup(): string {
-  const backupPath = path.join(storeDirectory(), 'pre-import-backup.json');
-  const snapshot = {
+/**
+ * Everything a backup holds — the configuration as stored (never the dev
+ * overlay), in the shape an import reads back. The pre-import backup and the
+ * backup taken before each MCP change are both this.
+ */
+export function configSnapshot(): {
+  backedUpAt: string;
+  version: number;
+  groups: Group[];
+  workflows: ReturnType<typeof readStoredWorkflows>;
+  globalSettings: GlobalSettings;
+  customIcons: CustomIcon[];
+} {
+  return {
     backedUpAt: new Date().toISOString(),
     version: readVersion(),
     groups: readStoredGroups(),
@@ -296,6 +307,13 @@ export function writeImportBackup(): string {
     globalSettings: getGlobalSettings(),
     customIcons: readCustomIcons(),
   };
-  fs.writeFileSync(backupPath, JSON.stringify(snapshot, null, 2), 'utf8');
+}
+export function writeImportBackup(): string {
+  const backupPath = path.join(storeDirectory(), 'pre-import-backup.json');
+  fs.writeFileSync(
+    backupPath,
+    JSON.stringify(configSnapshot(), null, 2),
+    'utf8',
+  );
   return backupPath;
 }

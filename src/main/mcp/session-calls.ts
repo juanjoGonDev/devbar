@@ -143,6 +143,14 @@ export function createCalls(
         ),
       now: () => deps.now(),
       sleep: (ms) => deps.sleep(ms),
+      changes: deps.changes,
+      lastUndo: () =>
+        deps.audit
+          .list({ clientId: client.id, filter: 'changes', limit: 500 })
+          .find((entry) => entry.undoToken !== undefined) ?? null,
+      retireUndo: (entryId) => {
+        deps.audit.update(entryId, { undoToken: undefined });
+      },
     };
   };
 

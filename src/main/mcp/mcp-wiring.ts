@@ -1,10 +1,12 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appHome } from '../../app-paths.js';
 import type { GlobalSettings } from '../../domain-types.js';
+import type { McpAuditEntry } from '../../ipc-contract/mcp-api.js';
+import type { SimpleResult } from '../../ipc-contract/simple-result.js';
+import type { IpcRegistrar } from '../ipc-validators.js';
 import { sendToRenderers, settingsPushes } from '../renderer-bus.js';
 import { createAuditLog, type AuditLog } from './audit-log.js';
 import { createClientStore, type ClientStore } from './client-store.js';
@@ -15,14 +17,14 @@ import {
   type McpControl,
   type McpEndpoint,
 } from './mcp-control.js';
+import { createConfigChanges } from './config-changes.js';
 import {
-  mcpRuntime,
-  type McpRuntime,
-  type McpRuntimeWiring,
-} from './runtime.js';
-import { createSession, type Session } from './session.js';
-import { createSocketEndpoint } from './socket-endpoint.js';
-import { MCP_TOOLS } from './tools/catalog.js';
+  createIpcTap,
+  electronConfigPort,
+  type ConfigPortWiring,
+} from './config-port-wiring.js';
+import { localEndpoint } from './local-endpoint.js';
+import { mcpRuntime, type McpRuntimeWiring } from './runtime.js';
 
 /**
  * The MCP server wired to the real collaborators: the config store, the disk,
@@ -69,7 +71,12 @@ const timers = {
 };
 
 /** What a local endpoint is built from. */
-type McpCore = Omit<McpParts, 'control'>;
+export type McpCore = Omit<McpParts, 'control'>;
+
+/** The app's MCP folder (socket, token, audit, backups). */
+function mcpHome(appHomeDir: string): string {
+  return path.join(appHomeDir, 'mcp');
+}
 
 function ownerOnlyDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true, mode: OWNER_ONLY_DIR });
@@ -77,11 +84,14 @@ function ownerOnlyDir(dir: string): void {
   if (process.platform !== 'win32') fs.chmodSync(dir, OWNER_ONLY_DIR);
 }
 
-export function createMcp(
-  wiring: McpWiring,
-  endpointFor: (core: McpCore) => McpEndpoint,
-): McpParts {
-  const home = path.join(wiring.appHome, 'mcp');
+export interface McpServerParts {
+  endpointFor(core: McpCore): McpEndpoint;
+  /** Undoes the change behind an audit entry. */
+  restore(entry: McpAuditEntry): Promise<SimpleResult>;
+}
+
+export function createMcp(wiring: McpWiring, server: McpServerParts): McpParts {
+  const home = mcpHome(wiring.appHome);
   ownerOnlyDir(home);
   const auditPath = path.join(home, AUDIT_FILE);
 
@@ -127,7 +137,7 @@ export function createMcp(
     clients,
     audit,
     desk,
-    endpoint: endpointFor({ clients, audit, desk, home }),
+    endpoint: server.endpointFor({ clients, audit, desk, home }),
     connectCommand: () =>
       connectCommands({
         platform: wiring.platform,
@@ -135,83 +145,46 @@ export function createMcp(
         cliPath: path.join(wiring.mainDir, 'mcp', 'cli.js'),
         home,
       }),
-    restore: () =>
-      Promise.resolve({
-        ok: false,
-        error: 'Ese cambio ya no se puede deshacer',
-      }),
+    restore: (entry) => server.restore(entry),
     changed: (state) => wiring.send('mcp:update', state),
   });
   return { control, clients, audit, desk, home };
 }
 
-/** The real local endpoint: the socket (or pipe) and a session per assistant. */
-export function localEndpoint(
-  core: McpCore,
-  runtime: McpRuntime,
-  version: string,
-): McpEndpoint {
-  const firstApprovals = new Set<string>();
-  const sessions = new Set<Session>();
-  const endpoint = createSocketEndpoint({
-    home: core.home,
-    platform: process.platform,
-    createServer: (onConnection) => net.createServer(onConnection),
-    probe: (socketPath) =>
-      new Promise((resolve) => {
-        const socket = net.connect(socketPath);
-        socket.once('connect', () => {
-          socket.destroy();
-          resolve(true);
-        });
-        socket.once('error', () => resolve(false));
-      }),
-    writeToken: (tokenPath, token) =>
-      fs.writeFileSync(tokenPath, token, { mode: OWNER_ONLY_FILE }),
-    removeSocket: (socketPath) => fs.rmSync(socketPath, { force: true }),
-    restrictSocket: (socketPath) => fs.chmodSync(socketPath, OWNER_ONLY_FILE),
-    newToken: () => randomBytes(32).toString('base64url'),
-    ...timers,
-    session: (transport) => {
-      const session = createSession(transport, {
-        ...core,
-        runtime,
-        tools: MCP_TOOLS,
-        version,
-        firstApprovals,
-        now: () => Date.now(),
-        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-        setTimer: timers.setTimer,
-      });
-      sessions.add(session);
-      session.server.server.onclose = () => {
-        sessions.delete(session);
-        void session.close();
-      };
-    },
-  });
-  return {
-    ...endpoint,
-    stop: async () => {
-      // An open session would otherwise keep answering until it hangs up.
-      await Promise.all([...sessions].map((session) => session.close()));
-      sessions.clear();
-      await endpoint.stop();
-    },
-  };
-}
-
 /** What main.ts already has at hand. */
 interface McpAppWiring extends McpRuntimeWiring {
-  configStore: McpWiring['configStore'] & McpRuntimeWiring['configStore'];
-  host: { appVersion(): string };
+  configStore: McpWiring['configStore'] &
+    McpRuntimeWiring['configStore'] &
+    ConfigPortWiring['configStore'];
+  host: { appVersion(): string; applyAutostart(enabled: boolean): void };
+  processManager: McpRuntimeWiring['processManager'] &
+    ConfigPortWiring['processManager'];
+  workflowRunner: McpRuntimeWiring['workflowRunner'] &
+    ConfigPortWiring['workflowRunner'];
+  syncRepoWatchers(): void;
   appWindows: { ensureConfigWindow(options?: { goto?: string }): void };
 }
 
+/** The MCP control surface, plus the tap its config tools write through. */
+export type McpApp = McpControl & {
+  /** Wraps `ipcMain` so the MCP tools can call the same handlers. */
+  tapIpc(ipc: IpcRegistrar): IpcRegistrar;
+};
+
 /** The MCP server over the real disk, store, windows and runtime. */
-export function mcpFor(app: McpAppWiring): McpControl {
+export function mcpFor(app: McpAppWiring): McpApp {
+  const home = mcpHome(appHome());
+  const tap = createIpcTap();
   const runtime = mcpRuntime(app);
-  return createMcp(
+  const changes = createConfigChanges(
+    electronConfigPort({
+      ...app,
+      home,
+      invoke: tap.invoke,
+      applyAutostart: (enabled) => app.host.applyAutostart(enabled),
+    }),
+  );
+  const parts = createMcp(
     {
       appHome: appHome(),
       // This file is build/src/main/mcp/mcp-wiring.js; the main dir is build/src.
@@ -229,8 +202,19 @@ export function mcpFor(app: McpAppWiring): McpControl {
       showConfirmations: () =>
         app.appWindows.ensureConfigWindow({ goto: 'mcp' }),
     },
-    (core) => localEndpoint(core, runtime, app.host.appVersion()),
-  ).control;
+    {
+      endpointFor: (core) =>
+        localEndpoint({ ...core, changes }, runtime, app.host.appVersion()),
+      restore: (entry) =>
+        entry.undoToken
+          ? changes.restore(entry.undoToken)
+          : Promise.resolve({
+              ok: false,
+              error: 'Ese cambio no se puede deshacer',
+            }),
+    },
+  );
+  return Object.assign(parts.control, { tapIpc: tap.tap });
 }
 
 /** «Control remoto»'s close, with the MCP endpoint closing alongside. */

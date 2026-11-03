@@ -4,15 +4,18 @@ import type {
   Action,
   Command,
   Group,
+  PreScript,
   Workflow,
 } from '../../../domain-types.js';
 import type {
+  McpAuditEntry,
   McpAuditResult,
   McpClient,
   McpDiffLine,
   McpRisk,
   McpScopes,
 } from '../../../ipc-contract/mcp-api.js';
+import type { ConfigChanges } from '../config-changes.js';
 import type { Redactor } from '../redact.js';
 import type { McpRuntime } from '../runtime.js';
 
@@ -79,6 +82,12 @@ export interface ToolContext {
   confirmChange(proposal: ConfigProposal): Promise<void>;
   now(): number;
   sleep(ms: number): Promise<void>;
+  /** Backups, the app's own write handlers, and undo. */
+  changes: ConfigChanges;
+  /** This client's latest change that can still be undone. */
+  lastUndo(): McpAuditEntry | null;
+  /** Its undo was used: the audit entry stops offering it. */
+  retireUndo(entryId: string): void;
 }
 
 export interface ToolDef<S extends Shape = Shape> {
@@ -133,6 +142,15 @@ export function findAction(group: Group, ref: string): Action {
   if (!action)
     throw new ToolError(`El grupo «${group.name}» no tiene la acción «${ref}»`);
   return action;
+}
+
+export function findPreScript(group: Group, ref: string): PreScript {
+  const script = byRef(group.preScripts, ref);
+  if (!script)
+    throw new ToolError(
+      `El grupo «${group.name}» no tiene el pre-script «${ref}»`,
+    );
+  return script;
 }
 
 /** Whether every script a workflow runs belongs to a group the client sees. */

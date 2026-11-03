@@ -22,7 +22,9 @@ import type {
 import { createAuditLog } from '../../src/main/mcp/audit-log.js';
 import { createClientStore } from '../../src/main/mcp/client-store.js';
 import { createConfirmDesk } from '../../src/main/mcp/confirm-desk.js';
+import { createConfigChanges } from '../../src/main/mcp/config-changes.js';
 import type { McpRuntime } from '../../src/main/mcp/runtime.js';
+import { fakeConfigPort, type FakeConfigPort } from './mcp-config-fakes.js';
 import { createSession, type Session } from '../../src/main/mcp/session.js';
 import type { ToolDef } from '../../src/main/mcp/tools/tool-kit.js';
 import type {
@@ -30,6 +32,8 @@ import type {
   McpScopes,
 } from '../../src/ipc-contract/mcp-api.js';
 import { makeCommand, makeGroup } from './main-fakes.js';
+
+export { fakeConfigPort };
 
 export interface FakeRuntime extends McpRuntime {
   groups: Group[];
@@ -187,6 +191,7 @@ export interface McpHarness {
   requests: McpConfirmRequest[];
   timers: { fn: () => void; ms: number }[];
   firstApprovals: Set<string>;
+  port: FakeConfigPort;
   /** Approves the connected client with these scopes. */
   approve(scopes?: Partial<McpScopes>): void;
   close(): Promise<void>;
@@ -235,12 +240,14 @@ export async function mcpHarness(
     closed: () => undefined,
   });
   const firstApprovals = new Set<string>();
+  const port = fakeConfigPort(runtime);
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   const session = createSession(serverSide, {
     clients,
     audit,
     desk,
     runtime,
+    changes: createConfigChanges(port),
     tools,
     version: '0.12.0',
     firstApprovals,
@@ -266,6 +273,7 @@ export async function mcpHarness(
     requests,
     timers,
     firstApprovals,
+    port,
     approve: (scopes) => {
       const id = clients.list()[0]?.id;
       if (!id) throw new Error('no client identified yet');

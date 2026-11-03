@@ -13,10 +13,11 @@ vi.mock('electron', () => {
 import { createAuditLog } from '../src/main/mcp/audit-log.js';
 import { createClientStore } from '../src/main/mcp/client-store.js';
 import { createConfirmDesk } from '../src/main/mcp/confirm-desk.js';
-import { localEndpoint } from '../src/main/mcp/mcp-wiring.js';
+import { createConfigChanges } from '../src/main/mcp/config-changes.js';
+import { localEndpoint } from '../src/main/mcp/local-endpoint.js';
 import { SocketTransport } from '../src/main/mcp/socket-transport.js';
 import { helloLine, mcpSocketPath, mcpTokenPath } from '../src/mcp/endpoint.js';
-import { fakeRuntime } from './helpers/mcp-fakes.js';
+import { fakeConfigPort, fakeRuntime } from './helpers/mcp-fakes.js';
 
 /**
  * The whole local path on a real Unix socket in a temp folder (no network):
@@ -36,6 +37,7 @@ function core() {
   };
   return {
     home,
+    changes: createConfigChanges(fakeConfigPort(fakeRuntime())),
     clients: createClientStore({
       read: () => undefined,
       write: () => undefined,
@@ -69,7 +71,7 @@ function connect(socketPath: string): Promise<net.Socket> {
   });
 }
 
-describe('src/main/mcp/mcp-wiring.ts localEndpoint', () => {
+describe('src/main/mcp/local-endpoint.ts', () => {
   afterEach(() => {
     for (const dir of dirs.splice(0))
       fs.rmSync(dir, { recursive: true, force: true });

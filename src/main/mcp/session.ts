@@ -6,6 +6,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpClient } from '../../ipc-contract/mcp-api.js';
 import type { AuditLog } from './audit-log.js';
 import type { ClientStore } from './client-store.js';
+import type { ConfigChanges } from './config-changes.js';
 import type { ConfirmDesk } from './confirm-desk.js';
 import type { McpRuntime } from './runtime.js';
 import { createCalls, isAllowed, text } from './session-calls.js';
@@ -29,6 +30,7 @@ export interface SessionDeps {
   audit: AuditLog;
   desk: ConfirmDesk;
   runtime: McpRuntime;
+  changes: ConfigChanges;
   tools: readonly ToolDef[];
   version: string;
   /** «Ask the first time» answers, shared by every session of the app. */

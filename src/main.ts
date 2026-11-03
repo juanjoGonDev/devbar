@@ -268,7 +268,11 @@ const schedules = createScheduleRunner({
   workflowRunner,
 });
 
-/** What both the IPC handlers and «Control remoto» drive. */
+// `sync` expands each `~` and ignores blanks and repeats itself.
+const syncRepoWatchers = (): void =>
+  repoWatcher.sync(configStore.listGroups().map((group) => group.path));
+
+/** What the IPC handlers, «Control remoto» and the MCP server drive. */
 const wiring = {
   host,
   configStore,
@@ -283,6 +287,7 @@ const wiring = {
   broadcast,
   repaintWindows,
   registry,
+  syncRepoWatchers,
   ...settingsPushes(registry),
 };
 
@@ -304,10 +309,6 @@ const shutdown = createShutdownController({
   appQuit: () => app.quit(),
   processExit: (code) => process.exit(code),
 });
-
-// `sync` expands each `~` and ignores blanks and repeats itself.
-const syncRepoWatchers = (): void =>
-  repoWatcher.sync(configStore.listGroups().map((group) => group.path));
 
 const trayHost = createTrayHost(() => menuBar, host, configStore);
 
@@ -352,7 +353,7 @@ const devHooks = {
 };
 
 function registerIpc(): void {
-  registerAllIpc(ipcMain, {
+  registerAllIpc(mcp.tapIpc(ipcMain), {
     ...host,
     ...wiring,
     configIo,
@@ -360,7 +361,6 @@ function registerIpc(): void {
     appWindows,
     notifications,
     trayHost,
-    syncRepoWatchers,
     expandTilde,
     fetchReleases: (limit) =>
       updateCheck.fetchReleases({ ...UPDATE_REPO, limit }),
