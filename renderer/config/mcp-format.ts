@@ -58,7 +58,7 @@ export function connectSnippet(
     case 'codex':
       return {
         code: commands.codexToml,
-        hint: 'Añádelo a ~/.codex/config.toml y reinicia Codex.',
+        hint: 'Añádelo a ~/.codex/config.toml y reinicia la app de ChatGPT (o Codex).',
       };
     case 'other':
       return {

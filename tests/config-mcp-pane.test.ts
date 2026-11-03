@@ -204,6 +204,7 @@ describe('renderer/config/mcp-pane.ts', () => {
       pick(kind('codex'));
       expect(el('mcp-connect-code').textContent).toBe('[mcp_servers.devbar]');
       expect(visible(el('mcp-connect-hint'))).toContain('config.toml');
+      expect(visible(el('mcp-connect-hint'))).toContain('app de ChatGPT');
     });
 
     it('shows the bare command line for any other client', async () => {
