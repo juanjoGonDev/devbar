@@ -79,7 +79,7 @@ export const READ_TOOLS: readonly ToolDef[] = [
         .flatMap((s) => s.commands)
         .filter((c) => c.status === 'running').length;
       return {
-        data: states.map(statusView),
+        data: states.map((state) => statusView(ctx, state)),
         target: group ? (states[0]?.group.name ?? group) : 'Todos los grupos',
         summary: `${running} en marcha`,
       };

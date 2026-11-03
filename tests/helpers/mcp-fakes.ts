@@ -41,6 +41,8 @@ export interface FakeRuntime extends McpRuntime {
   logLines: Map<string, LogEntry[]>;
   states: Map<string, Partial<ProcessState>>;
   runStates: Map<string, WorkflowRunState>;
+  /** The group header's last error, per group id. */
+  groupErrors: Map<string, string>;
   /** git's answer per group id; a group not here has no repo. */
   branches: Map<string, string>;
   calls: string[];
@@ -57,6 +59,7 @@ export function fakeRuntime(groups: Group[] = defaultGroups()): FakeRuntime {
     states: new Map(),
     runStates: new Map(),
     branches: new Map(),
+    groupErrors: new Map(),
     calls: [],
     emit: (what) => {
       for (const listener of listeners) listener(what);
@@ -68,7 +71,7 @@ export function fakeRuntime(groups: Group[] = defaultGroups()): FakeRuntime {
         group,
         currentBranch: null,
         color: 'running',
-        lastError: null,
+        lastError: runtime.groupErrors.get(group.id) ?? null,
         commands: group.commands.map((command) => {
           const id = makeCommandId(group.id, command.id);
           const state = runtime.states.get(id);
@@ -78,7 +81,7 @@ export function fakeRuntime(groups: Group[] = defaultGroups()): FakeRuntime {
             status: state?.status ?? 'stopped',
             warnCount: 0,
             errorCount: 0,
-            lastError: null,
+            lastError: state?.lastError ?? null,
             startedAt: state?.startedAt ?? null,
             color: 'stopped',
             muteWarn: false,

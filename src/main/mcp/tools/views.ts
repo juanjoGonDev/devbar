@@ -78,13 +78,17 @@ export function visibleStates(
     .filter((state) => only === null || state.groupId === only);
 }
 
-export function statusView(state: GroupState): unknown {
+/** A last error is a log line, so it goes through the redactor too. */
+const redactedError = (ctx: ToolContext, line: string | null): string | null =>
+  line === null ? null : ctx.redact.text(line);
+
+export function statusView(ctx: ToolContext, state: GroupState): unknown {
   return {
     id: state.groupId,
     name: state.group.name,
     branch: state.currentBranch,
     health: state.color,
-    lastError: state.lastError,
+    lastError: redactedError(ctx, state.lastError),
     commands: state.commands.map((command) => {
       const def = state.group.commands.find((c) => c.id === command.commandId);
       return {
@@ -94,7 +98,7 @@ export function statusView(state: GroupState): unknown {
         startedAt: command.startedAt,
         warnings: command.warnCount,
         errors: command.errorCount,
-        lastError: command.lastError,
+        lastError: redactedError(ctx, command.lastError),
         ports: command.ports.map((port) => port.port),
       };
     }),

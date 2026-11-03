@@ -243,14 +243,20 @@ export const WORKFLOW_CONFIG_TOOLS: readonly ToolDef[] = [
           env: ctx.redact.env(group.env),
           commands: group.commands.map((c) => ({
             ...c,
+            command: ctx.redact.text(c.command),
+            args: c.args.map((arg) => ctx.redact.text(arg)),
             env: ctx.redact.env(c.env),
           })),
           actions: group.actions.map((a) => ({
             ...a,
+            command: ctx.redact.text(a.command),
+            args: a.args.map((arg) => ctx.redact.text(arg)),
             env: ctx.redact.env(a.env),
           })),
           preScripts: group.preScripts.map((s) => ({
             ...s,
+            command: ctx.redact.text(s.command),
+            args: s.args.map((arg) => ctx.redact.text(arg)),
             env: ctx.redact.env(s.env),
           })),
         }));

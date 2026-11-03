@@ -96,6 +96,26 @@ describe('src/main/mcp/tools/read-tools.ts', () => {
     });
   });
 
+  describe('get_status', () => {
+    it('masks secrets in the last errors it reports', async () => {
+      const h = await harness();
+      h.runtime.states.set(NORMAL, {
+        status: 'error',
+        lastError: 'auth failed for hunter2-secret',
+      });
+      h.runtime.groupErrors.set('back', 'Bearer abcdefghijklmnop rejected');
+
+      const { data } = await call(h, 'get_status', { group: 'Back' });
+
+      expect(data).toMatchObject([
+        {
+          lastError: 'Bearer •••••• rejected',
+          commands: [{ lastError: 'auth failed for ••••••' }],
+        },
+      ]);
+    });
+  });
+
   describe('get_ports', () => {
     it('lists the ports of running commands, for one group or all', async () => {
       const h = await harness();

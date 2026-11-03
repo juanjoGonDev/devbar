@@ -397,8 +397,10 @@ describe('src/main/mcp/tools/config-*-tools.ts', () => {
   });
 
   describe('the whole configuration', () => {
-    it('exports what the client sees, with env values masked', async () => {
+    it('exports what the client sees, with env values and secrets masked', async () => {
       const h = await harness();
+      const normal = h.runtime.groups[0]?.commands[0];
+      if (normal) normal.args = ['--password=s3cr3t-arg'];
       h.clients.update(h.clients.list()[0]?.id ?? '', { groups: ['back'] });
 
       const result = resultData(await call(h, 'export_config', {})) as {
@@ -407,6 +409,7 @@ describe('src/main/mcp/tools/config-*-tools.ts', () => {
 
       expect(result.groups.map((g) => g.name)).toEqual(['Back']);
       expect(JSON.stringify(result)).not.toContain('hunter2-secret');
+      expect(JSON.stringify(result)).not.toContain('s3cr3t-arg');
       expect(h.requests).toEqual([]);
     });
 
