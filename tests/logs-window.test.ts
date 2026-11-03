@@ -333,7 +333,7 @@ describe('renderer/logs.ts', () => {
       ]);
       const pill = document.getElementById('port-pill');
       expect(pill?.hidden).toBe(false);
-      expect(pill?.textContent).toContain('localhost:3000');
+      expect(pill?.textContent).toContain(':3000');
     });
   });
 

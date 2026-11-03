@@ -119,10 +119,11 @@ describe('renderer/logs/port-pill.ts', () => {
       expect(pill.portPillFor([])).toBeNull();
     });
 
-    it('offers the primary web port by its host', () => {
+    it('offers the primary web port by its number, its URL in the tooltip', () => {
       expect(pill.portPillFor([port()])).toEqual({
         kind: 'open',
-        text: 'localhost:3000',
+        text: ':3000',
+        title: 'Abrir http://localhost:3000/',
         menu: false,
       });
     });
@@ -132,7 +133,7 @@ describe('renderer/logs/port-pill.ts', () => {
         pill.portPillFor([
           port({ kind: 'http', port: 8080, url: 'http://localhost:8080/' }),
         ]),
-      ).toMatchObject({ kind: 'open', text: 'localhost:8080' });
+      ).toMatchObject({ kind: 'open', text: ':8080' });
     });
 
     it('turns into a menu when there is more than one port to open', () => {
@@ -141,7 +142,12 @@ describe('renderer/logs/port-pill.ts', () => {
           port(),
           port({ port: 6006, url: 'http://localhost:6006/' }),
         ]),
-      ).toMatchObject({ kind: 'open', text: 'localhost:3000', menu: true });
+      ).toMatchObject({
+        kind: 'open',
+        text: ':3000',
+        title: 'Elegir puerto',
+        menu: true,
+      });
     });
 
     it('mutes a port that is not web', () => {
@@ -160,7 +166,8 @@ describe('renderer/logs/port-pill.ts', () => {
       header.renderHeaderRunState();
       const button = slot().querySelector('button');
       expect(slot().hidden).toBe(false);
-      expect(iconText(button)).toBe('localhost:3000[arrow-up-right]');
+      expect(iconText(button)).toBe(':3000[arrow-up-right]');
+      expect(button?.title).toBe('Abrir http://localhost:3000/');
       button?.click();
       expect(dom.argsFor('openPort')).toEqual([['g1', 'web']]);
     });

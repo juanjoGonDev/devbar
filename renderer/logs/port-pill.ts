@@ -1,5 +1,5 @@
 /**
- * The port pill right after the run pill: «localhost:3000» plus an arrow for
+ * The port pill right after the run pill: «:3000» plus an arrow for
  * a running command that serves a page or an HTTP API, a small menu when it
  * serves several, and a muted «:5432» for a port nothing can open.
  *
@@ -45,7 +45,7 @@ export function adoptGroupStates(
 }
 
 export type PortPill =
-  | { kind: 'open'; text: string; menu: boolean }
+  | { kind: 'open'; text: string; title: string; menu: boolean }
   | { kind: 'muted'; text: string };
 
 const openable = (port: DetectedPort): boolean =>
@@ -63,12 +63,16 @@ function hostOf(port: DetectedPort): string {
 /**
  * What the pill says for ports already sorted primary first: the first port a
  * browser can open (a menu when there are more), else the first one muted.
+ * The pill only reads «:3000»; the full URL is in its tooltip.
  */
 export function portPillFor(ports: readonly DetectedPort[]): PortPill | null {
   const open = ports.filter(openable);
   const first = open[0];
-  if (first)
-    return { kind: 'open', text: hostOf(first), menu: open.length > 1 };
+  if (first) {
+    const menu = open.length > 1;
+    const title = menu ? 'Elegir puerto' : `Abrir ${first.url}`;
+    return { kind: 'open', text: `:${first.port}`, title, menu };
+  }
   const other = ports[0];
   return other ? { kind: 'muted', text: `:${other.port}` } : null;
 }
@@ -82,22 +86,23 @@ function menuEntries(owner: PortOwner): MenuEntry[] {
   }));
 }
 
-function buildButton(owner: PortOwner, pill: PortPill): HTMLButtonElement {
+type OpenPill = Extract<PortPill, { kind: 'open' }>;
+
+function buildButton(owner: PortOwner, pill: OpenPill): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'port-open';
   const text = document.createElement('span');
   text.textContent = pill.text;
   button.append(text, icon('arrow-up-right'));
-  if (pill.kind === 'open' && pill.menu) {
-    button.title = 'Elegir puerto';
+  button.title = pill.title;
+  if (pill.menu) {
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
     button.addEventListener('click', () =>
       menu.toggle(button, menuEntries(owner)),
     );
   } else {
-    button.title = 'Abrir en el navegador';
     button.addEventListener(
       'click',
       () => void window.api.openPort(owner.groupId, owner.commandId),

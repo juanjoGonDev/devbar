@@ -161,7 +161,8 @@ describe('renderer/logs/header.ts', () => {
     it('ticks the uptime of a live run on the pill', () => {
       showing({ status: 'running', startedAt: Date.now() - 65_000 });
       header.renderHeaderRunState();
-      expect(elements.runPillTextEl.textContent).toBe('En marcha · 1m 5s');
+      expect(elements.runPillTextEl.textContent).toBe('1m 5s');
+      expect(elements.runPillEl.title).toBe('En marcha · 1m 5s');
       expect(elements.runPillEl.dataset.tone).toBe('running');
       expect(document.title).toBe('Logs — Back · api · 1m 5s');
     });
@@ -174,7 +175,7 @@ describe('renderer/logs/header.ts', () => {
       });
       header.renderHeaderRunState();
       expect(elements.runPillTextEl.textContent).toBe('Parado');
-      expect(elements.runPillEl.title).toBe('Última ejecución: 3s');
+      expect(elements.runPillEl.title).toBe('Parado · última ejecución: 3s');
       expect(elements.runPillEl.dataset.tone).toBe('stopped');
       expect(document.title).toBe('Logs — Back · api · 3s');
     });

@@ -90,10 +90,21 @@ describe('renderer/logs/toolbar-model.ts', () => {
   describe('runPillFor', () => {
     const now = 1_000_000;
 
-    it('is green and ticks while running', () => {
+    it('is green and ticks just the uptime while running', () => {
       expect(
         runPillFor(item({ status: 'running', startedAt: now - 65_000 }), now),
-      ).toMatchObject({ tone: 'running', text: 'En marcha · 1m 5s' });
+      ).toEqual({
+        tone: 'running',
+        text: '1m 5s',
+        title: 'En marcha · 1m 5s',
+      });
+    });
+
+    it('says «En marcha» while the clock has nothing to show', () => {
+      expect(runPillFor(item({ status: 'running' }), now)).toMatchObject({
+        text: 'En marcha',
+        title: 'En marcha',
+      });
     });
 
     it('says it is starting before the clock means anything', () => {
@@ -111,14 +122,15 @@ describe('renderer/logs/toolbar-model.ts', () => {
       ).toEqual({
         tone: 'stopped',
         text: 'Parado',
-        title: 'Última ejecución: 3s',
+        title: 'Parado · última ejecución: 3s',
       });
     });
 
     it('is red when the run ended in an error', () => {
-      expect(runPillFor(item({ status: 'error' }), now)).toMatchObject({
+      expect(runPillFor(item({ status: 'error' }), now)).toEqual({
         tone: 'error',
         text: 'Con errores',
+        title: 'Con errores',
       });
     });
 

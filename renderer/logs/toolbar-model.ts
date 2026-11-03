@@ -44,34 +44,45 @@ type PillTone = 'running' | 'stopped' | 'error';
 
 export interface RunPill {
   tone: PillTone;
+  /** What the pill reads: just the uptime while running, the state otherwise. */
   text: string;
-  /** The last run's length, for a stopped service — kept off the pill itself. */
+  /**
+   * The state spelled out, plus the run's length: the tooltip, and all a
+   * narrow toolbar keeps once the pill shrinks to its dot.
+   */
   title: string;
 }
 
-/** «● En marcha · 8m 26s», «Parado», «Con errores»… */
+/** Stopped states, with the last run's length kept off the pill itself. */
+function stoppedPill(
+  tone: PillTone,
+  state: string,
+  runtime: string | null,
+): RunPill {
+  const title = runtime ? `${state} · última ejecución: ${runtime}` : state;
+  return { tone, text: state, title };
+}
+
+/** «● 8m 26s», «Parado», «Con errores»… */
 export function runPillFor(
   item: LogListItem,
   now: number = Date.now(),
 ): RunPill {
-  const runtime = runtimeOf(item, now);
+  const runtime = runtimeOf(item, now)?.text ?? null;
   if (isRunning(item)) {
-    const text =
-      item.status === 'starting'
-        ? 'Arrancando'
-        : runtime
-          ? `En marcha · ${runtime.text}`
-          : 'En marcha';
-    return { tone: 'running', text, title: 'Tiempo en ejecución' };
+    if (item.status === 'starting')
+      return { tone: 'running', text: 'Arrancando', title: 'Arrancando' };
+    return runtime
+      ? { tone: 'running', text: runtime, title: `En marcha · ${runtime}` }
+      : { tone: 'running', text: 'En marcha', title: 'En marcha' };
   }
-  const title = runtime ? `Última ejecución: ${runtime.text}` : '';
   if (item.status === 'error')
-    return { tone: 'error', text: 'Con errores', title };
+    return stoppedPill('error', 'Con errores', runtime);
   if (item.status === 'stopping')
-    return { tone: 'stopped', text: 'Parando', title };
+    return stoppedPill('stopped', 'Parando', runtime);
   if (item.status === 'done')
-    return { tone: 'stopped', text: 'Terminado', title };
-  return { tone: 'stopped', text: 'Parado', title };
+    return stoppedPill('stopped', 'Terminado', runtime);
+  return stoppedPill('stopped', 'Parado', runtime);
 }
 
 export interface LevelTally {
