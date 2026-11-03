@@ -176,6 +176,14 @@ const subDialog = createSubDialog({
   showToast,
   schedule,
   openIconPicker,
+  dismissPopover: () => {
+    if (iconPickerEl.hidden) return false;
+    iconPicker.close();
+    return true;
+  },
+  // Late-bound: the lists are built after the sheet.
+  removeItem: (groupId, kind, item, onConfirmed) =>
+    subLists.remove(groupId, kind, item, onConfirmed),
   loadGroups,
   renderGroupDetail: () => groupDetail.render(),
   refreshPipeline,

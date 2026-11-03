@@ -186,7 +186,9 @@ Todas las novedades relevantes de DevBar. El formato sigue
   «Se ejecuta en …» debajo, y el resto se agrupa en secciones plegables
   (Variables de entorno, Ejecución, Programación, Logs y detección,
   Argumentos adicionales) que resumen su contenido y recuerdan cuáles dejaste
-  abiertas.
+  abiertas. Abajo, «Eliminar» (con confirmación), Cancelar y Guardar, también
+  con Cmd+S (Ctrl+S); Escape lo cierra y, si hay cambios sin guardar, pregunta
+  antes de descartarlos.
 
 ### Corregido
 

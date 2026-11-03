@@ -573,6 +573,132 @@ describe('renderer/config/sub-dialog.ts', () => {
     });
   });
 
+  describe('footer and keyboard', () => {
+    function key(target: Element, init: KeyboardEventInit): void {
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          ...init,
+        }),
+      );
+    }
+
+    async function editCommand(): Promise<RendererWindow> {
+      const w = await open({ commands: [command('web')] });
+      click(editButtonIn('.sub-item-list[data-kind="command"] .sub-item-row'));
+      return w;
+    }
+
+    it('offers no deletion for an item that does not exist yet', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      expect(el('sf-delete').hidden).toBe(true);
+    });
+
+    it('deletes the item it edits once the user confirms', async () => {
+      const w = await editCommand();
+      expect(el('sf-delete').hidden).toBe(false);
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      click(el('sf-delete'));
+      expect(dialog().open).toBe(false);
+      expect(w.argsFor('deleteCommand').at(-1)).toEqual([
+        'group-api',
+        'cmd-web',
+      ]);
+    });
+
+    it('stays open when the user backs out of deleting', async () => {
+      const w = await editCommand();
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      click(el('sf-delete'));
+      expect(dialog().open).toBe(true);
+      expect(w.callCount('deleteCommand')).toBe(0);
+    });
+
+    it('saves with Cmd/Ctrl+S', async () => {
+      await editCommand();
+      const saves = recordApiCalls('saveCommand');
+      key(input('sf-name'), { key: 's', ctrlKey: true });
+      expect(dialog().open).toBe(false);
+      expect(payload(saves).name).toBe('web');
+    });
+
+    it('names the shortcut with the Ctrl key off macOS', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      expect(el('sf-submit-key').textContent).toBe('Ctrl+S');
+    });
+
+    it('names the shortcut with the Command glyph on macOS', async () => {
+      win = await openConfigWindow('darwin');
+      await win.settle('listGroups', [group('api')]);
+      click(addButton('Añadir comando'));
+      expect(iconText(el('sf-submit-key'))).toBe('[command]S');
+    });
+
+    it('closes on Escape when nothing changed', async () => {
+      await editCommand();
+      const ask = vi.spyOn(window, 'confirm');
+      key(input('sf-name'), { key: 'Escape' });
+      expect(dialog().open).toBe(false);
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('asks before discarding edits on Escape', async () => {
+      const w = await editCommand();
+      input('sf-name').value = 'web-2';
+      const ask = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      key(input('sf-name'), { key: 'Escape' });
+      expect(ask).toHaveBeenCalledWith('¿Descartar los cambios?');
+      expect(dialog().open).toBe(true);
+      ask.mockReturnValue(true);
+      key(input('sf-name'), { key: 'Escape' });
+      expect(dialog().open).toBe(false);
+      expect(w.callCount('saveCommand')).toBe(0);
+    });
+
+    it('asks too when the close button would drop edits', async () => {
+      await editCommand();
+      input('sf-command').value = 'pnpm';
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      click(dialog().querySelector('.sheet-close'));
+      expect(dialog().open).toBe(true);
+    });
+
+    it('closes the icon picker first, not the sheet, on Escape', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      click(el('sf-icon-btn'));
+      expect(el('icon-picker').hidden).toBe(false);
+      key(el('icon-search'), { key: 'Escape' });
+      expect(el('icon-picker').hidden).toBe(true);
+      expect(dialog().open).toBe(true);
+    });
+
+    it('gives focus back to the button that opened it', async () => {
+      await open({});
+      const opener = addButton('Añadir comando');
+      opener.focus();
+      click(opener);
+      expect(document.activeElement, 'the name takes focus').toBe(
+        input('sf-name'),
+      );
+      key(input('sf-name'), { key: 'Escape' });
+      expect(document.activeElement).toBe(opener);
+    });
+
+    it('keeps Tab inside the sheet', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      el('sf-submit').focus();
+      key(el('sf-submit'), { key: 'Tab' });
+      expect(document.activeElement).toBe(el('sf-icon-btn'));
+      key(el('sf-icon-btn'), { key: 'Tab', shiftKey: true });
+      expect(document.activeElement).toBe(el('sf-submit'));
+    });
+  });
+
   describe('dialog chrome', () => {
     it('closes on cancel without saving', async () => {
       const w = await open({});

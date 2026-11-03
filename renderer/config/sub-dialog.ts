@@ -5,7 +5,7 @@ import {
   DEFAULT_WARN_REGEX,
 } from '../../src/log-level-defaults.js';
 import { createIconColorControl } from './icon-color-control.js';
-import { wireModal } from '../modal.js';
+import { wireSheetChrome } from './sheet-chrome.js';
 import { buildEnvEditor, type EnvEditorHandle } from './env-editor.js';
 import type { ScheduleEditor } from './schedule-editor.js';
 import type { Group, PreScript } from '../../src/domain-types.js';
@@ -65,6 +65,10 @@ export interface SubDialogElements {
   pipelineNoteName: HTMLElement;
   submit: HTMLButtonElement;
   submitLabel: HTMLElement;
+  /** The Cmd/Ctrl+S hint beside «Guardar». */
+  submitKey: HTMLElement;
+  /** «Eliminar», only when editing an item that exists. */
+  deleteBtn: HTMLButtonElement;
 }
 
 export interface SubDialogDeps {
@@ -76,6 +80,18 @@ export interface SubDialogDeps {
     anchorEl: HTMLElement,
     onSelect: (value: string) => void,
   ): void;
+  /** Closes the icon picker when it is open; true when it was. */
+  dismissPopover(): boolean;
+  /**
+   * Deletes the item after the user confirms; `onConfirmed` runs as soon as
+   * they do, before the deletion itself.
+   */
+  removeItem(
+    groupId: string,
+    kind: SubKind,
+    item: EditableItem,
+    onConfirmed: () => void,
+  ): Promise<void>;
   loadGroups(): Promise<void>;
   renderGroupDetail(): void;
   refreshPipeline(): Promise<void>;
@@ -118,6 +134,24 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     group: () => Group | null;
   } = { kind: 'command', isNew: true, group: () => null };
   const sections = createSheetSections(els.dialog);
+  // The item «Eliminar» would delete, and what the fields held on opening.
+  let deleteTarget: {
+    groupId: string;
+    kind: SubKind;
+    item: EditableItem;
+  } | null = null;
+  let snapshot = '';
+  const takeSnapshot = (): string =>
+    JSON.stringify([readFormData(), els.group.value]);
+  const chrome = wireSheetChrome({
+    dialog: els.dialog,
+    form: els.form,
+    firstField: els.name,
+    shortcutHint: els.submitKey,
+    platform: window.api.platform,
+    isDirty: () => takeSnapshot() !== snapshot,
+    dismissPopover: () => deps.dismissPopover(),
+  });
   const paintIcon = (): void => {
     const value = els.iconBtn.dataset.value || defaultIcon;
     els.iconBtn.replaceChildren(
@@ -321,7 +355,15 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     showCreateChrome(null);
     refreshLive();
     subDialogCallback = makeSubmitCallback(item, kind, () => groupId);
-    els.dialog.showModal();
+    present(item ? { groupId, kind, item } : null);
+  }
+
+  /** Shows the filled sheet, remembering what it held for the dirty check. */
+  function present(target: typeof deleteTarget): void {
+    deleteTarget = target;
+    els.deleteBtn.hidden = target === null;
+    snapshot = takeSnapshot();
+    chrome.open();
   }
 
   function openNewPreScript(request: NewPreScriptRequest): void {
@@ -340,7 +382,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
       () => els.group.value || request.groupId,
       request.onCreated,
     );
-    els.dialog.showModal();
+    present(null);
   }
 
   function readFormData(): SubFormData {
@@ -409,13 +451,17 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     if (subDialogCallback) await subDialogCallback(data);
   });
 
+  // «Cancelar» is an explicit discard: no question asked.
   els.cancel.addEventListener('click', (e) => {
     e.preventDefault();
     els.dialog.close();
   });
 
-  // Shared modal chrome (honest × / Esc / backdrop) for the side sheet.
-  wireModal(els.dialog);
+  els.deleteBtn.addEventListener('click', () => {
+    if (!deleteTarget) return;
+    const { groupId, kind, item } = deleteTarget;
+    void deps.removeItem(groupId, kind, item, () => els.dialog.close());
+  });
 
   return { open: openSubDialog, openNewPreScript };
 }

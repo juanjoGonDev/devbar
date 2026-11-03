@@ -44,6 +44,16 @@ export interface SubLists {
   ): void;
   /** Re-marks which rows are running, without rebuilding anything. */
   refreshRunning(groupId: string, root: HTMLElement): void;
+  /**
+   * Deletes an item once the user confirms; `onConfirmed` runs right after
+   * they do. The side sheet's «Eliminar» comes through here too.
+   */
+  remove(
+    groupId: string,
+    kind: SubKind,
+    item: Command | Action | PreScript,
+    onConfirmed?: () => void,
+  ): Promise<void>;
 }
 
 const TITLES: Record<SubKind, string> = {
@@ -112,8 +122,10 @@ export function createSubLists(deps: SubListsDeps): SubLists {
     groupId: string,
     kind: SubKind,
     item: Command | Action | PreScript,
+    onConfirmed?: () => void,
   ): Promise<void> {
     if (!confirm(`¿Borrar "${item.name}"?`)) return;
+    onConfirmed?.();
     if (kind === 'prescript') {
       await window.api.deletePreScript(groupId, item.id);
       await afterInstantWrite(groupId, kind);
@@ -285,6 +297,7 @@ export function createSubLists(deps: SubListsDeps): SubLists {
   }
 
   return {
+    remove,
     buildPreScriptsLibrary: (group, parent) => {
       buildList(group, 'prescript', group.preScripts || [], parent);
       const help = document.createElement('p');

@@ -59,6 +59,8 @@ export function subDialogElements(): {
       pipelineNoteName: byId<HTMLElement>('sf-pipeline-note-name', HTMLElement),
       submit: byId<HTMLButtonElement>('sf-submit', HTMLButtonElement),
       submitLabel: byId<HTMLElement>('sf-submit-label', HTMLElement),
+      submitKey: byId<HTMLElement>('sf-submit-key', HTMLElement),
+      deleteBtn: byId<HTMLButtonElement>('sf-delete', HTMLButtonElement),
     },
     schedule: {
       group: byId<HTMLElement>('sf-schedule-group', HTMLElement),
