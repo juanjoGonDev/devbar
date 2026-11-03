@@ -3,7 +3,7 @@
  * the primary one, and which URL «abrir» resolves to. All pure, so the rules
  * the tray, the editor and `openPort` share are tested once.
  */
-import { isPrivateIPv4 } from '../main/remote/lan.js';
+import { isPrivateIPv4 } from '../net/private-ipv4.js';
 import type { CommandLink, DetectedPort } from '../domain-types.js';
 
 const DEFAULT_LINK: CommandLink = { mode: 'auto' };

@@ -1,4 +1,7 @@
 import type os from 'node:os';
+import { isPrivateIPv4 } from '../../net/private-ipv4.js';
+
+export { isPrivateIPv4 };
 
 /**
  * Which addresses the remote-control server answers on. Only private IPv4
@@ -11,24 +14,6 @@ import type os from 'node:os';
 type Interfaces = NodeJS.Dict<os.NetworkInterfaceInfo[]>;
 
 const LOOPBACK_HOSTS = ['localhost', '127.0.0.1'];
-
-function octets(address: string): number[] | null {
-  const parts = address.split('.');
-  if (parts.length !== 4) return null;
-  const numbers = parts.map((part) =>
-    /^\d{1,3}$/.test(part) ? Number(part) : -1,
-  );
-  return numbers.every((n) => n >= 0 && n <= 255) ? numbers : null;
-}
-
-export function isPrivateIPv4(address: string): boolean {
-  const parts = octets(address);
-  if (!parts) return false;
-  const [a = -1, b = -1] = parts;
-  return (
-    a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
-  );
-}
 
 export function lanAddresses(interfaces: Interfaces): string[] {
   const found = new Set<string>();
