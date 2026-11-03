@@ -10,6 +10,8 @@ const STATE: McpState = {
     claudeCode: '',
     claudeDesktopJson: '',
     cursorJson: '',
+    opencodeJson: '',
+    codexToml: '',
     generic: '',
   },
   listening: true,

@@ -30,6 +30,9 @@ function windowsQuote(value: string): string {
   return `"${value.replaceAll('"', '')}"`;
 }
 
+/** A TOML basic string: its escapes are JSON's for every path character. */
+const tomlString = (value: string): string => JSON.stringify(value);
+
 export function connectCommands(paths: ConnectPaths): McpConnectCommands {
   const quote = paths.platform === 'win32' ? windowsQuote : posixQuote;
   const args = [paths.cliPath, '--home', paths.home];
@@ -56,6 +59,26 @@ export function connectCommands(paths: ConnectPaths): McpConnectCommands {
     claudeCode: `claude mcp add ${SERVER_NAME} --scope user -e ${RUN_AS_NODE}=1 -- ${commandLine}`,
     claudeDesktopJson: json,
     cursorJson: json,
+    opencodeJson: JSON.stringify(
+      {
+        mcp: {
+          [SERVER_NAME]: {
+            type: 'local',
+            command: [paths.execPath, ...args],
+            environment: { [RUN_AS_NODE]: '1' },
+            enabled: true,
+          },
+        },
+      },
+      null,
+      2,
+    ),
+    codexToml: [
+      `[mcp_servers.${SERVER_NAME}]`,
+      `command = ${tomlString(paths.execPath)}`,
+      `args = [${args.map(tomlString).join(', ')}]`,
+      `env = { ${RUN_AS_NODE} = "1" }`,
+    ].join('\n'),
     generic:
       paths.platform === 'win32'
         ? `set ${RUN_AS_NODE}=1 && ${commandLine}`

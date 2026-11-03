@@ -13,6 +13,8 @@ const COMMANDS = {
   claudeCode: 'claude mcp add devbar',
   claudeDesktopJson: '{}',
   cursorJson: '{}',
+  opencodeJson: '{}',
+  codexToml: '',
   generic: 'devbar',
 };
 

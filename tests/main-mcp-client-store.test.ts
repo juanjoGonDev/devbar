@@ -63,6 +63,8 @@ describe('src/main/mcp/client-store.ts', () => {
       ['Claude Code', 'claude-code'],
       ['claude-ai', 'claude-desktop'],
       ['cursor-vscode', 'cursor'],
+      ['opencode', 'opencode'],
+      ['codex-mcp-client', 'codex'],
       ['my-agent', 'other'],
     ])('reads %s as %s', (name, kind) => {
       expect(clientKind(name)).toBe(kind);
@@ -72,6 +74,8 @@ describe('src/main/mcp/client-store.ts', () => {
   describe('displayName', () => {
     it('names the known assistants the way their makers do', () => {
       expect(displayName({ name: 'claude-ai' })).toBe('Claude Desktop');
+      expect(displayName({ name: 'opencode' })).toBe('OpenCode');
+      expect(displayName({ name: 'codex-mcp-client' })).toBe('Codex');
     });
 
     it('prefers the title an unknown client announces', () => {

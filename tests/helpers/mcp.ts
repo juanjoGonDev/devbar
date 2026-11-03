@@ -39,6 +39,8 @@ export function mcpState(extra: Partial<McpState> = {}): McpState {
       claudeCode: 'claude mcp add devbar -- devbar mcp',
       claudeDesktopJson: '{"mcpServers":{"devbar":{"command":"devbar"}}}',
       cursorJson: '{"mcpServers":{"devbar":{"command":"cursor-devbar"}}}',
+      opencodeJson: '{"mcp":{"devbar":{"type":"local"}}}',
+      codexToml: '[mcp_servers.devbar]',
       generic: 'ELECTRON_RUN_AS_NODE=1 devbar mcp',
     },
     listening: false,

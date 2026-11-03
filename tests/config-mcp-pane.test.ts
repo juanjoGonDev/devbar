@@ -194,6 +194,18 @@ describe('renderer/config/mcp-pane.ts', () => {
       expect(visible(el('mcp-connect-hint'))).toContain('mcp.json');
     });
 
+    it('offers the OpenCode JSON block and the Codex TOML table', async () => {
+      win = await openMcp(mcpState());
+      pick(kind('opencode'));
+      expect(el('mcp-connect-code').textContent).toBe(
+        JSON.stringify({ mcp: { devbar: { type: 'local' } } }, null, 2),
+      );
+      expect(visible(el('mcp-connect-hint'))).toContain('opencode.json');
+      pick(kind('codex'));
+      expect(el('mcp-connect-code').textContent).toBe('[mcp_servers.devbar]');
+      expect(visible(el('mcp-connect-hint'))).toContain('config.toml');
+    });
+
     it('shows the bare command line for any other client', async () => {
       win = await openMcp(mcpState());
       pick(kind('other'));

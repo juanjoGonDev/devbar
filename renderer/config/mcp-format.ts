@@ -50,6 +50,16 @@ export function connectSnippet(
         code: prettyJson(commands.cursorJson),
         hint: 'Añádelo a ~/.cursor/mcp.json.',
       };
+    case 'opencode':
+      return {
+        code: prettyJson(commands.opencodeJson),
+        hint: 'Añádelo a opencode.json, o a ~/.config/opencode/opencode.json para todos tus proyectos.',
+      };
+    case 'codex':
+      return {
+        code: commands.codexToml,
+        hint: 'Añádelo a ~/.codex/config.toml y reinicia Codex.',
+      };
     case 'other':
       return {
         code: commands.generic,

@@ -31,6 +31,8 @@ const KINDS: readonly McpClientKind[] = [
   'claude-code',
   'claude-desktop',
   'cursor',
+  'opencode',
+  'codex',
   'other',
 ];
 

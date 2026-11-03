@@ -11,7 +11,7 @@ import type { SimpleResult } from './simple-result.js';
 
 /** Which assistant a client is, guessed from its MCP `clientInfo`. */
 export type McpClientKind =
-  'claude-code' | 'claude-desktop' | 'cursor' | 'other';
+  'claude-code' | 'claude-desktop' | 'cursor' | 'opencode' | 'codex' | 'other';
 
 /**
  * `pending` until the user lets it in from Settings › MCP (it only sees a
@@ -152,6 +152,10 @@ export interface McpConnectCommands {
   claudeDesktopJson: string;
   /** The `mcpServers` block for ~/.cursor/mcp.json. */
   cursorJson: string;
+  /** The `mcp` block for opencode.json. */
+  opencodeJson: string;
+  /** The `[mcp_servers.devbar]` table for ~/.codex/config.toml. */
+  codexToml: string;
   /** The bare command line, for any other stdio client. */
   generic: string;
 }

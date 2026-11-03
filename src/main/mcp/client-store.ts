@@ -84,6 +84,8 @@ export function clientKind(name: string): McpClientKind {
     return 'claude-code';
   if (lower.includes('claude')) return 'claude-desktop';
   if (lower.includes('cursor')) return 'cursor';
+  if (lower.includes('opencode')) return 'opencode';
+  if (lower.includes('codex')) return 'codex';
   return 'other';
 }
 
@@ -91,6 +93,8 @@ const KIND_NAMES: Record<Exclude<McpClientKind, 'other'>, string> = {
   'claude-code': 'Claude Code',
   'claude-desktop': 'Claude Desktop',
   cursor: 'Cursor',
+  opencode: 'OpenCode',
+  codex: 'Codex',
 };
 
 /** The name Settings shows for a new client. */

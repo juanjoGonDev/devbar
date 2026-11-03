@@ -6297,6 +6297,9 @@ button.primary.mcp-confirm-apply.is-destructive {
 }
 .mcp-connect .mode-segmented {
   align-self: flex-start;
+  /* Six clients: on a narrow window they wrap instead of overflowing. */
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 .mcp-code {
   margin: 0;

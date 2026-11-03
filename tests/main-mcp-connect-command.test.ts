@@ -32,6 +32,37 @@ describe('src/main/mcp/connect-command.ts', () => {
     expect(commands.cursorJson).toBe(commands.claudeDesktopJson);
   });
 
+  it('gives OpenCode a local server under mcp, the command as one array', () => {
+    const parsed: unknown = JSON.parse(connectCommands(MAC).opencodeJson);
+
+    expect(parsed).toEqual({
+      mcp: {
+        devbar: {
+          type: 'local',
+          command: [MAC.execPath, MAC.cliPath, '--home', MAC.home],
+          environment: { ELECTRON_RUN_AS_NODE: '1' },
+          enabled: true,
+        },
+      },
+    });
+  });
+
+  it('gives Codex an [mcp_servers.devbar] table with quoted TOML strings', () => {
+    const commands = connectCommands({
+      ...MAC,
+      home: 'C:\\Users\\ana "x"\\mcp',
+    });
+
+    expect(commands.codexToml).toBe(
+      [
+        '[mcp_servers.devbar]',
+        `command = "${MAC.execPath}"`,
+        `args = ["${MAC.cliPath}", "--home", "C:\\\\Users\\\\ana \\"x\\"\\\\mcp"]`,
+        'env = { ELECTRON_RUN_AS_NODE = "1" }',
+      ].join('\n'),
+    );
+  });
+
   it('prefixes the env assignment for a POSIX shell', () => {
     expect(connectCommands(MAC).generic).toMatch(
       /^ELECTRON_RUN_AS_NODE=1 '\/Applications/,
