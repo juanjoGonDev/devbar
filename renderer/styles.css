@@ -2461,6 +2461,143 @@ dialog h2 {
   opacity: 1;
 }
 
+/* ── Tray: ports (renderer/tray/port-pill.ts) ──────────────────────── */
+/* A web port is an accent-tinted pill that opens the page; any other port is
+   muted information; «+N» unfolds the in-flow menu below the row. */
+.port-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 20px;
+  border-radius: 10px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+.port-pill.is-web {
+  background: var(--accent-tint);
+  color: var(--badge-info-fg);
+}
+.port-pill.is-other {
+  padding: 0 8px;
+  background: var(--badge-neutral-bg);
+  color: var(--muted);
+  cursor: default;
+}
+.port-pill-open,
+.port-pill-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 100%;
+  padding: 0 7px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.port-pill-open:hover,
+.port-pill-more:hover,
+.port-pill-more[aria-expanded='true'] {
+  background: var(--accent-tint);
+}
+.port-pill-more {
+  padding-left: 5px;
+  border-left: 1px solid var(--border);
+}
+.port-pill .icon {
+  font-size: 11px;
+}
+.port-searching {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.port-searching-spin {
+  animation: port-search-spin 1s linear infinite;
+}
+@keyframes port-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .port-searching-spin {
+    animation-duration: 3s;
+  }
+}
+.port-menu {
+  margin: 2px 6px 6px auto;
+  max-width: 280px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-card-strong);
+}
+.port-menu-title {
+  padding: 4px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.port-menu-item,
+.port-menu-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+button.port-menu-item,
+.port-menu-copy {
+  cursor: pointer;
+}
+button.port-menu-item:hover,
+.port-menu-copy:hover {
+  background: var(--accent-tint);
+}
+.port-menu-item.is-other {
+  color: var(--muted);
+}
+.port-menu-address {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.port-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+button.port-menu-item .icon {
+  margin-left: auto;
+  color: var(--badge-info-fg);
+}
+.port-menu-copy {
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 5px 5px;
+  color: var(--muted);
+}
+/* ── End Tray: ports ───────────────────────────────────────────────── */
+
 /* ── Actions divider and chips ────────────────────────────────────── */
 .actions-divider {
   font-size: 10px;

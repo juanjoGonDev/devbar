@@ -17,6 +17,7 @@ export type IconName =
   | 'app-window'
   | 'arrow-down'
   | 'arrow-right'
+  | 'arrow-up-right'
   | 'ban'
   | 'bell'
   | 'bell-off'

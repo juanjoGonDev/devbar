@@ -17,6 +17,7 @@ import type {
 } from '../../src/ipc-contract.js';
 import type { Action, Command } from '../../src/domain-types.js';
 import { spinPhase } from '../spin-phase.js';
+import { commandPorts, groupPorts } from './port-pill.js';
 
 // Expanded/collapsed state: groupId → boolean
 const expandedState = new Map<string, boolean>();
@@ -85,6 +86,10 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
   spacer.className = 'group-row-spacer';
   row.appendChild(spacer);
 
+  // Collapsed, the group's own web port stands in for its commands' pills.
+  const groupPortsUi = isExpanded ? null : groupPorts(gs);
+  if (groupPortsUi) row.appendChild(groupPortsUi.pill);
+
   // Same icon as the per-command log buttons — one mark means "logs" at
   // every scope. The row itself toggles open, so this swallows its own click.
   const groupLogsBtn = document.createElement('button');
@@ -123,7 +128,7 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
   // which the user may want to select-as-text without expanding the group).
   const INTERACTIVE_SELECTOR =
     '.combobox, .combobox-input, .combobox-list, .combobox-item, ' +
-    '.caret-btn, .branch-select, .uptime, ' +
+    '.caret-btn, .branch-select, .uptime, .port-pill, ' +
     'button, input, select, textarea, a';
   row.addEventListener('click', (e) => {
     if (
@@ -146,6 +151,7 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
   });
 
   wrapper.appendChild(row);
+  if (groupPortsUi?.menu) wrapper.appendChild(groupPortsUi.menu);
 
   // ── Expanded section ─────────────────────────────────────────────────
   if (isExpanded) {
@@ -158,8 +164,9 @@ export function renderGroupRow(gs: GroupState): HTMLElement {
       for (const cs of gs.commands) {
         const cmd = (group.commands || []).find((c) => c.id === cs.commandId);
         if (!cmd) continue;
-        const subRow = buildCommandSubRow(gs, cs, cmd);
-        expanded.appendChild(subRow);
+        const ports = commandPorts(gs, cs, cmd.name);
+        expanded.appendChild(buildCommandSubRow(gs, cs, cmd, ports?.pill));
+        if (ports?.menu) expanded.appendChild(ports.menu);
       }
     }
 
@@ -224,6 +231,7 @@ function buildCommandSubRow(
   gs: GroupState,
   cs: CommandRuntimeState,
   cmd: Command,
+  portsPill: HTMLElement | undefined,
 ): HTMLElement {
   const subRow = document.createElement('div');
   subRow.className = 'cmd-sub-row';
@@ -270,6 +278,8 @@ function buildCommandSubRow(
   const spacer = document.createElement('span');
   spacer.style.flex = '1';
   subRow.appendChild(spacer);
+
+  if (portsPill) subRow.appendChild(portsPill);
 
   // Logs button
   const logsBtn = document.createElement('button');
