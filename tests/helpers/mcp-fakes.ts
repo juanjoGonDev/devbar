@@ -116,6 +116,7 @@ export function fakeRuntime(groups: Group[] = defaultGroups()): FakeRuntime {
         nextRunAt: null,
         scriptCount: workflow.graph.blocks.flatMap((b) => b.scripts).length,
         running: null,
+        hasLog: runtime.runStates.has(workflow.id),
       })),
     workflowRunState: (id) => runtime.runStates.get(id) ?? null,
     currentBranch: (groupId) =>
