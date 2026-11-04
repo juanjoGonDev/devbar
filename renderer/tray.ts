@@ -161,7 +161,6 @@ function render(groupStates: GroupState[]): void {
     _pendingStates = groupStates;
     return;
   }
-  groupsEl.innerHTML = '';
   renderAlertsSummary(groupStates);
 
   const { shown, folded: hidden } = trayGroupLayout(
@@ -176,10 +175,15 @@ function render(groupStates: GroupState[]): void {
   });
 
   if (tabs.active() === 'workflows') {
-    groupsEl.appendChild(workflowsSection());
+    // Left in place when it already is: detaching the list under the pointer
+    // on every push makes macOS drop the hand cursor.
+    const list = workflowsSection();
+    if (groupsEl.childElementCount !== 1 || groupsEl.firstChild !== list)
+      groupsEl.replaceChildren(list);
     autoHeight.schedule();
     return;
   }
+  groupsEl.innerHTML = '';
   // The Grupos tab — or the bare list while the selector is hidden — opens
   // with its own way into the settings, like the Workflows tab.
   groupsEl.appendChild(manageLink('Gestionar grupos', 'groups'));

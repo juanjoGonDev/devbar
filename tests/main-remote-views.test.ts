@@ -209,6 +209,7 @@ describe('src/main/remote/views.ts', () => {
       nextRunAt: null,
       scriptCount: 1,
       running: null,
+      hasLog: false,
     });
 
     it('lists what the tray lists, the hidden ones last and flagged', () => {

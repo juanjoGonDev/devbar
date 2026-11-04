@@ -51,6 +51,7 @@ export function wfEntry(
     nextRunAt: null,
     scriptCount: 1,
     running: null,
+    hasLog: false,
     ...extra,
   };
 }
@@ -65,6 +66,7 @@ export function entryOf(
     nextRunAt: null,
     scriptCount: 1,
     running: null,
+    hasLog: false,
     ...extra,
   };
 }

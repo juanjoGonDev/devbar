@@ -235,6 +235,7 @@ describe('src/main/remote/live.ts', () => {
         nextRunAt: null,
         scriptCount: 1,
         running: null,
+        hasLog: false,
       });
       h.setWorkflows([workflowEntry('w1', false), workflowEntry('w2', true)]);
 

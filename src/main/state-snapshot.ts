@@ -158,9 +158,8 @@ export function createStateSnapshots(deps: StateSnapshotDeps): StateSnapshots {
                 at,
               )
             : null;
-        const live = workflowRunner.isRunning(workflow.id)
-          ? workflowRunner.runState(workflow.id)
-          : null;
+        const latest = workflowRunner.runState(workflow.id);
+        const live = workflowRunner.isRunning(workflow.id) ? latest : null;
         return {
           workflow,
           lastRun: runs[workflow.id] ?? null,
@@ -174,6 +173,7 @@ export function createStateSnapshots(deps: StateSnapshotDeps): StateSnapshots {
                 startedAt: live.startedAt,
               }
             : null,
+          hasLog: latest !== null,
         };
       });
     },

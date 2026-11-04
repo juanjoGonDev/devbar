@@ -2150,6 +2150,11 @@ dialog h2 {
 .tray-wf-row.is-running .tray-wf-icon {
   color: var(--accent);
 }
+/* The log button before the workflow's first run: still hoverable, for its tooltip. */
+.tray-wf-row .tray-wf-action[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
 .tray-wf-row.is-failed .tray-wf-sub {
   color: var(--error);
 }

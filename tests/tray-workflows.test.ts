@@ -50,6 +50,7 @@ function entry(
     nextRunAt: null,
     scriptCount: 2,
     running: null,
+    hasLog: false,
     ...extra,
   };
 }
@@ -216,6 +217,109 @@ describe('renderer/tray/workflows-section.ts', () => {
       await win.settle('listWorkflows', [entry('m')]);
       await win.push('onUpdate', [groupState('api'), groupState('web')]);
       expect(rows()).toEqual(['Flujo m']);
+    });
+  });
+
+  describe('the log button', () => {
+    const RUNNING = {
+      running: { runId: 1, doneScripts: 0, totalScripts: 2, startedAt: 1 },
+      hasLog: true,
+    };
+    const logButton = (name: string): HTMLElement | null =>
+      document.querySelector(`[aria-label="Ver el log de «${name}»"]`);
+    // The app's tooltips move every `title` into `data-tip` (renderer/tooltip.ts).
+    const tooltip = (el: HTMLElement | null): string | undefined =>
+      el?.dataset.tip ?? el?.title;
+
+    it("opens the latest run's log, next to the ▶ on the right", async () => {
+      const win = await openTray();
+      await win.settle('listWorkflows', [entry('m', MANUAL, { hasLog: true })]);
+      const btn = logButton('Flujo m');
+      expect(tooltip(btn)).toBe('Ver el log de «Flujo m»');
+      expect(btn?.querySelector('.icon')?.getAttribute('data-icon')).toBe(
+        'scroll-text',
+      );
+      expect(btn?.nextElementSibling?.getAttribute('aria-label')).toBe(
+        'Ejecutar «Flujo m»',
+      );
+      click(btn);
+      expect(win.argsFor('openWorkflowLog')).toEqual([['m']]);
+    });
+
+    it('opens the log of the run in flight, beside its stop button', async () => {
+      const win = await openTray();
+      await win.settle('listWorkflows', [entry('s', MANUAL, RUNNING)]);
+      const btn = logButton('Flujo s');
+      expect(btn?.nextElementSibling?.getAttribute('aria-label')).toBe(
+        'Detener «Flujo s»',
+      );
+      click(btn);
+      expect(win.argsFor('openWorkflowLog')).toEqual([['s']]);
+    });
+
+    it('is disabled, saying why, while the workflow has never run', async () => {
+      const win = await openTray();
+      await win.settle('listWorkflows', [entry('m')]);
+      const btn = logButton('Flujo m');
+      // aria-disabled, not disabled: the tooltip has to show.
+      expect(btn?.getAttribute('aria-disabled')).toBe('true');
+      expect(tooltip(btn)).toBe('Todavía no se ha ejecutado');
+      click(btn);
+      expect(win.argsFor('openWorkflowLog')).toEqual([]);
+    });
+
+    it('turns on once the workflow has a run to show', async () => {
+      const win = await openTray();
+      await win.settle('listWorkflows', [entry('m')]);
+      await win.push('onWorkflowsUpdate', [entry('m', MANUAL, RUNNING)]);
+      expect(logButton('Flujo m')?.hasAttribute('aria-disabled')).toBe(false);
+    });
+  });
+
+  describe('state pushes under the pointer', () => {
+    // Running processes push state many times a second. Detaching the hovered
+    // element on each one makes macOS drop the hand cursor back to an arrow.
+    function watchRemovals(): () => Node[] {
+      const removed: Node[] = [];
+      const collect = (records: MutationRecord[]): void => {
+        for (const record of records) removed.push(...record.removedNodes);
+      };
+      const observer = new MutationObserver(collect);
+      // The list only: the tabs' counters repaint their text on every push.
+      observer.observe(byId('groups'), { childList: true, subtree: true });
+      return () => {
+        collect(observer.takeRecords());
+        observer.disconnect();
+        return removed;
+      };
+    }
+    const rowOf = (id: string): HTMLElement | null =>
+      document.querySelector(`.tray-wf-row[data-workflow-id="${id}"]`);
+
+    it('keeps every row when a push changes nothing', async () => {
+      const win = await openTray();
+      const list = [entry('m', MANUAL, { hasLog: true }), entry('n')];
+      await win.settle('listWorkflows', list);
+      const row = rowOf('m');
+      const removals = watchRemovals();
+      await win.push('onWorkflowsUpdate', structuredClone(list));
+      await win.push('onUpdate', [groupState('api')]);
+      expect(removals()).toEqual([]);
+      expect(rowOf('m')).toBe(row);
+    });
+
+    it('repaints only the row that changed', async () => {
+      const win = await openTray();
+      await win.settle('listWorkflows', [entry('m'), entry('n')]);
+      const kept = rowOf('n');
+      const changed = rowOf('m');
+      await win.push('onWorkflowsUpdate', [
+        entry('m', MANUAL, { hasLog: true }),
+        entry('n'),
+      ]);
+      expect(rowOf('n')).toBe(kept);
+      expect(rowOf('m')).not.toBe(changed);
+      expect(rows()).toEqual(['Flujo m', 'Flujo n']);
     });
   });
 
