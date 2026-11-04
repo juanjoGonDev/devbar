@@ -55,7 +55,7 @@ describe('renderer/logs/sidebar.ts', () => {
   let answers: LogListGroup[][];
 
   async function open(
-    options: { search?: string; collapsed?: boolean } = {},
+    options: { search?: string; collapsed?: boolean; listWidth?: string } = {},
   ): Promise<void> {
     answers = [];
     mountLogsDom({
@@ -63,6 +63,8 @@ describe('renderer/logs/sidebar.ts', () => {
       api: { listLogs: () => Promise.resolve(answers.shift() ?? []) },
     });
     if (options.collapsed) localStorage.setItem(SIDEBAR_KEY, 'collapsed');
+    if (options.listWidth)
+      localStorage.setItem('logs-list-width', options.listWidth);
     sidebar = await import('../renderer/logs/sidebar.js');
     elements = await import('../renderer/logs/elements.js');
     view = await import('../renderer/logs/view.js');
@@ -471,6 +473,89 @@ describe('renderer/logs/sidebar.ts', () => {
       elements.toggleSidebarBtn.click();
       expect(localStorage.getItem(SIDEBAR_KEY)).toBe('open');
       expect(document.body.classList.contains('sidebar-collapsed')).toBe(false);
+    });
+  });
+
+  describe('its width', () => {
+    /**
+     * Lays the window out the way a real one would: every row 244px wide in a
+     * 260px sidebar, its name box 100px of it, and 10px per character of
+     * text — so a row needs its name's text plus 160px.
+     */
+    function layOut(): void {
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(
+        function (this: HTMLElement) {
+          if (this.id === 'sidebar') return 260;
+          if (this.matches('.side-all, .side-group > summary, .side-item'))
+            return 244;
+          if (this.matches('.a-name, .g-name, .s-name')) return 100;
+          // The detached probe a name is measured with.
+          return this.parentElement === document.body
+            ? (this.textContent ?? '').length * 10
+            : 0;
+        },
+      );
+      vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(
+        function (this: Element) {
+          return this.id === 'sidebar' ? 260 : 0;
+        },
+      );
+    }
+
+    function listWidth(): string | null {
+      return elements.sideSplitterEl.getAttribute('aria-valuenow');
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('is set by a handle between the sidebar and the log', () => {
+      const handle = elements.sideSplitterEl;
+      expect(handle.previousElementSibling?.id).toBe('sidebar');
+      expect(handle.getAttribute('role')).toBe('separator');
+      expect(handle.getAttribute('aria-orientation')).toBe('vertical');
+      expect(handle.getAttribute('aria-valuemin')).toBe('180');
+      expect(handle.getAttribute('aria-valuemax')).toBe('360');
+      expect(handle.tabIndex).toBe(0);
+    });
+
+    it('fits the longest name once the tree is drawn', async () => {
+      layOut();
+      willList([
+        group({ items: [item({ id: 'a', name: 'frontend-monorepo' })] }),
+      ]);
+      await sidebar.refreshSidebar();
+      expect(listWidth()).toBe('330');
+    });
+
+    it('follows a renamed service, which only repaints the tree', async () => {
+      layOut();
+      willList(
+        [group({ items: [item({ id: 'a', name: 'api' })] })],
+        [group({ items: [item({ id: 'a', name: 'frontend-monorepo' })] })],
+      );
+      await sidebar.refreshSidebar();
+      expect(listWidth()).toBe('200');
+      await sidebar.refreshSidebar();
+      expect(listWidth()).toBe('330');
+    });
+
+    it('keeps the width the user chose when the tree changes', async () => {
+      await open({ listWidth: '250' });
+      layOut();
+      willList([
+        group({ items: [item({ id: 'a', name: 'frontend-monorepo' })] }),
+      ]);
+      await sidebar.refreshSidebar();
+      expect(listWidth()).toBe('250');
+    });
+
+    it('remembers a width chosen from the keyboard', () => {
+      elements.sideSplitterEl.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+      );
+      expect(localStorage.getItem('logs-list-width')).toBe('260');
     });
   });
 
