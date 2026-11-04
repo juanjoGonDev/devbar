@@ -305,12 +305,7 @@ describe('renderer/tray.ts', () => {
       expect(byId('quit-app').querySelector('.icon')?.textContent).not.toBe('');
     });
 
-    it('quits the app', async () => {
-      const quit = vi.fn();
-      await openTray({ quit });
-      click(byId('quit-app'));
-      expect(quit).toHaveBeenCalledTimes(1);
-    });
+    // Quitting asks first: tests/tray-quit-confirm.test.ts.
   });
 
   describe('the alerts summary', () => {
