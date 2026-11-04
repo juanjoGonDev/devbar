@@ -67,6 +67,10 @@ function mount(names: string[]): Omit<ResizablePaneOptions, 'measureText'> {
 const measureText = (el: HTMLElement): number =>
   (el.textContent ?? '').length * 10;
 
+function pointer(target: EventTarget, type: string, clientX: number): void {
+  target.dispatchEvent(new MouseEvent(type, { clientX, bubbles: true }));
+}
+
 function width(options: Pick<ResizablePaneOptions, 'handle'>): number {
   return Number(options.handle.getAttribute('aria-valuenow'));
 }
@@ -128,6 +132,25 @@ describe('renderer/resizable-pane.ts', () => {
         stubWidth(row, 0);
       pane.refresh();
       expect(width(options)).toBe(200);
+    });
+
+    it('keeps the dragged width while the pane re-fits mid-drag', () => {
+      const options = mount(['abcdefghij']);
+      const pane = createResizablePane({ ...options, measureText });
+
+      pointer(options.handle, 'pointerdown', 100);
+      pointer(window, 'pointermove', 160);
+      // What the ResizeObserver does on the next frame after each move.
+      pane.refresh();
+      expect(width(options)).toBe(260);
+      pointer(window, 'pointermove', 170);
+      pane.refresh();
+      expect(width(options)).toBe(270);
+
+      pointer(window, 'pointerup', 170);
+      pane.refresh();
+      expect(width(options)).toBe(270);
+      expect(localStorage.getItem(KEY)).toBe('270');
     });
 
     it('persists a chosen width under its own key', () => {
