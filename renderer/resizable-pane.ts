@@ -97,6 +97,12 @@ export function createResizablePane(
 
   let stored = readStored();
   let current = options.fallback;
+  /**
+   * Each drag step resizes the pane, which wakes the ResizeObserver; while
+   * the width is still automatic its re-fit would snap the pane back on every
+   * frame, so the divider shook until the drag was committed.
+   */
+  let dragging = false;
 
   function apply(width: number): void {
     current = clamp(width);
@@ -129,7 +135,7 @@ export function createResizablePane(
   }
 
   function refresh(): void {
-    if (stored !== null) return;
+    if (stored !== null || dragging) return;
     const auto = measured();
     if (auto !== null) apply(auto);
   }
@@ -147,8 +153,14 @@ export function createResizablePane(
     current: () => current,
     preview: apply,
     commit: choose,
-    onDragStart: () => host.classList.add('is-resizing'),
-    onDragEnd: () => host.classList.remove('is-resizing'),
+    onDragStart: () => {
+      dragging = true;
+      host.classList.add('is-resizing');
+    },
+    onDragEnd: () => {
+      dragging = false;
+      host.classList.remove('is-resizing');
+    },
   });
 
   handle.addEventListener('dblclick', () => {
