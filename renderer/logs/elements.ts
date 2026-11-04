@@ -108,6 +108,9 @@ export const scrollBtn = byId<HTMLButtonElement>(
   HTMLButtonElement,
 );
 export const runBtn = byId<HTMLButtonElement>('run-toggle', HTMLButtonElement);
+export const shellEl = requireElement<HTMLElement>('.shell', HTMLElement);
+export const sidebarEl = byId<HTMLElement>('sidebar', HTMLElement);
+export const sideSplitterEl = byId<HTMLElement>('side-splitter', HTMLElement);
 export const sideTreeEl = byId<HTMLElement>('side-tree', HTMLElement);
 export const sideFilterEl = byId<HTMLInputElement>(
   'side-filter',

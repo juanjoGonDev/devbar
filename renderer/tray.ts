@@ -9,6 +9,7 @@ import { clearBranchCache } from './tray/branches.js';
 import { renderGroupRow } from './tray/group-row.js';
 import { setTrayHost, showToast } from './tray/host.js';
 import { wireUpdateChip } from './tray/update-chip.js';
+import { wireQuitConfirm } from './tray/quit-confirm.js';
 import {
   renderWorkflowsSection,
   setWorkflowsFold,
@@ -154,6 +155,7 @@ function hiddenGroupsToggle(count: number): HTMLButtonElement {
 function render(groupStates: GroupState[]): void {
   lastGroupStates = groupStates;
   groupStatesKnown = true;
+  quitConfirm.update(groupStates);
   // A branch dropdown is open: wiping the groups list here would destroy the
   // combobox mid-interaction and orphan its (body-level) dropdown, while the
   // resize below would shrink the popover under it. Defer until it closes.
@@ -161,7 +163,6 @@ function render(groupStates: GroupState[]): void {
     _pendingStates = groupStates;
     return;
   }
-  groupsEl.innerHTML = '';
   renderAlertsSummary(groupStates);
 
   const { shown, folded: hidden } = trayGroupLayout(
@@ -176,10 +177,15 @@ function render(groupStates: GroupState[]): void {
   });
 
   if (tabs.active() === 'workflows') {
-    groupsEl.appendChild(workflowsSection());
+    // Left in place when it already is: detaching the list under the pointer
+    // on every push makes macOS drop the hand cursor.
+    const list = workflowsSection();
+    if (groupsEl.childElementCount !== 1 || groupsEl.firstChild !== list)
+      groupsEl.replaceChildren(list);
     autoHeight.schedule();
     return;
   }
+  groupsEl.innerHTML = '';
   // The Grupos tab — or the bare list while the selector is hidden — opens
   // with its own way into the settings, like the Workflows tab.
   groupsEl.appendChild(manageLink('Gestionar grupos', 'groups'));
@@ -242,8 +248,13 @@ function measureContentHeight(): number {
     const mb = parseFloat(cs.marginBottom) || 0;
     return el.offsetHeight + mt + mb;
   };
-  return Math.ceil(
-    padTop + block(header) + block(tabsEl) + groups.scrollHeight + padBottom,
+  // The open «¿Salir de DevBar?» sits in the top layer, outside the flow:
+  // the popover must still be tall enough to show it whole.
+  return Math.max(
+    Math.ceil(
+      padTop + block(header) + block(tabsEl) + groups.scrollHeight + padBottom,
+    ),
+    quitConfirm.minHeight(),
   );
 }
 
@@ -252,6 +263,8 @@ function measureContentHeight(): number {
 // follows the content while the popover is open. While a dropdown is open the
 // combobox owns the height (requestHostHeight grows to fit it); closeList()
 // forces a resend once the count hits 0, which shrinks the window back.
+// The power button asks «¿Salir de DevBar?» first (renderer/tray/quit-confirm).
+const quitConfirm = wireQuitConfirm(() => void window.api.quit());
 const autoHeight = installAutoHeight({
   root: document.body,
   measure: measureContentHeight,
@@ -295,9 +308,6 @@ byId('open-telemetry', HTMLButtonElement).addEventListener('click', () => {
 });
 byId('open-config', HTMLButtonElement).addEventListener('click', () => {
   window.api.openConfig();
-});
-byId('quit-app', HTMLButtonElement).addEventListener('click', () => {
-  window.api.quit();
 });
 
 // «Restablecer posición»: only while the user has pinned the popover away

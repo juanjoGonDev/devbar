@@ -88,6 +88,7 @@ describe('src/main/remote/runtime.ts', () => {
       nextRunAt: null,
       scriptCount: 1,
       running: null,
+      hasLog: false,
     };
     wiring.snapshots.workflowEntries = () => [hidden];
     const runtime = remoteRuntime(wiring);

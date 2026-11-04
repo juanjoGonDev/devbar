@@ -79,6 +79,12 @@ export interface WorkflowEntry {
     totalScripts: number;
     startedAt: number;
   } | null;
+  /**
+   * A run this session — in flight or finished — left a narration log that
+   * `openWorkflowLog(workflowId)` opens. False after a restart even with a
+   * `lastRun`: run logs live in memory.
+   */
+  hasLog: boolean;
 }
 
 /** How `runWorkflow` / `retryWorkflowFrom` end. */

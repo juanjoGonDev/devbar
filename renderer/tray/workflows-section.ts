@@ -17,6 +17,11 @@ import { trayWorkflowLayout } from '../../src/tray-layout.js';
  * tab is selected, and `renderWorkflowsSection` repaints it whenever the list
  * changes. `workflowsSummary` tells the tabs whether there is anything to
  * list and how many are running.
+ *
+ * Every state push (many a second while something runs) repaints the list,
+ * so a row is rebuilt only when what it shows changed, and an unchanged one
+ * never leaves the DOM: detaching the element under the pointer makes macOS
+ * drop the hand cursor back to an arrow.
  */
 
 const section = document.createElement('section');
@@ -54,6 +59,27 @@ function actionButton(
     e.stopPropagation();
     onClick();
   });
+  return btn;
+}
+
+/**
+ * Opens the latest run's narration — the one in flight while it runs. Off,
+ * with the reason as its tooltip, while no run this session left a log.
+ */
+function logButton(entry: WorkflowEntry): HTMLButtonElement {
+  const { workflow } = entry;
+  const btn = actionButton(
+    `Ver el log de «${workflow.name}»`,
+    'scroll-text',
+    () => {
+      if (entry.hasLog) void window.api.openWorkflowLog(workflow.id);
+    },
+  );
+  if (!entry.hasLog) {
+    // aria-disabled, not disabled: the tooltip has to say why.
+    btn.setAttribute('aria-disabled', 'true');
+    btn.title = 'Todavía no se ha ejecutado';
+  }
   return btn;
 }
 
@@ -106,6 +132,7 @@ function row(entry: WorkflowEntry, now: number): HTMLElement {
     el.append(
       mark,
       text,
+      logButton(entry),
       actionButton(`Detener «${workflow.name}»`, 'square', () => {
         void window.api.stopWorkflow(workflow.id);
       }),
@@ -120,17 +147,68 @@ function row(entry: WorkflowEntry, now: number): HTMLElement {
   el.append(
     mark,
     text,
+    logButton(entry),
     actionButton(`Ejecutar «${workflow.name}»`, 'play', () => void run(entry)),
   );
   return el;
 }
 
+interface BuiltRow {
+  key: string;
+  el: HTMLElement;
+}
+/** Each listed row, with what it was built from; `next` fills during a repaint. */
+let built = new Map<string, BuiltRow>();
+let next = new Map<string, BuiltRow>();
+
+/**
+ * The row for `entry`: the one already listed while nothing it shows changed
+ * (a running row's clock ticks on its own, see `tray.ts`), else a new one.
+ */
+function rowFor(
+  entry: WorkflowEntry,
+  now: number,
+  hidden: boolean,
+): HTMLElement {
+  const key = JSON.stringify([
+    entry,
+    entry.running ? null : workflowSubtitle(entry, now),
+    hidden,
+  ]);
+  const id = entry.workflow.id;
+  const previous = built.get(id);
+  let el = previous?.key === key ? previous.el : undefined;
+  if (!el) {
+    el = row(entry, now);
+    if (hidden) el.classList.add('is-hidden-group');
+  }
+  next.set(id, { key, el });
+  return el;
+}
+
+/** Puts `nodes` in `section`, moving or removing only what changed. */
+function reconcile(nodes: readonly Element[]): void {
+  const keep = new Set(nodes);
+  for (const child of Array.from(section.children))
+    if (!keep.has(child)) child.remove();
+  nodes.forEach((node, i) => {
+    const at = section.children[i];
+    if (at !== node) section.insertBefore(node, at ?? null);
+  });
+}
+
+const manage = manageLink('Gestionar workflows', 'workflows');
 let lastEntries: readonly WorkflowEntry[] = [];
 /** Settings › General › «Mostrar workflows ocultos plegados». */
 let showFold = false;
 let foldOpen = false;
 
+let fold: { key: string; el: HTMLButtonElement } | null = null;
+
+/** The «N oculto(s)» toggle, kept while its count and state hold. */
 function foldToggle(count: number): HTMLButtonElement {
+  const key = `${count}:${foldOpen}`;
+  if (fold?.key === key) return fold.el;
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'ghost hidden-groups-toggle';
@@ -144,6 +222,7 @@ function foldToggle(count: number): HTMLButtonElement {
     foldOpen = !foldOpen;
     renderWorkflowsSection(lastEntries);
   });
+  fold = { key, el: btn };
   return btn;
 }
 
@@ -172,18 +251,14 @@ export function renderWorkflowsSection(
     running: shown.filter((entry) => entry.running !== null).length,
   };
   const now = Date.now();
-  const nodes = shown.map((entry) => row(entry, now));
+  next = new Map();
+  const nodes: HTMLElement[] = [manage];
+  nodes.push(...shown.map((entry) => rowFor(entry, now, false)));
   if (folded.length > 0) {
     nodes.push(foldToggle(folded.length));
     if (foldOpen)
-      for (const entry of folded) {
-        const el = row(entry, now);
-        el.classList.add('is-hidden-group');
-        nodes.push(el);
-      }
+      nodes.push(...folded.map((entry) => rowFor(entry, now, true)));
   }
-  section.replaceChildren(
-    manageLink('Gestionar workflows', 'workflows'),
-    ...nodes,
-  );
+  built = next;
+  reconcile(nodes);
 }

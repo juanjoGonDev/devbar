@@ -97,6 +97,24 @@
       </button>
     </div>
     <div id="groups" class="groups-list"></div>
+    <!-- The power button asks first (renderer/tray/quit-confirm.ts). -->
+    <dialog
+      id="quit-dialog"
+      class="modal tray-quit-modal"
+      aria-labelledby="quit-dialog-title"
+      aria-describedby="quit-dialog-note"
+    >
+      <header class="modal-header">
+        <h2 id="quit-dialog-title">¿Salir de DevBar?</h2>
+      </header>
+      <div class="modal-body">
+        <p id="quit-dialog-note" class="tray-quit-note"></p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="quit-cancel" data-close>Cancelar</button>
+        <button type="button" id="quit-confirm" class="danger">Salir</button>
+      </div>
+    </dialog>
     <div id="toast" style="display: none" class="toast"></div>
     <script type="module" src="tray.js"></script>
   </body>

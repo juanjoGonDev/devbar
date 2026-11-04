@@ -64,6 +64,7 @@ function entry(
     nextRunAt: null,
     scriptCount: 1,
     running: null,
+    hasLog: false,
     ...extra,
   };
 }

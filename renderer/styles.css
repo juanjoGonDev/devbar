@@ -1803,6 +1803,15 @@ dialog h2 {
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* «¿Salir de DevBar?» (renderer/tray/quit-confirm.ts): the shared modal,
+   sized for the tray popover instead of a settings window. */
+.modal.tray-quit-modal {
+  width: 300px;
+}
+.tray-quit-note {
+  margin: 0;
+  font-size: 13px;
+}
 /* Changelog-specific: the collapsible release panels inside the shared body. */
 .modal-changelog .modal-body {
   display: flex;
@@ -2149,6 +2158,11 @@ dialog h2 {
 }
 .tray-wf-row.is-running .tray-wf-icon {
   color: var(--accent);
+}
+/* The log button before the workflow's first run: still hoverable, for its tooltip. */
+.tray-wf-row .tray-wf-action[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
 }
 .tray-wf-row.is-failed .tray-wf-sub {
   color: var(--error);

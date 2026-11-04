@@ -163,7 +163,10 @@ describe('renderer/logs/menu.ts', () => {
         'Mostrar actividad',
       ]);
       // Set apart from the view's own actions by a line of their own.
-      expect(document.querySelectorAll('[role="separator"]')).toHaveLength(2);
+      // (The sidebar's resize handle is a separator too, outside the menu.)
+      expect(
+        document.querySelectorAll('[role="menu"] [role="separator"]'),
+      ).toHaveLength(2);
     });
 
     it('leaves out a run control the service does not have', () => {

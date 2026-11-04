@@ -22,13 +22,24 @@ import {
   paintSideItem,
 } from './sidebar-rows.js';
 import { layoutGroupItems } from './sidebar-fold.js';
+import { createSidebarWidth } from './sidebar-width.js';
 import {
+  shellEl,
   sideFilterEl,
   sideFilterKeyEl,
+  sideSplitterEl,
+  sidebarEl,
   sideTreeEl,
   toggleSidebarBtn,
 } from './elements.js';
 import { view } from './view.js';
+
+const sidebarWidth = createSidebarWidth({
+  shell: shellEl,
+  sidebar: sidebarEl,
+  handle: sideSplitterEl,
+  tree: sideTreeEl,
+});
 
 function renderSidebar(): void {
   sideTreeEl.textContent = '';
@@ -151,6 +162,9 @@ export async function refreshSidebar(): Promise<void> {
       lastSignature = signature;
       renderSidebar();
     }
+    // A name may have grown or a counter appeared: re-fit, unless the user
+    // chose a width (then this keeps it).
+    sidebarWidth.refresh();
   }
   renderHeaderRunState();
 }

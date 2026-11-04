@@ -214,6 +214,7 @@ describe('src/main/state-snapshot.ts', () => {
           nextRunAt: null,
           scriptCount: 2,
           running: null,
+          hasLog: false,
         },
         {
           workflow: workflow('w2'),
@@ -221,6 +222,7 @@ describe('src/main/state-snapshot.ts', () => {
           nextRunAt: null,
           scriptCount: 2,
           running: null,
+          hasLog: false,
         },
       ]);
     });
@@ -251,6 +253,40 @@ describe('src/main/state-snapshot.ts', () => {
         doneScripts: 1,
         totalScripts: 2,
         startedAt: 5,
+      });
+    });
+
+    it('says whether a run this session left a log to open', () => {
+      const run = (status: WorkflowRunState['status']): WorkflowRunState => ({
+        workflowId: 'w1',
+        runId: 7,
+        aggregatorId: 'pre-pipeline:7',
+        status,
+        blocks: [],
+        scripts: [],
+        doneScripts: 2,
+        totalScripts: 2,
+        startedAt: 5,
+        finishedAt: 9,
+      });
+      const { snapshots, state } = harness({
+        workflows: [workflow('w1'), workflow('w2')],
+        // A run persisted from an earlier session has no log: logs live in
+        // memory, so only this session's runs can be opened.
+        runs: {
+          w2: { startedAt: 1, finishedAt: 3, durationMs: 2, result: 'success' },
+        },
+      });
+      expect(snapshots.workflowEntries().map((e) => e.hasLog)).toEqual([
+        false,
+        false,
+      ]);
+      state.runStates = new Map([['w1', run('running')]]);
+      expect(snapshots.workflowEntries()[0]?.hasLog).toBe(true);
+      state.runStates = new Map([['w1', run('error')]]);
+      expect(snapshots.workflowEntries()[0]).toMatchObject({
+        hasLog: true,
+        running: null,
       });
     });
 

@@ -28,6 +28,7 @@ export function startupEntries(
       nextRunAt: null,
       scriptCount: 0,
       running: null,
+      hasLog: false,
     },
   ];
 }
