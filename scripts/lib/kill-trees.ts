@@ -99,6 +99,32 @@ export function windowsKillDevInstanceCommand(checkoutPath: string): string {
 }
 
 /**
+ * Windows: the running `image` processes whose EXECUTABLE lives under
+ * `dir`, as a PowerShell pipeline. The image name alone cannot tell a
+ * DevBar.exe started from the build output apart from the installed copy;
+ * the executable path can. Pass `dir` with a trailing separator, so a
+ * sibling directory sharing its prefix does not match.
+ */
+export function windowsImageUnderDirQuery(image: string, dir: string): string {
+  return (
+    `Get-CimInstance Win32_Process -Filter "Name='${image}'" -ErrorAction SilentlyContinue | ` +
+    `Where-Object { $_.ExecutablePath -like '${psLikeEscape(dir)}*' }`
+  );
+}
+
+/** taskkill every process windowsImageUnderDirQuery selects, each with
+ *  its whole tree (/T), like the image-wide kill. */
+export function windowsKillImageUnderDirCommand(
+  image: string,
+  dir: string,
+): string {
+  return (
+    `${windowsImageUnderDirQuery(image, dir)} | ` +
+    `ForEach-Object { & taskkill /PID $($_.ProcessId) /T /F | Out-Null }`
+  );
+}
+
+/**
  * Grace window between SIGTERM and the SIGKILL escalation: long enough
  * for a normal dev server to finish its shutdown handler, short enough
  * that an installer never hangs on one bad service.
