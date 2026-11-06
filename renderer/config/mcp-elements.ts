@@ -2,10 +2,11 @@ import { byId } from '../dom.js';
 import type { McpActivityElements } from './mcp-activity.js';
 import type { McpSheetElements } from './mcp-client-sheet.js';
 import type { McpClientListElements } from './mcp-clients.js';
+import type { McpRevokeElements } from './mcp-revoke-dialog.js';
 
 /**
- * Every element of the «MCP» section (both tabs) and its permissions sheet,
- * resolved in one place: config.ts calls this once, and
+ * Every element of the «MCP» section (both tabs), its permissions sheet and
+ * its revoke confirmation, resolved in one place: config.ts calls this once, and
  * tests/renderer-dom-contract.test.ts checks each assertion against
  * config.html.
  */
@@ -28,6 +29,7 @@ export interface McpElements {
   connect: McpConnectElements;
   clients: McpClientListElements;
   sheet: McpSheetElements;
+  revoke: McpRevokeElements;
   activity: McpActivityElements;
 }
 
@@ -55,14 +57,13 @@ export function mcpElements(): McpElements {
       dialog: byId('mcp-client-sheet', HTMLDialogElement),
       form: byId('mcp-sheet-form', HTMLFormElement),
       avatar: byId('mcp-sheet-avatar', HTMLSpanElement),
-      name: byId('mcp-sheet-name', HTMLInputElement),
+      title: byId('mcp-sheet-title', HTMLHeadingElement),
       scopes: byId('mcp-sheet-scopes', HTMLDivElement),
       groupsAll: byId('mcp-sheet-groups-all', HTMLInputElement),
       groupsSome: byId('mcp-sheet-groups-some', HTMLInputElement),
       groups: byId('mcp-sheet-groups', HTMLDivElement),
       redact: byId('mcp-sheet-redact', HTMLInputElement),
       connection: byId('mcp-sheet-connection', HTMLSpanElement),
-      revoke: byId('mcp-sheet-revoke', HTMLButtonElement),
       submit: byId('mcp-sheet-submit', HTMLButtonElement),
       submitLabel: byId('mcp-sheet-submit-label', HTMLSpanElement),
       shortcutKey: byId('mcp-sheet-key', HTMLElement),
@@ -73,6 +74,13 @@ export function mcpElements(): McpElements {
         cancel: byId('mcp-config-warning-cancel', HTMLButtonElement),
         allow: byId('mcp-config-warning-allow', HTMLButtonElement),
       },
+    },
+    revoke: {
+      dialog: byId('mcp-revoke-dialog', HTMLDialogElement),
+      title: byId('mcp-revoke-title', HTMLHeadingElement),
+      client: byId('mcp-revoke-client', HTMLDivElement),
+      cancel: byId('mcp-revoke-cancel', HTMLButtonElement),
+      confirm: byId('mcp-revoke-confirm', HTMLButtonElement),
     },
     activity: {
       setupTab: byId('mcp-tab-setup', HTMLButtonElement),

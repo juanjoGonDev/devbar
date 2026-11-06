@@ -60,8 +60,16 @@ const chip = (name: string): HTMLButtonElement => {
   return found;
 };
 
-const nameField = (): HTMLInputElement =>
-  el<HTMLInputElement>('mcp-sheet-name');
+/** Picks `label` in the «⋯» menu of the client's row. */
+function fromMenu(name: string, label: string): void {
+  const r = row(name);
+  click(r.querySelector('.remote-menu-btn'));
+  const item = [...r.querySelectorAll('[role="menuitem"]')].find(
+    (each) => visible(each) === label,
+  );
+  if (!item) throw new Error(`no «${label}» in the menu of ${name}`);
+  click(item);
+}
 const warning = (): HTMLDialogElement =>
   el<HTMLDialogElement>('mcp-config-warning');
 /** Picks a confirmation policy the way the select does: value, then `change`. */
@@ -223,9 +231,8 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
       win = await openWith([PENDING]);
       click(button(row('Cursor'), 'Permitir…'));
       expect(sheet().open).toBe(true);
-      expect(nameField().value).toBe('Cursor');
+      expect(visible(el('mcp-sheet-title'))).toBe('Cursor');
       expect(visible(el('mcp-sheet-submit-label'))).toBe('Permitir');
-      expect(el('mcp-sheet-revoke').hidden).toBe(true);
       expect(scopeSwitch('read').checked).toBe(true);
       expect(scopeSwitch('control').checked).toBe(true);
       expect(scopeSwitch('workflows').checked).toBe(true);
@@ -332,9 +339,8 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
           redactSecrets: false,
         },
       ]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       expect(visible(el('mcp-sheet-submit-label'))).toBe('Guardar');
-      expect(el('mcp-sheet-revoke').hidden).toBe(false);
       expect(scopeSwitch('config').checked).toBe(true);
       expect(policy('control').value).toBe('first');
       expect(policy('workflows').value).toBe('always');
@@ -350,7 +356,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('fixes how reads are confirmed, and offers the rest a choice', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       expect(policy('read').disabled).toBe(true);
       expect(visible(policy('read').selectedOptions[0] ?? null)).toBe(
         'Sin preguntar',
@@ -377,7 +383,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('saves every field of the sheet', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       scopeSwitch('config').checked = false;
       policy('workflows').value = 'never';
       pick(el<HTMLInputElement>('mcp-sheet-groups-some'));
@@ -405,7 +411,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('hides the group chips while it sees every group', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       expect(el('mcp-sheet-groups').hidden).toBe(true);
       pick(el<HTMLInputElement>('mcp-sheet-groups-some'));
       expect(el('mcp-sheet-groups').hidden).toBe(false);
@@ -413,38 +419,14 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
       expect(el('mcp-sheet-groups').hidden).toBe(true);
     });
 
-    it('revokes access after asking', async () => {
-      win = await openWith([ALLOWED]);
-      const ask = vi.spyOn(window, 'confirm').mockReturnValue(true);
-      click(button(row('Claude Code'), 'Permisos'));
-      click(el('mcp-sheet-revoke'));
-      expect(ask).toHaveBeenCalledOnce();
-      expect(win.argsFor('revokeMcpClient')).toEqual([['client-Claude Code']]);
-      await win.settle('revokeMcpClient', {
-        ok: true,
-        state: mcpState({ clients: [{ ...ALLOWED, status: 'revoked' }] }),
-      });
-      expect(sheet().open).toBe(false);
-      expect(visible(el('mcp-revoked-summary'))).toBe('Revocados (1)');
-    });
-
-    it('keeps access when the user backs out of revoking', async () => {
-      win = await openWith([ALLOWED]);
-      vi.spyOn(window, 'confirm').mockReturnValue(false);
-      click(button(row('Claude Code'), 'Permisos'));
-      click(el('mcp-sheet-revoke'));
-      expect(win.callCount('revokeMcpClient')).toBe(0);
-      expect(sheet().open).toBe(true);
-    });
-
     it('asks before throwing edits away on close', async () => {
       win = await openWith([ALLOWED]);
       const ask = vi.spyOn(window, 'confirm').mockReturnValue(false);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       click(button(sheet(), 'Cancelar'));
       expect(ask).not.toHaveBeenCalled();
       expect(sheet().open).toBe(false);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       scopeSwitch('read').checked = false;
       click(button(sheet(), 'Cancelar'));
       expect(ask).toHaveBeenCalledOnce();
@@ -455,7 +437,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
   describe('choosing how configuration changes are confirmed', () => {
     it('says that every change stays in Activity and can be undone', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       expect(visible(sheet().querySelector('.mcp-sheet-note'))).toBe(
         'Todo cambio de configuración, confirmado o no, queda en Actividad con su diff y se puede deshacer.',
       );
@@ -463,7 +445,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('warns before letting a client skip the confirmation', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       choose('config', 'never');
       expect(warning().open).toBe(true);
       expect(visible(el('mcp-config-warning-title'))).toBe(
@@ -480,7 +462,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('warns before asking only the first time', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       choose('config', 'first');
       expect(warning().open).toBe(true);
       expect(visible(el('mcp-config-warning-title'))).toBe(
@@ -493,7 +475,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('puts the previous choice back when the warning is cancelled', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       choose('config', 'never');
       click(button(warning(), 'Cancelar'));
       expect(warning().open).toBe(false);
@@ -505,7 +487,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('puts the previous choice back on Escape, keeping the sheet open', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       choose('config', 'first');
       warning().dispatchEvent(new Event('cancel', { cancelable: true }));
       expect(warning().open).toBe(false);
@@ -515,7 +497,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('keeps the choice once allowed, and saves it', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       choose('config', 'never');
       click(el('mcp-config-warning-allow'));
       expect(warning().open).toBe(false);
@@ -528,7 +510,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
 
     it('goes back to the last allowed choice, not the one it opened on', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       choose('config', 'never');
       click(el('mcp-config-warning-allow'));
       choose('config', 'first');
@@ -540,7 +522,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
       win = await openWith([
         { ...ALLOWED, confirm: { ...ALLOWED.confirm, config: 'first' } },
       ]);
-      click(button(row('Claude Code'), 'Permisos'));
+      fromMenu('Claude Code', 'Permisos');
       expect(policy('config').value).toBe('first');
       choose('config', 'always');
       expect(warning().open).toBe(false);
@@ -563,73 +545,31 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
     });
   });
 
-  describe('renaming a connection', () => {
-    it('opens with the name ready to edit', async () => {
+  describe('the header', () => {
+    it('names the client as a plain title, with nothing to edit', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
-      expect(nameField().value).toBe('Claude Code');
-      expect(nameField().getAttribute('aria-label')).toBe(
-        'Nombre de la conexión',
+      fromMenu('Claude Code', 'Permisos');
+      expect(visible(el('mcp-sheet-title'))).toBe('Claude Code');
+      expect(el('mcp-sheet-title').tagName).toBe('H2');
+      expect(sheet().querySelector('.sheet-header input')).toBeNull();
+      expect(sheet().getAttribute('aria-label')).toBe(
+        'Permisos de Claude Code',
       );
-      expect(nameField().maxLength).toBe(80);
+    });
+
+    it('has no way to revoke: that lives in the row menu', async () => {
+      win = await openWith([ALLOWED]);
+      fromMenu('Claude Code', 'Permisos');
       expect(
-        sheet().querySelector('.mcp-sheet-name-edit [data-icon="pencil"]'),
-      ).not.toBeNull();
+        [...sheet().querySelectorAll('button')].map((b) => visible(b)),
+      ).not.toContain('Revocar acceso');
     });
 
-    it('saves a new name, trimmed', async () => {
+    it('never sends a name with the permissions', async () => {
       win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
-      nameField().value = '  Claude del trabajo  ';
-      submit();
-      expect(lastPatch(win)).toMatchObject({ name: 'Claude del trabajo' });
-    });
-
-    it('sends no name when it is unchanged or left blank', async () => {
-      win = await openWith([ALLOWED]);
-      click(button(row('Claude Code'), 'Permisos'));
-      nameField().value = '   ';
+      fromMenu('Claude Code', 'Permisos');
       submit();
       expect(lastPatch(win)).not.toHaveProperty('name');
-    });
-
-    it('applies a new name while approving', async () => {
-      win = await openWith([PENDING]);
-      click(button(row('Cursor'), 'Permitir…'));
-      nameField().value = 'Cursor personal';
-      submit();
-      await win.settle('approveMcpClient', {
-        ok: true,
-        state: mcpState({ clients: [{ ...PENDING, status: 'allowed' }] }),
-      });
-      expect(win.argsFor('updateMcpClient')).toEqual([
-        ['client-Cursor', expect.objectContaining({ name: 'Cursor personal' })],
-      ]);
-    });
-
-    it('keeps the new name when the save after an approval is retried', async () => {
-      win = await openWith([PENDING]);
-      click(button(row('Cursor'), 'Permitir…'));
-      nameField().value = 'Cursor personal';
-      submit();
-      await win.settle('approveMcpClient', {
-        ok: true,
-        state: mcpState({ clients: [{ ...PENDING, status: 'allowed' }] }),
-      });
-      await win.settle('updateMcpClient', { ok: false, error: 'Ocupado.' });
-      submit();
-      expect(win.argsFor('approveMcpClient')).toHaveLength(1);
-      expect(lastPatch(win)).toMatchObject({ name: 'Cursor personal' });
-    });
-
-    it('treats a new name as an edit to ask about on close', async () => {
-      win = await openWith([ALLOWED]);
-      const ask = vi.spyOn(window, 'confirm').mockReturnValue(false);
-      click(button(row('Claude Code'), 'Permisos'));
-      nameField().value = 'Otro';
-      click(button(sheet(), 'Cancelar'));
-      expect(ask).toHaveBeenCalledOnce();
-      expect(sheet().open).toBe(true);
     });
   });
 });

@@ -1612,19 +1612,7 @@
         <span id="mcp-sheet-avatar" class="mcp-avatar mcp-avatar-lg"></span>
         <div class="sheet-heading">
           <div class="sheet-overline">Cliente MCP</div>
-          <label class="mcp-sheet-name-edit">
-            <input
-              type="text"
-              id="mcp-sheet-name"
-              class="mcp-sheet-name"
-              form="mcp-sheet-form"
-              maxlength="80"
-              autocomplete="off"
-              spellcheck="false"
-              aria-label="Nombre de la conexión"
-            />
-            <span class="icon" data-icon="pencil"></span>
-          </label>
+          <h2 id="mcp-sheet-title"></h2>
         </div>
         <button
           type="button"
@@ -1687,9 +1675,6 @@
           <h3 class="mcp-group-title">Conexión</h3>
           <div class="mcp-card mcp-connection">
             <span id="mcp-sheet-connection" class="mcp-connection-line"></span>
-            <button type="button" id="mcp-sheet-revoke" class="mcp-danger-btn">
-              Revocar acceso
-            </button>
           </div>
         </div>
         <footer class="sheet-footer">
@@ -1725,6 +1710,36 @@
         </button>
         <button type="button" id="mcp-config-warning-allow" class="danger">
           Permitir
+        </button>
+      </div>
+    </dialog>
+
+    <!-- «MCP»: confirming «Revocar acceso» (renderer/config/mcp-revoke-dialog.ts) -->
+    <dialog
+      id="mcp-revoke-dialog"
+      class="modal mcp-warning-modal mcp-revoke-modal"
+      aria-labelledby="mcp-revoke-title"
+      aria-describedby="mcp-revoke-note"
+    >
+      <header class="modal-header">
+        <span class="mcp-warning-tile">
+          <span class="icon" data-icon="shield-off"></span>
+        </span>
+        <h2 id="mcp-revoke-title">¿Revocar el acceso?</h2>
+      </header>
+      <div class="modal-body">
+        <div id="mcp-revoke-client" class="mcp-revoke-card"></div>
+        <p id="mcp-revoke-note" class="mcp-revoke-note">
+          Perderá todas las herramientas al momento. Podrás volver a permitirlo
+          desde «Revocados».
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="mcp-revoke-cancel" data-close>
+          Cancelar
+        </button>
+        <button type="button" id="mcp-revoke-confirm" class="danger">
+          Revocar acceso
         </button>
       </div>
     </dialog>

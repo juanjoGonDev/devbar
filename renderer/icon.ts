@@ -72,6 +72,8 @@ export type IconName =
   | 'settings'
   | 'shield'
   | 'shield-check'
+  | 'shield-off'
+  | 'sliders-horizontal'
   | 'smartphone'
   | 'split'
   | 'square'

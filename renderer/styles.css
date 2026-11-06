@@ -6181,6 +6181,12 @@ button.primary.mcp-confirm-apply.is-destructive {
   --mcp-diff-add-bg: rgba(46, 160, 67, 0.15);
   --mcp-diff-add-fg: #7ee787;
 }
+/* The «⋯» menu is the linked devices' one (renderer/config/remote-device-
+   menu.ts): give it the section's own surface and red. */
+.config-section[data-section='mcp'] {
+  --remote-surface: var(--mcp-surface);
+  --remote-danger: var(--mcp-danger);
+}
 .config-section[data-section='mcp'].active {
   display: flex;
   flex-direction: column;
@@ -6363,11 +6369,22 @@ button.primary.mcp-confirm-apply.is-destructive {
   list-style: none;
 }
 .mcp-client {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 52px;
   padding: 10px 16px;
+}
+.mcp-client .remote-menu {
+  top: calc(100% - 6px);
+  right: 10px;
+}
+.mcp-client-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
 }
 .mcp-client + .mcp-client {
   border-top: 1px solid var(--mcp-hairline);
@@ -6381,7 +6398,10 @@ button.primary.mcp-confirm-apply.is-destructive {
 .mcp-clients .mcp-client.is-pending:only-child {
   border-radius: 9px;
 }
-.mcp-client.is-revoked {
+/* Dimmed piece by piece, not the whole row: an opacity on the row would
+   fade its open «⋯» menu too. */
+.mcp-client.is-revoked > :not(.mcp-client-actions),
+.mcp-client.is-revoked .mcp-client-actions > :not(.remote-menu) {
   opacity: 0.55;
 }
 .mcp-avatar {
@@ -6466,19 +6486,70 @@ button.primary.mcp-confirm-apply.is-destructive {
   background: var(--badge-error-bg);
   color: var(--badge-error-fg);
 }
-button.mcp-link-btn {
-  flex-shrink: 0;
-  padding: 4px 6px;
-  border: 0;
-  background: none;
-  box-shadow: none;
-  color: var(--accent);
-  font-size: 12.5px;
-  cursor: pointer;
+/* «Renombrar»: the name becomes a field in place, one accent ring around
+   the field and its save / cancel buttons, no nested borders. */
+.mcp-rename {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  max-width: 300px;
+  height: 26px;
+  margin-left: -7px;
+  padding: 0 2px 0 6px;
+  border-radius: 7px;
+  background: var(--mcp-surface);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 4px var(--accent-tint);
 }
-button.mcp-link-btn:hover {
-  text-decoration: underline;
+.mcp-rename input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+.mcp-rename input::selection {
+  background: rgba(10, 132, 255, 0.35);
+}
+.mcp-rename button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+.mcp-rename button:hover {
+  background: var(--bg-row-hover);
+  color: inherit;
   filter: none;
+}
+.mcp-rename button.is-save {
+  color: var(--accent);
+}
+.mcp-rename-hint {
+  font-size: 11px;
+}
+/* While renaming, the name gets the row: the scope tags step aside. */
+.mcp-client.is-renaming .mcp-scope-tags {
+  display: none;
+}
+.mcp-client.is-renaming .mcp-client-title {
+  width: 100%;
 }
 .mcp-empty {
   margin: 0;
@@ -6598,45 +6669,6 @@ dialog.sub-sheet.mcp-sheet {
 .mcp-sheet-note {
   margin: 2px 4px 0;
 }
-/* The client's name, editable in place: reads as the sheet's title until
-   hovered or focused, with a pencil saying it can be changed. */
-.mcp-sheet-name-edit {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  margin-left: -6px;
-  padding: 1px 6px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  cursor: text;
-}
-.mcp-sheet-name-edit:hover {
-  background: var(--bg-row-hover);
-}
-.mcp-sheet-name-edit:focus-within {
-  border-color: var(--accent);
-  background: var(--mcp-surface);
-}
-.mcp-sheet-name {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-  text-overflow: ellipsis;
-}
-.mcp-sheet-name-edit .icon {
-  flex-shrink: 0;
-  color: var(--muted);
-  font-size: 13px;
-}
 /* «¿Permitir cambios de configuración sin confirmar?» over the sheet. */
 .modal.mcp-warning-modal {
   width: 420px;
@@ -6655,6 +6687,24 @@ dialog.sub-sheet.mcp-sheet {
 }
 .mcp-warning-body {
   margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+/* «¿Revocar el acceso de …?»: the client as its row shows it, then why. */
+.mcp-revoke-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--mcp-surface);
+}
+.mcp-revoke-card .mcp-client-text {
+  gap: 2px;
+}
+.mcp-revoke-note {
+  margin: 12px 0 0;
   font-size: 13px;
   line-height: 1.45;
 }
@@ -6708,19 +6758,6 @@ button.mcp-group-chip[aria-pressed='true'] {
   flex: 1;
   min-width: 0;
   font-size: 12.5px;
-}
-button.mcp-danger-btn {
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--badge-error-bg);
-  border-radius: 7px;
-  background: var(--mcp-surface);
-  box-shadow: none;
-  color: var(--mcp-danger);
-  font-size: 12.5px;
-}
-button.mcp-danger-btn[hidden] {
-  display: none;
 }
 /* «Servidor | Actividad»: the section's two tabs. */
 .mcp-tabs {
