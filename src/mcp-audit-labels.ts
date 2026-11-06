@@ -6,8 +6,23 @@ import type { McpAuditEntry, McpAuditResult } from './ipc-contract/mcp-api.js';
  * entry is kept, which main prunes by and the window's date picker stops at.
  */
 
-/** Entries older than this are pruned from the log. */
-export const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How many days an entry is kept before it is pruned: the user picks it in
+ * «Limpiar» › «Borrado automático» (Settings › MCP › Actividad).
+ */
+export const AUDIT_RETENTION_DAYS = { default: 30, min: 1, max: 365 } as const;
+
+/** A stored or typed number of days as a whole day count within range. */
+export function retentionDays(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value))
+    return AUDIT_RETENTION_DAYS.default;
+  return Math.min(
+    AUDIT_RETENTION_DAYS.max,
+    Math.max(AUDIT_RETENTION_DAYS.min, Math.floor(value)),
+  );
+}
 
 export const AUDIT_RESULT_LABELS: Readonly<Record<McpAuditResult, string>> = {
   ok: 'Correcto',

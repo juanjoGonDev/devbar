@@ -55,6 +55,7 @@ export function auditPage(
     total: entries.length,
     retained: entries.length,
     facets: facetsOf(entries),
+    retentionDays: 30,
     ...extra,
   };
 }
@@ -188,4 +189,21 @@ export function summaryDetails(): string[] {
 
 export function activeLine(): string {
   return visible(el('mcp-activity-active'));
+}
+
+/** The confirmation dialog of «Actividad» (delete, undo, by dates). */
+export function activityDialog(): HTMLDialogElement {
+  return el<HTMLDialogElement>('mcp-activity-dialog');
+}
+
+/** Presses the dialog's main button and lets what it wakes run. */
+export async function confirmDialog(): Promise<void> {
+  click(el('mcp-activity-dialog-ok'));
+  await flush();
+}
+
+/** Lets queued promises run (a flow awaiting the dialog, say). */
+export async function flush(): Promise<void> {
+  for (let i = 0; i < 3; i++)
+    await new Promise((resolve) => setTimeout(resolve, 0));
 }

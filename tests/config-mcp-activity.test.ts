@@ -12,6 +12,7 @@ import {
 } from './helpers/mcp.js';
 import {
   auditPage,
+  confirmDialog,
   lastQuery,
   openActivity,
   row,
@@ -273,12 +274,14 @@ describe('renderer/config/mcp-activity.ts', () => {
       expect(row('a2').querySelector('.mcp-entry-undo')).toBeNull();
     });
 
-    it('undoes it, says so and reads the log again', async () => {
+    it('undoes it once confirmed, says so and reads the log again', async () => {
       win = await openActivity([CHANGE]);
       click(row('a1').querySelector('.mcp-entry-undo'));
+      expect(win.callCount('undoMcpChange')).toBe(0);
+      await confirmDialog();
       expect(win.argsFor('undoMcpChange')).toEqual([['undo-1']]);
       await win.settle('undoMcpChange', { ok: true });
-      expect(el('toast').textContent).toBe('Cambio deshecho');
+      expect(el('toast').textContent).toBe('1 cambio deshecho');
       expect(win.callCount('queryMcpAudit')).toBe(2);
     });
 
@@ -287,6 +290,7 @@ describe('renderer/config/mcp-activity.ts', () => {
       const undo =
         row('a1').querySelector<HTMLButtonElement>('.mcp-entry-undo');
       click(undo);
+      await confirmDialog();
       expect(undo?.disabled).toBe(true);
       await win.settle('undoMcpChange', { ok: false, error: 'Ya no existe.' });
       expect(el('toast').textContent).toBe('Ya no existe.');
@@ -297,6 +301,7 @@ describe('renderer/config/mcp-activity.ts', () => {
     it('says what went wrong when the call fails', async () => {
       win = await openActivity([CHANGE]);
       click(row('a1').querySelector('.mcp-entry-undo'));
+      await confirmDialog();
       await win.fail('undoMcpChange', new Error('sin conexión'));
       expect(el('toast').textContent).toBe('Error: sin conexión');
     });

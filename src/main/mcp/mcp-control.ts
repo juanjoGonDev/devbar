@@ -3,6 +3,10 @@ import type {
   McpAuditEntry,
   McpAuditPage,
   McpAuditPageQuery,
+  McpAuditRetention,
+  McpAuditSelection,
+  McpAuditSelectionInfo,
+  McpAuditUndoResult,
   McpClientPatch,
   McpConfirmAnswer,
   McpConfirmRequest,
@@ -65,11 +69,22 @@ export interface McpControl {
   revoke(id: string): McpMutationResult;
   queryAudit(query: McpAuditPageQuery): McpAuditPage;
   undo(undoToken: string): Promise<SimpleResult>;
+  auditSelectionInfo(
+    selection: McpAuditSelection,
+    view?: McpAuditPageQuery,
+  ): McpAuditSelectionInfo;
+  deleteAudit(selection: McpAuditSelection): { deleted: number };
+  /** Undoes the selection's changes newest first; one failing skips on. */
+  undoMany(selection: McpAuditSelection): Promise<McpAuditUndoResult>;
+  /** Saves «Borrado automático» and prunes what is already older. */
+  setAuditRetention(days: number): McpAuditRetention;
   answerConfirm(id: string, answer: McpConfirmAnswer): SimpleResult;
   listConfirms(): McpConfirmRequest[];
 }
 
 const UNDO_GONE = 'Ese cambio ya no se puede deshacer';
+/** The distinct reasons a bulk undo reports, at most. */
+const MAX_UNDO_ERRORS = 5;
 
 export function createMcpControl(deps: McpControlDeps): McpControl {
   let error: string | null = null;
@@ -104,6 +119,18 @@ export function createMcpControl(deps: McpControlDeps): McpControl {
   const mutation = (result: ClientStoreResult): McpMutationResult =>
     result.ok ? { ok: true, state: state() } : result;
 
+  /** Restores one entry's change and retires its token once it worked. */
+  const undoEntry = async (entry: McpAuditEntry): Promise<SimpleResult> => {
+    let result: SimpleResult;
+    try {
+      result = await deps.restore(entry);
+    } catch (failure) {
+      result = { ok: false, error: errorMessage(failure) };
+    }
+    if (result.ok) deps.audit.update(entry.id, { undoToken: undefined });
+    return result;
+  };
+
   return {
     state,
     setEnabled: async (enabled) => {
@@ -133,9 +160,33 @@ export function createMcpControl(deps: McpControlDeps): McpControl {
     undo: async (undoToken) => {
       const entry = deps.audit.byUndoToken(undoToken);
       if (!entry) return { ok: false, error: UNDO_GONE };
-      const result = await deps.restore(entry);
-      if (result.ok) deps.audit.update(entry.id, { undoToken: undefined });
-      return result;
+      return undoEntry(entry);
+    },
+    auditSelectionInfo: (selection, view) =>
+      deps.audit.selectionInfo(selection, view),
+    deleteAudit: (selection) => ({ deleted: deps.audit.remove(selection) }),
+    undoMany: async (selection) => {
+      let undone = 0;
+      let failed = 0;
+      const errors = new Set<string>();
+      for (const entry of deps.audit.undoableIn(selection)) {
+        const result = await undoEntry(entry);
+        if (result.ok) undone++;
+        else {
+          failed++;
+          if (errors.size < MAX_UNDO_ERRORS)
+            errors.add(result.error ?? UNDO_GONE);
+        }
+      }
+      return errors.size > 0
+        ? { undone, failed, errors: [...errors] }
+        : { undone, failed };
+    },
+    setAuditRetention: (days) => {
+      deps.settings.save({ ...deps.settings.get(), auditRetentionDays: days });
+      const deleted = deps.audit.prune();
+      push();
+      return { days: deps.settings.get().auditRetentionDays, deleted };
     },
     answerConfirm: (id, answer) => deps.desk.answer(id, answer),
     listConfirms: () => deps.desk.pending(),

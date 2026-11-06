@@ -1,6 +1,7 @@
 import type {
   McpAuditEntry,
   McpAuditFacets,
+  McpAuditFilter,
   McpAuditPage,
   McpAuditPageQuery,
   McpAuditResult,
@@ -68,7 +69,7 @@ interface Prepared {
 const setOf = <T>(list: readonly T[] | undefined): ReadonlySet<T> | null =>
   list ? new Set(list) : null;
 
-function prepare(query: McpAuditPageQuery): Prepared {
+function prepare(query: McpAuditFilter): Prepared {
   return {
     search: (query.search ?? '').trim().toLowerCase(),
     clients: setOf(query.clientIds),
@@ -198,16 +199,36 @@ function toolFacet(
   }));
 }
 
+/** The entries a filter matches, in the log's own order. */
+export function filterAuditEntries(
+  all: readonly McpAuditEntry[],
+  filter: McpAuditFilter,
+): McpAuditEntry[] {
+  const p = prepare(filter);
+  return all.filter((entry) => matches(entry, p));
+}
+
+/** Where a page query puts each entry: its match, sorted, and the slice. */
+export function paged(
+  all: readonly McpAuditEntry[],
+  query: McpAuditPageQuery,
+): { matching: McpAuditEntry[]; offset: number; limit: number } {
+  const matching = filterAuditEntries(all, query);
+  matching.sort(comparator(query.sort));
+  return {
+    matching,
+    limit: Math.max(1, Math.min(MAX_LIMIT, Math.floor(query.limit))),
+    offset: Math.max(0, Math.floor(query.offset)),
+  };
+}
+
 export function queryAuditEntries(
   all: readonly McpAuditEntry[],
   query: McpAuditPageQuery,
   known: AuditKnown,
-): McpAuditPage {
+): Omit<McpAuditPage, 'retentionDays'> {
   const p = prepare(query);
-  const limit = Math.max(1, Math.min(MAX_LIMIT, Math.floor(query.limit)));
-  const offset = Math.max(0, Math.floor(query.offset));
-  const matching = all.filter((entry) => matches(entry, p));
-  matching.sort(comparator(query.sort));
+  const { matching, offset, limit } = paged(all, query);
   const results = countBy(all, p, 'result', (entry) => entry.result);
   return {
     entries: matching

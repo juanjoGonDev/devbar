@@ -12,6 +12,7 @@ import type {
   WorkflowRunRecord,
 } from '../domain-types.js';
 import { normalizeCustomIcons } from '../custom-icons.js';
+import { AUDIT_RETENTION_DAYS, retentionDays } from '../mcp-audit-labels.js';
 import { OWNER_ONLY, restrictToOwner } from './owner-only.js';
 import { normalizeWorkflows, pruneWorkflowRefs } from '../workflows.js';
 import {
@@ -51,16 +52,27 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   notifySuccess: true,
   showHiddenGroupsFold: true,
   showHiddenWorkflowsFold: false,
-  mcp: { enabled: false, transport: 'stdio' },
+  mcp: {
+    enabled: false,
+    transport: 'stdio',
+    auditRetentionDays: AUDIT_RETENTION_DAYS.default,
+  },
 };
 
-/** Only the local stdio transport exists; anything else reads as off. */
+/**
+ * Only the local stdio transport exists; anything else reads as off. The
+ * days «Actividad» keeps are clamped into range (30 when never chosen).
+ */
 function normalizeMcpSettings(value: unknown): McpSettings {
   const raw =
     value !== null && typeof value === 'object'
       ? (value as Record<string, unknown>)
       : {};
-  return { enabled: raw.enabled === true, transport: 'stdio' };
+  return {
+    enabled: raw.enabled === true,
+    transport: 'stdio',
+    auditRetentionDays: retentionDays(raw.auditRetentionDays),
+  };
 }
 
 type StoreState = {

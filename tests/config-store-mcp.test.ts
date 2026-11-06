@@ -45,6 +45,7 @@ describe('src/config-store/store.ts (MCP)', () => {
     expect(store.getGlobalSettings().mcp).toEqual({
       enabled: false,
       transport: 'stdio',
+      auditRetentionDays: 30,
     });
   });
 
@@ -52,20 +53,32 @@ describe('src/config-store/store.ts (MCP)', () => {
     const store = await harness.open();
 
     const unknown = 'http' as McpTransport;
-    const saved = store.saveMcpSettings({ enabled: true, transport: unknown });
+    const saved = store.saveMcpSettings({
+      enabled: true,
+      transport: unknown,
+      auditRetentionDays: 30,
+    });
 
-    expect(saved.mcp).toEqual({ enabled: true, transport: 'stdio' });
+    expect(saved.mcp).toEqual({
+      enabled: true,
+      transport: 'stdio',
+      auditRetentionDays: 30,
+    });
     const reopened = await harness.open({ home: harness.home() });
     expect(reopened.getGlobalSettings().mcp.enabled).toBe(true);
   });
 
   it('never lets the general settings save, nor an import, flip the switch', async () => {
     const store = await harness.open();
-    store.saveMcpSettings({ enabled: true, transport: 'stdio' });
+    store.saveMcpSettings({
+      enabled: true,
+      transport: 'stdio',
+      auditRetentionDays: 30,
+    });
 
     const saved = store.saveGlobalSettings({
       theme: 'dark',
-      mcp: { enabled: false, transport: 'stdio' },
+      mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
     });
 
     expect(saved.theme).toBe('dark');
@@ -79,6 +92,36 @@ describe('src/config-store/store.ts (MCP)', () => {
     });
 
     expect(store.getGlobalSettings().mcp.enabled).toBe(false);
+  });
+
+  it('keeps the days «Actividad» keeps, within 1–365', async () => {
+    const store = await harness.open();
+
+    const saved = store.saveMcpSettings({
+      enabled: false,
+      transport: 'stdio',
+      auditRetentionDays: 7,
+    });
+    expect(saved.mcp.auditRetentionDays).toBe(7);
+    expect(
+      store.saveMcpSettings({ ...saved.mcp, auditRetentionDays: 9000 }).mcp
+        .auditRetentionDays,
+    ).toBe(365);
+    expect(
+      store.saveMcpSettings({ ...saved.mcp, auditRetentionDays: 0.5 }).mcp
+        .auditRetentionDays,
+    ).toBe(1);
+  });
+
+  it('reads hand-edited days as the 30-day default', async () => {
+    const store = await harness.open({
+      seed: {
+        version: 4,
+        globalSettings: { mcp: { auditRetentionDays: 'x' } },
+      },
+    });
+
+    expect(store.getGlobalSettings().mcp.auditRetentionDays).toBe(30);
   });
 
   it('keeps the clients across a restart, raw', async () => {

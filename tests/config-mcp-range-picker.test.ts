@@ -54,7 +54,13 @@ function mount(value: RangeValue, rebuild = true): Harness {
         ? active.dataset.focusKey
         : undefined;
     host.replaceChildren(
-      rangePicker({ value: current, now: NOW, view, change }),
+      rangePicker({
+        value: current,
+        now: NOW,
+        retentionDays: 30,
+        view,
+        change,
+      }),
     );
     if (key !== undefined) byKey(key)?.focus();
   };

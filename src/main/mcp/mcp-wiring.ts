@@ -117,7 +117,10 @@ export function createMcp(wiring: McpWiring, server: McpServerParts): McpParts {
       fs.writeFileSync(auditPath, content, { mode: OWNER_ONLY_FILE }),
     now: () => Date.now(),
     newId: () => randomUUID(),
+    retentionDays: () =>
+      wiring.configStore.getGlobalSettings().mcp.auditRetentionDays,
     published: (entry) => wiring.send('mcp:audit', entry),
+    refreshed: () => wiring.send('mcp:auditRefresh', null),
   });
   const desk = createConfirmDesk({
     now: () => Date.now(),

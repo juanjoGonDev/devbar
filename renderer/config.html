@@ -766,6 +766,108 @@
                 class="act-active"
                 aria-live="polite"
               ></div>
+              <!-- «Limpiar» (renderer/config/mcp-activity-clean.ts) -->
+              <div class="clean-host">
+                <button
+                  type="button"
+                  id="mcp-activity-clean"
+                  class="act-clean"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-controls="mcp-activity-clean-pop"
+                >
+                  <span class="icon" data-icon="trash-2"></span>
+                  Limpiar
+                </button>
+                <div
+                  id="mcp-activity-clean-pop"
+                  class="xf clean-pop"
+                  role="dialog"
+                  aria-label="Limpiar historial"
+                  hidden
+                >
+                  <div class="xf-sec">
+                    <div class="xf-title">Eliminar</div>
+                    <button
+                      type="button"
+                      id="mcp-clean-filtered"
+                      class="xf-item"
+                    >
+                      <span class="icon" data-icon="filter"></span>
+                      <span>Lo que coincide con los filtros</span>
+                      <span id="mcp-clean-filtered-n" class="n"></span>
+                    </button>
+                    <button type="button" id="mcp-clean-range" class="xf-item">
+                      <span class="icon" data-icon="calendar-range"></span>
+                      <span>Por rango de fechas…</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="mcp-clean-all"
+                      class="xf-item is-danger"
+                    >
+                      <span class="icon" data-icon="trash-2"></span>
+                      <span>Todo el historial…</span>
+                      <span id="mcp-clean-all-n" class="n"></span>
+                    </button>
+                  </div>
+                  <div class="xf-sec">
+                    <div class="xf-title">Borrado automático</div>
+                    <div class="auto-row">
+                      <label for="mcp-clean-days"
+                        >Eliminar entradas con más de</label
+                      >
+                      <div class="num-stepper">
+                        <button
+                          type="button"
+                          class="num-stepper-btn"
+                          data-step="-1"
+                          aria-label="Menos días"
+                          title="Menos días"
+                        >
+                          <span class="icon" data-icon="minus"></span>
+                        </button>
+                        <span class="num-stepper-field">
+                          <input
+                            type="number"
+                            id="mcp-clean-days"
+                            min="1"
+                            max="365"
+                            step="1"
+                            value="30"
+                            inputmode="numeric"
+                          />
+                          <span class="num-stepper-suffix">días</span>
+                        </span>
+                        <button
+                          type="button"
+                          class="num-stepper-btn"
+                          data-step="1"
+                          aria-label="Más días"
+                          title="Más días"
+                        >
+                          <span class="icon" data-icon="plus"></span>
+                        </button>
+                      </div>
+                    </div>
+                    <p
+                      id="mcp-clean-hint"
+                      class="auto-hint"
+                      aria-live="polite"
+                    ></p>
+                  </div>
+                  <div class="xf-foot">
+                    <span class="auto-hint">Máximo 365 días</span>
+                    <button
+                      type="button"
+                      id="mcp-clean-done"
+                      class="small-btn primary"
+                    >
+                      Listo
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             <div id="mcp-activity-log" class="mcp-card mcp-log">
               <div id="mcp-activity-head" class="mcp-log-head" role="row"></div>
@@ -789,7 +891,7 @@
                 ></div>
               </div>
             </div>
-            <p class="mcp-hint">
+            <p id="mcp-activity-keep" class="mcp-hint">
               Se guardan los últimos 30 días. Los logs que lee un asistente no
               se copian aquí.
             </p>
@@ -1750,6 +1852,28 @@
         </button>
         <button type="button" id="mcp-revoke-confirm" class="danger">
           Revocar acceso
+        </button>
+      </div>
+    </dialog>
+
+    <!-- «Actividad»: deleting entries and undoing changes (renderer/config/mcp-activity-ask.ts) -->
+    <dialog
+      id="mcp-activity-dialog"
+      class="modal mcp-warning-modal mcp-activity-dialog"
+      aria-labelledby="mcp-activity-dialog-title"
+      aria-describedby="mcp-activity-dialog-body"
+    >
+      <header class="modal-header">
+        <span id="mcp-activity-dialog-tile" class="mcp-warning-tile"></span>
+        <h2 id="mcp-activity-dialog-title"></h2>
+      </header>
+      <div id="mcp-activity-dialog-body" class="modal-body"></div>
+      <div class="modal-actions">
+        <button type="button" id="mcp-activity-dialog-cancel" data-close>
+          Cancelar
+        </button>
+        <button type="button" id="mcp-activity-dialog-ok" class="danger">
+          Eliminar
         </button>
       </div>
     </dialog>

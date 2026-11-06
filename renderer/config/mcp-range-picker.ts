@@ -1,4 +1,4 @@
-import { AUDIT_RETENTION_MS } from '../../src/mcp-audit-labels.js';
+import { DAY_MS } from '../../src/mcp-audit-labels.js';
 import { icon } from '../icon.js';
 import { localInput, parseLocal } from './mcp-activity-model.js';
 import { PART_MAX, timeSegment, type Part } from './mcp-range-clock.js';
@@ -52,6 +52,8 @@ export interface RangeView {
 export interface RangePickerOptions {
   value: RangeValue;
   now: number;
+  /** How many days the log keeps: the calendar stops at the oldest one. */
+  retentionDays: number;
   view: RangeView;
   change(next: RangeValue): void;
 }
@@ -99,7 +101,7 @@ function span(className: string, text: string): HTMLSpanElement {
 export function rangePicker(options: RangePickerOptions): HTMLElement {
   const { view, now } = options;
   let value: RangeValue = { ...options.value };
-  const oldest = midnight(now - AUDIT_RETENTION_MS);
+  const oldest = midnight(now - options.retentionDays * DAY_MS);
   const today = midnight(now);
   const clamp = (day: number): number => Math.min(today, Math.max(oldest, day));
   const at = (end: RangeEnd): number | undefined => parseLocal(value[end]);

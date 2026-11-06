@@ -324,7 +324,7 @@ describe('src/config-store/store.ts', () => {
         notifySuccess: true,
         showHiddenGroupsFold: true,
         showHiddenWorkflowsFold: false,
-        mcp: { enabled: false, transport: 'stdio' },
+        mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
       });
     });
 

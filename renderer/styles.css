@@ -6686,6 +6686,40 @@ dialog.sub-sheet.mcp-sheet {
   font-size: 13px;
   line-height: 1.45;
 }
+/* «Actividad»'s confirmations: blue for an undo, a warning line in amber. */
+.mcp-warning-tile.is-info {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+.mcp-activity-dialog .modal-body p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mcp-activity-dialog .modal-body p + p {
+  margin-top: 8px;
+}
+.mcp-activity-dialog p.mcp-ask-warn {
+  color: var(--badge-warn-fg);
+}
+.mcp-activity-dialog p.mcp-ask-what {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+/* «Eliminar por fechas»: the presets, the range picker, the live count. */
+.range-del .xf-chips {
+  padding: 0 0 10px;
+}
+.range-del .rp {
+  padding: 0 0 4px;
+}
+.mcp-activity-dialog p.range-count {
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+.range-count b {
+  color: var(--mcp-danger);
+}
 /* «¿Revocar el acceso de …?»: the client as its row shows it, then why. */
 .mcp-revoke-card {
   display: flex;
@@ -6945,10 +6979,10 @@ button.act-fresh {
 .mcp-log-head,
 .mcp-entry-line {
   display: grid;
-  grid-template-columns: 64px 110px minmax(0, 1fr) 96px 112px;
+  grid-template-columns: 22px 64px 110px minmax(0, 1fr) 96px 112px;
   align-items: center;
   gap: 12px;
-  padding: 0 16px;
+  padding: 0 16px 0 12px;
 }
 .mcp-log-head {
   position: relative;
@@ -7120,9 +7154,9 @@ button.mcp-entry-toggle .icon {
 button.mcp-entry-toggle[aria-expanded='true'] .icon {
   transform: rotate(90deg);
 }
-/* Lined up under «Acción»: padding + time + client + two gaps. */
+/* Lined up under «Acción»: padding + box + time + client + three gaps. */
 .mcp-log-rows .mcp-diff {
-  margin: 0 16px 0 214px;
+  margin: 0 16px 0 244px;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -7715,13 +7749,189 @@ button.xf-foot-link:disabled {
 }
 .mcp-log.is-flat .mcp-log-head,
 .mcp-log.is-flat .mcp-entry-line {
-  grid-template-columns: 92px 110px minmax(0, 1fr) 96px 112px;
+  grid-template-columns: 22px 92px 110px minmax(0, 1fr) 96px 112px;
 }
 .mcp-log.is-flat .mcp-log-rows .mcp-diff {
-  margin-left: 242px;
+  margin-left: 272px;
 }
 .mcp-entry-time.has-date {
   white-space: nowrap;
+}
+/* Selecting rows: a box leads each row (faint until hovered or ticked) and
+   the header; ticked rows take the accent tint. */
+.sel-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sel-box input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent-strong);
+  cursor: pointer;
+}
+.mcp-entry:not(.is-selected) .sel-box input:not(:focus-visible) {
+  opacity: 0.45;
+}
+.mcp-entry:hover .sel-box input {
+  opacity: 1;
+}
+.mcp-entry.is-selected,
+.mcp-entry.is-selected.is-change {
+  background: var(--accent-tint);
+}
+/* While anything is selected the header becomes the selection bar. */
+.mcp-log-head.is-selecting {
+  display: flex;
+  height: 40px;
+  padding: 0 10px 0 12px;
+  background: var(--badge-info-bg);
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.mcp-log-head.is-selecting > :not(.sel-bar),
+.sel-bar[hidden] {
+  display: none;
+}
+.sel-bar {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sel-bar .sel-box {
+  width: 22px;
+}
+.sel-count {
+  color: var(--badge-info-fg);
+  font-weight: 700;
+}
+.sel-where {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.sel-bar .spacer {
+  flex: 1;
+}
+button.sel-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+button.sel-act .icon {
+  font-size: 13px;
+}
+button.sel-act.is-danger {
+  color: var(--mcp-danger);
+}
+button.sel-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+button.sel-x:hover {
+  background: var(--bg-row-hover);
+  color: inherit;
+  filter: none;
+}
+/* «Están seleccionadas las 50 de esta página. Seleccionar las 1.284…» */
+.sel-banner {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-top: 1px solid var(--mcp-hairline);
+  background: var(--accent-tint);
+  font-size: 12px;
+}
+button.sel-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+/* «Limpiar»: a button at the end of the row over the log and its popover
+   (the look of the column menus, right-aligned under it). */
+.clean-host {
+  position: relative;
+  flex-shrink: 0;
+}
+button.act-clean {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+button.act-clean[aria-expanded='true'] {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.xf.clean-pop {
+  left: auto;
+  right: 0;
+  width: 304px;
+}
+.xf.clean-pop[hidden] {
+  display: none;
+}
+button.xf-item .n {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+button.xf-item:disabled {
+  opacity: 0.45;
+}
+button.xf-item.is-danger,
+button.xf-item.is-danger .icon {
+  color: var(--mcp-danger);
+}
+.auto-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 8px 2px;
+}
+.auto-row .num-stepper input[type='number'] {
+  width: 34px;
+}
+.auto-hint {
+  margin: 6px 8px 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.xf-foot .auto-hint {
+  margin: 0;
+}
+.auto-hint.is-warn {
+  color: var(--badge-warn-fg);
 }
 .mcp-log-rows mark {
   padding: 0 1px;

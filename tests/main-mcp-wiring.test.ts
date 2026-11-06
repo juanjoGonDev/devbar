@@ -92,6 +92,37 @@ describe('src/main/mcp/mcp-wiring.ts', () => {
     expect(h.sent.map((s) => s.channel)).toEqual(['mcp:audit']);
   });
 
+  it('keeps the days the settings say and tells the windows when entries go', () => {
+    const h = harness();
+    h.parts.audit.record({
+      clientId: 'c1',
+      clientName: 'Claude Code',
+      tool: 'get_status',
+      target: 'Back',
+      result: 'ok',
+      summary: '',
+    });
+
+    const result = h.parts.control.setAuditRetention(7);
+
+    expect(result).toEqual({ days: 7, deleted: 0 });
+    expect(h.pushedSettings.at(-1)?.mcp.auditRetentionDays).toBe(7);
+    expect(
+      h.parts.audit.query({ offset: 0, limit: 1 }, { clients: [], tools: [] })
+        .retentionDays,
+    ).toBe(7);
+    expect(h.parts.control.deleteAudit({ kind: 'all' })).toEqual({
+      deleted: 1,
+    });
+    expect(h.sent.at(-1)).toEqual({
+      channel: 'mcp:auditRefresh',
+      payload: null,
+    });
+    expect(
+      fs.readFileSync(path.join(h.appHome, 'mcp', 'audit.jsonl'), 'utf8'),
+    ).toBe('');
+  });
+
   it('saves the switch in the global settings and pushes them', async () => {
     const h = harness();
 
@@ -100,6 +131,7 @@ describe('src/main/mcp/mcp-wiring.ts', () => {
     expect(h.pushedSettings.at(-1)?.mcp).toEqual({
       enabled: true,
       transport: 'stdio',
+      auditRetentionDays: 30,
     });
     expect(h.sent.at(-1)?.channel).toBe('mcp:update');
   });

@@ -1,5 +1,6 @@
 import type {
   McpAuditFacets,
+  McpAuditFilter,
   McpAuditPageQuery,
   McpAuditResult,
   McpAuditSort,
@@ -267,6 +268,12 @@ export function toQuery(state: ActivityState, now: number): McpAuditPageQuery {
   if (state.results) query.results = [...state.results];
   if (state.undoable) query.undoable = true;
   return query;
+}
+
+/** The filters of a page query, without its paging and sort. */
+export function toFilter(query: McpAuditPageQuery): McpAuditFilter {
+  const { offset: _offset, limit: _limit, sort: _sort, ...filter } = query;
+  return filter;
 }
 
 const SHORT_STAMP = new Intl.DateTimeFormat('es-ES', {

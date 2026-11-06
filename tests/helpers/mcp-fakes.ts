@@ -237,7 +237,9 @@ export async function mcpHarness(
     rewrite: () => undefined,
     now: () => now,
     newId: () => `audit${++ids}`,
+    retentionDays: () => 30,
     published: () => undefined,
+    refreshed: () => undefined,
   });
   const requests: McpConfirmRequest[] = [];
   const desk = createConfirmDesk({

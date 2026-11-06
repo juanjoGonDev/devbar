@@ -4,7 +4,7 @@ import type { McpState } from '../src/ipc-contract/mcp-api.js';
 import { recordingIpc } from './helpers/main-fakes.js';
 
 const STATE: McpState = {
-  settings: { enabled: true, transport: 'stdio' },
+  settings: { enabled: true, transport: 'stdio', auditRetentionDays: 30 },
   clients: [],
   connectCommand: {
     claudeCode: '',
@@ -39,8 +39,17 @@ function harness() {
       total: 0,
       retained: 0,
       facets: { clients: [], tools: [], results: [] },
+      retentionDays: 30,
     }),
     undo: record('undo', Promise.resolve({ ok: true as const })),
+    auditSelectionInfo: record('auditSelectionInfo', {
+      total: 0,
+      undoable: 0,
+      oldest: null,
+    }),
+    deleteAudit: record('deleteAudit', { deleted: 0 }),
+    undoMany: record('undoMany', Promise.resolve({ undone: 0, failed: 0 })),
+    setAuditRetention: record('setAuditRetention', { days: 7, deleted: 0 }),
     answerConfirm: record('answerConfirm', { ok: true as const }),
     listConfirms: record('listConfirms', []),
   };
@@ -73,6 +82,43 @@ describe('src/main/ipc/mcp-ipc.ts', () => {
     ],
     ['mcp:undo', { undoToken: 'u1' }, ['undo', 'u1']],
     [
+      'mcp:auditSelectionInfo',
+      { selection: { kind: 'ids', ids: ['a1'], extra: 1 } },
+      ['auditSelectionInfo', { kind: 'ids', ids: ['a1'] }, undefined],
+    ],
+    [
+      'mcp:auditSelectionInfo',
+      {
+        selection: { kind: 'all' },
+        view: { offset: 50, limit: 50, search: 'x', secret: true },
+      },
+      [
+        'auditSelectionInfo',
+        { kind: 'all' },
+        { offset: 50, limit: 50, search: 'x' },
+      ],
+    ],
+    [
+      'mcp:deleteAudit',
+      {
+        selection: {
+          kind: 'query',
+          query: { tools: ['restart'], offset: 0 },
+          except: ['a2'],
+        },
+      },
+      [
+        'deleteAudit',
+        { kind: 'query', query: { tools: ['restart'] }, except: ['a2'] },
+      ],
+    ],
+    [
+      'mcp:undoChanges',
+      { selection: { kind: 'range', from: 1, to: 2 } },
+      ['undoMany', { kind: 'range', from: 1, to: 2 }],
+    ],
+    ['mcp:setAuditRetention', { days: 7 }, ['setAuditRetention', 7]],
+    [
       'mcp:answerConfirm',
       { id: 'r1', answer: 'reject' },
       ['answerConfirm', 'r1', 'reject'],
@@ -93,6 +139,14 @@ describe('src/main/ipc/mcp-ipc.ts', () => {
     ['mcp:updateClient', { id: 'c1', patch: { groups: 'some' } }],
     ['mcp:queryAudit', { limit: 10 }],
     ['mcp:undo', { undoToken: 7 }],
+    ['mcp:auditSelectionInfo', { selection: { kind: 'some' } }],
+    ['mcp:auditSelectionInfo', { selection: { kind: 'all' }, view: {} }],
+    ['mcp:deleteAudit', { selection: { kind: 'ids', ids: [''] } }],
+    ['mcp:deleteAudit', {}],
+    ['mcp:undoChanges', { selection: { kind: 'query' } }],
+    ['mcp:setAuditRetention', { days: 0 }],
+    ['mcp:setAuditRetention', { days: 366 }],
+    ['mcp:setAuditRetention', { days: 2.5 }],
     ['mcp:answerConfirm', { id: 'r1', answer: 'yes' }],
   ])('%s refuses %j without acting', (channel, payload) => {
     const h = harness();

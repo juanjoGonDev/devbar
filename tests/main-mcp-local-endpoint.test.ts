@@ -51,7 +51,9 @@ function core() {
       rewrite: () => undefined,
       now: () => Date.now(),
       newId: () => String(Math.random()),
+      retentionDays: () => 30,
       published: () => undefined,
+      refreshed: () => undefined,
     }),
     desk: createConfirmDesk({
       now: () => Date.now(),

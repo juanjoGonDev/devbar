@@ -310,6 +310,8 @@ export type McpTransport = 'stdio';
 export interface McpSettings {
   enabled: boolean;
   transport: McpTransport;
+  /** How many days «Actividad» keeps an entry (1–365). */
+  auditRetentionDays: number;
 }
 
 export interface GlobalSettings {

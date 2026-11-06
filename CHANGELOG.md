@@ -28,7 +28,11 @@ Todas las novedades relevantes de DevBar. El formato sigue
   Actividad registra cada llamada y permite deshacer los cambios. Puedes
   buscar en toda la actividad, filtrar cada columna como en una hoja de
   cálculo (también por fecha y hora), ordenar por varias columnas a la vez y
-  recorrerla por páginas.
+  recorrerla por páginas. Puedes seleccionar entradas (también de varias
+  páginas, o todas las que coinciden) para deshacerlas o eliminarlas, siempre
+  con confirmación; borrar lo que coincide con los filtros, un rango de fechas
+  o todo el historial, y elegir a los cuántos días se borran solas las
+  entradas (30 por defecto, hasta 365).
 
 ## [0.12.0] - 2026-10-17
 

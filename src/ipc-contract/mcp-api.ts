@@ -87,7 +87,7 @@ export interface McpDiffLine {
 export type McpAuditResult =
   'ok' | 'warning' | 'error' | 'rejected' | 'pending';
 
-/** One tool call, kept for 30 days. Log contents are never stored. */
+/** One tool call, kept for 30 days by default. Logs read are never stored. */
 export interface McpAuditEntry {
   id: string;
   /** Epoch ms. */
@@ -159,6 +159,71 @@ export interface McpAuditPage {
   /** How many entries the log keeps, whatever the query. */
   retained: number;
   facets: McpAuditFacets;
+  /** How many days the log keeps an entry (the user's choice). */
+  retentionDays: number;
+}
+
+/** The filter half of a page query: what narrows the log, without paging. */
+export type McpAuditFilter = Pick<
+  McpAuditPageQuery,
+  'search' | 'clientIds' | 'tools' | 'results' | 'undoable' | 'from' | 'to'
+>;
+
+/**
+ * Entries of the log picked to undo or delete, resolved by main so a big
+ * selection never travels whole: the ids ticked one by one; everything a
+ * filter matches (save `except`, plus `include`), which is what «Seleccionar
+ * las N que coinciden» and «Lo que coincide con los filtros» send; a time
+ * window (epoch ms, both inclusive, either end open); or the whole log.
+ */
+export type McpAuditSelection =
+  | { kind: 'ids'; ids: string[] }
+  | {
+      kind: 'query';
+      query: McpAuditFilter;
+      /** Matching entries left out. */
+      except?: string[];
+      /** Entries outside the filter picked as well. */
+      include?: string[];
+    }
+  | { kind: 'range'; from?: number; to?: number }
+  | { kind: 'all' };
+
+/** Where a selection sits in one page query of «Actividad». */
+export interface McpAuditSelectionView {
+  /** Selected entries the query's filters leave out. */
+  outside: number;
+  /** How many of the query's pages hold a selected entry. */
+  pages: number;
+  /** The selected entries of the page asked for. */
+  onPage: string[];
+  /** Every entry the query matches is selected (and it matches some). */
+  everyMatch: boolean;
+}
+
+export interface McpAuditSelectionInfo {
+  /** How many entries the selection holds right now. */
+  total: number;
+  /** How many of them can still be undone. */
+  undoable: number;
+  /** Epoch ms of its oldest entry; null when it is empty. */
+  oldest: number | null;
+  /** Present when asked about a page query. */
+  view?: McpAuditSelectionView;
+}
+
+export interface McpAuditUndoResult {
+  undone: number;
+  failed: number;
+  /** Why some could not be undone (distinct reasons, a few at most). */
+  errors?: string[];
+}
+
+/** The log after a new «Borrado automático» took effect. */
+export interface McpAuditRetention {
+  days: number;
+  /** Entries pruned at once because they were already older than that. */
+  deleted: number;
 }
 
 /**
@@ -244,6 +309,23 @@ export interface McpApi {
   queryMcpAudit(query: McpAuditPageQuery): Promise<McpAuditPage>;
   /** Restores what a configuration change replaced. */
   undoMcpChange(undoToken: string): Promise<SimpleResult>;
+  /**
+   * How many entries a selection holds and how many can be undone; with a
+   * page query, also where the selection sits in it.
+   */
+  getMcpAuditSelectionInfo(
+    selection: McpAuditSelection,
+    view?: McpAuditPageQuery,
+  ): Promise<McpAuditSelectionInfo>;
+  /** Deletes the selected entries from the log for good. */
+  deleteMcpAudit(selection: McpAuditSelection): Promise<{ deleted: number }>;
+  /**
+   * Undoes every change of the selection that still can be, newest first; a
+   * failure does not stop the rest.
+   */
+  undoMcpChanges(selection: McpAuditSelection): Promise<McpAuditUndoResult>;
+  /** Keeps entries this many days (1–365), pruning the older ones now. */
+  setMcpAuditRetention(days: number): Promise<McpAuditRetention>;
   answerMcpConfirm(id: string, answer: McpConfirmAnswer): Promise<SimpleResult>;
   /** The confirmations still waiting — for a window that opens late. */
   listMcpConfirms(): Promise<McpConfirmRequest[]>;
@@ -254,4 +336,6 @@ export interface McpApi {
   onMcpConfirmClosed(callback: (closed: McpConfirmClosed) => void): () => void;
   /** Every new audit entry, as it is recorded. */
   onMcpAudit(callback: (entry: McpAuditEntry) => void): () => void;
+  /** Entries left the log (deleted or pruned): read it again. */
+  onMcpAuditRefresh(callback: () => void): () => void;
 }

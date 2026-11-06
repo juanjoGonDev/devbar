@@ -26,6 +26,7 @@ export type IconName =
   | 'bell-off'
   | 'calendar'
   | 'calendar-clock'
+  | 'calendar-range'
   | 'check'
   | 'chevron-down'
   | 'chevron-left'

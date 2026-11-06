@@ -37,6 +37,8 @@ export interface MenuContext {
   state: ActivityState;
   facets: McpAuditFacets | null;
   now: number;
+  /** How many days the log keeps (the «Rango…» calendar stops there). */
+  retentionDays: number;
   /** The text of this column's «Buscar» field (kept while the menu is open). */
   find: string;
   setFind(text: string): void;
@@ -151,6 +153,7 @@ function timeFilter(ctx: MenuContext): HTMLElement[] {
   const picker = rangePicker({
     value: { from: time.from, to: time.to },
     now: ctx.now,
+    retentionDays: ctx.retentionDays,
     view: ctx.range,
     change: (range) => ctx.setTime({ ...time, ...range }),
   });

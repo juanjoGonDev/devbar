@@ -22,7 +22,13 @@ import type { RendererWindow } from './helpers/renderer-dom.js';
  * tests/config-mcp-activity.test.ts.
  */
 
-const ACTIVE = { settings: { enabled: true, transport: 'stdio' as const } };
+const ACTIVE = {
+  settings: {
+    enabled: true,
+    transport: 'stdio' as const,
+    auditRetentionDays: 30,
+  },
+};
 
 function navItem(): HTMLElement {
   const item = document.querySelector<HTMLElement>(

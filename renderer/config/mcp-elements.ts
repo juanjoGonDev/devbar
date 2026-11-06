@@ -5,8 +5,9 @@ import type { McpClientListElements } from './mcp-clients.js';
 import type { McpRevokeElements } from './mcp-revoke-dialog.js';
 
 /**
- * Every element of the «MCP» section (both tabs), its permissions sheet and
- * its revoke confirmation, resolved in one place: config.ts calls this once, and
+ * Every element of the «MCP» section (both tabs, with «Limpiar» and the
+ * activity's confirmation dialog), its permissions sheet and its revoke
+ * confirmation, resolved in one place: config.ts calls this once, and
  * tests/renderer-dom-contract.test.ts checks each assertion against
  * config.html.
  */
@@ -98,6 +99,27 @@ export function mcpElements(): McpElements {
       range: byId('mcp-activity-range', HTMLSpanElement),
       size: byId('mcp-activity-size', HTMLSelectElement),
       pages: byId('mcp-activity-pages', HTMLDivElement),
+      keep: byId('mcp-activity-keep', HTMLParagraphElement),
+      clean: {
+        button: byId('mcp-activity-clean', HTMLButtonElement),
+        pop: byId('mcp-activity-clean-pop', HTMLDivElement),
+        filtered: byId('mcp-clean-filtered', HTMLButtonElement),
+        filteredCount: byId('mcp-clean-filtered-n', HTMLSpanElement),
+        range: byId('mcp-clean-range', HTMLButtonElement),
+        all: byId('mcp-clean-all', HTMLButtonElement),
+        allCount: byId('mcp-clean-all-n', HTMLSpanElement),
+        days: byId('mcp-clean-days', HTMLInputElement),
+        hint: byId('mcp-clean-hint', HTMLParagraphElement),
+        done: byId('mcp-clean-done', HTMLButtonElement),
+      },
+      dialog: {
+        dialog: byId('mcp-activity-dialog', HTMLDialogElement),
+        tile: byId('mcp-activity-dialog-tile', HTMLSpanElement),
+        title: byId('mcp-activity-dialog-title', HTMLHeadingElement),
+        body: byId('mcp-activity-dialog-body', HTMLDivElement),
+        cancel: byId('mcp-activity-dialog-cancel', HTMLButtonElement),
+        ok: byId('mcp-activity-dialog-ok', HTMLButtonElement),
+      },
     },
   };
 }

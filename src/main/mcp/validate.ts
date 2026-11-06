@@ -1,6 +1,8 @@
 import type {
+  McpAuditFilter,
   McpAuditPageQuery,
   McpAuditResult,
+  McpAuditSelection,
   McpAuditSort,
   McpClientPatch,
   McpConfirmAnswer,
@@ -13,6 +15,7 @@ import {
   ipcString,
   type UnknownRecord,
 } from '../ipc-validators.js';
+import { AUDIT_RETENTION_DAYS } from '../../mcp-audit-labels.js';
 
 /**
  * Payload narrowing for the `mcp:*` IPC channels. A renderer is untrusted
@@ -42,6 +45,8 @@ const MAX_TOOL_LENGTH = 100;
 const MAX_GROUP_IDS = 500;
 const MAX_ID_LENGTH = 200;
 const MAX_NAME_LENGTH = 200;
+/** Ids ticked one by one, across pages: far more than anyone clicks. */
+const MAX_SELECTED_IDS = 10_000;
 
 function optionalRecord(value: unknown, label: string): UnknownRecord | null {
   if (value === undefined || value === null) return null;
@@ -120,10 +125,15 @@ export function ipcMcpClientPatch(value: unknown): McpClientPatch {
   return patch;
 }
 
-function idList(value: unknown, label: string, maxLength: number): string[] {
+function idList(
+  value: unknown,
+  label: string,
+  maxLength: number,
+  maxCount = MAX_FILTER_VALUES,
+): string[] {
   if (
     !Array.isArray(value) ||
-    value.length > MAX_FILTER_VALUES ||
+    value.length > maxCount ||
     !value.every(
       (id: unknown) =>
         typeof id === 'string' && id.length > 0 && id.length <= maxLength,
@@ -164,6 +174,30 @@ function wholeNumber(value: unknown, label: string): number {
   return value;
 }
 
+/** What narrows the activity log: sizes capped, keys and values whitelisted. */
+function auditFilter(raw: UnknownRecord): McpAuditFilter {
+  const filter: McpAuditFilter = {};
+  if (raw.search !== undefined) {
+    const search = ipcString(raw.search, 'search');
+    if (search.length > MAX_SEARCH_LENGTH)
+      throw new TypeError('Invalid IPC search');
+    filter.search = search;
+  }
+  if (raw.clientIds !== undefined)
+    filter.clientIds = idList(raw.clientIds, 'clientIds', MAX_ID_LENGTH);
+  if (raw.tools !== undefined)
+    filter.tools = idList(raw.tools, 'tools', MAX_TOOL_LENGTH);
+  if (raw.results !== undefined) filter.results = resultList(raw.results);
+  if (raw.undoable !== undefined) {
+    if (typeof raw.undoable !== 'boolean')
+      throw new TypeError('Invalid IPC undoable');
+    filter.undoable = raw.undoable;
+  }
+  if (raw.from !== undefined) filter.from = ipcNumber(raw.from, 'from');
+  if (raw.to !== undefined) filter.to = ipcNumber(raw.to, 'to');
+  return filter;
+}
+
 /** One page of the activity log: sizes capped, keys and values whitelisted. */
 export function ipcMcpAuditPageQuery(value: unknown): McpAuditPageQuery {
   const raw = ipcRecord(value, 'audit query');
@@ -173,27 +207,52 @@ export function ipcMcpAuditPageQuery(value: unknown): McpAuditPageQuery {
     MAX_AUDIT_LIMIT,
     Math.max(1, wholeNumber(raw.limit, 'limit')),
   );
-  const query: McpAuditPageQuery = { offset, limit };
-  if (raw.search !== undefined) {
-    const search = ipcString(raw.search, 'search');
-    if (search.length > MAX_SEARCH_LENGTH)
-      throw new TypeError('Invalid IPC search');
-    query.search = search;
-  }
-  if (raw.clientIds !== undefined)
-    query.clientIds = idList(raw.clientIds, 'clientIds', MAX_ID_LENGTH);
-  if (raw.tools !== undefined)
-    query.tools = idList(raw.tools, 'tools', MAX_TOOL_LENGTH);
-  if (raw.results !== undefined) query.results = resultList(raw.results);
-  if (raw.undoable !== undefined) {
-    if (typeof raw.undoable !== 'boolean')
-      throw new TypeError('Invalid IPC undoable');
-    query.undoable = raw.undoable;
-  }
-  if (raw.from !== undefined) query.from = ipcNumber(raw.from, 'from');
-  if (raw.to !== undefined) query.to = ipcNumber(raw.to, 'to');
+  const query: McpAuditPageQuery = { offset, limit, ...auditFilter(raw) };
   if (raw.sort !== undefined) query.sort = sortList(raw.sort);
   return query;
+}
+
+const selectedIds = (value: unknown, label: string): string[] =>
+  idList(value, label, MAX_ID_LENGTH, MAX_SELECTED_IDS);
+
+/** Entries picked in «Actividad»: one of four shapes, each one bounded. */
+export function ipcMcpAuditSelection(value: unknown): McpAuditSelection {
+  const raw = ipcRecord(value, 'audit selection');
+  switch (raw.kind) {
+    case 'all':
+      return { kind: 'all' };
+    case 'ids':
+      return { kind: 'ids', ids: selectedIds(raw.ids, 'ids') };
+    case 'range': {
+      const range: Extract<McpAuditSelection, { kind: 'range' }> = {
+        kind: 'range',
+      };
+      if (raw.from !== undefined) range.from = ipcNumber(raw.from, 'from');
+      if (raw.to !== undefined) range.to = ipcNumber(raw.to, 'to');
+      return range;
+    }
+    case 'query': {
+      const picked: Extract<McpAuditSelection, { kind: 'query' }> = {
+        kind: 'query',
+        query: auditFilter(ipcRecord(raw.query, 'audit selection query')),
+      };
+      if (raw.except !== undefined)
+        picked.except = selectedIds(raw.except, 'except');
+      if (raw.include !== undefined)
+        picked.include = selectedIds(raw.include, 'include');
+      return picked;
+    }
+    default:
+      throw new TypeError('Invalid IPC audit selection');
+  }
+}
+
+/** «Borrado automático»: a whole number of days within range. */
+export function ipcMcpRetentionDays(value: unknown): number {
+  const days = wholeNumber(value, 'days');
+  if (days < AUDIT_RETENTION_DAYS.min || days > AUDIT_RETENTION_DAYS.max)
+    throw new TypeError('Invalid IPC days');
+  return days;
 }
 
 export function ipcMcpConfirmAnswer(value: unknown): McpConfirmAnswer {

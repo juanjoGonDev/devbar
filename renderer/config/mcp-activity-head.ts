@@ -28,6 +28,7 @@ export interface HeadDeps {
   state(): ActivityState;
   facets(): McpAuditFacets | null;
   now(): number;
+  retentionDays(): number;
   clickSort(key: ActivityColumn, additive: boolean): void;
   sort(key: ActivityColumn, dir: SortDir): void;
   addSort(key: ActivityColumn): void;
@@ -149,6 +150,7 @@ export function createActivityHead(
         state: deps.state(),
         facets: deps.facets(),
         now: deps.now(),
+        retentionDays: deps.retentionDays(),
         find: menu.find,
         setFind: (text) => {
           menu.find = text;

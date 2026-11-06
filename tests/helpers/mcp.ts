@@ -33,7 +33,7 @@ export function mcpClient(
 
 export function mcpState(extra: Partial<McpState> = {}): McpState {
   return {
-    settings: { enabled: false, transport: 'stdio' },
+    settings: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
     clients: [],
     connectCommand: {
       claudeCode: 'claude mcp add devbar -- devbar mcp',

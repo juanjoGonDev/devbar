@@ -3,13 +3,15 @@ import { auditResultLabel } from '../../src/mcp-audit-labels.js';
 import { icon } from '../icon.js';
 import { auditTime } from './mcp-format.js';
 import { shortStamp } from './mcp-activity-model.js';
+import { rowBox } from './mcp-activity-picking.js';
 
 /**
- * The rows of «Actividad»: one line per tool call (time, client, action,
- * result), a change that unfolds into its diff and offers «Deshacer», the
- * search marked in what it matched, and a separator per day while the time
- * leads the sort. With another column first the rows run flat and each time
- * carries its date.
+ * The rows of «Actividad»: one line per tool call (its selection box, time,
+ * client, action, result), a change that unfolds into its diff and offers
+ * «Deshacer», the search marked in what it matched, and a separator per day
+ * while the time leads the sort. With another column first the rows run flat
+ * and each time carries its date. The selection banner, when there is one,
+ * comes first.
  */
 
 export interface RowsView {
@@ -20,7 +22,10 @@ export interface RowsView {
   now: number;
   /** Nothing in the log at all, or nothing that matches. */
   empty: 'none' | 'filtered';
-  undo(token: string, button: HTMLButtonElement): void;
+  undo(entry: McpAuditEntry, token: string, button: HTMLButtonElement): void;
+  picked(id: string): boolean;
+  pick(entry: McpAuditEntry, on: boolean, shift: boolean): void;
+  banner: HTMLLIElement | null;
 }
 
 const DIFF_SIGN = { ctx: ' ', del: '-', add: '+' } as const;
@@ -114,12 +119,16 @@ function diffBox(
   li.append(diff);
 }
 
-function undoButton(token: string, view: RowsView): HTMLButtonElement {
+function undoButton(
+  entry: McpAuditEntry,
+  token: string,
+  view: RowsView,
+): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'small-btn mcp-entry-undo';
   button.append(icon('undo-2'), 'Deshacer');
-  button.addEventListener('click', () => view.undo(token, button));
+  button.addEventListener('click', () => view.undo(entry, token, button));
   return button;
 }
 
@@ -128,6 +137,8 @@ function row(entry: McpAuditEntry, view: RowsView): HTMLLIElement {
   const li = document.createElement('li');
   li.className = 'mcp-entry';
   li.dataset.id = entry.id;
+  const picked = view.picked(entry.id);
+  li.classList.toggle('is-selected', picked);
 
   const line = document.createElement('div');
   line.className = 'mcp-entry-line';
@@ -149,6 +160,7 @@ function row(entry: McpAuditEntry, view: RowsView): HTMLLIElement {
     ? span('mcp-entry-time', auditTime(entry.at))
     : span('mcp-entry-time has-date', shortStamp(entry.at));
   line.append(
+    rowBox(entry, picked, (on, shift) => view.pick(entry, on, shift)),
     time,
     marked('mcp-entry-client', entry.clientName, search),
     action,
@@ -158,7 +170,7 @@ function row(entry: McpAuditEntry, view: RowsView): HTMLLIElement {
   li.append(line);
 
   if (entry.diff) diffBox(entry, li, tail);
-  if (entry.undoToken) tail.prepend(undoButton(entry.undoToken, view));
+  if (entry.undoToken) tail.prepend(undoButton(entry, entry.undoToken, view));
   return li;
 }
 
@@ -184,7 +196,7 @@ export function renderRows(
     list.replaceChildren(emptyRow(view.empty));
     return;
   }
-  const items: HTMLLIElement[] = [];
+  const items: HTMLLIElement[] = view.banner ? [view.banner] : [];
   let day = '';
   for (const entry of entries) {
     if (view.byDay) {

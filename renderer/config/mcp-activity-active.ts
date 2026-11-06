@@ -25,6 +25,8 @@ export interface ActiveView {
   facets: McpAuditFacets | null;
   total: number;
   retained: number;
+  /** How many days the log keeps. */
+  days: number;
 }
 
 const CLEAR_LABEL = 'Quitar filtros y orden';
@@ -97,7 +99,10 @@ export function renderActive(
   const items: HTMLElement[] = [text('spacer', '')];
   if (!narrows(state) && isDefaultSort(state.sort)) {
     items.push(
-      text('act-count', `${NUMBER.format(view.retained)} llamadas · 30 días`),
+      text(
+        'act-count',
+        `${NUMBER.format(view.retained)} llamadas · ${view.days} ${view.days === 1 ? 'día' : 'días'}`,
+      ),
     );
   } else {
     items.push(

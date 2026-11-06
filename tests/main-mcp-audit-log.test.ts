@@ -6,10 +6,10 @@ import type {
   McpDiffLine,
 } from '../src/ipc-contract/mcp-api.js';
 import { createAuditLog, type AuditDraft } from '../src/main/mcp/audit-log.js';
-import { AUDIT_RETENTION_MS } from '../src/mcp-audit-labels.js';
 import type { AuditKnown } from '../src/main/mcp/audit-query.js';
 
 const DAY = 24 * 60 * 60 * 1000;
+const AUDIT_RETENTION_MS = 30 * DAY;
 const START = Date.UTC(2026, 10, 3, 12);
 
 function harness(file: string | null = null) {
@@ -18,6 +18,8 @@ function harness(file: string | null = null) {
   let disk = file ?? '';
   const rewrites: string[] = [];
   const published: McpAuditEntry[] = [];
+  let days = 30;
+  let refreshes = 0;
   const log = createAuditLog({
     load: () => file,
     append: (line) => {
@@ -29,13 +31,21 @@ function harness(file: string | null = null) {
     },
     now: () => now,
     newId: () => `a${++ids}`,
+    retentionDays: () => days,
     published: (entry) => published.push(entry),
+    refreshed: () => {
+      refreshes++;
+    },
   });
   return {
     log,
     rewrites,
     published,
     disk: () => disk,
+    refreshes: () => refreshes,
+    keep: (next: number) => {
+      days = next;
+    },
     advance: (ms: number) => {
       now += ms;
     },
@@ -46,6 +56,8 @@ const DIFF: McpDiffLine[] = [
   { kind: 'del', field: 'comando', text: 'pnpm dev' },
   { kind: 'add', field: 'comando', text: 'pnpm dev --inspect' },
 ];
+
+const KNOWN_NONE: AuditKnown = { clients: [], tools: [] };
 
 function draft(overrides: Partial<AuditDraft> = {}): AuditDraft {
   return {
@@ -155,6 +167,118 @@ describe('src/main/mcp/audit-log.ts', () => {
     const h = harness(JSON.stringify({ id: 'x', at: START }) + '\n');
 
     expect(h.rewrites).toEqual([]);
+  });
+
+  describe('deleting and the days it keeps', () => {
+    function three() {
+      const h = harness();
+      const a = h.log.record(draft({ tool: 'a', undoToken: 'u1' }));
+      h.advance(DAY);
+      const b = h.log.record(draft({ tool: 'b', clientId: 'c2' }));
+      h.advance(DAY);
+      const c = h.log.record(draft({ tool: 'c', undoToken: 'u3' }));
+      return { h, a, b, c };
+    }
+    const tools = (h: ReturnType<typeof harness>): string[] =>
+      h.log.list({ limit: 10 }).map((e) => e.tool);
+
+    it('deletes picked ids, rewrites the file and asks the windows to refresh', () => {
+      const { h, a, c } = three();
+
+      expect(h.log.remove({ kind: 'ids', ids: [a.id, c.id, 'gone'] })).toBe(2);
+
+      expect(tools(h)).toEqual(['b']);
+      expect(h.rewrites.at(-1)).toBe(
+        JSON.stringify(h.log.list({ limit: 1 })[0]) + '\n',
+      );
+      expect(h.refreshes()).toBe(1);
+    });
+
+    it('deletes what a filter matches, but its exceptions', () => {
+      const { h, a } = three();
+
+      const deleted = h.log.remove({
+        kind: 'query',
+        query: { clientIds: ['c1'] },
+        except: [a.id],
+      });
+
+      expect(deleted).toBe(1);
+      expect(tools(h)).toEqual(['b', 'a']);
+    });
+
+    it('deletes a time window, either end open', () => {
+      const { h, b } = three();
+
+      expect(h.log.remove({ kind: 'range', to: b.at })).toBe(2);
+      expect(tools(h)).toEqual(['c']);
+      expect(h.log.remove({ kind: 'range', from: b.at })).toBe(1);
+      expect(tools(h)).toEqual([]);
+    });
+
+    it('deletes the whole log', () => {
+      const { h } = three();
+
+      expect(h.log.remove({ kind: 'all' })).toBe(3);
+      expect(h.disk()).toBe('');
+    });
+
+    it('touches nothing when the selection holds nothing', () => {
+      const { h } = three();
+
+      expect(h.log.remove({ kind: 'ids', ids: ['nope'] })).toBe(0);
+      expect(h.rewrites).toEqual([]);
+      expect(h.refreshes()).toBe(0);
+    });
+
+    it('counts a selection: how many, how many undoable, since when', () => {
+      const { h, a } = three();
+
+      expect(h.log.selectionInfo({ kind: 'all' })).toEqual({
+        total: 3,
+        undoable: 2,
+        oldest: a.at,
+      });
+      expect(h.log.selectionInfo({ kind: 'ids', ids: [] })).toEqual({
+        total: 0,
+        undoable: 0,
+        oldest: null,
+      });
+    });
+
+    it('lists the undoable changes of a selection, newest first', () => {
+      const { h } = three();
+
+      expect(h.log.undoableIn({ kind: 'all' }).map((e) => e.tool)).toEqual([
+        'c',
+        'a',
+      ]);
+    });
+
+    it('prunes by the days it is told to keep, at once', () => {
+      const { h } = three();
+      h.keep(1);
+      h.advance(1);
+
+      expect(h.log.prune()).toBe(2);
+
+      expect(tools(h)).toEqual(['c']);
+      expect(h.refreshes()).toBe(1);
+      expect(
+        h.log.query({ offset: 0, limit: 5 }, KNOWN_NONE).retentionDays,
+      ).toBe(1);
+    });
+
+    it('keeps pruning once a day with the days it is told', () => {
+      const h = harness();
+      h.keep(2);
+      h.log.record(draft({ tool: 'old' }));
+      h.advance(3 * DAY);
+
+      h.log.record(draft({ tool: 'new' }));
+
+      expect(tools(h)).toEqual(['new']);
+    });
   });
 
   describe('query', () => {

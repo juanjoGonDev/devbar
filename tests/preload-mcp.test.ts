@@ -96,6 +96,30 @@ const FORWARDS: readonly [
     [{ undoToken: 'u1' }],
   ],
   [
+    'getMcpAuditSelectionInfo',
+    (a) => a.getMcpAuditSelectionInfo({ kind: 'all' }, { offset: 0, limit: 5 }),
+    'mcp:auditSelectionInfo',
+    [{ selection: { kind: 'all' }, view: { offset: 0, limit: 5 } }],
+  ],
+  [
+    'deleteMcpAudit',
+    (a) => a.deleteMcpAudit({ kind: 'ids', ids: ['a1'] }),
+    'mcp:deleteAudit',
+    [{ selection: { kind: 'ids', ids: ['a1'] } }],
+  ],
+  [
+    'undoMcpChanges',
+    (a) => a.undoMcpChanges({ kind: 'range', to: 5 }),
+    'mcp:undoChanges',
+    [{ selection: { kind: 'range', to: 5 } }],
+  ],
+  [
+    'setMcpAuditRetention',
+    (a) => a.setMcpAuditRetention(7),
+    'mcp:setAuditRetention',
+    [{ days: 7 }],
+  ],
+  [
     'answerMcpConfirm',
     (a) => a.answerMcpConfirm('r1', 'apply'),
     'mcp:answerConfirm',
@@ -149,4 +173,13 @@ describe('src/preload.ts (MCP)', () => {
       expect(seen).toEqual([{ value: 1 }]);
     },
   );
+
+  it('onMcpAuditRefresh listens on its own channel and hands back nothing', () => {
+    const seen: unknown[][] = [];
+    api().onMcpAuditRefresh((...args: unknown[]) => seen.push(args));
+
+    expect(ipc.on.map((entry) => entry.channel)).toEqual(['mcp:auditRefresh']);
+    ipc.on[0]?.handler({ sender: 'main' }, null);
+    expect(seen).toEqual([[]]);
+  });
 });

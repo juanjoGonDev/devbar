@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   ipcMcpAuditPageQuery,
+  ipcMcpAuditSelection,
   ipcMcpClientPatch,
   ipcMcpConfirmAnswer,
   ipcMcpId,
+  ipcMcpRetentionDays,
   ipcMcpScopes,
 } from '../src/main/mcp/validate.js';
 
@@ -166,6 +168,71 @@ describe('src/main/mcp/validate.ts', () => {
       expect(ipcMcpConfirmAnswer('apply')).toBe('apply');
       expect(ipcMcpConfirmAnswer('reject')).toBe('reject');
       expect(() => ipcMcpConfirmAnswer('maybe')).toThrow(TypeError);
+    });
+  });
+
+  describe('ipcMcpAuditSelection', () => {
+    it.each([
+      [{ kind: 'all', ids: ['x'] }, { kind: 'all' }],
+      [
+        { kind: 'ids', ids: ['a', 'a', 'b'] },
+        { kind: 'ids', ids: ['a', 'b'] },
+      ],
+      [
+        { kind: 'range', from: 1, extra: 2 },
+        { kind: 'range', from: 1 },
+      ],
+      [
+        {
+          kind: 'query',
+          query: { search: 'x', results: ['ok'], offset: 5, sort: [] },
+          except: ['a'],
+          include: ['b'],
+        },
+        {
+          kind: 'query',
+          query: { search: 'x', results: ['ok'] },
+          except: ['a'],
+          include: ['b'],
+        },
+      ],
+    ])('keeps only what %j may carry', (value, expected) => {
+      expect(ipcMcpAuditSelection(value)).toEqual(expected);
+    });
+
+    it('takes ids ticked across many pages, up to a bound', () => {
+      const many = Array.from({ length: 10_000 }, (_, i) => `e${i}`);
+      expect(ipcMcpAuditSelection({ kind: 'ids', ids: many })).toMatchObject({
+        kind: 'ids',
+      });
+      expect(() =>
+        ipcMcpAuditSelection({ kind: 'ids', ids: [...many, 'one-more'] }),
+      ).toThrow(TypeError);
+    });
+
+    it.each([
+      [null],
+      [{}],
+      [{ kind: 'every' }],
+      [{ kind: 'ids' }],
+      [{ kind: 'ids', ids: ['x'.repeat(201)] }],
+      [{ kind: 'range', from: 'yesterday' }],
+      [{ kind: 'query' }],
+      [{ kind: 'query', query: { search: 'x'.repeat(201) } }],
+      [{ kind: 'query', query: {}, except: 'a' }],
+    ])('refuses %j', (value) => {
+      expect(() => ipcMcpAuditSelection(value)).toThrow(TypeError);
+    });
+  });
+
+  describe('ipcMcpRetentionDays', () => {
+    it('accepts a whole number of days from 1 to 365', () => {
+      expect(ipcMcpRetentionDays(1)).toBe(1);
+      expect(ipcMcpRetentionDays(365)).toBe(365);
+    });
+
+    it.each([[0], [366], [1.5], ['30'], [null]])('refuses %j', (value) => {
+      expect(() => ipcMcpRetentionDays(value)).toThrow(TypeError);
     });
   });
 });

@@ -1,9 +1,20 @@
 import type {
+  McpAuditEntry,
   McpAuditFacets,
   McpAuditPage,
 } from '../../src/ipc-contract/mcp-api.js';
+import { AUDIT_RETENTION_DAYS } from '../../src/mcp-audit-labels.js';
 import { latestWins } from '../latest-wins.js';
 import { renderActive } from './mcp-activity-active.js';
+import {
+  createActivityDialog,
+  type McpActivityDialogElements,
+} from './mcp-activity-ask.js';
+import { confirmUndoOne } from './mcp-activity-bulk.js';
+import {
+  createActivityClean,
+  type McpCleanElements,
+} from './mcp-activity-clean.js';
 import { createActivityHead } from './mcp-activity-head.js';
 import {
   clearColumn,
@@ -14,26 +25,31 @@ import {
   groupsByDay,
   initialState,
   isDefaultSort,
+  narrows,
   pickSort,
+  toFilter,
   toQuery,
   type ActivityColumn,
 } from './mcp-activity-model.js';
 import { pageCount, renderPager } from './mcp-activity-pager.js';
+import { createActivityPicking } from './mcp-activity-picking.js';
 import { renderRows } from './mcp-activity-rows.js';
 import { createActivitySearch } from './mcp-activity-search.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
  * «Actividad»: the second tab of the «MCP» section, the audit log of every
- * tool call. Main keeps 30 days of it and answers one page at a time
- * (`queryMcpAudit`): this owns what the user asked for — search, column
- * filters, sort keys, page — and repaints whatever main answered last. The
- * pieces around it live next door: the header and its column menus, the
- * rows, the pager and the line of active filters.
+ * tool call. Main keeps the days the user chose (30 by default) and answers
+ * one page at a time (`queryMcpAudit`): this owns what the user asked for —
+ * search, column filters, sort keys, page — and repaints whatever main
+ * answered last. The pieces around it live next door: the header and its
+ * column menus, the rows, the selection and its bar, «Limpiar», the pager and
+ * the line of active filters.
  *
  * New calls arrive live. On the first page in the usual order the log reads
  * itself again; anywhere else it would move what the user is looking at, so
- * it only offers «Actualizar».
+ * it only offers «Actualizar». Entries that leave the log (deleted, pruned)
+ * read it again wherever the user is.
  *
  * Only the rows scroll (renderer/styles.css): whatever the user asks for
  * next starts them back at the top, and a faint shadow under the header says
@@ -56,6 +72,10 @@ export interface McpActivityElements {
   range: HTMLElement;
   size: HTMLSelectElement;
   pages: HTMLElement;
+  /** «Se guardan los últimos N días…» under the log. */
+  keep: HTMLElement;
+  clean: McpCleanElements;
+  dialog: McpActivityDialogElements;
 }
 
 export interface McpActivityDeps {
@@ -80,6 +100,14 @@ export function createMcpActivity(
   const reads = latestWins();
 
   const facets = (): McpAuditFacets | null => page?.facets ?? null;
+  const days = (): number =>
+    page?.retentionDays ?? AUDIT_RETENTION_DAYS.default;
+  const shown = (): boolean =>
+    !els.activity.hidden &&
+    (els.activity.closest('.config-section')?.classList.contains('active') ??
+      false);
+  const dialog = createActivityDialog(els.dialog);
+  const bulk = { dialog, showToast };
 
   /** A new question for main: back to the first page unless told not to. */
   function change(firstPage = true): void {
@@ -101,6 +129,7 @@ export function createMcpActivity(
     state: () => state,
     facets,
     now: () => Date.now(),
+    retentionDays: days,
     clickSort: (key, additive) => setSort(clickSort(state.sort, key, additive)),
     sort: (key, dir) => setSort(pickSort(state.sort, key, dir, false)),
     addSort: (key) =>
@@ -127,12 +156,7 @@ export function createMcpActivity(
     { input: els.search, clear: els.searchClear, shortcut: els.searchKey },
     {
       platform: deps.platform,
-      shown: () =>
-        !els.activity.hidden &&
-        (els.activity
-          .closest('.config-section')
-          ?.classList.contains('active') ??
-          false),
+      shown,
       apply: (text) => {
         state.search = text;
         change();
@@ -140,21 +164,36 @@ export function createMcpActivity(
     },
   );
 
-  async function undo(token: string, button: HTMLButtonElement): Promise<void> {
-    button.disabled = true;
-    try {
-      const result = await window.api.undoMcpChange(token);
-      if (result.ok) {
-        showToast('Cambio deshecho', 'ok');
-        void load();
-      } else {
-        showToast(result.error ?? 'No se pudo deshacer.', 'error');
-        button.disabled = false;
-      }
-    } catch (err) {
-      showToast(`Error: ${errorMessage(err)}`, 'error');
-      button.disabled = false;
-    }
+  /** The query of the page on show (its time window fixed when asked). */
+  let shownQuery = toQuery(state, Date.now());
+  // Before the selection: Escape closes an open «Limpiar» first.
+  createActivityClean(els.clean, {
+    ...bulk,
+    now: () => Date.now(),
+    retentionDays: days,
+    page: () => page,
+    narrows: () => narrows(state),
+    filter: () => toFilter(shownQuery),
+    reload: () => void load(),
+  });
+  const picking = createActivityPicking(els.head, els.rows, {
+    ...bulk,
+    shown,
+    page: () => page,
+    query: () => shownQuery,
+    filter: () => toFilter(shownQuery),
+    reload: () => void load(),
+  });
+
+  async function undo(
+    entry: McpAuditEntry,
+    token: string,
+    button: HTMLButtonElement,
+  ): Promise<void> {
+    const busy = (on: boolean): void => {
+      button.disabled = on;
+    };
+    if (await confirmUndoOne(bulk, entry, token, busy)) void load();
   }
 
   function go(next: number): void {
@@ -184,8 +223,11 @@ export function createMcpActivity(
       byDay,
       now: Date.now(),
       empty: retained === 0 ? 'none' : 'filtered',
-      undo: (token, button) => void undo(token, button),
+      undo: (entry, token, button) => void undo(entry, token, button),
+      ...picking.rows,
+      banner: picking.banner(),
     });
+    picking.paint();
     renderPager(
       { range: els.range, pages: els.pages },
       {
@@ -198,9 +240,10 @@ export function createMcpActivity(
     );
     renderActive(
       els.active,
-      { state, facets: facets(), total, retained },
+      { state, facets: facets(), total, retained, days: days() },
       reset,
     );
+    els.keep.textContent = `${days() === 1 ? 'Se guarda el último día' : `Se guardan los últimos ${days()} días`}. Los logs que lee un asistente no se copian aquí.`;
     if (toTop) {
       toTop = false;
       els.rows.scrollTop = 0;
@@ -219,9 +262,10 @@ export function createMcpActivity(
     reads.invalidate();
     const current = reads.claim();
     try {
-      const next = await window.api.queryMcpAudit(toQuery(state, Date.now()));
+      const asked = toQuery(state, Date.now());
+      const next = await window.api.queryMcpAudit(asked);
       if (!current()) return;
-      // The page emptied under the user (entries aged out): go to the last.
+      // The page emptied under the user (entries went): go to the last.
       const last = pageCount(next.total, state.size);
       if (next.entries.length === 0 && state.page > last) {
         state.page = last;
@@ -229,7 +273,10 @@ export function createMcpActivity(
         return;
       }
       page = next;
+      shownQuery = asked;
       loaded = true;
+      await picking.loaded();
+      if (!current()) return;
       paint();
     } catch (err) {
       if (current())
@@ -254,6 +301,9 @@ export function createMcpActivity(
   els.fresh.addEventListener('click', () => void load());
   els.rows.addEventListener('scroll', scrolled, { passive: true });
 
+  window.api.onMcpAuditRefresh(() => {
+    if (loaded) void load();
+  });
   window.api.onMcpAudit(() => {
     if (!loaded) return;
     if (state.page === 1 && isDefaultSort(state.sort)) {
