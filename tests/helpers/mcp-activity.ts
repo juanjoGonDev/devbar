@@ -1,7 +1,8 @@
 /**
  * Drives «Actividad» (Settings › MCP) through the real config window: the
  * page main answers with, opening the tab, and the parts of the table a test
- * reads or clicks — header cells, the open column menu, rows, pager, pills.
+ * reads or clicks — header cells, the open column menu, rows, pager, the
+ * summary beside the search.
  */
 import type {
   McpAuditEntry,
@@ -173,10 +174,16 @@ export function toggle(box: HTMLInputElement): void {
   box.click();
 }
 
-export function pills(): string[] {
-  return [...el('mcp-activity-active').querySelectorAll('.act-pill')].map(
-    (pill) => visible(pill),
-  );
+/** The one pill beside the search, while a filter or a sort is on. */
+export function summaryPill(): HTMLElement | null {
+  return el('mcp-activity-active').querySelector<HTMLElement>('.act-pill');
+}
+
+/** The pill's tooltip, one line per filter (and the sort), or none. */
+export function summaryDetails(): string[] {
+  const pill = summaryPill();
+  const tip = pill?.getAttribute('title') ?? pill?.getAttribute('data-tip');
+  return tip ? tip.split('\n') : [];
 }
 
 export function activeLine(): string {

@@ -729,7 +729,7 @@
             aria-labelledby="mcp-tab-activity"
             hidden
           >
-            <div class="act-toolbar">
+            <div class="act-bar">
               <label class="act-search">
                 <span class="icon" data-icon="search"></span>
                 <input
@@ -761,12 +761,12 @@
                 <span class="icon" data-icon="rotate-cw"></span>
                 Hay actividad nueva · Actualizar
               </button>
+              <div
+                id="mcp-activity-active"
+                class="act-active"
+                aria-live="polite"
+              ></div>
             </div>
-            <div
-              id="mcp-activity-active"
-              class="act-active"
-              aria-live="polite"
-            ></div>
             <div id="mcp-activity-log" class="mcp-card mcp-log">
               <div id="mcp-activity-head" class="mcp-log-head" role="row"></div>
               <ul id="mcp-activity-rows" class="mcp-log-rows"></ul>

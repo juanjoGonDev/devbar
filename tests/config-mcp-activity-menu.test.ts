@@ -14,7 +14,7 @@ import {
   menuButton,
   openActivity,
   openMenu,
-  pills,
+  summaryDetails,
   toggle,
 } from './helpers/mcp-activity.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
@@ -138,7 +138,7 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       expect(menuButton('Quitar filtro').disabled).toBe(true);
     });
 
-    it('asks for what stays ticked, and says so on the header and a pill', async () => {
+    it('asks for what stays ticked, and says so on the header and in the summary', async () => {
       win = await openActivity(PAGE);
       click(funnel('Cliente'));
       toggle(checkbox('Cursor'));
@@ -148,7 +148,7 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       expect(cell('Cliente').classList.contains('is-filtered')).toBe(true);
       expect(iconText(funnel('Cliente'))).toBe('[filter]');
       expect(iconText(funnel('Hora'))).toBe('[list-filter]');
-      expect(pills()).toEqual(['Cliente: Claude Code']);
+      expect(summaryDetails()).toEqual(['Cliente: Claude Code']);
       toggle(checkbox('Cursor'));
       expect(lastQuery(win).clientIds).toBeUndefined();
     });
@@ -159,7 +159,7 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       toggle(checkbox('(Seleccionar todo)'));
       expect(lastQuery(win).clientIds).toEqual([]);
       await answer(win);
-      expect(pills()).toEqual(['Cliente: ninguno']);
+      expect(summaryDetails()).toEqual(['Cliente: ninguno']);
       toggle(checkbox('(Seleccionar todo)'));
       expect(lastQuery(win).clientIds).toBeUndefined();
     });
@@ -220,7 +220,7 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       toggle(checkbox('get_status'));
       expect(checks()[1]).toEqual(['Lectura', '6', 'mixed']);
       await answer(win);
-      expect(pills()).toEqual(['Acción: 3 herramientas']);
+      expect(summaryDetails()).toEqual(['Acción: 3 herramientas']);
       toggle(checkbox('Lectura'));
       expect(lastQuery(win).tools).toBeUndefined();
     });
@@ -232,7 +232,7 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       await answer(win);
       toggle(checkbox('restart'));
       await answer(win);
-      expect(pills()).toEqual(['Acción: restart']);
+      expect(summaryDetails()).toEqual(['Acción: restart']);
     });
   });
 
@@ -266,7 +266,7 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       await answer(win);
       toggle(checkbox('Error'));
       await answer(win);
-      expect(pills()).toEqual([
+      expect(summaryDetails()).toEqual([
         'Resultado: Correcto, Con avisos, Rechazado, Pendiente · se puede deshacer',
       ]);
     });
@@ -305,7 +305,7 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       expect(lastQuery(win).from).toBe(from);
       expect(lastQuery(win).to).toBeUndefined();
       await answer(win);
-      expect(pills()).toEqual([`Hora: ${label}`]);
+      expect(summaryDetails()).toEqual([`Hora: ${label}`]);
     });
 
     it('starts a range on the last day, then reads what is typed', async () => {
@@ -318,12 +318,12 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       expect(lastQuery(win).from).toBe(NOW - 24 * HOUR);
       expect(lastQuery(win).to).toBe(NOW + 60_000 - 1);
       await answer(win);
-      expect(pills()).toEqual(['Hora: 5 nov 09:00 → 6 nov 09:00']);
+      expect(summaryDetails()).toEqual(['Hora: 5 nov 09:00 → 6 nov 09:00']);
       range('to').value = '';
       range('to').dispatchEvent(new Event('change'));
       expect(lastQuery(win).to).toBeUndefined();
       await answer(win);
-      expect(pills()).toEqual(['Hora: 5 nov 09:00 → ahora']);
+      expect(summaryDetails()).toEqual(['Hora: 5 nov 09:00 → ahora']);
       range('from').value = '2026-11-04T10:30';
       range('from').dispatchEvent(new Event('change'));
       expect(lastQuery(win).from).toBe(new Date(2026, 10, 4, 10, 30).getTime());

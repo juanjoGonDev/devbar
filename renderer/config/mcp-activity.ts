@@ -9,6 +9,7 @@ import {
   clearColumn,
   clickSort,
   columnOf,
+  COLUMNS,
   dropSort,
   groupsByDay,
   initialState,
@@ -33,6 +34,10 @@ import { errorMessage, type ShowToast } from './toast.js';
  * New calls arrive live. On the first page in the usual order the log reads
  * itself again; anywhere else it would move what the user is looking at, so
  * it only offers «Actualizar».
+ *
+ * Only the rows scroll (renderer/styles.css): whatever the user asks for
+ * next starts them back at the top, and a faint shadow under the header says
+ * there is more above while they are scrolled.
  */
 
 export interface McpActivityElements {
@@ -66,10 +71,12 @@ export function createMcpActivity(
   deps: McpActivityDeps,
 ): void {
   const { showToast } = deps;
-  let state = initialState();
+  const state = initialState();
   let page: McpAuditPage | null = null;
   let loaded = false;
   let live: ReturnType<typeof setTimeout> | null = null;
+  /** The next paint answers a new question: show its rows from the top. */
+  let toTop = false;
   const reads = latestWins();
 
   const facets = (): McpAuditFacets | null => page?.facets ?? null;
@@ -77,6 +84,7 @@ export function createMcpActivity(
   /** A new question for main: back to the first page unless told not to. */
   function change(firstPage = true): void {
     if (firstPage) state.page = 1;
+    toTop = true;
     head.render();
     void load();
   }
@@ -115,7 +123,7 @@ export function createMcpActivity(
     clear,
   });
 
-  const search = createActivitySearch(
+  createActivitySearch(
     { input: els.search, clear: els.searchClear, shortcut: els.searchKey },
     {
       platform: deps.platform,
@@ -154,6 +162,17 @@ export function createMcpActivity(
     change(false);
   }
 
+  function scrolled(): void {
+    els.rows.classList.toggle('is-scrolled', els.rows.scrollTop > 0);
+  }
+
+  /** Every column filter off and newest first again; the search stays. */
+  function reset(): void {
+    for (const column of COLUMNS) clearColumn(state, column.key);
+    state.sort = initialState().sort;
+    change();
+  }
+
   function paint(): void {
     head.render();
     const byDay = groupsByDay(state.sort);
@@ -180,16 +199,13 @@ export function createMcpActivity(
     renderActive(
       els.active,
       { state, facets: facets(), total, retained },
-      {
-        dropSort: (key) => setSort(dropSort(state.sort, key)),
-        clearColumn: clear,
-        clearAll: () => {
-          state = { ...initialState(), size: state.size };
-          search.reset();
-          change();
-        },
-      },
+      reset,
     );
+    if (toTop) {
+      toTop = false;
+      els.rows.scrollTop = 0;
+      scrolled();
+    }
   }
 
   function stopLive(): void {
@@ -236,6 +252,7 @@ export function createMcpActivity(
     change();
   });
   els.fresh.addEventListener('click', () => void load());
+  els.rows.addEventListener('scroll', scrolled, { passive: true });
 
   window.api.onMcpAudit(() => {
     if (!loaded) return;

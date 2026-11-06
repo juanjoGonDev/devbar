@@ -1,7 +1,4 @@
-import type {
-  McpAuditFacets,
-  McpAuditSort,
-} from '../../src/ipc-contract/mcp-api.js';
+import type { McpAuditFacets } from '../../src/ipc-contract/mcp-api.js';
 import { icon } from '../icon.js';
 import {
   COLUMNS,
@@ -10,23 +7,18 @@ import {
   isDefaultSort,
   isFiltered,
   narrows,
-  type ActivityColumn,
   type ActivityState,
 } from './mcp-activity-model.js';
 import { NUMBER } from './mcp-activity-pager.js';
 
 /**
- * The line over the «Actividad» table that says what is narrowing it: the
- * sort keys when they are not the usual newest first, one pill per filtered
- * column (each with its ✕), then «X de Y» and «Quitar todo». With nothing
- * applied it just says how many calls the log keeps.
+ * The short summary beside the search over «Actividad». With nothing applied
+ * it says how many calls the log keeps; otherwise «X de Y», plus one pill —
+ * «2 filtros · orden» — while a column filter or a sort other than newest
+ * first is on. The headers already show which column does what, so the pill
+ * only counts them: its tooltip spells each one out, and its ✕ takes every
+ * filter and the sort off (the search stays: it has its own ✕).
  */
-
-export interface ActiveActions {
-  dropSort(key: ActivityColumn): void;
-  clearColumn(column: ActivityColumn): void;
-  clearAll(): void;
-}
 
 export interface ActiveView {
   state: ActivityState;
@@ -35,24 +27,7 @@ export interface ActiveView {
   retained: number;
 }
 
-function pill(
-  extra: string,
-  content: (Node | string)[],
-  removeLabel: string,
-  remove: () => void,
-): HTMLSpanElement {
-  const el = document.createElement('span');
-  el.className = `act-pill${extra}`;
-  el.append(...content);
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.setAttribute('aria-label', `Quitar ${removeLabel}`);
-  button.title = `Quitar ${removeLabel}`;
-  button.append(icon('x'));
-  button.addEventListener('click', remove);
-  el.append(button);
-  return el;
-}
+const CLEAR_LABEL = 'Quitar filtros y orden';
 
 function text(className: string, value: string): HTMLSpanElement {
   const el = document.createElement('span');
@@ -61,53 +36,68 @@ function text(className: string, value: string): HTMLSpanElement {
   return el;
 }
 
-function sortPill(
-  each: McpAuditSort,
-  index: number,
-  several: boolean,
-  actions: ActiveActions,
-): HTMLSpanElement {
-  const { label } = columnOf(each.key);
-  const content: (Node | string)[] = [];
-  if (several) content.push(text('prio', String(index + 1)));
-  content.push(label, icon(each.dir === 'asc' ? 'arrow-up' : 'arrow-down'));
-  return pill(' is-sort', content, `orden ${label}`, () =>
-    actions.dropSort(each.key),
+/**
+ * «Orden: Cliente (A → Z), Hora (Más reciente primero)»: each key in the
+ * words its column menu uses. A tooltip is plain text, so no arrow icon.
+ */
+function sortLine(state: ActivityState): string {
+  const keys = state.sort.map((each) => {
+    const column = columnOf(each.key);
+    return `${column.label} (${column[each.dir]})`;
+  });
+  return `Orden: ${keys.join(', ')}`;
+}
+
+function summaryPill(view: ActiveView, reset: () => void): HTMLSpanElement {
+  const { state } = view;
+  const filtered = COLUMNS.filter((column) => isFiltered(state, column.key));
+  const sorted = !isDefaultSort(state.sort);
+  const parts: string[] = [];
+  if (filtered.length > 0)
+    parts.push(
+      filtered.length === 1 ? '1 filtro' : `${filtered.length} filtros`,
+    );
+  if (sorted) parts.push('orden');
+
+  const pill = document.createElement('span');
+  pill.className = 'act-pill';
+  pill.append(icon('filter'), parts.join(' · '));
+  pill.title = [
+    ...filtered.map(
+      (column) =>
+        `${column.label}: ${describeFilter(state, column.key, view.facets)}`,
+    ),
+    ...(sorted ? [sortLine(state)] : []),
+  ].join('\n');
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.setAttribute('aria-label', CLEAR_LABEL);
+  button.title = CLEAR_LABEL;
+  button.append(icon('x'));
+  button.addEventListener('click', reset);
+  pill.append(button);
+  return pill;
+}
+
+/** Whether a column filter or a sort other than newest first is on. */
+function shaped(state: ActivityState): boolean {
+  return (
+    !isDefaultSort(state.sort) ||
+    COLUMNS.some((column) => isFiltered(state, column.key))
   );
 }
 
 export function renderActive(
   container: HTMLElement,
   view: ActiveView,
-  actions: ActiveActions,
+  reset: () => void,
 ): void {
   const { state } = view;
-  const items: HTMLElement[] = [];
-  if (!isDefaultSort(state.sort)) {
-    items.push(text('lbl', 'Orden'));
-    const several = state.sort.length > 1;
-    state.sort.forEach((each, index) =>
-      items.push(sortPill(each, index, several, actions)),
-    );
-  }
-  for (const column of COLUMNS) {
-    if (!isFiltered(state, column.key)) continue;
+  const items: HTMLElement[] = [text('spacer', '')];
+  if (!narrows(state) && isDefaultSort(state.sort)) {
     items.push(
-      pill(
-        '',
-        [`${column.label}: ${describeFilter(state, column.key, view.facets)}`],
-        `filtro ${column.label}`,
-        () => actions.clearColumn(column.key),
-      ),
-    );
-  }
-  items.push(text('spacer', ''));
-  if (!narrows(state)) {
-    items.push(
-      text(
-        'act-count',
-        `${NUMBER.format(view.retained)} llamadas en los últimos 30 días`,
-      ),
+      text('act-count', `${NUMBER.format(view.retained)} llamadas · 30 días`),
     );
   } else {
     items.push(
@@ -116,12 +106,7 @@ export function renderActive(
         `${NUMBER.format(view.total)} de ${NUMBER.format(view.retained)}`,
       ),
     );
-    const clear = document.createElement('button');
-    clear.type = 'button';
-    clear.className = 'act-link';
-    clear.textContent = 'Quitar todo';
-    clear.addEventListener('click', () => actions.clearAll());
-    items.push(clear);
+    if (shaped(state)) items.push(summaryPill(view, reset));
   }
   container.replaceChildren(...items);
 }

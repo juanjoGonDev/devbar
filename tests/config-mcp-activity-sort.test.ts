@@ -13,9 +13,10 @@ import {
   menu,
   menuButton,
   openActivity,
-  pills,
   shiftClick,
   sortButton,
+  summaryDetails,
+  summaryPill,
 } from './helpers/mcp-activity.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
 import type { McpAuditSort } from '../src/ipc-contract/mcp-api.js';
@@ -24,7 +25,7 @@ import type { McpAuditSort } from '../src/ipc-contract/mcp-api.js';
  * Sorting «Actividad» (renderer/config/mcp-activity-head.ts and
  * renderer/config/mcp-activity-model.ts): a header click sorts by that column
  * alone, Shift+click adds it as one more key, the column menu offers the same
- * and the «Orden» pills over the table take keys out again.
+ * and the summary beside the search says a sort is on, and undoes it.
  */
 
 const LIST = [auditEntry('a1'), auditEntry('a2'), auditEntry('a3')];
@@ -57,7 +58,7 @@ describe('renderer/config/mcp-activity-head.ts (sorting)', () => {
       'Ordenar por cliente · Mayús+clic para añadir a la ordenación',
     );
     expect(cell('Hora').getAttribute('role')).toBe('columnheader');
-    expect(activeLine()).toBe('3 llamadas en los últimos 30 días');
+    expect(activeLine()).toBe('3 llamadas · 30 días');
   });
 
   it('sorts by one column with a click, and turns it round with another', async () => {
@@ -144,36 +145,35 @@ describe('renderer/config/mcp-activity-head.ts (sorting)', () => {
     });
   });
 
-  describe('the «Orden» pills', () => {
-    it('show only a sort that is not the usual one', async () => {
+  describe('the summary beside the search', () => {
+    it('says «orden» only for a sort that is not the usual one', async () => {
       win = await openActivity(LIST);
-      expect(pills()).toEqual([]);
+      expect(summaryPill()).toBeNull();
       click(sortButton('Cliente'));
       await answer(win);
-      shiftClick(sortButton('Hora'));
+      shiftClick(sortButton('Resultado'));
       await answer(win);
-      expect(activeLine()).toBe(
-        'Orden1Cliente2Hora3 llamadas en los últimos 30 días',
+      expect(iconText(el('mcp-activity-active'))).toBe(
+        '3 de 3[filter]orden[x]',
       );
-      expect(
-        [...el('mcp-activity-active').querySelectorAll('.act-pill')].map((p) =>
-          iconText(p),
-        ),
-      ).toEqual(['1Cliente[arrow-up][x]', '2Hora[arrow-down][x]']);
+      expect(summaryDetails()).toEqual([
+        'Orden: Cliente (A → Z), Resultado (Errores primero)',
+      ]);
     });
 
-    it('take a key out with their ✕, back to newest first at the end', async () => {
+    it('goes back to newest first with its ✕', async () => {
       win = await openActivity(LIST);
       click(sortButton('Cliente'));
       await answer(win);
       click(
         el('mcp-activity-active').querySelector(
-          '[aria-label="Quitar orden Cliente"]',
+          '[aria-label="Quitar filtros y orden"]',
         ),
       );
       expect(sorts(win)).toEqual([{ key: 'time', dir: 'desc' }]);
       await answer(win);
-      expect(pills()).toEqual([]);
+      expect(summaryPill()).toBeNull();
+      expect(activeLine()).toBe('3 llamadas · 30 días');
     });
   });
 });

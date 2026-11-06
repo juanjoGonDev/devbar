@@ -3,16 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { iconText } from './helpers/icon-text.js';
 import { auditEntry, click, el, visible } from './helpers/mcp.js';
+import { tipOf } from './helpers/tip.js';
 import {
   activeLine,
   auditPage,
   checkbox,
   funnel,
   lastQuery,
+  menuButton,
   openActivity,
-  pills,
   row,
   sortButton,
+  summaryDetails,
+  summaryPill,
   toggle,
 } from './helpers/mcp-activity.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
@@ -24,7 +27,7 @@ import {
 /**
  * Searching «Actividad» (renderer/config/mcp-activity-search.ts): the field
  * waits for the typing to pause, marks what it matched in the rows, and
- * ⌘F reaches it; plus the line of active filters and «Quitar todo».
+ * ⌘F reaches it; plus the summary beside it and its «Quitar filtros y orden».
  */
 
 const READ = auditEntry('a1', {
@@ -134,15 +137,6 @@ describe('renderer/config/mcp-activity-search.ts', () => {
       accelF(true);
       expect(document.activeElement).not.toBe(input);
     });
-
-    it('empties itself without applying anything on reset', () => {
-      const search = mount();
-      type(input, 'abc');
-      search.reset();
-      vi.advanceTimersByTime(SEARCH_DELAY_MS);
-      expect(input.value).toBe('');
-      expect(applied).toEqual([]);
-    });
   });
 
   describe('in the window', () => {
@@ -169,7 +163,8 @@ describe('renderer/config/mcp-activity-search.ts', () => {
       expect(visible(row('a1').querySelector('.mcp-entry-action'))).toBe(
         'search_logs · Back › Normal · 12 líneas en back',
       );
-      expect(activeLine()).toBe('1 de 9Quitar todo');
+      expect(activeLine()).toBe('1 de 9');
+      expect(summaryPill()).toBeNull();
     });
 
     it('takes ⌘F while «Actividad» is the section on screen', async () => {
@@ -181,7 +176,31 @@ describe('renderer/config/mcp-activity-search.ts', () => {
       expect(document.activeElement).toBe(search());
     });
 
-    it('clears every filter, the sort and the search with «Quitar todo»', async () => {
+    it('counts the filters and the sort in one pill, spelled out in its tooltip', async () => {
+      win = await openActivity(auditPage([READ], { retained: 4 }));
+      click(sortButton('Cliente'));
+      await win.settle('queryMcpAudit', auditPage([READ], { retained: 4 }));
+      click(funnel('Resultado'));
+      toggle(checkbox('Error'));
+      await win.settle('queryMcpAudit', auditPage([READ], { retained: 4 }));
+      expect(iconText(el('mcp-activity-active'))).toBe(
+        '1 de 4[filter]1 filtro · orden[x]',
+      );
+      click(funnel('Hora'));
+      click(menuButton('Hoy'));
+      await win.settle('queryMcpAudit', auditPage([READ], { retained: 4 }));
+      expect(visible(summaryPill())).toBe('2 filtros · orden');
+      expect(summaryDetails()).toEqual([
+        'Hora: Hoy',
+        'Resultado: Correcto, Con avisos, Rechazado, Pendiente',
+        'Orden: Cliente (A → Z)',
+      ]);
+      expect(el('mcp-activity-active').getAttribute('aria-live')).toBe(
+        'polite',
+      );
+    });
+
+    it('takes every filter and the sort off with ✕, but keeps the search', async () => {
       win = await openActivity(auditPage([READ], { retained: 4 }));
       click(sortButton('Cliente'));
       await win.settle('queryMcpAudit', auditPage([READ], { retained: 4 }));
@@ -191,35 +210,26 @@ describe('renderer/config/mcp-activity-search.ts', () => {
       type(search(), 'logs');
       enter(search());
       await win.settle('queryMcpAudit', auditPage([READ], { retained: 4 }));
-      expect(pills()).toEqual([
-        'Cliente',
-        'Resultado: Correcto, Con avisos, Rechazado, Pendiente',
-      ]);
-      const clearAll = [
-        ...el('mcp-activity-active').querySelectorAll('button'),
-      ].find((b) => b.textContent === 'Quitar todo');
-      click(clearAll ?? null);
+      const clear = el('mcp-activity-active').querySelector(
+        'button[aria-label="Quitar filtros y orden"]',
+      );
+      expect(tipOf(clear)).toBe('Quitar filtros y orden');
+      click(clear);
       expect(lastQuery(win)).toEqual({
         offset: 0,
         limit: 50,
         sort: [{ key: 'time', dir: 'desc' }],
+        search: 'logs',
       });
-      expect(search().value).toBe('');
+      expect(search().value).toBe('logs');
       await win.settle('queryMcpAudit', auditPage([READ], { retained: 4 }));
-      expect(activeLine()).toBe('4 llamadas en los últimos 30 días');
+      expect(activeLine()).toBe('1 de 4');
+      expect(summaryPill()).toBeNull();
     });
 
-    it('takes one filter off with its pill', async () => {
-      win = await openActivity([READ]);
-      click(funnel('Resultado'));
-      toggle(checkbox('Error'));
-      await win.settle('queryMcpAudit', auditPage([READ]));
-      click(
-        el('mcp-activity-active').querySelector(
-          '[aria-label="Quitar filtro Resultado"]',
-        ),
-      );
-      expect(lastQuery(win).results).toBeUndefined();
+    it('says how many calls it keeps with nothing applied', async () => {
+      win = await openActivity(auditPage([READ], { retained: 4 }));
+      expect(activeLine()).toBe('4 llamadas · 30 días');
     });
   });
 });

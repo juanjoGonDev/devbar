@@ -19,18 +19,13 @@ export interface SearchDeps {
   apply(text: string): void;
 }
 
-export interface ActivitySearch {
-  /** Empties the field without applying anything («Quitar todo» does). */
-  reset(): void;
-}
-
 /** How long the typing has to pause before the search runs. */
 export const SEARCH_DELAY_MS = 150;
 
 export function createActivitySearch(
   els: SearchElements,
   deps: SearchDeps,
-): ActivitySearch {
+): void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let applied = '';
 
@@ -81,13 +76,4 @@ export function createActivitySearch(
     els.input.select();
   });
   paint();
-
-  return {
-    reset() {
-      cancel();
-      els.input.value = '';
-      applied = '';
-      paint();
-    },
-  };
 }

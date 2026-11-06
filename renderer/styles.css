@@ -6784,34 +6784,44 @@ button.mcp-tab:focus-visible {
   outline-offset: 1px;
 }
 
-/* «Actividad»: the search over the log and the line of what narrows it. */
-.act-toolbar {
+/* «Actividad»: one row over the log — a compact search, «Actualizar» when
+   there is something new, and the summary of what narrows it. */
+.act-bar {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 .act-search {
   position: relative;
   display: flex;
-  flex: 1;
+  flex: 0 0 240px;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 30px;
-  padding: 0 8px 0 30px;
+  height: 26px;
+  padding: 0 6px 0 26px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--mcp-surface);
+  font-size: 12.5px;
+  transition: flex-basis 0.15s ease;
 }
 .act-search:focus-within {
+  flex-basis: 300px;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
+@media (prefers-reduced-motion: reduce) {
+  .act-search {
+    transition: none;
+  }
+}
 .act-search > .icon {
   position: absolute;
-  left: 9px;
+  left: 8px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 12px;
 }
 .act-search input {
   flex: 1;
@@ -6842,8 +6852,8 @@ button.mcp-tab:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -6874,18 +6884,17 @@ button.act-fresh {
 }
 .act-active {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   min-height: 22px;
   color: var(--muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 .act-active .spacer {
   flex: 1;
-}
-.act-active .lbl {
-  font-weight: 600;
 }
 .act-pill {
   display: inline-flex;
@@ -6898,24 +6907,8 @@ button.act-fresh {
   color: var(--badge-info-fg);
   font-weight: 600;
 }
-.act-pill.is-sort {
-  background: var(--badge-neutral-bg);
-  color: inherit;
-}
 .act-pill .icon {
   font-size: 11px;
-}
-.act-pill .prio {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--muted);
-  color: var(--mcp-surface);
-  font-size: 9.5px;
-  font-weight: 700;
 }
 .act-pill button {
   display: inline-flex;
@@ -6935,19 +6928,14 @@ button.act-fresh {
   background: var(--bg-row-hover);
   filter: none;
 }
-button.act-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  box-shadow: none;
-  color: var(--accent);
-  font-size: 12px;
-  cursor: pointer;
-}
 /* The column menu pops out of the header, so the card cannot clip it. The
    header text is muted; what is sorted and the menu read in body colour. */
 .mcp-log {
   --act-text: #1d1d1f;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
   background: var(--mcp-surface);
   overflow: visible;
 }
@@ -6973,10 +6961,59 @@ button.act-link {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+/*
+ * Only the rows scroll. While «Actividad» is on screen the settings content
+ * stops scrolling and hands its height down: the tabs, the search row, the
+ * column header and the pager stay put, and the list between them takes the
+ * rest. «Servidor» scrolls the whole content as every other section does.
+ * The card keeps `overflow: visible` (its column menus pop out over the
+ * rows); the head and the pager carry its rounded corners.
+ */
+.config-content:has(
+  > .config-section[data-section='mcp'].active > #mcp-activity:not([hidden])
+) {
+  overflow: hidden;
+}
+.config-section[data-section='mcp'].active:has(> #mcp-activity:not([hidden])) {
+  height: 100%;
+}
+#mcp-activity {
+  flex: 1;
+  min-height: 0;
+}
+.mcp-log-head,
+.act-pager {
+  flex-shrink: 0;
+}
 .mcp-log-rows {
+  flex: 1;
+  min-height: 0;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   list-style: none;
+}
+/* «There is more above»: a faint shade under the header once scrolled. It
+   rides on its own sticky layer so the opaque day separators cannot hide it. */
+.mcp-log-rows::before {
+  content: '';
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: block;
+  height: 6px;
+  margin-bottom: -6px;
+  background: linear-gradient(rgba(0, 0, 0, 0.14), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+:root[data-theme='dark'] .mcp-log-rows::before {
+  background: linear-gradient(rgba(0, 0, 0, 0.4), transparent);
+}
+.mcp-log-rows.is-scrolled::before {
+  opacity: 1;
 }
 .mcp-entry {
   border-top: 1px solid var(--mcp-hairline);
@@ -7411,12 +7448,20 @@ button.xf-foot-link:disabled {
   color: var(--muted);
 }
 /* Rows: a separator per day while the time leads; flat rows carry a date. */
+/* The day stays on top of its rows while they scroll under it, so it has to
+   be opaque: the head tint laid over the card's own surface. */
 .act-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   justify-content: space-between;
   padding: 6px 16px;
   border-top: 1px solid var(--mcp-hairline);
-  background: var(--mcp-log-head-bg);
+  background:
+    linear-gradient(var(--mcp-log-head-bg), var(--mcp-log-head-bg)),
+    var(--mcp-surface);
+  box-shadow: inset 0 -1px 0 var(--mcp-hairline);
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
