@@ -8,10 +8,11 @@ import {
   refreshWindowBackgrounds,
   rendererTargets,
   sendToRenderers,
+  settingsPushes,
   themeTargets,
   type WindowLike,
 } from '../src/main/renderer-bus.js';
-import { fakeWindow } from './helpers/main-fakes.js';
+import { fakeWindow, makeSettings } from './helpers/main-fakes.js';
 
 const asWindow = (win: ReturnType<typeof fakeWindow>): WindowLike => win;
 
@@ -102,6 +103,26 @@ describe('src/main/renderer-bus.ts', () => {
       expect(config.sent).toEqual([
         { channel: 'groups:toast', payload: { kind: 'ok', message: 'hi' } },
       ]);
+    });
+  });
+
+  describe('settingsPushes', () => {
+    it('sends the theme and the whole settings on their own channels', () => {
+      const config = fakeWindow('config');
+      const registry = createWindowRegistry(() => null);
+      registry.config = asWindow(config);
+      const pushes = settingsPushes(registry);
+
+      pushes.sendTheme('dark');
+      pushes.sendSettings(makeSettings({ showHiddenGroupsFold: false }));
+
+      expect(config.sent.map((sent) => sent.channel)).toEqual([
+        'settings:theme',
+        'settings:changed',
+      ]);
+      expect(config.sent[1]?.payload).toMatchObject({
+        showHiddenGroupsFold: false,
+      });
     });
   });
 

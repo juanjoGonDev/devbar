@@ -11,9 +11,10 @@ type Architecture = 'arm64' | 'x64';
  * `build/{src,renderer}/dev` — the development-only simulation panel and its
  * IPC handlers, which must never reach a packaged build.
  */
-/** Paths that never belong in a shipped app. */
+/** Paths that never belong in a shipped app. `.claude` holds agent
+ *  worktrees — full checkouts that would add gigabytes to a local build. */
 const ALWAYS_IGNORED =
-  /^\/(?:dist|tests|\.agents|\.github|src|renderer|scripts|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.ts|vitest\.config\.ts|knip\.json|\.dependency-cruiser\.json)(?:$|\/)/;
+  /^\/(?:dist|tests|\.agents|\.claude|\.github|src|renderer|scripts|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.ts|vitest\.config\.ts|knip\.json|\.dependency-cruiser\.json)(?:$|\/)/;
 /** The development-only simulation panel and its IPC handlers. */
 const DEV_PANEL = /^\/build\/(?:src|renderer)\/dev(?:$|\/)/;
 /** The bundled emoji webfont: Linux-only (renderer/emoji.css), and macOS

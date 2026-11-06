@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   errorMessage,
   ipcBooleanField,
+  ipcConfigSection,
   ipcConfirmDecision,
   ipcGlobalSettingsPatch,
   ipcImportPreview,
@@ -17,7 +18,7 @@ const preview = {
   groupsCount: 1,
   commandsCount: 2,
   actionsCount: 3,
-  preStepsCount: 4,
+  workflowsCount: 4,
   preScriptsCount: 5,
   hasGlobalSettings: true,
 };
@@ -105,6 +106,15 @@ describe('src/main/ipc-validators.ts', () => {
     });
   });
 
+  describe('ipcConfigSection', () => {
+    it('accepts only the sections the tray opens', () => {
+      expect(ipcConfigSection('workflows')).toBe('workflows');
+      expect(ipcConfigSection('groups')).toBe('groups');
+      expect(() => ipcConfigSection('about')).toThrow(/config section/);
+      expect(() => ipcConfigSection(null)).toThrow(/config section/);
+    });
+  });
+
   describe('ipcConfirmDecision', () => {
     it('accepts confirm and cancel only', () => {
       expect(ipcConfirmDecision('confirm')).toBe('confirm');
@@ -137,6 +147,24 @@ describe('src/main/ipc-validators.ts', () => {
       expect(
         ipcGlobalSettingsPatch({ autostart: true, maxLogLines: 500 }),
       ).toEqual({ autostart: true, maxLogLines: 500 });
+    });
+
+    it('accepts the hidden groups fold flag', () => {
+      expect(ipcGlobalSettingsPatch({ showHiddenGroupsFold: false })).toEqual({
+        showHiddenGroupsFold: false,
+      });
+      expect(() =>
+        ipcGlobalSettingsPatch({ showHiddenGroupsFold: 'no' }),
+      ).toThrow(/showHiddenGroupsFold/);
+    });
+
+    it('accepts the hidden workflows fold flag', () => {
+      expect(ipcGlobalSettingsPatch({ showHiddenWorkflowsFold: true })).toEqual(
+        { showHiddenWorkflowsFold: true },
+      );
+      expect(() =>
+        ipcGlobalSettingsPatch({ showHiddenWorkflowsFold: 'no' }),
+      ).toThrow(/showHiddenWorkflowsFold/);
     });
 
     it('ignores absent fields entirely', () => {

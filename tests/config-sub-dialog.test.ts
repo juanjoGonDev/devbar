@@ -7,11 +7,14 @@ import {
   command,
   group,
   openConfigWindow,
+  openStartupWorkflow,
   preScript,
   recordApiCalls,
 } from './helpers/config-window.js';
 import type { RendererWindow } from './helpers/renderer-dom.js';
 import type { Group } from '../src/domain-types.js';
+import { byTip, tipOf } from './helpers/tip.js';
+import { startupEntries } from './helpers/startup-workflow.js';
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -38,9 +41,9 @@ function submit(): void {
 function addButton(label: string): HTMLButtonElement {
   const found = [
     ...document.querySelectorAll<HTMLButtonElement>(
-      '#group-detail .sub-list-header .small-btn',
+      '#group-detail .sub-list-header .sub-add-btn',
     ),
-  ].find((b) => b.textContent === label);
+  ].find((b) => b.getAttribute('aria-label') === label);
   if (!found) throw new Error(`no add button "${label}"`);
   return found;
 }
@@ -49,7 +52,7 @@ function editButtonIn(selector: string): HTMLButtonElement {
   const row = document.querySelector<HTMLElement>(selector);
   const found = [
     ...(row?.querySelectorAll<HTMLButtonElement>('button') ?? []),
-  ].find((b) => b.title === 'Editar');
+  ].find((b) => tipOf(b) === 'Editar');
   if (!found) throw new Error(`no edit button in ${selector}`);
   return found;
 }
@@ -71,6 +74,8 @@ describe('renderer/config/sub-dialog.ts', () => {
     win?.close();
     win = null;
     vi.restoreAllMocks();
+    // The sheet remembers which sections were open, per kind.
+    localStorage.clear();
   });
 
   async function open(extra: Partial<Group> = {}): Promise<RendererWindow> {
@@ -82,11 +87,11 @@ describe('renderer/config/sub-dialog.ts', () => {
   describe('opening for a command', () => {
     it('offers the command-only fields with the default patterns', async () => {
       await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       expect(dialog().open).toBe(true);
-      expect(el('cmd-only-fields').style.display).toBe('');
-      expect(el('sf-inherit-group-env-row').style.display).toBe('none');
-      expect(el('sf-timeout-row').style.display).toBe('none');
+      expect(el('sf-sec-logs').hidden).toBe(false);
+      expect(el('sf-inherit-group-env-row').hidden).toBe(true);
+      expect(el('sf-timeout-row').hidden).toBe(true);
       expect(el<HTMLElement>('sf-schedule-group').style.display).toBe('');
       expect(iconText(input('sf-icon-btn'))).toBe('[terminal]');
       expect(input('sf-warn').value).toContain('warn');
@@ -129,7 +134,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('reveals and hides the confirmation detail with its toggle', async () => {
       await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       expect(el('sf-confirm-details').style.display).toBe('none');
       input('sf-confirm').checked = true;
       input('sf-confirm').dispatchEvent(new Event('change'));
@@ -144,15 +149,15 @@ describe('renderer/config/sub-dialog.ts', () => {
     it('hides the command-only fields and offers the inherit toggle', async () => {
       await open({ actions: [action('seed', { inheritGroupEnv: true })] });
       click(editButtonIn('.sub-item-list[data-kind="action"] .sub-item-row'));
-      expect(el('cmd-only-fields').style.display).toBe('none');
-      expect(el('sf-inherit-group-env-row').style.display).toBe('');
+      expect(el('sf-sec-logs').hidden).toBe(true);
+      expect(el('sf-inherit-group-env-row').hidden).toBe(false);
       expect(input('sf-inherit-group-env').checked).toBe(true);
       expect(el<HTMLElement>('sf-schedule-group').style.display).toBe('');
     });
 
     it('starts a new action with the wand icon', async () => {
       await open({});
-      click(addButton('+ Añadir acción'));
+      click(addButton('Añadir acción'));
       expect(iconText(input('sf-icon-btn'))).toBe('[wand-sparkles]');
       expect(input('sf-inherit-group-env').checked).toBe(false);
     });
@@ -162,18 +167,178 @@ describe('renderer/config/sub-dialog.ts', () => {
     it('offers the timeout and hides the icon and the schedule', async () => {
       await open({ preScripts: [preScript('seed', { timeoutMs: 90_000 })] });
       click(editButtonIn('.prescript-row'));
-      expect(el('sf-timeout-row').style.display).toBe('');
+      expect(el('sf-timeout-row').hidden).toBe(false);
       expect(input('sf-timeout-secs').value).toBe('90');
       expect(el<HTMLElement>('sf-schedule-group').style.display).toBe('none');
-      expect(
-        document.querySelector<HTMLElement>('.sf-icon-field')?.style.display,
-      ).toBe('none');
+      expect(el('sf-icon-field').hidden).toBe(true);
+      expect(el('sf-kind-tile').hidden).toBe(false);
     });
 
     it('leaves the timeout blank when the script has none', async () => {
       await open({});
-      click(addButton('+ Añadir pre-script'));
+      click(addButton('Añadir pre-script'));
       expect(input('sf-timeout-secs').value).toBe('');
+    });
+  });
+
+  describe('the side sheet', () => {
+    function section(name: string): HTMLElement {
+      const found = dialog().querySelector<HTMLElement>(
+        `.sheet-section[data-section="${name}"]`,
+      );
+      if (!found) throw new Error(`no section ${name}`);
+      return found;
+    }
+
+    function toggleOf(name: string): HTMLButtonElement {
+      const found = section(name).querySelector<HTMLButtonElement>(
+        '.sheet-section-toggle',
+      );
+      if (!found) throw new Error(`no toggle in ${name}`);
+      return found;
+    }
+
+    function badgeOf(name: string): string {
+      return section(name).querySelector('.sheet-badge')?.textContent ?? '';
+    }
+
+    function isOpen(name: string): boolean {
+      const body = section(name).querySelector<HTMLElement>(
+        '.sheet-section-body',
+      );
+      return (
+        toggleOf(name).getAttribute('aria-expanded') === 'true' &&
+        body?.hidden === false
+      );
+    }
+
+    it('names the kind and the group above the item name', async () => {
+      await open({ commands: [command('web')] });
+      click(editButtonIn('.sub-item-list[data-kind="command"] .sub-item-row'));
+      expect(el('sf-overline').textContent).toBe('Comando · api');
+      expect(el('sub-dialog-title').textContent).toBe('web');
+      expect(dialog().getAttribute('aria-label')).toBe('Editar comando');
+    });
+
+    it('titles a new item by its kind until it has a name', async () => {
+      await open({});
+      click(addButton('Añadir acción'));
+      expect(el('sf-overline').textContent).toBe('Acción · api');
+      expect(el('sub-dialog-title').textContent).toBe('Nueva acción');
+      input('sf-name').value = 'Seed';
+      input('sf-name').dispatchEvent(new Event('input', { bubbles: true }));
+      expect(el('sub-dialog-title').textContent).toBe('Seed');
+    });
+
+    it('shows a static kind tile for a pre-script', async () => {
+      await open({});
+      click(addButton('Añadir pre-script'));
+      expect(el('sf-overline').textContent).toBe('Pre-script · api');
+      expect(el('sf-kind-tile').hidden).toBe(false);
+      expect(iconText(el('sf-kind-tile'))).toBe('[scroll-text]');
+      click(addButton('Añadir comando'));
+      expect(el('sf-kind-tile').hidden).toBe(true);
+      expect(el('sf-icon-field').hidden).toBe(false);
+    });
+
+    it('says where the command runs, following the cwd override', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      expect(el('sf-cwd-hint').textContent).toBe('/tmp/api');
+      input('sf-cwd').value = '/srv/web';
+      input('sf-cwd').dispatchEvent(new Event('input', { bubbles: true }));
+      expect(el('sf-cwd-hint').textContent).toBe('/srv/web');
+    });
+
+    it('runs an action in its group folder', async () => {
+      await open({ actions: [action('seed')] });
+      click(editButtonIn('.sub-item-list[data-kind="action"] .sub-item-row'));
+      expect(el('sf-cwd-hint').textContent).toBe('/tmp/api');
+    });
+
+    it('lists the sections each kind owns', async () => {
+      await open({});
+      const visible = (): string[] =>
+        [...dialog().querySelectorAll<HTMLElement>('.sheet-section')]
+          .filter((s) => !s.hidden && s.style.display !== 'none')
+          .map((s) => s.dataset.section ?? '');
+      click(addButton('Añadir comando'));
+      expect(visible()).toEqual([
+        'env',
+        'exec',
+        'schedule',
+        'logs',
+        'link',
+        'args',
+      ]);
+      click(addButton('Añadir acción'));
+      expect(visible()).toEqual(['env', 'exec', 'schedule', 'args']);
+      click(addButton('Añadir pre-script'));
+      expect(visible()).toEqual(['env', 'exec', 'args']);
+    });
+
+    it('collapses a section from its header and remembers it per kind', async () => {
+      await open({});
+      click(addButton('Añadir pre-script'));
+      expect(isOpen('env')).toBe(true);
+      expect(isOpen('args')).toBe(false);
+      click(toggleOf('env'));
+      click(toggleOf('args'));
+      expect(isOpen('env')).toBe(false);
+      expect(isOpen('args')).toBe(true);
+      click(addButton('Añadir comando'));
+      expect(isOpen('env'), 'a command keeps its own layout').toBe(true);
+      click(addButton('Añadir pre-script'));
+      expect(isOpen('env')).toBe(false);
+      expect(isOpen('args')).toBe(true);
+    });
+
+    it('sums up each section in its badge', async () => {
+      await open({
+        preScripts: [
+          preScript('seed', {
+            env: [{ key: 'A', value: '1', enabled: true }],
+            args: [],
+            confirm: true,
+            confirmSecs: 60,
+          }),
+        ],
+      });
+      click(editButtonIn('.prescript-row'));
+      expect(badgeOf('env')).toBe('1');
+      expect(badgeOf('exec')).toBe('confirmación · 60 s');
+      expect(badgeOf('args')).toBe('ninguno');
+      el<HTMLTextAreaElement>('sf-args').value = 'a\nb';
+      el('sf-args').dispatchEvent(new Event('input', { bubbles: true }));
+      expect(badgeOf('args')).toBe('2');
+      input('sf-confirm').checked = false;
+      input('sf-confirm').dispatchEvent(new Event('change', { bubbles: true }));
+      expect(badgeOf('exec')).toBe('sin límite');
+      input('sf-timeout-secs').value = '30';
+      input('sf-timeout-secs').dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+      expect(badgeOf('exec')).toBe('límite 30 s');
+    });
+
+    it('sums up the schedule and the log settings of a command', async () => {
+      await open({
+        commands: [
+          command('web', {
+            schedule: {
+              enabled: true,
+              rules: [{ time: '09:00', days: [] }],
+              interval: null,
+            },
+            maxLogLines: 500,
+          }),
+        ],
+      });
+      click(editButtonIn('.sub-item-list[data-kind="command"] .sub-item-row'));
+      expect(badgeOf('schedule')).toBe('09:00');
+      expect(badgeOf('logs')).toBe('500 líneas');
+      expect(badgeOf('env')).toBe('ninguna');
+      expect(badgeOf('exec')).toBe('sin confirmación');
     });
   });
 
@@ -207,7 +372,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('defaults a brand-new command and blanks an empty limit', async () => {
       await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       input('sf-name').value = 'web';
       input('sf-command').value = 'pnpm';
       const saves = recordApiCalls('saveCommand');
@@ -222,7 +387,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('falls back to the default patterns when they are cleared', async () => {
       await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       input('sf-warn').value = '';
       input('sf-error').value = '';
       const saves = recordApiCalls('saveCommand');
@@ -234,7 +399,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('writes an action and says so in the feminine', async () => {
       const w = await open({});
-      click(addButton('+ Añadir acción'));
+      click(addButton('Añadir acción'));
       input('sf-name').value = 'seed';
       input('sf-inherit-group-env').checked = true;
       const saves = recordApiCalls('saveAction');
@@ -247,8 +412,8 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('writes a pre-script in milliseconds and refreshes the pipeline', async () => {
       const w = await open({});
-      await w.settle('getPreSteps', []); // the pipeline read the window boots with
-      click(addButton('+ Añadir pre-script'));
+      await openStartupWorkflow(w); // the workflow the editor shows
+      click(addButton('Añadir pre-script'));
       input('sf-name').value = 'seed';
       input('sf-timeout-secs').value = '30';
       const saves = recordApiCalls('savePreScript');
@@ -256,13 +421,16 @@ describe('renderer/config/sub-dialog.ts', () => {
       expect(payload(saves).timeoutMs).toBe(30_000);
       await w.settle('savePreScript', preScript('seed'));
       await w.settle('listGroups', [group('api')]);
-      await w.settle('getPreSteps', []);
+      await w.settle(
+        'listWorkflows',
+        startupEntries({ blocks: [], edges: [] }),
+      );
       expect(toastText()).toBe('Pre-script guardado');
     });
 
     it('sends a null timeout when the field is empty', async () => {
       await open({});
-      click(addButton('+ Añadir pre-script'));
+      click(addButton('Añadir pre-script'));
       const saves = recordApiCalls('savePreScript');
       submit();
       expect(payload(saves).timeoutMs).toBeNull();
@@ -271,22 +439,23 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('records the schedule the editor is showing', async () => {
       await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       input('sf-schedule-enabled').checked = true;
       document
-        .querySelector<HTMLElement>('#sf-schedule-rules .day-chip')
+        .querySelector<HTMLElement>('#sf-schedule-editor .sched-day')
         ?.click();
       const saves = recordApiCalls('saveCommand');
       submit();
       expect(payload(saves).schedule).toEqual({
         enabled: true,
         rules: [{ time: '09:00', days: [1] }],
+        interval: null,
       });
     });
 
     it('surfaces a save that blew up', async () => {
       const w = await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       submit();
       await w.fail('saveCommand', new Error('disk full'));
       expect(toastText()).toBe('Error: disk full');
@@ -294,7 +463,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('keeps the open group on screen when main stops listing it', async () => {
       const w = await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       submit();
       await w.settle('saveCommand', command('api'));
       await w.settle('listGroups', []);
@@ -306,10 +475,246 @@ describe('renderer/config/sub-dialog.ts', () => {
     });
   });
 
+  describe('creating a pre-script from the pipeline', () => {
+    async function openFromPanel(): Promise<RendererWindow> {
+      win = await openConfigWindow();
+      await win.settle('listGroups', [
+        group('api', { iconColor: '#22c55e' }),
+        group('web'),
+      ]);
+      await openStartupWorkflow(win);
+      click(document.querySelector('.pipeline-panel-new'));
+      return win;
+    }
+
+    it('asks for the group, with its tile, and offers "Crear"', async () => {
+      await openFromPanel();
+      expect(dialog().open).toBe(true);
+      expect(el('sub-dialog-title').textContent).toBe('Nuevo pre-script');
+      expect(el('sf-group-field').hidden).toBe(false);
+      const select = el<HTMLSelectElement>('sf-group');
+      expect([...select.options].map((o) => o.textContent)).toEqual([
+        'api',
+        'web',
+      ]);
+      expect(select.value).toBe('group-api');
+      expect(el('sf-group-tile').style.getPropertyValue('--tile-color')).toBe(
+        '#22c55e',
+      );
+      expect(el('sf-submit-label').textContent).toBe('Crear');
+      // Not opened from a "+": there is no node to follow.
+      expect(el('sf-pipeline-note').hidden).toBe(true);
+    });
+
+    it('repaints the tile when another group is chosen', async () => {
+      await openFromPanel();
+      const select = el<HTMLSelectElement>('sf-group');
+      select.value = 'group-web';
+      select.dispatchEvent(new Event('change'));
+      expect(el('sf-group-tile').style.getPropertyValue('--tile-color')).toBe(
+        '',
+      );
+    });
+
+    it('saves into the chosen group and places the script in the pipeline', async () => {
+      const w = await openFromPanel();
+      const select = el<HTMLSelectElement>('sf-group');
+      select.value = 'group-web';
+      input('sf-name').value = 'Limpiar caché';
+      input('sf-command').value = 'make clean';
+      const saves = recordApiCalls('savePreScript');
+      const writes = recordApiCalls('saveWorkflow');
+      submit();
+      expect(saves.at(-1)?.[0]).toBe('group-web');
+      const saved = preScript('Limpiar caché');
+      await w.settle('savePreScript', saved);
+      await w.settle('listGroups', [
+        group('api'),
+        group('web', { preScripts: [saved] }),
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const pipeline = (
+        writes.at(-1)?.[0] as {
+          graph: {
+            blocks: { id: string; scripts: unknown[] }[];
+            edges: { from: string; to: string }[];
+          };
+        }
+      ).graph;
+      expect(pipeline.blocks[0]?.scripts).toEqual([
+        { groupId: 'group-web', scriptId: saved.id },
+      ]);
+      expect(pipeline.edges).toEqual([
+        { from: 'trigger', to: pipeline.blocks[0]?.id },
+      ]);
+    });
+
+    it('says where the script will go when opened from a "+"', async () => {
+      win = await openConfigWindow();
+      const build = preScript('Build');
+      await win.settle('listGroups', [
+        group('api', { preScripts: [build, preScript('Lint')] }),
+      ]);
+      await openStartupWorkflow(win, {
+        blocks: [
+          {
+            id: 'b1',
+            scripts: [{ groupId: 'group-api', scriptId: build.id }],
+            x: 300,
+            y: 40,
+            requireAll: true,
+          },
+        ],
+        edges: [{ from: 'trigger', to: 'b1' }],
+      });
+      click(document.querySelector('.pipeline-stub'));
+      click(document.querySelector('.pipeline-picker-option.is-create'));
+      expect(dialog().open).toBe(true);
+      expect(el('sf-pipeline-note').hidden).toBe(false);
+      expect(
+        el('sf-pipeline-note').textContent?.replace(/\s+/g, ' '),
+      ).toContain('Se colocará en el workflow después de Build.');
+    });
+
+    it('hides the group again for an ordinary pre-script', async () => {
+      await openFromPanel();
+      click(el('sub-cancel'));
+      click(addButton('Añadir pre-script'));
+      expect(el('sf-group-field').hidden).toBe(true);
+      expect(el('sf-submit-label').textContent).toBe('Guardar');
+    });
+  });
+
+  describe('footer and keyboard', () => {
+    function key(target: Element, init: KeyboardEventInit): void {
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          ...init,
+        }),
+      );
+    }
+
+    async function editCommand(): Promise<RendererWindow> {
+      const w = await open({ commands: [command('web')] });
+      click(editButtonIn('.sub-item-list[data-kind="command"] .sub-item-row'));
+      return w;
+    }
+
+    it('offers no deletion for an item that does not exist yet', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      expect(el('sf-delete').hidden).toBe(true);
+    });
+
+    it('deletes the item it edits once the user confirms', async () => {
+      const w = await editCommand();
+      expect(el('sf-delete').hidden).toBe(false);
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      click(el('sf-delete'));
+      expect(dialog().open).toBe(false);
+      expect(w.argsFor('deleteCommand').at(-1)).toEqual([
+        'group-api',
+        'cmd-web',
+      ]);
+    });
+
+    it('stays open when the user backs out of deleting', async () => {
+      const w = await editCommand();
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      click(el('sf-delete'));
+      expect(dialog().open).toBe(true);
+      expect(w.callCount('deleteCommand')).toBe(0);
+    });
+
+    it('saves with Cmd/Ctrl+S', async () => {
+      await editCommand();
+      const saves = recordApiCalls('saveCommand');
+      key(input('sf-name'), { key: 's', ctrlKey: true });
+      expect(dialog().open).toBe(false);
+      expect(payload(saves).name).toBe('web');
+    });
+
+    it('names the shortcut with the Ctrl key off macOS', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      expect(el('sf-submit-key').textContent).toBe('Ctrl+S');
+    });
+
+    it('names the shortcut with the Command glyph on macOS', async () => {
+      win = await openConfigWindow('darwin');
+      await win.settle('listGroups', [group('api')]);
+      click(addButton('Añadir comando'));
+      expect(iconText(el('sf-submit-key'))).toBe('[command]S');
+    });
+
+    it('closes on Escape when nothing changed', async () => {
+      await editCommand();
+      const ask = vi.spyOn(window, 'confirm');
+      key(input('sf-name'), { key: 'Escape' });
+      expect(dialog().open).toBe(false);
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('asks before discarding edits on Escape', async () => {
+      const w = await editCommand();
+      input('sf-name').value = 'web-2';
+      const ask = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      key(input('sf-name'), { key: 'Escape' });
+      expect(ask).toHaveBeenCalledWith('¿Descartar los cambios?');
+      expect(dialog().open).toBe(true);
+      ask.mockReturnValue(true);
+      key(input('sf-name'), { key: 'Escape' });
+      expect(dialog().open).toBe(false);
+      expect(w.callCount('saveCommand')).toBe(0);
+    });
+
+    it('asks too when the close button would drop edits', async () => {
+      await editCommand();
+      input('sf-command').value = 'pnpm';
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      click(dialog().querySelector('.sheet-close'));
+      expect(dialog().open).toBe(true);
+    });
+
+    it('closes the icon picker first, not the sheet, on Escape', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      click(el('sf-icon-btn'));
+      expect(el('icon-picker').hidden).toBe(false);
+      key(el('icon-search'), { key: 'Escape' });
+      expect(el('icon-picker').hidden).toBe(true);
+      expect(dialog().open).toBe(true);
+    });
+
+    it('gives focus back to the button that opened it', async () => {
+      await open({});
+      const opener = addButton('Añadir comando');
+      opener.focus();
+      click(opener);
+      expect(document.activeElement, 'the name takes focus').toBe(
+        input('sf-name'),
+      );
+      key(input('sf-name'), { key: 'Escape' });
+      expect(document.activeElement).toBe(opener);
+    });
+
+    it('keeps Tab inside the sheet', async () => {
+      await open({});
+      click(addButton('Añadir comando'));
+      el('sf-submit').focus();
+      key(el('sf-submit'), { key: 'Tab' });
+      expect(document.activeElement).toBe(el('sf-icon-btn'));
+      key(el('sf-icon-btn'), { key: 'Tab', shiftKey: true });
+      expect(document.activeElement).toBe(el('sf-submit'));
+    });
+  });
+
   describe('dialog chrome', () => {
     it('closes on cancel without saving', async () => {
       const w = await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       click(el('sub-cancel'));
       expect(dialog().open).toBe(false);
       expect(w.callCount('saveCommand')).toBe(0);
@@ -318,7 +723,7 @@ describe('renderer/config/sub-dialog.ts', () => {
     it('picks an icon through the shared picker', async () => {
       const w = await open({});
       await w.settle('getIconBattery', [{ name: 'rocket', tags: ['launch'] }]);
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       click(el('sf-icon-btn'));
       expect(document.getElementById('icon-picker')?.parentElement).toBe(
         dialog(),
@@ -334,9 +739,9 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('saves the colour picked beside the icon', async () => {
       await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       click(dialog().querySelector('.icon-color-trigger'));
-      click(dialog().querySelector('.icon-color-swatch[title="Azul"]'));
+      click(dialog().querySelector(`.icon-color-swatch:is(${byTip('Azul')})`));
       expect(
         el('sf-icon-btn').querySelector<HTMLElement>('.icon')?.style.color,
       ).toBe('rgb(59, 130, 246)');
@@ -347,16 +752,15 @@ describe('renderer/config/sub-dialog.ts', () => {
       expect(payload(saves).iconColor).toBe('#3b82f6');
     });
 
-    it('keeps the icon line compact: the split button and the hint only', async () => {
+    it('makes the header tile the icon picker, with its colour segment', async () => {
       await open({});
-      click(addButton('+ Añadir comando'));
-      const row = dialog().querySelector('.sf-icon-row');
-      expect([...(row?.children ?? [])].map((c) => c.className)).toEqual([
+      click(addButton('Añadir comando'));
+      const tile = el('sf-icon-field');
+      expect([...tile.children].map((c) => c.className)).toEqual([
         'icon-split',
-        'muted',
       ]);
       expect(
-        [...(row?.querySelector('.icon-split')?.children ?? [])].map(
+        [...(tile.querySelector('.icon-split')?.children ?? [])].map(
           (c) => c.id || c.className,
         ),
       ).toEqual([
@@ -369,11 +773,11 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('starts a new item without a colour, whatever the last one had', async () => {
       await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       click(dialog().querySelector('.icon-color-trigger'));
-      click(dialog().querySelector('.icon-color-swatch[title="Azul"]'));
+      click(dialog().querySelector(`.icon-color-swatch:is(${byTip('Azul')})`));
       click(el('sub-cancel'));
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       expect(
         dialog()
           .querySelector('.icon-color-reset')
@@ -383,7 +787,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('writes the chosen folder into the cwd field', async () => {
       const w = await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       click(el('sf-cwd-pick'));
       await w.settle('pickFolder', { ok: true, path: '/srv/api' });
       expect(input('sf-cwd').value).toBe('/srv/api');
@@ -391,7 +795,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('leaves the cwd field alone when the picker is cancelled', async () => {
       const w = await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       click(el('sf-cwd-pick'));
       await w.settle('pickFolder', { canceled: true });
       expect(input('sf-cwd').value).toBe('');
@@ -399,7 +803,7 @@ describe('renderer/config/sub-dialog.ts', () => {
 
     it('surfaces a refused folder dialog and ignores an empty answer', async () => {
       const w = await open({});
-      click(addButton('+ Añadir comando'));
+      click(addButton('Añadir comando'));
       click(el('sf-cwd-pick'));
       await w.settle('pickFolder', { ok: false, error: 'no access' });
       expect(toastText()).toBe('Error: no access');

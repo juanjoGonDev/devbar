@@ -111,41 +111,36 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       );
     });
 
-    it('falls back to an icon for the kind of thing it is', () => {
-      const icon = (shown: LogListItem): string =>
-        iconText(buildRow(shown).getElementsByClassName('s-ico')[0]);
-      expect(icon(item({ icon: 'rocket' }))).toBe('[rocket]');
-      expect(icon(item({ icon: null, type: 'command' }))).toBe('[terminal]');
-      expect(icon(item({ icon: null, type: 'action' }))).toBe(
-        '[wand-sparkles]',
-      );
-      expect(icon(item({ icon: null, type: 'prescript' }))).toBe(
-        '[flask-conical]',
-      );
-      expect(icon(item({ icon: null, type: 'pipeline' }))).toBe('[puzzle]');
-      // An unmigrated emoji still shows as itself.
-      expect(icon(item({ icon: '🚀' }))).toBe('🚀');
-    });
-
-    it('colours the dot by the loudest thing the service has to say', () => {
+    it('lights the dot only while it runs — the counters say the rest', () => {
       const dot = (shown: LogListItem): string =>
         buildRow(shown).getElementsByClassName('dot')[0]?.className ?? '';
       expect(dot(item({ status: 'running' }))).toBe('dot running');
-      expect(dot(item({ status: 'running', warnCount: 1 }))).toBe('dot warn');
-      expect(
-        dot(item({ status: 'running', errorCount: 1, warnCount: 9 })),
-      ).toBe('dot error');
+      expect(dot(item({ status: 'running', errorCount: 1 }))).toBe(
+        'dot running',
+      );
+      expect(dot(item({ status: 'starting' }))).toBe('dot starting');
       expect(dot(item({ status: 'stopped', errorCount: 3 }))).toBe('dot');
     });
 
-    it('counts the lines when there is nothing louder to show', () => {
-      const row = buildRow(item({ lineCount: 42 }));
+    it('dims a stopped service', () => {
+      expect(buildRow(item({ status: 'stopped' })).classList).toContain(
+        'stopped',
+      );
       expect(
-        badgeLabels(row.getElementsByClassName('s-badges')[0] as HTMLElement),
-      ).toEqual(['42 líneas']);
+        buildRow(item({ status: 'running' })).classList.contains('stopped'),
+      ).toBe(false);
     });
 
-    it('shows the warn and error counters, and the clock, instead', () => {
+    it('shows no badge at all while there is nothing to count', () => {
+      const row = buildRow(
+        item({ lineCount: 42, status: 'running', startedAt: Date.now() }),
+      );
+      expect(
+        badgeLabels(row.getElementsByClassName('s-badges')[0] as HTMLElement),
+      ).toEqual([]);
+    });
+
+    it('shows the warn and error counters when there are some', () => {
       const row = buildRow(
         item({
           warnCount: 2,
@@ -157,22 +152,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       );
       expect(
         badgeLabels(row.getElementsByClassName('s-badges')[0] as HTMLElement),
-      ).toEqual(['[triangle-alert] 2', '[circle-x] 1', '[timer] 5s']);
-    });
-
-    it('marks a live clock apart from a finished one', () => {
-      const clock = (shown: LogListItem): HTMLElement =>
-        buildRow(shown).getElementsByClassName('b time')[0] as HTMLElement;
-      const live = clock(
-        item({ status: 'running', startedAt: Date.now() - 1000 }),
-      );
-      expect(live.className).toBe('b time live');
-      expect(live.title).toBe('Tiempo en ejecución');
-      const past = clock(
-        item({ status: 'stopped', startedAt: 1000, lastFinishedAt: 3000 }),
-      );
-      expect(past.className).toBe('b time');
-      expect(past.title).toBe('Duración de la última ejecución');
+      ).toEqual(['2', '1']);
     });
 
     it('offers to stop what is running and to start what is not', () => {
@@ -274,35 +254,10 @@ describe('renderer/logs/sidebar-rows.ts', () => {
 
     it('a rename in the config reaches an open window through the paint', () => {
       const row = buildRow(item({ name: 'api' }));
-      rows.paintSideItem(row, item({ name: 'api gateway', icon: 'rocket' }));
+      rows.paintSideItem(row, item({ name: 'api gateway' }));
       expect(row.getElementsByClassName('s-name')[0]?.textContent).toBe(
         'api gateway',
       );
-      expect(iconText(row.getElementsByClassName('s-ico')[0])).toBe('[rocket]');
-    });
-
-    it('repaints the icon when its colour or the image library changes', async () => {
-      // Same module instance the rows paint through (the DOM mount resets
-      // the module graph).
-      const { setCustomIcons } = await import('../renderer/icon.js');
-      const row = buildRow(item({ icon: 'rocket' }));
-      const glyph = () =>
-        row
-          .getElementsByClassName('s-ico')[0]
-          ?.querySelector<HTMLElement>('.icon');
-      rows.paintSideItem(row, item({ icon: 'rocket', iconColor: '#3b82f6' }));
-      expect(glyph()?.style.color).toBe('rgb(59, 130, 246)');
-      rows.paintSideItem(row, item({ icon: 'img:abc123' }));
-      expect(glyph()?.dataset.icon).toBe('terminal');
-      setCustomIcons([
-        {
-          id: 'abc123',
-          name: 'logo',
-          dataUrl: 'data:image/png;base64,iVBORw0KGgo=',
-        },
-      ]);
-      rows.paintSideItem(row, item({ icon: 'img:abc123' }));
-      expect(glyph()?.className).toBe('icon icon-img');
     });
   });
 
@@ -328,17 +283,6 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       expect(localStorage.getItem('devbar.logs.group.g1')).toBe('open');
     });
 
-    it('falls back to a folder when the group set no icon', () => {
-      const plain = mount(rows.buildGroupRow(group({ groupIcon: '' })));
-      expect(iconText(plain.getElementsByClassName('g-ico')[0])).toBe(
-        '[folder]',
-      );
-      const custom = mount(rows.buildGroupRow(group({ groupIcon: 'code' })));
-      expect(iconText(custom.getElementsByClassName('g-ico')[0])).toBe(
-        '[code]',
-      );
-    });
-
     it('lists one row per service inside it', () => {
       const details = mount(
         rows.buildGroupRow(
@@ -347,30 +291,6 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       );
       expect(details.getElementsByClassName('side-item')).toHaveLength(2);
       expect(details.getElementsByClassName('side-items')).toHaveLength(1);
-    });
-
-    it('rolls the worst state among its services up to the header', () => {
-      // A failing service cannot hide behind a folded header.
-      const details = mount(
-        rows.buildGroupRow(
-          group({
-            items: [
-              item({ id: 'a', status: 'running' }),
-              item({ id: 'b', status: 'running', errorCount: 1 }),
-            ],
-          }),
-        ),
-      );
-      const dot = details.getElementsByClassName('g-dot')[0] as HTMLElement;
-      expect(dot.className).toBe('g-dot error');
-      expect(dot.title).toBe('Estado del grupo: error');
-    });
-
-    it('leaves the rollup blank when nothing inside is running', () => {
-      const details = mount(rows.buildGroupRow(group()));
-      const dot = details.getElementsByClassName('g-dot')[0] as HTMLElement;
-      expect(dot.className).toBe('g-dot');
-      expect(dot.title).toBe('');
     });
 
     it('adds up the warnings and errors of everything inside', () => {
@@ -388,7 +308,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
         badgeLabels(
           details.getElementsByClassName('g-badges')[0] as HTMLElement,
         ),
-      ).toEqual(['[triangle-alert] 5', '[circle-x] 1']);
+      ).toEqual(['5', '1']);
     });
 
     it('a group total opens the merged view already pinned to that level', () => {
@@ -454,7 +374,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
     it('marks itself as the cross-cutting view it is', () => {
       const details = mount(rows.buildPipelineRow(pipeline()));
       expect(iconText(details.getElementsByClassName('g-ico')[0])).toBe(
-        '[dna]',
+        '[workflow]',
       );
     });
 
@@ -514,7 +434,7 @@ describe('renderer/logs/sidebar-rows.ts', () => {
       const row = mount(rows.buildAllRow());
       expect(
         badgeLabels(row.getElementsByClassName('a-badges')[0] as HTMLElement),
-      ).toEqual(['[triangle-alert] 3', '[circle-x] 4']);
+      ).toEqual(['3', '4']);
     });
 
     it('shows nothing at all when everything is quiet', () => {

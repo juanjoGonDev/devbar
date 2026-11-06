@@ -7,9 +7,9 @@ import {
   normalizeAction,
   normalizeCommand,
   normalizeGroup,
-  normalizePreStep,
   reorderByIds,
 } from './groups-model.js';
+import { normalizeWorkflows } from './workflows.js';
 import { serializeConfig } from './config-io.js';
 import { mergeCustomIcons, referencedCustomIconIds } from './custom-icons.js';
 import type { CustomIcon } from './domain-types.js';
@@ -20,7 +20,7 @@ import {
   persistState,
   groupsOverlayActive,
   readStoredGroups,
-  readStoredPreSteps,
+  readStoredWorkflows,
   readGroups,
   readVersion,
   saveGlobalSettings,
@@ -31,8 +31,8 @@ import {
 /**
  * Groups and everything nested inside one (commands, actions, silencing),
  * plus whole-config import/export. The store handle, the settings/schedule
- * slices and the migration live in `config-store/store.ts`; the pre-script
- * pipeline lives in `config-store/pipeline-store.ts`. Both are re-exported
+ * slices and the migration live in `config-store/store.ts`; the workflows
+ * live in `config-store/workflow-store.ts`. Both are re-exported
  * here so `config-store.js` stays the single import surface for main.
  */
 
@@ -49,16 +49,20 @@ export {
   setScheduleLastRun,
 } from './config-store/store.js';
 export {
-  assignScriptToStep,
+  createWorkflow,
   deletePreScript,
-  deletePreStep,
-  getPreSteps,
+  deleteWorkflow,
+  getWorkflow,
+  getWorkflowRuns,
+  listWorkflows,
+  makeStartupWorkflow,
+  recordWorkflowRun,
   reorderPreScripts,
-  reorderPreSteps,
   savePreScript,
-  savePreStep,
-  unassignScriptFromStep,
-} from './config-store/pipeline-store.js';
+  saveWorkflow,
+  setGroupHiddenInTray,
+  setWorkflowEnabled,
+} from './config-store/workflow-store.js';
 export {
   addCustomIcon,
   deleteCustomIcon,
@@ -253,7 +257,7 @@ export function exportConfig(): ReturnType<typeof serializeConfig> {
     {
       version: readVersion(),
       groups,
-      preSteps: readStoredPreSteps(),
+      workflows: readStoredWorkflows(),
       globalSettings: getGlobalSettings(),
       customIcons: readCustomIcons().filter((icon) => referenced.has(icon.id)),
     },
@@ -263,7 +267,8 @@ export function exportConfig(): ReturnType<typeof serializeConfig> {
 export function replaceConfig(payload: {
   version: number;
   groups: unknown[];
-  preSteps?: unknown[];
+  /** Already validated by `config-io.validateImportedConfig`. */
+  workflows?: unknown;
   globalSettings: Partial<GlobalSettings>;
   customIcons?: readonly CustomIcon[];
 }): void {
@@ -277,10 +282,7 @@ export function replaceConfig(payload: {
   const safeGroups = payload.groups
     .map(normalizeGroup)
     .map((group) => enforceSingleModeAutoStart(group).group ?? group);
-  const safeSteps = Array.isArray(payload.preSteps)
-    ? payload.preSteps.map(normalizePreStep)
-    : [];
-  persistState(safeGroups, safeSteps);
+  persistState(safeGroups, normalizeWorkflows(payload.workflows));
 }
 export function writeImportBackup(): string {
   const backupPath = path.join(storeDirectory(), 'pre-import-backup.json');
@@ -288,7 +290,7 @@ export function writeImportBackup(): string {
     backedUpAt: new Date().toISOString(),
     version: readVersion(),
     groups: readStoredGroups(),
-    preSteps: readStoredPreSteps(),
+    workflows: readStoredWorkflows(),
     globalSettings: getGlobalSettings(),
     customIcons: readCustomIcons(),
   };

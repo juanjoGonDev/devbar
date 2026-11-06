@@ -22,6 +22,8 @@ function harness() {
     applyAutostart: (enabled: boolean) => calls.push(`autostart:${enabled}`),
     refreshWindowBackgrounds: () => calls.push('repaint'),
     sendTheme: (theme: string) => calls.push(`theme:${theme}`),
+    sendSettings: (next: GlobalSettings) =>
+      calls.push(`settings:${next.autostart}`),
     broadcast: () => calls.push('broadcast'),
   };
   return { deps, calls };
@@ -39,6 +41,7 @@ describe('src/main/settings-save.ts', () => {
       'autostart:true',
       'repaint',
       'theme:auto',
+      'settings:true',
       'broadcast',
     ]);
   });

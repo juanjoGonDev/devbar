@@ -69,14 +69,22 @@ export function fixtureEnvironment(input: {
 }
 
 /**
- * The running app's side of the "Grupos de prueba" overlay: the groups
- * overlay in the store, the process manager the fixture processes run in, and
- * the repaint that shows the swap in every window.
+ * The running app's side of the "Grupos y workflows de prueba" overlay: the
+ * overlay in the store, the workflow runner and process manager the fixture
+ * runs and processes live in, and the repaint that shows the swap in every
+ * window.
  */
 export function createFixtureHost(deps: {
   app: { isPackaged: boolean; getAppPath: () => string };
   pathExists: (target: string) => boolean;
   setOverlay: DevHooks['fixtures']['setOverlay'];
+  /** What the app lists now: the overlay's workflows while it is on. */
+  listWorkflows: () => readonly { id: string }[];
+  workflowRunner: {
+    isRunning: (id: string) => boolean;
+    stop: (id: string) => { ok: boolean };
+    current: (id: string) => Promise<unknown> | null;
+  };
   processManager: {
     allStates: () => readonly { id: string }[];
     stop: DevHooks['fixtures']['stop'];
@@ -95,6 +103,22 @@ export function createFixtureHost(deps: {
         exists: deps.pathExists,
       }),
     setOverlay: deps.setOverlay,
+    runningWorkflowIds: () =>
+      deps
+        .listWorkflows()
+        .map((workflow) => workflow.id)
+        .filter((id) => deps.workflowRunner.isRunning(id)),
+    stopWorkflow: async (id) => {
+      if (!deps.workflowRunner.isRunning(id)) return;
+      const inFlight = deps.workflowRunner.current(id);
+      deps.workflowRunner.stop(id);
+      // Settled either way: what matters is that its last run is recorded
+      // while the overlay is still up.
+      await inFlight?.then(
+        () => undefined,
+        () => undefined,
+      );
+    },
     processIds: () => deps.processManager.allStates().map((entry) => entry.id),
     stop: (id) => deps.processManager.stop(id),
     removeState: (id) => deps.processManager.removeState(id),

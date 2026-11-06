@@ -159,7 +159,7 @@ export function makeCommand(overrides: Partial<Command> = {}): Command {
     silenceErrors: false,
     silencedPatterns: { warn: [], error: [] },
     autoStart: false,
-    schedule: { enabled: false, rules: [] },
+    schedule: { enabled: false, rules: [], interval: null },
     maxLogLines: null,
     confirm: false,
     confirmSecs: null,
@@ -178,7 +178,7 @@ export function makeAction(overrides: Partial<Action> = {}): Action {
     args: [],
     env: [],
     inheritGroupEnv: true,
-    schedule: { enabled: false, rules: [] },
+    schedule: { enabled: false, rules: [], interval: null },
     confirm: false,
     confirmSecs: null,
     confirmOnTimeout: 'cancel',
@@ -218,6 +218,7 @@ export function makeGroup(overrides: Partial<Group> = {}): Group {
     actions: [],
     preScripts: [],
     waitForPipeline: true,
+    hiddenInTray: false,
     ...overrides,
   };
 }
@@ -232,7 +233,8 @@ export function makeSettings(
     silenceErrors: false,
     maxLogLines: 10_000,
     notifySuccess: true,
-    preScriptsAutoRun: true,
+    showHiddenGroupsFold: true,
+    showHiddenWorkflowsFold: false,
     ...overrides,
   };
 }

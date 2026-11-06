@@ -1,40 +1,25 @@
 /**
- * The footer line, and the queue that feeds it while the viewer is paused.
+ * The footer's status line, and the queue of lines a manual pause holds back.
  *
- * One strip of text answers three different questions — how many lines are
- * selected, how many arrived while paused, whether a copy just succeeded — so
- * they have to agree on who wrote last. Keeping them together is what makes
- * "clear the selection" fall back to the paused badge instead of to nothing.
+ * The footer answers two questions — how many lines are selected, whether a
+ * copy just succeeded — so they have to agree on who wrote last. How many
+ * lines a pause is holding is the live button's to say (`live.ts`); the queue
+ * sits here because a scope switch has to empty it in the same breath as it
+ * clears the selection.
  */
 import { queuedAfter } from '../pending-queue.js';
 import { buffer } from './buffer.js';
-import {
-  clearSelectionBtn,
-  copyBtn,
-  linesEl,
-  pausedEl,
-  statusEl,
-} from './elements.js';
+import { dispatchLive } from './live.js';
+import { clearSelectionBtn, linesEl, statusEl } from './elements.js';
 import type { LogEntry } from '../../src/domain-types.js';
 
 /** Lines held back from the buffer while the viewer is paused. */
 export const pendingQueue: LogEntry[] = [];
 
-/** The paused badge, or nothing when the viewer is live. */
-function showPausedCount(): void {
-  if (!pausedEl.checked) {
-    statusEl.textContent = '';
-    return;
-  }
-  statusEl.textContent = pendingQueue.length
-    ? `Pausado (+${pendingQueue.length})`
-    : 'Pausado';
-}
-
-/** Hold a line that arrived while paused, and say so. */
+/** Hold a line that arrived while paused, and count it on the live button. */
 export function queueWhilePaused(entry: LogEntry): void {
   pendingQueue.push(entry);
-  statusEl.textContent = `Pausado (+${pendingQueue.length})`;
+  dispatchLive({ type: 'arrived', count: 1 });
 }
 
 /**
@@ -46,7 +31,7 @@ export function queueWhilePaused(entry: LogEntry): void {
  */
 export function dropPendingQueue(): void {
   pendingQueue.length = 0;
-  showPausedCount();
+  dispatchLive({ type: 'reset' });
 }
 
 /**
@@ -59,16 +44,12 @@ export function keepQueuedAfter(watermark: (entry: LogEntry) => number): void {
   const fresh = queuedAfter(pendingQueue, watermark);
   pendingQueue.length = 0;
   pendingQueue.push(...fresh);
-  showPausedCount();
 }
 
 export function reportSelection(): void {
   const count = buffer.selected.size;
-  copyBtn.title = count ? `Copiar ${count} línea(s) seleccionada(s)` : 'Copiar';
   clearSelectionBtn.hidden = count === 0;
-  if (count) statusEl.textContent = `${count} seleccionada(s)`;
-  else if (pausedEl.checked) statusEl.textContent = 'Pausado';
-  else statusEl.textContent = '';
+  statusEl.textContent = count ? `${count} seleccionada(s)` : '';
 }
 
 /** Re-mark the drawn rows from the selection, which is keyed by entry. */

@@ -1,12 +1,19 @@
-import { isDue } from '../scheduler.js';
+import { isDue, isWorkflowScheduleDue } from '../scheduler.js';
 import { makeActionId, makeCommandId } from '../compound-id.js';
 import type {
   Action,
   Command,
   Group,
+  LogEntry,
   ProcessState,
   Schedule,
+  Workflow,
 } from '../domain-types.js';
+
+/** The `scheduleState` key a scheduled workflow's last run is kept under. */
+export function workflowScheduleKey(workflowId: string): string {
+  return `wf:${workflowId}`;
+}
 
 /**
  * Anacron-style scheduler. Runs on a 60s tick, on power resume, and shortly
@@ -18,11 +25,18 @@ import type {
  *
  * The lastRun bookkeeping (config-store.scheduleState) survives sleep AND app
  * restarts, so a machine asleep at 09:00 that wakes at 09:30 still catches up.
- * Unlike boot auto-start, scheduled runs do NOT execute pre-scripts.
+ * An interval («Cada…») schedule fires on the runs `nextRuns` plans (what the
+ * editor previews) and catches up on at most one missed run, however many it
+ * slept through. A run that comes while the target is still going is skipped
+ * with a log line, never queued.
+ * Unlike boot auto-start, scheduled commands do NOT execute pre-scripts; a
+ * workflow with the `schedule` trigger is the scheduled way to run them, and
+ * it follows the same bookkeeping (keyed `wf:<id>`) while it is enabled.
  */
 
 interface ScheduleConfigStore {
   listGroups: () => Group[];
+  listWorkflows?: () => Workflow[];
   getScheduleLastRun: (processId: string) => string | null;
   setScheduleLastRun: (processId: string, iso: string) => void;
 }
@@ -31,13 +45,23 @@ interface ScheduleProcessManager {
   getState: (id: string) => Pick<ProcessState, 'status'>;
   start: (processId: string) => { ok: boolean; error?: string | undefined };
   stop: (id: string) => Promise<{ ok: boolean; error?: string | undefined }>;
+  /** Where a skipped run is noted, in the target's own log. */
+  pushLog: (id: string, entry: LogEntry) => void;
 }
+
+/** What a run that comes while the previous one is still going says. */
+const SKIPPED_STILL_RUNNING = 'Ejecución programada saltada: sigue en marcha';
 
 export interface ScheduleRunnerDeps {
   configStore: ScheduleConfigStore;
   processManager: ScheduleProcessManager;
   confirmIfNeeded: (target: Command | Action, group: Group) => Promise<boolean>;
   broadcast: () => void;
+  /** Runs the workflows with the `schedule` trigger, while enabled. */
+  workflowRunner?: {
+    isRunning: (workflowId: string) => boolean;
+    run: (workflowId: string, cause: 'schedule') => Promise<unknown>;
+  };
   setTimer?: (fn: () => void, ms: number) => unknown;
   setRepeatingTimer?: (fn: () => void, ms: number) => unknown;
   now?: () => number;
@@ -72,30 +96,85 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
   /**
    * Evaluate one schedulable target (command or action) at `now`. Seeds
    * lastRun on first sight (no retroactive fire), otherwise fires `startFn`
-   * when a scheduled occurrence has elapsed since lastRun and it is not
-   * already running. `startFn` must swallow its own errors.
+   * when a scheduled occurrence has elapsed since lastRun. A target still
+   * running then is skipped (`onSkip` notes it), never queued: the marker
+   * moves on all the same, so the run does not fire late once it stops.
+   * `startFn` must swallow its own errors.
    */
-  async function evaluateSchedule(
+  async function evaluate(
+    key: string,
+    due: (lastRun: string) => boolean,
+    at: Date,
+    running: () => boolean,
+    startFn: () => Promise<boolean>,
+    onSkip: () => void,
+  ): Promise<boolean> {
+    const last = configStore.getScheduleLastRun(key);
+    if (last == null) {
+      configStore.setScheduleLastRun(key, at.toISOString()); // seed only
+      return false;
+    }
+    if (!due(last)) return false;
+    let didStart = false;
+    if (running()) onSkip();
+    else didStart = (await startFn()) === true;
+    // Advance the marker even on a declined confirmation, so we don't re-prompt
+    // for the same occurrence on every tick.
+    configStore.setScheduleLastRun(key, at.toISOString());
+    return didStart;
+  }
+
+  function evaluateSchedule(
     pid: string,
     sched: Schedule | null | undefined,
     at: Date,
     startFn: () => Promise<boolean>,
   ): Promise<boolean> {
-    if (!sched || !sched.enabled) return false;
-    const last = configStore.getScheduleLastRun(pid);
-    if (last == null) {
-      configStore.setScheduleLastRun(pid, at.toISOString()); // seed only
-      return false;
+    if (!sched || !sched.enabled) return Promise.resolve(false);
+    return evaluate(
+      pid,
+      (last) => isDue(sched, last, at),
+      at,
+      () => processManager.getState(pid).status === 'running',
+      startFn,
+      () =>
+        processManager.pushLog(pid, {
+          ts: at.getTime(),
+          stream: 'sys',
+          level: null,
+          line: `── ${SKIPPED_STILL_RUNNING} ──`,
+        }),
+    );
+  }
+
+  /**
+   * Scheduled workflows. The run is kicked off, never awaited: a workflow
+   * may take minutes, and the tick must not hold every other schedule (or
+   * the re-entrancy guard) for that long.
+   */
+  async function runWorkflowSchedules(at: Date): Promise<boolean> {
+    const runner = deps.workflowRunner;
+    if (!runner || !configStore.listWorkflows) return false;
+    let started = false;
+    for (const workflow of configStore.listWorkflows()) {
+      const { trigger } = workflow;
+      if (trigger.kind !== 'schedule' || !workflow.enabled) continue;
+      const ran = await evaluate(
+        workflowScheduleKey(workflow.id),
+        (last) => isWorkflowScheduleDue(trigger.schedule, last, at),
+        at,
+        () => runner.isRunning(workflow.id),
+        () => {
+          void runner.run(workflow.id, 'schedule');
+          return Promise.resolve(true);
+        },
+        () => {
+          console.info(`[schedule] ${workflow.name}: ${SKIPPED_STILL_RUNNING}`);
+        },
+      );
+      started = started || ran;
     }
-    if (!isDue(sched, last, at)) return false;
-    let didStart = false;
-    if (processManager.getState(pid).status !== 'running') {
-      didStart = (await startFn()) === true;
-    }
-    // Advance the marker even on a declined confirmation, so we don't re-prompt
-    // for the same occurrence on every tick.
-    configStore.setScheduleLastRun(pid, at.toISOString());
-    return didStart;
+    return started;
   }
 
   async function runSchedulesOnce(at: Date): Promise<void> {
@@ -141,6 +220,7 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
         started = started || ran;
       }
     }
+    if (await runWorkflowSchedules(at)) started = true;
     if (started) broadcast();
   }
 

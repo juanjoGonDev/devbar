@@ -1,25 +1,27 @@
 /**
- * One script of one pipeline step: the collaborator contracts it needs, the
+ * One script of one workflow block: the collaborator contracts it needs, the
  * per-run handle it mutates, and the single `runOne` call that starts the
  * process and settles when it finishes, fails, times out or is declined.
  *
- * Split out of `pre-script-runner.ts` so the step/pipeline sequencing there
+ * Split out of `pre-script-runner.ts` so the block/pipeline scheduling there
  * reads as sequencing, and this one script's lifecycle reads as a lifecycle.
  */
 import type {
   Action,
   Group,
   LogEntry,
+  Pipeline,
   PreScript,
-  PreStep,
   PreStepScriptRef,
 } from '../domain-types.js';
 import { makePreScriptId } from '../compound-id.js';
 import { formatUptime } from '../format-uptime.js';
+import { safeRegex, stripAnsi } from '../process/log-filters.js';
 
 export interface ConfigStoreLike {
   getGroup(groupId: string): Group | null;
-  getPreSteps(): PreStep[];
+  /** The graph this runner runs: its own workflow's. */
+  getPipeline(): Pipeline;
 }
 
 export interface PreScriptProcessManager {
@@ -52,17 +54,21 @@ export interface PreScriptProcessManager {
   ): unknown;
   start(processId: string): { ok: boolean; error?: string | undefined };
   stop(processId: string): Promise<{ ok: boolean; error?: string | undefined }>;
+  /** Tells a script already running — e.g. for another workflow — apart. */
+  getState?(processId: string): { status: string };
 }
 
-export type RunnerStatus = 'running' | 'done' | 'error' | 'idle';
+type RunnerStatus = 'running' | 'done' | 'error' | 'idle';
 
 export interface RunHandle {
   runId: number;
   aggregatorId: string;
   cancelled: boolean;
   childPids: Set<string>;
-  currentStep: number;
-  totalSteps: number;
+  /** Scripts settled so far — finished, failed or skipped. */
+  doneScripts: number;
+  /** Scripts this run will try: those of its runnable blocks. */
+  totalScripts: number;
   status: RunnerStatus;
   _timedOutScripts: Set<string>;
 }
@@ -73,6 +79,8 @@ export interface OneResult {
   error?: string | undefined;
   cancelled?: boolean;
   skipped?: boolean;
+  /** A clean exit whose output matched the group's warn pattern. */
+  warned?: boolean;
 }
 
 /** Writes one narration line into a log buffer (`pushSysLog` in the runner). */
@@ -101,14 +109,34 @@ export interface RunOneDeps {
         groupId: string,
       ) => Promise<boolean>)
     | undefined;
+  /** Checked right before spawning: the run or the block gave up meanwhile. */
+  shouldAbort?: () => boolean;
+  /** The process is about to be spawned. */
+  onStarted?: () => void;
+  /** Every line the script's buffer receives while it runs. */
+  onLog?: (entry: LogEntry) => void;
+}
+
+/**
+ * What makes a clean exit a warning: the owning group's warn patterns. A
+ * pre-script has no pattern of its own, so these are its group's commands'
+ * `warnRegex` — the same ones that tint the group in the tray.
+ */
+function warnMatchers(group: Group): RegExp[] {
+  return [
+    ...new Set(group.commands.map((command) => command.warnRegex)),
+  ].flatMap((source) => {
+    const regex = safeRegex(source);
+    return regex ? [regex] : [];
+  });
 }
 
 /**
  * Resolves `ref` against its OWN group for every run-time concern (script
- * definition, cwd, env) — never the step's or the pipeline's — since a
- * step can now mix refs from different groups. An unresolvable ref (a
+ * definition, cwd, env) — never the block's or the pipeline's — since a
+ * block can mix refs from different groups. An unresolvable ref (a
  * dangling reference the write-time prune could not catch, e.g. hand-
- * edited JSON) is skipped with a warning rather than failing the step: a
+ * edited JSON) is skipped with a warning rather than failing the block: a
  * leftover ref must not deadlock boot auto-start (D6).
  */
 export async function runOne(
@@ -134,7 +162,7 @@ export async function runOne(
   const groupPath = group.path.trim();
   if (!groupPath) {
     // An ordinary per-script failure, not a whole-pipeline abort: siblings
-    // already spawned in the same parallel step still complete.
+    // already spawned in the same parallel block still complete.
     pushScriptLog(pid, `── Sin ruta configurada en su grupo ──`, 'error');
     return { ok: false, code: -1, error: 'no_group_path' };
   }
@@ -152,7 +180,38 @@ export async function runOne(
       };
     }
   }
+  if (deps.shouldAbort?.() === true) {
+    pushScriptLog(pid, `── Cancelado ──`);
+    return { ok: false, code: -1, error: 'aborted', cancelled: true };
+  }
+  if (processManager.getState?.(pid).status === 'running') {
+    pushScriptLog(
+      pid,
+      `── Ya se está ejecutando (¿en otro workflow?) ──`,
+      'error',
+    );
+    return { ok: false, code: -1, error: 'already_running' };
+  }
   handle.childPids.add(pid);
+  const matchers = warnMatchers(group);
+  let warned = false;
+  const logListener = ({
+    id,
+    entry,
+  }: {
+    id: string;
+    entry: LogEntry;
+  }): void => {
+    if (id !== pid) return;
+    deps.onLog?.(entry);
+    if (
+      !warned &&
+      entry.stream !== 'sys' &&
+      matchers.some((regex) => regex.test(stripAnsi(entry.line)))
+    )
+      warned = true;
+  };
+  processManager.on('log', logListener);
   return new Promise<OneResult>((resolve) => {
     let timeoutToken: NodeJS.Timeout | null = null;
     const scriptStartedAt = Date.now();
@@ -180,7 +239,8 @@ export async function runOne(
             : `── Ha fallado (salida ${code}, ${elapsed}) ──`,
           ok ? null : 'error',
         );
-      resolve({ ok, code });
+      processManager.removeListener('log', logListener);
+      resolve({ ok, code, warned: ok && warned });
     };
     processManager.on('action:done', handler);
     if (script.timeoutMs) {
@@ -195,6 +255,7 @@ export async function runOne(
       }, script.timeoutMs);
     }
     pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
+    deps.onStarted?.();
     const result = processManager.start(pid);
     if (!result.ok) {
       if (timeoutToken) {
@@ -202,6 +263,7 @@ export async function runOne(
         timeoutToken = null;
       }
       processManager.removeListener('action:done', handler);
+      processManager.removeListener('log', logListener);
       handle.childPids.delete(pid);
       pushScriptLog(
         pid,

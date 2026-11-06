@@ -298,7 +298,7 @@ describe('src/main/ipc/logs-ipc.ts', () => {
         (entry) => entry.groupId === PIPELINE_LOG_GROUP_ID,
       );
       expect(pipeline?.items[0]).toMatchObject({ type: 'pipeline' });
-      expect(pipeline?.groupIcon).toBe('dna');
+      expect(pipeline?.groupIcon).toBe('workflow');
     });
   });
 });

@@ -1,4 +1,8 @@
-import type { ProcessStatus } from '../domain-types.js';
+import type {
+  DetectedPortKind,
+  ProcessStatus,
+  WorkflowRunResult,
+} from '../domain-types.js';
 
 /**
  * What the «Control remoto» server sends a linked phone, over /api/* and the
@@ -37,6 +41,15 @@ export interface RemoteCommandView {
   errorCount: number;
   lastError: string | null;
   startedAt: number | null;
+  /** Its detected ports, primary first. Never a URL: the phone builds
+   *  `http://<the host it reached>:<port>`, and only when `lanReachable`. */
+  ports: RemotePortView[];
+}
+
+export interface RemotePortView {
+  port: number;
+  kind: DetectedPortKind;
+  lanReachable: boolean;
 }
 
 export interface RemoteActionView {
@@ -55,15 +68,38 @@ export interface RemoteGroupView {
   /** The checked-out branch, or null when the group is not a git repo. */
   branch: string | null;
   lastError: string | null;
+  /** Hidden from the tray: the phone folds it like the tray does. */
+  hidden: boolean;
   commands: RemoteCommandView[];
   actions: RemoteActionView[];
 }
 
-export interface RemotePipelineView {
-  status: 'running' | 'done' | 'error' | 'idle';
-  currentStep: number | null;
-  totalSteps: number;
-  lastError: string | null;
+export type RemoteWorkflowTrigger = 'manual' | 'schedule' | 'startup';
+
+/**
+ * A workflow the phone may run and stop: the ones the tray lists (see
+ * src/tray-layout.ts). Never its graph or its scripts.
+ */
+export interface RemoteWorkflowView {
+  id: string;
+  name: string;
+  /** Same as `trigger === 'startup'`; kept for pages loaded before it. */
+  startup: boolean;
+  /** How it fires: picks its tile and its subtitle on the phone. */
+  trigger: RemoteWorkflowTrigger;
+  running: boolean;
+  /** Hidden from the tray: the phone folds it like the tray does. */
+  hidden: boolean;
+  /** Settled scripts of the run in flight; null when it is not running. */
+  doneScripts: number | null;
+  /** The run's scripts, or the workflow's runnable ones when idle. */
+  totalScripts: number;
+  /** When the run in flight started, on main's clock; null when idle. */
+  startedAt: number | null;
+  /** When a scheduled (and enabled) workflow fires next. */
+  nextRunAt: number | null;
+  lastResult: WorkflowRunResult | null;
+  lastFinishedAt: number | null;
 }
 
 /**
@@ -82,7 +118,7 @@ export interface RemoteStateView {
   now: number;
   host: { name: string; version: string };
   groups: RemoteGroupView[];
-  pipeline: RemotePipelineView;
+  workflows: RemoteWorkflowView[];
   update: RemoteUpdateView;
   confirms: RemoteConfirmView[];
 }

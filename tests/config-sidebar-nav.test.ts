@@ -145,7 +145,7 @@ describe('renderer/config/sidebar-nav.ts', () => {
     it('reports through the dialog: template copied, GitHub opened', async () => {
       win = await openConfigWindow();
       const btn = document.getElementById('report-issue') as HTMLButtonElement;
-      expect(btn?.textContent).toContain('Reportar fallo');
+      expect(btn?.textContent).toContain('Reportar un fallo');
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       // The dialog explains the copy BEFORE anything happens.
       const dlg = document.querySelector(
@@ -258,6 +258,12 @@ describe('renderer/config/sidebar-nav.ts', () => {
       win = await openConfigWindow();
       await win.push('onConfigGoto', 'remote');
       expect(activeSections()).toEqual(['remote']);
+    });
+
+    it('jumps to Grupos when the tray asks for it', async () => {
+      win = await openConfigWindow();
+      await win.push('onConfigGoto', 'groups');
+      expect(activeSections()).toEqual(['groups']);
     });
 
     it('ignores a target it does not know', async () => {

@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -347,11 +355,15 @@ describe('switching branches against a real repository', () => {
 
     it('reports the failure of the dirty-check itself', async () => {
       const notRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'devbar-plain-'));
+      // git translates its messages: pin the locale so the assertion holds on
+      // a machine set to another language.
+      vi.stubEnv('LC_ALL', 'C');
       try {
         const res = await switchBranch(notRepo, 'main');
         expect(res.ok).toBe(false);
         expect(res.error).toContain('not a git repository');
       } finally {
+        vi.unstubAllEnvs();
         fs.rmSync(notRepo, { recursive: true, force: true });
       }
     });

@@ -91,9 +91,7 @@ describe('neutral icon chrome CSS contract', () => {
   });
 
   it('keeps the accent where it carries meaning', () => {
-    expect(rule('.small-btn.theme-opt.is-on').background).toBe(
-      'var(--accent-strong)',
-    );
+    expect(rule('.theme-opt.is-on')['border-color']).toBe('var(--accent)');
     expect(rule('.cl-notes a').color).toBe('var(--accent)');
     expect(rule('.nav-card.selected .nav-name').color).toBe('var(--accent)');
   });

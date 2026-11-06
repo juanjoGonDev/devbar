@@ -123,246 +123,43 @@
         <button type="button" id="result-done" class="button">Entendido</button>
       </section>
 
-      <section data-view="linked" class="view panel" hidden>
-        <p id="reconnecting" class="reconnecting" role="status" hidden>
-          <span class="spinner" aria-hidden="true"></span>
-          Reconectando…
-        </p>
-
-        <div id="tab-groups" class="tab" data-tab="groups">
-          <header class="host-header">
-            <div class="host-text">
-              <h2 id="host-name" class="host-name"></h2>
-              <p class="host-status">
-                <span class="dot is-running" aria-hidden="true"></span>
-                <span id="host-status"></span>
-              </p>
-            </div>
+      <section
+        id="linked-panel"
+        data-view="linked"
+        data-drawer="closed"
+        class="view panel"
+        hidden
+      >
+        <!--
+          Everything behind the side menu: made inert while it is open
+          (renderer/remote/drawer.ts).
+        -->
+        <div id="panel-main" class="panel-main">
+          <header class="topbar">
             <button
               type="button"
-              id="stop-all"
-              class="square-button is-danger"
-              aria-label="Detener todo"
-              title="Detener todo"
+              id="menu-button"
+              class="topbar-button"
+              aria-label="Menú"
+              aria-controls="drawer"
+              aria-expanded="false"
             >
-              <span data-glyph="stop"></span>
-            </button>
-          </header>
-          <div class="chips-row">
-            <span id="error-chip" class="chip is-error" hidden></span>
-            <span id="warn-chip" class="chip is-warn" hidden></span>
-            <span class="spacer"></span>
-            <button type="button" id="run-pipeline" class="pill-button">
-              <span data-glyph="play"></span>
-              <span id="pipeline-label">Ejecutar pipeline</span>
-            </button>
-          </div>
-          <button
-            type="button"
-            id="confirm-banner"
-            class="banner is-confirm"
-            hidden
-          >
-            <span class="banner-mark" data-glyph="help"></span>
-            <span class="banner-text">
-              <span id="confirm-banner-title" class="banner-title"></span>
-              <span id="confirm-banner-sub" class="banner-sub"></span>
-            </span>
-            <span data-glyph="chevron"></span>
-          </button>
-          <button
-            type="button"
-            id="update-banner"
-            class="banner is-update"
-            hidden
-          >
-            <span class="banner-mark" data-glyph="download"></span>
-            <span class="banner-text">
-              <span id="update-banner-title" class="banner-title"></span>
-              <span class="banner-sub">Toca para actualizar desde aquí</span>
-            </span>
-            <span data-glyph="chevron"></span>
-          </button>
-          <h3 class="section-title">Grupos</h3>
-          <p id="groups-empty" class="muted" hidden>
-            No hay grupos configurados en DevBar.
-          </p>
-          <div id="groups" class="groups"></div>
-        </div>
-
-        <div id="tab-logs" class="tab" data-tab="logs" hidden>
-          <h2 class="tab-title">Logs</h2>
-          <label class="select-row" for="log-process">
-            <span class="visually-hidden">Proceso</span>
-            <select id="log-process"></select>
-          </label>
-          <div class="segmented" role="group" aria-label="Filtrar por nivel">
-            <button type="button" data-filter="all" aria-pressed="true">
-              Todo <span id="count-all" class="count"></span>
-            </button>
-            <button type="button" data-filter="warn" aria-pressed="false">
-              Warnings <span id="count-warn" class="count"></span>
-            </button>
-            <button type="button" data-filter="error" aria-pressed="false">
-              Errors <span id="count-error" class="count"></span>
-            </button>
-          </div>
-          <div id="log-panel" class="log-panel" role="log"></div>
-          <p id="log-empty" class="log-empty" hidden></p>
-          <button type="button" id="log-follow" class="follow-button" hidden>
-            Ir al final
-          </button>
-          <div class="log-actions">
-            <button type="button" id="log-restart" class="button">
-              <span data-glyph="restart"></span>Reiniciar
-            </button>
-            <button type="button" id="log-toggle" class="button"></button>
-          </div>
-        </div>
-
-        <div id="tab-notices" class="tab" data-tab="notices" hidden>
-          <div class="tab-head">
-            <h2 class="tab-title">Avisos</h2>
-            <button type="button" id="mark-read" class="link-button">
-              Marcar leídos
-            </button>
-          </div>
-          <section
-            id="confirm-card"
-            class="card confirm-card"
-            aria-label="Confirmación pendiente"
-            hidden
-          >
-            <p id="confirm-card-group" class="eyebrow"></p>
-            <p id="confirm-card-title" class="confirm-title"></p>
-            <code id="confirm-card-command" class="command"></code>
-            <div class="confirm-buttons">
-              <button
-                type="button"
-                id="confirm-card-cancel"
-                class="button"
-              ></button>
-              <button
-                type="button"
-                id="confirm-card-run"
-                class="button primary"
-              ></button>
-            </div>
-            <p id="confirm-card-note" class="note"></p>
-          </section>
-          <p id="notices-empty" class="muted" hidden>Todavía no hay avisos.</p>
-          <div id="notices"></div>
-        </div>
-
-        <div id="tab-settings" class="tab" data-tab="settings" hidden>
-          <h2 class="tab-title">Ajustes</h2>
-          <section class="card update-card">
-            <p id="update-title" class="update-title"></p>
-            <p id="update-text" class="muted"></p>
-            <progress id="update-progress" hidden></progress>
-            <button
-              type="button"
-              id="update-apply"
-              class="button primary"
-              hidden
-            >
-              Actualizar
-            </button>
-          </section>
-          <h3 class="section-title">General</h3>
-          <div class="card list">
-            <label class="toggle-row">
-              <span>Iniciar al arrancar el sistema</span>
-              <input type="checkbox" role="switch" id="set-autostart" />
-            </label>
-            <label class="toggle-row">
-              <span>Notificar al terminar acciones</span>
-              <input type="checkbox" role="switch" id="set-notifySuccess" />
-            </label>
-            <label class="toggle-row">
-              <span>Silenciar warnings</span>
-              <input type="checkbox" role="switch" id="set-silenceWarnings" />
-            </label>
-            <label class="toggle-row">
-              <span>Silenciar errors</span>
-              <input type="checkbox" role="switch" id="set-silenceErrors" />
-            </label>
-          </div>
-          <h3 class="section-title">Seguridad</h3>
-          <div class="card list security-card">
-            <div class="row">
-              <span class="row-label">
-                <span data-glyph="lock" class="is-secure"></span>
-                Cifrado de extremo a extremo
-              </span>
-              <span class="value">Activo</span>
-            </div>
-            <div class="row">
-              <span class="row-label">
-                <span data-glyph="key"></span>
-                Clave nueva en cada conexión
-              </span>
-              <span class="value">Sí</span>
-            </div>
-            <div class="row security-code-row">
-              <span>Código de seguridad</span>
+              <span data-glyph="menu"></span>
               <span
-                id="security-code"
-                class="security-code"
-                aria-label="Código de seguridad"
+                id="menu-dot"
+                class="menu-dot"
+                aria-hidden="true"
+                hidden
               ></span>
-            </div>
-            <div class="row">
-              <span>Estado</span>
-              <span id="security-status" class="verified-badge"></span>
-            </div>
-            <button type="button" id="rotate-keys" class="row-button">
-              Renovar claves de este dispositivo
             </button>
-          </div>
-          <p class="footer-note">
-            Para verificarlo, abre en el ordenador DevBar › Configuración ›
-            Control remoto › Código de seguridad y escanéalo con la cámara.
-          </p>
-          <h3 class="section-title">Este dispositivo</h3>
-          <div class="card list">
-            <button type="button" id="rename" class="row-button">
-              <span>Nombre</span>
-              <span id="device-name-value" class="value"></span>
-            </button>
-            <form id="rename-form" class="rename-form" novalidate hidden>
-              <label for="rename-input" class="visually-hidden">Nombre</label>
-              <input id="rename-input" maxlength="40" autocomplete="off" />
-              <p id="rename-error" class="error" role="alert" hidden></p>
-              <div class="confirm-buttons">
-                <button type="button" id="rename-cancel" class="button">
-                  Cancelar
-                </button>
-                <button type="submit" id="rename-save" class="button primary">
-                  Guardar
-                </button>
-              </div>
-            </form>
-            <div class="row">
-              <span>Vinculado</span>
-              <span id="device-linked" class="value"></span>
-            </div>
-            <button type="button" id="unlink" class="row-button is-destructive">
-              Desvincular este dispositivo
-            </button>
-          </div>
-          <p id="connected-footer" class="footer-note"></p>
-        </div>
-
-        <nav class="tabbar" aria-label="Secciones">
-          <button type="button" data-tab-button="groups" aria-current="page">
-            <span data-glyph="groups"></span>Grupos
-          </button>
-          <button type="button" data-tab-button="logs">
-            <span data-glyph="logs"></span>Logs
-          </button>
-          <button type="button" data-tab-button="notices" id="notices-tab">
-            <span class="badge-host">
+            <h1 id="screen-title" class="screen-title">Grupos</h1>
+            <button
+              type="button"
+              id="notices-tab"
+              class="topbar-button"
+              data-tab-button="notices"
+              aria-label="Avisos"
+            >
               <span data-glyph="bell"></span>
               <span
                 id="unread-badge"
@@ -370,13 +167,287 @@
                 aria-hidden="true"
                 hidden
               ></span>
+            </button>
+          </header>
+          <p id="reconnecting" class="reconnecting" role="status" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            Reconectando…
+          </p>
+
+          <div id="tab-groups" class="tab" data-tab="groups">
+            <header class="host-header">
+              <div class="host-text">
+                <h2 id="host-name" class="host-name"></h2>
+                <p class="host-status">
+                  <span class="dot is-running" aria-hidden="true"></span>
+                  <span id="host-status"></span>
+                </p>
+              </div>
+              <button
+                type="button"
+                id="stop-all"
+                class="square-button is-danger"
+                aria-label="Detener todo"
+                title="Detener todo"
+              >
+                <span data-glyph="stop"></span>
+              </button>
+            </header>
+            <div class="chips-row">
+              <span id="error-chip" class="chip is-error" hidden></span>
+              <span id="warn-chip" class="chip is-warn" hidden></span>
+            </div>
+            <button
+              type="button"
+              id="confirm-banner"
+              class="banner is-confirm"
+              hidden
+            >
+              <span class="banner-mark" data-glyph="help"></span>
+              <span class="banner-text">
+                <span id="confirm-banner-title" class="banner-title"></span>
+                <span id="confirm-banner-sub" class="banner-sub"></span>
+              </span>
+              <span data-glyph="chevron"></span>
+            </button>
+            <button
+              type="button"
+              id="update-banner"
+              class="banner is-update"
+              hidden
+            >
+              <span class="banner-mark" data-glyph="download"></span>
+              <span class="banner-text">
+                <span id="update-banner-title" class="banner-title"></span>
+                <span class="banner-sub">Toca para actualizar desde aquí</span>
+              </span>
+              <span data-glyph="chevron"></span>
+            </button>
+            <p id="groups-empty" class="muted" hidden>
+              No hay grupos configurados en DevBar.
+            </p>
+            <div id="groups" class="groups"></div>
+          </div>
+
+          <div id="tab-workflows" class="tab" data-tab="workflows" hidden>
+            <h3 id="workflows-running-title" class="section-title" hidden>
+              En curso
+            </h3>
+            <div id="workflows-running" class="wf-card"></div>
+            <h3 id="workflows-idle-title" class="section-title" hidden>
+              Disponibles
+            </h3>
+            <div id="workflows-idle" class="wf-card"></div>
+            <p id="workflows-empty" class="muted" hidden>
+              No hay workflows que lanzar desde aquí.
+            </p>
+          </div>
+
+          <div id="tab-logs" class="tab" data-tab="logs" hidden>
+            <label class="select-row" for="log-process">
+              <span class="visually-hidden">Proceso</span>
+              <select id="log-process"></select>
+            </label>
+            <div class="segmented" role="group" aria-label="Filtrar por nivel">
+              <button type="button" data-filter="all" aria-pressed="true">
+                Todo <span id="count-all" class="count"></span>
+              </button>
+              <button type="button" data-filter="warn" aria-pressed="false">
+                Warnings <span id="count-warn" class="count"></span>
+              </button>
+              <button type="button" data-filter="error" aria-pressed="false">
+                Errors <span id="count-error" class="count"></span>
+              </button>
+            </div>
+            <div id="log-panel" class="log-panel" role="log"></div>
+            <p id="log-empty" class="log-empty" hidden></p>
+            <button type="button" id="log-follow" class="follow-button" hidden>
+              Ir al final
+            </button>
+            <div class="log-actions">
+              <button type="button" id="log-restart" class="button">
+                <span data-glyph="restart"></span>Reiniciar
+              </button>
+              <button type="button" id="log-toggle" class="button"></button>
+            </div>
+          </div>
+
+          <div id="tab-notices" class="tab" data-tab="notices" hidden>
+            <div class="tab-head">
+              <button type="button" id="mark-read" class="link-button">
+                Marcar leídos
+              </button>
+            </div>
+            <section
+              id="confirm-card"
+              class="card confirm-card"
+              aria-label="Confirmación pendiente"
+              hidden
+            >
+              <p id="confirm-card-group" class="eyebrow"></p>
+              <p id="confirm-card-title" class="confirm-title"></p>
+              <code id="confirm-card-command" class="command"></code>
+              <div class="confirm-buttons">
+                <button
+                  type="button"
+                  id="confirm-card-cancel"
+                  class="button"
+                ></button>
+                <button
+                  type="button"
+                  id="confirm-card-run"
+                  class="button primary"
+                ></button>
+              </div>
+              <p id="confirm-card-note" class="note"></p>
+            </section>
+            <p id="notices-empty" class="muted" hidden>
+              Todavía no hay avisos.
+            </p>
+            <div id="notices"></div>
+          </div>
+
+          <div id="tab-settings" class="tab" data-tab="settings" hidden>
+            <section class="card update-card">
+              <p id="update-title" class="update-title"></p>
+              <p id="update-text" class="muted"></p>
+              <progress id="update-progress" hidden></progress>
+              <button
+                type="button"
+                id="update-apply"
+                class="button primary"
+                hidden
+              >
+                Actualizar
+              </button>
+            </section>
+            <h3 class="section-title">General</h3>
+            <div class="card list">
+              <label class="toggle-row">
+                <span>Iniciar al arrancar el sistema</span>
+                <input type="checkbox" role="switch" id="set-autostart" />
+              </label>
+              <label class="toggle-row">
+                <span>Notificar al terminar acciones</span>
+                <input type="checkbox" role="switch" id="set-notifySuccess" />
+              </label>
+              <label class="toggle-row">
+                <span>Silenciar warnings</span>
+                <input type="checkbox" role="switch" id="set-silenceWarnings" />
+              </label>
+              <label class="toggle-row">
+                <span>Silenciar errors</span>
+                <input type="checkbox" role="switch" id="set-silenceErrors" />
+              </label>
+            </div>
+            <h3 class="section-title">Seguridad</h3>
+            <div class="card list security-card">
+              <div class="row">
+                <span class="row-label">
+                  <span data-glyph="lock" class="is-secure"></span>
+                  Cifrado de extremo a extremo
+                </span>
+                <span class="value">Activo</span>
+              </div>
+              <div class="row">
+                <span class="row-label">
+                  <span data-glyph="key"></span>
+                  Clave nueva en cada conexión
+                </span>
+                <span class="value">Sí</span>
+              </div>
+              <div class="row security-code-row">
+                <span>Código de seguridad</span>
+                <span
+                  id="security-code"
+                  class="security-code"
+                  aria-label="Código de seguridad"
+                ></span>
+              </div>
+              <div class="row">
+                <span>Estado</span>
+                <span id="security-status" class="verified-badge"></span>
+              </div>
+              <button type="button" id="rotate-keys" class="row-button">
+                Renovar claves de este dispositivo
+              </button>
+            </div>
+            <p class="footer-note">
+              Para verificarlo, abre en el ordenador DevBar › Configuración ›
+              Control remoto › Código de seguridad y escanéalo con la cámara.
+            </p>
+            <h3 class="section-title">Este dispositivo</h3>
+            <div class="card list">
+              <button type="button" id="rename" class="row-button">
+                <span>Nombre</span>
+                <span id="device-name-value" class="value"></span>
+              </button>
+              <form id="rename-form" class="rename-form" novalidate hidden>
+                <label for="rename-input" class="visually-hidden">Nombre</label>
+                <input id="rename-input" maxlength="40" autocomplete="off" />
+                <p id="rename-error" class="error" role="alert" hidden></p>
+                <div class="confirm-buttons">
+                  <button type="button" id="rename-cancel" class="button">
+                    Cancelar
+                  </button>
+                  <button type="submit" id="rename-save" class="button primary">
+                    Guardar
+                  </button>
+                </div>
+              </form>
+              <div class="row">
+                <span>Vinculado</span>
+                <span id="device-linked" class="value"></span>
+              </div>
+              <button
+                type="button"
+                id="unlink"
+                class="row-button is-destructive"
+              >
+                Desvincular este dispositivo
+              </button>
+            </div>
+            <p id="connected-footer" class="footer-note"></p>
+          </div>
+        </div>
+
+        <div id="drawer-backdrop" class="drawer-backdrop"></div>
+        <nav id="drawer" class="drawer" aria-label="Menú" inert>
+          <div class="drawer-head">
+            <span class="app-tile" aria-hidden="true"
+              >&gt;<span class="app-tile-bar">|</span></span
+            >
+            <span class="drawer-brand">
+              <span class="drawer-app">DevBar</span>
+              <span id="drawer-host" class="drawer-host"></span>
             </span>
-            Avisos
+          </div>
+          <button type="button" class="drawer-item" data-tab-button="groups">
+            <span data-glyph="groups"></span>
+            <span class="drawer-label">Grupos</span>
+            <span id="drawer-count-groups" class="drawer-count"></span>
           </button>
-          <button type="button" data-tab-button="settings">
-            <span data-glyph="settings"></span>Ajustes
+          <button type="button" class="drawer-item" data-tab-button="workflows">
+            <span data-glyph="workflow"></span>
+            <span class="drawer-label">Workflows</span>
+            <span
+              id="drawer-count-workflows"
+              class="drawer-count is-running"
+              hidden
+            ></span>
+          </button>
+          <button type="button" class="drawer-item" data-tab-button="logs">
+            <span data-glyph="logs"></span>
+            <span class="drawer-label">Logs</span>
+          </button>
+          <span class="drawer-spacer"></span>
+          <hr class="drawer-separator" />
+          <button type="button" class="drawer-item" data-tab-button="settings">
+            <span data-glyph="settings"></span>
+            <span class="drawer-label">Ajustes</span>
           </button>
         </nav>
+        <span class="edge-hint" aria-hidden="true"></span>
 
         <dialog
           id="confirm-dialog"

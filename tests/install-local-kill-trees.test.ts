@@ -11,8 +11,10 @@ import {
   POSIX_SERVICE_GRACE_MS,
   posixKillServiceTrees,
   psLikeEscape,
+  windowsImageUnderDirQuery,
   windowsKillDevInstanceCommand,
   windowsKillImageTreeArgs,
+  windowsKillImageUnderDirCommand,
   type KillTreeRun,
 } from '../scripts/lib/kill-trees.js';
 
@@ -50,6 +52,40 @@ describe('windowsKillDevInstanceCommand', () => {
     expect(cmd).toContain(`*C:\\repo\\o''brien*`);
     // No raw unescaped quote from the path may appear.
     expect(cmd).not.toContain("C:\\repo\\o'brien");
+  });
+});
+
+describe('windowsImageUnderDirQuery', () => {
+  it('selects the image by its EXECUTABLE path prefix, not by name alone', () => {
+    // The installed copy and a dist/ run share the DevBar.exe image name:
+    // only the executable path tells them apart.
+    const query = windowsImageUnderDirQuery(
+      'DevBar.exe',
+      'C:\\repo\\dist\\electron-builder\\',
+    );
+    expect(query).toContain("Name='DevBar.exe'");
+    expect(query).toContain(
+      "$_.ExecutablePath -like 'C:\\repo\\dist\\electron-builder\\*'",
+    );
+  });
+
+  it('escapes the directory so it cannot break out of the PS string', () => {
+    const query = windowsImageUnderDirQuery('DevBar.exe', "C:\\o'brien\\[x]\\");
+    expect(query).toContain("'C:\\o''brien\\`[x`]\\*'");
+    expect(query).not.toContain("C:\\o'brien");
+  });
+});
+
+describe('windowsKillImageUnderDirCommand', () => {
+  it('taskkills every selected process with its whole tree (/T)', () => {
+    const cmd = windowsKillImageUnderDirCommand(
+      'DevBar.exe',
+      'C:\\repo\\dist\\',
+    );
+    expect(cmd).toContain(
+      windowsImageUnderDirQuery('DevBar.exe', 'C:\\repo\\dist\\'),
+    );
+    expect(cmd).toMatch(/taskkill \/PID \$\(\$_\.ProcessId\) \/T \/F/);
   });
 });
 

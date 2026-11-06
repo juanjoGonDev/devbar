@@ -14,12 +14,15 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  killPatterns,
+  type ProbeProcess,
+  type ProbeResult,
+} from '../scripts/install-local-stop.js';
+import {
   linkLauncher,
   main,
   type InstallContext,
   type LaunchApp,
-  type ProbeProcess,
-  type ProbeResult,
 } from '../scripts/install-local.js';
 
 /**
@@ -43,6 +46,9 @@ class InstallAborted extends Error {
 const NOTHING_MATCHED: ProbeResult = { status: 1, stdout: '' };
 const NOTHING_RUNNING: ProbeProcess = (cmd) =>
   cmd === 'powershell' ? { status: 0, stdout: '' } : NOTHING_MATCHED;
+
+/** What a failed build or pack must say: nothing was stopped. */
+const LEFT_UNTOUCHED = 'the running DevBar was left untouched';
 
 function fakeLauncher() {
   const calls: {
@@ -115,12 +121,37 @@ describe('scripts/install-local.ts', () => {
       groupAlive: () => false,
       runStep: (cmd, args) => {
         steps.push([cmd, ...args]);
+        return 0;
       },
       launch: launcher.launch,
       fail: (code) => {
         throw new InstallAborted(code);
       },
       ...overrides,
+    };
+  }
+
+  /** The installed copy's kill pattern. */
+  const installedPattern = (): string =>
+    killPatterns(root, installDir)[0] ?? '';
+
+  /** A quiet probe that records every call, to tell which instances a run
+   *  signalled. */
+  function recordedProbe() {
+    const all: string[][] = [];
+    const probe: ProbeProcess = (cmd, args) => {
+      all.push([cmd, ...args]);
+      return NOTHING_RUNNING(cmd, args);
+    };
+    return {
+      probe,
+      all,
+      signalled: (pattern: string) =>
+        all.some(
+          (call) =>
+            (call[0] === 'pkill' || call[0] === 'kill') &&
+            call.includes(pattern),
+        ),
     };
   }
 
@@ -208,7 +239,7 @@ describe('scripts/install-local.ts', () => {
           '--input-type=module',
           '--eval',
           `const m = await import(${JSON.stringify(pathToFileURL(SCRIPT).href)});
-           process.stdout.write(typeof m.main + ',' + typeof m.killPatterns);`,
+           process.stdout.write(typeof m.main + ',' + typeof m.layout);`,
         ],
         {
           encoding: 'utf8',
@@ -314,38 +345,148 @@ describe('scripts/install-local.ts', () => {
 
     it('aborts when the packaging step produced no executable', () => {
       mkdirSync(unpackedDir, { recursive: true });
-      expect(() => main(context({ noBuild: false }))).toThrow(InstallAborted);
+      const calls = recordedProbe();
+      expect(() =>
+        main(context({ noBuild: false, probe: calls.probe })),
+      ).toThrow(InstallAborted);
       expect(errored.join('\n')).toContain(
         `packaged executable not found at ${path.join(unpackedDir, EXECUTABLE)}`,
       );
+      expect(errored.join('\n')).toContain(LEFT_UNTOUCHED);
       expect(existsSync(installDir)).toBe(false);
+      expect(calls.signalled(installedPattern())).toBe(false);
     });
 
-    it('stops the running app BEFORE the fallible build step', () => {
-      // If the build aborts first, a surviving instance is left holding the
-      // single-instance lock with no forced cleanup behind it.
+    it('packs BEFORE stopping the installed app, stopping only a dist/ instance first', () => {
+      // DevBar — and the user's services — keep running through the slow
+      // build. Only an instance running FROM the build output has to stop
+      // before the pack overwrites its bundle.
       packApp();
       const order: string[] = [];
       main(
         context({
           noBuild: false,
           probe: (cmd, args) => {
-            order.push(`probe:${cmd}`);
+            order.push(`${cmd} ${args.join(' ')}`);
             return NOTHING_RUNNING(cmd, args);
           },
           runStep: (_cmd, args) => {
             order.push(`step:${args[1]}`);
+            return 0;
           },
         }),
       );
-      expect(order[0]).toBe('probe:pgrep');
-      expect(order.filter((entry) => entry.startsWith('step:'))).toEqual([
-        'step:scripts/build.ts',
-        'step:scripts/package-win-linux.ts',
-      ]);
-      expect(order.indexOf('step:scripts/build.ts')).toBeGreaterThan(
-        order.lastIndexOf('probe:pgrep'),
+      const [installed, dist, dev] = killPatterns(root, installDir);
+      const pack = order.indexOf('step:scripts/package-win-linux.ts');
+      const beforePack = order.slice(0, pack);
+      expect(order.indexOf('step:scripts/build.ts')).toBeLessThan(pack);
+      expect(beforePack).toContain(`pkill -f ${dist}`);
+      expect(
+        beforePack.filter(
+          (entry) =>
+            entry.includes(` ${installed}`) || entry.includes(` ${dev}`),
+        ),
+      ).toEqual([]);
+      expect(order.indexOf(`pkill -f ${installed}`)).toBeGreaterThan(pack);
+      expect(order.indexOf(`pkill -f ${dev}`)).toBeGreaterThan(pack);
+    });
+
+    it('stops the dist/ instance only AFTER a successful build', () => {
+      // The build does not touch dist/, so a failed build leaves even a
+      // dist/ instance running.
+      packApp();
+      const order: string[] = [];
+      main(
+        context({
+          noBuild: false,
+          probe: (cmd, args) => {
+            order.push(cmd);
+            return NOTHING_RUNNING(cmd, args);
+          },
+          runStep: (_cmd, args) => {
+            order.push(`step:${args[1]}`);
+            return 0;
+          },
+        }),
       );
+      expect(order[0]).toBe('step:scripts/build.ts');
+      expect(order.indexOf('pkill')).toBeLessThan(
+        order.indexOf('step:scripts/package-win-linux.ts'),
+      );
+    });
+
+    it('a failed pack exits with its status and never stops the installed app', () => {
+      packApp();
+      const calls = recordedProbe();
+      let thrown: unknown;
+      try {
+        main(
+          context({
+            noBuild: false,
+            probe: calls.probe,
+            runStep: (_cmd, args) =>
+              args[1] === 'scripts/package-win-linux.ts' ? 2 : 0,
+          }),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toEqual(new InstallAborted(2));
+      expect(errored.join('\n')).toContain(`pack failed — ${LEFT_UNTOUCHED}`);
+      expect(calls.signalled(installedPattern())).toBe(false);
+      expect(launcher.calls).toEqual([]);
+    });
+
+    it('a failed build stops nothing at all', () => {
+      packApp();
+      const calls = recordedProbe();
+      expect(() =>
+        main(
+          context({
+            noBuild: false,
+            probe: calls.probe,
+            runStep: (_cmd, args) => (args[1] === 'scripts/build.ts' ? 1 : 0),
+          }),
+        ),
+      ).toThrow(InstallAborted);
+      expect(errored.join('\n')).toContain(`build failed — ${LEFT_UNTOUCHED}`);
+      expect(calls.all).toEqual([]);
+    });
+
+    it('on Windows the pre-pack stop never kills by image name', () => {
+      // taskkill /IM DevBar.exe would take the installed copy down with the
+      // dist/ one — the build would then run with DevBar stopped.
+      packApp();
+      const order: string[] = [];
+      main(
+        context({
+          noBuild: false,
+          platform: 'win32',
+          probe: (cmd, args) => {
+            order.push(`${cmd} ${args.join(' ')}`);
+            return NOTHING_RUNNING(cmd, args);
+          },
+          runStep: (_cmd, args) => {
+            order.push(`step:${args[1]}`);
+            return 0;
+          },
+        }),
+      );
+      const pack = order.indexOf('step:scripts/package-win-linux.ts');
+      const imageKill = order.indexOf('taskkill /F /T /IM DevBar.exe');
+      expect(
+        order.slice(0, pack).some((e) => e.includes("Name='DevBar.exe'")),
+      ).toBe(true);
+      expect(imageKill).toBeGreaterThan(pack);
+    });
+
+    it('--no-build stops everything up front, then installs, as before', () => {
+      packApp();
+      const calls = recordedProbe();
+      main(context({ probe: calls.probe }));
+      expect(steps).toEqual([]);
+      expect(calls.signalled(installedPattern())).toBe(true);
+      expect(existsSync(path.join(installDir, EXECUTABLE))).toBe(true);
     });
 
     it('turns the dev panel on for --dev, and leaves it off otherwise', () => {

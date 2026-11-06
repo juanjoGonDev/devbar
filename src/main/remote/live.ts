@@ -1,5 +1,5 @@
 import type { LogEntry } from '../../domain-types.js';
-import type { GroupState, PipelineState } from '../../ipc-contract.js';
+import type { GroupState, WorkflowEntry } from '../../ipc-contract.js';
 import type {
   RemoteConfirmView,
   RemoteNotice,
@@ -10,12 +10,12 @@ import { createEventHub, type EventSink, type StreamOwner } from './events.js';
 import { bannerNotice, createNoticeLog, toastNotice } from './notices.js';
 import type { TimerHandle, Timers } from './timers.js';
 import { record } from './validate.js';
-import { groupViews, logLine, pipelineView, updateView } from './views.js';
+import { groupViews, logLine, updateView, workflowViews } from './views.js';
 
 /**
  * The live half of «Control remoto»: the /api/events streams and what feeds
  * them. It listens to the same renderer stream the windows hear
- * (`groups:update`, `pipeline:update`, toasts, update pushes, branch
+ * (`groups:update`, `workflows:update`, toasts, update pushes, branch
  * changes), to the log lines and to the confirmation queue, and relays each
  * as an SSE event:
  *
@@ -40,7 +40,11 @@ export type LiveStream =
 /** What the app hands the live layer (built in remote-control.ts). */
 export interface RemoteRuntime {
   groupStates(): GroupState[];
-  pipelineState(): PipelineState;
+  /** Settings › General › «Mostrar grupos ocultos plegados». */
+  showHiddenGroupsFold(): boolean;
+  /** Settings › General › «Mostrar workflows ocultos plegados». */
+  showHiddenWorkflowsFold(): boolean;
+  workflowEntries(): WorkflowEntry[];
   currentBranch(groupId: string): Promise<unknown>;
   onLog(listener: (payload: { id: string; entry: LogEntry }) => void): void;
   confirms: {
@@ -96,8 +100,15 @@ export function createLive(deps: LiveDeps): Live {
   const snapshot = (): RemoteStateView => ({
     now: deps.now(),
     host: deps.hostInfo(),
-    groups: groupViews(runtime.groupStates(), branches),
-    pipeline: pipelineView(runtime.pipelineState()),
+    groups: groupViews(
+      runtime.groupStates(),
+      branches,
+      runtime.showHiddenGroupsFold(),
+    ),
+    workflows: workflowViews(
+      runtime.workflowEntries(),
+      runtime.showHiddenWorkflowsFold(),
+    ),
     update: updateView(
       runtime.updater.status(),
       runtime.updater.canInstallStaged(),
@@ -147,7 +158,7 @@ export function createLive(deps: LiveDeps): Live {
   };
 
   runtime.onBus((channel, payload) => {
-    if (channel === 'groups:update' || channel === 'pipeline:update') {
+    if (channel === 'groups:update' || channel === 'workflows:update') {
       pushState();
       const fresh = unknownGroups();
       if (fresh.length > 0) void readBranches(fresh);

@@ -8,9 +8,6 @@
 import path from 'node:path';
 import os from 'node:os';
 
-export const DEFAULT_WARN_REGEX = '\\bwarn(ing)?s?\\b';
-export const DEFAULT_ERROR_REGEX = '\\berror(s)?\\b';
-
 export type UnknownRecord = Record<string, unknown>;
 
 export function isRecord(value: unknown): value is UnknownRecord {

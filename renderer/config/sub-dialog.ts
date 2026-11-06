@@ -1,50 +1,42 @@
 import { userIcon } from '../icon.js';
 import { customIconIdOf } from '../../src/custom-icons.js';
+import {
+  DEFAULT_ERROR_REGEX,
+  DEFAULT_WARN_REGEX,
+} from '../../src/log-level-defaults.js';
 import { createIconColorControl } from './icon-color-control.js';
-import { wireModal } from '../modal.js';
+import { wireSheetChrome } from './sheet-chrome.js';
 import { buildEnvEditor, type EnvEditorHandle } from './env-editor.js';
-import type { ScheduleEditor } from './schedule-editor.js';
-import type {
-  Action,
-  Command,
-  EnvEntry,
-  PreScript,
-  Schedule,
-} from '../../src/domain-types.js';
+import type { ScheduleSection } from './schedule-editor.js';
+import type { DetectedPort, Group, PreScript } from '../../src/domain-types.js';
 import type { GroupStore } from './group-store.js';
 import { errorMessage, type ShowToast } from './toast.js';
+import { fillGroupTile } from '../pipeline/group-tile.js';
+import { createSheetSections } from './sheet-sections.js';
+import { paintSummaries } from './sheet-summaries.js';
+import { createSheetLink, type SheetLinkElements } from './sheet-link.js';
+import {
+  persistItem,
+  type EditableItem,
+  type SubFormData,
+  type SubKind,
+} from './sub-dialog-save.js';
 
-type EditableItem = Command | Action | PreScript;
-type SubKind = 'command' | 'action' | 'prescript';
-
-interface SubFormData {
-  icon: string | null;
-  iconColor: string | null;
-  name: string;
-  command: string;
-  args: string[];
-  env: EnvEntry[];
-  inheritGroupEnv: boolean;
-  cwd: string;
-  warnRegex: string;
-  errorRegex: string;
-  silenceWarnings: boolean;
-  silenceErrors: boolean;
-  maxLogLines: number | null;
-  timeoutSecs: number | null;
-  confirm: boolean;
-  confirmSecs: number | null;
-  confirmOnTimeout: 'confirm' | 'cancel';
-  schedule: Schedule;
-}
-
-/** Every control the command/action/pre-script editor owns. */
-interface SubDialogElements {
+/** Every control the command/action/pre-script side sheet owns. */
+export interface SubDialogElements {
   dialog: HTMLDialogElement;
   form: HTMLFormElement;
   title: HTMLElement;
   cancel: HTMLButtonElement;
   iconBtn: HTMLButtonElement;
+  /** The header tile holding the icon button (commands and actions). */
+  iconField: HTMLElement;
+  /** The fixed header tile of a pre-script, which has no icon. */
+  kindTile: HTMLElement;
+  /** «COMANDO · <GRUPO>» above the title. */
+  overline: HTMLElement;
+  /** The folder the item runs in, under the command field. */
+  cwdHint: HTMLElement;
   name: HTMLInputElement;
   command: HTMLInputElement;
   args: HTMLTextAreaElement;
@@ -58,7 +50,6 @@ interface SubDialogElements {
   silenceWarn: HTMLInputElement;
   silenceErr: HTMLInputElement;
   maxLogLines: HTMLInputElement;
-  cmdOnlyFields: HTMLElement;
   timeoutRow: HTMLElement;
   timeoutSecs: HTMLInputElement;
   confirmRow: HTMLElement;
@@ -66,28 +57,73 @@ interface SubDialogElements {
   confirmDetails: HTMLElement;
   confirmOnTimeout: HTMLSelectElement;
   confirmSecs: HTMLInputElement;
+  /** The "Grupo" select, shown only when creating from the canvas. */
+  groupField: HTMLElement;
+  group: HTMLSelectElement;
+  groupTile: HTMLElement;
+  /** "Se colocará en el workflow después de …", from a canvas "+". */
+  pipelineNote: HTMLElement;
+  pipelineNoteName: HTMLElement;
+  submit: HTMLButtonElement;
+  submitLabel: HTMLElement;
+  /** The Cmd/Ctrl+S hint beside «Guardar». */
+  submitKey: HTMLElement;
+  /** «Eliminar», only when editing an item that exists. */
+  deleteBtn: HTMLButtonElement;
+  /** The «Enlace» section, commands only. */
+  link: SheetLinkElements;
 }
 
 export interface SubDialogDeps {
   els: SubDialogElements;
   store: GroupStore;
   showToast: ShowToast;
-  schedule: ScheduleEditor;
+  schedule: ScheduleSection;
   openIconPicker(
     anchorEl: HTMLElement,
     onSelect: (value: string) => void,
   ): void;
+  /** Closes the icon picker when it is open; true when it was. */
+  dismissPopover(): boolean;
+  /**
+   * Deletes the item after the user confirms; `onConfirmed` runs as soon as
+   * they do, before the deletion itself.
+   */
+  removeItem(
+    groupId: string,
+    kind: SubKind,
+    item: EditableItem,
+    onConfirmed: () => void,
+  ): Promise<void>;
   loadGroups(): Promise<void>;
+  /** The ports a command listens on now, primary first. */
+  commandPorts(groupId: string, commandId: string): readonly DetectedPort[];
   renderGroupDetail(): void;
   refreshPipeline(): Promise<void>;
 }
 
-const DEFAULT_WARN = '\\bwarn(ing)?s?\\b';
-const DEFAULT_ERROR = '\\berror(s)?\\b';
+/** Creating a pre-script from the pipeline, which belongs to no group. */
+interface NewPreScriptRequest {
+  /** The groups offered by the "Grupo" select, in this order. */
+  groups: readonly Group[];
+  /** The one selected at first. */
+  groupId: string;
+  /** The node the new script will follow, for the placement note. */
+  after: string | null;
+  /** Runs once the script is saved and the groups are re-read. */
+  onCreated: (groupId: string, script: PreScript) => void | Promise<void>;
+}
 
 export interface SubDialog {
   open(item: EditableItem | null, kind: SubKind, groupId: string): void;
+  openNewPreScript(request: NewPreScriptRequest): void;
 }
+
+const KIND_LABELS: Record<SubKind, { kind: string; fresh: string }> = {
+  command: { kind: 'Comando', fresh: 'Nuevo comando' },
+  action: { kind: 'Acción', fresh: 'Nueva acción' },
+  prescript: { kind: 'Pre-script', fresh: 'Nuevo pre-script' },
+};
 
 export function createSubDialog(deps: SubDialogDeps): SubDialog {
   const { els, store } = deps;
@@ -96,6 +132,34 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
   let envEditorHandle: EnvEditorHandle | null = null;
   // Default icon of the kind being edited, for repaints from the colour segment.
   let defaultIcon: 'terminal' | 'wand-sparkles' = 'terminal';
+  // What the sheet is editing, for the live header, hint and badges.
+  let current: {
+    kind: SubKind;
+    isNew: boolean;
+    group: () => Group | null;
+  } = { kind: 'command', isNew: true, group: () => null };
+  const sections = createSheetSections(els.dialog);
+  const link = createSheetLink(els.link);
+  /** A command with an invalid custom URL cannot be saved. */
+  const canSave = (): boolean => current.kind !== 'command' || link.isValid();
+  // The item «Eliminar» would delete, and what the fields held on opening.
+  let deleteTarget: {
+    groupId: string;
+    kind: SubKind;
+    item: EditableItem;
+  } | null = null;
+  let snapshot = '';
+  const takeSnapshot = (): string =>
+    JSON.stringify([readFormData(), els.group.value]);
+  const chrome = wireSheetChrome({
+    dialog: els.dialog,
+    form: els.form,
+    firstField: els.name,
+    shortcutHint: els.submitKey,
+    platform: window.api.platform,
+    isDirty: () => takeSnapshot() !== snapshot,
+    dismissPopover: () => deps.dismissPopover(),
+  });
   const paintIcon = (): void => {
     const value = els.iconBtn.dataset.value || defaultIcon;
     els.iconBtn.replaceChildren(
@@ -106,20 +170,44 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
   // Built once around the icon button; each open() loads the item's colour.
   const colorControl = createIconColorControl(els.iconBtn, paintIcon);
 
+  /** The group as the pane holds it: the draft when it is the one open. */
+  function groupById(groupId: string): Group | null {
+    const draft = store.getDraft();
+    if (draft && draft.id === groupId) return draft;
+    return store.getGroups().find((group) => group.id === groupId) ?? null;
+  }
+
+  /** Header, cwd hint and badges, from what the fields hold right now. */
+  function refreshLive(): void {
+    const { kind, isNew } = current;
+    const labels = KIND_LABELS[kind];
+    const group = current.group();
+    els.overline.textContent = group
+      ? `${labels.kind} · ${group.name}`
+      : labels.kind;
+    els.title.textContent =
+      els.name.value.trim() || (isNew ? labels.fresh : 'Sin nombre');
+    const cwd = kind === 'command' ? els.cwd.value.trim() : '';
+    els.cwdHint.textContent = cwd || group?.path || '';
+
+    paintSummaries(sections, kind, readFormData());
+    els.submit.disabled = !canSave();
+  }
+
   function fillCommonFields(item: EditableItem | null, kind: SubKind): void {
     const isCommand = kind === 'command';
     const isPreScript = kind === 'prescript';
-    els.title.textContent = item
-      ? `Editar ${isCommand ? 'comando' : isPreScript ? 'pre-script' : 'acción'}: ${item.name}`
-      : isCommand
-        ? 'Nuevo comando'
-        : isPreScript
-          ? 'Nuevo pre-script'
-          : 'Nueva acción';
+    els.dialog.setAttribute(
+      'aria-label',
+      item
+        ? `Editar ${KIND_LABELS[kind].kind.toLowerCase()}`
+        : KIND_LABELS[kind].fresh,
+    );
 
-    // Icon button — hidden for prescripts (they don't have icons)
-    const sfIconField = document.querySelector<HTMLElement>('.sf-icon-field');
-    if (sfIconField) sfIconField.style.display = isPreScript ? 'none' : '';
+    // The header tile picks the icon; pre-scripts have none, so they get a
+    // fixed tile instead.
+    els.iconField.hidden = isPreScript;
+    els.kindTile.hidden = !isPreScript;
     defaultIcon = isCommand ? 'terminal' : 'wand-sparkles';
     const setIcon = (value: string): void => {
       // The button shows the icon; the stored value rides in a data
@@ -137,18 +225,15 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     els.command.value = item ? item.command : '';
     els.args.value = item ? (item.args || []).join('\n') : '';
 
-    // Action and prescript: inheritGroupEnv toggle
-    if (!isCommand) {
-      els.inheritGroupEnvRow.style.display = '';
-      els.inheritGroupEnv.checked =
-        item && 'inheritGroupEnv' in item ? item.inheritGroupEnv : false;
-    } else {
-      els.inheritGroupEnvRow.style.display = 'none';
-    }
+    // Actions and pre-scripts can inherit the group's variables.
+    els.inheritGroupEnvRow.hidden = isCommand;
+    els.inheritGroupEnv.checked =
+      !isCommand && item && 'inheritGroupEnv' in item
+        ? item.inheritGroupEnv
+        : false;
 
-    // (auto-start lives in the commands list, not in this dialog.)
+    // (auto-start lives in the commands list, not in this sheet.)
 
-    // Build env editor — always interactive (no dimming)
     const initialEnv = item ? item.env || [] : [];
     envEditorHandle = buildEnvEditor(els.envEditor, initialEnv);
   }
@@ -157,127 +242,48 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     const isCommand = kind === 'command';
     const isPreScript = kind === 'prescript';
 
-    // PreScript-only: timeout field
-    if (els.timeoutRow)
-      els.timeoutRow.style.display = isPreScript ? '' : 'none';
-    if (els.timeoutSecs)
-      els.timeoutSecs.value =
-        item && 'timeoutMs' in item && item.timeoutMs
-          ? String(Math.round(item.timeoutMs / 1000))
-          : '';
+    // Pre-scripts only: the timeout.
+    els.timeoutRow.hidden = !isPreScript;
+    els.timeoutSecs.value =
+      item && 'timeoutMs' in item && item.timeoutMs
+        ? String(Math.round(item.timeoutMs / 1000))
+        : '';
 
-    // Confirmation gate — available for commands, actions and pre-scripts.
-    if (els.confirmRow) els.confirmRow.style.display = '';
-    if (els.confirm) {
-      els.confirm.checked = !!(item && item.confirm);
-      if (els.confirmOnTimeout) {
-        els.confirmOnTimeout.value = item?.confirmOnTimeout || 'cancel';
-      }
-      if (els.confirmSecs) {
-        els.confirmSecs.value =
-          item && item.confirmSecs != null ? String(item.confirmSecs) : '';
-      }
-      if (els.confirmDetails) {
-        els.confirmDetails.style.display = els.confirm.checked ? '' : 'none';
-      }
-      els.confirm.onchange = () => {
-        if (els.confirmDetails) {
-          els.confirmDetails.style.display = els.confirm.checked ? '' : 'none';
-        }
-      };
-    }
+    // Confirmation gate — commands, actions and pre-scripts alike.
+    els.confirm.checked = !!(item && item.confirm);
+    els.confirmOnTimeout.value = item?.confirmOnTimeout || 'cancel';
+    els.confirmSecs.value =
+      item && item.confirmSecs != null ? String(item.confirmSecs) : '';
+    const syncConfirm = (): void => {
+      els.confirmDetails.style.display = els.confirm.checked ? '' : 'none';
+    };
+    syncConfirm();
+    els.confirm.onchange = syncConfirm;
 
-    // Command-only fields — hidden for actions and prescripts
-    els.cmdOnlyFields.style.display = isCommand ? '' : 'none';
-    if (isCommand) {
-      const command = item && 'cwd' in item ? item : null;
-      els.cwd.value = command?.cwd || '';
-      els.warn.value = command?.warnRegex || DEFAULT_WARN;
-      els.error.value = command?.errorRegex || DEFAULT_ERROR;
-      els.silenceWarn.checked = command?.silenceWarnings ?? false;
-      els.silenceErr.checked = command?.silenceErrors ?? false;
-      els.maxLogLines.value =
-        command?.maxLogLines != null ? String(command.maxLogLines) : '';
-    }
-  }
-
-  async function persistItem(
-    data: SubFormData,
-    item: EditableItem | null,
-    kind: SubKind,
-    groupId: string,
-  ): Promise<void> {
-    if (kind === 'prescript') {
-      await window.api.savePreScript(groupId, {
-        id: item ? item.id : undefined,
-        name: data.name,
-        command: data.command,
-        args: data.args,
-        env: data.env,
-        inheritGroupEnv: data.inheritGroupEnv,
-        timeoutMs: data.timeoutSecs ? data.timeoutSecs * 1000 : null,
-        confirm: data.confirm,
-        confirmSecs: data.confirmSecs,
-        confirmOnTimeout: data.confirmOnTimeout,
-      });
-      return;
-    }
-    if (kind === 'command') {
-      await window.api.saveCommand(groupId, {
-        id: item ? item.id : undefined,
-        icon: data.icon || null,
-        iconColor: data.iconColor,
-        name: data.name,
-        command: data.command,
-        args: data.args,
-        env: data.env,
-        cwd: data.cwd || null,
-        warnRegex: data.warnRegex || DEFAULT_WARN,
-        errorRegex: data.errorRegex || DEFAULT_ERROR,
-        silenceWarnings: data.silenceWarnings,
-        silenceErrors: data.silenceErrors,
-        maxLogLines: data.maxLogLines,
-        // Preserve existing autoStart — the toggle for it lives in the
-        // commands list now, not in this dialog.
-        autoStart: item && 'autoStart' in item ? item.autoStart : false,
-        schedule: data.schedule,
-        confirm: data.confirm,
-        confirmSecs: data.confirmSecs,
-        confirmOnTimeout: data.confirmOnTimeout,
-        // Preserve silenced patterns
-        silencedPatterns:
-          item && 'silencedPatterns' in item
-            ? item.silencedPatterns
-            : { warn: [], error: [] },
-      });
-      return;
-    }
-    await window.api.saveAction(groupId, {
-      id: item ? item.id : undefined,
-      icon: data.icon || null,
-      iconColor: data.iconColor,
-      name: data.name,
-      command: data.command,
-      args: data.args,
-      env: data.env,
-      inheritGroupEnv: data.inheritGroupEnv,
-      schedule: data.schedule,
-      confirm: data.confirm,
-      confirmSecs: data.confirmSecs,
-      confirmOnTimeout: data.confirmOnTimeout,
-    });
+    // «Logs y detección» — commands only; the sections decide visibility.
+    const command = isCommand && item && 'cwd' in item ? item : null;
+    els.cwd.value = command?.cwd || '';
+    els.warn.value = command?.warnRegex || DEFAULT_WARN_REGEX;
+    els.error.value = command?.errorRegex || DEFAULT_ERROR_REGEX;
+    els.silenceWarn.checked = command?.silenceWarnings ?? false;
+    els.silenceErr.checked = command?.silenceErrors ?? false;
+    els.maxLogLines.value =
+      command?.maxLogLines != null ? String(command.maxLogLines) : '';
   }
 
   function makeSubmitCallback(
     item: EditableItem | null,
     kind: SubKind,
-    groupId: string,
+    resolveGroupId: () => string,
+    onCreated?: NewPreScriptRequest['onCreated'],
   ): (data: SubFormData) => Promise<void> {
     const isCommand = kind === 'command';
     const isPreScript = kind === 'prescript';
     return async (data: SubFormData) => {
+      // Read before the save: the select is only shown for this one flow.
+      const groupId = resolveGroupId();
       try {
-        await persistItem(data, item, kind, groupId);
+        const saved = await persistItem(data, item, kind, groupId);
 
         // Refresh allGroups silently (no full re-render)
         await deps.loadGroups();
@@ -292,6 +298,8 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
         // Re-render from draftGroup (parent edits preserved); with no draft
         // active this is the same full reload the old code fell back to.
         deps.renderGroupDetail();
+
+        if (onCreated && saved) await onCreated(groupId, saved);
 
         // A rename/edit here changes what the pipeline's own script rows
         // display (name, command, timeout) — refresh it too.
@@ -311,20 +319,88 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     };
   }
 
-  function openSubDialog(
+  /** The chrome only the create-from-pipeline flow shows, on or off. */
+  function showCreateChrome(request: NewPreScriptRequest | null): void {
+    els.groupField.hidden = request === null;
+    els.pipelineNote.hidden = request?.after == null;
+    els.pipelineNoteName.textContent = request?.after ?? '';
+    els.submitLabel.textContent = request ? 'Crear' : 'Guardar';
+    if (!request) return;
+    els.group.replaceChildren(
+      ...request.groups.map((group) => {
+        const option = document.createElement('option');
+        option.value = group.id;
+        option.textContent = group.name;
+        return option;
+      }),
+    );
+    els.group.value = request.groupId;
+    const paintTile = (): void => {
+      fillGroupTile(
+        els.groupTile,
+        request.groups.find((group) => group.id === els.group.value) ?? null,
+      );
+      refreshLive();
+    };
+    els.group.onchange = paintTile;
+    paintTile();
+  }
+
+  function fill(
     item: EditableItem | null,
     kind: SubKind,
     groupId: string,
   ): void {
     fillCommonFields(item, kind);
     fillGateFields(item, kind);
-
+    const command = kind === 'command' && item && 'cwd' in item ? item : null;
+    link.fill(
+      command?.link,
+      command ? deps.commandPorts(groupId, command.id) : [],
+    );
     // Schedule editor — commands and actions, not pre-scripts.
     deps.schedule.setup(item, kind === 'prescript');
+    sections.show(kind);
+  }
 
-    subDialogCallback = makeSubmitCallback(item, kind, groupId);
+  function openSubDialog(
+    item: EditableItem | null,
+    kind: SubKind,
+    groupId: string,
+  ): void {
+    current = { kind, isNew: item === null, group: () => groupById(groupId) };
+    fill(item, kind, groupId);
+    showCreateChrome(null);
+    refreshLive();
+    subDialogCallback = makeSubmitCallback(item, kind, () => groupId);
+    present(item ? { groupId, kind, item } : null);
+  }
 
-    els.dialog.showModal();
+  /** Shows the filled sheet, remembering what it held for the dirty check. */
+  function present(target: typeof deleteTarget): void {
+    deleteTarget = target;
+    els.deleteBtn.hidden = target === null;
+    snapshot = takeSnapshot();
+    chrome.open();
+  }
+
+  function openNewPreScript(request: NewPreScriptRequest): void {
+    current = {
+      kind: 'prescript',
+      isNew: true,
+      group: () =>
+        request.groups.find((group) => group.id === els.group.value) ?? null,
+    };
+    fill(null, 'prescript', request.groupId);
+    showCreateChrome(request);
+    refreshLive();
+    subDialogCallback = makeSubmitCallback(
+      null,
+      'prescript',
+      () => els.group.value || request.groupId,
+      request.onCreated,
+    );
+    present(null);
   }
 
   function readFormData(): SubFormData {
@@ -361,6 +437,7 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
       confirmOnTimeout:
         els.confirmOnTimeout.value === 'confirm' ? 'confirm' : 'cancel',
       schedule: deps.schedule.readSchedule(),
+      link: link.read(),
     };
   }
 
@@ -377,20 +454,35 @@ export function createSubDialog(deps: SubDialogDeps): SubDialog {
     els.cwd.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
+  // Every edit refreshes the live title, cwd hint and section badges.
+  els.form.addEventListener('input', refreshLive);
+  els.form.addEventListener('change', refreshLive);
+  els.form.addEventListener('click', (e) => {
+    // Env rows and schedule chips change state through buttons.
+    if (e.target instanceof Element && e.target.closest('button'))
+      refreshLive();
+  });
+
   els.form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    // Cmd/Ctrl+S submits past the disabled button.
+    if (!canSave()) return;
     const data = readFormData();
     els.dialog.close();
     if (subDialogCallback) await subDialogCallback(data);
   });
 
+  // «Cancelar» is an explicit discard: no question asked.
   els.cancel.addEventListener('click', (e) => {
     e.preventDefault();
     els.dialog.close();
   });
 
-  // Shared modal chrome (honest × / Esc / backdrop) for the command editor.
-  wireModal(els.dialog);
+  els.deleteBtn.addEventListener('click', () => {
+    if (!deleteTarget) return;
+    const { groupId, kind, item } = deleteTarget;
+    void deps.removeItem(groupId, kind, item, () => els.dialog.close());
+  });
 
-  return { open: openSubDialog };
+  return { open: openSubDialog, openNewPreScript };
 }

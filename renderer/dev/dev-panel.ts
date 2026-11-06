@@ -196,7 +196,7 @@ function buildSection(version: HTMLInputElement): HTMLElement {
 }
 
 const FIXTURE_NOTE =
-  'Sustituye tus grupos por un juego de prueba: servicios que escriben cada segundo, avisos y errores, mucha salida, fallos al arrancar (código 1, comando inexistente, carpeta inexistente) y acciones correctas, fallidas y lentas, con iconos y colores distintos. Sirve para ver la barra y la configuración llenas. Tus grupos no se tocan: quedan ocultos y sin cambios, y sus procesos siguen corriendo. Lo que edites mientras tanto solo cambia los grupos de prueba y se pierde al quitarlos; exportar lleva siempre tus grupos reales e importar queda bloqueado. Al quitarlos se paran todos sus procesos.';
+  'Sustituye tus grupos y workflows por un juego de prueba: servicios que escriben cada segundo, avisos y errores, mucha salida, fallos al arrancar (código 1, comando inexistente, carpeta inexistente), acciones correctas, fallidas y lentas, y unos 25 workflows de todo tipo (arranque, programados, manuales, ramas, paralelos, uno grande, scripts lentos, con avisos, que fallan o exceden su tiempo) con últimas ejecuciones de cada estado. Sirve para ver la barra, la configuración y la lista de workflows llenas. Lo tuyo no se toca: grupos, workflows e historial quedan ocultos y sin cambios, y tus procesos siguen corriendo. Lo que edites mientras tanto solo cambia el juego de prueba y se pierde al quitarlo (también al reiniciar); exportar lleva siempre tu configuración real e importar queda bloqueado. Al quitarlo se cancelan sus workflows y se paran todos sus procesos.';
 
 /** "Repetir ×N" as the main process takes it: a whole number, 1 to 20. */
 function clampRepeat(raw: string): number {
@@ -205,12 +205,12 @@ function clampRepeat(raw: string): number {
   return Math.min(20, Math.max(1, value));
 }
 
-/** The "Grupos de prueba" card: a load/remove toggle and the copy count. */
+/** The "Grupos y workflows de prueba" card: a load/remove toggle and the copy count. */
 function buildFixtureCard(api = window.api): HTMLElement {
   const card = document.createElement('section');
   card.className = 'settings-card';
   const heading = document.createElement('h2');
-  heading.textContent = 'Grupos de prueba';
+  heading.textContent = 'Grupos y workflows de prueba';
   const note = document.createElement('p');
   note.className = 'muted small';
   note.textContent = FIXTURE_NOTE;

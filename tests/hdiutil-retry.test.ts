@@ -84,25 +84,32 @@ async function fakeHdiutil(): Promise<Fixture> {
 async function runRetry(
   fixture: Fixture,
   failures: number,
-): Promise<{ code: number; calls: string[] }> {
+  delay = '0',
+): Promise<{ code: number; calls: string[]; stderr: string }> {
   let code = 0;
+  let stderr = '';
   try {
-    await execFileAsync('bash', [fixture.harness], {
+    ({ stderr } = await execFileAsync('bash', [fixture.harness], {
       env: {
         ...process.env,
         HARNESS_BIN: fixture.binDirectory,
         HARNESS_SCRIPT: script,
-        HDIUTIL_RETRY_DELAY: '0',
+        HDIUTIL_RETRY_DELAY: delay,
+        // A no-op instead of sleep: the backoff is asserted from the
+        // warnings, without the test waiting for it.
+        HDIUTIL_SLEEP: 'true',
         HD_TEST_LOG: fixture.log,
         HD_TEST_COUNT: fixture.counter,
         HD_TEST_FAILURES: String(failures),
       },
-    });
+    }));
   } catch (error: unknown) {
-    code = Number((error as { code?: number }).code ?? 1);
+    const failed = error as { code?: number; stderr?: string };
+    code = Number(failed.code ?? 1);
+    stderr = failed.stderr ?? '';
   }
   const log = await readFile(fixture.log, 'utf8').catch(() => '');
-  return { code, calls: log.split('\n').filter(Boolean) };
+  return { code, calls: log.split('\n').filter(Boolean), stderr };
 }
 
 describe('scripts/verify-macos-release.sh — hdiutil retry', () => {
@@ -129,7 +136,16 @@ describe('scripts/verify-macos-release.sh — hdiutil retry', () => {
     it('gives up on the attempt budget instead of retrying forever', async () => {
       const { code, calls } = await runRetry(await fakeHdiutil(), 99);
       expect(code).not.toBe(0);
-      expect(calls).toHaveLength(3);
+      expect(calls).toHaveLength(6);
+    });
+
+    it('doubles the wait after each failure, so a busy runner gets time to recover', async () => {
+      const { code, stderr } = await runRetry(await fakeHdiutil(), 4, '3');
+      expect(code).toBe(0);
+      const waits = [...stderr.matchAll(/retrying in (\d+)s/g)].map((m) =>
+        Number(m[1]),
+      );
+      expect(waits).toEqual([3, 6, 12, 24]);
     });
 
     it('passes the arguments through untouched', async () => {

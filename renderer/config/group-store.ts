@@ -6,7 +6,7 @@ type SavedGroup = Group & { _autoStartEnforced?: boolean };
 
 /** The slices an INSTANT write (reorder, delete, sub-dialog save) can persist
  * behind the draft's back. */
-type GroupSlice = 'preScripts' | 'commands' | 'actions';
+type GroupSlice = 'preScripts' | 'commands' | 'actions' | 'hiddenInTray';
 
 export interface GroupStoreDeps {
   showToast: ShowToast;
@@ -35,7 +35,10 @@ export interface GroupStore {
   updateSaveBar(): void;
   saveDraft(): Promise<SavedGroup | null>;
   syncPersistedSlice(groupId: string, key: GroupSlice): void;
-  adoptSavedSlice(groupId: string, key: GroupSlice): void;
+  adoptSavedSlice(
+    groupId: string,
+    key: Exclude<GroupSlice, 'hiddenInTray'>,
+  ): void;
 }
 
 export function createGroupStore(deps: GroupStoreDeps): GroupStore {
@@ -172,7 +175,10 @@ export function createGroupStore(deps: GroupStoreDeps): GroupStore {
    * BOTH snapshots in place, so the sub-list reflects the updated item while
    * parent-level edits to the draft are preserved.
    */
-  function adoptSavedSlice(groupId: string, key: GroupSlice): void {
+  function adoptSavedSlice(
+    groupId: string,
+    key: Exclude<GroupSlice, 'hiddenInTray'>,
+  ): void {
     if (!draftGroup || draftGroup.id !== groupId) return;
     const fresh = allGroups.find((g) => g.id === groupId);
     if (!fresh || !storedGroup) return;

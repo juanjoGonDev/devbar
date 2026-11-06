@@ -4,7 +4,7 @@
  * What is left here is only the wiring: pull the panes in, tell them what the
  * window was opened for, and route what main pushes. Everything the window
  * actually DOES lives under `renderer/logs/` — the line pane, the sidebar, the
- * silenced drawer, the scope switcher — each small enough to read in one sitting
+ * silenced popover, the scope switcher — each small enough to read in one sitting
  * and testable without the others.
  */
 import './report-uncaught.js';
@@ -14,13 +14,20 @@ import { watchCustomIcons } from './custom-icons.js';
 import { installTooltips } from './tooltip.js';
 import { logsParams } from './logs/params.js';
 import { installNav, view } from './logs/view.js';
-import { filterEl, titleEl } from './logs/elements.js';
-import { applyFilter, rerenderExistingLines } from './logs/pane.js';
-import { renderDrawer } from './logs/drawer.js';
+import { filterBy } from './logs/find.js';
+import { rerenderExistingLines } from './logs/pane.js';
+import { renderSilencePopover } from './logs/silence-popover.js';
 import { jumpToLine, openScope, selectLog } from './logs/scope.js';
 import { refreshSidebar } from './logs/sidebar.js';
+import { renderHeaderRunState } from './logs/header.js';
+import { adoptGroupStates } from './logs/port-pill.js';
 import { receivePush } from './logs/stream.js';
 import './logs/selection-ui.js';
+import './logs/row-actions.js';
+import './logs/footer.js';
+import './logs/menu.js';
+import './logs/find-toggle.js';
+import { invalidateActivity } from './logs/activity.js';
 import { DEFAULT_MAX_LOG_LINES } from '../src/domain-types.js';
 
 initTheme();
@@ -41,9 +48,11 @@ installNav({ openScope, jumpToLine });
   const settings = await window.api.getSettings();
   view.globalRetention = settings?.maxLogLines || DEFAULT_MAX_LOG_LINES;
   view.memoryCap = view.globalRetention;
-  if (logsParams.filter) filterEl.value = logsParams.filter;
   await refreshSidebar();
   if (logsParams.scope) {
+    // A merged scope never goes through `selectLog`, the one that applies a
+    // filter the entry point carried, so it is applied here.
+    if (logsParams.filter) filterBy(logsParams.filter);
     await openScope(
       logsParams.scope,
       logsParams.level ? [logsParams.level] : [],
@@ -54,8 +63,6 @@ installNav({ openScope, jumpToLine });
       logsParams.filter || undefined,
       logsParams.level ?? undefined,
     );
-  } else {
-    titleEl.textContent = 'Logs (sin proceso)';
   }
 })();
 
@@ -74,8 +81,7 @@ window.api.onLogsSelect((payload) => {
   if (!pid) return;
   if (logsParams.isDetached) {
     if (pid !== view.processId || payload.filter === undefined) return;
-    filterEl.value = payload.filter;
-    applyFilter();
+    filterBy(payload.filter);
     return;
   }
   void selectLog(pid, payload.filter, payload.level ?? undefined);
@@ -86,11 +92,24 @@ window.api.onLog((payload) => {
   receivePush(payload);
 });
 
+// The header's port pill reads the same group states `onUpdate` pushes; the
+// first read only counts until a push has already said something newer.
+let statesPushed = false;
+void window.api.getGroupStates().then((states) => {
+  if (statesPushed) return;
+  adoptGroupStates(states);
+  renderHeaderRunState();
+});
+
 // Any state change (start, stop, new warn/error) → refresh the live numbers.
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-window.api.onUpdate(() => {
+window.api.onUpdate((states) => {
+  statesPushed = true;
+  adoptGroupStates(states);
+  renderHeaderRunState(); // a port opening or closing shows at once
   rerenderExistingLines();
-  renderDrawer(); // patterns may have just been added or removed
+  renderSilencePopover(); // patterns may have just been added or removed
+  invalidateActivity(); // a silenced warning no longer colours its bar
   if (refreshTimer) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = null;

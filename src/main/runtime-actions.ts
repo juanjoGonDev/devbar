@@ -2,7 +2,7 @@ import { makeActionId, makeCommandId, parseProcessId } from '../compound-id.js';
 import type { Action, Command, Group, ProcessState } from '../domain-types.js';
 
 /**
- * Starting and stopping things — commands, actions, the pre-script pipeline —
+ * Starting and stopping things — commands, actions, workflows —
  * and the branch switch that has to stop and restart a group's services
  * around it. The IPC handlers (src/main/ipc/runtime-ipc.ts) and the
  * «Control remoto» API (src/main/remote/control-api.ts) both call these, so a
@@ -25,7 +25,10 @@ export interface RuntimeActionsDeps {
     stop: (id: string) => Promise<Outcome>;
     getState: (id: string) => Pick<ProcessState, 'status'>;
   };
-  preScriptRunner: { run: () => Promise<unknown> };
+  workflowRunner: {
+    run: (workflowId: string, cause: 'manual') => Promise<unknown>;
+    stop: (workflowId: string) => Outcome;
+  };
   gitManager: {
     listBranches: (repoPath: string) => Promise<unknown>;
     currentBranch: (repoPath: string) => Promise<unknown>;
@@ -58,7 +61,9 @@ export interface RuntimeActions {
   stopProcess(processId: string): Promise<Outcome>;
   /** Stops every running command service; one broadcast at the end. */
   stopAll(): Promise<{ ok: boolean; stopped: number }>;
-  runPipeline(): Promise<unknown>;
+  /** A manual run: it asks first when the workflow says so. */
+  runWorkflow(workflowId: string): Promise<unknown>;
+  stopWorkflow(workflowId: string): Outcome;
   listBranches(groupId: string): Promise<unknown>;
   currentBranch(groupId: string): Promise<unknown>;
   switchBranch(groupId: string, branch: string): Promise<Outcome>;
@@ -189,7 +194,8 @@ export function createRuntimeActions(deps: RuntimeActionsDeps): RuntimeActions {
       return { ok: results.every((r) => r.ok), stopped: ids.length };
     },
 
-    runPipeline: () => deps.preScriptRunner.run(),
+    runWorkflow: (workflowId) => deps.workflowRunner.run(workflowId, 'manual'),
+    stopWorkflow: (workflowId) => deps.workflowRunner.stop(workflowId),
 
     listBranches: async (groupId) => {
       const group = configStore.getGroup(groupId);

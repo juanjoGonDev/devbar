@@ -84,6 +84,7 @@ function groupState(
     currentBranch: null,
     color,
     commands: commands.map((command, index) => ({
+      ports: [],
       commandId: `c${index}`,
       processId: `cmd:g1:c${index}`,
       status: 'running',
@@ -127,6 +128,22 @@ describe('src/main/tray.ts', () => {
       });
       expect(h.titles).toEqual([' 2']);
       expect(h.tooltips).toEqual(['DevBar — 2 errores']);
+    });
+
+    it('leaves the status item alone when a push changes nothing it shows', () => {
+      const h = harness();
+      h.controller.attach(h.menuBar);
+      const busy = [groupState('error', [{ errorCount: 2 }])];
+      // Running processes push state many times a second. Touching the
+      // status item on each one makes macOS reset the pointer in every other
+      // DevBar window, so only a real change may reach it.
+      h.controller.updateTitle(busy);
+      h.controller.updateTitle(busy);
+      h.controller.updateTitle(busy);
+      expect(h.titles).toEqual([' 2']);
+      expect(h.tooltips).toEqual(['DevBar — 2 errores']);
+      h.controller.updateTitle([groupState('error', [{ errorCount: 3 }])]);
+      expect(h.titles).toEqual([' 2', ' 3']);
     });
 
     it('draws the count into the icon where tray titles are not rendered', () => {

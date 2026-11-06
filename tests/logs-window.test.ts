@@ -139,7 +139,7 @@ describe('renderer/logs.ts', () => {
     it('says so when it was opened on nothing in particular', async () => {
       const win = await openLogs();
       await win.settle('listLogs', []);
-      expect(document.getElementById('title')?.textContent).toBe(
+      expect(document.getElementById('crumb-name')?.textContent).toBe(
         'Logs (sin proceso)',
       );
     });
@@ -177,7 +177,7 @@ describe('renderer/logs.ts', () => {
         mergedSnapshot([line('fallo 1'), line('ok')]),
       );
       expect(
-        (document.getElementById('filter') as HTMLInputElement).value,
+        (document.getElementById('find-input') as HTMLInputElement).value,
       ).toBe('fallo');
       expect(drawn()).toEqual(['fallo 1']);
     });
@@ -224,9 +224,7 @@ describe('renderer/logs.ts', () => {
       await win.push('onLogsSelect', { scope: 'group', groupId: 'g1' });
       expect(win.callCount('getMergedLogs')).toBe(1);
       await win.settle('getMergedLogs', mergedSnapshot());
-      expect(document.getElementById('title')?.textContent).toBe(
-        'Logs — Back · todos',
-      );
+      expect(document.title).toBe('Logs — Back · todos');
     });
 
     it('falls back to everything when the group scope carries no group', async () => {
@@ -234,7 +232,7 @@ describe('renderer/logs.ts', () => {
       await win.settle('listLogs', []);
       await win.push('onLogsSelect', { scope: 'group' });
       await win.settle('getMergedLogs', mergedSnapshot());
-      expect(document.getElementById('title')?.textContent).toBe('Telemetría');
+      expect(document.title).toBe('Telemetría');
     });
 
     it('ignores a selection that names nothing at all', async () => {
@@ -285,6 +283,60 @@ describe('renderer/logs.ts', () => {
     });
   });
 
+  describe('port pill', () => {
+    it('shows the port a state push reports for the service on screen', async () => {
+      const win = await openLogs('?id=g1:web');
+      await win.settle('listLogs', [
+        {
+          ...logGroup('Back'),
+          groupId: 'g1',
+          items: [
+            {
+              id: 'g1:web',
+              type: 'command',
+              name: 'web',
+              icon: null,
+              iconColor: null,
+              lineCount: 0,
+              status: 'running',
+              warnCount: 0,
+              errorCount: 0,
+              startedAt: Date.now(),
+              lastFinishedAt: null,
+              logLimit: 5000,
+            },
+          ],
+        },
+      ]);
+      // The boot selects it, and the sidebar's first paint reloads it too.
+      await win.settle('getLogs', snapshot());
+      await win.settle('getLogs', snapshot());
+      await win.push('onUpdate', [
+        {
+          groupId: 'g1',
+          commands: [
+            {
+              commandId: 'web',
+              processId: 'g1:web',
+              ports: [
+                {
+                  port: 3000,
+                  url: 'http://localhost:3000/',
+                  kind: 'web',
+                  source: 'log',
+                  lanReachable: false,
+                },
+              ],
+            },
+          ],
+        },
+      ]);
+      const pill = document.getElementById('port-pill');
+      expect(pill?.hidden).toBe(false);
+      expect(pill?.textContent).toContain(':3000');
+    });
+  });
+
   describe('the panes it wires together', () => {
     it('hands the scope switcher to the rows that sit below it', async () => {
       // A row that opens another scope cannot import the switcher back without
@@ -321,11 +373,11 @@ describe('renderer/logs.ts', () => {
     it('installs the styled tooltips over the native ones', async () => {
       const win = await openLogs();
       await win.settle('listLogs', []);
-      const copy = document.getElementById('copy') as HTMLElement;
-      copy.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      const more = document.getElementById('more') as HTMLElement;
+      more.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
       await wait(300);
-      expect(copy.title, 'the native title is moved out of the way').toBe('');
-      expect(copy.dataset.tip).toBe('Copiar');
+      expect(more.title, 'the native title is moved out of the way').toBe('');
+      expect(more.dataset.tip).toBe('Más opciones');
     });
   });
 });

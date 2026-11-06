@@ -3,13 +3,17 @@ import {
   createFixtureMode,
   isFixtureProcess,
   type FixtureHost,
+  type FixtureOverlay,
 } from '../src/dev/fixture-mode.js';
-import type { Group } from '../src/domain-types.js';
+import { buildFixtureWorkflows } from '../src/dev/fixture-workflows.js';
 
-function harness(running: string[] = []) {
+const WORKFLOWS = buildFixtureWorkflows().length;
+
+function harness(running: string[] = [], runningWorkflows: string[] = []) {
   const calls: string[] = [];
   const stopping: (() => void)[] = [];
-  let overlay: readonly Group[] | null = null;
+  let overlay: FixtureOverlay | null = null;
+  const liveWorkflows = new Set(runningWorkflows);
   let failStops = false;
   let deferStops = false;
   const live = new Set(running);
@@ -20,9 +24,19 @@ function harness(running: string[] = []) {
       tmpDir: '/tmp',
       repoPath: null,
     }),
-    setOverlay: (groups) => {
-      overlay = groups;
-      calls.push(groups ? `overlay:${groups.length}` : 'overlay:off');
+    setOverlay: (next) => {
+      overlay = next;
+      calls.push(
+        next
+          ? `overlay:${next.groups.length}/${next.workflows.length}`
+          : 'overlay:off',
+      );
+    },
+    runningWorkflowIds: () => [...liveWorkflows],
+    stopWorkflow: (id) => {
+      calls.push(`stopWorkflow:${id}`);
+      liveWorkflows.delete(id);
+      return Promise.resolve();
     },
     processIds: () => [...live],
     stop: (id) => {
@@ -50,6 +64,7 @@ function harness(running: string[] = []) {
     mode: createFixtureMode(host),
     calls,
     live,
+    liveWorkflows,
     overlay: () => overlay,
     failStops: () => {
       failStops = true;
@@ -83,9 +98,20 @@ describe('src/dev/fixture-mode.ts', () => {
       const h = harness();
       const result = await h.mode.enable(2);
       expect(result).toMatchObject({ ok: true, active: true, repeat: 2 });
-      expect(h.overlay()?.length).toBe(6);
-      expect(h.calls).toEqual(['overlay:6', 'refresh']);
+      expect(h.overlay()?.groups.length).toBe(7);
+      expect(h.calls).toEqual([`overlay:7/${WORKFLOWS}`, 'refresh']);
       expect(h.mode.status()).toEqual({ active: true, repeat: 2 });
+    });
+
+    it('swaps in the fixture workflows with their seeded runs, and runs none of them', async () => {
+      const h = harness();
+      await h.mode.enable(1);
+      const overlay = h.overlay();
+      expect(overlay?.workflows).toEqual(buildFixtureWorkflows());
+      const runIds = Object.keys(overlay?.workflowRuns ?? {});
+      expect(runIds.length).toBeGreaterThan(0);
+      for (const id of runIds) expect(id).toMatch(/^fixture-wf-/);
+      expect(h.calls.some((c) => c.startsWith('stopWorkflow'))).toBe(false);
     });
 
     it('clamps the repeat count to the 1–20 the panel allows', async () => {
@@ -103,7 +129,7 @@ describe('src/dev/fixture-mode.ts', () => {
         'stop:cmd:fixture-1-services:tick',
         'stopped:cmd:fixture-1-services:tick',
         'remove:cmd:fixture-1-services:tick',
-        'overlay:9',
+        `overlay:10/${WORKFLOWS}`,
         'refresh',
       ]);
     });
@@ -130,6 +156,26 @@ describe('src/dev/fixture-mode.ts', () => {
         'overlay:off',
         'refresh',
       ]);
+    });
+
+    it('cancels the demo runs and waits for them before stopping processes and restoring', async () => {
+      const h = harness([], ['fixture-wf-largo', 'w-user-created-in-demo']);
+      await h.mode.enable(1);
+      h.live.add('pre:fixture-scripts:lento-40');
+      h.calls.length = 0;
+
+      await h.mode.disable();
+
+      expect(h.calls).toEqual([
+        'stopWorkflow:fixture-wf-largo',
+        'stopWorkflow:w-user-created-in-demo',
+        'stop:pre:fixture-scripts:lento-40',
+        'stopped:pre:fixture-scripts:lento-40',
+        'remove:pre:fixture-scripts:lento-40',
+        'overlay:off',
+        'refresh',
+      ]);
+      expect([...h.liveWorkflows]).toEqual([]);
     });
 
     it('never touches the processes of the real groups', async () => {

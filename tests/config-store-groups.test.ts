@@ -48,6 +48,15 @@ function command(id: string, extra: Record<string, unknown> = {}) {
   return { id, name: id, command: `pnpm ${id}`, ...extra };
 }
 
+function script(id: string) {
+  return { id, name: id, command: `make ${id}` };
+}
+
+/** The ref to the `setup` script of group `g-<name>`. */
+function SETUP_OF(name: string) {
+  return { groupId: `g-${name}`, scriptId: 'setup' };
+}
+
 describe('src/config-store.ts', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -448,15 +457,30 @@ describe('src/config-store.ts', () => {
 
       store.replaceConfig({
         version: 4,
-        groups: [group('imported')],
-        preSteps: [{ id: 's1', mode: 'serial', scripts: [] }],
+        groups: [group('imported', { preScripts: [script('setup')] })],
+        workflows: [
+          {
+            id: 'w-start',
+            name: 'Arranque',
+            enabled: true,
+            trigger: { kind: 'startup' },
+            graph: {
+              blocks: [
+                { id: 'b1', scripts: [SETUP_OF('imported')], x: 0, y: 0 },
+              ],
+              edges: [{ from: 'trigger', to: 'b1' }],
+            },
+          },
+        ],
         globalSettings: { theme: 'dark' },
       });
 
       expect(store.listGroups().map((entry) => entry.name)).toEqual([
         'imported',
       ]);
-      expect(store.getPreSteps().map((step) => step.id)).toEqual(['s1']);
+      expect(
+        store.getWorkflow('w-start')?.graph.blocks.map((block) => block.id),
+      ).toEqual(['b1']);
       expect(store.getGlobalSettings().theme).toBe('dark');
     });
 
@@ -482,9 +506,18 @@ describe('src/config-store.ts', () => {
       ).toEqual([false, false]);
     });
 
-    it('imports an empty pipeline when the payload carries no steps', async () => {
+    it('imports no workflows when the payload carries none', async () => {
       const store = await harness.open();
-      store.savePreStep({ id: 's1', mode: 'serial', scripts: [] });
+      store.saveGroup(group('api', { preScripts: [script('setup')] }));
+      store.saveWorkflow({
+        id: 'w-start',
+        name: 'Arranque',
+        trigger: { kind: 'startup' },
+        graph: {
+          blocks: [{ id: 'b1', scripts: [SETUP_OF('api')], x: 0, y: 0 }],
+          edges: [],
+        },
+      });
 
       store.replaceConfig({
         version: 4,
@@ -492,7 +525,7 @@ describe('src/config-store.ts', () => {
         globalSettings: {},
       });
 
-      expect(store.getPreSteps()).toEqual([]);
+      expect(store.listWorkflows()).toEqual([]);
     });
 
     it('sanitises the imported settings instead of trusting them', async () => {
@@ -517,8 +550,16 @@ describe('src/config-store.ts', () => {
 
     it('writes a readable snapshot next to the store before an import', async () => {
       const store = await harness.open();
-      store.saveGroup(group('api'));
-      store.savePreStep({ id: 's1', mode: 'parallel', scripts: [] });
+      store.saveGroup(group('api', { preScripts: [script('setup')] }));
+      store.saveWorkflow({
+        id: 'w-start',
+        name: 'Arranque',
+        trigger: { kind: 'startup' },
+        graph: {
+          blocks: [{ id: 'b1', scripts: [SETUP_OF('api')], x: 0, y: 0 }],
+          edges: [],
+        },
+      });
 
       const backupPath = store.writeImportBackup();
 
@@ -528,13 +569,15 @@ describe('src/config-store.ts', () => {
       const snapshot = JSON.parse(fs.readFileSync(backupPath, 'utf8')) as {
         version: number;
         groups: { name: string }[];
-        preSteps: { id: string }[];
+        workflows: { graph: { blocks: { id: string }[] } }[];
         backedUpAt: string;
         globalSettings: Record<string, unknown>;
       };
       expect(snapshot.version).toBe(4);
       expect(snapshot.groups.map((entry) => entry.name)).toEqual(['api']);
-      expect(snapshot.preSteps.map((entry) => entry.id)).toEqual(['s1']);
+      expect(
+        snapshot.workflows[0]?.graph.blocks.map((entry) => entry.id),
+      ).toEqual(['b1']);
       expect(Date.parse(snapshot.backedUpAt)).not.toBeNaN();
       expect(snapshot.globalSettings).toHaveProperty('maxLogLines');
     });

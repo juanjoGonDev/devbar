@@ -8,17 +8,13 @@
  * function, or an open window would keep showing what the config said an hour
  * ago.
  */
-import {
-  canRun,
-  dotClass,
-  groupDotClass,
-  isRunning,
-  runtimeOf,
-} from '../log-status.js';
+import { canRun, groupDotClass, isRunning } from '../log-status.js';
 import { PIPELINE_LOG_GROUP_ID } from '../../src/pipeline-labels.js';
 import { toggleRunById } from './header.js';
 import { openScope, selectLog } from './scope.js';
 import { setText } from './elements.js';
+import { layoutGroupItems } from './sidebar-fold.js';
+import { isActive, runningOfTotal } from './sidebar-order.js';
 import { view } from './view.js';
 import { customIconsVersion, icon, userIcon, type IconName } from '../icon.js';
 import type {
@@ -26,13 +22,6 @@ import type {
   LogListItem,
   SilenceLevel,
 } from '../../src/ipc-contract.js';
-
-const TYPE_ICON: Record<LogListItem['type'], IconName> = {
-  command: 'terminal',
-  action: 'wand-sparkles',
-  prescript: 'flask-conical',
-  pipeline: 'puzzle',
-};
 
 /**
  * Paints a user icon into `host` only when it changed — this runs on every
@@ -59,7 +48,7 @@ function groupOpenKey(groupId: string): string {
 
 /** The pipeline bucket is a cross-cutting view, and says so with its own mark. */
 function groupFallbackIcon(group: LogListGroup): IconName {
-  return group.groupId === PIPELINE_LOG_GROUP_ID ? 'dna' : 'folder';
+  return group.groupId === PIPELINE_LOG_GROUP_ID ? 'workflow' : 'folder';
 }
 
 /**
@@ -77,10 +66,8 @@ function levelCountButton(
   btn.type = 'button';
   btn.className = `b ${level === 'warn' ? 'warn' : 'err'} clickable`;
   btn.title = label;
-  btn.append(
-    icon(level === 'warn' ? 'triangle-alert' : 'circle-x'),
-    ` ${count}`,
-  );
+  // The pill's colour says which level it is; the tooltip spells it out.
+  btn.textContent = String(count);
   btn.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -89,21 +76,17 @@ function levelCountButton(
   return btn;
 }
 
+/**
+ * The warn/error counters, and nothing when both are zero: a quiet service
+ * needs no badge to say so.
+ */
 function renderBadges(host: HTMLElement, item: LogListItem): void {
   // Guard the rebuild. This runs on every sidebar repaint, including the
-  // one-second uptime tick, and the counters are BUTTONS: replacing one between
+  // one-second tick, and the counters are BUTTONS: replacing one between
   // mousedown and mouseup means the browser never fires the click, so pressing
   // a counter silently does nothing. It also drops any pending tooltip anchor.
-  // The runtime text changes every second, so the signature has to cover it —
-  // and the name, because these buttons spell it out in their tooltips.
-  const runtimeNow = runtimeOf(item);
-  const signature = [
-    item.name,
-    item.warnCount,
-    item.errorCount,
-    item.lineCount,
-    runtimeNow ? `${runtimeNow.text}/${runtimeNow.live}` : '',
-  ].join('|');
+  // The name is in the signature because these buttons spell it out.
+  const signature = [item.name, item.warnCount, item.errorCount].join('|');
   if (host.dataset.signature === signature) return;
   host.dataset.signature = signature;
   host.textContent = '';
@@ -127,22 +110,6 @@ function renderBadges(host: HTMLElement, item: LogListItem): void {
       ),
     );
   }
-  const runtime = runtimeOf(item);
-  if (runtime) {
-    const b = document.createElement('span');
-    b.className = runtime.live ? 'b time live' : 'b time';
-    b.title = runtime.live
-      ? 'Tiempo en ejecución'
-      : 'Duración de la última ejecución';
-    b.append(icon('timer'), ` ${runtime.text}`);
-    host.appendChild(b);
-  }
-  if (!host.childElementCount) {
-    const b = document.createElement('span');
-    b.className = 'b';
-    b.textContent = `${item.lineCount} líneas`;
-    host.appendChild(b);
-  }
 }
 
 function buildSideItem(item: LogListItem): HTMLElement {
@@ -162,18 +129,15 @@ function buildSideItem(item: LogListItem): HTMLElement {
   open.addEventListener('click', () => void selectLog(item.id));
   row.appendChild(open);
 
-  // Two rows in the first column: what the service IS on top, what it is
-  // DOING underneath. The counters and the clock were sharing a line with the
-  // name and had to wrap mid-badge to fit.
+  // One 30px line: the state dot, the name, and counters only when there is
+  // something to count. How long it has been running is the toolbar's to say.
   const head = document.createElement('span');
   head.className = 's-head';
   const dot = document.createElement('span');
   dot.className = 'dot';
-  const ico = document.createElement('span');
-  ico.className = 's-ico';
   const name = document.createElement('span');
   name.className = 's-name';
-  head.append(dot, ico, name);
+  head.append(dot, name);
   row.appendChild(head);
 
   const badges = document.createElement('span');
@@ -194,13 +158,18 @@ function buildSideItem(item: LogListItem): HTMLElement {
 }
 
 export function paintSideItem(row: HTMLElement, item: LogListItem): void {
+  // Green while running, grey otherwise: warnings and errors have their own
+  // counters now, so the dot only answers "is it up?".
+  const active = isActive(item);
   const dot = row.querySelector<HTMLElement>('.dot');
-  if (dot) dot.className = `dot ${dotClass(item)}`.trim();
-  // Name and icon are painted, never built: a rename in the config reaches an
-  // open window through this path, and only this one — the tree is rebuilt
-  // solely when a service appears or goes away.
-  const ico = row.querySelector<HTMLElement>('.s-ico');
-  if (ico) paintIcon(ico, item.icon, TYPE_ICON[item.type], item.iconColor);
+  if (dot)
+    dot.className = active
+      ? `dot ${item.status === 'running' ? 'running' : item.status}`
+      : 'dot';
+  row.classList.toggle('stopped', !active);
+  // The name is painted, never built: a rename in the config reaches an open
+  // window through this path, and only this one — the tree is rebuilt solely
+  // when a service appears or goes away.
   const name = row.querySelector<HTMLElement>('.s-name');
   if (name) {
     name.textContent = item.name;
@@ -314,13 +283,8 @@ export function buildGroupRow(group: LogListGroup): HTMLElement {
   const chevron = document.createElement('span');
   chevron.className = 'chevron';
   chevron.append(icon('chevron-right'));
-  const gIco = document.createElement('span');
-  gIco.className = 'g-ico';
-  // Name on top, its group-wide warn/error totals underneath — the same
-  // two-line shape the service rows use, so the eye reads them as a column.
-  // Rollup: how many services live here, and the worst state among them.
-  const gDot = document.createElement('span');
-  gDot.className = 'g-dot';
+  // Name, its group-wide warn/error totals when there are any, and how many
+  // of its services are running out of how many there are.
   const gCount = document.createElement('span');
   gCount.className = 'g-count';
   // Opens the merged view for the whole group. It lives inside <summary>, so
@@ -334,7 +298,7 @@ export function buildGroupRow(group: LogListGroup): HTMLElement {
     event.stopPropagation();
     void openScope({ kind: 'group', groupId: group.groupId });
   });
-  summary.append(chevron, gIco, buildGroupMain(), gDot, gCount, gAll);
+  summary.append(chevron, buildGroupMain(), gCount, gAll);
   details.appendChild(summary);
   // Items live in their own box so the guide rail can hang off it.
   const box = document.createElement('div');
@@ -345,6 +309,7 @@ export function buildGroupRow(group: LogListGroup): HTMLElement {
     box.appendChild(row);
   }
   details.appendChild(box);
+  layoutGroupItems(details, group);
   paintGroupSummary(details, group);
   return details;
 }
@@ -417,6 +382,11 @@ export function paintGroupSummary(
     opener.title = `Ver todos los logs de ${group.groupName} juntos`;
     if (opener.classList.contains('g-all'))
       opener.setAttribute('aria-label', opener.title);
+  }
+  const count = details.querySelector<HTMLElement>('.g-count');
+  if (count) {
+    setText(count, runningOfTotal(group.items));
+    count.title = 'En marcha / total';
   }
   const dot = details.querySelector<HTMLElement>('.g-dot');
   if (dot) {

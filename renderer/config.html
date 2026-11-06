@@ -74,10 +74,17 @@
           type="button"
           class="nav-item"
           data-target="prescripts"
-          aria-label="Pipeline"
+          aria-label="Workflows"
         >
-          <span class="nav-ico"><span class="icon" data-icon="dna"></span></span
-          ><span class="nav-label">Pipeline</span>
+          <span class="nav-ico"
+            ><span class="icon" data-icon="workflow"></span></span
+          ><span class="nav-label">Workflows</span
+          ><span
+            id="workflows-badge"
+            class="nav-badge"
+            title="Workflows en ejecución"
+            hidden
+          ></span>
         </button>
         <button
           type="button"
@@ -113,131 +120,272 @@
 
       <div class="config-content">
         <!-- ── General ────────────────────────────────────────────── -->
+        <!--
+          macOS inset grouped lists: the title sits above its card, every
+          row is at least 44px tall with a hairline between rows, and the
+          control sits at the trailing edge. Footnotes go under the card.
+        -->
         <section class="config-section active" data-section="general">
-          <section class="settings-card">
-            <label class="toggle">
-              <input type="checkbox" id="set-autostart" />
-              <span>Iniciar al arrancar el sistema</span>
-              <!-- textContent is refined per-OS by config.ts -->
-              <small id="autostart-hint"
-                >Registra DevBar en el autostart del sistema. Solo aplica a la
-                app empaquetada/instalada.</small
-              >
-            </label>
-          </section>
-          <section class="settings-card">
-            <h2>Tema</h2>
-            <div class="theme-picker">
-              <button
-                type="button"
-                class="small-btn theme-opt"
-                data-theme-value="auto"
-                aria-pressed="false"
-              >
-                Automático
-              </button>
-              <button
-                type="button"
-                class="small-btn theme-opt"
-                data-theme-value="light"
-                aria-pressed="false"
-              >
-                Claro
-              </button>
-              <button
-                type="button"
-                class="small-btn theme-opt"
-                data-theme-value="dark"
-                aria-pressed="false"
-              >
-                Oscuro
-              </button>
-            </div>
-            <small
-              >Automático sigue la apariencia del sistema. Claro y Oscuro
-              fuerzan la apariencia de todas las ventanas.</small
-            >
-          </section>
-          <section class="settings-card">
-            <h2>Panel de la barra</h2>
-            <p class="muted small">
-              Arrastra el panel por su cabecera o redimensiónalo por los bordes
-              y se quedará donde lo dejes.
+          <div class="settings-group">
+            <h2 class="settings-group-title">Inicio</h2>
+            <section class="settings-card settings-group-card">
+              <label class="toggle">
+                <input type="checkbox" id="set-autostart" />
+                <span
+                  >Iniciar al arrancar el sistema
+                  <!-- textContent is refined per-OS by config.ts -->
+                  <small id="autostart-hint"
+                    >Registra DevBar en el autostart del sistema. Solo aplica a
+                    la app empaquetada/instalada.</small
+                  ></span
+                >
+              </label>
+            </section>
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Tema</h2>
+            <section class="settings-card settings-group-card">
+              <div class="theme-picker" role="group" aria-label="Tema">
+                <button
+                  type="button"
+                  class="theme-opt"
+                  data-theme-value="auto"
+                  aria-pressed="false"
+                >
+                  <span class="theme-preview theme-preview-auto"
+                    ><span class="tp-bar tp-accent"></span
+                    ><span class="tp-bar"></span
+                    ><span class="tp-bar tp-short"></span
+                  ></span>
+                  <span class="theme-opt-label"
+                    ><span class="icon" data-icon="monitor"></span>
+                    Automático</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="theme-opt"
+                  data-theme-value="light"
+                  aria-pressed="false"
+                >
+                  <span class="theme-preview theme-preview-light"
+                    ><span class="tp-bar tp-accent"></span
+                    ><span class="tp-bar"></span
+                    ><span class="tp-bar tp-short"></span
+                  ></span>
+                  <span class="theme-opt-label"
+                    ><span class="icon" data-icon="sun"></span> Claro</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="theme-opt"
+                  data-theme-value="dark"
+                  aria-pressed="false"
+                >
+                  <span class="theme-preview theme-preview-dark"
+                    ><span class="tp-bar tp-accent"></span
+                    ><span class="tp-bar"></span
+                    ><span class="tp-bar tp-short"></span
+                  ></span>
+                  <span class="theme-opt-label"
+                    ><span class="icon" data-icon="moon"></span> Oscuro</span
+                  >
+                </button>
+              </div>
+            </section>
+            <p class="settings-group-note">
+              Automático sigue la apariencia del sistema. Claro y Oscuro fuerzan
+              la apariencia de todas las ventanas.
             </p>
-            <button
-              type="button"
-              id="reset-tray-position-config"
-              class="small-btn"
-            >
-              <span class="icon" data-icon="pin-off"></span> Volver junto al
-              icono
-            </button>
-          </section>
-          <section class="settings-card">
-            <h2>Filtros globales</h2>
-            <p class="muted small">
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Panel de la barra</h2>
+            <section class="settings-card settings-group-card">
+              <label class="toggle">
+                <input type="checkbox" id="set-show-hidden-groups-fold" />
+                <span>Mostrar grupos ocultos plegados</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="set-show-hidden-workflows-fold" />
+                <span>Mostrar workflows ocultos plegados</span>
+              </label>
+              <div class="settings-row">
+                <span class="settings-row-label"
+                  >Posición del panel
+                  <small
+                    >Arrástralo por su cabecera o redimensiónalo por los bordes
+                    y se quedará donde lo dejes.</small
+                  ></span
+                >
+                <button
+                  type="button"
+                  id="reset-tray-position-config"
+                  class="small-btn"
+                >
+                  <span class="icon" data-icon="locate-fixed"></span>
+                  Restablecer posición
+                </button>
+              </div>
+            </section>
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Filtros globales</h2>
+            <section class="settings-card settings-group-card">
+              <label class="toggle">
+                <input type="checkbox" id="set-silence-warnings" />
+                <span
+                  >Silenciar <strong>warnings</strong> en todos los grupos</span
+                >
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="set-silence-errors" />
+                <span
+                  >Silenciar <strong>errors</strong> en todos los grupos</span
+                >
+              </label>
+              <div class="settings-row">
+                <label class="settings-row-label" for="set-max-log-lines"
+                  >Líneas máximas de logs
+                  <small
+                    >Por defecto para todos los procesos (100–50000). El cambio
+                    aplica al reiniciar el proceso.</small
+                  ></label
+                >
+                <div class="num-stepper">
+                  <button
+                    type="button"
+                    class="num-stepper-btn"
+                    data-step="-1"
+                    aria-label="Menos líneas"
+                    title="Menos líneas"
+                  >
+                    <span class="icon" data-icon="minus"></span>
+                  </button>
+                  <span class="num-stepper-field">
+                    <input
+                      type="number"
+                      id="set-max-log-lines"
+                      min="100"
+                      max="50000"
+                      step="100"
+                      inputmode="numeric"
+                    />
+                    <span class="num-stepper-suffix">líneas</span>
+                  </span>
+                  <button
+                    type="button"
+                    class="num-stepper-btn"
+                    data-step="1"
+                    aria-label="Más líneas"
+                    title="Más líneas"
+                  >
+                    <span class="icon" data-icon="plus"></span>
+                  </button>
+                </div>
+              </div>
+            </section>
+            <p class="settings-group-note">
               Silenciar afecta solo al color de la bolita y al icono de la
               barra.
             </p>
-            <label class="toggle">
-              <input type="checkbox" id="set-silence-warnings" />
-              <span
-                >Silenciar <strong>warnings</strong> en todos los grupos</span
-              >
-            </label>
-            <label class="toggle">
-              <input type="checkbox" id="set-silence-errors" />
-              <span>Silenciar <strong>errors</strong> en todos los grupos</span>
-            </label>
-            <div class="field" style="margin-top: 12px">
-              <label for="set-max-log-lines">Líneas máximas de logs</label>
-              <input
-                type="number"
-                id="set-max-log-lines"
-                min="100"
-                max="50000"
-                step="100"
-                style="width: 120px"
-              />
-              <small class="muted" style="display: block; margin-top: 4px"
-                >Por defecto para todos los procesos (100–50000). El cambio
-                aplica al reiniciar el proceso.</small
-              >
-            </div>
-          </section>
+          </div>
         </section>
 
         <!-- ── Notificaciones ─────────────────────────────────────── -->
         <section class="config-section" data-section="notifications">
-          <section class="settings-card">
-            <label class="toggle">
-              <input type="checkbox" id="set-notify-success" />
-              <span
-                >Notificar al terminar pre-scripts y acciones programadas</span
-              >
-            </label>
-            <!-- Wording + button label are refined per-OS by config.ts -->
-            <p id="notif-hint" class="muted small" style="margin: 12px 0 0">
-              ¿No se ven las notificaciones? Revisa el permiso en
-              <button
-                type="button"
-                id="open-notification-settings"
-                class="linkish"
-              >
-                los ajustes del sistema</button
-              >.
-            </p>
-            <div style="margin-top: 8px">
-              <button type="button" id="test-notification" class="small-btn">
-                Probar notificación
-              </button>
+          <!-- A static sample of the banner DevBar shows; not interactive. -->
+          <div class="notif-preview-wrap">
+            <div
+              class="notif-preview"
+              role="img"
+              aria-label="Vista previa de una notificación"
+            >
+              <img
+                class="notif-preview-icon"
+                src="../assets/icon.png"
+                alt=""
+                width="34"
+                height="34"
+              />
+              <div class="notif-preview-text">
+                <div class="notif-preview-head">
+                  <strong>DevBar</strong
+                  ><span class="notif-preview-sub">ahora</span>
+                </div>
+                <div>Workflow terminado</div>
+                <div class="notif-preview-sub">
+                  Ejemplo de aviso al acabar los pre-scripts
+                </div>
+              </div>
             </div>
-          </section>
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Avisos</h2>
+            <section class="settings-card settings-group-card">
+              <label class="toggle">
+                <input type="checkbox" id="set-notify-success" />
+                <span class="settings-row-main"
+                  ><span class="row-badge row-badge-ok" aria-hidden="true"
+                    ><span class="icon" data-icon="check"></span></span
+                  ><span class="settings-row-label"
+                    >Al terminar pre-scripts y acciones programadas
+                    <small
+                      >Un aviso por workflow completado o acción
+                      programada.</small
+                    ></span
+                  ></span
+                >
+              </label>
+            </section>
+          </div>
+          <div class="settings-group">
+            <h2 class="settings-group-title">Sistema</h2>
+            <section class="settings-card settings-group-card">
+              <div class="settings-row">
+                <span class="row-badge row-badge-info" aria-hidden="true"
+                  ><span class="icon" data-icon="bell"></span
+                ></span>
+                <span class="settings-row-label"
+                  >Probar notificación
+                  <small>Envía un aviso de prueba ahora mismo.</small></span
+                >
+                <button type="button" id="test-notification" class="small-btn">
+                  Enviar prueba
+                </button>
+              </div>
+              <div class="settings-row">
+                <span class="row-badge row-badge-warn" aria-hidden="true"
+                  ><span class="icon" data-icon="circle-alert"></span
+                ></span>
+                <span class="settings-row-label"
+                  >¿No ves las notificaciones?
+                  <!-- Wording + button label are refined per-OS by settings-pane.ts -->
+                  <small id="notif-hint"
+                    >Revisa que DevBar tenga permiso en los ajustes del
+                    sistema.</small
+                  ></span
+                >
+                <button
+                  type="button"
+                  id="open-notification-settings"
+                  class="small-btn btn-with-icon"
+                >
+                  <span class="btn-label">Abrir ajustes</span
+                  ><span
+                    class="icon btn-trail-icon"
+                    data-icon="external-link"
+                  ></span>
+                </button>
+              </div>
+            </section>
+          </div>
         </section>
 
-        <!-- ── Pipeline de pre-scripts ────────────────────────────── -->
+        <!-- ── Workflows: the list, and the editor of one ─────────── -->
         <section class="config-section" data-section="prescripts">
-          <div id="prescripts-pipeline-root"></div>
+          <div id="workflows-list-root"></div>
+          <div id="prescripts-pipeline-root" hidden></div>
         </section>
 
         <!-- ── Control remoto ─────────────────────────────────────── -->
@@ -415,25 +563,52 @@
 
         <!-- ── Copias de seguridad ────────────────────────────────── -->
         <section class="config-section" data-section="backup">
-          <section class="settings-card">
-            <p class="muted small">
-              Exporta toda la configuración a JSON o impórtala desde otra
-              máquina. Importar <strong>sobreescribe</strong> todo lo actual; se
-              guarda un backup automático.
-            </p>
-            <div class="copy-actions">
-              <button id="export-config">Exportar</button>
-              <button id="import-config">Importar</button>
-            </div>
-          </section>
+          <div class="backup-grid">
+            <section class="backup-card" aria-labelledby="backup-export-title">
+              <span class="backup-badge row-badge-info" aria-hidden="true"
+                ><span class="icon" data-icon="download"></span
+              ></span>
+              <div>
+                <h2 id="backup-export-title" class="backup-title">Exportar</h2>
+                <p class="backup-text">
+                  Guarda grupos, workflows y ajustes en un archivo JSON para
+                  llevarlos a otra máquina.
+                </p>
+              </div>
+              <button type="button" id="export-config" class="primary">
+                Exportar…
+              </button>
+            </section>
+            <section class="backup-card" aria-labelledby="backup-import-title">
+              <span class="backup-badge row-badge-warn" aria-hidden="true"
+                ><span class="icon" data-icon="upload"></span
+              ></span>
+              <div>
+                <h2 id="backup-import-title" class="backup-title">Importar</h2>
+                <p class="backup-text">
+                  Sustituye <strong>toda</strong> la configuración actual por la
+                  del archivo.
+                </p>
+              </div>
+              <button type="button" id="import-config">Importar…</button>
+            </section>
+          </div>
+          <!-- config:applyImport writes pre-import-backup.json before applying. -->
+          <p class="backup-note">
+            <span
+              class="icon"
+              data-icon="shield-check"
+              aria-hidden="true"
+            ></span>
+            <span
+              >Antes de importar, DevBar guarda una copia automática de tu
+              configuración actual.</span
+            >
+          </p>
         </section>
 
         <!-- ── Grupos ─────────────────────────────────────────────── -->
         <section class="config-section" data-section="groups">
-          <div class="section-head">
-            <span class="spacer"></span>
-            <button id="add-group" class="primary small-btn">+ Añadir</button>
-          </div>
           <div class="config-two-pane" id="groups-two-pane">
             <div class="config-left-pane">
               <!--
@@ -452,8 +627,32 @@
                   <span class="icon" data-icon="panel-left-close"></span>
                 </button>
               </div>
+              <!--
+                Pinned above the rows rather than rendered among them: it is
+                not a group, so it must never join the drag-and-drop reorder,
+                and it stays reachable (icon-only) when the list is folded.
+              -->
+              <button
+                type="button"
+                id="add-group"
+                class="add-group-btn"
+                title="Nuevo grupo"
+                aria-label="Nuevo grupo"
+              >
+                <span class="icon" data-icon="plus"></span
+                ><span class="add-group-label">Nuevo grupo</span>
+              </button>
               <div id="groups-list" class="groups-list-nav"></div>
             </div>
+            <div
+              id="groups-splitter"
+              class="pane-splitter"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Ancho de la lista de grupos"
+              title="Arrastra para cambiar el ancho · doble clic para ajustarlo"
+              tabindex="0"
+            ></div>
             <div class="config-right-pane" id="group-detail">
               <div class="detail-empty">
                 <p class="muted">Selecciona un grupo para editarlo.</p>
@@ -465,62 +664,157 @@
 
         <!-- ── Acerca de ──────────────────────────────────────────── -->
         <section class="config-section" data-section="about">
-          <section class="settings-card about-card">
-            <h2>DevBar</h2>
-            <div class="copy-actions">
-              <button type="button" id="report-issue" class="small-btn">
-                Reportar fallo en GitHub
-              </button>
-              <button
-                type="button"
-                id="about-github"
-                class="small-btn with-icon"
-              >
-                Ver en GitHub
-                <span class="icon" data-icon="external-link"></span>
-              </button>
+          <div class="about-page">
+            <div class="about-hero">
+              <!-- The packaged app icon: build/assets sits beside build/renderer. -->
+              <img
+                class="about-app-icon"
+                src="../assets/icon.png"
+                alt=""
+                width="72"
+                height="72"
+              />
+              <h2 class="about-name">DevBar</h2>
+              <!-- Filled by config.ts once the version is known. -->
+              <p id="about-version" class="about-version"></p>
             </div>
-            <div class="updates-row" style="margin-top: 16px">
-              <button type="button" id="check-updates" class="small-btn">
-                Buscar actualizaciones
-              </button>
-              <button
-                type="button"
-                id="apply-update"
-                class="small-btn primary"
-                style="display: none"
-              ></button>
-              <span id="update-status" class="muted small"></span>
-            </div>
-            <progress
-              id="update-progress"
-              class="update-progress"
-              max="100"
+
+            <!--
+              data-state (ok | available | busy | error) is set by
+              updates-pane.ts and picks the badge's colour and glyph.
+            -->
+            <section id="update-card" class="about-card update-card">
+              <div class="update-card-row">
+                <span class="update-badge" aria-hidden="true"
+                  ><span class="icon badge-ok" data-icon="check"></span
+                  ><span
+                    class="icon badge-available"
+                    data-icon="arrow-down"
+                  ></span
+                  ><span
+                    class="icon badge-busy"
+                    data-icon="loader-circle"
+                  ></span
+                  ><span
+                    class="icon badge-error"
+                    data-icon="triangle-alert"
+                  ></span
+                  ><span class="icon badge-idle" data-icon="refresh-cw"></span
+                ></span>
+                <div class="update-card-text">
+                  <strong id="update-title" class="update-title"
+                    >Actualizaciones</strong
+                  >
+                  <span id="update-status" class="muted small"></span>
+                </div>
+                <div class="update-card-actions">
+                  <!-- updates-pane.ts swaps only .btn-label while checking. -->
+                  <button
+                    type="button"
+                    id="check-updates"
+                    class="small-btn btn-with-icon"
+                  >
+                    <span class="icon" data-icon="refresh-cw"></span
+                    ><span class="btn-label">Buscar ahora</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="apply-update"
+                    class="small-btn primary"
+                    style="display: none"
+                  ></button>
+                </div>
+              </div>
+              <progress
+                id="update-progress"
+                class="update-progress"
+                max="100"
+                hidden
+              ></progress>
+              <div id="update-help" class="update-help" hidden>
+                <p id="update-help-text" class="muted small"></p>
+                <code id="update-command" class="update-command" hidden></code>
+                <div class="copy-actions">
+                  <button
+                    type="button"
+                    id="update-copy-command"
+                    class="small-btn"
+                    hidden
+                  >
+                    Copiar comando
+                  </button>
+                  <button
+                    type="button"
+                    id="update-open-folder"
+                    class="small-btn"
+                    hidden
+                  >
+                    Abrir carpeta
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <!--
+              Filled and revealed by about-notes.ts only when the running
+              version has a published release; hidden otherwise.
+            -->
+            <section
+              id="about-notes"
+              class="about-card about-notes"
+              aria-labelledby="about-notes-title"
               hidden
-            ></progress>
-            <div id="update-help" class="update-help" hidden>
-              <p id="update-help-text" class="muted small"></p>
-              <code id="update-command" class="update-command" hidden></code>
-              <div class="copy-actions">
+            >
+              <div class="about-notes-head">
+                <h3 id="about-notes-title" class="about-notes-title">
+                  Novedades
+                </h3>
                 <button
                   type="button"
-                  id="update-copy-command"
-                  class="small-btn"
-                  hidden
+                  id="about-notes-history"
+                  class="about-notes-history"
                 >
-                  Copiar comando
-                </button>
-                <button
-                  type="button"
-                  id="update-open-folder"
-                  class="small-btn"
-                  hidden
-                >
-                  Abrir carpeta
+                  Historial completo
                 </button>
               </div>
-            </div>
-          </section>
+              <div id="about-notes-list" class="about-notes-list"></div>
+            </section>
+
+            <section class="about-card about-links">
+              <button type="button" id="about-github" class="about-link">
+                <span class="icon about-link-lead" data-icon="code-xml"></span>
+                <span class="about-link-label">Código en GitHub</span>
+                <span
+                  class="icon about-link-trail"
+                  data-icon="external-link"
+                ></span>
+              </button>
+              <button type="button" id="report-issue" class="about-link">
+                <span
+                  class="icon about-link-lead about-link-lead-bug"
+                  data-icon="bug"
+                ></span>
+                <span class="about-link-label">Reportar un fallo</span>
+                <span class="about-link-trail about-link-hint"
+                  >incluye los últimos errores</span
+                >
+              </button>
+              <!-- Revealed by about-notes.ts with the release's own URL. -->
+              <button
+                type="button"
+                id="about-release-notes"
+                class="about-link"
+                hidden
+              >
+                <span class="icon about-link-lead" data-icon="file-text"></span>
+                <span class="about-link-label">Notas de la versión</span>
+                <span
+                  class="icon about-link-trail"
+                  data-icon="external-link"
+                ></span>
+              </button>
+            </section>
+          </div>
         </section>
       </div>
     </div>
@@ -539,14 +833,32 @@
       <div id="icon-grid" class="icon-grid-scroll"></div>
     </div>
 
-    <!-- Command/action modal -->
-    <dialog id="sub-dialog" class="modal">
-      <header class="modal-header">
-        <h2 id="sub-dialog-title">Comando</h2>
-        <span class="spacer"></span>
+    <!-- Command / action / pre-script editor: a side sheet on the right. -->
+    <dialog id="sub-dialog" class="sub-sheet" aria-label="Editar comando">
+      <header class="sheet-header">
+        <!-- The tile is the icon picker for commands and actions. -->
+        <div id="sf-icon-field" class="sheet-tile-slot">
+          <button
+            type="button"
+            id="sf-icon-btn"
+            class="icon-btn sf-icon-btn"
+            title="Cambiar icono"
+            aria-label="Cambiar icono"
+          >
+            <span class="icon" data-icon="terminal"></span>
+          </button>
+        </div>
+        <!-- Pre-scripts carry no icon of their own: a fixed kind tile. -->
+        <span id="sf-kind-tile" class="sheet-kind-tile" hidden>
+          <span class="icon" data-icon="scroll-text"></span>
+        </span>
+        <div class="sheet-heading">
+          <div id="sf-overline" class="sheet-overline"></div>
+          <h2 id="sub-dialog-title">Comando</h2>
+        </div>
         <button
           type="button"
-          class="modal-close"
+          class="modal-close sheet-close"
           data-close
           aria-label="Cerrar"
         >
@@ -554,21 +866,20 @@
         </button>
       </header>
       <form id="sub-form" method="dialog">
-        <div class="modal-body">
-          <div class="field sf-icon-field">
-            <label>Icono</label>
-            <div class="sf-icon-row">
-              <button
-                type="button"
-                id="sf-icon-btn"
-                class="icon-btn sf-icon-btn"
-                title="Cambiar icono"
-                aria-label="Cambiar icono"
-              >
-                <span class="icon" data-icon="terminal"></span>
-              </button>
-              <small class="muted">(opcional)</small>
+        <div class="sheet-body">
+          <!-- Only when a pre-script is created from the pipeline, which
+               belongs to no group: everywhere else the group is implied. -->
+          <div class="field" id="sf-group-field" hidden>
+            <label for="sf-group">Grupo</label>
+            <div class="sf-group-select">
+              <span id="sf-group-tile" class="group-tile"></span>
+              <select id="sf-group"></select>
+              <span class="icon" data-icon="chevron-down"></span>
             </div>
+            <small class="muted"
+              >Se ejecuta en la carpeta del grupo y puede heredar sus
+              variables.</small
+            >
           </div>
 
           <div class="field">
@@ -577,117 +888,158 @@
           </div>
           <div class="field" id="sf-command-field">
             <label for="sf-command">Comando</label>
-            <input id="sf-command" placeholder="pnpm dev" required />
-          </div>
-          <div class="field" id="sf-args-field">
-            <label for="sf-args">Argumentos (opcional, uno por línea)</label>
-            <textarea
-              id="sf-args"
-              placeholder="solo si no los pones arriba"
-            ></textarea>
-          </div>
-          <!-- Env editor — built dynamically by config.js -->
-          <div class="field" id="sf-env-field">
-            <label>Variables de entorno</label>
-            <!-- Action-only: inheritGroupEnv toggle (hidden for commands) -->
-            <div
-              id="sf-inherit-group-env-row"
-              style="display: none; margin-bottom: 8px"
-              class="env-section-header"
-            >
-              <label class="toggle inline">
-                <input type="checkbox" id="sf-inherit-group-env" />
-                <span>Heredar variables del grupo</span>
-              </label>
-              <p
-                id="sf-inherit-group-env-hint"
-                class="muted small"
-                style="margin: 2px 0 6px 42px"
-              >
-                Cuando está activo, las variables del grupo se aplican antes que
-                las de esta acción (las de aquí pueden sobreescribir).
-              </p>
+            <div class="sheet-cmd">
+              <span class="sheet-cmd-prompt" aria-hidden="true">$</span>
+              <input
+                id="sf-command"
+                placeholder="pnpm dev"
+                spellcheck="false"
+                autocomplete="off"
+                required
+              />
             </div>
-            <div id="sf-env-editor"></div>
+            <small class="sheet-hint"
+              >Se ejecuta en <code id="sf-cwd-hint"></code
+            ></small>
           </div>
 
-          <!-- PreScript-only: timeout field -->
-          <div class="field" id="sf-timeout-row" style="display: none">
-            <label for="sf-timeout-secs">Timeout (segundos, opcional)</label>
-            <input
-              id="sf-timeout-secs"
-              type="number"
-              min="1"
-              max="3600"
-              step="1"
-              placeholder="vacío = sin límite"
-            />
-          </div>
+          <section class="sheet-section" data-section="env">
+            <div class="sheet-section-header">
+              <button
+                type="button"
+                class="sheet-section-toggle"
+                aria-expanded="true"
+                aria-controls="sf-sec-env-body"
+              >
+                <span class="icon" data-icon="chevron-right"></span>
+                <span class="sheet-section-title">Variables de entorno</span>
+                <span class="sheet-badge"></span>
+              </button>
+              <!-- Actions and pre-scripts only. -->
+              <label
+                id="sf-inherit-group-env-row"
+                class="toggle sheet-inherit"
+                title="Las variables del grupo se aplican antes que estas, que pueden sobrescribirlas."
+                hidden
+              >
+                <span>Heredar del grupo</span>
+                <input type="checkbox" id="sf-inherit-group-env" />
+              </label>
+            </div>
+            <div class="sheet-section-body" id="sf-sec-env-body">
+              <div id="sf-env-editor"></div>
+            </div>
+          </section>
 
-          <!-- PreScript-only: confirmation gate -->
-          <div class="field" id="sf-confirm-row" style="display: none">
-            <label class="toggle inline">
-              <input type="checkbox" id="sf-confirm" />
-              <span>Pedir confirmación antes de ejecutar</span>
-            </label>
-            <div
-              id="sf-confirm-details"
-              style="display: none; margin: 6px 0 0 42px"
-            >
-              <div class="field">
-                <label for="sf-confirm-on-timeout">Si expira el contador</label>
-                <select id="sf-confirm-on-timeout">
-                  <option value="cancel">Cancelar</option>
-                  <option value="confirm">Ejecutar</option>
-                </select>
+          <section class="sheet-section" data-section="exec">
+            <div class="sheet-section-header">
+              <button
+                type="button"
+                class="sheet-section-toggle"
+                aria-expanded="true"
+                aria-controls="sf-sec-exec-body"
+              >
+                <span class="icon" data-icon="chevron-right"></span>
+                <span class="sheet-section-title">Ejecución</span>
+                <span class="sheet-badge"></span>
+              </button>
+            </div>
+            <div class="sheet-section-body" id="sf-sec-exec-body">
+              <!-- Pre-scripts only. -->
+              <div class="sheet-row" id="sf-timeout-row" hidden>
+                <label for="sf-timeout-secs">Timeout</label>
+                <input
+                  id="sf-timeout-secs"
+                  class="sheet-num"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  step="1"
+                  placeholder="sin límite"
+                />
+                <span class="sheet-unit">s</span>
               </div>
-              <div class="field">
-                <label for="sf-confirm-secs"
-                  >Segundos para autodecisión (vacío = sin contador)</label
-                >
+              <label class="toggle sheet-row" id="sf-confirm-row">
+                <span>Pedir confirmación antes de ejecutar</span>
+                <input type="checkbox" id="sf-confirm" />
+              </label>
+              <div class="sheet-row sheet-indent" id="sf-confirm-details">
+                <label for="sf-confirm-secs">Si nadie responde en</label>
                 <input
                   id="sf-confirm-secs"
+                  class="sheet-num"
                   type="number"
                   min="3"
                   max="3600"
                   step="1"
-                  placeholder="60"
+                  placeholder="nunca"
                 />
+                <span class="sheet-unit"
+                  >s <span class="icon" data-icon="arrow-right"></span
+                ></span>
+                <select id="sf-confirm-on-timeout" aria-label="Al expirar">
+                  <option value="confirm">Ejecutar</option>
+                  <option value="cancel">Cancelar</option>
+                </select>
               </div>
             </div>
-          </div>
+          </section>
 
-          <!-- Schedule (commands and actions) -->
-          <fieldset class="schedule-group" id="sf-schedule-group">
-            <legend>Programación</legend>
-            <label class="toggle inline">
-              <input type="checkbox" id="sf-schedule-enabled" />
-              <span>Ejecutar a una hora programada</span>
-            </label>
-            <div id="sf-schedule-details" style="margin-top: 8px">
-              <div id="sf-schedule-rules"></div>
-              <button type="button" id="sf-schedule-add" class="small-btn">
-                + Añadir horario
+          <!-- Commands and actions. -->
+          <section
+            class="sheet-section"
+            data-section="schedule"
+            id="sf-schedule-group"
+          >
+            <div class="sheet-section-header">
+              <button
+                type="button"
+                class="sheet-section-toggle"
+                aria-expanded="false"
+                aria-controls="sf-sec-schedule-body"
+              >
+                <span class="icon" data-icon="chevron-right"></span>
+                <span class="sheet-section-title">Programación</span>
+                <span class="sheet-badge"></span>
               </button>
-              <small class="muted" style="display: block; margin-top: 8px">
-                Cada horario tiene su hora y sus días (sin días = todos). Si el
-                equipo estaba suspendido a esa hora, se ejecuta al despertar.
-              </small>
+              <input
+                type="checkbox"
+                class="remote-switch"
+                role="switch"
+                id="sf-schedule-enabled"
+                aria-label="Ejecutar de forma programada"
+              />
             </div>
-          </fieldset>
+            <div class="sheet-section-body" id="sf-sec-schedule-body">
+              <div id="sf-schedule-details">
+                <div id="sf-schedule-editor"></div>
+                <small class="sheet-hint">
+                  Si el equipo estaba en reposo a esa hora, se ejecuta al
+                  despertar.
+                </small>
+              </div>
+            </div>
+          </section>
 
-          <!-- Command-only fields -->
-          <div id="cmd-only-fields">
-            <details>
-              <summary class="muted small">
-                Avanzado (regex, silencio, cwd override)
-              </summary>
-              <div class="field" style="margin-top: 8px">
-                <label for="sf-cwd"
-                  >Working directory override (vacío = usar el del grupo)</label
-                >
+          <!-- Commands only. -->
+          <section class="sheet-section" data-section="logs" id="sf-sec-logs">
+            <div class="sheet-section-header">
+              <button
+                type="button"
+                class="sheet-section-toggle"
+                aria-expanded="false"
+                aria-controls="sf-sec-logs-body"
+              >
+                <span class="icon" data-icon="chevron-right"></span>
+                <span class="sheet-section-title">Logs y detección</span>
+                <span class="sheet-badge"></span>
+              </button>
+            </div>
+            <div class="sheet-section-body" id="sf-sec-logs-body">
+              <div class="field">
+                <label for="sf-cwd">Carpeta de trabajo</label>
                 <div class="input-with-action">
-                  <input id="sf-cwd" placeholder="/Users/yo/subproyecto" />
+                  <input id="sf-cwd" placeholder="la del grupo" />
                   <button
                     type="button"
                     id="sf-cwd-pick"
@@ -702,48 +1054,179 @@
               <div class="field-row">
                 <div class="field">
                   <label for="sf-warn">Regex warnings</label>
-                  <input id="sf-warn" />
+                  <input id="sf-warn" class="mono" spellcheck="false" />
                 </div>
                 <div class="field">
                   <label for="sf-error">Regex errors</label>
-                  <input id="sf-error" />
+                  <input id="sf-error" class="mono" spellcheck="false" />
                 </div>
               </div>
-              <fieldset class="silence-group">
-                <legend>Silenciar en este comando</legend>
-                <label class="toggle inline">
-                  <input type="checkbox" id="sf-silence-warn" />
-                  <span>Warnings no afectan al color</span>
-                </label>
-                <label class="toggle inline">
-                  <input type="checkbox" id="sf-silence-err" />
-                  <span>Errors no afectan al color</span>
-                </label>
-              </fieldset>
-              <div class="field" style="margin-top: 8px">
-                <label for="sf-max-log-lines">Líneas máximas (opcional)</label>
+              <label class="toggle sheet-row">
+                <span>Los warnings no cambian el color</span>
+                <input type="checkbox" id="sf-silence-warn" />
+              </label>
+              <label class="toggle sheet-row">
+                <span>Los errores no cambian el color</span>
+                <input type="checkbox" id="sf-silence-err" />
+              </label>
+              <div class="sheet-row">
+                <label for="sf-max-log-lines">Líneas máximas</label>
                 <input
                   type="number"
                   id="sf-max-log-lines"
+                  class="sheet-num"
                   min="100"
                   max="50000"
                   step="100"
-                  placeholder="usar global"
-                  style="width: 120px"
+                  placeholder="global"
                 />
-                <small class="muted" style="display: block; margin-top: 4px"
-                  >Vacío = usar el valor global. El cambio aplica al
-                  reiniciar.</small
+              </div>
+              <small class="sheet-hint"
+                >Vacío = el valor global. Se aplica al reiniciar.</small
+              >
+            </div>
+          </section>
+
+          <!-- Commands only: what «abrir» opens. -->
+          <section class="sheet-section" data-section="link" id="sf-sec-link">
+            <div class="sheet-section-header">
+              <button
+                type="button"
+                class="sheet-section-toggle"
+                aria-expanded="false"
+                aria-controls="sf-sec-link-body"
+              >
+                <span class="icon" data-icon="chevron-right"></span>
+                <span class="sheet-section-title">Enlace</span>
+                <span class="sheet-badge"></span>
+              </button>
+            </div>
+            <div class="sheet-section-body" id="sf-sec-link-body">
+              <div
+                class="mode-segmented sheet-link-modes"
+                role="radiogroup"
+                aria-label="Enlace"
+              >
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="sf-link-mode"
+                    id="sf-link-mode-auto"
+                    value="auto"
+                    checked
+                  />
+                  <span>Automático</span>
+                </label>
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="sf-link-mode"
+                    id="sf-link-mode-custom"
+                    value="custom"
+                  />
+                  <span>Personalizado</span>
+                </label>
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="sf-link-mode"
+                    id="sf-link-mode-none"
+                    value="none"
+                  />
+                  <span>Ninguno</span>
+                </label>
+              </div>
+              <div id="sf-link-auto" class="sheet-link-pane">
+                <p class="sheet-link-detected" id="sf-link-detected"></p>
+                <div class="field">
+                  <label for="sf-link-path"
+                    >Ruta a abrir
+                    <span class="sheet-link-optional">(opcional)</span></label
+                  >
+                  <div class="sheet-link-path">
+                    <span class="sheet-link-prefix" id="sf-link-prefix"></span>
+                    <input
+                      id="sf-link-path"
+                      class="mono"
+                      placeholder="/"
+                      spellcheck="false"
+                      autocomplete="off"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div id="sf-link-custom" class="sheet-link-pane" hidden>
+                <div class="field">
+                  <label for="sf-link-url">URL</label>
+                  <input
+                    id="sf-link-url"
+                    class="mono"
+                    inputmode="url"
+                    placeholder="http://localhost:3000"
+                    spellcheck="false"
+                    autocomplete="off"
+                    aria-describedby="sf-link-url-error"
+                  />
+                  <small
+                    class="sheet-link-error"
+                    id="sf-link-url-error"
+                    role="alert"
+                    hidden
+                  ></small>
+                </div>
+              </div>
+              <div id="sf-link-none" class="sheet-link-pane" hidden>
+                <small class="sheet-hint"
+                  >Este comando no mostrará ningún enlace.</small
                 >
               </div>
-            </details>
-          </div>
+            </div>
+          </section>
+
+          <section class="sheet-section" data-section="args">
+            <div class="sheet-section-header">
+              <button
+                type="button"
+                class="sheet-section-toggle"
+                aria-expanded="false"
+                aria-controls="sf-sec-args-body"
+              >
+                <span class="icon" data-icon="chevron-right"></span>
+                <span class="sheet-section-title">Argumentos adicionales</span>
+                <span class="sheet-badge"></span>
+              </button>
+            </div>
+            <div class="sheet-section-body" id="sf-sec-args-body">
+              <textarea
+                id="sf-args"
+                class="mono"
+                aria-label="Argumentos adicionales, uno por línea"
+                placeholder="Uno por línea"
+                spellcheck="false"
+              ></textarea>
+            </div>
+          </section>
+
+          <p id="sf-pipeline-note" class="sf-pipeline-note" hidden>
+            <span class="icon" data-icon="workflow"></span>
+            <span
+              >Se colocará en el workflow después de
+              <strong id="sf-pipeline-note-name"></strong>.</span
+            >
+          </p>
         </div>
 
-        <div class="modal-actions">
+        <footer class="sheet-footer">
+          <button type="button" id="sf-delete" class="sheet-delete" hidden>
+            Eliminar
+          </button>
+          <span class="spacer"></span>
           <button type="button" id="sub-cancel">Cancelar</button>
-          <button type="submit" class="primary">Guardar</button>
-        </div>
+          <button type="submit" id="sf-submit" class="primary">
+            <span id="sf-submit-label">Guardar</span>
+            <kbd id="sf-submit-key" class="sheet-kbd">Ctrl+S</kbd>
+          </button>
+        </footer>
       </form>
     </dialog>
 

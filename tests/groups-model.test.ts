@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Group, PreStep } from '../src/domain-types.js';
+import type { Group } from '../src/domain-types.js';
 
 // Mock uuid for predictable id generation
 vi.mock('uuid', () => ({
@@ -13,8 +13,6 @@ import {
   migratePreScriptPipeline,
   prunePipelineRefs,
   reorderByIds,
-  assignScriptToStep,
-  unassignScriptFromStep,
   validateGroupShape,
   enforceSingleModeAutoStart,
   clampMaxLogLinesOrNull,
@@ -624,159 +622,66 @@ describe('prunePipelineRefs', () => {
         command: 'true',
       })),
     });
+  const single = (id: string, groupId: string, scriptId: string) => ({
+    id,
+    scripts: [{ groupId, scriptId }],
+    x: 0,
+    y: 0,
+    requireAll: true,
+  });
 
   it('drops a ref pointing at a deleted group id', () => {
     const groups = [group('g1', ['sc1'])];
-    const steps = [
-      {
-        id: 'step1',
-        mode: 'parallel' as const,
-        scripts: [
-          { groupId: 'g1', scriptId: 'sc1' },
-          { groupId: 'deleted-group', scriptId: 'sc9' },
-        ],
-      },
-    ];
-    const result = prunePipelineRefs(steps, groups);
-    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
+    const pipeline = {
+      blocks: [
+        {
+          id: 'b1',
+          scripts: [
+            { groupId: 'g1', scriptId: 'sc1' },
+            { groupId: 'deleted-group', scriptId: 'sc9' },
+          ],
+          x: 0,
+          y: 0,
+          requireAll: true,
+        },
+      ],
+      edges: [{ from: 'trigger', to: 'b1' }],
+    };
+    const result = prunePipelineRefs(pipeline, groups);
+    expect(result.blocks[0]?.scripts).toEqual([
+      { groupId: 'g1', scriptId: 'sc1' },
+    ]);
   });
 
   it('drops a ref pointing at a deleted script id within an existing group', () => {
     const groups = [group('g1', ['sc1'])];
-    const steps = [
-      {
-        id: 'step1',
-        mode: 'parallel' as const,
-        scripts: [
-          { groupId: 'g1', scriptId: 'sc1' },
-          { groupId: 'g1', scriptId: 'deleted-script' },
-        ],
-      },
-    ];
-    const result = prunePipelineRefs(steps, groups);
-    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
+    const pipeline = {
+      blocks: [single('b1', 'g1', 'sc1'), single('b2', 'g1', 'gone')],
+      edges: [],
+    };
+    const result = prunePipelineRefs(pipeline, groups);
+    expect(result.blocks.map((b) => b.id)).toEqual(['b1']);
   });
 
-  it('keeps a step that becomes empty after pruning, rather than dropping it', () => {
-    const groups = [group('g1', [])];
-    const steps = [
-      {
-        id: 'step1',
-        mode: 'parallel' as const,
-        scripts: [{ groupId: 'g1', scriptId: 'gone' }],
-      },
-    ];
-    const result = prunePipelineRefs(steps, groups);
-    expect(result).toHaveLength(1);
-    expect(result[0]?.scripts).toEqual([]);
-  });
-});
-
-// ─── assignScriptToStep / unassignScriptFromStep ────────────────────────
-
-describe('assignScriptToStep', () => {
-  const fixture = (): PreStep[] => [
-    {
-      id: 'step1',
-      mode: 'parallel',
-      scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
-    },
-    { id: 'step2', mode: 'parallel', scripts: [] },
-  ];
-
-  it('appends a fresh ref to the end of the target step by default', () => {
-    const result = assignScriptToStep(fixture(), 'step2', {
-      groupId: 'g2',
-      scriptId: 'sc2',
-    });
-    expect(result.find((s) => s.id === 'step2')?.scripts).toEqual([
-      { groupId: 'g2', scriptId: 'sc2' },
+  it('bridges a block that empties so the blocks after it still run', () => {
+    const groups = [group('g1', ['a', 'c'])];
+    const pipeline = {
+      blocks: [
+        single('b1', 'g1', 'a'),
+        single('b2', 'g1', 'gone'),
+        single('b3', 'g1', 'c'),
+      ],
+      edges: [
+        { from: 'trigger', to: 'b1' },
+        { from: 'b1', to: 'b2' },
+        { from: 'b2', to: 'b3' },
+      ],
+    };
+    const result = prunePipelineRefs(pipeline, groups);
+    expect(result.edges).toEqual([
+      { from: 'trigger', to: 'b1' },
+      { from: 'b1', to: 'b3' },
     ]);
-  });
-
-  it('inserts at the given position within the target step', () => {
-    const twoScripts: PreStep[] = [
-      {
-        id: 'step1',
-        mode: 'parallel',
-        scripts: [
-          { groupId: 'g1', scriptId: 'a' },
-          { groupId: 'g1', scriptId: 'b' },
-        ],
-      },
-    ];
-    const result = assignScriptToStep(
-      twoScripts,
-      'step1',
-      { groupId: 'g1', scriptId: 'c' },
-      1,
-    );
-    expect(result[0]?.scripts.map((s) => s.scriptId)).toEqual(['a', 'c', 'b']);
-  });
-
-  it('moves a ref from its old step to the target step (cross-container drag)', () => {
-    const result = assignScriptToStep(fixture(), 'step2', {
-      groupId: 'g1',
-      scriptId: 'sc1',
-    });
-    expect(result.find((s) => s.id === 'step1')?.scripts).toEqual([]);
-    expect(result.find((s) => s.id === 'step2')?.scripts).toEqual([
-      { groupId: 'g1', scriptId: 'sc1' },
-    ]);
-  });
-
-  it('leaves steps other than the source and target unaffected', () => {
-    const result = assignScriptToStep(fixture(), 'step2', {
-      groupId: 'g2',
-      scriptId: 'sc2',
-    });
-    expect(result.find((s) => s.id === 'step1')?.scripts).toEqual([
-      { groupId: 'g1', scriptId: 'sc1' },
-    ]);
-  });
-
-  it('returns the steps unchanged when the target stepId does not exist (stale/unknown step)', () => {
-    const original = fixture();
-    const result = assignScriptToStep(original, 'ghost-step', {
-      groupId: 'g1',
-      scriptId: 'sc1',
-    });
-    expect(result).toEqual(original);
-  });
-});
-
-describe('unassignScriptFromStep', () => {
-  it('removes the matching ref from the named step', () => {
-    const steps: PreStep[] = [
-      {
-        id: 'step1',
-        mode: 'parallel',
-        scripts: [
-          { groupId: 'g1', scriptId: 'sc1' },
-          { groupId: 'g2', scriptId: 'sc2' },
-        ],
-      },
-    ];
-    const result = unassignScriptFromStep(steps, 'step1', {
-      groupId: 'g1',
-      scriptId: 'sc1',
-    });
-    expect(result[0]?.scripts).toEqual([{ groupId: 'g2', scriptId: 'sc2' }]);
-  });
-
-  it('is a no-op when the ref is not present in that step', () => {
-    const steps: PreStep[] = [
-      {
-        id: 'step1',
-        mode: 'parallel',
-        scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
-      },
-    ];
-    const result = unassignScriptFromStep(steps, 'step1', {
-      groupId: 'gX',
-      scriptId: 'scX',
-    });
-    expect(result[0]?.scripts).toEqual([{ groupId: 'g1', scriptId: 'sc1' }]);
   });
 });
 

@@ -4,12 +4,15 @@
  * The native `title` attribute waits about a second before appearing, which is
  * long enough that most people never see it — and it cannot be styled. Rather
  * than rewrite every `title=` in every template, this hooks the document once
- * and takes them over: on hover the title is moved into `data-tip` (so macOS
- * never gets the chance to draw its own) and a styled bubble is shown instead.
+ * and takes them over: every title is moved into `data-tip` (so macOS never
+ * gets the chance to draw its own) and a styled bubble is shown on hover.
  *
- * Moving the attribute rather than copying it is what makes dynamic titles keep
- * working: code that reassigns `el.title` later simply gets stolen again on the
- * next hover.
+ * The move happens AHEAD of the hover — once for the whole page at install,
+ * then through a MutationObserver for every node added and every title
+ * reassigned later — never while the pointer is over the element. On macOS,
+ * changing the hovered view's tooltip text resets the cursor to the arrow, so
+ * stealing the title on `mouseover` turned the hand cursor into an arrow a
+ * moment after it appeared.
  */
 
 const DELAY_MS = 250;
@@ -29,12 +32,9 @@ function ensureBubble(): HTMLDivElement {
   // The size caps are viewport-relative on purpose: the tray popover is about
   // 380px wide and sizes itself from its content, so a bubble that can spill
   // past the window edge is a bubble that grows a scrollbar.
-  // `popover` promotes the bubble to the browser's TOP LAYER, the same place
-  // `<dialog>.showModal()` puts a modal. That layer is above every z-index in
-  // the normal layer, so without this a tooltip over a modal renders behind it
-  // no matter how large its z-index. Top layer also anchors it to the viewport
-  // regardless of any filtered ancestor.
-  node.setAttribute('popover', 'manual');
+  // Marks the node for tests and devtools: whether it carries `popover`
+  // depends on whether a modal is open (see `place`).
+  node.dataset.tooltipBubble = '';
   node.style.cssText = [
     'position:fixed',
     'z-index:2147483647',
@@ -76,7 +76,11 @@ function hide(): void {
   anchor = null;
   if (!bubble) return;
   bubble.style.opacity = '0';
-  if (bubble.isConnected && supportsPopover()) {
+  if (
+    bubble.isConnected &&
+    bubble.hasAttribute('popover') &&
+    supportsPopover()
+  ) {
     try {
       bubble.hidePopover();
     } catch {
@@ -88,6 +92,18 @@ function hide(): void {
 
 function supportsPopover(): boolean {
   return typeof HTMLElement.prototype.showPopover === 'function';
+}
+
+/**
+ * Whether the bubble has to go to the browser's TOP LAYER: the place
+ * `<dialog>.showModal()` puts a modal, above every z-index of the normal
+ * layer. Without it a tooltip over a modal renders behind it no matter how
+ * large its z-index. Only then, though: promoting an element to the top layer
+ * under the pointer also resets the macOS cursor to the arrow, so with no
+ * modal open the bubble stays a plain fixed element on <html>.
+ */
+function needsTopLayer(): boolean {
+  return supportsPopover() && document.querySelector('dialog[open]') !== null;
 }
 
 export interface Box {
@@ -134,9 +150,14 @@ function place(target: HTMLElement, text: string): void {
   // `position: fixed` descendants — a bubble inside it stops being anchored to
   // the viewport, picks up the body's padding as an offset, and can overflow
   // the body box into real scrollable area. Promoting to the top layer below
-  // fixes that too, but this keeps the fallback path honest.
+  // fixes that too, but only happens while a modal is open.
+  const topLayer = needsTopLayer();
+  if (topLayer) node.setAttribute('popover', 'manual');
+  // An unopened popover is display:none, so off the top layer it must not be
+  // one at all.
+  else node.removeAttribute('popover');
   document.documentElement.appendChild(node);
-  if (supportsPopover()) {
+  if (topLayer) {
     try {
       node.showPopover();
     } catch {
@@ -154,27 +175,60 @@ function place(target: HTMLElement, text: string): void {
   node.style.opacity = '1';
 }
 
-/** The tip text for an element, stealing `title` the first time we see it. */
-function tipFor(el: HTMLElement): string {
+/** Moves a non-empty native `title` into `data-tip`. */
+function convertTitle(el: Element): void {
+  if (!(el instanceof HTMLElement)) return;
   const native = el.getAttribute('title');
-  if (native !== null && native.trim() !== '') {
-    el.dataset.tip = native;
-    // Keep the label reachable for assistive tech, which would otherwise lose
-    // it along with the attribute we just removed.
-    if (!el.hasAttribute('aria-label') && !el.hasAttribute('aria-labelledby'))
-      el.setAttribute('aria-label', native);
-    el.removeAttribute('title');
+  if (native === null || native.trim() === '') return;
+  // Keep the label reachable for assistive tech, which would otherwise lose
+  // it along with the attribute removed below. A label this module mirrored
+  // from an older title follows the new one; an author's own is left alone.
+  const label = el.getAttribute('aria-label');
+  if (
+    !el.hasAttribute('aria-labelledby') &&
+    (label === null || label === el.dataset.tip)
+  )
+    el.setAttribute('aria-label', native);
+  el.dataset.tip = native;
+  el.removeAttribute('title');
+}
+
+function convertTree(root: Element): void {
+  convertTitle(root);
+  for (const el of root.querySelectorAll('[title]')) convertTitle(el);
+}
+
+function convertRecords(records: readonly MutationRecord[]): void {
+  for (const record of records) {
+    if (record.type === 'attributes') {
+      if (record.target instanceof Element) convertTitle(record.target);
+      continue;
+    }
+    for (const node of record.addedNodes)
+      if (node instanceof Element) convertTree(node);
   }
-  return el.dataset.tip ?? '';
 }
 
 export function installTooltips(): void {
+  convertTree(document.documentElement);
+  const observer = new MutationObserver(convertRecords);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['title'],
+    childList: true,
+    subtree: true,
+  });
+
   document.addEventListener('mouseover', (event) => {
+    // A browser delivers the observer's records before it dispatches the next
+    // input event, so this finds nothing left to convert. It only matters to a
+    // caller that adds a titled element and hovers it in the same task.
+    convertRecords(observer.takeRecords());
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const el = target.closest<HTMLElement>('[title],[data-tip]');
+    const el = target.closest<HTMLElement>('[data-tip]');
     if (!el || el === anchor) return;
-    const text = tipFor(el);
+    const text = el.dataset.tip ?? '';
     if (!text) return;
     hide();
     anchor = el;
@@ -187,7 +241,7 @@ export function installTooltips(): void {
   document.addEventListener('mouseout', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (!anchor || target.closest('[title],[data-tip]') !== anchor) return;
+    if (!anchor || target.closest('[data-tip]') !== anchor) return;
     // Moving between children of the same control still fires mouseout. Hiding
     // there would cancel the pending timer, and the follow-up mouseover would
     // restart the delay from zero — so crossing a button's own icon and label

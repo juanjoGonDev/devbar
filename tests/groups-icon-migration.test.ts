@@ -177,7 +177,7 @@ describe('src/groups/icon-migration.ts', () => {
       const plan = planStoreMigration({
         version: 4,
         groups: [canonical('container')],
-        preSteps: [],
+        workflows: [],
         globalSettings: {},
       });
       expect(plan.changed).toBe(false);

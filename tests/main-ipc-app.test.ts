@@ -7,7 +7,7 @@ const preview = {
   groupsCount: 2,
   commandsCount: 3,
   actionsCount: 1,
-  preStepsCount: 0,
+  workflowsCount: 0,
   preScriptsCount: 0,
   hasGlobalSettings: true,
 };
@@ -98,7 +98,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
         return { ok: false, error: 'no_file' };
       },
     },
-    snapshots: { forgetPipelineRunId: () => calls.push('forgetRunId') },
+    workflowRunner: { cancelAll: () => calls.push('cancelWorkflows') },
     expandTilde: (value) => value.replace('~', '/home/me'),
     syncRepoWatchers: () => calls.push('syncRepoWatchers'),
     applyAutostart: (enabled) => calls.push(`autostart:${enabled}`),
@@ -434,7 +434,7 @@ describe('src/main/ipc/app-ipc.ts', () => {
       ).resolves.toEqual({ ok: true, backupPath: '/backup.json' });
       expect(h.calls).toEqual([
         'stopAll',
-        'forgetRunId',
+        'cancelWorkflows',
         'replaceConfig',
         'syncRepoWatchers',
         'autostart:true',

@@ -1,19 +1,18 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 
-import {
-  createScheduleEditor,
-  summarizeSchedule,
-} from '../renderer/config/schedule-editor.js';
+import { createScheduleSection } from '../renderer/config/schedule-editor.js';
 import type { Command, Schedule } from '../src/domain-types.js';
+
+// 2026-01-05 is a Monday; 15:00.
+const NOW = new Date(2026, 0, 5, 15, 0).getTime();
 
 interface Harness {
   group: HTMLElement;
   enabled: HTMLInputElement;
-  rules: HTMLElement;
-  add: HTMLButtonElement;
   details: HTMLElement;
-  editor: ReturnType<typeof createScheduleEditor>;
+  mount: HTMLElement;
+  section: ReturnType<typeof createScheduleSection>;
 }
 
 function harness(): Harness {
@@ -21,217 +20,124 @@ function harness(): Harness {
   const group = document.createElement('div');
   const enabled = document.createElement('input');
   enabled.type = 'checkbox';
-  const rules = document.createElement('div');
-  const add = document.createElement('button');
   const details = document.createElement('div');
-  for (const el of [group, enabled, rules, add, details])
-    document.body.appendChild(el);
-  const editor = createScheduleEditor({ group, enabled, rules, add, details });
-  return { group, enabled, rules, add, details, editor };
+  const mount = document.createElement('div');
+  details.append(mount);
+  group.append(enabled, details);
+  document.body.append(group);
+  const section = createScheduleSection(
+    { group, enabled, details, mount },
+    () => NOW,
+  );
+  return { group, enabled, details, mount, section };
 }
 
-function ruleRows(h: Harness): HTMLElement[] {
-  return [...h.rules.querySelectorAll<HTMLElement>('.schedule-rule')];
-}
-
-function chips(row: HTMLElement): HTMLElement[] {
-  return [...row.querySelectorAll<HTMLElement>('.day-chip')];
+function rows(h: Harness): HTMLElement[] {
+  return [...h.mount.querySelectorAll<HTMLElement>('.sched-rule')];
 }
 
 function command(schedule: Schedule): Command {
-  return {
-    id: 'cmd-1',
-    name: 'api',
-    icon: null,
-    command: 'npm',
-    args: [],
-    env: [],
-    cwd: null,
-    warnRegex: '',
-    errorRegex: '',
-    silenceWarnings: false,
-    silenceErrors: false,
-    maxLogLines: null,
-    autoStart: false,
-    order: 0,
-    schedule,
-    confirm: false,
-    confirmSecs: null,
-    confirmOnTimeout: 'cancel',
-    silencedPatterns: { warn: [], error: [] },
-  } as unknown as Command;
+  return { id: 'cmd-1', name: 'api', schedule } as unknown as Command;
 }
 
 describe('renderer/config/schedule-editor.ts', () => {
-  describe('summarizeSchedule', () => {
-    it('is empty for a missing schedule', () => {
-      expect(summarizeSchedule(null)).toBe('');
-      expect(summarizeSchedule(undefined)).toBe('');
-    });
-
-    it('names the selected weekdays', () => {
-      expect(
-        summarizeSchedule({
-          enabled: true,
-          rules: [{ time: '09:00', days: [1, 5] }],
-        }),
-      ).toBe('09:00 LV');
-    });
-
-    it('says "todos" when a rule selects no weekday', () => {
-      expect(
-        summarizeSchedule({
-          enabled: true,
-          rules: [{ time: '14:00', days: [] }],
-        }),
-      ).toBe('14:00 todos');
-    });
-
-    it('joins several rules with a middle dot', () => {
-      expect(
-        summarizeSchedule({
-          enabled: true,
-          rules: [
-            { time: '09:00', days: [1] },
-            { time: '14:00', days: [] },
-          ],
-        }),
-      ).toBe('09:00 L · 14:00 todos');
-    });
-
-    it('drops a weekday index outside 0..6', () => {
-      expect(
-        summarizeSchedule({
-          enabled: true,
-          rules: [{ time: '09:00', days: [9] }],
-        }),
-      ).toBe('09:00 ');
-    });
-  });
-
   describe('setup', () => {
     it('hides the whole block for a pre-script', () => {
       const h = harness();
-      h.editor.setup(null, true);
+      h.section.setup(null, true);
       expect(h.group.style.display).toBe('none');
-      expect(ruleRows(h)).toHaveLength(0);
     });
 
-    it('offers one empty row for a brand-new item', () => {
+    it('offers one 09:00 row, every day, for a brand-new item', () => {
       const h = harness();
-      h.editor.setup(null, false);
+      h.section.setup(null, false);
       expect(h.group.style.display).toBe('');
       expect(h.enabled.checked).toBe(false);
-      expect(ruleRows(h)).toHaveLength(1);
+      expect(rows(h)).toHaveLength(1);
       expect(h.details.style.display).toBe('none');
+      expect(h.section.readSchedule()).toEqual({
+        enabled: false,
+        rules: [{ time: '09:00', days: [] }],
+        interval: null,
+      });
     });
 
-    it('renders one row per stored rule and reveals the details', () => {
+    it('loads the stored rules and reveals the editor', () => {
       const h = harness();
-      h.editor.setup(
+      h.section.setup(
         command({
           enabled: true,
           rules: [
             { time: '09:00', days: [1, 2] },
             { time: '18:30', days: [] },
           ],
+          interval: null,
         }),
         false,
       );
       expect(h.enabled.checked).toBe(true);
       expect(h.details.style.display).toBe('');
-      expect(ruleRows(h)).toHaveLength(2);
+      expect(rows(h)).toHaveLength(2);
+    });
+
+    it('loads a stored interval in the «Cada…» mode', () => {
+      const h = harness();
+      const schedule: Schedule = {
+        enabled: true,
+        rules: [],
+        interval: { every: 15, unit: 'minutes', window: null, days: [] },
+      };
+      h.section.setup(command(schedule), false);
       expect(
-        chips(ruleRows(h)[0]).filter((c) => c.classList.contains('is-on'))
-          .length,
-      ).toBe(2);
+        h.mount.querySelector('[role="tab"][aria-selected="true"]')
+          ?.textContent,
+      ).toBe('Cada…');
+      expect(h.section.readSchedule()).toEqual(schedule);
     });
 
-    it('falls back to one empty row when rules is not an array', () => {
+    it('starts over from what the next item holds', () => {
       const h = harness();
-      h.editor.setup(
-        command({ enabled: true, rules: null } as unknown as Schedule),
-        false,
-      );
-      expect(ruleRows(h)).toHaveLength(1);
-    });
-
-    it('falls back to 09:00 and no days for a blank rule', () => {
-      const h = harness();
-      h.editor.setup(
+      h.section.setup(
         command({
           enabled: true,
-          rules: [{ time: '', days: null }] as unknown as Schedule['rules'],
+          rules: [],
+          interval: { every: 2, unit: 'hours', window: null, days: [] },
         }),
         false,
       );
-      const time = ruleRows(h)[0].querySelector<HTMLInputElement>('.rule-time');
-      expect(time?.value).toBe('09:00');
-      expect(
-        chips(ruleRows(h)[0]).some((c) => c.classList.contains('is-on')),
-      ).toBe(false);
+      h.section.setup(
+        command({
+          enabled: true,
+          rules: [{ time: '07:00', days: [] }],
+          interval: null,
+        }),
+        false,
+      );
+      expect(h.section.readSchedule().interval).toBeNull();
+      expect(rows(h)).toHaveLength(1);
     });
 
-    it('follows the enabled toggle after setup', () => {
+    it('follows the header switch', () => {
       const h = harness();
-      h.editor.setup(null, false);
+      h.section.setup(null, false);
       h.enabled.checked = true;
       h.enabled.dispatchEvent(new Event('change'));
       expect(h.details.style.display).toBe('');
+      expect(h.section.readSchedule().enabled).toBe(true);
     });
   });
 
-  describe('editing rows', () => {
-    it('appends an empty row from the add button', () => {
-      const h = harness();
-      h.editor.setup(null, false);
-      h.add.click();
-      expect(ruleRows(h)).toHaveLength(2);
-    });
-
-    it('removes the row its own bin button belongs to', () => {
-      const h = harness();
-      h.editor.setup(null, false);
-      h.add.click();
-      ruleRows(h)[0].querySelector<HTMLButtonElement>('.rule-remove')?.click();
-      expect(ruleRows(h)).toHaveLength(1);
-    });
-
-    it('toggles a weekday chip and its aria-pressed state', () => {
-      const h = harness();
-      h.editor.setup(null, false);
-      const monday = chips(ruleRows(h)[0])[0];
-      monday.click();
-      expect(monday.classList.contains('is-on')).toBe(true);
-      expect(monday.getAttribute('aria-pressed')).toBe('true');
-      monday.click();
-      expect(monday.getAttribute('aria-pressed')).toBe('false');
-    });
-  });
-
-  describe('readSchedule', () => {
-    it('reads the toggle and every row back, weekdays sorted', () => {
-      const h = harness();
-      h.editor.setup(null, false);
-      h.enabled.checked = true;
-      const row = ruleRows(h)[0];
-      row.querySelector<HTMLInputElement>('.rule-time')!.value = '07:45';
-      const [monday, , wednesday] = chips(row);
-      wednesday.click();
-      monday.click();
-      expect(h.editor.readSchedule()).toEqual({
-        enabled: true,
-        rules: [{ time: '07:45', days: [1, 3] }],
-      });
-    });
-
-    it('falls back to 09:00 for a row whose time field is gone', () => {
-      const h = harness();
-      h.editor.setup(null, false);
-      ruleRows(h)[0].querySelector('.rule-time')?.remove();
-      expect(h.editor.readSchedule().rules).toEqual([
-        { time: '09:00', days: [] },
-      ]);
+  it('reads back what the editor shows', () => {
+    const h = harness();
+    h.section.setup(null, false);
+    h.enabled.checked = true;
+    const days = [...h.mount.querySelectorAll<HTMLElement>('.sched-day')];
+    days[2]?.click();
+    days[0]?.click();
+    expect(h.section.readSchedule()).toEqual({
+      enabled: true,
+      rules: [{ time: '09:00', days: [1, 3] }],
+      interval: null,
     });
   });
 });

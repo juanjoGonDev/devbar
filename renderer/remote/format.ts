@@ -23,6 +23,14 @@ export function uptime(ms: number): string {
   return `${Math.floor(ms / DAY)}d ${Math.floor((ms % DAY) / HOUR)}h`;
 }
 
+/** How long a run has been going: "12s", "1m 12s", "1h 5m". */
+export function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  if (ms < HOUR) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${Math.floor(ms / HOUR)}h ${Math.floor((ms % HOUR) / MINUTE)}m`;
+}
+
 /** Whole seconds left, rounded up so 0 means really over. */
 export function countdown(ms: number): number {
   return Math.max(0, Math.ceil(ms / 1000));

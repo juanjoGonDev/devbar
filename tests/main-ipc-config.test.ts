@@ -44,22 +44,6 @@ function harness(groups: Group[] = [], overrides: Partial<ConfigIpcDeps> = {}) {
       calls.push(`deleteAction:${g}:${a}`),
     reorderActions: (g: string, ids: readonly string[]) =>
       calls.push(`reorderActions:${g}:${ids.join(',')}`),
-    getPreSteps: () => [],
-    savePreStep: (data: unknown) => {
-      saved.push(data);
-      return null as never;
-    },
-    deletePreStep: (id: string) => calls.push(`deletePreStep:${id}`),
-    reorderPreSteps: (ids: readonly string[]) =>
-      calls.push(`reorderPreSteps:${ids.join(',')}`),
-    assignScriptToStep: (...args: unknown[]) => {
-      calls.push(`assign:${args.join(',')}`);
-      return null as never;
-    },
-    unassignScriptFromStep: (...args: unknown[]) => {
-      calls.push(`unassign:${args.join(',')}`);
-      return null as never;
-    },
     savePreScript: (groupId: string, data: unknown) => {
       saved.push({ groupId, data });
       return null as never;
@@ -97,6 +81,7 @@ function harness(groups: Group[] = [], overrides: Partial<ConfigIpcDeps> = {}) {
     applyAutostart: (enabled) => calls.push(`autostart:${enabled}`),
     refreshWindowBackgrounds: () => calls.push('repaint'),
     sendTheme: (theme) => themes.push(theme),
+    sendSettings: () => undefined,
     ...overrides,
   });
   return { ipc, calls, saved, themes, groupErrors, stopResults };
@@ -120,12 +105,6 @@ describe('src/main/ipc/config-ipc.ts', () => {
           'actions:save',
           'actions:delete',
           'actions:reorder',
-          'pipeline:list',
-          'preSteps:save',
-          'preSteps:delete',
-          'preSteps:reorder',
-          'preSteps:assignScript',
-          'preSteps:unassignScript',
           'preScripts:save',
           'preScripts:delete',
           'preScripts:reorder',
@@ -333,7 +312,7 @@ describe('src/main/ipc/config-ipc.ts', () => {
     });
   });
 
-  describe('actions and the pipeline', () => {
+  describe('actions and pre-scripts', () => {
     it('saves, deletes and reorders actions', () => {
       const h = harness();
       h.ipc.invoke('actions:save', { groupId: 'g1', actionData: { id: 'a1' } });
@@ -341,37 +320,6 @@ describe('src/main/ipc/config-ipc.ts', () => {
       h.ipc.invoke('actions:reorder', { groupId: 'g1', actionIds: ['a1'] });
       expect(h.calls).toContain('deleteAction:g1:a1');
       expect(h.calls).toContain('reorderActions:g1:a1');
-    });
-
-    it('edits the pipeline steps and their script assignments', () => {
-      const h = harness();
-      expect(h.ipc.invoke('pipeline:list')).toEqual([]);
-      h.ipc.invoke('preSteps:save', { data: { id: 's1' } });
-      h.ipc.invoke('preSteps:delete', { stepId: 's1' });
-      h.ipc.invoke('preSteps:reorder', { orderedIds: ['s1', 's2'] });
-      h.ipc.invoke('preSteps:assignScript', {
-        stepId: 's1',
-        groupId: 'g1',
-        scriptId: 'p1',
-        position: 0,
-      });
-      h.ipc.invoke('preSteps:unassignScript', {
-        stepId: 's1',
-        groupId: 'g1',
-        scriptId: 'p1',
-      });
-      expect(h.calls).toContain('assign:s1,g1,p1,0');
-      expect(h.calls).toContain('unassign:s1,g1,p1');
-    });
-
-    it('treats an absent position as unspecified', () => {
-      const h = harness();
-      h.ipc.invoke('preSteps:assignScript', {
-        stepId: 's1',
-        groupId: 'g1',
-        scriptId: 'p1',
-      });
-      expect(h.calls).toContain('assign:s1,g1,p1,');
     });
 
     it('edits a group pre-script', () => {

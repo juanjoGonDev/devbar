@@ -4,63 +4,74 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { entry, mountLogsDom } from './helpers/logs-dom.js';
 
 /**
- * `renderer/logs/status.ts` is one strip of text answering three different
- * questions — how many lines are selected, how many arrived while paused,
- * whether a copy just succeeded — plus the queue that feeds the middle one.
- * They only behave correctly because they agree on who wrote last, so they are
- * driven together here, against the real footer markup.
+ * `renderer/logs/status.ts` is the footer's status line — how many lines are
+ * selected, whether a copy just succeeded — plus the queue a manual pause
+ * holds lines in. How many are held is the live button's to say, so that is
+ * asserted on the button.
  */
 type StatusModule = typeof import('../renderer/logs/status.js');
 type BufferModule = typeof import('../renderer/logs/buffer.js');
 type ElementsModule = typeof import('../renderer/logs/elements.js');
+type ViewModule = typeof import('../renderer/logs/view.js');
 
 describe('renderer/logs/status.ts', () => {
   let status: StatusModule;
   let buffer: BufferModule;
   let elements: ElementsModule;
+  let view: ViewModule;
 
   beforeEach(async () => {
     mountLogsDom();
     status = await import('../renderer/logs/status.js');
     buffer = await import('../renderer/logs/buffer.js');
     elements = await import('../renderer/logs/elements.js');
+    view = await import('../renderer/logs/view.js');
   });
+
+  /** Pause by hand, as pressing the live button does. */
+  function pauseByHand(): void {
+    view.view.live = { following: false, cause: 'manual', unseen: 0 };
+  }
+
+  function liveText(): string {
+    return elements.liveTextEl.textContent ?? '';
+  }
 
   function statusText(): string {
     return elements.statusEl.textContent ?? '';
   }
 
   describe('the paused queue', () => {
-    it('holds an arriving line and says how many are waiting', () => {
+    it('holds an arriving line and the live button says how many', () => {
+      pauseByHand();
       status.queueWhilePaused(entry('una'));
       status.queueWhilePaused(entry('otra'));
       expect(status.pendingQueue).toHaveLength(2);
-      expect(statusText()).toBe('Pausado (+2)');
+      expect(liveText()).toBe('En pausa · 2 nuevas');
     });
 
-    it('forgetting the queue while still paused falls back to the plain badge', () => {
-      elements.pausedEl.checked = true;
+    it('forgetting the queue keeps the pause but drops the count', () => {
+      pauseByHand();
       status.queueWhilePaused(entry('una'));
       status.dropPendingQueue();
       expect(status.pendingQueue).toHaveLength(0);
-      expect(statusText()).toBe('Pausado');
+      expect(liveText()).toBe('En pausa');
     });
 
-    it('forgetting the queue while live leaves the strip empty', () => {
+    it('leaves the footer to the selection', () => {
+      pauseByHand();
       status.queueWhilePaused(entry('una'));
-      status.dropPendingQueue();
       expect(statusText()).toBe('');
     });
 
     it('keeps only what the adopted snapshot does not already carry', () => {
-      elements.pausedEl.checked = true;
+      pauseByHand();
       status.queueWhilePaused(entry('vieja', { seq: 4 }));
       status.queueWhilePaused(entry('justa', { seq: 5 }));
       status.queueWhilePaused(entry('nueva', { seq: 6 }));
       // The snapshot reached seq 5: everything at or below it is in there.
       status.keepQueuedAfter(() => 5);
       expect(status.pendingQueue.map((held) => held.line)).toEqual(['nueva']);
-      expect(statusText()).toBe('Pausado (+1)');
     });
 
     it('drops a line with no sequence at all rather than showing it twice', () => {
@@ -73,22 +84,12 @@ describe('renderer/logs/status.ts', () => {
   });
 
   describe('reportSelection', () => {
-    it('counts the selection and offers to copy exactly that', () => {
+    it('counts the selection, and offers to drop it', () => {
       buffer.buffer.selected.add(1);
       buffer.buffer.selected.add(4);
       status.reportSelection();
       expect(statusText()).toBe('2 seleccionada(s)');
-      expect(elements.copyBtn.title).toBe('Copiar 2 línea(s) seleccionada(s)');
-    });
-
-    it('clearing the selection falls back to the paused badge, not to nothing', () => {
-      elements.pausedEl.checked = true;
-      buffer.buffer.selected.add(1);
-      status.reportSelection();
-      buffer.buffer.selected.clear();
-      status.reportSelection();
-      expect(statusText()).toBe('Pausado');
-      expect(elements.copyBtn.title).toBe('Copiar');
+      expect(elements.clearSelectionBtn.hidden).toBe(false);
     });
 
     it('clearing the selection while live leaves the strip empty', () => {
