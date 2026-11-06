@@ -25,7 +25,10 @@ Todas las novedades relevantes de DevBar. El formato sigue
   motivo que da el asistente; si no respondes, se rechaza solo. Para cada
   cliente puedes elegir, tras aceptar un aviso, que no pregunte o que pregunte
   solo la primera vez. Antes de aplicarlo se guarda una copia, y la pestaña
-  Actividad registra cada llamada y permite deshacer los cambios.
+  Actividad registra cada llamada y permite deshacer los cambios. Puedes
+  buscar en toda la actividad, filtrar cada columna como en una hoja de
+  cálculo (también por fecha y hora), ordenar por varias columnas a la vez y
+  recorrerla por páginas.
 
 ## [0.12.0] - 2026-10-17
 

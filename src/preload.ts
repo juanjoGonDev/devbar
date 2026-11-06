@@ -159,7 +159,7 @@ const api: DevBarApi = {
   updateMcpClient: (id, patch) =>
     ipcRenderer.invoke('mcp:updateClient', { id, patch }),
   revokeMcpClient: (id) => ipcRenderer.invoke('mcp:revokeClient', { id }),
-  listMcpAudit: (query) => ipcRenderer.invoke('mcp:listAudit', query),
+  queryMcpAudit: (query) => ipcRenderer.invoke('mcp:queryAudit', query),
   undoMcpChange: (undoToken) => ipcRenderer.invoke('mcp:undo', { undoToken }),
   answerMcpConfirm: (id, answer) =>
     ipcRenderer.invoke('mcp:answerConfirm', { id, answer }),

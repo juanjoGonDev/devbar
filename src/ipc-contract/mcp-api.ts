@@ -32,6 +32,9 @@ export interface McpScopes {
   config: boolean;
 }
 
+/** A family of tools: each tool belongs to one, one switch per family. */
+export type McpScopeKey = keyof McpScopes;
+
 /**
  * When a call waits for the user's OK in DevBar: `first` asks once per
  * client and target (per app session), `always` every time.
@@ -104,13 +107,58 @@ export interface McpAuditEntry {
   undoToken?: string;
 }
 
-export type McpAuditFilter = 'all' | 'changes' | 'rejected';
+/** A column of the «Actividad» table, as it sorts. */
+export type McpAuditSortKey = 'time' | 'client' | 'action' | 'result';
 
-export interface McpAuditQuery {
-  clientId?: string;
-  filter?: McpAuditFilter;
-  /** Newest first, at most this many (1–500). */
+export interface McpAuditSort {
+  key: McpAuditSortKey;
+  dir: 'asc' | 'desc';
+}
+
+/**
+ * One page of the audit log, filtered and sorted in main so the 30 days it
+ * keeps never travel to the window whole. A list left out filters nothing;
+ * an empty one matches nothing (every box unticked).
+ */
+export interface McpAuditPageQuery {
+  /** Case-insensitive text in the tool, target, summary, client or result. */
+  search?: string;
+  clientIds?: string[];
+  /** MCP tool names. */
+  tools?: string[];
+  results?: McpAuditResult[];
+  /** Only the changes that can still be undone. */
+  undoable?: boolean;
+  /** Epoch ms, both inclusive. */
+  from?: number;
+  to?: number;
+  /** Most significant first; none means newest first. */
+  sort?: McpAuditSort[];
+  offset: number;
+  /** 1–100. */
   limit: number;
+}
+
+/**
+ * How many entries each value of a column would show, counted with every
+ * OTHER filter of the query applied but not that column's own (the way a
+ * spreadsheet's column filter counts). A known value with no entries is still
+ * listed, so a checklist never loses a box the user unticked.
+ */
+export interface McpAuditFacets {
+  clients: { id: string; name: string; count: number }[];
+  /** `family` is null for a tool the server no longer offers. */
+  tools: { tool: string; family: McpScopeKey | null; count: number }[];
+  results: { result: McpAuditResult; count: number }[];
+}
+
+export interface McpAuditPage {
+  entries: McpAuditEntry[];
+  /** How many entries match the query, across every page. */
+  total: number;
+  /** How many entries the log keeps, whatever the query. */
+  retained: number;
+  facets: McpAuditFacets;
 }
 
 /**
@@ -192,7 +240,8 @@ export interface McpApi {
   ): Promise<McpMutationResult>;
   /** Cuts an allowed client off; its open sessions lose every tool. */
   revokeMcpClient(id: string): Promise<McpMutationResult>;
-  listMcpAudit(query: McpAuditQuery): Promise<McpAuditEntry[]>;
+  /** One page of the activity log, with the counts its filters show. */
+  queryMcpAudit(query: McpAuditPageQuery): Promise<McpAuditPage>;
   /** Restores what a configuration change replaced. */
   undoMcpChange(undoToken: string): Promise<SimpleResult>;
   answerMcpConfirm(id: string, answer: McpConfirmAnswer): Promise<SimpleResult>;

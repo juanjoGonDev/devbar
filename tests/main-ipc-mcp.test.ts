@@ -34,7 +34,12 @@ function harness() {
     reject: record('reject', mutation),
     update: record('update', mutation),
     revoke: record('revoke', mutation),
-    listAudit: record('listAudit', []),
+    queryAudit: record('queryAudit', {
+      entries: [],
+      total: 0,
+      retained: 0,
+      facets: { clients: [], tools: [], results: [] },
+    }),
     undo: record('undo', Promise.resolve({ ok: true as const })),
     answerConfirm: record('answerConfirm', { ok: true as const }),
     listConfirms: record('listConfirms', []),
@@ -62,9 +67,9 @@ describe('src/main/ipc/mcp-ipc.ts', () => {
     ],
     ['mcp:revokeClient', { id: 'c1' }, ['revoke', 'c1']],
     [
-      'mcp:listAudit',
-      { limit: 10, filter: 'changes' },
-      ['listAudit', { limit: 10, filter: 'changes' }],
+      'mcp:queryAudit',
+      { offset: 0, limit: 10, results: ['rejected'], secret: 1 },
+      ['queryAudit', { offset: 0, limit: 10, results: ['rejected'] }],
     ],
     ['mcp:undo', { undoToken: 'u1' }, ['undo', 'u1']],
     [
@@ -86,7 +91,7 @@ describe('src/main/ipc/mcp-ipc.ts', () => {
     ['mcp:approveClient', { id: 'c1', scopes: { read: 1 } }],
     ['mcp:rejectClient', {}],
     ['mcp:updateClient', { id: 'c1', patch: { groups: 'some' } }],
-    ['mcp:listAudit', { limit: 9999 }],
+    ['mcp:queryAudit', { limit: 10 }],
     ['mcp:undo', { undoToken: 7 }],
     ['mcp:answerConfirm', { id: 'r1', answer: 'yes' }],
   ])('%s refuses %j without acting', (channel, payload) => {

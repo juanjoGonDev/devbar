@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ipcMcpAuditQuery,
+  ipcMcpAuditPageQuery,
   ipcMcpClientPatch,
   ipcMcpConfirmAnswer,
   ipcMcpId,
@@ -75,21 +75,89 @@ describe('src/main/mcp/validate.ts', () => {
     });
   });
 
-  describe('ipcMcpAuditQuery', () => {
-    it('narrows a full query', () => {
+  describe('ipcMcpAuditPageQuery', () => {
+    it('narrows a full query and drops unknown keys', () => {
       expect(
-        ipcMcpAuditQuery({ clientId: 'c1', filter: 'rejected', limit: 20 }),
-      ).toEqual({ clientId: 'c1', filter: 'rejected', limit: 20 });
+        ipcMcpAuditPageQuery({
+          search: 'restart',
+          clientIds: ['c1', 'c1', 'c2'],
+          tools: ['restart'],
+          results: ['ok', 'error'],
+          undoable: true,
+          from: 10,
+          to: 20,
+          sort: [
+            { key: 'client', dir: 'asc' },
+            { key: 'time', dir: 'desc', extra: 1 },
+          ],
+          offset: 50,
+          limit: 50,
+          admin: true,
+        }),
+      ).toEqual({
+        search: 'restart',
+        clientIds: ['c1', 'c2'],
+        tools: ['restart'],
+        results: ['ok', 'error'],
+        undoable: true,
+        from: 10,
+        to: 20,
+        sort: [
+          { key: 'client', dir: 'asc' },
+          { key: 'time', dir: 'desc' },
+        ],
+        offset: 50,
+        limit: 50,
+      });
+    });
+
+    it('keeps an empty list, which matches nothing', () => {
+      expect(
+        ipcMcpAuditPageQuery({ clientIds: [], offset: 0, limit: 1 }),
+      ).toEqual({ clientIds: [], offset: 0, limit: 1 });
     });
 
     it.each([
-      [{ limit: 0 }],
-      [{ limit: 501 }],
-      [{ limit: 2.5 }],
-      [{}],
-      [{ limit: 10, filter: 'mine' }],
+      [0, 1],
+      [-5, 1],
+      [9999, 100],
+    ])('clamps a limit of %d to %d', (limit, expected) => {
+      expect(ipcMcpAuditPageQuery({ offset: 0, limit }).limit).toBe(expected);
+    });
+
+    it.each([
+      [{ limit: 10 }],
+      [{ offset: -1, limit: 10 }],
+      [{ offset: 1.5, limit: 10 }],
+      [{ offset: 0, limit: 2.5 }],
+      [{ offset: 0, limit: Number.NaN }],
+      [{ offset: 0, limit: 10, from: Number.POSITIVE_INFINITY }],
+      [{ offset: 0, limit: 10, to: '5' }],
+      [{ offset: 0, limit: 10, search: 'x'.repeat(201) }],
+      [{ offset: 0, limit: 10, search: 7 }],
+      [{ offset: 0, limit: 10, clientIds: 'c1' }],
+      [{ offset: 0, limit: 10, clientIds: [''] }],
+      [{ offset: 0, limit: 10, clientIds: Array(501).fill('c') }],
+      [{ offset: 0, limit: 10, tools: ['x'.repeat(101)] }],
+      [{ offset: 0, limit: 10, results: ['fine'] }],
+      [{ offset: 0, limit: 10, undoable: 'yes' }],
+      [{ offset: 0, limit: 10, sort: [{ key: 'size', dir: 'asc' }] }],
+      [{ offset: 0, limit: 10, sort: [{ key: 'time', dir: 'up' }] }],
+      [{ offset: 0, limit: 10, sort: ['time'] }],
+      [{ offset: 0, limit: 10, sort: { key: 'time', dir: 'asc' } }],
+      [
+        {
+          offset: 0,
+          limit: 10,
+          sort: [
+            { key: 'time', dir: 'asc' },
+            { key: 'time', dir: 'desc' },
+          ],
+        },
+      ],
+      [null],
     ])('refuses %j', (query) => {
-      expect(() => ipcMcpAuditQuery(query)).toThrow(TypeError);
+      expect(() => ipcMcpAuditPageQuery(query)).toThrow(TypeError);
     });
   });
 

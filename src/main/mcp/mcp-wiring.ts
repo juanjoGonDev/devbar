@@ -25,6 +25,7 @@ import {
 } from './config-port-wiring.js';
 import { localEndpoint } from './local-endpoint.js';
 import { mcpRuntime, type McpRuntimeWiring } from './runtime.js';
+import { MCP_TOOLS } from './tools/catalog.js';
 
 /**
  * The MCP server wired to the real collaborators: the config store, the disk,
@@ -136,6 +137,7 @@ export function createMcp(wiring: McpWiring, server: McpServerParts): McpParts {
     },
     clients,
     audit,
+    tools: MCP_TOOLS,
     desk,
     endpoint: server.endpointFor({ clients, audit, desk, home }),
     connectCommand: () =>

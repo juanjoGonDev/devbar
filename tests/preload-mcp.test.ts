@@ -84,10 +84,10 @@ const FORWARDS: readonly [
     [{ id: 'c1' }],
   ],
   [
-    'listMcpAudit',
-    (a) => a.listMcpAudit({ filter: 'changes', limit: 50 }),
-    'mcp:listAudit',
-    [{ filter: 'changes', limit: 50 }],
+    'queryMcpAudit',
+    (a) => a.queryMcpAudit({ search: 'restart', offset: 50, limit: 50 }),
+    'mcp:queryAudit',
+    [{ search: 'restart', offset: 50, limit: 50 }],
   ],
   [
     'undoMcpChange',

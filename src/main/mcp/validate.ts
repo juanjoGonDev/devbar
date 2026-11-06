@@ -1,12 +1,18 @@
 import type {
-  McpAuditFilter,
-  McpAuditQuery,
+  McpAuditPageQuery,
+  McpAuditResult,
+  McpAuditSort,
   McpClientPatch,
   McpConfirmAnswer,
   McpConfirmPolicy,
   McpScopes,
 } from '../../ipc-contract/mcp-api.js';
-import { ipcRecord, ipcString, type UnknownRecord } from '../ipc-validators.js';
+import {
+  ipcNumber,
+  ipcRecord,
+  ipcString,
+  type UnknownRecord,
+} from '../ipc-validators.js';
 
 /**
  * Payload narrowing for the `mcp:*` IPC channels. A renderer is untrusted
@@ -16,7 +22,23 @@ import { ipcRecord, ipcString, type UnknownRecord } from '../ipc-validators.js';
 
 const SCOPE_KEYS = ['read', 'control', 'workflows', 'config'] as const;
 const POLICIES: readonly McpConfirmPolicy[] = ['never', 'first', 'always'];
-const FILTERS: readonly McpAuditFilter[] = ['all', 'changes', 'rejected'];
+const RESULTS: readonly McpAuditResult[] = [
+  'ok',
+  'warning',
+  'error',
+  'rejected',
+  'pending',
+];
+const SORT_KEYS: readonly McpAuditSort['key'][] = [
+  'time',
+  'client',
+  'action',
+  'result',
+];
+const MAX_AUDIT_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 200;
+const MAX_FILTER_VALUES = 500;
+const MAX_TOOL_LENGTH = 100;
 const MAX_GROUP_IDS = 500;
 const MAX_ID_LENGTH = 200;
 const MAX_NAME_LENGTH = 200;
@@ -98,24 +120,79 @@ export function ipcMcpClientPatch(value: unknown): McpClientPatch {
   return patch;
 }
 
-export function ipcMcpAuditQuery(value: unknown): McpAuditQuery {
-  const raw = ipcRecord(value, 'audit query');
-  const limit = raw.limit;
+function idList(value: unknown, label: string, maxLength: number): string[] {
   if (
-    typeof limit !== 'number' ||
-    !Number.isInteger(limit) ||
-    limit < 1 ||
-    limit > 500
+    !Array.isArray(value) ||
+    value.length > MAX_FILTER_VALUES ||
+    !value.every(
+      (id: unknown) =>
+        typeof id === 'string' && id.length > 0 && id.length <= maxLength,
+    )
   )
-    throw new TypeError('Invalid IPC limit');
-  const query: McpAuditQuery = { limit };
-  if (raw.clientId !== undefined)
-    query.clientId = ipcMcpId(raw.clientId, 'clientId');
-  if (raw.filter !== undefined) {
-    if (!FILTERS.includes(raw.filter as McpAuditFilter))
-      throw new TypeError('Invalid IPC filter');
-    query.filter = raw.filter as McpAuditFilter;
+    throw new TypeError(`Invalid IPC ${label}`);
+  return [...new Set(value as string[])];
+}
+
+function resultList(value: unknown): McpAuditResult[] {
+  if (
+    !Array.isArray(value) ||
+    !value.every((result) => RESULTS.includes(result as McpAuditResult))
+  )
+    throw new TypeError('Invalid IPC results');
+  return [...new Set(value as McpAuditResult[])];
+}
+
+function sortList(value: unknown): McpAuditSort[] {
+  if (!Array.isArray(value) || value.length > SORT_KEYS.length)
+    throw new TypeError('Invalid IPC sort');
+  const sort: McpAuditSort[] = [];
+  for (const item of value) {
+    const raw = ipcRecord(item, 'sort');
+    const key = raw.key as McpAuditSort['key'];
+    if (!SORT_KEYS.includes(key) || (raw.dir !== 'asc' && raw.dir !== 'desc'))
+      throw new TypeError('Invalid IPC sort');
+    if (sort.some((each) => each.key === key))
+      throw new TypeError('Invalid IPC sort: repeated key');
+    sort.push({ key, dir: raw.dir });
   }
+  return sort;
+}
+
+function wholeNumber(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value))
+    throw new TypeError(`Invalid IPC ${label}`);
+  return value;
+}
+
+/** One page of the activity log: sizes capped, keys and values whitelisted. */
+export function ipcMcpAuditPageQuery(value: unknown): McpAuditPageQuery {
+  const raw = ipcRecord(value, 'audit query');
+  const offset = wholeNumber(raw.offset, 'offset');
+  if (offset < 0) throw new TypeError('Invalid IPC offset');
+  const limit = Math.min(
+    MAX_AUDIT_LIMIT,
+    Math.max(1, wholeNumber(raw.limit, 'limit')),
+  );
+  const query: McpAuditPageQuery = { offset, limit };
+  if (raw.search !== undefined) {
+    const search = ipcString(raw.search, 'search');
+    if (search.length > MAX_SEARCH_LENGTH)
+      throw new TypeError('Invalid IPC search');
+    query.search = search;
+  }
+  if (raw.clientIds !== undefined)
+    query.clientIds = idList(raw.clientIds, 'clientIds', MAX_ID_LENGTH);
+  if (raw.tools !== undefined)
+    query.tools = idList(raw.tools, 'tools', MAX_TOOL_LENGTH);
+  if (raw.results !== undefined) query.results = resultList(raw.results);
+  if (raw.undoable !== undefined) {
+    if (typeof raw.undoable !== 'boolean')
+      throw new TypeError('Invalid IPC undoable');
+    query.undoable = raw.undoable;
+  }
+  if (raw.from !== undefined) query.from = ipcNumber(raw.from, 'from');
+  if (raw.to !== undefined) query.to = ipcNumber(raw.to, 'to');
+  if (raw.sort !== undefined) query.sort = sortList(raw.sort);
   return query;
 }
 

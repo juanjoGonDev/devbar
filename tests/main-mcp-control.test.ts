@@ -63,6 +63,7 @@ function harness(
     },
     clients,
     audit,
+    tools: [{ name: 'get_ports', scope: 'read' }],
     desk,
     endpoint: {
       start: () => {
@@ -255,7 +256,7 @@ describe('src/main/mcp/mcp-control.ts', () => {
     expect(h.calls.at(-1)).toBe('stop');
   });
 
-  it('lists the audit through the log', () => {
+  it('pages the audit through the log, with the clients and tools it knows', () => {
     const h = harness();
     h.audit.record({
       clientId: 'c1',
@@ -266,8 +267,11 @@ describe('src/main/mcp/mcp-control.ts', () => {
       summary: ':4400',
     });
 
-    expect(h.control.listAudit({ limit: 5 }).map((e) => e.tool)).toEqual([
-      'get_ports',
+    const page = h.control.queryAudit({ offset: 0, limit: 5 });
+
+    expect(page.entries.map((e) => e.tool)).toEqual(['get_ports']);
+    expect(page.facets.tools).toEqual([
+      { tool: 'get_ports', family: 'read', count: 1 },
     ]);
   });
 });

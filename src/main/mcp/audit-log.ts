@@ -1,7 +1,9 @@
 import type {
   McpAuditEntry,
-  McpAuditQuery,
+  McpAuditPage,
+  McpAuditPageQuery,
 } from '../../ipc-contract/mcp-api.js';
+import { queryAuditEntries, type AuditKnown } from './audit-query.js';
 
 /**
  * Every MCP tool call, kept for 30 days in its own file (one JSON entry per
@@ -17,6 +19,13 @@ import type {
 export const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000;
 const MAX_LIMIT = 500;
+
+/** The newest entries, optionally of one client (main's own reads). */
+interface AuditListQuery {
+  clientId?: string;
+  /** At most this many (1–500). */
+  limit: number;
+}
 
 export interface AuditLogDeps {
   /** The file as it is on disk, or null when there is none yet. */
@@ -40,9 +49,13 @@ export interface AuditLog {
   record(draft: AuditDraft): McpAuditEntry;
   /** Settles an entry (`pending` → `ok`…) or drops its undo token. */
   update(id: string, patch: AuditPatch): McpAuditEntry | null;
-  list(query: McpAuditQuery): McpAuditEntry[];
+  list(query: AuditListQuery): McpAuditEntry[];
+  /** One page of «Actividad»: filtered, sorted, sliced and counted. */
+  query(query: McpAuditPageQuery, known: AuditKnown): McpAuditPage;
   /** The entry an undo token belongs to, while it still can be undone. */
   byUndoToken(token: string): McpAuditEntry | null;
+  /** This client's newest change that can still be undone. */
+  latestUndoable(clientId: string): McpAuditEntry | null;
 }
 
 function parseEntry(line: string): McpAuditEntry | null {
@@ -114,24 +127,29 @@ export function createAuditLog(deps: AuditLogDeps): AuditLog {
     },
     list: (query) => {
       const limit = Math.max(1, Math.min(MAX_LIMIT, Math.floor(query.limit)));
-      const filter = query.filter ?? 'all';
       return [...entries.values()]
         .filter((entry) => !query.clientId || entry.clientId === query.clientId)
-        .filter((entry) =>
-          filter === 'changes'
-            ? entry.diff !== undefined
-            : filter === 'rejected'
-              ? entry.result === 'rejected'
-              : true,
-        )
         .sort((a, b) => b.at - a.at)
         .slice(0, limit)
         .map((entry) => structuredClone(entry));
     },
+    query: (query, known) =>
+      queryAuditEntries([...entries.values()], query, known),
     byUndoToken: (token) => {
       for (const entry of entries.values())
         if (entry.undoToken === token) return structuredClone(entry);
       return null;
+    },
+    latestUndoable: (clientId) => {
+      let latest: McpAuditEntry | null = null;
+      for (const entry of entries.values())
+        if (
+          entry.clientId === clientId &&
+          entry.undoToken !== undefined &&
+          (!latest || entry.at >= latest.at)
+        )
+          latest = entry;
+      return latest ? structuredClone(latest) : null;
     },
   };
 }

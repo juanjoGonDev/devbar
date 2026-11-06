@@ -1,12 +1,14 @@
 import type { McpSettings } from '../../domain-types.js';
 import type {
   McpAuditEntry,
-  McpAuditQuery,
+  McpAuditPage,
+  McpAuditPageQuery,
   McpClientPatch,
   McpConfirmAnswer,
   McpConfirmRequest,
   McpConnectCommands,
   McpMutationResult,
+  McpScopeKey,
   McpScopes,
   McpState,
 } from '../../ipc-contract/mcp-api.js';
@@ -39,6 +41,8 @@ export interface McpControlDeps {
   };
   clients: ClientStore;
   audit: AuditLog;
+  /** The tool catalog: which family each tool the log names belongs to. */
+  tools: readonly { name: string; scope: McpScopeKey }[];
   desk: ConfirmDesk;
   endpoint: McpEndpoint;
   connectCommand(): McpConnectCommands;
@@ -59,7 +63,7 @@ export interface McpControl {
   reject(id: string): McpMutationResult;
   update(id: string, patch: McpClientPatch): McpMutationResult;
   revoke(id: string): McpMutationResult;
-  listAudit(query: McpAuditQuery): McpAuditEntry[];
+  queryAudit(query: McpAuditPageQuery): McpAuditPage;
   undo(undoToken: string): Promise<SimpleResult>;
   answerConfirm(id: string, answer: McpConfirmAnswer): SimpleResult;
   listConfirms(): McpConfirmRequest[];
@@ -121,7 +125,11 @@ export function createMcpControl(deps: McpControlDeps): McpControl {
     reject: (id) => mutation(deps.clients.reject(id)),
     update: (id, patch) => mutation(deps.clients.update(id, patch)),
     revoke: (id) => mutation(deps.clients.revoke(id)),
-    listAudit: (query) => deps.audit.list(query),
+    queryAudit: (query) =>
+      deps.audit.query(query, {
+        clients: deps.clients.list(),
+        tools: deps.tools,
+      }),
     undo: async (undoToken) => {
       const entry = deps.audit.byUndoToken(undoToken);
       if (!entry) return { ok: false, error: UNDO_GONE };

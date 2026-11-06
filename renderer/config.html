@@ -729,55 +729,65 @@
             aria-labelledby="mcp-tab-activity"
             hidden
           >
-            <div class="mcp-activity-bar">
-              <div
-                id="mcp-activity-filters"
-                class="mcp-filters"
-                role="group"
-                aria-label="Filtro"
+            <div class="act-toolbar">
+              <label class="act-search">
+                <span class="icon" data-icon="search"></span>
+                <input
+                  id="mcp-activity-search"
+                  type="search"
+                  placeholder="Buscar en toda la actividad"
+                  aria-label="Buscar en la actividad"
+                  maxlength="200"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <kbd id="mcp-activity-search-key">Ctrl+F</kbd>
+                <button
+                  type="button"
+                  id="mcp-activity-search-clear"
+                  aria-label="Borrar búsqueda"
+                  title="Borrar búsqueda"
+                  hidden
+                >
+                  <span class="icon" data-icon="x"></span>
+                </button>
+              </label>
+              <button
+                type="button"
+                id="mcp-activity-fresh"
+                class="act-fresh"
+                hidden
               >
-                <button
-                  type="button"
-                  class="mcp-chip"
-                  data-filter="all"
-                  aria-pressed="true"
-                >
-                  Todo
-                </button>
-                <button
-                  type="button"
-                  class="mcp-chip"
-                  data-filter="changes"
-                  aria-pressed="false"
-                >
-                  Cambios
-                </button>
-                <button
-                  type="button"
-                  class="mcp-chip"
-                  data-filter="rejected"
-                  aria-pressed="false"
-                >
-                  Rechazado
-                </button>
-              </div>
-              <select
-                id="mcp-activity-client"
-                class="mcp-select"
-                aria-label="Cliente"
-              >
-                <option value="">Todos los clientes</option>
-              </select>
+                <span class="icon" data-icon="rotate-cw"></span>
+                Hay actividad nueva · Actualizar
+              </button>
             </div>
-            <div class="mcp-card mcp-log">
-              <div class="mcp-log-head" aria-hidden="true">
-                <span>Hora</span><span>Cliente</span><span>Acción</span
-                ><span>Resultado</span><span></span>
-              </div>
+            <div
+              id="mcp-activity-active"
+              class="act-active"
+              aria-live="polite"
+            ></div>
+            <div id="mcp-activity-log" class="mcp-card mcp-log">
+              <div id="mcp-activity-head" class="mcp-log-head" role="row"></div>
               <ul id="mcp-activity-rows" class="mcp-log-rows"></ul>
-              <p id="mcp-activity-empty" class="mcp-empty">
-                Sin actividad todavía.
-              </p>
+              <div class="act-pager">
+                <span id="mcp-activity-range"></span>
+                <span class="spacer"></span>
+                <label>
+                  Por página
+                  <select id="mcp-activity-size" class="mcp-select">
+                    <option value="25">25</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                  </select>
+                </label>
+                <div
+                  id="mcp-activity-pages"
+                  class="act-pages"
+                  role="group"
+                  aria-label="Páginas"
+                ></div>
+              </div>
             </div>
             <p class="mcp-hint">
               Se guardan los últimos 30 días. Los logs que lee un asistente no

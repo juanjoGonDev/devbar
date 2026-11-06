@@ -1,19 +1,38 @@
 import type {
-  McpAuditEntry,
-  McpAuditFilter,
-  McpAuditQuery,
-  McpClient,
+  McpAuditFacets,
+  McpAuditPage,
 } from '../../src/ipc-contract/mcp-api.js';
-import { icon } from '../icon.js';
 import { latestWins } from '../latest-wins.js';
-import { auditResultLabel, auditTime } from './mcp-format.js';
+import { renderActive } from './mcp-activity-active.js';
+import { createActivityHead } from './mcp-activity-head.js';
+import {
+  clearColumn,
+  clickSort,
+  columnOf,
+  dropSort,
+  groupsByDay,
+  initialState,
+  isDefaultSort,
+  pickSort,
+  toQuery,
+  type ActivityColumn,
+} from './mcp-activity-model.js';
+import { pageCount, renderPager } from './mcp-activity-pager.js';
+import { renderRows } from './mcp-activity-rows.js';
+import { createActivitySearch } from './mcp-activity-search.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
- * «Actividad»: the second tab of the «MCP» section. The audit log main keeps
- * (newest first), filtered by kind and client, read the first time the tab
- * opens and again on every filter change; new entries arrive live. A change
- * unfolds into its diff and offers «Deshacer» while main still can.
+ * «Actividad»: the second tab of the «MCP» section, the audit log of every
+ * tool call. Main keeps 30 days of it and answers one page at a time
+ * (`queryMcpAudit`): this owns what the user asked for — search, column
+ * filters, sort keys, page — and repaints whatever main answered last. The
+ * pieces around it live next door: the header and its column menus, the
+ * rows, the pager and the line of active filters.
+ *
+ * New calls arrive live. On the first page in the usual order the log reads
+ * itself again; anywhere else it would move what the user is looking at, so
+ * it only offers «Actualizar».
  */
 
 export interface McpActivityElements {
@@ -21,146 +40,181 @@ export interface McpActivityElements {
   activityTab: HTMLButtonElement;
   setup: HTMLElement;
   activity: HTMLElement;
-  filters: HTMLElement;
-  client: HTMLSelectElement;
+  search: HTMLInputElement;
+  searchClear: HTMLButtonElement;
+  searchKey: HTMLElement;
+  fresh: HTMLButtonElement;
+  active: HTMLElement;
+  log: HTMLElement;
+  head: HTMLElement;
   rows: HTMLUListElement;
-  empty: HTMLElement;
+  range: HTMLElement;
+  size: HTMLSelectElement;
+  pages: HTMLElement;
 }
 
-export interface McpActivity {
-  /** The clients the «Cliente» filter offers. */
-  setClients(clients: readonly McpClient[]): void;
+export interface McpActivityDeps {
+  showToast: ShowToast;
+  platform: string;
 }
 
-/** How many entries one read brings back. */
-const PAGE = 200;
-
-function isFilter(value: string | undefined): value is McpAuditFilter {
-  return value === 'all' || value === 'changes' || value === 'rejected';
-}
-
-function span(className: string, text: string): HTMLSpanElement {
-  const el = document.createElement('span');
-  el.className = className;
-  el.textContent = text;
-  return el;
-}
-
-const DIFF_SIGN = { ctx: ' ', del: '-', add: '+' } as const;
+/** Calls rarely come alone: one read for a burst of them. */
+export const LIVE_DELAY_MS = 300;
 
 export function createMcpActivity(
   els: McpActivityElements,
-  showToast: ShowToast,
-): McpActivity {
-  let filter: McpAuditFilter = 'all';
-  let clientId = '';
+  deps: McpActivityDeps,
+): void {
+  const { showToast } = deps;
+  let state = initialState();
+  let page: McpAuditPage | null = null;
   let loaded = false;
-  let shown: McpAuditEntry[] = [];
+  let live: ReturnType<typeof setTimeout> | null = null;
   const reads = latestWins();
 
-  function matches(entry: McpAuditEntry): boolean {
-    if (clientId && entry.clientId !== clientId) return false;
-    if (filter === 'changes') return entry.diff !== undefined;
-    if (filter === 'rejected') return entry.result === 'rejected';
-    return true;
-  }
+  const facets = (): McpAuditFacets | null => page?.facets ?? null;
 
-  function undoButton(token: string): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'small-btn mcp-entry-undo';
-    button.append(icon('undo-2'), 'Deshacer');
-    button.addEventListener('click', async () => {
-      button.disabled = true;
-      try {
-        const result = await window.api.undoMcpChange(token);
-        if (result.ok) {
-          showToast('Cambio deshecho', 'ok');
-          void load();
-        } else {
-          showToast(result.error ?? 'No se pudo deshacer.', 'error');
-          button.disabled = false;
-        }
-      } catch (err) {
-        showToast(`Error: ${errorMessage(err)}`, 'error');
+  /** A new question for main: back to the first page unless told not to. */
+  function change(firstPage = true): void {
+    if (firstPage) state.page = 1;
+    head.render();
+    void load();
+  }
+  const setSort = (next: typeof state.sort): void => {
+    state.sort = next;
+    change();
+  };
+  const clear = (column: ActivityColumn): void => {
+    clearColumn(state, column);
+    change();
+  };
+
+  const head = createActivityHead(els.head, {
+    state: () => state,
+    facets,
+    now: () => Date.now(),
+    clickSort: (key, additive) => setSort(clickSort(state.sort, key, additive)),
+    sort: (key, dir) => setSort(pickSort(state.sort, key, dir, false)),
+    addSort: (key) =>
+      setSort(pickSort(state.sort, key, columnOf(key).first, true)),
+    removeSort: (key) => setSort(dropSort(state.sort, key)),
+    setTime: (time) => {
+      state.time = time;
+      change();
+    },
+    select: (column, next) => {
+      if (column === 'client') state.clients = next;
+      else if (column === 'action') state.tools = next;
+      else state.results = next as typeof state.results;
+      change();
+    },
+    setUndoable: (on) => {
+      state.undoable = on;
+      change();
+    },
+    clear,
+  });
+
+  const search = createActivitySearch(
+    { input: els.search, clear: els.searchClear, shortcut: els.searchKey },
+    {
+      platform: deps.platform,
+      shown: () =>
+        !els.activity.hidden &&
+        (els.activity
+          .closest('.config-section')
+          ?.classList.contains('active') ??
+          false),
+      apply: (text) => {
+        state.search = text;
+        change();
+      },
+    },
+  );
+
+  async function undo(token: string, button: HTMLButtonElement): Promise<void> {
+    button.disabled = true;
+    try {
+      const result = await window.api.undoMcpChange(token);
+      if (result.ok) {
+        showToast('Cambio deshecho', 'ok');
+        void load();
+      } else {
+        showToast(result.error ?? 'No se pudo deshacer.', 'error');
         button.disabled = false;
       }
-    });
-    return button;
-  }
-
-  function row(entry: McpAuditEntry): HTMLLIElement {
-    const li = document.createElement('li');
-    li.className = 'mcp-entry';
-    li.dataset.id = entry.id;
-
-    const line = document.createElement('div');
-    line.className = 'mcp-entry-line';
-    const action = span('mcp-entry-action', '');
-    action.append(span('mcp-entry-tool', entry.tool));
-    if (entry.target) action.append(` · ${entry.target}`);
-    if (entry.summary)
-      action.append(span('mcp-entry-summary', ` · ${entry.summary}`));
-    const result = span('mcp-entry-result', auditResultLabel(entry));
-    result.dataset.result = entry.result;
-    const tail = span('mcp-entry-tail', '');
-    line.append(
-      span('mcp-entry-time', auditTime(entry.at)),
-      span('mcp-entry-client', entry.clientName),
-      action,
-      result,
-      tail,
-    );
-    li.append(line);
-
-    if (entry.diff) {
-      const diff = document.createElement('div');
-      diff.className = 'mcp-diff';
-      diff.id = `mcp-diff-${entry.id}`;
-      diff.hidden = true;
-      for (const change of entry.diff) {
-        const diffLine = document.createElement('div');
-        diffLine.className = 'mcp-diff-line';
-        diffLine.dataset.kind = change.kind;
-        diffLine.textContent = `${DIFF_SIGN[change.kind]} ${change.field}: ${change.text}`;
-        diff.append(diffLine);
-      }
-      const toggle = document.createElement('button');
-      toggle.type = 'button';
-      toggle.className = 'mcp-entry-toggle';
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-controls', diff.id);
-      toggle.setAttribute('aria-label', 'Ver el cambio');
-      toggle.append(icon('chevron-right'));
-      toggle.addEventListener('click', () => {
-        diff.hidden = !diff.hidden;
-        toggle.setAttribute('aria-expanded', String(!diff.hidden));
-        li.classList.toggle('is-open', !diff.hidden);
-      });
-      tail.append(toggle);
-      li.classList.add('is-change');
-      li.append(diff);
+    } catch (err) {
+      showToast(`Error: ${errorMessage(err)}`, 'error');
+      button.disabled = false;
     }
-    if (entry.undoToken) tail.prepend(undoButton(entry.undoToken));
-    return li;
   }
 
-  function render(): void {
-    els.rows.replaceChildren(...shown.map(row));
-    els.empty.hidden = shown.length > 0;
+  function go(next: number): void {
+    state.page = next;
+    change(false);
+  }
+
+  function paint(): void {
+    head.render();
+    const byDay = groupsByDay(state.sort);
+    els.log.classList.toggle('is-flat', !byDay);
+    const total = page?.total ?? 0;
+    const retained = page?.retained ?? 0;
+    renderRows(els.rows, page?.entries ?? [], {
+      search: state.search,
+      byDay,
+      now: Date.now(),
+      empty: retained === 0 ? 'none' : 'filtered',
+      undo: (token, button) => void undo(token, button),
+    });
+    renderPager(
+      { range: els.range, pages: els.pages },
+      {
+        page: state.page,
+        size: state.size,
+        total,
+        shown: page?.entries.length ?? 0,
+      },
+      go,
+    );
+    renderActive(
+      els.active,
+      { state, facets: facets(), total, retained },
+      {
+        dropSort: (key) => setSort(dropSort(state.sort, key)),
+        clearColumn: clear,
+        clearAll: () => {
+          state = { ...initialState(), size: state.size };
+          search.reset();
+          change();
+        },
+      },
+    );
+  }
+
+  function stopLive(): void {
+    if (live !== null) clearTimeout(live);
+    live = null;
   }
 
   async function load(): Promise<void> {
+    stopLive();
+    els.fresh.hidden = true;
     reads.invalidate();
     const current = reads.claim();
-    const query: McpAuditQuery = { filter, limit: PAGE };
-    if (clientId) query.clientId = clientId;
     try {
-      const list = await window.api.listMcpAudit(query);
+      const next = await window.api.queryMcpAudit(toQuery(state, Date.now()));
       if (!current()) return;
-      shown = list;
+      // The page emptied under the user (entries aged out): go to the last.
+      const last = pageCount(next.total, state.size);
+      if (next.entries.length === 0 && state.page > last) {
+        state.page = last;
+        void load();
+        return;
+      }
+      page = next;
       loaded = true;
-      render();
+      paint();
     } catch (err) {
       if (current())
         showToast(`Error al leer la actividad: ${errorMessage(err)}`, 'error');
@@ -177,52 +231,24 @@ export function createMcpActivity(
   els.setupTab.addEventListener('click', () => showTab(false));
   els.activityTab.addEventListener('click', () => showTab(true));
 
-  els.filters.addEventListener('click', (event) => {
-    const chip =
-      event.target instanceof HTMLElement
-        ? event.target.closest<HTMLElement>('[data-filter]')
-        : null;
-    const picked = chip?.dataset.filter;
-    if (!isFilter(picked) || picked === filter) return;
-    filter = picked;
-    for (const each of els.filters.querySelectorAll<HTMLElement>(
-      '[data-filter]',
-    ))
-      each.setAttribute('aria-pressed', String(each === chip));
-    void load();
+  els.size.addEventListener('change', () => {
+    state.size = Number(els.size.value) || state.size;
+    change();
+  });
+  els.fresh.addEventListener('click', () => void load());
+
+  window.api.onMcpAudit(() => {
+    if (!loaded) return;
+    if (state.page === 1 && isDefaultSort(state.sort)) {
+      stopLive();
+      live = setTimeout(() => {
+        live = null;
+        void load();
+      }, LIVE_DELAY_MS);
+    } else {
+      els.fresh.hidden = false;
+    }
   });
 
-  els.client.addEventListener('change', () => {
-    clientId = els.client.value;
-    void load();
-  });
-
-  window.api.onMcpAudit((entry) => {
-    if (!loaded || !matches(entry)) return;
-    shown = [entry, ...shown.filter((each) => each.id !== entry.id)].slice(
-      0,
-      PAGE,
-    );
-    render();
-  });
-
-  return {
-    setClients(clients) {
-      const options = clients.map(
-        (client) => new Option(client.name, client.id),
-      );
-      els.client.replaceChildren(
-        new Option('Todos los clientes', ''),
-        ...options,
-      );
-      // A client that is gone keeps its filter only while it is listed.
-      els.client.value = clients.some((client) => client.id === clientId)
-        ? clientId
-        : '';
-      if (els.client.value !== clientId) {
-        clientId = '';
-        if (loaded) void load();
-      }
-    },
-  };
+  head.render();
 }

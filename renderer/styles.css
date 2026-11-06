@@ -6144,8 +6144,6 @@ button.primary.mcp-confirm-apply.is-destructive {
   --mcp-avatar-fg: #3a3a3c;
   --mcp-claude-bg: rgba(193, 95, 60, 0.12);
   --mcp-claude-fg: #c15f3c;
-  --mcp-chip-on-bg: #1d1d1f;
-  --mcp-chip-on-fg: #ffffff;
   --mcp-log-head-bg: rgba(0, 0, 0, 0.025);
   --mcp-change-bg: rgba(0, 122, 255, 0.04);
   --mcp-dot-neutral: #c7c7cc;
@@ -6170,8 +6168,6 @@ button.primary.mcp-confirm-apply.is-destructive {
   --mcp-avatar-fg: #e5e5ea;
   --mcp-claude-bg: rgba(217, 119, 87, 0.2);
   --mcp-claude-fg: #e8916f;
-  --mcp-chip-on-bg: #f5f5f7;
-  --mcp-chip-on-fg: #1d1d1f;
   --mcp-log-head-bg: rgba(255, 255, 255, 0.03);
   --mcp-change-bg: rgba(10, 132, 255, 0.08);
   --mcp-dot-neutral: #636366;
@@ -6788,39 +6784,175 @@ button.mcp-tab:focus-visible {
   outline-offset: 1px;
 }
 
-/* «Actividad»: filter chips and client picker over the log. */
-.mcp-activity-bar {
+/* «Actividad»: the search over the log and the line of what narrows it. */
+.act-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
-.mcp-filters {
+.act-search {
+  position: relative;
   display: flex;
+  flex: 1;
+  align-items: center;
   gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px 0 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--mcp-surface);
 }
-button.mcp-chip {
-  height: 26px;
-  padding: 0 11px;
+.act-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+.act-search > .icon {
+  position: absolute;
+  left: 9px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.act-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
   border: 0;
-  border-radius: 13px;
-  background: var(--badge-neutral-bg);
+  outline: 0;
+  background: transparent;
   box-shadow: none;
   color: inherit;
+  font: inherit;
+}
+.act-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.act-search kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--badge-neutral-bg);
+  color: var(--muted);
+  font: 10.5px var(--font-mono);
+}
+.act-search button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--badge-neutral-bg);
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+.act-search [hidden],
+button.act-fresh[hidden] {
+  display: none;
+}
+button.act-fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--badge-info-bg);
+  box-shadow: none;
+  color: var(--badge-info-fg);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.act-active {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.act-active .spacer {
+  flex: 1;
+}
+.act-active .lbl {
+  font-weight: 600;
+}
+.act-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 9px;
+  border-radius: 11px;
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+  font-weight: 600;
+}
+.act-pill.is-sort {
+  background: var(--badge-neutral-bg);
+  color: inherit;
+}
+.act-pill .icon {
+  font-size: 11px;
+}
+.act-pill .prio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  color: var(--mcp-surface);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.act-pill button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 10px;
+}
+.act-pill button:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+button.act-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
   font-size: 12px;
   cursor: pointer;
 }
-button.mcp-chip[aria-pressed='true'] {
-  background: var(--mcp-chip-on-bg);
-  color: var(--mcp-chip-on-fg);
-  font-weight: 600;
-}
-.mcp-activity-bar .mcp-select {
-  width: auto;
-  min-width: 160px;
-}
+/* The column menu pops out of the header, so the card cannot clip it. The
+   header text is muted; what is sorted and the menu read in body colour. */
 .mcp-log {
-  overflow: hidden;
+  --act-text: #1d1d1f;
+  background: var(--mcp-surface);
+  overflow: visible;
+}
+:root[data-theme='dark'] .mcp-log {
+  --act-text: #f5f5f7;
 }
 .mcp-log-head,
 .mcp-entry-line {
@@ -6831,7 +6963,9 @@ button.mcp-chip[aria-pressed='true'] {
   padding: 0 16px;
 }
 .mcp-log-head {
+  position: relative;
   height: 32px;
+  border-radius: 9px 9px 0 0;
   background: var(--mcp-log-head-bg);
   color: var(--muted);
   font-size: 10.5px;
@@ -6974,6 +7108,407 @@ button.mcp-entry-toggle[aria-expanded='true'] .icon {
 .mcp-log-rows .mcp-diff-line[data-kind='add'] {
   background: var(--mcp-diff-add-bg);
   color: var(--mcp-diff-add-fg);
+}
+/* Header cells: the label sorts, the funnel opens the column menu. */
+.xh {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: -6px;
+}
+button.xh-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+button.xh-sort:hover {
+  background: var(--bg-row-hover);
+  color: var(--act-text);
+  filter: none;
+}
+button.xh-sort .icon {
+  font-size: 12px;
+}
+.xh.is-sorted button.xh-sort {
+  color: var(--act-text);
+}
+.xh-prio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--badge-neutral-bg);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+button.xh-funnel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.mcp-log-head:hover button.xh-funnel,
+button.xh-funnel:focus-visible,
+button.xh-funnel[aria-expanded='true'] {
+  opacity: 1;
+}
+button.xh-funnel:hover,
+button.xh-funnel[aria-expanded='true'] {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.xh.is-filtered button.xh-funnel {
+  opacity: 1;
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+/* The column menu (a spreadsheet-like filter popover). */
+.xf {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: 268px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--mcp-surface);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+  color: var(--act-text);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root[data-theme='dark'] .xf {
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.xf.is-right {
+  left: auto;
+  right: 0;
+}
+.xf-sec {
+  padding: 5px;
+}
+.xf-sec + .xf-sec {
+  border-top: 1px solid var(--border);
+}
+button.xf-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-align: left;
+}
+button.xf-item:hover,
+button.xf-item:focus-visible {
+  outline: none;
+  background: var(--accent-tint);
+  filter: none;
+}
+button.xf-item .icon {
+  color: var(--muted);
+  font-size: 14px;
+}
+button.xf-item .icon.on {
+  margin-left: auto;
+  color: var(--accent);
+}
+.xf-title {
+  padding: 6px 8px 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.xf-find {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 2px 3px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-card-strong);
+}
+.xf-find:focus-within {
+  border-color: var(--accent);
+}
+.xf-find .icon {
+  color: var(--muted);
+  font-size: 12px;
+}
+.xf-find input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+}
+.xf-list {
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 0 3px 2px;
+}
+.xf-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.xf-check:hover {
+  background: var(--bg-row-hover);
+}
+.xf-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.xf-check .n {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.xf-check.is-all {
+  font-weight: 600;
+}
+.xf-check.is-group {
+  margin-top: 2px;
+  font-weight: 600;
+}
+.xf-check.is-child {
+  padding-left: 26px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.xf-check .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mcp-dot-neutral);
+}
+.xf-check .dot[data-result='ok'] {
+  background: var(--running);
+}
+.xf-check .dot[data-result='warning'] {
+  background: var(--mcp-dot-warn);
+}
+.xf-check .dot[data-result='error'],
+.xf-check .dot[data-result='rejected'] {
+  background: var(--error);
+}
+.xf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 2px 4px 6px;
+}
+button.xf-chip {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button.xf-chip[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+  font-weight: 600;
+}
+.xf-range {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 2px 6px 6px;
+}
+.xf-range label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.xf-range input {
+  height: 27px;
+  padding: 0 6px;
+  border-radius: 7px;
+  color-scheme: light dark;
+  font: inherit;
+  font-size: 12px;
+}
+.xf-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+}
+.xf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+button.xf-foot-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+button.xf-foot-link:disabled {
+  color: var(--muted);
+}
+/* Rows: a separator per day while the time leads; flat rows carry a date. */
+.act-day {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border-top: 1px solid var(--mcp-hairline);
+  background: var(--mcp-log-head-bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.mcp-log.is-flat .mcp-log-head,
+.mcp-log.is-flat .mcp-entry-line {
+  grid-template-columns: 92px 110px minmax(0, 1fr) 96px 112px;
+}
+.mcp-log.is-flat .mcp-log-rows .mcp-diff {
+  margin-left: 242px;
+}
+.mcp-entry-time.has-date {
+  white-space: nowrap;
+}
+.mcp-log-rows mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: rgba(255, 214, 10, 0.35);
+  color: inherit;
+}
+.act-empty {
+  padding: 34px 16px;
+  border-top: 1px solid var(--mcp-hairline);
+  color: var(--muted);
+  text-align: center;
+}
+.act-empty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--act-text);
+  font-size: 13px;
+}
+/* The pager, at the foot of the card. */
+.act-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 16px;
+  border-top: 1px solid var(--mcp-hairline);
+  border-radius: 0 0 9px 9px;
+  background: var(--mcp-log-head-bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+.act-pager .spacer {
+  flex: 1;
+}
+.act-pager label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.act-pager select.mcp-select {
+  width: auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 22px 0 8px;
+  font-size: 12px;
+}
+.act-pages {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.act-pages button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.act-pages button:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.act-pages button[aria-current='page'] {
+  background: var(--accent-strong);
+  color: #fff;
+  font-weight: 600;
+}
+.act-pages button:disabled {
+  opacity: 0.35;
+}
+.act-pages .gap {
+  width: 20px;
+  text-align: center;
 }
 /* ── End Settings: MCP ─────────────────────────────────────────────── */
 

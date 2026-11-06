@@ -52,7 +52,7 @@ export function createMcpPane(els: McpElements, deps: McpPaneDeps): void {
     platform: deps.platform,
     onState: (next) => apply(next),
   });
-  const activity = createMcpActivity(els.activity, showToast);
+  createMcpActivity(els.activity, { showToast, platform: deps.platform });
   const clients = createMcpClientList(els.clients, {
     onReject: (client) => void mutate(window.api.rejectMcpClient(client.id)),
     onAllow: (client) => sheet.open(client),
@@ -101,7 +101,6 @@ export function createMcpPane(els: McpElements, deps: McpPaneDeps): void {
     const now = Date.now();
     clients.render(next.clients, now);
     revoke.update(next.clients, now);
-    activity.setClients(next.clients);
   }
 
   els.server.enabled.addEventListener('change', async () => {

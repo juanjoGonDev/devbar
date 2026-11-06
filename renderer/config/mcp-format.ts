@@ -1,6 +1,4 @@
 import type {
-  McpAuditEntry,
-  McpAuditResult,
   McpClient,
   McpClientKind,
   McpConnectCommands,
@@ -12,8 +10,8 @@ import { lastSeen } from './remote-format.js';
 /**
  * The words of the «MCP» section that come out of its data: the status line
  * of the server card, the ready-to-paste block for each assistant, the
- * lines that say when a client connected and was last used, and the time and
- * result columns of the activity log.
+ * lines that say when a client connected and was last used, and the time
+ * column of the activity log.
  */
 
 export interface ConnectSnippet {
@@ -134,20 +132,6 @@ const CLOCK = new Intl.DateTimeFormat('es-ES', {
 /** «12:41:07», the time column of the activity log. */
 export function auditTime(at: number): string {
   return CLOCK.format(at);
-}
-
-const RESULT_LABELS: Readonly<Record<McpAuditResult, string>> = {
-  ok: 'Correcto',
-  warning: 'Con avisos',
-  error: 'Error',
-  rejected: 'Rechazado',
-  pending: 'Pendiente',
-};
-
-/** A change that went through reads «Aplicado»; anything else by result. */
-export function auditResultLabel(entry: McpAuditEntry): string {
-  if (entry.result === 'ok' && entry.diff) return 'Aplicado';
-  return RESULT_LABELS[entry.result];
 }
 
 /** The «CONEXIÓN» line of the sheet. */

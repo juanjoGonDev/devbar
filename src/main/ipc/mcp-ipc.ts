@@ -6,7 +6,7 @@ import {
   type IpcRegistrar,
 } from '../ipc-validators.js';
 import {
-  ipcMcpAuditQuery,
+  ipcMcpAuditPageQuery,
   ipcMcpClientPatch,
   ipcMcpConfirmAnswer,
   ipcMcpId,
@@ -29,7 +29,7 @@ export interface McpIpcDeps {
     | 'reject'
     | 'update'
     | 'revoke'
-    | 'listAudit'
+    | 'queryAudit'
     | 'undo'
     | 'answerConfirm'
     | 'listConfirms'
@@ -57,8 +57,8 @@ export function registerMcpIpc(ipc: IpcRegistrar, deps: McpIpcDeps): void {
   ipc.handle('mcp:revokeClient', (_e: IpcMainInvokeEvent, payload: unknown) =>
     mcp.revoke(idOf(payload)),
   );
-  ipc.handle('mcp:listAudit', (_e: IpcMainInvokeEvent, payload: unknown) =>
-    mcp.listAudit(ipcMcpAuditQuery(payload)),
+  ipc.handle('mcp:queryAudit', (_e: IpcMainInvokeEvent, payload: unknown) =>
+    mcp.queryAudit(ipcMcpAuditPageQuery(payload)),
   );
   ipc.handle('mcp:undo', (_e: IpcMainInvokeEvent, payload: unknown) =>
     mcp.undo(ipcMcpId(ipcRecord(payload).undoToken, 'undoToken')),
