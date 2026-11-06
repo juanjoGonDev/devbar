@@ -6598,6 +6598,27 @@ dialog.sub-sheet.mcp-sheet {
 .mcp-sheet-note {
   margin: 2px 4px 0;
 }
+/* «¿Permitir cambios de configuración sin confirmar?» over the sheet. */
+.modal.mcp-warning-modal {
+  width: 420px;
+}
+.mcp-warning-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--badge-error-bg);
+  color: var(--mcp-danger);
+  font-size: 15px;
+}
+.mcp-warning-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
 .mcp-access {
   display: flex;
   flex-direction: column;

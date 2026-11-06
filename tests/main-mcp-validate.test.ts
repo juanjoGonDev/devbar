@@ -51,7 +51,7 @@ describe('src/main/mcp/validate.ts', () => {
       ).toEqual({
         name: 'Mi Claude',
         scopes: { workflows: false },
-        confirm: { control: 'always', workflows: 'never' },
+        confirm: { control: 'always', workflows: 'never', config: 'never' },
         groups: ['g1'],
         redactSecrets: false,
       });
@@ -63,6 +63,7 @@ describe('src/main/mcp/validate.ts', () => {
 
     it.each([
       [{ confirm: { control: 'sometimes' } }],
+      [{ confirm: { config: 'sometimes' } }],
       [{ groups: 'some' }],
       [{ groups: [1] }],
       [{ groups: Array.from({ length: 501 }, (_, i) => `g${i}`) }],

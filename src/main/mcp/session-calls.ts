@@ -1,5 +1,8 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { McpClient } from '../../ipc-contract/mcp-api.js';
+import type {
+  McpClient,
+  McpConfirmPolicy,
+} from '../../ipc-contract/mcp-api.js';
 import type { ConfirmDesk, ConfirmOutcome } from './confirm-desk.js';
 import {
   createRedactor,
@@ -102,6 +105,18 @@ export function createCalls(
       if (outcome !== 'applied')
         throw new ToolError(OUTCOME_ERRORS[outcome], 'rejected', target);
     };
+    /** Asks per the client's policy: never, once per key, or always. */
+    const gate = async (
+      policy: McpConfirmPolicy,
+      key: string,
+      asking: () => Promise<void>,
+    ): Promise<void> => {
+      const once = `${client.id}|${key}`;
+      if (policy === 'never') return;
+      if (policy === 'first' && deps.firstApprovals.has(once)) return;
+      await asking();
+      if (policy === 'first') deps.firstApprovals.add(once);
+    };
     return {
       client,
       runtime: deps.runtime,
@@ -109,37 +124,35 @@ export function createCalls(
       groups: () =>
         deps.runtime.listGroups().filter((group) => groupAllowed(group.id)),
       groupAllowed,
-      confirmRun: async (question: RunConfirmation) => {
-        const policy = client.confirm[question.scope];
-        const key = `${client.id}|${question.key}`;
-        if (policy === 'never') return;
-        if (policy === 'first' && deps.firstApprovals.has(key)) return;
-        await ask(
-          {
-            clientName: client.name,
-            title: question.title,
-            subtitle: question.subtitle,
-            risk: 'executes',
-            diff: [],
-            ...(question.reason ? { reason: question.reason } : {}),
-          },
-          question.subtitle,
-          undefined,
-        );
-        if (policy === 'first') deps.firstApprovals.add(key);
-      },
+      confirmRun: (question: RunConfirmation) =>
+        gate(client.confirm[question.scope], question.key, () =>
+          ask(
+            {
+              clientName: client.name,
+              title: question.title,
+              subtitle: question.subtitle,
+              risk: 'executes',
+              diff: [],
+              ...(question.reason ? { reason: question.reason } : {}),
+            },
+            question.subtitle,
+            undefined,
+          ),
+        ),
       confirmChange: (proposal: ConfigProposal) =>
-        ask(
-          {
-            clientName: client.name,
-            title: proposal.title,
-            subtitle: proposal.subtitle,
-            risk: proposal.risk,
-            diff: proposal.diff,
-            ...(proposal.reason ? { reason: proposal.reason } : {}),
-          },
-          proposal.subtitle,
-          proposal.diff,
+        gate(client.confirm.config, `cfg:${tool}:${proposal.subtitle}`, () =>
+          ask(
+            {
+              clientName: client.name,
+              title: proposal.title,
+              subtitle: proposal.subtitle,
+              risk: proposal.risk,
+              diff: proposal.diff,
+              ...(proposal.reason ? { reason: proposal.reason } : {}),
+            },
+            proposal.subtitle,
+            proposal.diff,
+          ),
         ),
       now: () => deps.now(),
       sleep: (ms) => deps.sleep(ms),

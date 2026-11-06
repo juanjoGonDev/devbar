@@ -8,6 +8,10 @@ import type {
 } from '../../src/ipc-contract/mcp-api.js';
 import { icon, type IconName } from '../icon.js';
 import {
+  createConfigWarning,
+  type McpWarningElements,
+} from './mcp-config-warning.js';
+import {
   clientInitial,
   connectionLine,
   SCOPE_KEYS,
@@ -21,7 +25,9 @@ import { errorMessage, type ShowToast } from './toast.js';
  * confirmation policy per scope, the groups it may see, whether secrets are
  * masked, and «Revocar acceso». For a pending (or revoked) client the same
  * sheet is the approval: it opens on the defaults main gave the client and
- * «Permitir» lets it in with what is picked.
+ * «Permitir» lets it in with what is picked. Letting configuration changes
+ * skip their diff («Sin preguntar» or «Preguntar la primera vez») only
+ * sticks once its warning is accepted.
  */
 
 export interface McpSheetElements {
@@ -39,6 +45,7 @@ export interface McpSheetElements {
   submit: HTMLButtonElement;
   submitLabel: HTMLElement;
   shortcutKey: HTMLElement;
+  warning: McpWarningElements;
 }
 
 export interface McpSheetDeps {
@@ -88,13 +95,21 @@ const SCOPES: Readonly<Record<ScopeKey, ScopeMeta>> = {
   config: {
     icon: 'pencil',
     hint: 'Crear, editar y borrar grupos, comandos, acciones y workflows; importar y exportar.',
-    policies: [['always', 'Preguntar siempre con diff']],
+    policies: [
+      ['never', 'Sin preguntar'],
+      ['first', 'Preguntar la primera vez'],
+      ['always', 'Preguntar siempre con diff'],
+    ],
   },
 };
 
 interface Draft {
   scopes: McpScopes;
-  confirm: { control: McpConfirmPolicy; workflows: McpConfirmPolicy };
+  confirm: {
+    control: McpConfirmPolicy;
+    workflows: McpConfirmPolicy;
+    config: McpConfirmPolicy;
+  };
   groups: 'all' | string[];
   redactSecrets: boolean;
 }
@@ -113,6 +128,9 @@ export function createMcpClientSheet(
   let selected = new Set<string>();
   let initial = '';
   let busy = false;
+  /** The config policy in effect: a laxer one only once its warning is OK'd. */
+  let configPolicy: McpConfirmPolicy = 'always';
+  const warning = createConfigWarning(els.warning);
 
   // The four scope rows are fixed: built once, filled on every open.
   for (const key of SCOPE_KEYS) {
@@ -162,7 +180,7 @@ export function createMcpClientSheet(
     selects[key] = select;
   }
 
-  function policyOf(key: 'control' | 'workflows'): McpConfirmPolicy {
+  function policyOf(key: 'control' | 'workflows' | 'config'): McpConfirmPolicy {
     const value = selects[key].value;
     return isPolicy(value) ? value : 'always';
   }
@@ -176,6 +194,7 @@ export function createMcpClientSheet(
       confirm: {
         control: policyOf('control'),
         workflows: policyOf('workflows'),
+        config: configPolicy,
       },
       groups: els.groupsAll.checked
         ? 'all'
@@ -203,13 +222,27 @@ export function createMcpClientSheet(
     els.groups.replaceChildren(...chips);
   }
 
+  selects.config.addEventListener('change', () => {
+    const next = policyOf('config');
+    if (next === 'always' || !client) {
+      configPolicy = next;
+      return;
+    }
+    warning.ask(client.name, next, (ok) => {
+      if (ok) configPolicy = next;
+      selects.config.value = configPolicy;
+    });
+  });
+
+  const snapshot = (): string => JSON.stringify(read());
+
   const chrome = wireSheetChrome({
     dialog: els.dialog,
     form: els.form,
     firstField: switches.read,
     shortcutHint: els.shortcutKey,
     platform: deps.platform,
-    isDirty: () => client !== null && JSON.stringify(read()) !== initial,
+    isDirty: () => client !== null && snapshot() !== initial,
     dismissPopover: () => false,
   });
 
@@ -237,6 +270,7 @@ export function createMcpClientSheet(
     return (
       current.confirm.control !== draft.confirm.control ||
       current.confirm.workflows !== draft.confirm.workflows ||
+      current.confirm.config !== draft.confirm.config ||
       JSON.stringify(current.groups) !== JSON.stringify(draft.groups) ||
       current.redactSecrets !== draft.redactSecrets
     );
@@ -308,7 +342,8 @@ export function createMcpClientSheet(
       selects.read.value = 'never';
       selects.control.value = next.confirm.control;
       selects.workflows.value = next.confirm.workflows;
-      selects.config.value = 'always';
+      configPolicy = next.confirm.config;
+      selects.config.value = configPolicy;
       els.groupsAll.checked = next.groups === 'all';
       els.groupsSome.checked = next.groups !== 'all';
       selected = new Set(next.groups === 'all' ? [] : next.groups);
@@ -319,7 +354,7 @@ export function createMcpClientSheet(
         : connectionLine(next, Date.now());
       els.revoke.hidden = approving;
       els.submitLabel.textContent = approving ? 'Permitir' : 'Guardar';
-      initial = JSON.stringify(read());
+      initial = snapshot();
       chrome.open();
     },
   };

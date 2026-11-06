@@ -86,6 +86,8 @@ export function ipcMcpClientPatch(value: unknown): McpClientPatch {
         confirm.workflows,
         'confirm.workflows',
       );
+    if (confirm.config !== undefined)
+      patch.confirm.config = policyField(confirm.config, 'confirm.config');
   }
   if (raw.groups !== undefined) patch.groups = groupsField(raw.groups);
   if (raw.redactSecrets !== undefined) {

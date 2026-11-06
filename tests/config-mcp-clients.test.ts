@@ -60,6 +60,18 @@ const chip = (name: string): HTMLButtonElement => {
   return found;
 };
 
+const warning = (): HTMLDialogElement =>
+  el<HTMLDialogElement>('mcp-config-warning');
+/** Picks a confirmation policy the way the select does: value, then `change`. */
+function choose(scope: string, value: string): void {
+  const select = policy(scope);
+  select.value = value;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+/** The patch of the latest `updateMcpClient` call. */
+const lastPatch = (win: RendererWindow): unknown =>
+  win.argsFor('updateMcpClient').at(-1)?.[1];
+
 const PENDING = mcpClient('Cursor', {
   kind: 'cursor',
   status: 'pending',
@@ -218,6 +230,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
       expect(scopeSwitch('config').checked).toBe(false);
       expect(policy('control').value).toBe('never');
       expect(policy('workflows').value).toBe('first');
+      expect(policy('config').value).toBe('always');
     });
 
     it('approves with the scopes picked, then closes', async () => {
@@ -254,7 +267,11 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
         [
           'client-Cursor',
           {
-            confirm: { control: 'always', workflows: 'first' },
+            confirm: {
+              control: 'always',
+              workflows: 'first',
+              config: 'always',
+            },
             groups: 'all',
             redactSecrets: false,
           },
@@ -329,17 +346,21 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
       );
     });
 
-    it('fixes how reads and configuration changes are confirmed', async () => {
+    it('fixes how reads are confirmed, and offers the rest a choice', async () => {
       win = await openWith([ALLOWED]);
       click(button(row('Claude Code'), 'Permisos'));
       expect(policy('read').disabled).toBe(true);
       expect(visible(policy('read').selectedOptions[0] ?? null)).toBe(
         'Sin preguntar',
       );
-      expect(policy('config').disabled).toBe(true);
-      expect(visible(policy('config').selectedOptions[0] ?? null)).toBe(
-        'Preguntar siempre con diff',
-      );
+      expect(policy('config').disabled).toBe(false);
+      expect(
+        [...policy('config').options].map((o) => [o.value, o.text]),
+      ).toEqual([
+        ['never', 'Sin preguntar'],
+        ['first', 'Preguntar la primera vez'],
+        ['always', 'Preguntar siempre con diff'],
+      ]);
       expect(
         [...policy('control').options].map((o) => [o.value, o.text]),
       ).toEqual([
@@ -370,7 +391,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
               workflows: true,
               config: false,
             },
-            confirm: { control: 'never', workflows: 'never' },
+            confirm: { control: 'never', workflows: 'never', config: 'always' },
             groups: ['group-Back'],
             redactSecrets: true,
           },
@@ -426,6 +447,117 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
       click(button(sheet(), 'Cancelar'));
       expect(ask).toHaveBeenCalledOnce();
       expect(sheet().open).toBe(true);
+    });
+  });
+
+  describe('choosing how configuration changes are confirmed', () => {
+    it('says that every change stays in Activity and can be undone', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      expect(visible(sheet().querySelector('.mcp-sheet-note'))).toBe(
+        'Todo cambio de configuración, confirmado o no, queda en Actividad con su diff y se puede deshacer.',
+      );
+    });
+
+    it('warns before letting a client skip the confirmation', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      choose('config', 'never');
+      expect(warning().open).toBe(true);
+      expect(visible(el('mcp-config-warning-title'))).toBe(
+        '¿Permitir cambios de configuración sin confirmar?',
+      );
+      expect(visible(el('mcp-config-warning-body'))).toBe(
+        'Claude Code podrá cambiar comandos, variables y carpetas —es decir, qué se ejecuta en tu equipo— sin tu aprobación previa. Cada cambio queda en Actividad y se puede deshacer.',
+      );
+      expect(visible(el('mcp-config-warning-allow'))).toBe('Permitir');
+      expect(el('mcp-config-warning-allow').classList.contains('danger')).toBe(
+        true,
+      );
+    });
+
+    it('warns before asking only the first time', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      choose('config', 'first');
+      expect(warning().open).toBe(true);
+      expect(visible(el('mcp-config-warning-title'))).toBe(
+        '¿Confirmar solo la primera vez?',
+      );
+      expect(visible(el('mcp-config-warning-body'))).toBe(
+        'Claude Code solo pedirá tu aprobación la primera vez que cambie cada elemento mientras DevBar siga abierto; después podrá cambiar sus comandos, variables y carpetas sin preguntar. Cada cambio queda en Actividad y se puede deshacer.',
+      );
+    });
+
+    it('puts the previous choice back when the warning is cancelled', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      choose('config', 'never');
+      click(button(warning(), 'Cancelar'));
+      expect(warning().open).toBe(false);
+      expect(policy('config').value).toBe('always');
+      expect(sheet().open).toBe(true);
+      submit();
+      expect(lastPatch(win)).toMatchObject({ confirm: { config: 'always' } });
+    });
+
+    it('puts the previous choice back on Escape, keeping the sheet open', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      choose('config', 'first');
+      warning().dispatchEvent(new Event('cancel', { cancelable: true }));
+      expect(warning().open).toBe(false);
+      expect(policy('config').value).toBe('always');
+      expect(sheet().open).toBe(true);
+    });
+
+    it('keeps the choice once allowed, and saves it', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      choose('config', 'never');
+      click(el('mcp-config-warning-allow'));
+      expect(warning().open).toBe(false);
+      expect(policy('config').value).toBe('never');
+      submit();
+      expect(lastPatch(win)).toMatchObject({
+        confirm: { control: 'never', workflows: 'first', config: 'never' },
+      });
+    });
+
+    it('goes back to the last allowed choice, not the one it opened on', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      choose('config', 'never');
+      click(el('mcp-config-warning-allow'));
+      choose('config', 'first');
+      click(button(warning(), 'Cancelar'));
+      expect(policy('config').value).toBe('never');
+    });
+
+    it('asks nothing to go back to confirming every change', async () => {
+      win = await openWith([
+        { ...ALLOWED, confirm: { ...ALLOWED.confirm, config: 'first' } },
+      ]);
+      click(button(row('Claude Code'), 'Permisos'));
+      expect(policy('config').value).toBe('first');
+      choose('config', 'always');
+      expect(warning().open).toBe(false);
+      submit();
+      expect(lastPatch(win)).toMatchObject({ confirm: { config: 'always' } });
+    });
+
+    it('sends the allowed choice with an approval too', async () => {
+      win = await openWith([PENDING]);
+      click(button(row('Cursor'), 'Permitir…'));
+      choose('config', 'first');
+      expect(visible(el('mcp-config-warning-body'))).toContain('Cursor solo');
+      click(el('mcp-config-warning-allow'));
+      submit();
+      await win.settle('approveMcpClient', {
+        ok: true,
+        state: mcpState({ clients: [{ ...PENDING, status: 'allowed' }] }),
+      });
+      expect(lastPatch(win)).toMatchObject({ confirm: { config: 'first' } });
     });
   });
 });

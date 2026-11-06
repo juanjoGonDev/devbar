@@ -41,8 +41,8 @@ export type McpConfirmPolicy = 'never' | 'first' | 'always';
 export interface McpConfirmPolicies {
   control: McpConfirmPolicy;
   workflows: McpConfirmPolicy;
-  /** Fixed: every configuration change is confirmed with its diff. */
-  config: 'always';
+  /** Configuration changes; `always` (the default) shows their diff. */
+  config: McpConfirmPolicy;
 }
 
 export interface McpClient {
@@ -68,7 +68,7 @@ export interface McpClient {
 export interface McpClientPatch {
   name?: string;
   scopes?: Partial<McpScopes>;
-  confirm?: Partial<Pick<McpConfirmPolicies, 'control' | 'workflows'>>;
+  confirm?: Partial<McpConfirmPolicies>;
   groups?: 'all' | string[];
   redactSecrets?: boolean;
 }

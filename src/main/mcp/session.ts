@@ -46,7 +46,7 @@ export interface Session {
 }
 
 const PENDING_TOOL = 'devbar_access';
-const INSTRUCTIONS = `DevBar is a menu-bar launcher for local development services. A group is a project folder with commands (long-running services such as dev servers), actions (one-off tasks such as a build) and pre-scripts (steps that workflows run). Wherever a tool asks for a group, command, action, pre-script or workflow, its id or its name is accepted. The user grants this client its permissions in DevBar › Settings › MCP; some calls wait until the user confirms them in DevBar, and are rejected when nobody answers within 60 seconds. Configuration changes always show the user a diff first and can be undone (undo_last_change).`;
+const INSTRUCTIONS = `DevBar is a menu-bar launcher for local development services. A group is a project folder with commands (long-running services such as dev servers), actions (one-off tasks such as a build) and pre-scripts (steps that workflows run). Wherever a tool asks for a group, command, action, pre-script or workflow, its id or its name is accepted. The user grants this client its permissions in DevBar › Settings › MCP; some calls wait until the user confirms them in DevBar, and are rejected when nobody answers within 60 seconds. Configuration changes show the user a diff to approve, unless the user allowed this client to skip it, and can always be undone (undo_last_change).`;
 
 function pendingText(client: McpClient | null): string {
   if (client?.status === 'revoked')

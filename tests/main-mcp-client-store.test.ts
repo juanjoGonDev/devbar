@@ -205,7 +205,7 @@ describe('src/main/mcp/client-store.ts', () => {
       const result = h.store.update(id, {
         name: '  Mi Claude  ',
         scopes: { config: true },
-        confirm: { control: 'always' },
+        confirm: { control: 'always', config: 'first' },
         groups: ['g1', 'g1', 'g2'],
         redactSecrets: false,
       });
@@ -215,7 +215,7 @@ describe('src/main/mcp/client-store.ts', () => {
         client: {
           name: 'Mi Claude',
           scopes: { read: true, control: true, workflows: true, config: true },
-          confirm: { control: 'always', workflows: 'first', config: 'always' },
+          confirm: { control: 'always', workflows: 'first', config: 'first' },
           groups: ['g1', 'g2'],
           redactSecrets: false,
         },
@@ -329,6 +329,25 @@ describe('src/main/mcp/client-store.ts', () => {
           redactSecrets: true,
         },
       ]);
+    });
+
+    it('keeps a chosen configuration policy and asks always for an old or invalid one', () => {
+      const record = (config?: unknown) => ({
+        id: 'c1',
+        key: 'claude-code',
+        confirm: { control: 'never', workflows: 'first', config },
+      });
+
+      expect(normalizeClientRecord(record('never'))?.confirm.config).toBe(
+        'never',
+      );
+      expect(normalizeClientRecord(record('first'))?.confirm.config).toBe(
+        'first',
+      );
+      expect(normalizeClientRecord(record())?.confirm.config).toBe('always');
+      expect(normalizeClientRecord(record('sometimes'))?.confirm.config).toBe(
+        'always',
+      );
     });
 
     it('treats a store that is not a list as empty', () => {

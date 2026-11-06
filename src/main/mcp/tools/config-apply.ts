@@ -6,11 +6,12 @@ import { ToolError, type ToolContext, type ToolOutcome } from './tool-kit.js';
 
 /**
  * The one way an assistant's configuration change happens: nothing changed
- * means nothing is asked; otherwise the user sees the diff in DevBar and
- * confirms (always — configuration is never «sin preguntar»), the whole
- * config is backed up for the slice it touches, and only then is the change
- * written through the app's own handler. The outcome carries the diff and
- * the undo token the audit log keeps.
+ * means nothing is asked; otherwise the user confirms the diff in DevBar as
+ * the client's config policy says (always by default, once per target, or
+ * not at all), the whole config is backed up for the slice it touches, and
+ * only then is the change written through the app's own handler. Whether it
+ * was asked or not, the outcome carries the diff and the undo token the
+ * audit log keeps.
  */
 
 export interface ChangeRequest {

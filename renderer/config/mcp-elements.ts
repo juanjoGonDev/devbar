@@ -66,6 +66,13 @@ export function mcpElements(): McpElements {
       submit: byId('mcp-sheet-submit', HTMLButtonElement),
       submitLabel: byId('mcp-sheet-submit-label', HTMLSpanElement),
       shortcutKey: byId('mcp-sheet-key', HTMLElement),
+      warning: {
+        dialog: byId('mcp-config-warning', HTMLDialogElement),
+        title: byId('mcp-config-warning-title', HTMLHeadingElement),
+        body: byId('mcp-config-warning-body', HTMLParagraphElement),
+        cancel: byId('mcp-config-warning-cancel', HTMLButtonElement),
+        allow: byId('mcp-config-warning-allow', HTMLButtonElement),
+      },
     },
     activity: {
       setupTab: byId('mcp-tab-setup', HTMLButtonElement),

@@ -182,7 +182,7 @@ export function normalizeClientRecord(value: unknown): McpClientRecord | null {
     confirm: {
       control: policy(confirm.control, 'never'),
       workflows: policy(confirm.workflows, 'first'),
-      config: 'always',
+      config: policy(confirm.config, 'always'),
     },
     groups: normalizeGroups(value.groups),
     redactSecrets: bool(value.redactSecrets, true),
@@ -303,7 +303,7 @@ export function createClientStore(deps: ClientStoreDeps): ClientStore {
               patch.confirm.workflows,
               record.confirm.workflows,
             ),
-            config: 'always',
+            config: policy(patch.confirm.config, record.confirm.config),
           };
         }
         if (patch.groups !== undefined)

@@ -1632,8 +1632,8 @@
           <h3 class="mcp-group-title">Qué puede hacer</h3>
           <div id="mcp-sheet-scopes" class="mcp-card mcp-scopes"></div>
           <p class="mcp-hint mcp-sheet-note">
-            Los cambios en líneas de comando, variables o carpetas siempre se
-            confirman en DevBar, aunque elijas otra opción.
+            Todo cambio de configuración, confirmado o no, queda en Actividad
+            con su diff y se puede deshacer.
           </p>
 
           <h3 class="mcp-group-title">A qué puede acceder</h3>
@@ -1693,6 +1693,32 @@
           </button>
         </footer>
       </form>
+    </dialog>
+
+    <!-- «MCP»: before a client may skip config confirmations (mcp-config-warning.ts) -->
+    <dialog
+      id="mcp-config-warning"
+      class="modal mcp-warning-modal"
+      aria-labelledby="mcp-config-warning-title"
+      aria-describedby="mcp-config-warning-body"
+    >
+      <header class="modal-header">
+        <span class="mcp-warning-tile">
+          <span class="icon" data-icon="triangle-alert"></span>
+        </span>
+        <h2 id="mcp-config-warning-title"></h2>
+      </header>
+      <div class="modal-body">
+        <p id="mcp-config-warning-body" class="mcp-warning-body"></p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="mcp-config-warning-cancel" data-close>
+          Cancelar
+        </button>
+        <button type="button" id="mcp-config-warning-allow" class="danger">
+          Permitir
+        </button>
+      </div>
     </dialog>
 
     <div id="toast" style="display: none" class="toast"></div>
