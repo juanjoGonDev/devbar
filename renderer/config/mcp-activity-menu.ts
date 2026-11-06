@@ -25,7 +25,8 @@ import { rangePicker, type RangeView } from './mcp-range-picker.js';
 
 /**
  * What a column's menu holds: the sort entries on top, then its filter — the
- * time chips and range picker for «Hora», a searchable checklist for the others
+ * time chips for «Hora», with the range picker in a flyout beside the menu
+ * while «Rango…» is chosen, a searchable checklist for the others
  * (tools gathered by family, results with their colour and the «Solo se
  * puede deshacer» switch) — and «Quitar filtro» / «Listo» at the foot.
  * Rebuilt whole on every change; the column header keeps the popover itself.
@@ -153,7 +154,14 @@ function timeFilter(ctx: MenuContext): HTMLElement[] {
     view: ctx.range,
     change: (range) => ctx.setTime({ ...time, ...range }),
   });
-  return [chips, picker];
+  // Too tall for the menu: it opens beside it (mcp-activity-place.ts), but
+  // stays inside it, next in the Tab order and part of the same dialog.
+  const fly = document.createElement('div');
+  fly.className = 'xf-fly';
+  fly.setAttribute('role', 'group');
+  fly.setAttribute('aria-label', 'Rango de fechas');
+  fly.append(picker);
+  return [chips, fly];
 }
 
 function pickPreset(

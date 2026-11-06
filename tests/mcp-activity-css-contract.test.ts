@@ -88,6 +88,34 @@ describe('«Actividad» scrolling (renderer/styles.css)', () => {
     );
   });
 
+  it('lets a column menu scroll inside itself instead of being cut off', () => {
+    const box = declarations('.xf');
+    expect(box).toMatch(/overflow-y: auto/);
+    expect(box).toMatch(/overscroll-behavior: contain/);
+  });
+
+  it('pins the «Rango…» flyout to the window, where nothing around it can clip it', () => {
+    const fly = declarations('.xf-fly');
+    expect(fly).toMatch(/position: fixed/);
+    expect(fly).toMatch(/width: 284px/);
+    // These would make a box around it the flyout's frame instead of the
+    // window, and the settings content or the menu would clip it again.
+    const traps =
+      /(?:^|;)\s*(?:transform|filter|backdrop-filter|perspective|contain|will-change):/;
+    for (const around of [
+      '.config-content',
+      '.config-section',
+      ".config-section[data-section='mcp'].active",
+      '.mcp-view',
+      '.mcp-card',
+      '.mcp-log',
+      '.mcp-log-head',
+      '.xh',
+      '.xf',
+    ])
+      expect(declarations(around), around).not.toMatch(traps);
+  });
+
   it('keeps the search compact, wider while it is being used', () => {
     expect(declarations('.act-search')).toMatch(/flex: 0 0 240px/);
     expect(declarations('.act-search:focus-within')).toMatch(

@@ -2,6 +2,7 @@ import type { McpAuditFacets } from '../../src/ipc-contract/mcp-api.js';
 import { icon } from '../icon.js';
 import type { Selection } from './mcp-activity-checklist.js';
 import { menuContent } from './mcp-activity-menu.js';
+import { placeMenu } from './mcp-activity-place.js';
 import {
   COLUMNS,
   isFiltered,
@@ -19,7 +20,8 @@ import { createRangeView, type RangeView } from './mcp-range-picker.js';
  * the funnel opens the column's menu. The menu is a popover that stays open
  * while it is used — even when what is inside it is rebuilt with new counts —
  * and closes on «Listo», Escape (focus back on its funnel) or a click
- * anywhere else.
+ * anywhere else. After every paint and on every resize the menu is fitted
+ * into the window, with the «Rango…» flyout beside it (mcp-activity-place.ts).
  */
 
 export interface HeadDeps {
@@ -162,6 +164,7 @@ export function createActivityHead(
         done: () => close(true),
       }),
     );
+    placeMenu(menu.el);
   }
 
   function close(refocus: boolean): void {
@@ -209,6 +212,9 @@ export function createActivityHead(
     event.preventDefault();
     event.stopPropagation();
     close(true);
+  });
+  window.addEventListener('resize', () => {
+    if (open) placeMenu(open.el);
   });
 
   return {

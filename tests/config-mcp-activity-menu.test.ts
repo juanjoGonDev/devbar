@@ -28,7 +28,8 @@ import type {
  * -menu.ts and -checklist.ts): opening and closing the popover, the
  * checklists with their counts, groups and «(Seleccionar todo)», the result
  * switch, the time chips and range (its picker has its own file,
- * config-mcp-range-picker.test.ts), and «Quitar filtro».
+ * config-mcp-range-picker.test.ts, and the flyout it opens in and the room
+ * every menu gets, config-mcp-activity-flyout.test.ts), and «Quitar filtro».
  */
 
 const NOW = new Date(2026, 10, 6, 9, 0).getTime();

@@ -457,6 +457,10 @@ describe('the picker in «Actividad»', () => {
 
   it('filters by the days picked and says so in the summary', async () => {
     win = await openRange();
+    // Drawn in the flyout beside the menu, which still owns it.
+    expect(day(NOV, 2).closest('.xf-fly')?.parentElement?.closest('.xf')).toBe(
+      menu(),
+    );
     day(NOV, 2).focus();
     click(day(NOV, 2));
     expect(lastQuery(win).from).toBe(new Date(2026, 10, 2, 9, 0).getTime());

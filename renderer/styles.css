@@ -7227,13 +7227,19 @@ button.xh-funnel[aria-expanded='true'] {
   background: var(--badge-info-bg);
   color: var(--badge-info-fg);
 }
-/* The column menu (a spreadsheet-like filter popover). */
+/* The column menu (a spreadsheet-like filter popover). Its max-height is the
+   room left under it in the window (set by renderer/config/
+   mcp-activity-place.ts): a menu taller than that scrolls inside itself
+   instead of being cut off, since «Actividad» itself does not scroll. */
 .xf {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   z-index: 30;
   width: 268px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border-strong);
   border-radius: 11px;
   background: var(--mcp-surface);
@@ -7404,15 +7410,32 @@ button.xf-chip[aria-pressed='true'] {
   font-weight: 600;
 }
 /* «Rango…» of «Hora»: the app's own range picker (renderer/config/
-   mcp-range-picker.ts) — Chromium's datetime-local popup ignores the theme. */
-.xf[data-column='time'] {
-  width: 300px;
+   mcp-range-picker.ts) — Chromium's datetime-local popup ignores the theme.
+   Too tall for the menu, it opens in a flyout beside it: still a child of the
+   menu (same dialog, next in the Tab order), but fixed and placed from the
+   menu's box by mcp-activity-place.ts, so neither the menu's scrolling nor
+   the settings content can clip it. */
+.xf-fly {
+  position: fixed;
+  z-index: 31;
+  width: 284px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--mcp-surface);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+}
+:root[data-theme='dark'] .xf-fly {
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
 }
 .rp {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 4px 6px 6px;
+}
+.xf-fly .rp {
+  padding: 0;
 }
 .rp-ends {
   display: grid;
