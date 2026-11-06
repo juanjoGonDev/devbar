@@ -5,11 +5,8 @@ import type {
   McpAuditResult,
   McpDiffLine,
 } from '../src/ipc-contract/mcp-api.js';
-import {
-  AUDIT_RETENTION_MS,
-  createAuditLog,
-  type AuditDraft,
-} from '../src/main/mcp/audit-log.js';
+import { createAuditLog, type AuditDraft } from '../src/main/mcp/audit-log.js';
+import { AUDIT_RETENTION_MS } from '../src/mcp-audit-labels.js';
 import type { AuditKnown } from '../src/main/mcp/audit-query.js';
 
 const DAY = 24 * 60 * 60 * 1000;

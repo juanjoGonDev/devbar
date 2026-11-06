@@ -3,6 +3,7 @@ import type {
   McpAuditPage,
   McpAuditPageQuery,
 } from '../../ipc-contract/mcp-api.js';
+import { AUDIT_RETENTION_MS } from '../../mcp-audit-labels.js';
 import { queryAuditEntries, type AuditKnown } from './audit-query.js';
 
 /**
@@ -16,7 +17,6 @@ import { queryAuditEntries, type AuditKnown } from './audit-query.js';
  * config file is rewritten whole on every save.
  */
 
-export const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const PRUNE_EVERY_MS = 24 * 60 * 60 * 1000;
 const MAX_LIMIT = 500;
 

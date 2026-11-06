@@ -20,7 +20,7 @@ export type SortDir = McpAuditSort['dir'];
 
 export interface TimeFilter {
   when: TimePreset;
-  /** `<input type="datetime-local">` values; '' leaves that end open. */
+  /** Local `YYYY-MM-DDTHH:MM` values (to the minute); '' leaves that end open. */
   from: string;
   to: string;
 }
@@ -210,14 +210,14 @@ export function clearColumn(
   }
 }
 
-/** A datetime-local value (local time, to the minute). */
+/** A `YYYY-MM-DDTHH:MM` value in local time, to the minute. */
 export function localInput(ms: number): string {
   const offset = new Date(ms).getTimezoneOffset() * MINUTE;
   return new Date(ms - offset).toISOString().slice(0, 16);
 }
 
-/** A datetime-local value as epoch ms, or undefined when empty or invalid. */
-function parseLocal(value: string): number | undefined {
+/** A `YYYY-MM-DDTHH:MM` value as epoch ms, or undefined when empty or invalid. */
+export function parseLocal(value: string): number | undefined {
   if (!value) return undefined;
   const ms = new Date(value).getTime();
   return Number.isFinite(ms) ? ms : undefined;

@@ -21,10 +21,11 @@ import {
   type TimePreset,
 } from './mcp-activity-model.js';
 import { SCOPE_KEYS, SCOPE_LABELS } from './mcp-format.js';
+import { rangePicker, type RangeView } from './mcp-range-picker.js';
 
 /**
  * What a column's menu holds: the sort entries on top, then its filter — the
- * time chips and range for «Hora», a searchable checklist for the others
+ * time chips and range picker for «Hora», a searchable checklist for the others
  * (tools gathered by family, results with their colour and the «Solo se
  * puede deshacer» switch) — and «Quitar filtro» / «Listo» at the foot.
  * Rebuilt whole on every change; the column header keeps the popover itself.
@@ -38,6 +39,8 @@ export interface MenuContext {
   /** The text of this column's «Buscar» field (kept while the menu is open). */
   find: string;
   setFind(text: string): void;
+  /** What the «Rango…» picker shows (kept while the menu is open). */
+  range: RangeView;
   sort(dir: SortDir): void;
   addSort(): void;
   removeSort(): void;
@@ -144,32 +147,13 @@ function timeFilter(ctx: MenuContext): HTMLElement[] {
     chips.append(chip);
   }
   if (time.when !== 'custom') return [chips];
-  const range = document.createElement('div');
-  range.className = 'xf-range';
-  const field = (
-    id: string,
-    label: string,
-    value: string,
-    set: (v: string) => void,
-  ): void => {
-    const name = document.createElement('label');
-    name.htmlFor = id;
-    name.textContent = label;
-    const input = document.createElement('input');
-    input.type = 'datetime-local';
-    input.id = id;
-    input.value = value;
-    input.dataset.focusKey = id;
-    input.addEventListener('change', () => set(input.value));
-    range.append(name, input);
-  };
-  field('mcp-activity-from', 'Desde', time.from, (from) =>
-    ctx.setTime({ ...time, from }),
-  );
-  field('mcp-activity-to', 'Hasta', time.to, (to) =>
-    ctx.setTime({ ...time, to }),
-  );
-  return [chips, range];
+  const picker = rangePicker({
+    value: { from: time.from, to: time.to },
+    now: ctx.now,
+    view: ctx.range,
+    change: (range) => ctx.setTime({ ...time, ...range }),
+  });
+  return [chips, picker];
 }
 
 function pickPreset(

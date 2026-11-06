@@ -1,9 +1,13 @@
 import type { McpAuditEntry, McpAuditResult } from './ipc-contract/mcp-api.js';
 
 /**
- * The words the «Actividad» log uses for an outcome. Shared by the window,
- * which shows them, and by main, whose search matches what the user reads.
+ * What both sides of the «Actividad» log agree on: the words it uses for an
+ * outcome — shown by the window, matched by main's search — and how long an
+ * entry is kept, which main prunes by and the window's date picker stops at.
  */
+
+/** Entries older than this are pruned from the log. */
+export const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const AUDIT_RESULT_LABELS: Readonly<Record<McpAuditResult, string>> = {
   ok: 'Correcto',

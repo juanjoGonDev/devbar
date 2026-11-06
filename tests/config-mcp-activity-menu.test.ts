@@ -27,7 +27,8 @@ import type {
  * The column menus of «Actividad» (renderer/config/mcp-activity-head.ts,
  * -menu.ts and -checklist.ts): opening and closing the popover, the
  * checklists with their counts, groups and «(Seleccionar todo)», the result
- * switch, the time chips and range, and «Quitar filtro».
+ * switch, the time chips and range (its picker has its own file,
+ * config-mcp-range-picker.test.ts), and «Quitar filtro».
  */
 
 const NOW = new Date(2026, 10, 6, 9, 0).getTime();
@@ -278,8 +279,10 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
         chip.textContent ?? '',
         chip.getAttribute('aria-pressed'),
       ]);
-    const range = (id: string): HTMLInputElement =>
-      el<HTMLInputElement>(`mcp-activity-${id}`);
+    const ends = (): (string | null)[] =>
+      [...menu().querySelectorAll<HTMLElement>('.rp-end')].map((end) =>
+        end.getAttribute('aria-label'),
+      );
 
     it('offers the periods, «Siempre» first', async () => {
       win = await openActivity(PAGE);
@@ -308,25 +311,19 @@ describe('renderer/config/mcp-activity-menu.ts', () => {
       expect(summaryDetails()).toEqual([`Hora: ${label}`]);
     });
 
-    it('starts a range on the last day, then reads what is typed', async () => {
+    it('starts a range on the last day, shown in the themed picker', async () => {
       vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
       win = await openActivity(PAGE);
       click(funnel('Hora'));
       click(menuButton('Rango…'));
-      expect(range('from').value).toBe('2026-11-05T09:00');
-      expect(range('to').value).toBe('2026-11-06T09:00');
+      expect(ends()).toEqual(['Desde: 5 nov · 09:00', 'Hasta: 6 nov · 09:00']);
+      // No native date input: its popup would ignore the app's theme.
+      expect(menu().querySelector('input[type="datetime-local"]')).toBeNull();
+      expect(menu().dataset.column).toBe('time');
       expect(lastQuery(win).from).toBe(NOW - 24 * HOUR);
       expect(lastQuery(win).to).toBe(NOW + 60_000 - 1);
       await answer(win);
       expect(summaryDetails()).toEqual(['Hora: 5 nov 09:00 → 6 nov 09:00']);
-      range('to').value = '';
-      range('to').dispatchEvent(new Event('change'));
-      expect(lastQuery(win).to).toBeUndefined();
-      await answer(win);
-      expect(summaryDetails()).toEqual(['Hora: 5 nov 09:00 → ahora']);
-      range('from').value = '2026-11-04T10:30';
-      range('from').dispatchEvent(new Event('change'));
-      expect(lastQuery(win).from).toBe(new Date(2026, 10, 4, 10, 30).getTime());
     });
 
     it('takes the period off with «Quitar filtro»', async () => {

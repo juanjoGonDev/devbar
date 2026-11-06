@@ -11,6 +11,7 @@ import {
   type SortDir,
   type TimeFilter,
 } from './mcp-activity-model.js';
+import { createRangeView, type RangeView } from './mcp-range-picker.js';
 
 /**
  * The header of the «Actividad» table, one cell per column the way a
@@ -51,6 +52,7 @@ interface OpenMenu {
   cell: Cell;
   el: HTMLElement;
   find: string;
+  range: RangeView;
 }
 
 function buildCell(
@@ -149,6 +151,7 @@ export function createActivityHead(
         setFind: (text) => {
           menu.find = text;
         },
+        range: menu.range,
         sort: (dir) => deps.sort(key, dir),
         addSort: () => deps.addSort(key),
         removeSort: () => deps.removeSort(key),
@@ -177,9 +180,10 @@ export function createActivityHead(
     const el = document.createElement('div');
     el.className = 'xf';
     el.classList.toggle('is-right', COLUMNS.indexOf(cell.column) >= 2);
+    el.dataset.column = cell.column.key;
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-label', `Columna ${cell.column.label}`);
-    open = { cell, el, find: '' };
+    open = { cell, el, find: '', range: createRangeView() };
     cell.el.append(el);
     cell.funnel.setAttribute('aria-expanded', 'true');
     paintMenu(open);

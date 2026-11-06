@@ -7403,23 +7403,247 @@ button.xf-chip[aria-pressed='true'] {
   color: var(--badge-info-fg);
   font-weight: 600;
 }
-.xf-range {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 6px 8px;
-  padding: 2px 6px 6px;
+/* «Rango…» of «Hora»: the app's own range picker (renderer/config/
+   mcp-range-picker.ts) — Chromium's datetime-local popup ignores the theme. */
+.xf[data-column='time'] {
+  width: 300px;
 }
-.xf-range label {
+.rp {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 6px 6px;
+}
+.rp-ends {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+button.rp-end {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card-strong);
+  box-shadow: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.rp-end:hover {
+  border-color: var(--border-strong);
+  filter: none;
+}
+button.rp-end[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+button.rp-end:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.rp-end-k {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.rp-end-v {
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rp-end-v.is-empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+.rp-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 4px;
+}
+.rp-month {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.rp-nav {
+  display: flex;
+  gap: 2px;
+}
+button.rp-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+button.rp-step:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  color: inherit;
+  filter: none;
+}
+button.rp-step:disabled {
+  opacity: 0.3;
+}
+.rp-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rp-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+.rp-dow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.rp-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+}
+/* The band between the ends: rounded where a week starts or ends. */
+.rp-cell.in-range::before,
+.rp-grid.is-span .rp-cell.is-from::before,
+.rp-grid.is-span .rp-cell.is-to::before {
+  content: '';
+  position: absolute;
+  inset: 3px 0;
+  background: var(--accent-tint);
+}
+.rp-grid.is-span .rp-cell.is-from::before {
+  left: 50%;
+}
+.rp-grid.is-span .rp-cell.is-to::before {
+  right: 50%;
+}
+.rp-week > .rp-cell.in-range:first-child::before {
+  left: 3px;
+  border-radius: 12px 0 0 12px;
+}
+.rp-week > .rp-cell.in-range:last-child::before {
+  right: 3px;
+  border-radius: 0 12px 12px 0;
+}
+button.rp-day {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+button.rp-day:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+button.rp-day.is-out {
+  color: var(--muted);
+  opacity: 0.6;
+}
+button.rp-day.is-today {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+button.rp-day:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+/* An end is a solid accent circle, even on a day of another month. */
+.rp-cell.is-from button.rp-day,
+.rp-cell.is-to button.rp-day {
+  background: var(--accent-strong);
+  box-shadow: none;
+  color: #fff;
+  font-weight: 700;
+  opacity: 1;
+}
+button.rp-day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.rp-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 0;
+  border-top: 1px solid var(--border);
+}
+.rp-time-k {
   color: var(--muted);
   font-size: 12px;
 }
-.xf-range input {
-  height: 27px;
-  padding: 0 6px;
+.rp-clock {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
   border-radius: 7px;
-  color-scheme: light dark;
-  font: inherit;
+  background: var(--bg-card-strong);
+}
+.rp-clock:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+input.rp-seg {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: 600 12.5px var(--font-mono);
+  text-align: center;
+  caret-color: transparent;
+}
+input.rp-seg:focus {
+  background: var(--accent-strong);
+  color: #fff;
+}
+.rp-colon {
+  color: var(--muted);
+  font-weight: 600;
+}
+.rp-spacer {
+  flex: 1;
+}
+button.rp-now {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
   font-size: 12px;
 }
 .xf-switch {
