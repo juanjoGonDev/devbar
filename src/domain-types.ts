@@ -303,6 +303,17 @@ export const DEFAULT_MAX_LOG_LINES = 10_000;
 
 export type ThemePreference = 'auto' | 'light' | 'dark';
 
+/** How AI assistants reach the MCP server: only local stdio for now. */
+export type McpTransport = 'stdio';
+
+/** The MCP server switch (see src/main/mcp). Off until the user turns it on. */
+export interface McpSettings {
+  enabled: boolean;
+  transport: McpTransport;
+  /** How many days «Actividad» keeps an entry (1–365). */
+  auditRetentionDays: number;
+}
+
 export interface GlobalSettings {
   autostart: boolean;
   /** UI theme: follow the OS (auto) or force light/dark. */
@@ -318,6 +329,8 @@ export interface GlobalSettings {
   showHiddenGroupsFold: boolean;
   /** The same fold for the workflows hidden from the tray and the phone. */
   showHiddenWorkflowsFold: boolean;
+  /** The MCP server for AI assistants; changed only by `setMcpEnabled`. */
+  mcp: McpSettings;
 }
 
 export type ProcessStatus =

@@ -3,6 +3,37 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.13.0] - 2026-11-03
+
+### Añadido
+
+- **Servidor MCP.** Los asistentes de IA (Claude Code, Claude Desktop, Cursor
+  u otros) pueden usar DevBar: ver el estado y los puertos, leer y buscar en
+  los logs, arrancar, parar y reiniciar comandos, lanzar acciones y workflows
+  y editar la configuración (grupos, comandos, acciones y workflows, con su
+  icono, color y carpeta, e importar y exportar). Está apagado por defecto y se
+  activa en Ajustes › MCP, que también da el comando para conectar cada
+  cliente. Solo acepta conexiones de este equipo, y cada una debe presentar
+  un token que DevBar renueva en cada arranque.
+- **Permisos por cliente.** Cada cliente nuevo queda pendiente hasta que lo
+  permites, y eliges qué puede hacer (lectura, control, workflows,
+  configuración), a qué grupos accede, si se ocultan los secretos de los logs
+  y cuándo pide confirmación, y le pones el nombre que quieras. Puedes
+  revocarlo en cualquier momento.
+- **Confirmación con diff y deshacer.** Por defecto, un cambio de
+  configuración se confirma en DevBar mostrando exactamente qué cambia y el
+  motivo que da el asistente; si no respondes, se rechaza solo. Para cada
+  cliente puedes elegir, tras aceptar un aviso, que no pregunte o que pregunte
+  solo la primera vez. Antes de aplicarlo se guarda una copia, y la pestaña
+  Actividad registra cada llamada y permite deshacer los cambios. Puedes
+  buscar en toda la actividad, filtrar cada columna como en una hoja de
+  cálculo (también por fecha y hora), ordenar por varias columnas a la vez y
+  recorrerla por páginas. Puedes seleccionar entradas (también de varias
+  páginas, o todas las que coinciden) para deshacerlas o eliminarlas, siempre
+  con confirmación; borrar lo que coincide con los filtros, un rango de fechas
+  o todo el historial, y elegir a los cuántos días se borran solas las
+  entradas (30 por defecto, hasta 365).
+
 ## [0.12.0] - 2026-10-17
 
 ### Añadido

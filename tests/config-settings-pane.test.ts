@@ -18,6 +18,7 @@ function settings(extra: Partial<GlobalSettings> = {}): GlobalSettings {
     notifySuccess: false,
     showHiddenGroupsFold: false,
     showHiddenWorkflowsFold: true,
+    mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
     ...extra,
   };
 }

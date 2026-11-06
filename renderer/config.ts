@@ -26,6 +26,9 @@ import { aboutVersionLine } from './config/about-pane.js';
 import { showReleaseNotes } from './config/about-notes.js';
 import { createRemotePane } from './config/remote-pane.js';
 import { remoteElements } from './config/remote-elements.js';
+import { createMcpPane } from './config/mcp-pane.js';
+import { mcpElements } from './config/mcp-elements.js';
+import { mountMcpConfirm } from './config/mcp-confirm.js';
 initTheme();
 hydrateIcons(document);
 
@@ -279,6 +282,14 @@ wireBackupButtons({
 });
 
 createRemotePane(remoteElements(), showToast);
+createMcpPane(mcpElements(), {
+  showToast,
+  getGroups: () => store.getGroups(),
+  platform: window.api.platform,
+});
+
+// An assistant's risky MCP call waits here for the user's OK.
+mountMcpConfirm(showToast);
 
 // ────────────────────── Live updates ───────────────────────────────────
 

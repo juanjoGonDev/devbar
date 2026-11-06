@@ -53,6 +53,18 @@ describe('packaged app contents', () => {
     }
   });
 
+  it('ships the MCP stdio bridge and the SDK it runs on', () => {
+    for (const kept of [
+      '/build/src/mcp/cli.js',
+      '/build/src/mcp/bridge.js',
+      '/build/src/mcp/endpoint.js',
+      '/build/src/main/mcp/session.js',
+      '/node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js',
+      '/node_modules/zod/index.js',
+    ])
+      expect(isIgnored(kept), kept).toBe(false);
+  });
+
   it('drops the bundled emoji webfont (Linux-only, see package-win-linux)', () => {
     expect(isIgnored('/build/assets/fonts/NotoColorEmoji.woff2')).toBe(true);
   });

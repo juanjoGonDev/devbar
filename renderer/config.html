@@ -99,6 +99,16 @@
         <button
           type="button"
           class="nav-item"
+          data-target="mcp"
+          aria-label="MCP"
+        >
+          <span class="nav-ico"
+            ><span class="icon" data-icon="plug"></span></span
+          ><span class="nav-label">MCP</span>
+        </button>
+        <button
+          type="button"
+          class="nav-item"
           data-target="backup"
           aria-label="Copias de seguridad"
         >
@@ -559,6 +569,333 @@
               </div>
             </div>
           </section>
+        </section>
+
+        <!-- ── MCP ────────────────────────────────────────────────── -->
+        <!-- Wired by renderer/config/mcp-pane.ts; every id below is
+             resolved in renderer/config/mcp-elements.ts. The rows are built
+             there too, from the McpState main reports. -->
+        <section class="config-section" data-section="mcp">
+          <div class="mcp-tabs" role="tablist" aria-label="MCP">
+            <button
+              type="button"
+              role="tab"
+              id="mcp-tab-setup"
+              class="mcp-tab"
+              aria-controls="mcp-setup"
+              aria-selected="true"
+            >
+              Servidor
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="mcp-tab-activity"
+              class="mcp-tab"
+              aria-controls="mcp-activity"
+              aria-selected="false"
+            >
+              Actividad
+            </button>
+          </div>
+
+          <div
+            id="mcp-setup"
+            class="mcp-view"
+            role="tabpanel"
+            aria-labelledby="mcp-tab-setup"
+          >
+            <section class="mcp-card" aria-label="Servidor">
+              <div class="mcp-row mcp-server-row">
+                <span class="mcp-tile"
+                  ><span class="icon" data-icon="plug"></span
+                ></span>
+                <div class="mcp-row-text">
+                  <label for="mcp-enabled" class="mcp-title"
+                    >Servidor MCP</label
+                  >
+                  <span class="mcp-hint"
+                    >Deja que asistentes de IA usen DevBar: estado, logs,
+                    puertos, arrancar y parar, workflows.</span
+                  >
+                </div>
+                <span id="mcp-status" class="mcp-status">Detenido</span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  id="mcp-enabled"
+                  class="remote-switch"
+                  aria-describedby="mcp-status"
+                  disabled
+                />
+              </div>
+              <p id="mcp-error" class="mcp-error" role="alert" hidden></p>
+            </section>
+
+            <section class="mcp-group" aria-labelledby="mcp-connect-title">
+              <h2 id="mcp-connect-title" class="mcp-group-title">
+                Conectar un cliente
+              </h2>
+              <div class="mcp-card mcp-connect">
+                <div
+                  id="mcp-connect-kinds"
+                  class="mode-segmented"
+                  role="radiogroup"
+                  aria-label="Cliente"
+                >
+                  <label class="mode-segment">
+                    <input
+                      type="radio"
+                      name="mcp-connect-kind"
+                      value="claude-code"
+                      checked
+                    />
+                    <span>Claude Code</span>
+                  </label>
+                  <label class="mode-segment">
+                    <input
+                      type="radio"
+                      name="mcp-connect-kind"
+                      value="claude-desktop"
+                    />
+                    <span>Claude Desktop</span>
+                  </label>
+                  <label class="mode-segment">
+                    <input
+                      type="radio"
+                      name="mcp-connect-kind"
+                      value="cursor"
+                    />
+                    <span>Cursor</span>
+                  </label>
+                  <label class="mode-segment">
+                    <input
+                      type="radio"
+                      name="mcp-connect-kind"
+                      value="opencode"
+                    />
+                    <span>OpenCode</span>
+                  </label>
+                  <label class="mode-segment">
+                    <input type="radio" name="mcp-connect-kind" value="codex" />
+                    <span>ChatGPT / Codex</span>
+                  </label>
+                  <label class="mode-segment">
+                    <input type="radio" name="mcp-connect-kind" value="other" />
+                    <span>Otro</span>
+                  </label>
+                </div>
+                <pre id="mcp-connect-code" class="mcp-code"></pre>
+                <div class="mcp-connect-foot">
+                  <button type="button" id="mcp-copy" class="small-btn">
+                    <span class="icon" data-icon="copy"></span>Copiar
+                  </button>
+                  <span id="mcp-connect-hint" class="mcp-hint"></span>
+                </div>
+              </div>
+            </section>
+
+            <section class="mcp-group" aria-labelledby="mcp-clients-title">
+              <div class="mcp-group-head">
+                <h2 id="mcp-clients-title" class="mcp-group-title">Clientes</h2>
+                <span class="mcp-group-note"
+                  >Por defecto: lectura, control y workflows</span
+                >
+              </div>
+              <div class="mcp-card">
+                <ul id="mcp-clients" class="mcp-clients"></ul>
+                <p id="mcp-clients-empty" class="mcp-empty">
+                  Ningún cliente todavía. Copia el comando de arriba en tu
+                  asistente.
+                </p>
+              </div>
+              <p id="mcp-clients-trust" class="mcp-hint mcp-clients-trust">
+                Cada asistente se reconoce por el nombre que anuncia. Los
+                permisos ordenan qué hace cada uno, pero no separan entre sí
+                programas que se ejecutan con tu usuario: permite solo
+                asistentes en los que confíes.
+              </p>
+              <details id="mcp-revoked" class="mcp-revoked" hidden>
+                <summary id="mcp-revoked-summary">Revocados (0)</summary>
+                <ul id="mcp-revoked-list" class="mcp-card mcp-clients"></ul>
+              </details>
+            </section>
+          </div>
+
+          <div
+            id="mcp-activity"
+            class="mcp-view"
+            role="tabpanel"
+            aria-labelledby="mcp-tab-activity"
+            hidden
+          >
+            <div class="act-bar">
+              <label class="act-search">
+                <span class="icon" data-icon="search"></span>
+                <input
+                  id="mcp-activity-search"
+                  type="search"
+                  placeholder="Buscar en toda la actividad"
+                  aria-label="Buscar en la actividad"
+                  maxlength="200"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+                <kbd id="mcp-activity-search-key">Ctrl+F</kbd>
+                <button
+                  type="button"
+                  id="mcp-activity-search-clear"
+                  aria-label="Borrar búsqueda"
+                  title="Borrar búsqueda"
+                  hidden
+                >
+                  <span class="icon" data-icon="x"></span>
+                </button>
+              </label>
+              <button
+                type="button"
+                id="mcp-activity-fresh"
+                class="act-fresh"
+                hidden
+              >
+                <span class="icon" data-icon="rotate-cw"></span>
+                Hay actividad nueva · Actualizar
+              </button>
+              <div
+                id="mcp-activity-active"
+                class="act-active"
+                aria-live="polite"
+              ></div>
+              <!-- «Limpiar» (renderer/config/mcp-activity-clean.ts) -->
+              <div class="clean-host">
+                <button
+                  type="button"
+                  id="mcp-activity-clean"
+                  class="act-clean"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-controls="mcp-activity-clean-pop"
+                >
+                  <span class="icon" data-icon="trash-2"></span>
+                  Limpiar
+                </button>
+                <div
+                  id="mcp-activity-clean-pop"
+                  class="xf clean-pop"
+                  role="dialog"
+                  aria-label="Limpiar historial"
+                  hidden
+                >
+                  <div class="xf-sec">
+                    <div class="xf-title">Eliminar</div>
+                    <button
+                      type="button"
+                      id="mcp-clean-filtered"
+                      class="xf-item"
+                    >
+                      <span class="icon" data-icon="filter"></span>
+                      <span>Lo que coincide con los filtros</span>
+                      <span id="mcp-clean-filtered-n" class="n"></span>
+                    </button>
+                    <button type="button" id="mcp-clean-range" class="xf-item">
+                      <span class="icon" data-icon="calendar-range"></span>
+                      <span>Por rango de fechas…</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="mcp-clean-all"
+                      class="xf-item is-danger"
+                    >
+                      <span class="icon" data-icon="trash-2"></span>
+                      <span>Todo el historial…</span>
+                      <span id="mcp-clean-all-n" class="n"></span>
+                    </button>
+                  </div>
+                  <div class="xf-sec">
+                    <div class="xf-title">Borrado automático</div>
+                    <div class="auto-row">
+                      <label for="mcp-clean-days"
+                        >Eliminar entradas con más de</label
+                      >
+                      <div class="num-stepper">
+                        <button
+                          type="button"
+                          class="num-stepper-btn"
+                          data-step="-1"
+                          aria-label="Menos días"
+                          title="Menos días"
+                        >
+                          <span class="icon" data-icon="minus"></span>
+                        </button>
+                        <span class="num-stepper-field">
+                          <input
+                            type="number"
+                            id="mcp-clean-days"
+                            min="1"
+                            max="365"
+                            step="1"
+                            value="30"
+                            inputmode="numeric"
+                          />
+                          <span class="num-stepper-suffix">días</span>
+                        </span>
+                        <button
+                          type="button"
+                          class="num-stepper-btn"
+                          data-step="1"
+                          aria-label="Más días"
+                          title="Más días"
+                        >
+                          <span class="icon" data-icon="plus"></span>
+                        </button>
+                      </div>
+                    </div>
+                    <p
+                      id="mcp-clean-hint"
+                      class="auto-hint"
+                      aria-live="polite"
+                    ></p>
+                  </div>
+                  <div class="xf-foot">
+                    <span class="auto-hint">Máximo 365 días</span>
+                    <button
+                      type="button"
+                      id="mcp-clean-done"
+                      class="small-btn primary"
+                    >
+                      Listo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="mcp-activity-log" class="mcp-card mcp-log">
+              <div id="mcp-activity-head" class="mcp-log-head" role="row"></div>
+              <ul id="mcp-activity-rows" class="mcp-log-rows"></ul>
+              <div class="act-pager">
+                <span id="mcp-activity-range"></span>
+                <span class="spacer"></span>
+                <label>
+                  Por página
+                  <select id="mcp-activity-size" class="mcp-select">
+                    <option value="25">25</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                  </select>
+                </label>
+                <div
+                  id="mcp-activity-pages"
+                  class="act-pages"
+                  role="group"
+                  aria-label="Páginas"
+                ></div>
+              </div>
+            </div>
+            <p id="mcp-activity-keep" class="mcp-hint">
+              Se guardan los últimos 30 días. Los logs que lee un asistente no
+              se copian aquí.
+            </p>
+          </div>
         </section>
 
         <!-- ── Copias de seguridad ────────────────────────────────── -->
@@ -1377,6 +1714,166 @@
           disabled
         >
           Vincular
+        </button>
+      </div>
+    </dialog>
+
+    <!-- «MCP»: one client's permissions (renderer/config/mcp-client-sheet.ts) -->
+    <dialog id="mcp-client-sheet" class="sub-sheet mcp-sheet">
+      <header class="sheet-header">
+        <span id="mcp-sheet-avatar" class="mcp-avatar mcp-avatar-lg"></span>
+        <div class="sheet-heading">
+          <div class="sheet-overline">Cliente MCP</div>
+          <h2 id="mcp-sheet-title"></h2>
+        </div>
+        <button
+          type="button"
+          class="modal-close sheet-close"
+          data-close
+          aria-label="Cerrar"
+        >
+          <span class="icon" data-icon="x"></span>
+        </button>
+      </header>
+      <form id="mcp-sheet-form" method="dialog">
+        <div class="sheet-body">
+          <h3 class="mcp-group-title">Qué puede hacer</h3>
+          <div id="mcp-sheet-scopes" class="mcp-card mcp-scopes"></div>
+          <p class="mcp-hint mcp-sheet-note">
+            Todo cambio de configuración, confirmado o no, queda en Actividad
+            con su diff y se puede deshacer.
+          </p>
+
+          <h3 class="mcp-group-title">A qué puede acceder</h3>
+          <div class="mcp-card mcp-access">
+            <div class="mcp-access-row">
+              <span class="mcp-row-label">Grupos</span>
+              <div class="mode-segmented" role="radiogroup" aria-label="Grupos">
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="mcp-sheet-groups-mode"
+                    id="mcp-sheet-groups-all"
+                    value="all"
+                    checked
+                  />
+                  <span>Todos</span>
+                </label>
+                <label class="mode-segment">
+                  <input
+                    type="radio"
+                    name="mcp-sheet-groups-mode"
+                    id="mcp-sheet-groups-some"
+                    value="some"
+                  />
+                  <span>Elegidos</span>
+                </label>
+              </div>
+            </div>
+            <div id="mcp-sheet-groups" class="mcp-group-chips" hidden></div>
+            <label class="mcp-access-row">
+              <span class="mcp-row-label"
+                >Ocultar secretos (variables, tokens)</span
+              >
+              <input
+                type="checkbox"
+                role="switch"
+                id="mcp-sheet-redact"
+                class="remote-switch"
+              />
+            </label>
+          </div>
+
+          <h3 class="mcp-group-title">Conexión</h3>
+          <div class="mcp-card mcp-connection">
+            <span id="mcp-sheet-connection" class="mcp-connection-line"></span>
+          </div>
+        </div>
+        <footer class="sheet-footer">
+          <span class="spacer"></span>
+          <button type="button" data-close>Cancelar</button>
+          <button type="submit" id="mcp-sheet-submit" class="primary">
+            <span id="mcp-sheet-submit-label">Guardar</span>
+            <kbd id="mcp-sheet-key" class="sheet-kbd">Ctrl+S</kbd>
+          </button>
+        </footer>
+      </form>
+    </dialog>
+
+    <!-- «MCP»: before a client may skip config confirmations (mcp-config-warning.ts) -->
+    <dialog
+      id="mcp-config-warning"
+      class="modal mcp-warning-modal"
+      aria-labelledby="mcp-config-warning-title"
+      aria-describedby="mcp-config-warning-body"
+    >
+      <header class="modal-header">
+        <span class="mcp-warning-tile">
+          <span class="icon" data-icon="triangle-alert"></span>
+        </span>
+        <h2 id="mcp-config-warning-title"></h2>
+      </header>
+      <div class="modal-body">
+        <p id="mcp-config-warning-body" class="mcp-warning-body"></p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="mcp-config-warning-cancel" data-close>
+          Cancelar
+        </button>
+        <button type="button" id="mcp-config-warning-allow" class="danger">
+          Permitir
+        </button>
+      </div>
+    </dialog>
+
+    <!-- «MCP»: confirming «Revocar acceso» (renderer/config/mcp-revoke-dialog.ts) -->
+    <dialog
+      id="mcp-revoke-dialog"
+      class="modal mcp-warning-modal mcp-revoke-modal"
+      aria-labelledby="mcp-revoke-title"
+      aria-describedby="mcp-revoke-note"
+    >
+      <header class="modal-header">
+        <span class="mcp-warning-tile">
+          <span class="icon" data-icon="shield-off"></span>
+        </span>
+        <h2 id="mcp-revoke-title">¿Revocar el acceso?</h2>
+      </header>
+      <div class="modal-body">
+        <div id="mcp-revoke-client" class="mcp-revoke-card"></div>
+        <p id="mcp-revoke-note" class="mcp-revoke-note">
+          Perderá todas las herramientas al momento. Podrás volver a permitirlo
+          desde «Revocados».
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="mcp-revoke-cancel" data-close>
+          Cancelar
+        </button>
+        <button type="button" id="mcp-revoke-confirm" class="danger">
+          Revocar acceso
+        </button>
+      </div>
+    </dialog>
+
+    <!-- «Actividad»: deleting entries and undoing changes (renderer/config/mcp-activity-ask.ts) -->
+    <dialog
+      id="mcp-activity-dialog"
+      class="modal mcp-warning-modal mcp-activity-dialog"
+      aria-labelledby="mcp-activity-dialog-title"
+      aria-describedby="mcp-activity-dialog-body"
+    >
+      <header class="modal-header">
+        <span id="mcp-activity-dialog-tile" class="mcp-warning-tile"></span>
+        <h2 id="mcp-activity-dialog-title"></h2>
+      </header>
+      <div id="mcp-activity-dialog-body" class="modal-body"></div>
+      <div class="modal-actions">
+        <button type="button" id="mcp-activity-dialog-cancel" data-close>
+          Cancelar
+        </button>
+        <button type="button" id="mcp-activity-dialog-ok" class="danger">
+          Eliminar
         </button>
       </div>
     </dialog>

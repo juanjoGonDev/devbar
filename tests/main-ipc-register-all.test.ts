@@ -173,6 +173,12 @@ function harness(
         return {};
       },
     },
+    mcp: {
+      state: () => {
+        calls.push('mcpState');
+        return {};
+      },
+    },
     ...overrides,
   } as unknown as RegisterAllDeps;
   const ipc = recordingIpc();
@@ -193,6 +199,7 @@ describe('src/main/ipc/register-all.ts', () => {
           'window:openConfig',
           'updates:status',
           'remote:getStatus',
+          'mcp:getState',
           'workflows:list',
         ]),
       );
@@ -241,6 +248,12 @@ describe('src/main/ipc/register-all.ts', () => {
       const h = harness();
       h.ipc.invoke('remote:getStatus');
       expect(h.calls).toContain('remoteStatus');
+    });
+
+    it("hands the MCP channels the app's MCP control", () => {
+      const h = harness();
+      h.ipc.invoke('mcp:getState');
+      expect(h.calls).toContain('mcpState');
     });
 
     it('passes the dev-panel flag from the host through', () => {

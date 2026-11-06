@@ -15,6 +15,7 @@ import type {
 } from '../../domain-types.js';
 import type { ImportPreview, UpdateStatus } from '../../ipc-contract.js';
 import type { ApplyUpdateResult } from '../assisted-update.js';
+import { applyConfigImport } from '../config-import.js';
 
 /**
  * App-level entry points: updates, configuration export/import, the icon
@@ -247,34 +248,7 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
         };
       }
       pendingImports.delete(token);
-      // Checked before anything is stopped: the user's real services keep
-      // running underneath the dev panel's test groups.
-      if (deps.configStore.groupsOverlayActive())
-        return {
-          ok: false,
-          error:
-            'Modo grupos de prueba activo: quita los grupos de prueba en el panel Dev antes de importar.',
-        };
-      try {
-        const backupPath = deps.configStore.writeImportBackup();
-        const stopped = await deps.processManager.stopAll();
-        if (!stopped.ok) {
-          // Half-stopped fleet: replacing the config now would leave the
-          // still-running services on the OLD config. Refuse the import.
-          return {
-            ok: false,
-            error: `No se pudieron detener todos los servicios (${stopped.failed.join(', ')}) — la importación se canceló. Detén los servicios e inténtalo de nuevo.`,
-          };
-        }
-        deps.workflowRunner.cancelAll();
-        deps.configStore.replaceConfig(payload);
-        deps.syncRepoWatchers();
-        deps.applyAutostart(deps.configStore.getGlobalSettings().autostart);
-        deps.broadcast();
-        return { ok: true, backupPath };
-      } catch (err) {
-        return { ok: false, error: errorMessage(err) };
-      }
+      return applyConfigImport(deps, payload);
     },
   );
 
