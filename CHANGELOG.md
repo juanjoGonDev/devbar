@@ -18,7 +18,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - **Permisos por cliente.** Cada cliente nuevo queda pendiente hasta que lo
   permites, y eliges qué puede hacer (lectura, control, workflows,
   configuración), a qué grupos accede, si se ocultan los secretos de los logs
-  y cuándo pide confirmación. Puedes revocarlo en cualquier momento.
+  y cuándo pide confirmación, y le pones el nombre que quieras. Puedes
+  revocarlo en cualquier momento.
 - **Confirmación con diff y deshacer.** Por defecto, un cambio de
   configuración se confirma en DevBar mostrando exactamente qué cambia y el
   motivo que da el asistente; si no respondes, se rechaza solo. Para cada

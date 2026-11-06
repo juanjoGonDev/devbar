@@ -60,6 +60,8 @@ const chip = (name: string): HTMLButtonElement => {
   return found;
 };
 
+const nameField = (): HTMLInputElement =>
+  el<HTMLInputElement>('mcp-sheet-name');
 const warning = (): HTMLDialogElement =>
   el<HTMLDialogElement>('mcp-config-warning');
 /** Picks a confirmation policy the way the select does: value, then `change`. */
@@ -221,7 +223,7 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
       win = await openWith([PENDING]);
       click(button(row('Cursor'), 'Permitir…'));
       expect(sheet().open).toBe(true);
-      expect(el('mcp-sheet-title').textContent).toBe('Cursor');
+      expect(nameField().value).toBe('Cursor');
       expect(visible(el('mcp-sheet-submit-label'))).toBe('Permitir');
       expect(el('mcp-sheet-revoke').hidden).toBe(true);
       expect(scopeSwitch('read').checked).toBe(true);
@@ -558,6 +560,76 @@ describe('renderer/config/mcp-client-sheet.ts', () => {
         state: mcpState({ clients: [{ ...PENDING, status: 'allowed' }] }),
       });
       expect(lastPatch(win)).toMatchObject({ confirm: { config: 'first' } });
+    });
+  });
+
+  describe('renaming a connection', () => {
+    it('opens with the name ready to edit', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      expect(nameField().value).toBe('Claude Code');
+      expect(nameField().getAttribute('aria-label')).toBe(
+        'Nombre de la conexión',
+      );
+      expect(nameField().maxLength).toBe(80);
+      expect(
+        sheet().querySelector('.mcp-sheet-name-edit [data-icon="pencil"]'),
+      ).not.toBeNull();
+    });
+
+    it('saves a new name, trimmed', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      nameField().value = '  Claude del trabajo  ';
+      submit();
+      expect(lastPatch(win)).toMatchObject({ name: 'Claude del trabajo' });
+    });
+
+    it('sends no name when it is unchanged or left blank', async () => {
+      win = await openWith([ALLOWED]);
+      click(button(row('Claude Code'), 'Permisos'));
+      nameField().value = '   ';
+      submit();
+      expect(lastPatch(win)).not.toHaveProperty('name');
+    });
+
+    it('applies a new name while approving', async () => {
+      win = await openWith([PENDING]);
+      click(button(row('Cursor'), 'Permitir…'));
+      nameField().value = 'Cursor personal';
+      submit();
+      await win.settle('approveMcpClient', {
+        ok: true,
+        state: mcpState({ clients: [{ ...PENDING, status: 'allowed' }] }),
+      });
+      expect(win.argsFor('updateMcpClient')).toEqual([
+        ['client-Cursor', expect.objectContaining({ name: 'Cursor personal' })],
+      ]);
+    });
+
+    it('keeps the new name when the save after an approval is retried', async () => {
+      win = await openWith([PENDING]);
+      click(button(row('Cursor'), 'Permitir…'));
+      nameField().value = 'Cursor personal';
+      submit();
+      await win.settle('approveMcpClient', {
+        ok: true,
+        state: mcpState({ clients: [{ ...PENDING, status: 'allowed' }] }),
+      });
+      await win.settle('updateMcpClient', { ok: false, error: 'Ocupado.' });
+      submit();
+      expect(win.argsFor('approveMcpClient')).toHaveLength(1);
+      expect(lastPatch(win)).toMatchObject({ name: 'Cursor personal' });
+    });
+
+    it('treats a new name as an edit to ask about on close', async () => {
+      win = await openWith([ALLOWED]);
+      const ask = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      click(button(row('Claude Code'), 'Permisos'));
+      nameField().value = 'Otro';
+      click(button(sheet(), 'Cancelar'));
+      expect(ask).toHaveBeenCalledOnce();
+      expect(sheet().open).toBe(true);
     });
   });
 });

@@ -21,20 +21,20 @@ import { wireSheetChrome } from './sheet-chrome.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 /**
- * One client's permissions, in the settings side sheet: a switch and a
- * confirmation policy per scope, the groups it may see, whether secrets are
- * masked, and «Revocar acceso». For a pending (or revoked) client the same
- * sheet is the approval: it opens on the defaults main gave the client and
- * «Permitir» lets it in with what is picked. Letting configuration changes
- * skip their diff («Sin preguntar» or «Preguntar la primera vez») only
- * sticks once its warning is accepted.
+ * One client's permissions, in the settings side sheet: its name (editable
+ * in the header), a switch and a confirmation policy per scope, the groups
+ * it may see, whether secrets are masked, and «Revocar acceso». For a
+ * pending (or revoked) client the same sheet is the approval: it opens on the
+ * defaults main gave the client and «Permitir» lets it in with what is
+ * picked. Letting configuration changes skip their diff («Sin preguntar» or
+ * «Preguntar la primera vez») only sticks once its warning is accepted.
  */
 
 export interface McpSheetElements {
   dialog: HTMLDialogElement;
   form: HTMLFormElement;
   avatar: HTMLElement;
-  title: HTMLElement;
+  name: HTMLInputElement;
   scopes: HTMLElement;
   groupsAll: HTMLInputElement;
   groupsSome: HTMLInputElement;
@@ -222,19 +222,26 @@ export function createMcpClientSheet(
     els.groups.replaceChildren(...chips);
   }
 
+  /** The trimmed name when it changed; a blank one keeps the old name. */
+  function newName(current: McpClient): string | undefined {
+    const name = els.name.value.trim();
+    return name && name !== current.name ? name : undefined;
+  }
+
   selects.config.addEventListener('change', () => {
     const next = policyOf('config');
     if (next === 'always' || !client) {
       configPolicy = next;
       return;
     }
-    warning.ask(client.name, next, (ok) => {
+    const name = els.name.value.trim() || client.name;
+    warning.ask(name, next, (ok) => {
       if (ok) configPolicy = next;
       selects.config.value = configPolicy;
     });
   });
 
-  const snapshot = (): string => JSON.stringify(read());
+  const snapshot = (): string => JSON.stringify([read(), els.name.value]);
 
   const chrome = wireSheetChrome({
     dialog: els.dialog,
@@ -278,17 +285,20 @@ export function createMcpClientSheet(
 
   async function save(current: McpClient): Promise<boolean> {
     const draft = read();
+    const name = newName(current);
+    const renamed = name === undefined ? {} : { name };
     if (current.status === 'allowed') {
-      const patch: McpClientPatch = { ...draft };
+      const patch: McpClientPatch = { ...renamed, ...draft };
       return commit(window.api.updateMcpClient(current.id, patch));
     }
     if (!(await commit(window.api.approveMcpClient(current.id, draft.scopes))))
       return false;
     // Approved now: should the second save fail, a retry must not approve again.
     client = { ...current, status: 'allowed', scopes: draft.scopes };
-    if (!restChanged(current, draft)) return true;
+    if (name === undefined && !restChanged(current, draft)) return true;
     return commit(
       window.api.updateMcpClient(current.id, {
+        ...renamed,
         confirm: draft.confirm,
         groups: draft.groups,
         redactSecrets: draft.redactSecrets,
@@ -336,7 +346,7 @@ export function createMcpClientSheet(
       const approving = next.status !== 'allowed';
       els.avatar.textContent = clientInitial(next.name);
       els.avatar.dataset.kind = next.kind ?? 'other';
-      els.title.textContent = next.name;
+      els.name.value = next.name;
       els.dialog.setAttribute('aria-label', `Permisos de ${next.name}`);
       for (const key of SCOPE_KEYS) switches[key].checked = next.scopes[key];
       selects.read.value = 'never';

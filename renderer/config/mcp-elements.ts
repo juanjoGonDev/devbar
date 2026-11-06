@@ -55,7 +55,7 @@ export function mcpElements(): McpElements {
       dialog: byId('mcp-client-sheet', HTMLDialogElement),
       form: byId('mcp-sheet-form', HTMLFormElement),
       avatar: byId('mcp-sheet-avatar', HTMLSpanElement),
-      title: byId('mcp-sheet-title', HTMLHeadingElement),
+      name: byId('mcp-sheet-name', HTMLInputElement),
       scopes: byId('mcp-sheet-scopes', HTMLDivElement),
       groupsAll: byId('mcp-sheet-groups-all', HTMLInputElement),
       groupsSome: byId('mcp-sheet-groups-some', HTMLInputElement),

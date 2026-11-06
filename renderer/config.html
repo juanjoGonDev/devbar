@@ -1607,16 +1607,24 @@
     </dialog>
 
     <!-- «MCP»: one client's permissions (renderer/config/mcp-client-sheet.ts) -->
-    <dialog
-      id="mcp-client-sheet"
-      class="sub-sheet mcp-sheet"
-      aria-labelledby="mcp-sheet-title"
-    >
+    <dialog id="mcp-client-sheet" class="sub-sheet mcp-sheet">
       <header class="sheet-header">
         <span id="mcp-sheet-avatar" class="mcp-avatar mcp-avatar-lg"></span>
         <div class="sheet-heading">
           <div class="sheet-overline">Cliente MCP</div>
-          <h2 id="mcp-sheet-title">Cliente</h2>
+          <label class="mcp-sheet-name-edit">
+            <input
+              type="text"
+              id="mcp-sheet-name"
+              class="mcp-sheet-name"
+              form="mcp-sheet-form"
+              maxlength="80"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Nombre de la conexión"
+            />
+            <span class="icon" data-icon="pencil"></span>
+          </label>
         </div>
         <button
           type="button"

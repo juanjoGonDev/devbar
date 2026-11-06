@@ -6598,6 +6598,45 @@ dialog.sub-sheet.mcp-sheet {
 .mcp-sheet-note {
   margin: 2px 4px 0;
 }
+/* The client's name, editable in place: reads as the sheet's title until
+   hovered or focused, with a pencil saying it can be changed. */
+.mcp-sheet-name-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: -6px;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: text;
+}
+.mcp-sheet-name-edit:hover {
+  background: var(--bg-row-hover);
+}
+.mcp-sheet-name-edit:focus-within {
+  border-color: var(--accent);
+  background: var(--mcp-surface);
+}
+.mcp-sheet-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  text-overflow: ellipsis;
+}
+.mcp-sheet-name-edit .icon {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
 /* «¿Permitir cambios de configuración sin confirmar?» over the sheet. */
 .modal.mcp-warning-modal {
   width: 420px;
