@@ -115,9 +115,9 @@ describe('warn/error entry points open logs with the level chip', () => {
     // The same contract as the tray button, at the other end: a level must
     // reach the view as the chip, never as something typed into the search
     // box — the one thing `showInContext` and the pill's ✕ can clear.
-    const assignments = Array.from(
-      selectLog.matchAll(/filterEl\.value = ([^;]*);/gu),
-    ).map((match) => normalize(match[1] ?? '').trim());
-    expect(assignments).toEqual(['filter', "''"]);
+    const searches = Array.from(
+      selectLog.matchAll(/(filterBy|clearFindQuery)\(([^)]*)\)/gu),
+    ).map((match) => `${match[1]}(${normalize(match[2] ?? '').trim()})`);
+    expect(searches).toEqual(['filterBy(filter)', 'clearFindQuery()']);
   });
 });

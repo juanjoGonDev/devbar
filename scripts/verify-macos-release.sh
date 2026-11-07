@@ -18,14 +18,18 @@ fail() {
 # retries around `hdiutil create`. A DMG written seconds ago is exactly when it
 # happens, so verify and attach get the same treatment instead of failing an
 # otherwise healthy release.
+# Three tries 3s apart were not enough on a busy CI runner, so the wait doubles
+# after each failure: 3, 6, 12, 24 and 48s — about a minute and a half in all.
 # Overridable so tests can exercise the retry without waiting on it.
-HDIUTIL_ATTEMPTS=${HDIUTIL_ATTEMPTS:-3}
+HDIUTIL_ATTEMPTS=${HDIUTIL_ATTEMPTS:-6}
 HDIUTIL_RETRY_DELAY=${HDIUTIL_RETRY_DELAY:-3}
+HDIUTIL_SLEEP=${HDIUTIL_SLEEP:-sleep}
 
 hdiutil_retry() {
   local description=$1
   shift
   local attempt=1
+  local delay=$HDIUTIL_RETRY_DELAY
   local output
   while :; do
     if output=$("$@" 2>&1); then
@@ -37,9 +41,10 @@ hdiutil_retry() {
       fail "$description failed after $HDIUTIL_ATTEMPTS attempts."
     fi
     printf 'warning: %s failed (attempt %d/%d); retrying in %ds\n' \
-      "$description" "$attempt" "$HDIUTIL_ATTEMPTS" "$HDIUTIL_RETRY_DELAY" >&2
+      "$description" "$attempt" "$HDIUTIL_ATTEMPTS" "$delay" >&2
     attempt=$((attempt + 1))
-    sleep "$HDIUTIL_RETRY_DELAY"
+    "$HDIUTIL_SLEEP" "$delay"
+    delay=$((delay * 2))
   done
 }
 

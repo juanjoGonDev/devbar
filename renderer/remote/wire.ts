@@ -1,4 +1,8 @@
-import type { ProcessStatus } from '../../src/domain-types.js';
+import type {
+  DetectedPortKind,
+  ProcessStatus,
+  WorkflowRunResult,
+} from '../../src/domain-types.js';
 import type {
   RemoteActionView,
   RemoteCommandView,
@@ -8,7 +12,9 @@ import type {
   RemoteLogLine,
   RemoteNotice,
   RemoteNoticeKind,
-  RemotePipelineView,
+  RemotePortView,
+  RemoteWorkflowTrigger,
+  RemoteWorkflowView,
   RemoteSettingsView,
   RemoteStateView,
   RemoteUpdateView,
@@ -66,6 +72,24 @@ const STATUSES: readonly ProcessStatus[] = [
   'done',
 ];
 
+const PORT_KINDS: readonly DetectedPortKind[] = ['web', 'http', 'other'];
+
+/** Valid ports only (1–65535); anything else is dropped. */
+const ports = (value: unknown): RemotePortView[] =>
+  (Array.isArray(value) ? value : [])
+    .filter(
+      (entry): entry is Raw =>
+        isRecord(entry) &&
+        Number.isInteger(entry.port) &&
+        (entry.port as number) >= 1 &&
+        (entry.port as number) <= 65535,
+    )
+    .map((raw) => ({
+      port: raw.port as number,
+      kind: oneOf(raw.kind, PORT_KINDS, 'other'),
+      lanReachable: raw.lanReachable === true,
+    }));
+
 const command = (raw: Raw): RemoteCommandView => ({
   id: str(raw.id),
   processId: str(raw.processId),
@@ -76,6 +100,7 @@ const command = (raw: Raw): RemoteCommandView => ({
   errorCount: num(raw.errorCount),
   lastError: strOrNull(raw.lastError),
   startedAt: numOrNull(raw.startedAt),
+  ports: ports(raw.ports),
 });
 
 const action = (raw: Raw): RemoteActionView => ({
@@ -93,19 +118,46 @@ const group = (raw: Raw): RemoteGroupView => ({
   color: oneOf(raw.color, DOTS, 'stopped'),
   branch: strOrNull(raw.branch),
   lastError: strOrNull(raw.lastError),
+  hidden: raw.hidden === true,
   commands: list(raw.commands, command),
   actions: list(raw.actions, action),
 });
 
-function pipeline(value: unknown): RemotePipelineView {
-  const raw = record(value);
-  return {
-    status: oneOf(raw.status, ['running', 'done', 'error', 'idle'], 'idle'),
-    currentStep: numOrNull(raw.currentStep),
-    totalSteps: num(raw.totalSteps),
-    lastError: strOrNull(raw.lastError),
-  };
-}
+const RESULTS: readonly WorkflowRunResult[] = [
+  'success',
+  'warning',
+  'error',
+  'cancelled',
+];
+
+const TRIGGERS: readonly RemoteWorkflowTrigger[] = [
+  'manual',
+  'schedule',
+  'startup',
+];
+
+const workflow = (raw: Raw): RemoteWorkflowView => ({
+  id: str(raw.id),
+  name: str(raw.name),
+  startup: raw.startup === true,
+  // An older server only says whether it runs at startup.
+  trigger: oneOf(
+    raw.trigger,
+    TRIGGERS,
+    raw.startup === true ? 'startup' : 'manual',
+  ),
+  running: raw.running === true,
+  hidden: raw.hidden === true,
+  doneScripts: numOrNull(raw.doneScripts),
+  totalScripts: num(raw.totalScripts),
+  startedAt: numOrNull(raw.startedAt),
+  nextRunAt: numOrNull(raw.nextRunAt),
+  lastResult:
+    raw.lastResult === null || raw.lastResult === undefined
+      ? null
+      : oneOf(raw.lastResult, RESULTS, 'error'),
+  lastFinishedAt: numOrNull(raw.lastFinishedAt),
+});
 
 export function updateView(value: unknown): RemoteUpdateView {
   const raw = record(value);
@@ -137,7 +189,7 @@ export function stateView(value: unknown): RemoteStateView {
     now: num(raw.now),
     host: { name: str(host.name), version: str(host.version) },
     groups: list(raw.groups, group),
-    pipeline: pipeline(raw.pipeline),
+    workflows: list(raw.workflows, workflow),
     update: updateView(raw.update),
     confirms: list(raw.confirms, confirm, 'token'),
   };

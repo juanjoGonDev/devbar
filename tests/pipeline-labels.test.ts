@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  formatPipelineFailure,
   formatPipelineRunName,
-  formatStepCount,
-  formatStepMode,
+  formatScriptCount,
   PIPELINE_LOG_GROUP_ID,
   PIPELINE_LOG_NAME,
 } from '../src/pipeline-labels.js';
@@ -11,12 +11,12 @@ describe('formatPipelineRunName', () => {
   it('stamps the start time so consecutive runs are told apart in the log list', () => {
     // Local-time constructor: the expected clock reading is timezone-independent.
     const at = new Date(2026, 8, 10, 12, 47, 13).getTime();
-    expect(formatPipelineRunName(at)).toBe('Pipeline · 12:47:13.000');
+    expect(formatPipelineRunName(at)).toBe('Workflow · 12:47:13.000');
   });
 
   it('zero-pads so the labels stay column-aligned', () => {
     const at = new Date(2026, 8, 10, 9, 5, 4).getTime();
-    expect(formatPipelineRunName(at)).toBe('Pipeline · 09:05:04.000');
+    expect(formatPipelineRunName(at)).toBe('Workflow · 09:05:04.000');
   });
 
   it('distinguishes two runs inside the same second', () => {
@@ -37,21 +37,30 @@ describe('formatPipelineRunName', () => {
   });
 });
 
-describe('formatStepCount', () => {
-  it('uses the singular for one step', () => {
-    expect(formatStepCount(1)).toBe('1 paso');
+describe('formatScriptCount', () => {
+  it('uses the singular for one script', () => {
+    expect(formatScriptCount(1)).toBe('1 script');
   });
 
   it('uses the plural for anything else', () => {
-    expect(formatStepCount(0)).toBe('0 pasos');
-    expect(formatStepCount(2)).toBe('2 pasos');
+    expect(formatScriptCount(0)).toBe('0 scripts');
+    expect(formatScriptCount(8)).toBe('8 scripts');
   });
 });
 
-describe('formatStepMode', () => {
-  it('reads in the same language as the rest of the app', () => {
-    expect(formatStepMode('serial')).toBe('serie');
-    expect(formatStepMode('parallel')).toBe('paralelo');
+describe('formatPipelineFailure', () => {
+  it("reads the runner's failure reason as a sentence", () => {
+    expect(formatPipelineFailure('scripts_failed:1', 8)).toBe(
+      'Falló 1 script de 8',
+    );
+    expect(formatPipelineFailure('scripts_failed:3', 8)).toBe(
+      'Fallaron 3 scripts de 8',
+    );
+  });
+
+  it('returns null for a reason it does not know', () => {
+    expect(formatPipelineFailure('boom', 8)).toBeNull();
+    expect(formatPipelineFailure(null, 8)).toBeNull();
   });
 });
 
@@ -65,6 +74,6 @@ describe('PIPELINE_LOG_GROUP_ID / PIPELINE_LOG_NAME', () => {
   });
 
   it('is the shared display name for that bucket', () => {
-    expect(PIPELINE_LOG_NAME).toBe('Pipeline de pre-scripts');
+    expect(PIPELINE_LOG_NAME).toBe('Workflows');
   });
 });

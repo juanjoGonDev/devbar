@@ -114,6 +114,10 @@ export function createConfirmDialog(
   els.run.addEventListener('click', () => void answer('confirm'));
   els.cancel.addEventListener('click', () => void answer('cancel'));
   els.dialog.addEventListener('close', () => {
+    // `close` fires a task after close(). A state push in that gap may have
+    // opened the next confirmation already: this event is the previous one's,
+    // and handling it would dismiss the one on screen and orphan its buttons.
+    if (els.dialog.open) return;
     if (closer !== null) ctx.env.clearTimeout(closer);
     closer = null;
     if (shown && !settled.has(shown.token) && answered !== shown.token)

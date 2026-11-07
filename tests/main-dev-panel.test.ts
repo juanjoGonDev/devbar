@@ -16,6 +16,8 @@ const fixtures: DevPanelDeps['fixtures'] = {
     repoPath: null,
   }),
   setOverlay: () => undefined,
+  runningWorkflowIds: () => [],
+  stopWorkflow: () => Promise.resolve(),
   processIds: () => [],
   stop: () => Promise.resolve({ ok: true }),
   removeState: () => undefined,
@@ -143,12 +145,56 @@ describe('src/main/dev-panel.ts', () => {
   });
 
   describe('createFixtureHost', () => {
+    it('cancels a listed workflow run and waits for it to settle', async () => {
+      const calls: string[] = [];
+      let settle: () => void = () => undefined;
+      const inFlight = new Promise<{ ok: boolean }>((resolve) => {
+        settle = () => {
+          calls.push('settled');
+          resolve({ ok: false });
+        };
+      });
+      const host = createFixtureHost({
+        app: { isPackaged: true, getAppPath: () => '/app' },
+        pathExists: () => true,
+        setOverlay: () => undefined,
+        listWorkflows: () => [{ id: 'fixture-wf-largo' }, { id: 'quiet' }],
+        workflowRunner: {
+          isRunning: (id) => id === 'fixture-wf-largo',
+          stop: (id) => {
+            calls.push(`cancel:${id}`);
+            settle();
+            return { ok: true };
+          },
+          current: (id) => (id === 'fixture-wf-largo' ? inFlight : null),
+        },
+        processManager: {
+          allStates: () => [],
+          stop: () => Promise.resolve({ ok: true }),
+          removeState: () => undefined,
+        },
+        refresh: () => undefined,
+      });
+
+      expect(host.runningWorkflowIds()).toEqual(['fixture-wf-largo']);
+      await host.stopWorkflow('fixture-wf-largo');
+      await host.stopWorkflow('quiet');
+      expect(calls).toEqual(['cancel:fixture-wf-largo', 'settled']);
+    });
+
     it('hands the overlay the process manager and the repaint it needs', async () => {
       const calls: string[] = [];
       const host = createFixtureHost({
         app: { isPackaged: true, getAppPath: () => '/app' },
         pathExists: () => true,
-        setOverlay: (groups) => calls.push(`overlay:${groups?.length ?? 0}`),
+        setOverlay: (overlay) =>
+          calls.push(`overlay:${overlay?.groups.length ?? 0}`),
+        listWorkflows: () => [{ id: 'w1' }, { id: 'w2' }],
+        workflowRunner: {
+          isRunning: (id) => id === 'w2',
+          stop: () => ({ ok: true }),
+          current: () => null,
+        },
         processManager: {
           allStates: () => [{ id: 'cmd:g:a' }, { id: 'act:g:b' }],
           stop: (id) => {
@@ -161,6 +207,7 @@ describe('src/main/dev-panel.ts', () => {
       });
 
       expect(host.processIds()).toEqual(['cmd:g:a', 'act:g:b']);
+      expect(host.runningWorkflowIds()).toEqual(['w2']);
       await host.stop('cmd:g:a');
       host.removeState('cmd:g:a');
       host.setOverlay(null);

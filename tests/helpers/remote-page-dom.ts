@@ -46,9 +46,11 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         color: 'warn',
         branch: 'main',
         lastError: null,
+        hidden: false,
         commands: [
           {
             id: 'api',
+            ports: [],
             processId: 'cmd:g1:api',
             name: 'API',
             status: 'running',
@@ -60,6 +62,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
           },
           {
             id: 'jobs',
+            ports: [],
             processId: 'cmd:g1:jobs',
             name: 'Cola de jobs',
             status: 'stopped',
@@ -87,9 +90,11 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         color: 'error',
         branch: null,
         lastError: null,
+        hidden: false,
         commands: [
           {
             id: 'astro',
+            ports: [],
             processId: 'cmd:g2:astro',
             name: 'Astro dev',
             status: 'error',
@@ -103,12 +108,7 @@ export function state(extra: Partial<RemoteStateView> = {}): RemoteStateView {
         actions: [],
       },
     ],
-    pipeline: {
-      status: 'idle',
-      currentStep: null,
-      totalSteps: 2,
-      lastError: null,
-    },
+    workflows: [],
     update: { currentVersion: '0.11.0', state: 'current', version: null },
     confirms: [],
     ...extra,

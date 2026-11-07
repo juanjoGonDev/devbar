@@ -3,6 +3,7 @@ import {
   clockTime,
   countdown,
   dayLabel,
+  elapsed,
   hourMinute,
   mmss,
   plural,
@@ -25,6 +26,17 @@ describe('renderer/remote/format.ts', () => {
       [2 * DAY + 3 * HOUR, '2d 3h'],
     ])('reads %i ms as "%s"', (ms, label) => {
       expect(uptime(ms)).toBe(label);
+    });
+  });
+
+  describe('elapsed', () => {
+    it.each([
+      [0, '0s'],
+      [12_400, '12s'],
+      [MINUTE + 12_000, '1m 12s'],
+      [HOUR + 5 * MINUTE + 30_000, '1h 5m'],
+    ])('reads %i ms as "%s"', (ms, label) => {
+      expect(elapsed(ms)).toBe(label);
     });
   });
 

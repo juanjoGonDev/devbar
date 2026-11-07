@@ -1,6 +1,7 @@
 import { icon, userIcon } from '../icon.js';
 import { attachDragHandlers } from '../dnd-helper.js';
 import { latestWins } from '../latest-wins.js';
+import { setHiddenInTray } from './group-visibility.js';
 import type { Group } from '../../src/domain-types.js';
 import type { GroupStore } from './group-store.js';
 import { errorMessage, type ShowToast } from './toast.js';
@@ -12,11 +13,18 @@ export interface GroupsListDeps {
   showToast: ShowToast;
   /** Late-bound: the detail pane is wired to this list by the entry point. */
   renderGroupDetail(): void;
+  /** Runs after every repaint of the rows, e.g. to re-fit the list width. */
+  onRendered?(): void;
 }
 
 export interface GroupsList {
   /** Re-reads every group from main and repaints the nav. */
   load(): Promise<void>;
+  /**
+   * The read a live push triggers: repaints only when the stored groups
+   * changed, and answers whether they did.
+   */
+  refresh(): Promise<boolean>;
   render(): void;
 }
 
@@ -33,24 +41,48 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
    */
   const groupListReads = latestWins();
 
-  async function loadGroups(): Promise<void> {
+  /** The groups the nav was last built from, to tell a real change apart. */
+  let renderedSnapshot: string | null = null;
+
+  async function readGroups(): Promise<Group[] | null> {
     // Issuing this read retires every older one still in flight.
     groupListReads.invalidate();
     const current = groupListReads.claim();
     const groups = await window.api.listGroups();
-    if (!current()) return; // a newer read already answered
+    return current() ? groups : null; // null: a newer read already answered
+  }
+
+  async function loadGroups(): Promise<void> {
+    const groups = await readGroups();
+    if (!groups) return;
     store.setGroups(groups);
     renderGroupsList();
   }
 
+  /*
+   * Running processes push state many times a second, and each push re-reads
+   * the groups. Rebuilding the nav and the pane for an unchanged read swaps
+   * the element under the pointer, and macOS then drops the hand cursor.
+   */
+  async function refreshGroups(): Promise<boolean> {
+    const groups = await readGroups();
+    if (!groups) return false;
+    const changed = JSON.stringify(groups) !== renderedSnapshot;
+    store.setGroups(groups);
+    if (changed) renderGroupsList();
+    return changed;
+  }
+
   function renderGroupsList(): void {
     const groups = store.getGroups();
+    renderedSnapshot = JSON.stringify(groups);
     deps.listEl.innerHTML = '';
     if (!groups.length) {
       const empty = document.createElement('div');
       empty.className = 'nav-empty muted';
-      empty.textContent = 'Sin grupos. Pulsa + Añadir.';
+      empty.textContent = 'Sin grupos. Pulsa Nuevo grupo.';
       deps.listEl.appendChild(empty);
+      deps.onRendered?.();
       return;
     }
 
@@ -73,6 +105,7 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
       await window.api.reorderGroups(orderedIds);
       await loadGroups();
     });
+    deps.onRendered?.();
 
     // Only re-render detail when clean — preserve in-progress edits
     if (store.getSelectedId() && !store.isDirty()) deps.renderGroupDetail();
@@ -99,9 +132,14 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
     nameEl.className = 'nav-name';
     nameEl.textContent = group.name || '(sin nombre)';
     card.appendChild(nameEl);
+    card.appendChild(buildEye(group));
+    if (group.hiddenInTray) card.classList.add('is-hidden-in-tray');
 
     card.addEventListener('click', async (e) => {
-      if (e.target instanceof HTMLElement && e.target.closest('.drag-handle'))
+      if (
+        e.target instanceof HTMLElement &&
+        e.target.closest('.drag-handle, .nav-eye')
+      )
         return;
       if (group.id === store.getSelectedId()) return;
       if (store.isDirty()) {
@@ -128,5 +166,41 @@ export function createGroupsList(deps: GroupsListDeps): GroupsList {
     return card;
   }
 
-  return { load: loadGroups, render: renderGroupsList };
+  /** Shown on hover — always while the group is hidden. Not draggable and
+   * outside the handle, so it never starts a reorder or selects the row. */
+  function buildEye(group: Group): HTMLButtonElement {
+    const name = group.name || '(sin nombre)';
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.className = 'nav-eye';
+    eye.draggable = false;
+    eye.title = group.hiddenInTray
+      ? 'Mostrar en la barra'
+      : 'Ocultar de la barra';
+    eye.setAttribute(
+      'aria-label',
+      group.hiddenInTray
+        ? `Mostrar ${name} en la barra`
+        : `Ocultar ${name} de la barra`,
+    );
+    eye.append(icon(group.hiddenInTray ? 'eye-off' : 'eye'));
+    eye.addEventListener('click', (event) => {
+      event.stopPropagation();
+      void setHiddenInTray(
+        {
+          store,
+          showToast: deps.showToast,
+          repaint: () => {
+            renderGroupsList();
+            deps.renderGroupDetail();
+          },
+        },
+        group,
+        !group.hiddenInTray,
+      );
+    });
+    return eye;
+  }
+
+  return { load: loadGroups, refresh: refreshGroups, render: renderGroupsList };
 }

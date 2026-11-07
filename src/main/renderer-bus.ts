@@ -1,3 +1,5 @@
+import type { GlobalSettings, ThemePreference } from '../domain-types.js';
+
 /**
  * The set of live windows, and the fan-out over them. Every push from the main
  * process (`groups:update`, toasts, theme changes) goes through here, so
@@ -95,6 +97,21 @@ export function themeTargets(registry: WindowRegistry): WebContentsLike[] {
 /** The resolved theme preference, on its own channel. */
 export function broadcastTheme(registry: WindowRegistry, theme: string): void {
   for (const wc of themeTargets(registry)) wc.send('settings:theme', theme);
+}
+
+/**
+ * What a settings save pushes: the theme on its own channel (every themed
+ * window), then the whole settings (the tray's group fold).
+ */
+export function settingsPushes(registry: WindowRegistry): {
+  sendTheme: (theme: ThemePreference) => void;
+  sendSettings: (settings: GlobalSettings) => void;
+} {
+  return {
+    sendTheme: (theme) => broadcastTheme(registry, theme),
+    sendSettings: (settings) =>
+      sendToRenderers(registry, 'settings:changed', settings),
+  };
 }
 
 export function sendToRenderers(

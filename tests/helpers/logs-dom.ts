@@ -72,7 +72,7 @@ function stubScrollIntoView(): void {
 }
 
 /**
- * jsdom has no `CSS` object at all, and both the drawer and the sidebar look
+ * jsdom has no `CSS` object at all, and both the scope switcher and the sidebar look
  * rows up by an id they escape with `CSS.escape` (`g1:web` is a real id, and
  * `:` starts a pseudo-class). This is the CSSOM serialization algorithm, so
  * the selectors under test are the ones the real renderer builds.

@@ -19,6 +19,20 @@ describe('packaged app contents', () => {
     expect(isIgnored('/build/src/dev/dev-ipc.js.map')).toBe(true);
   });
 
+  it('drops agent worktrees, which are whole checkouts of the repo', () => {
+    for (const ignore of [PACKAGE_IGNORE, packageIgnoreFor(true)]) {
+      for (const dropped of [
+        '/.claude',
+        '/.claude/worktrees/agent-1/build/src/main.js',
+      ]) {
+        expect(
+          ignore.some((pattern) => pattern.test(dropped)),
+          dropped,
+        ).toBe(true);
+      }
+    }
+  });
+
   it('keeps everything the app actually runs', () => {
     for (const kept of [
       '/build/src/main.js',

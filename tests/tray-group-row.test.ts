@@ -5,7 +5,7 @@ import type {
   CommandRuntimeState,
   GroupState,
 } from '../src/ipc-contract.js';
-import type { Action, Command } from '../src/domain-types.js';
+import type { Action, Command, DetectedPort } from '../src/domain-types.js';
 import { iconText } from './helpers/icon-text.js';
 
 /**
@@ -39,6 +39,7 @@ function commandState(
   overrides: Partial<CommandRuntimeState> = {},
 ): CommandRuntimeState {
   return {
+    ports: [],
     commandId: 'c1',
     processId: 'g1:c1',
     status: 'stopped',
@@ -67,6 +68,16 @@ function actionState(
   };
 }
 
+function webPort(port = 3000): DetectedPort {
+  return {
+    port,
+    url: `http://localhost:${port}/`,
+    kind: 'web',
+    source: 'log',
+    lanReachable: false,
+  };
+}
+
 function groupState(overrides: Partial<GroupState> = {}): GroupState {
   const base: GroupState = {
     groupId: 'g1',
@@ -85,6 +96,7 @@ function groupState(overrides: Partial<GroupState> = {}): GroupState {
       actions: [],
       preScripts: [],
       waitForPipeline: true,
+      hiddenInTray: false,
     },
     currentBranch: null,
     color: 'stopped',
@@ -110,6 +122,7 @@ describe('renderer/tray/group-row.ts', () => {
       startProcess: vi.fn(() => Promise.resolve()),
       stopProcess: vi.fn(() => Promise.resolve()),
       runAction: vi.fn(() => Promise.resolve()),
+      openPort: vi.fn(() => Promise.resolve({ ok: true })),
       listBranches: vi.fn(() => new Promise(() => undefined)),
       currentBranch: vi.fn(() => new Promise(() => undefined)),
       setTrayHeight: vi.fn(() => Promise.resolve()),
@@ -217,6 +230,36 @@ describe('renderer/tray/group-row.ts', () => {
         groupId: 'g1',
       });
       expect(rerender).not.toHaveBeenCalled();
+    });
+
+    it('shows the group’s web port while collapsed', () => {
+      const el = mount(
+        groupState({
+          commands: [
+            commandState({
+              status: 'running',
+              startedAt: 1,
+              ports: [webPort()],
+            }),
+          ],
+        }),
+      );
+      const open = q(q(el, '.group-row'), '.port-pill-open');
+      click(open);
+      expect(api.openPort).toHaveBeenCalledWith('g1', 'c1', 3000);
+      expect(rerender).not.toHaveBeenCalled();
+    });
+
+    it('drops the group’s port pill once expanded', () => {
+      const state = groupState({
+        commands: [
+          commandState({ status: 'running', startedAt: 1, ports: [webPort()] }),
+        ],
+      });
+      click(q(mount(state), '.caret-btn'));
+      expect(
+        q(mount(state), '.group-row').querySelector('.port-pill'),
+      ).toBeNull();
     });
 
     it('names the group in that button’s tooltip', () => {
@@ -390,6 +433,27 @@ describe('renderer/tray/group-row.ts', () => {
       const el = expandedWith(withCommand({ warnCount: 0, errorCount: 0 }));
       expect(el.querySelector('.cmd-counters')).toBeNull();
     });
+
+    it('shows the port pill of a running command', () => {
+      const el = expandedWith(
+        withCommand({ status: 'running', startedAt: 1, ports: [webPort()] }),
+      );
+      const open = q(q(el, '.cmd-sub-row'), '.port-pill-open');
+      click(open);
+      expect(api.openPort).toHaveBeenCalledWith('g1', 'c1', 3000);
+      expect(rerender).toHaveBeenCalledTimes(1);
+    });
+
+    it('puts an open ports menu right after the command row', () => {
+      const state = withCommand({
+        status: 'running',
+        startedAt: 1,
+        ports: [webPort(), webPort(6006)],
+      });
+      click(q(expandedWith(state), '.port-pill-more'));
+      const row = q(mount(state), '.cmd-sub-row');
+      expect(row.nextElementSibling?.className).toBe('port-menu');
+    });
   });
 
   describe('action chips', () => {
@@ -423,6 +487,8 @@ describe('renderer/tray/group-row.ts', () => {
       const chip = q(el, '.action-chip');
       expect(chip.className).toContain('running');
       expect(chip.textContent).toBe('migrar …');
+      // Phase-locked to the (faked) page clock, so a repaint keeps its pulse.
+      expect(chip.style.animationDelay).toMatch(/^-?[\d.]+ms$/);
       click(chip);
       expect(api.runAction).not.toHaveBeenCalled();
     });

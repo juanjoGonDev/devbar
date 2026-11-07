@@ -59,7 +59,8 @@ const GLOBAL_SETTINGS: GlobalSettings = {
   silenceErrors: false,
   maxLogLines: 2000,
   notifySuccess: true,
-  preScriptsAutoRun: false,
+  showHiddenGroupsFold: true,
+  showHiddenWorkflowsFold: false,
 };
 
 function makeConfigStoreStub(group: Group = GROUP) {

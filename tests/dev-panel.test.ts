@@ -133,7 +133,7 @@ describe('renderer/dev/dev-panel.ts', () => {
         'Notificaciones',
         'Icono de la barra',
         'Diálogos y avisos',
-        'Grupos de prueba',
+        'Grupos y workflows de prueba',
       ]);
     });
 

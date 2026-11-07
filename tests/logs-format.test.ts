@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { fmtTime, mutedKey, sourceColor } from '../renderer/logs/format.js';
+import {
+  fmtTime,
+  mutedKey,
+  relativeTime,
+  sourceColor,
+} from '../renderer/logs/format.js';
 
 describe('renderer/logs/format.ts', () => {
   describe('fmtTime', () => {
@@ -13,6 +18,26 @@ describe('renderer/logs/format.ts', () => {
     it('keeps three digits of milliseconds', () => {
       const ts = new Date(2024, 0, 2, 23, 59, 59, 999).getTime();
       expect(fmtTime(ts)).toBe('23:59:59.999');
+    });
+  });
+
+  describe('relativeTime', () => {
+    const now = 1_000_000_000;
+
+    it.each([
+      [0, 'hace 0 s'],
+      [12_400, 'hace 12 s'],
+      [59_999, 'hace 59 s'],
+      [60_000, 'hace 1 min'],
+      [59 * 60_000, 'hace 59 min'],
+      [3 * 3_600_000, 'hace 3 h'],
+      [2 * 86_400_000, 'hace 2 d'],
+    ])('says %i ms ago as %j', (ago, text) => {
+      expect(relativeTime(now - ago, now)).toBe(text);
+    });
+
+    it('treats a stamp from a clock slightly ahead as just now', () => {
+      expect(relativeTime(now + 500, now)).toBe('hace 0 s');
     });
   });
 

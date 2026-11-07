@@ -3,27 +3,25 @@ import {
   describeWithheldGroups,
   filterAutoStartEligibleGroups,
   planAutoStartRelease,
+  releasableGroupIds,
   shouldAutoRunPipeline,
   shouldShowGenericFailureToast,
   withheldGroupIds,
   type AutoStartPlan,
 } from '../autostart-schedule.js';
-import type {
-  GlobalSettings,
-  Group,
-  LogEntry,
-  PreStep,
-} from '../domain-types.js';
+import type { Group, LogEntry, Workflow } from '../domain-types.js';
+import { runnableScriptCount } from '../pipeline-graph.js';
 import type { RunResult } from '../pre-script-runner.js';
+import { startupWorkflow } from '../workflows.js';
 
 /**
  * Everything that happens once, at launch: restoring the previous session's
- * services, and running the ONE global pre-script pipeline before releasing
- * each eligible group's `autoStart` commands.
+ * services, and running the startup workflow («workflow de arranque») before
+ * releasing each eligible group's `autoStart` commands.
  *
  * The staged-release bookkeeping lives here rather than in `main.ts` because
  * it is shared state read from THREE places — the boot flow itself, the
- * runner's `onStepComplete`, and its `onError` — and getting it wrong starves
+ * runner's `onBlockComplete`, and its `onError` — and getting it wrong starves
  * a group that should have started.
  */
 
@@ -38,16 +36,15 @@ interface StartupProcessManager {
 
 interface StartupConfigStore {
   listGroups: () => Group[];
-  getPreSteps: () => PreStep[];
-  getGlobalSettings: () => GlobalSettings;
+  listWorkflows: () => Workflow[];
 }
 
 export interface StartupDeps {
   processManager: StartupProcessManager;
   configStore: StartupConfigStore;
-  preScriptRunner: {
-    run: () => Promise<RunResult>;
-    current: () => Promise<RunResult> | null;
+  workflowRunner: {
+    run: (workflowId: string, cause: 'startup') => Promise<RunResult>;
+    current: (workflowId: string) => Promise<RunResult> | null;
   };
   /** Consumes (and deletes) the previous session's snapshot. */
   consumeSnapshot: (canResume: (id: string) => boolean) => {
@@ -66,22 +63,31 @@ export interface Startup {
   resumeSavedServices: () => void;
   autoStartAllMarkedCommands: () => Promise<void>;
   startGroupAutoStartCommands: (group: Group) => void;
-  /** Releases the groups whose LAST referencing step just cleared. */
-  onPipelineStepComplete: (stepIndex: number) => void;
+  /** Releases the groups whose every awaited block has now completed. */
+  onWorkflowBlockComplete: (event: {
+    workflowId: string;
+    blockId: string;
+  }) => void;
   /** Whether the runner's generic failure toast would say anything new. */
   shouldShowGenericFailureToast: () => boolean;
 }
 
 export function createStartup(deps: StartupDeps): Startup {
-  const { processManager, configStore, preScriptRunner } = deps;
+  const { processManager, configStore, workflowRunner } = deps;
 
-  // Set only while `autoStartAllMarkedCommands` awaits the BOOT-time pipeline
-  // run. Null the rest of the time — including during a manual, tray-triggered
-  // run — because releasing autoStart commands is exclusively a boot concern.
+  // Set only while `autoStartAllMarkedCommands` awaits the BOOT-time run of
+  // the startup workflow. Null the rest of the time — including during a
+  // manual, tray-triggered run — because releasing autoStart commands is
+  // exclusively a boot concern.
   let activeAutoStartRelease: {
+    /** The startup workflow whose blocks release the groups. */
+    workflowId: string;
     plan: AutoStartPlan;
     groupsById: ReadonlyMap<string, Group>;
-    fired: Set<number>;
+    /** Blocks that completed successfully during this boot run. */
+    completed: Set<string>;
+    /** Awaiting groups already started — each starts at most once. */
+    started: Set<string>;
   } | null = null;
 
   function startGroupAutoStartCommands(group: Group): void {
@@ -100,7 +106,7 @@ export function createStartup(deps: StartupDeps): Startup {
   }
 
   /**
-   * Names every group withheld by a pipeline failure or a declined
+   * Names every group withheld by a startup workflow failure or a declined
    * confirmation. Same computation, same reporting machinery for both causes
    * (the Decided Override: one release rule) — the wording/severity split is
    * `describeWithheldGroups`'s job; this is only the IO side effect.
@@ -122,7 +128,7 @@ export function createStartup(deps: StartupDeps): Startup {
       });
     }
     deps.broadcastToast(report.toastKind, report.message);
-    deps.showCompletionNotification('DevBar — pre-scripts', report.message);
+    deps.showCompletionNotification('DevBar — workflows', report.message);
   }
 
   return {
@@ -162,11 +168,13 @@ export function createStartup(deps: StartupDeps): Startup {
 
     startGroupAutoStartCommands,
 
-    onPipelineStepComplete(stepIndex: number): void {
+    onWorkflowBlockComplete({ workflowId, blockId }): void {
       const active = activeAutoStartRelease;
-      if (!active) return;
-      active.fired.add(stepIndex);
-      for (const groupId of active.plan.releases.get(stepIndex) ?? []) {
+      if (!active || active.workflowId !== workflowId) return;
+      active.completed.add(blockId);
+      for (const groupId of releasableGroupIds(active.plan, active.completed)) {
+        if (active.started.has(groupId)) continue;
+        active.started.add(groupId);
         const group = active.groupsById.get(groupId);
         if (group) startGroupAutoStartCommands(group);
       }
@@ -183,7 +191,7 @@ export function createStartup(deps: StartupDeps): Startup {
       return shouldShowGenericFailureToast({
         isBootRun: active !== null,
         withheldCount: active
-          ? withheldGroupIds(active.plan, active.fired).length
+          ? withheldGroupIds(active.plan, active.completed).length
           : 0,
       });
     },
@@ -193,22 +201,24 @@ export function createStartup(deps: StartupDeps): Startup {
       // on every manual app restart. This protects the user from re-running
       // expensive `make setup` style scripts every time they reopen DevBar.
       const openedAtLogin = deps.forceLogin || deps.wasOpenedAtLogin();
-      const steps = configStore.getPreSteps();
-      const shouldRunPipeline = shouldAutoRunPipeline({
-        wasOpenedAtLogin: openedAtLogin,
-        preScriptsAutoRun:
-          configStore.getGlobalSettings().preScriptsAutoRun === true,
-        stepCount: steps.length,
-      });
+      const workflow = startupWorkflow(configStore.listWorkflows());
+      const pipeline = workflow?.graph ?? { blocks: [], edges: [] };
+      const shouldRunPipeline =
+        workflow !== null &&
+        shouldAutoRunPipeline({
+          wasOpenedAtLogin: openedAtLogin,
+          startupEnabled: workflow.enabled,
+          scriptCount: runnableScriptCount(pipeline),
+        });
 
-      // Deliberately computed AFTER the pipeline decision above, and NOT used
-      // to gate it: a pipeline with real steps must run at login even when no
-      // group has an autoStart command at all.
+      // Deliberately computed AFTER the startup workflow decision above, and
+      // NOT used to gate it: a workflow with real blocks must run at login
+      // even when no group has an autoStart command at all.
       const eligibleGroups = filterAutoStartEligibleGroups(
         configStore.listGroups(),
       );
 
-      if (!shouldRunPipeline) {
+      if (!workflow || !shouldRunPipeline) {
         for (const group of eligibleGroups) startGroupAutoStartCommands(group);
         return;
       }
@@ -217,11 +227,11 @@ export function createStartup(deps: StartupDeps): Startup {
         eligibleGroups.map((group) => [group.id, group]),
       );
       const plan = planAutoStartRelease({
-        steps,
+        pipeline,
         eligibleGroupIds: eligibleGroups.map((group) => group.id),
-        // Group.waitForPipeline (default true): a group whose own last step
-        // already succeeded can still get broken by a LATER, unrelated group's
-        // step (e.g. a second `make setup` restarting Docker) — so by default
+        // Group.waitForPipeline (default true): a group whose own blocks
+        // already succeeded can still get broken by another, unrelated group's
+        // block (e.g. a second `make setup` restarting Docker) — so by default
         // every eligible group waits for the whole pipeline instead of
         // releasing early.
         waitingGroupIds: eligibleGroups
@@ -233,7 +243,13 @@ export function createStartup(deps: StartupDeps): Startup {
         if (group) startGroupAutoStartCommands(group);
       }
 
-      const release = { plan, groupsById, fired: new Set<number>() };
+      const release = {
+        workflowId: workflow.id,
+        plan,
+        groupsById,
+        completed: new Set<string>(),
+        started: new Set<string>(),
+      };
       activeAutoStartRelease = release;
       try {
         // Capture the in-flight run BEFORE awaiting. `run()` returns its
@@ -242,19 +258,19 @@ export function createStartup(deps: StartupDeps): Startup {
         // manual run that finished in that window, leaving the synthetic
         // `already_running` result — which reports a cancellation as a failure
         // and loses the real run's `aggregatorId`.
-        const attempt = preScriptRunner.run();
-        const inFlight = preScriptRunner.current();
+        const attempt = workflowRunner.run(workflow.id, 'startup');
+        const inFlight = workflowRunner.current(workflow.id);
         let res = await attempt;
         if (!res.ok && res.error === 'already_running' && inFlight) {
           // A manual run (e.g. the tray ▶▶) was already in flight when boot
           // auto-start fired. Adopt ITS result instead of reporting a spurious
           // failure: the release stays set for the whole wait, so that run's
-          // `onStepComplete` still releases this boot plan's groups.
+          // `onBlockComplete` still releases this boot plan's groups.
           res = await inFlight;
         }
         if (!res.ok) {
           reportWithheldGroups(
-            withheldGroupIds(plan, release.fired),
+            withheldGroupIds(plan, release.completed),
             groupsById,
             res.aggregatorId ?? null,
             res.cancelled ? 'cancelled' : 'failure',

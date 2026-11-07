@@ -221,6 +221,33 @@ describe('src/process-manager.ts — service output and exit', () => {
       expect(pm.getState(CMD_ID).errorCount).toBe(0);
     });
 
+    it('does not count the lines a port probe makes the service print', async () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      pm.probeNoise.mute(CMD_ID, Date.now() + 60_000, (line) =>
+        line.includes('Cannot GET /'),
+      );
+      await say(
+        lastChild(),
+        'stdout',
+        'ERROR: Cannot GET /',
+        'ERROR: connection refused',
+      );
+      const [noise, real] = output(pm, CMD_ID);
+      expect(noise?.level).toBeNull();
+      expect(noise?.originalLevel).toBeNull();
+      expect(real?.level).toBe('error');
+      expect(pm.getState(CMD_ID).errorCount).toBe(1);
+    });
+
+    it('counts those lines again once the probe window is over', async () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      pm.probeNoise.mute(CMD_ID, Date.now() - 1, () => true);
+      await say(lastChild(), 'stdout', 'ERROR: Cannot GET /');
+      expect(pm.getState(CMD_ID).errorCount).toBe(1);
+    });
+
     it('re-reads the patterns per line, so a pattern added mid-run applies', async () => {
       const pm = manager();
       pm.start(CMD_ID);

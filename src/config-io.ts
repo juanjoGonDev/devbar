@@ -2,17 +2,19 @@ import type {
   CustomIcon,
   GlobalSettings,
   Group,
-  PreStep,
+  PreStepScriptRef,
+  Workflow,
 } from './domain-types.js';
+import { normalizeGroup, validateGroupShape } from './groups-model.js';
 import {
-  normalizeGroup,
-  normalizePreStep,
-  validateGroupShape,
-  migratePreScriptPipeline,
-} from './groups-model.js';
+  applyV3Migration,
+  validateLegacySteps,
+} from './config-io/legacy-steps.js';
 import { migrateIcons } from './groups/icon-migration.js';
 import { validateCustomIcons } from './custom-icons.js';
 import { normalizeIconColor } from './icon-color.js';
+import { validatePipeline } from './pipeline-graph.js';
+import { validateWorkflow, workflowsFromPipeline } from './workflows.js';
 
 export const EXPORT_SCHEMA_VERSION = 4;
 /** A v3 export/store file (nested per-group `preSteps`) still imports. */
@@ -70,7 +72,7 @@ export interface SerializedConfig {
   appVersion: string | null;
   version: number;
   groups: Group[];
-  preSteps: PreStep[];
+  workflows: Workflow[];
   globalSettings: Partial<GlobalSettings>;
   /** The uploaded images the exported groups reference. */
   customIcons: CustomIcon[];
@@ -78,7 +80,7 @@ export interface SerializedConfig {
 export interface ImportPayload {
   version: number;
   groups: Group[];
-  preSteps: PreStep[];
+  workflows: Workflow[];
   globalSettings: Partial<GlobalSettings>;
   customIcons: CustomIcon[];
 }
@@ -90,7 +92,7 @@ export function serializeConfig(
     | {
         version?: number;
         groups?: Group[];
-        preSteps?: PreStep[];
+        workflows?: Workflow[];
         globalSettings?: Partial<GlobalSettings>;
         customIcons?: CustomIcon[];
       }
@@ -105,152 +107,31 @@ export function serializeConfig(
     version:
       typeof raw.version === 'number' ? raw.version : EXPORT_SCHEMA_VERSION,
     groups: Array.isArray(raw.groups) ? raw.groups : [],
-    preSteps: Array.isArray(raw.preSteps) ? raw.preSteps : [],
+    workflows: Array.isArray(raw.workflows) ? raw.workflows : [],
     globalSettings: raw.globalSettings ?? {},
     customIcons: Array.isArray(raw.customIcons) ? raw.customIcons : [],
   };
 }
 
 /**
- * Hoists a v3 payload's nested per-group script definitions into the global
- * pipeline shape. A v4 payload passes straight through.
- *
- * Extracted from `validateImportedConfig` to keep that function under the
- * repo's complexity ceiling; it is also the only part of the importer that
- * needs to reason about two schema versions at once.
+ * A backup's `workflows`, each validated as strictly as a save from the
+ * settings window: same graph rules, refs resolving against the SAME
+ * payload's scripts, a single startup workflow, distinct ids.
  */
-function applyV3Migration(value: {
-  version?: unknown;
-  groups: unknown[];
-  preSteps?: unknown;
-  globalSettings?: unknown;
-}): { groups: unknown[]; steps: unknown; autoRun: boolean | undefined } {
-  if (value.version !== MIN_SUPPORTED_VERSION)
-    return { groups: value.groups, steps: value.preSteps, autoRun: undefined };
-
-  const migrated = migratePreScriptPipeline({
-    groups: value.groups,
-    preSteps: value.preSteps,
-    globalSettings: value.globalSettings,
-  });
-  const groups = value.groups.map((rawGroup, index) => {
-    const migratedGroup = migrated.groups[index];
-    return {
-      ...record(rawGroup),
-      // The migration mints an id for an id-less group and points its refs at
-      // it; re-normalizing the raw group would mint a different one and the
-      // cross-reference check would then reject the whole import.
-      ...(migratedGroup ? { id: migratedGroup.id } : {}),
-      preScripts: migratedGroup?.preScripts ?? [],
-    };
-  });
-  // `migrated.preSteps` (existing + hoisted, both already normalized) is
-  // right for the LIVE STORE, which has no separate validation pass. The
-  // importer DOES have one, right below — so using `migrated.preSteps` here
-  // would let an invalid `mode`, an invalid `scripts` value, or a malformed
-  // ref inside the payload's OWN top-level `preSteps` get silently defaulted
-  // into something valid before that validation ever runs. Only
-  // `migrated.hoistedSteps` (freshly built by the migration itself, so
-  // always well-formed) is safe to trust outright; the payload's own
-  // top-level steps are passed through EXACTLY as authored so they still
-  // face the same strict checks a v4 payload's would — the same
-  // v3-leniency-stays-scoped principle already applied to `preScripts` above.
-  const rawTopLevelSteps: unknown = value.preSteps;
-  const steps: unknown = isUnknownArray(rawTopLevelSteps)
-    ? [...rawTopLevelSteps, ...migrated.hoistedSteps]
-    : rawTopLevelSteps === undefined
-      ? migrated.hoistedSteps
-      : rawTopLevelSteps;
-  return {
-    groups,
-    steps,
-    // Only when legacy data was actually hoisted. A store mislabelled v3 that
-    // already holds v4 data has zero contributors, and the AND-fold would
-    // silently turn OFF an auto-run the payload had enabled.
-    // Gate on real contributors, NOT on `changed`: an empty legacy
-    // `preSteps: []` flips `changed` while contributing nothing, and the
-    // AND-fold would then turn OFF an auto-run the payload had enabled.
-    // Same guard `planStoreMigration` uses on the live-store path.
-    autoRun:
-      migrated.preScriptsAutoRunContributors > 0
-        ? migrated.preScriptsAutoRun
-        : undefined,
-  };
-}
-
-/**
- * Validates the global pipeline against the rest of the payload.
- *
- * This importer is the only place that sees the WHOLE payload at once, so it
- * is the only place three invariants the editor maintains by construction can
- * be checked: refs resolve, step ids are unique, and a script is placed in at
- * most one step. Hand-edited or third-party JSON honours none of them.
- *
- * Extracted from `validateImportedConfig` to keep it under the repo's
- * complexity ceiling.
- */
-function validatePipelineSteps(
-  rawSteps: readonly unknown[],
-  groupIds: ReadonlySet<string>,
-  scriptIdsByGroup: ReadonlyMap<string, Set<string>>,
-): { ok: true; steps: PreStep[] } | { ok: false; error: string } {
-  const steps: PreStep[] = [];
-  const usedStepIds = new Set<string>();
-  // A ref in two steps shares one process id, so the later placement never
-  // really runs — and it still delays that group's autoStart release to the
-  // later step. `assignScriptToStep` enforces this in the editor.
-  const placedRefs = new Set<string>();
-
-  for (let stepIndex = 0; stepIndex < rawSteps.length; stepIndex++) {
-    const rawStep = record(rawSteps[stepIndex]);
-    if (
-      rawStep.mode !== undefined &&
-      rawStep.mode !== 'parallel' &&
-      rawStep.mode !== 'serial'
-    )
-      return { ok: false, error: `Paso #${stepIndex} con mode inválido` };
-    if (rawStep.scripts !== undefined && !isUnknownArray(rawStep.scripts))
-      return { ok: false, error: `Paso #${stepIndex} scripts debe ser array` };
-
-    const rawRefs = isUnknownArray(rawStep.scripts) ? rawStep.scripts : [];
-    for (const candidate of rawRefs) {
-      const ref = record(candidate);
-      const groupId = typeof ref.groupId === 'string' ? ref.groupId : '';
-      const scriptId = typeof ref.scriptId === 'string' ? ref.scriptId : '';
-      const resolves =
-        groupId !== '' &&
-        scriptId !== '' &&
-        groupIds.has(groupId) &&
-        Boolean(scriptIdsByGroup.get(groupId)?.has(scriptId));
-      if (!resolves)
-        return {
-          ok: false,
-          error: `Paso #${stepIndex} referencia un grupo o script inexistente`,
-        };
-    }
-
-    // Checked on the NORMALIZED step: a missing id is minted as a fresh uuid
-    // (never a false duplicate), while a provided one is kept as-is.
-    const step = normalizePreStep(rawStep);
-    if (usedStepIds.has(step.id))
-      return {
-        ok: false,
-        error: `Paso #${stepIndex} repite el id de otro paso`,
-      };
-    usedStepIds.add(step.id);
-
-    for (const ref of step.scripts) {
-      const key = `${ref.groupId}/${ref.scriptId}`;
-      if (placedRefs.has(key))
-        return {
-          ok: false,
-          error: `Paso #${stepIndex} coloca un script que ya está en otro paso`,
-        };
-      placedRefs.add(key);
-    }
-    steps.push(step);
+function validateWorkflows(
+  rawWorkflows: readonly unknown[],
+  resolves: (ref: PreStepScriptRef) => boolean,
+): { ok: true; workflows: Workflow[] } | { ok: false; error: string } {
+  const workflows: Workflow[] = [];
+  for (const [index, candidate] of rawWorkflows.entries()) {
+    const result = validateWorkflow(candidate, { others: workflows, resolves });
+    if (!result.ok)
+      return { ok: false, error: `Workflow #${index}: ${result.error}` };
+    if (workflows.some((w) => w.id === result.workflow.id))
+      return { ok: false, error: `Workflow #${index} repite el id de otro` };
+    workflows.push(result.workflow);
   }
-  return { ok: true, steps };
+  return { ok: true, workflows };
 }
 
 export function validateImportedConfig(value: unknown): ImportValidation {
@@ -291,7 +172,12 @@ export function validateImportedConfig(value: unknown): ImportValidation {
     globalSettings: value.globalSettings,
   });
 
-  if (rawSteps !== undefined && !isUnknownArray(rawSteps))
+  // An export from before the graph carries the old ordered `preSteps`
+  // instead of `pipeline`: those are validated as strictly as ever, then
+  // chained into a graph (`fromLegacySteps`), so old backups keep working.
+  const legacyShape =
+    value.version === MIN_SUPPORTED_VERSION || value.pipeline === undefined;
+  if (legacyShape && rawSteps !== undefined && !isUnknownArray(rawSteps))
     return { ok: false, error: 'preSteps debe ser un array' };
   const preStepsInput = isUnknownArray(rawSteps) ? rawSteps : [];
 
@@ -383,25 +269,34 @@ export function validateImportedConfig(value: unknown): ImportValidation {
   }
 
   // Only this importer sees the whole payload at once, so this is the one
-  // place a pipeline ref's cross-reference (does {groupId,scriptId} resolve
+  // place a workflow ref's cross-reference (does {groupId,scriptId} resolve
   // to a real script in this SAME payload?) can be validated.
-  const stepsResult = validatePipelineSteps(
-    preStepsInput,
-    new Set(cleanGroups.map((group) => group.id)),
-    scriptIdsByGroup,
-  );
-  if (!stepsResult.ok) return { ok: false, error: stepsResult.error };
-  const cleanSteps = stepsResult.steps;
-
+  const resolves = (ref: PreStepScriptRef): boolean =>
+    Boolean(scriptIdsByGroup.get(ref.groupId)?.has(ref.scriptId));
   const settings = record(value.globalSettings);
+  let workflows: Workflow[];
+  if (isUnknownArray(value.workflows)) {
+    const result = validateWorkflows(value.workflows, resolves);
+    if (!result.ok) return result;
+    workflows = result.workflows;
+  } else {
+    // A backup from before workflows carries ONE pipeline (a graph, or the
+    // older ordered steps): it becomes the startup workflow, armed by the
+    // old «Auto al arrancar» — the same conversion the live store applies.
+    const pipelineResult = legacyShape
+      ? validateLegacySteps(preStepsInput, cleanGroups, scriptIdsByGroup)
+      : validatePipeline(value.pipeline, { resolves });
+    if (!pipelineResult.ok) return { ok: false, error: pipelineResult.error };
+    workflows = workflowsFromPipeline(
+      pipelineResult.pipeline,
+      migratedAutoRun ?? settings.preScriptsAutoRun === true,
+    );
+  }
+
   const cleanGlobalSettings: Partial<GlobalSettings> = {
     autostart: Boolean(settings.autostart),
     silenceWarnings: Boolean(settings.silenceWarnings),
     silenceErrors: Boolean(settings.silenceErrors),
-    preScriptsAutoRun:
-      migratedAutoRun !== undefined
-        ? migratedAutoRun
-        : Boolean(settings.preScriptsAutoRun),
   };
   return {
     ok: true,
@@ -410,7 +305,7 @@ export function validateImportedConfig(value: unknown): ImportValidation {
       // An export from before the icon font still carries emoji icons; it
       // gets the same conversion the live store applies on load.
       groups: migrateIcons(cleanGroups).groups,
-      preSteps: cleanSteps,
+      workflows,
       globalSettings: cleanGlobalSettings,
       customIcons: customIcons.icons,
     },
@@ -421,17 +316,29 @@ export function summarizeImport(value: unknown): {
   groupsCount: number;
   commandsCount: number;
   actionsCount: number;
-  preStepsCount: number;
+  workflowsCount: number;
   preScriptsCount: number;
   hasGlobalSettings: boolean;
 } {
   const payload = record(value);
   const groups = isUnknownArray(payload.groups) ? payload.groups : [];
-  const preSteps = isUnknownArray(payload.preSteps) ? payload.preSteps : [];
+  const blocks = record(payload.pipeline).blocks;
+  // A payload from before workflows holds one pipeline (a graph, or the
+  // older steps), which imports as the startup workflow when it has any.
+  const legacyPipeline = isUnknownArray(blocks)
+    ? blocks
+    : isUnknownArray(payload.preSteps)
+      ? payload.preSteps
+      : [];
+  const workflowsCount = isUnknownArray(payload.workflows)
+    ? payload.workflows.length
+    : legacyPipeline.length > 0
+      ? 1
+      : 0;
   let commandsCount = 0;
   let actionsCount = 0;
   // Definitions, not placements: a script defined but not yet placed in any
-  // step still counts, and a script placed in more than one step (not
+  // block still counts, and a script placed in more than one block (not
   // possible today, but not this function's job to assume) would not be
   // double-counted.
   let preScriptsCount = 0;
@@ -448,7 +355,7 @@ export function summarizeImport(value: unknown): {
     groupsCount: groups.length,
     commandsCount,
     actionsCount,
-    preStepsCount: preSteps.length,
+    workflowsCount,
     preScriptsCount,
     hasGlobalSettings: isRecord(payload.globalSettings),
   };

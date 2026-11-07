@@ -16,8 +16,10 @@ function settings(extra: Partial<GlobalSettings> = {}): GlobalSettings {
     silenceErrors: false,
     maxLogLines: 1234,
     notifySuccess: false,
+    showHiddenGroupsFold: false,
+    showHiddenWorkflowsFold: true,
     ...extra,
-  } as GlobalSettings;
+  };
 }
 
 function input(id: string): HTMLInputElement {
@@ -46,6 +48,14 @@ function toastText(): string {
 
 function hintText(id: string): string {
   return document.getElementById(id)?.textContent ?? '';
+}
+
+/** The visible label of the button, without its trailing icon glyph. */
+function notifSettingsLabel(): string {
+  return (
+    document.querySelector('#open-notification-settings .btn-label')
+      ?.textContent ?? ''
+  );
 }
 
 describe('renderer/config/settings-pane.ts', () => {
@@ -96,6 +106,8 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-silence-errors').checked).toBe(false);
       expect(input('set-max-log-lines').value).toBe('1234');
       expect(input('set-notify-success').checked).toBe(false);
+      expect(input('set-show-hidden-groups-fold').checked).toBe(false);
+      expect(input('set-show-hidden-workflows-fold').checked).toBe(true);
       expect(themeButton('dark').getAttribute('aria-pressed')).toBe('true');
       expect(themeButton('auto').getAttribute('aria-pressed')).toBe('false');
     });
@@ -111,6 +123,8 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-max-log-lines').value).not.toBe('');
       expect(themeButton('auto').getAttribute('aria-pressed')).toBe('true');
       expect(input('set-notify-success').checked).toBe(true);
+      expect(input('set-show-hidden-groups-fold').checked).toBe(true);
+      expect(input('set-show-hidden-workflows-fold').checked).toBe(false);
     });
   });
 
@@ -135,6 +149,117 @@ describe('renderer/config/settings-pane.ts', () => {
       field.dispatchEvent(new Event('change'));
       field.dispatchEvent(new Event('blur'));
       expect(win.callCount('saveSettings')).toBe(2);
+    });
+
+    it('persists the hidden groups fold switch', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-show-hidden-groups-fold');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+        showHiddenGroupsFold: true,
+      });
+    });
+
+    it('persists the hidden workflows fold switch, under the groups one', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-show-hidden-workflows-fold');
+      expect(toggle.closest('label')?.textContent?.trim()).toBe(
+        'Mostrar workflows ocultos plegados',
+      );
+      const groups = input('set-show-hidden-groups-fold').closest('label');
+      expect(groups?.nextElementSibling).toBe(toggle.closest('label'));
+      toggle.checked = false;
+      toggle.dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+        showHiddenWorkflowsFold: false,
+      });
+    });
+
+    describe('log limit stepper', () => {
+      function stepButton(label: string): HTMLButtonElement {
+        const found = document.querySelector<HTMLButtonElement>(
+          `.num-stepper button[aria-label="${label}"]`,
+        );
+        if (!found) throw new Error(`no ${label} button`);
+        return found;
+      }
+
+      async function loadedWith(maxLogLines: number): Promise<void> {
+        win = await openConfigWindow();
+        await answerBystanderSettingsReads(win);
+        await win.settle('getSettings', settings({ maxLogLines }));
+      }
+
+      it('steps by 100 onto the grid and saves each step', async () => {
+        await loadedWith(1234);
+        stepButton('Más líneas').click();
+        expect(input('set-max-log-lines').value).toBe('1300');
+        stepButton('Menos líneas').click();
+        stepButton('Menos líneas').click();
+        expect(input('set-max-log-lines').value).toBe('1100');
+        expect(win?.argsFor('saveSettings').at(-1)?.[0]).toMatchObject({
+          maxLogLines: 1100,
+        });
+        expect(win?.callCount('saveSettings')).toBe(3);
+      });
+
+      it('stops at 100 and at 50000, disabling the button that would pass them', async () => {
+        await loadedWith(200);
+        stepButton('Menos líneas').click();
+        expect(input('set-max-log-lines').value).toBe('100');
+        expect(stepButton('Menos líneas').disabled).toBe(true);
+        await win?.settle('saveSettings', settings());
+        win?.close();
+        await loadedWith(49_950);
+        stepButton('Más líneas').click();
+        expect(input('set-max-log-lines').value).toBe('50000');
+        expect(stepButton('Más líneas').disabled).toBe(true);
+      });
+
+      it('clamps a typed value into range before saving it', async () => {
+        await loadedWith(1000);
+        const field = input('set-max-log-lines');
+        field.value = '99999';
+        field.dispatchEvent(new Event('change'));
+        expect(field.value).toBe('50000');
+        expect(win?.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+          maxLogLines: 50_000,
+        });
+      });
+
+      it('steps with the arrow keys and saves when the field is left', async () => {
+        await loadedWith(1000);
+        const field = input('set-max-log-lines');
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowUp', cancelable: true }),
+        );
+        expect(field.value).toBe('1100');
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }),
+        );
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }),
+        );
+        expect(field.value).toBe('900');
+        expect(win?.callCount('saveSettings')).toBe(0);
+        field.dispatchEvent(new Event('blur'));
+        expect(win?.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+          maxLogLines: 900,
+        });
+      });
+
+      it('names the unit beside the number', async () => {
+        await loadedWith(1000);
+        expect(
+          document.querySelector('.num-stepper .num-stepper-suffix')
+            ?.textContent,
+        ).toBe('líneas');
+      });
     });
 
     it('persists the silence and notification toggles', async () => {
@@ -229,6 +354,17 @@ describe('renderer/config/settings-pane.ts', () => {
   });
 
   describe('tray popover position', () => {
+    it('labels the button «Restablecer posición» with its own icon', async () => {
+      win = await openConfigWindow();
+      const button = document.getElementById('reset-tray-position-config');
+      expect(button?.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+        'Restablecer posición',
+      );
+      expect(
+        button?.querySelector('[data-icon="locate-fixed"]'),
+      ).not.toBeNull();
+    });
+
     it('puts a pinned popover back by the tray icon', async () => {
       win = await openConfigWindow();
       click('reset-tray-position-config');
@@ -250,26 +386,35 @@ describe('renderer/config/settings-pane.ts', () => {
       win = await openConfigWindow('darwin');
       expect(hintText('autostart-hint')).toContain('Login Items');
       expect(hintText('notif-hint')).toContain('macOS pide permiso');
-      expect(
-        document.getElementById('open-notification-settings')?.textContent,
-      ).toBe('Ajustes del sistema → Notificaciones');
+      expect(hintText('notif-hint')).toContain(
+        'Ajustes del sistema → Notificaciones',
+      );
+      expect(notifSettingsLabel()).toBe('Abrir ajustes');
     });
 
     it('names the Windows Run key and Settings app', async () => {
       win = await openConfigWindow('win32');
       expect(hintText('autostart-hint')).toContain('clave Run');
+      expect(hintText('notif-hint')).toContain(
+        'Configuración → Sistema → Notificaciones',
+      );
+      expect(notifSettingsLabel()).toBe('Abrir Configuración');
+    });
+
+    it('keeps the external-link icon on the settings button', async () => {
+      win = await openConfigWindow('win32');
       expect(
-        document.getElementById('open-notification-settings')?.textContent,
-      ).toBe('Configuración → Sistema → Notificaciones');
+        document.querySelector(
+          '#open-notification-settings [data-icon="external-link"]',
+        ),
+      ).not.toBeNull();
     });
 
     it('names the XDG autostart and leaves the desktop panel generic', async () => {
       win = await openConfigWindow('linux');
       expect(hintText('autostart-hint')).toContain('XDG');
       expect(hintText('notif-hint')).toContain('GNOME');
-      expect(
-        document.getElementById('open-notification-settings')?.textContent,
-      ).toBe('los ajustes del sistema');
+      expect(notifSettingsLabel()).toBe('Abrir ajustes');
     });
   });
 });

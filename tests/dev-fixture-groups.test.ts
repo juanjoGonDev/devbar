@@ -1,9 +1,11 @@
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
   buildFixtureGroups,
   clampFixtureRepeat,
   type FixtureEnvironment,
 } from '../src/dev/fixture-groups.js';
+import { FIXTURE_SCRIPTS_GROUP_ID } from '../src/dev/fixture-scripts.js';
 import { ICON_BATTERY } from '../src/icon-battery.js';
 import { normalizeGroup } from '../src/groups-model.js';
 import type { Group } from '../src/domain-types.js';
@@ -40,9 +42,47 @@ describe('src/dev/fixture-groups.ts', () => {
       expect(groups.map((g) => g.order)).toEqual(groups.map((_, i) => i));
     });
 
-    it('repeats the whole set N times', () => {
-      const one = buildFixtureGroups(env(), 1);
-      expect(buildFixtureGroups(env(), 4)).toHaveLength(one.length * 4);
+    it('repeats the whole set N times, with the workflow scripts group once', () => {
+      const perCopy = buildFixtureGroups(env(), 1).length - 1;
+      const four = buildFixtureGroups(env(), 4);
+      expect(four).toHaveLength(perCopy * 4 + 1);
+      expect(
+        four.filter((g) => g.id === FIXTURE_SCRIPTS_GROUP_ID),
+      ).toHaveLength(1);
+    });
+
+    it('gives the workflows quick, slow, warning, failing, timed-out, confirmed and noisy scripts', () => {
+      const scripts =
+        buildFixtureGroups(env(), 1).find(
+          (g) => g.id === FIXTURE_SCRIPTS_GROUP_ID,
+        )?.preScripts ?? [];
+      expect(scripts.map((s) => s.id)).toEqual(
+        expect.arrayContaining([
+          'rapido',
+          'lento-5',
+          'lento-15',
+          'lento-40',
+          'aviso',
+          'falla',
+          'timeout',
+          'confirmar',
+          'ruidoso',
+        ]),
+      );
+      const byId = new Map(scripts.map((s) => [s.id, s]));
+      expect(byId.get('timeout')?.timeoutMs).toBe(3000);
+      expect(byId.get('confirmar')).toMatchObject({
+        confirm: true,
+        confirmSecs: 10,
+      });
+      for (const script of scripts) {
+        expect(script.command).toContain(' -e ');
+        expect(script.env).toContainEqual({
+          key: 'ELECTRON_RUN_AS_NODE',
+          value: '1',
+          enabled: true,
+        });
+      }
     });
 
     it('is already in the shape the store normalizes to', () => {
@@ -118,9 +158,32 @@ describe('src/dev/fixture-groups.ts', () => {
 
     it('keeps cmd metacharacters out of the node scripts', () => {
       // These are what cmd.exe would reinterpret even with careful quoting.
-      for (const item of everyRunnable(buildFixtureGroups(env(), 1)))
+      const groups = buildFixtureGroups(env(), 1);
+      for (const item of [
+        ...everyRunnable(groups),
+        ...groups.flatMap((g) => g.preScripts),
+      ])
         if (item.command.includes(' -e '))
           expect(item.command.split(' -e ')[1]).not.toMatch(/[<>&|%^!"]/);
+    });
+
+    it('only hands node scripts that parse', () => {
+      // cmd quoting wraps the script verbatim, so it reads straight back.
+      const groups = buildFixtureGroups(
+        env({ platform: 'win32', execPath: 'C:\\Dev Bar\\DevBar.exe' }),
+        1,
+      );
+      const scripts = [
+        ...everyRunnable(groups),
+        ...groups.flatMap((g) => g.preScripts),
+      ].flatMap((item) => {
+        const match = /^"[^"]+" -e "(.*)"$/.exec(item.command);
+        return match?.[1] ? [match[1]] : [];
+      });
+      expect(scripts.length).toBeGreaterThan(20);
+      for (const script of scripts)
+        // Compiled, never run.
+        expect(() => new vm.Script(script), script).not.toThrow();
     });
 
     it('works from the temp dir, with a git repo only when one is given', () => {

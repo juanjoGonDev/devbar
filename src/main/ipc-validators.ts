@@ -1,6 +1,10 @@
 import type { IpcMainInvokeEvent } from 'electron';
 import type { GlobalSettings } from '../domain-types.js';
-import type { ImportPreview, SilenceLevel } from '../ipc-contract.js';
+import type {
+  ConfigSection,
+  ImportPreview,
+  SilenceLevel,
+} from '../ipc-contract.js';
 
 /**
  * Payload validation for every `ipcMain.handle` entry point. A renderer is a
@@ -77,6 +81,11 @@ export function ipcSilenceLevel(value: unknown): SilenceLevel {
     throw new TypeError('Invalid IPC silence level');
   return value;
 }
+export function ipcConfigSection(value: unknown): ConfigSection {
+  if (value !== 'workflows' && value !== 'groups')
+    throw new TypeError('Invalid IPC config section');
+  return value;
+}
 export function ipcConfirmDecision(value: unknown): ConfirmDecision {
   if (value !== 'confirm' && value !== 'cancel')
     throw new TypeError('Invalid IPC confirmation decision');
@@ -90,7 +99,7 @@ export function ipcImportPreview(value: unknown): ImportPreview {
       | 'groupsCount'
       | 'commandsCount'
       | 'actionsCount'
-      | 'preStepsCount'
+      | 'workflowsCount'
       | 'preScriptsCount'
     >,
   ): number => ipcNumber(preview[field], String(field));
@@ -101,7 +110,7 @@ export function ipcImportPreview(value: unknown): ImportPreview {
     groupsCount: numberField('groupsCount'),
     commandsCount: numberField('commandsCount'),
     actionsCount: numberField('actionsCount'),
-    preStepsCount: numberField('preStepsCount'),
+    workflowsCount: numberField('workflowsCount'),
     preScriptsCount: numberField('preScriptsCount'),
     hasGlobalSettings,
   };
@@ -116,7 +125,8 @@ export function ipcGlobalSettingsPatch(
     'silenceWarnings',
     'silenceErrors',
     'notifySuccess',
-    'preScriptsAutoRun',
+    'showHiddenGroupsFold',
+    'showHiddenWorkflowsFold',
   ] as const) {
     if (raw[field] !== undefined) {
       if (typeof raw[field] !== 'boolean')

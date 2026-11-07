@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { layout } from '../scripts/install-local.js';
 import {
   FORCE_POLLS,
   FORCE_POLL_MS,
@@ -6,7 +7,6 @@ import {
   killLeftovers,
   killPatterns,
   killRunningInstances,
-  layout,
   verifyStopped,
   VERIFY_POLLS,
   VERIFY_POLL_MS,
@@ -14,9 +14,11 @@ import {
   type ProbeProcess,
   type ProbeResult,
   type StopContext,
-} from '../scripts/install-local.js';
+} from '../scripts/install-local-stop.js';
 import {
   POSIX_POST_KILL_POLL_MS,
+  windowsImageUnderDirQuery,
+  windowsKillImageUnderDirCommand,
   type ServiceGroup,
 } from '../scripts/lib/kill-trees.js';
 
@@ -38,6 +40,10 @@ class InstallAborted extends Error {
 /** What a real `pgrep`/`tasklist` answers when nothing matched: a nonzero
  *  status and empty output — NOT a failure to run. */
 const NOTHING_MATCHED: ProbeResult = { status: 1, stdout: '' };
+
+/** The build output a pre-pack stop is narrowed to, as the Windows
+ *  executable-path filter receives it (trailing separator included). */
+const DIST_DIR = '/repo/dist/electron-builder/';
 
 interface Harness {
   context: StopContext;
@@ -187,6 +193,14 @@ describe('scripts/install-local.ts', () => {
         '/tmp/my\\.repo \\(1\\)/node_modules/electron',
       ]);
     });
+
+    it('narrows to the build output for the pre-pack (dist) stop', () => {
+      // Packing overwrites dist/: only an instance running from there has
+      // to stop before it. The installed and dev instances keep running.
+      expect(killPatterns('/repo', '/install', 'dist')).toEqual([
+        '/repo/dist/electron-builder',
+      ]);
+    });
   });
 
   describe('windowsDevInstanceAlive', () => {
@@ -310,6 +324,47 @@ describe('scripts/install-local.ts', () => {
     });
   });
 
+  describe('isAnyDevBarAlive (dist scope)', () => {
+    it('probes only the build-output pattern on POSIX', () => {
+      const { context, calls } = harness({
+        root: '/repo',
+        installDir: '/install',
+      });
+      expect(isAnyDevBarAlive(context, 'dist')).toBe(false);
+      expect(calls).toEqual([['pgrep', '-f', '/repo/dist/electron-builder']]);
+    });
+
+    it('asks Windows for DevBar.exe UNDER dist/, never the image-wide task list', () => {
+      // The installed copy shares the DevBar.exe image name: a tasklist hit
+      // would read the (still running) installed app as a dist instance.
+      const { context, calls } = harness({
+        platform: 'win32',
+        root: '/repo',
+        answer: () => ({ status: 1, stdout: '' }),
+      });
+      expect(isAnyDevBarAlive(context, 'dist')).toBe(true);
+      expect(calls.map((call) => call[0])).toEqual(['powershell']);
+      expect(calls[0]?.at(-1)).toContain(
+        windowsImageUnderDirQuery('DevBar.exe', DIST_DIR),
+      );
+    });
+
+    it('reads a Windows probe that could not run as nothing running', () => {
+      const { context } = harness({ platform: 'win32', answer: () => null });
+      expect(isAnyDevBarAlive(context, 'dist')).toBe(false);
+    });
+
+    it('probes the SAME pattern the dist kill wave targets', () => {
+      const kill = harness({ root: '/repo', installDir: '/install' });
+      killRunningInstances(kill.context, 'dist');
+      const alive = harness({ root: '/repo', installDir: '/install' });
+      isAnyDevBarAlive(alive.context, 'dist');
+      const pgrepPatterns = (calls: string[][]): string[] =>
+        calls.filter((call) => call[0] === 'pgrep').map((call) => call[2]);
+      expect(pgrepPatterns(alive.calls)).toEqual(pgrepPatterns(kill.calls));
+    });
+  });
+
   describe('verifyStopped', () => {
     it('returns without waiting when nothing is running', () => {
       const { context, waits } = harness();
@@ -385,6 +440,52 @@ describe('scripts/install-local.ts', () => {
         ['pkill', '-f', '/install'],
         ['pkill', '-f', '/repo/dist/electron-builder'],
         ['pkill', '-f', '/repo/node_modules/electron'],
+      ]);
+    });
+
+    it('the dist scope on POSIX walks and pkills only the build-output instance', () => {
+      const { context, calls } = harness({
+        root: '/repo',
+        installDir: '/install',
+        answer: (cmd, args) => {
+          if (
+            cmd === 'pgrep' &&
+            args[0] === '-f' &&
+            args[1] === '/repo/dist/electron-builder'
+          )
+            return { status: 0, stdout: '100\n' };
+          if (cmd === 'pgrep' && args[0] === '-P' && args[1] === '100')
+            return { status: 0, stdout: '110\n' };
+          return NOTHING_MATCHED;
+        },
+      });
+      expect(killRunningInstances(context, 'dist')).toEqual([
+        { pid: '110', identity: 'starttime:1234' },
+      ]);
+      const signals = calls.filter(
+        (call) => call[0] === 'kill' || call[0] === 'pkill',
+      );
+      expect(signals).toEqual([
+        ['kill', '-s', 'TERM', '--', '-110'],
+        ['kill', '-s', 'TERM', '110'],
+        ['pkill', '-f', '/repo/dist/electron-builder'],
+      ]);
+      expect(logged).toContain(
+        '→ Stopping any DevBar running from the build output (dist/)…',
+      );
+    });
+
+    it('the dist scope on Windows kills only DevBar.exe under dist/, sparing the installed copy', () => {
+      const { context, calls } = harness({ platform: 'win32', root: '/repo' });
+      expect(killRunningInstances(context, 'dist')).toEqual([]);
+      expect(calls).toEqual([
+        [
+          'powershell',
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          windowsKillImageUnderDirCommand('DevBar.exe', DIST_DIR),
+        ],
       ]);
     });
   });
@@ -491,6 +592,43 @@ describe('scripts/install-local.ts', () => {
         '/T',
         '/IM',
         'DevBar.exe',
+      ]);
+    });
+
+    it('the dist scope forces only the build-output instance on POSIX', () => {
+      const { context, calls } = harness({
+        root: '/repo',
+        installDir: '/install',
+        answer: (cmd) =>
+          cmd === 'pgrep' ? { status: 0, stdout: '4242\n' } : NOTHING_MATCHED,
+      });
+      expect(() => killLeftovers(context, [], 'dist')).toThrow(InstallAborted);
+      expect(calls.filter((call) => call[0] === 'pkill')).toEqual([
+        ['pkill', '-9', '-f', '/repo/dist/electron-builder'],
+      ]);
+      expect(
+        calls.filter((call) => call[0] === 'pgrep').map((call) => call[2]),
+      ).not.toContain('/install');
+    });
+
+    it('the dist scope on Windows never force-kills by image name', () => {
+      // taskkill /IM DevBar.exe would take the installed copy down too —
+      // before the pack has even run.
+      const { context, calls } = harness({
+        platform: 'win32',
+        root: '/repo',
+        answer: (cmd) =>
+          cmd === 'powershell' ? { status: 1, stdout: '' } : NOTHING_MATCHED,
+      });
+      expect(() => killLeftovers(context, [], 'dist')).toThrow(InstallAborted);
+      expect(calls.map((call) => call[0])).not.toContain('tasklist');
+      expect(calls.map((call) => call[0])).not.toContain('taskkill');
+      expect(calls).toContainEqual([
+        'powershell',
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        windowsKillImageUnderDirCommand('DevBar.exe', DIST_DIR),
       ]);
     });
   });

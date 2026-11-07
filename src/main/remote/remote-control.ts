@@ -229,6 +229,7 @@ export function createRemoteControl(deps: RemoteControlDeps): RemoteControl {
     configStore: runtime.configStore,
     runtime: runtime.actions,
     state: () => live.state(),
+    workflowVisible: (id) => runtime.workflowVisible(id),
     logs: (id) => runtime.logs(id),
     logSeq: (id) => runtime.logSeq(id),
     notices: (deviceId) => live.notices(deviceId),

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { iconText } from './helpers/icon-text.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { iconText } from './helpers/icon-text.js';
 import { mountLogsDom } from './helpers/logs-dom.js';
 import { PIPELINE_LOG_GROUP_ID } from '../src/pipeline-labels.js';
 import type { LogListGroup, LogListItem } from '../src/ipc-contract.js';
@@ -55,7 +55,7 @@ describe('renderer/logs/sidebar.ts', () => {
   let answers: LogListGroup[][];
 
   async function open(
-    options: { search?: string; collapsed?: boolean } = {},
+    options: { search?: string; collapsed?: boolean; listWidth?: string } = {},
   ): Promise<void> {
     answers = [];
     mountLogsDom({
@@ -63,6 +63,8 @@ describe('renderer/logs/sidebar.ts', () => {
       api: { listLogs: () => Promise.resolve(answers.shift() ?? []) },
     });
     if (options.collapsed) localStorage.setItem(SIDEBAR_KEY, 'collapsed');
+    if (options.listWidth)
+      localStorage.setItem('logs-list-width', options.listWidth);
     sidebar = await import('../renderer/logs/sidebar.js');
     elements = await import('../renderer/logs/elements.js');
     view = await import('../renderer/logs/view.js');
@@ -141,9 +143,7 @@ describe('renderer/logs/sidebar.ts', () => {
       expect(elements.sideTreeEl.getElementsByClassName('side-item')[0]).toBe(
         row,
       );
-      expect(iconText(row?.getElementsByClassName('s-badges')[0])).toBe(
-        '[triangle-alert] 3',
-      );
+      expect(row?.getElementsByClassName('s-badges')[0]?.textContent).toBe('3');
     });
 
     it('refreshes the root row on the fast path, which nothing rebuilds', async () => {
@@ -156,8 +156,8 @@ describe('renderer/logs/sidebar.ts', () => {
       await sidebar.refreshSidebar();
       await sidebar.refreshSidebar();
       expect(
-        iconText(elements.sideTreeEl.getElementsByClassName('a-badges')[0]),
-      ).toBe('[triangle-alert] 4');
+        elements.sideTreeEl.getElementsByClassName('a-badges')[0]?.textContent,
+      ).toBe('4');
     });
 
     it('rebuilds when a service appeared', async () => {
@@ -251,12 +251,10 @@ describe('renderer/logs/sidebar.ts', () => {
       expect(hiddenItems()).toEqual(['b']);
     });
 
-    it('counts what survived, next to the group name', () => {
-      elements.sideFilterEl.value = 'ap';
-      elements.sideFilterEl.dispatchEvent(new Event('input'));
+    it('says next to the group name how many of it are running', () => {
       expect(
         elements.sideTreeEl.getElementsByClassName('g-count')[0]?.textContent,
-      ).toBe('1');
+      ).toBe('0/2');
     });
 
     it('folds away a group with nothing left in it', () => {
@@ -304,6 +302,147 @@ describe('renderer/logs/sidebar.ts', () => {
     });
   });
 
+  describe('running first, the stopped tail folded', () => {
+    const many = (): LogListGroup =>
+      group({
+        items: [
+          item({ id: 'a' }),
+          item({ id: 'b' }),
+          item({ id: 'on', status: 'running' }),
+          item({ id: 'c' }),
+          item({ id: 'd' }),
+          item({ id: 'e' }),
+        ],
+      });
+
+    function foldedIds(): string[] {
+      return Array.from(
+        elements.sideTreeEl.querySelectorAll<HTMLElement>('.side-item.folded'),
+        (row) => row.dataset.id ?? '',
+      );
+    }
+
+    function fold(): HTMLButtonElement {
+      return elements.sideTreeEl.querySelector('.s-fold') as HTMLButtonElement;
+    }
+
+    it('lists the running services before the stopped ones', async () => {
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      expect(itemIds()).toEqual(['on', 'a', 'b', 'c', 'd', 'e']);
+    });
+
+    it('folds the stopped ones past the first three into «+ N parados»', async () => {
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      expect(foldedIds()).toEqual(['d', 'e']);
+      expect(fold().hidden).toBe(false);
+      expect(fold().textContent).toBe('+ 2 parados');
+      // The button sits where the hidden rows begin.
+      expect(fold().nextElementSibling?.getAttribute('data-id')).toBe('d');
+    });
+
+    it('opens the fold on a click, and remembers it per group', async () => {
+      willList([many()], [many()]);
+      await sidebar.refreshSidebar();
+      fold().click();
+      expect(foldedIds()).toEqual([]);
+      expect(fold().hidden).toBe(true);
+      await open();
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      expect(foldedIds()).toEqual(['d', 'e']); // a fresh window, fresh storage
+      localStorage.setItem('devbar.logs.stopped.g1', 'open');
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      expect(foldedIds()).toEqual([]);
+    });
+
+    it('needs no fold for three stopped services or fewer', async () => {
+      willList([
+        group({
+          items: [item({ id: 'a' }), item({ id: 'b' }), item({ id: 'c' })],
+        }),
+      ]);
+      await sidebar.refreshSidebar();
+      expect(foldedIds()).toEqual([]);
+      expect(fold().hidden).toBe(true);
+    });
+
+    it('moves a service that started to the top, keeping the same row', async () => {
+      const started = many();
+      started.items = started.items.map((one) =>
+        one.id === 'e' ? { ...one, status: 'running' } : one,
+      );
+      willList([many()], [started]);
+      await sidebar.refreshSidebar();
+      const row = elements.sideTreeEl.querySelector('[data-id="e"]');
+      await sidebar.refreshSidebar();
+      expect(itemIds()).toEqual(['on', 'e', 'a', 'b', 'c', 'd']);
+      expect(elements.sideTreeEl.querySelector('[data-id="e"]')).toBe(row);
+      expect(foldedIds()).toEqual(['d']);
+    });
+
+    it('a search looks behind the fold', async () => {
+      willList([many()]);
+      await sidebar.refreshSidebar();
+      elements.sideFilterEl.value = 'e';
+      elements.sideFilterEl.dispatchEvent(new Event('input'));
+      expect(elements.sideTreeEl.classList.contains('searching')).toBe(true);
+      elements.sideFilterEl.value = '';
+      elements.sideFilterEl.dispatchEvent(new Event('input'));
+      expect(elements.sideTreeEl.classList.contains('searching')).toBe(false);
+    });
+  });
+
+  describe('the ⌘K shortcut', () => {
+    function press(init: KeyboardEventInit): KeyboardEvent {
+      const event = new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      document.dispatchEvent(event);
+      return event;
+    }
+
+    it('focuses the service search, with ⌘ or Ctrl', () => {
+      expect(press({ key: 'k', metaKey: true }).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(elements.sideFilterEl);
+      elements.sideFilterEl.blur();
+      press({ key: 'K', ctrlKey: true });
+      expect(document.activeElement).toBe(elements.sideFilterEl);
+    });
+
+    it('opens a collapsed sidebar first, so the box can take the focus', () => {
+      elements.toggleSidebarBtn.click();
+      press({ key: 'k', metaKey: true });
+      expect(document.body.classList.contains('sidebar-collapsed')).toBe(false);
+    });
+
+    it('leaves a plain K alone', () => {
+      expect(press({ key: 'k' }).defaultPrevented).toBe(false);
+    });
+
+    it('names the key this platform uses', async () => {
+      expect(elements.sideFilterKeyEl.textContent).toBe('Ctrl+K');
+      mountLogsDom({ api: { listLogs: () => Promise.resolve([]) } });
+      const api = window.api;
+      Object.defineProperty(window, 'api', {
+        configurable: true,
+        value: new Proxy(api, {
+          get: (target, key) =>
+            key === 'platform'
+              ? 'darwin'
+              : (target as unknown as Record<string | symbol, unknown>)[key],
+        }),
+      });
+      await import('../renderer/logs/sidebar.js');
+      const key = document.getElementById('side-filter-key');
+      expect(iconText(key)).toBe('[command]K');
+    });
+  });
+
   describe('hiding the sidebar', () => {
     it('starts open, and says what pressing the control would do', () => {
       expect(document.body.classList.contains('sidebar-collapsed')).toBe(false);
@@ -337,19 +476,104 @@ describe('renderer/logs/sidebar.ts', () => {
     });
   });
 
-  describe('the one-second ticker', () => {
-    it('keeps the live durations on screen moving', async () => {
-      vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 0));
-      const started = Date.now() - 1000;
+  describe('its width', () => {
+    /**
+     * Lays the window out the way a real one would: every row 244px wide in a
+     * 260px sidebar, its name box 100px of it, and 10px per character of
+     * text — so a row needs its name's text plus 160px.
+     */
+    function layOut(): void {
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(
+        function (this: HTMLElement) {
+          if (this.id === 'sidebar') return 260;
+          if (this.matches('.side-all, .side-group > summary, .side-item'))
+            return 244;
+          if (this.matches('.a-name, .g-name, .s-name')) return 100;
+          // The detached probe a name is measured with.
+          return this.parentElement === document.body
+            ? (this.textContent ?? '').length * 10
+            : 0;
+        },
+      );
+      vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(
+        function (this: Element) {
+          return this.id === 'sidebar' ? 260 : 0;
+        },
+      );
+    }
+
+    function listWidth(): string | null {
+      return elements.sideSplitterEl.getAttribute('aria-valuenow');
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('is set by a handle between the sidebar and the log', () => {
+      const handle = elements.sideSplitterEl;
+      expect(handle.previousElementSibling?.id).toBe('sidebar');
+      expect(handle.getAttribute('role')).toBe('separator');
+      expect(handle.getAttribute('aria-orientation')).toBe('vertical');
+      expect(handle.getAttribute('aria-valuemin')).toBe('180');
+      expect(handle.getAttribute('aria-valuemax')).toBe('360');
+      expect(handle.tabIndex).toBe(0);
+    });
+
+    it('fits the longest name once the tree is drawn', async () => {
+      layOut();
       willList([
-        group({ items: [item({ status: 'running', startedAt: started })] }),
+        group({ items: [item({ id: 'a', name: 'frontend-monorepo' })] }),
       ]);
       await sidebar.refreshSidebar();
-      const clock = (): string =>
-        iconText(elements.sideTreeEl.getElementsByClassName('b time')[0]);
-      expect(clock()).toBe('[timer] 1s');
-      vi.advanceTimersByTime(4000);
-      expect(clock()).toBe('[timer] 5s');
+      expect(listWidth()).toBe('330');
+    });
+
+    it('follows a renamed service, which only repaints the tree', async () => {
+      layOut();
+      willList(
+        [group({ items: [item({ id: 'a', name: 'api' })] })],
+        [group({ items: [item({ id: 'a', name: 'frontend-monorepo' })] })],
+      );
+      await sidebar.refreshSidebar();
+      expect(listWidth()).toBe('200');
+      await sidebar.refreshSidebar();
+      expect(listWidth()).toBe('330');
+    });
+
+    it('keeps the width the user chose when the tree changes', async () => {
+      await open({ listWidth: '250' });
+      layOut();
+      willList([
+        group({ items: [item({ id: 'a', name: 'frontend-monorepo' })] }),
+      ]);
+      await sidebar.refreshSidebar();
+      expect(listWidth()).toBe('250');
+    });
+
+    it('remembers a width chosen from the keyboard', () => {
+      elements.sideSplitterEl.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+      );
+      expect(localStorage.getItem('logs-list-width')).toBe('260');
+    });
+  });
+
+  describe('the one-second ticker', () => {
+    it('keeps the running/total count of a group current', async () => {
+      willList(
+        [group({ items: [item({ id: 'a' }), item({ id: 'b' })] })],
+        [
+          group({
+            items: [item({ id: 'a', status: 'running' }), item({ id: 'b' })],
+          }),
+        ],
+      );
+      await sidebar.refreshSidebar();
+      await sidebar.refreshSidebar();
+      expect(
+        elements.sideTreeEl.getElementsByClassName('g-count')[0]?.textContent,
+      ).toBe('1/2');
     });
 
     it('does not touch the tree of a detached window', async () => {

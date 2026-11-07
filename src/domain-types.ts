@@ -9,9 +9,15 @@ export interface ScheduleRule {
   days: number[];
 }
 
+/**
+ * When a command or action runs on its own. `interval !== null` means the
+ * «Cada…» mode (the rules are kept, but ignored, so switching back restores
+ * them); otherwise the weekday + time rules decide.
+ */
 export interface Schedule {
   enabled: boolean;
   rules: ScheduleRule[];
+  interval: ScheduleInterval | null;
 }
 
 type ConfirmOnTimeout = 'confirm' | 'cancel';
@@ -25,6 +31,34 @@ export interface ConfirmConfig {
 export interface SilencedPatterns {
   warn: string[];
   error: string[];
+}
+
+export type DetectedPortKind = 'web' | 'http' | 'other';
+
+/**
+ * A TCP port a running command listens on, as main detected it (from its log
+ * or from the OS socket table) and classified it with an HTTP probe.
+ */
+export interface DetectedPort {
+  port: number;
+  /** Where to open it, e.g. `http://localhost:5173/`. */
+  url: string;
+  kind: DetectedPortKind;
+  source: 'log' | 'socket';
+  /** The dev tool that announced it («Vite», «Storybook»), when known. */
+  label?: string;
+  /** Bound beyond loopback (`*`, `0.0.0.0`, the LAN address): a phone can reach it. */
+  lanReachable: boolean;
+}
+
+/**
+ * What «abrir» does for a command: `auto` opens its primary detected web port
+ * (plus `path`), `custom` opens `url`, `none` shows no link at all.
+ */
+export interface CommandLink {
+  mode: 'auto' | 'custom' | 'none';
+  path?: string;
+  url?: string;
 }
 
 export interface Command extends ConfirmConfig {
@@ -45,6 +79,8 @@ export interface Command extends ConfirmConfig {
   autoStart: boolean;
   schedule: Schedule;
   maxLogLines: number | null;
+  /** Absent in old stores and backups; the normaliser fills `{ mode: 'auto' }`. */
+  link?: CommandLink;
 }
 
 export interface Action extends ConfirmConfig {
@@ -69,16 +105,134 @@ export interface PreScript extends ConfirmConfig {
   timeoutMs: number | null;
 }
 
-/** A step's reference to a script defined in its OWN group's `preScripts`. */
+/** A pipeline's reference to a script defined in its OWN group's `preScripts`. */
 export interface PreStepScriptRef {
   groupId: string;
   scriptId: string;
 }
 
+/**
+ * LEGACY: the pipeline before it became a graph — an ordered list of steps.
+ * Only read to migrate old stores and old backup files into a `Pipeline`
+ * (see `fromLegacySteps` in src/pipeline-graph.ts); never written any more.
+ */
 export interface PreStep {
   id: string;
   mode: 'parallel' | 'serial';
   scripts: PreStepScriptRef[];
+}
+
+/**
+ * A unit on the pipeline canvas: one script is a single node, two or more a
+ * parallel frame. Its scripts all start together and the block finishes when
+ * every one of them has. `x`/`y` are canvas coordinates (see `PIPELINE_GRID`).
+ */
+export interface PipelineBlock {
+  id: string;
+  scripts: PreStepScriptRef[];
+  x: number;
+  y: number;
+  /**
+   * «Todos OK» (default true): one failing script cancels its still-running
+   * siblings and fails the block, so its descendants are skipped. When false
+   * the siblings keep running and the block counts as finished for what
+   * comes after it, even if some failed — the run then ends «con avisos».
+   * Irrelevant for a single-script block.
+   */
+  requireAll: boolean;
+}
+
+/**
+ * `to` waits for `from`. `from` is a block id or the literal `'trigger'`
+ * (`PIPELINE_TRIGGER`), which completes the instant the pipeline starts.
+ */
+export interface PipelineEdge {
+  from: string;
+  to: string;
+}
+
+/**
+ * One workflow's pre-script graph as a DAG (n8n style). A block starts once EVERY
+ * source of its incoming edges finished successfully; a block with no
+ * incoming edge is disconnected and never runs. Each script appears in at most
+ * one block, and the edges never form a cycle. src/pipeline-graph.ts holds
+ * every rule; this is only the shape.
+ */
+export interface Pipeline {
+  blocks: PipelineBlock[];
+  edges: PipelineEdge[];
+}
+
+/** A daily time window, `'HH:MM'` local; `to <= from` crosses midnight. */
+export interface ScheduleWindow {
+  from: string;
+  to: string;
+}
+
+/**
+ * «Cada N minutos/horas/días». Runs are anchored to the start of `window`
+ * (or to midnight) and step `every` units from there; src/schedule-plan.ts
+ * holds every rule.
+ */
+export interface ScheduleInterval {
+  /** >= 1. */
+  every: number;
+  unit: 'minutes' | 'hours' | 'days';
+  /** Only fire inside it; null = all day. */
+  window: ScheduleWindow | null;
+  /** 0=Sun..6=Sat; [] = every day. */
+  days: number[];
+}
+
+/**
+ * When a scheduled workflow runs: the same weekday + time rules commands and
+ * actions use (`ScheduleRule`), or a fixed interval (`interval !== null`
+ * means the «Cada…» mode, exactly as in `Schedule`). Whether it is
+ * armed at all is the workflow's own `enabled`, so there is no flag here.
+ */
+export interface WorkflowSchedule {
+  rules: ScheduleRule[];
+  interval: ScheduleInterval | null;
+}
+
+export type WorkflowTrigger =
+  | { kind: 'startup' }
+  | { kind: 'schedule'; schedule: WorkflowSchedule }
+  | {
+      kind: 'manual';
+      /** Ask before running (the same confirmation dialog scripts use). */
+      confirm: boolean;
+    };
+
+/**
+ * A named pre-script graph with its own trigger. At most one workflow has the
+ * `startup` trigger (it is what DevBar runs at login, and what
+ * `Group.waitForPipeline` groups wait for). A script appears at most once in
+ * a workflow, but may appear in several. src/workflows.ts holds every rule.
+ */
+export interface Workflow {
+  id: string;
+  name: string;
+  /** Arms the automatic triggers (startup, schedule) and the tray entry. */
+  enabled: boolean;
+  /**
+   * Hidden from the tray and a linked phone, like `Group.hiddenInTray`: listed
+   * only behind their «N oculto(s)» fold (`showHiddenWorkflowsFold`), or not
+   * at all. A running workflow is listed whatever this says.
+   */
+  hidden: boolean;
+  trigger: WorkflowTrigger;
+  graph: Pipeline;
+}
+
+export type WorkflowRunResult = 'success' | 'warning' | 'error' | 'cancelled';
+
+/** The last finished run of one workflow, persisted (`workflowRuns`). */
+export interface WorkflowRunRecord {
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
+  result: WorkflowRunResult;
 }
 
 export interface Group {
@@ -98,14 +252,19 @@ export interface Group {
   preScripts: PreScript[];
   /**
    * Whether this group's `autoStart` commands must wait for the ENTIRE
-   * pipeline to finish successfully before releasing, instead of releasing
-   * as soon as this group's own last referencing step completes. Defaults
+   * startup workflow («workflow de arranque») to finish successfully before releasing, instead of releasing
+   * as soon as every block holding one of its scripts completes. Defaults
    * to `true` (wait): releasing early fails silently — the group looks
-   * started but a later, unrelated step (e.g. a different group's `make
+   * started but another, unrelated block (e.g. a different group's `make
    * setup` restarting Docker) can still break it — while waiting only fails
    * by making boot slower, which is visible and self-explanatory.
    */
   waitForPipeline: boolean;
+  /**
+   * Folded into the tray's «N oculto(s)» disclosure instead of listed. Only
+   * presentation: the group's processes keep running as usual.
+   */
+  hiddenInTray: boolean;
 }
 
 /**
@@ -152,7 +311,13 @@ export interface GlobalSettings {
   silenceErrors: boolean;
   maxLogLines: number;
   notifySuccess: boolean;
-  preScriptsAutoRun: boolean;
+  /**
+   * Whether the tray (and a linked phone) lists the groups hidden from it
+   * behind the «N oculto(s)» fold; off, they are not listed anywhere there.
+   */
+  showHiddenGroupsFold: boolean;
+  /** The same fold for the workflows hidden from the tray and the phone. */
+  showHiddenWorkflowsFold: boolean;
 }
 
 export type ProcessStatus =

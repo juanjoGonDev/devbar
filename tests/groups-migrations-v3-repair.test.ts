@@ -475,10 +475,167 @@ describe('planStoreMigration', () => {
     const result = planStoreMigration({
       version: 4,
       groups: [],
-      preSteps: [],
+      workflows: [],
       globalSettings: {},
     });
     expect(result.changed).toBe(false);
+    expect(result.legacyStepsMigrated).toBe(false);
+    expect(result.workflowsMigrated).toBe(false);
+  });
+
+  it('turns the stored pipeline into the startup workflow «Arranque», armed by the old «Auto al arrancar»', () => {
+    const pipeline = {
+      blocks: [
+        {
+          id: 'b1',
+          scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+          x: 0,
+          y: 0,
+          requireAll: true,
+        },
+      ],
+      edges: [{ from: 'trigger', to: 'b1' }],
+    };
+    const result = planStoreMigration({
+      version: 4,
+      groups: [],
+      pipeline,
+      globalSettings: { preScriptsAutoRun: true },
+    });
+    expect(result.changed).toBe(true);
+    expect(result.workflowsMigrated).toBe(true);
+    expect(result.workflows).toEqual([
+      expect.objectContaining({
+        name: 'Arranque',
+        enabled: true,
+        trigger: { kind: 'startup' },
+        graph: pipeline,
+      }),
+    ]);
+  });
+
+  it('leaves the old auto-run off as a disabled startup workflow', () => {
+    const result = planStoreMigration({
+      version: 4,
+      groups: [],
+      preSteps: [
+        {
+          id: 's1',
+          mode: 'parallel',
+          scripts: [{ groupId: 'g', scriptId: 'a' }],
+        },
+      ],
+      globalSettings: { preScriptsAutoRun: false },
+    });
+    expect(result.workflows.map((w) => w.enabled)).toEqual([false]);
+  });
+
+  it('keeps stored workflows as they are and ignores any leftover pipeline', () => {
+    const workflows = [
+      {
+        id: 'w1',
+        name: 'Backup',
+        enabled: true,
+        hidden: true,
+        trigger: { kind: 'manual', confirm: false },
+        graph: { blocks: [], edges: [] },
+      },
+    ];
+    const result = planStoreMigration({
+      version: 4,
+      groups: [],
+      workflows,
+      globalSettings: {},
+    });
+    expect(result.workflowsMigrated).toBe(false);
+    expect(result.workflows).toEqual(workflows);
+  });
+
+  it("turns a stored manual trigger's tray flag into the workflow's hidden", () => {
+    const result = planStoreMigration({
+      version: 4,
+      groups: [],
+      workflows: [
+        {
+          id: 'w1',
+          name: 'Backup',
+          trigger: {
+            kind: 'manual',
+            showInTray: false,
+            showInRemote: true,
+            confirm: true,
+          },
+          graph: { blocks: [], edges: [] },
+        },
+        { id: 'w2', name: 'Arranque', trigger: { kind: 'startup' } },
+      ],
+      globalSettings: {},
+    });
+    expect(result.workflows.map((w) => [w.hidden, w.trigger])).toEqual([
+      [true, { kind: 'manual', confirm: true }],
+      [false, { kind: 'startup' }],
+    ]);
+  });
+
+  it('keeps a stored graph as it is', () => {
+    const pipeline = {
+      blocks: [
+        {
+          id: 'b1',
+          scripts: [{ groupId: 'g1', scriptId: 'sc1' }],
+          x: 10,
+          y: 20,
+          requireAll: true,
+        },
+      ],
+      edges: [{ from: 'trigger', to: 'b1' }],
+    };
+    const result = planStoreMigration({
+      version: 4,
+      groups: [],
+      pipeline,
+      globalSettings: {},
+    });
+    expect(result.pipeline).toEqual(pipeline);
+  });
+
+  it('chains top-level legacy preSteps into the graph and asks for the key to go', () => {
+    const result = planStoreMigration({
+      version: 4,
+      groups: [],
+      preSteps: [
+        {
+          id: 's1',
+          mode: 'parallel',
+          scripts: [{ groupId: 'g1', scriptId: 'a' }],
+        },
+        {
+          id: 's2',
+          mode: 'parallel',
+          scripts: [{ groupId: 'g1', scriptId: 'b' }],
+        },
+      ],
+      pipeline: { blocks: [], edges: [] },
+      globalSettings: {},
+    });
+    expect(result.changed).toBe(true);
+    expect(result.legacyStepsMigrated).toBe(true);
+    expect(result.pipeline.edges).toEqual([
+      { from: 'trigger', to: 's1' },
+      { from: 's1', to: 's2' },
+    ]);
+  });
+
+  it('treats even an empty legacy preSteps key as something to delete', () => {
+    const result = planStoreMigration({
+      version: 4,
+      groups: [],
+      preSteps: [],
+      globalSettings: {},
+    });
+    expect(result.changed).toBe(true);
+    expect(result.legacyStepsMigrated).toBe(true);
+    expect(result.pipeline).toEqual({ blocks: [], edges: [] });
   });
 
   it('still hoists legacy per-group preSteps into the global pipeline (batch-1 ordering fix intact)', () => {
@@ -499,10 +656,11 @@ describe('planStoreMigration', () => {
     });
     expect(result.changed).toBe(true);
     expect(result.version).toBe(4);
-    expect(result.preSteps).toHaveLength(1);
-    expect(result.preSteps[0]?.scripts).toEqual([
+    expect(result.pipeline.blocks).toHaveLength(1);
+    expect(result.pipeline.blocks[0]?.scripts).toEqual([
       { groupId: 'g1', scriptId: 'sc1' },
     ]);
+    expect(result.legacyStepsMigrated).toBe(true);
     expect(result.groups[0]?.preScripts.map((s) => s.id)).toEqual(['sc1']);
   });
 
@@ -549,7 +707,7 @@ describe('planStoreMigration', () => {
     const untouched = planStoreMigration({
       version: 4,
       groups: [],
-      preSteps: [],
+      pipeline: { blocks: [], edges: [] },
       globalSettings: {},
     });
     expect(untouched.preScriptsAutoRun).toBeNull();
@@ -590,7 +748,7 @@ describe('planStoreMigration', () => {
     const second = planStoreMigration({
       version: first.version,
       groups: first.groups,
-      preSteps: first.preSteps,
+      workflows: first.workflows,
       globalSettings: {},
     });
     expect(second.changed).toBe(false);

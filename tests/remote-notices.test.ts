@@ -107,7 +107,9 @@ describe('renderer/remote/notices-tab.ts', () => {
     expect(badge().hidden).toBe(true);
     expect(tabButton('notices').getAttribute('aria-label')).toBe('Avisos');
     expect(
-      [...storage.keys()].filter((key) => key.startsWith('devbar-remote:')),
+      [...storage.keys()].filter((key) =>
+        key.startsWith('devbar-remote:read:'),
+      ),
     ).toEqual(['devbar-remote:read:d1']);
 
     await withNotices({ storage });
