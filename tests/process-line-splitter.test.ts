@@ -126,6 +126,23 @@ describe('src/process/line-splitter.ts', () => {
       ]);
     });
 
+    it('takes linear time for one huge line delivered in many chunks', () => {
+      // Rescanning the held text on every chunk made a 4 MB line take ~7 s on
+      // the main process; searching only the new text keeps it in ms.
+      let longest = 0;
+      const splitter = createLineSplitter((line) => {
+        longest = line.length;
+      });
+      const chunk = 'x'.repeat(1000);
+      const started = performance.now();
+      for (let i = 0; i < 4000; i += 1) splitter.write(chunk);
+      splitter.write('\n');
+      const elapsed = performance.now() - started;
+
+      expect(longest).toBe(4_000_000);
+      expect(elapsed, `took ${Math.round(elapsed)} ms`).toBeLessThan(1000);
+    });
+
     it('flushes nothing when nothing is held', () => {
       expect(split('one\n')).toEqual([['one', false]]);
     });

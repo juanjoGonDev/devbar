@@ -56,24 +56,27 @@ export function createLineSplitter(emit: LineSink): LineSplitter {
           text = text.slice(1);
         }
       }
-      buffer += text;
+      // The held text never contains a line end (each one is consumed
+      // below), so only the new text is searched: rescanning a long
+      // unfinished line on every chunk made one huge line cost quadratic time.
       const lastBreak = Math.max(
-        buffer.lastIndexOf('\n'),
-        buffer.lastIndexOf('\r'),
+        text.lastIndexOf('\n'),
+        text.lastIndexOf('\r'),
       );
       let start = 0;
-      for (const match of buffer.matchAll(LINE_END)) {
-        const segment = buffer.slice(start, match.index);
+      for (const match of text.matchAll(LINE_END)) {
+        const segment = buffer + text.slice(start, match.index);
+        buffer = '';
         const end = match.index + match[0].length;
         start = end;
         if (match[0].endsWith('\n')) line(segment, false);
-        else if (end === buffer.length) {
+        else if (end === text.length) {
           line(segment, true);
           pendingCR = true;
         } else if (segment !== '' && end > lastBreak) line(segment, true);
         // Otherwise rewritten within this very chunk: never on screen.
       }
-      buffer = buffer.slice(start);
+      buffer += text.slice(start);
     },
     end() {
       if (buffer !== '') line(buffer, false);
