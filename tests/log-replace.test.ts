@@ -18,6 +18,14 @@ describe('src/log-replace.ts', () => {
       expect(replacedIndex(list, 2)).toBe(1);
     });
 
+    it('matches any link of a redraw chain below the upper end it is given', () => {
+      // A held redraw that took over its chain (2 → 3 → 4) replaces whichever
+      // link the list still holds.
+      const list: Line[] = [{ seq: 1 }, { seq: 3 }];
+      expect(replacedIndex(list, 2, undefined, 5)).toBe(1);
+      expect(replacedIndex([{ seq: 1 }], 2, undefined, 5)).toBe(-1);
+    });
+
     it('answers -1 for a line that rewrites nothing', () => {
       expect(replacedIndex([{ seq: 1 }], undefined)).toBe(-1);
     });

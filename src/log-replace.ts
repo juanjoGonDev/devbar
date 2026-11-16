@@ -15,18 +15,23 @@ interface Sequenced {
  * `sameSource` keeps a merged list from matching another service's line with
  * the same number; along one source seqs only grow, so the search stops at
  * the first older one instead of walking the whole list.
+ *
+ * `before` (exclusive) widens the match to `replaces..before-1`: a held
+ * redraw that took over a chain of redraws (2 → 3 → 4) rewrites whichever
+ * link the list holds. Redraws are consecutive, so nothing else sits there.
  */
 export function replacedIndex<T extends Sequenced>(
   list: readonly T[],
   replaces: number | undefined,
   sameSource: (candidate: T) => boolean = () => true,
+  before = (replaces ?? 0) + 1,
 ): number {
   if (replaces === undefined) return -1;
   for (let index = list.length - 1; index >= 0; index -= 1) {
     const candidate = list[index];
     if (candidate?.seq === undefined || !sameSource(candidate)) continue;
-    if (candidate.seq === replaces) return index;
-    if (candidate.seq < replaces) return -1;
+    if (candidate.seq >= before) continue;
+    return candidate.seq >= replaces ? index : -1;
   }
   return -1;
 }
