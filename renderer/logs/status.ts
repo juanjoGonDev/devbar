@@ -8,7 +8,7 @@
  * clears the selection.
  */
 import { queuedAfter } from '../pending-queue.js';
-import { buffer } from './buffer.js';
+import { buffer, rewrittenIndex } from './buffer.js';
 import { dispatchLive } from './live.js';
 import { clearSelectionBtn, linesEl, statusEl } from './elements.js';
 import type { LogEntry } from '../../src/domain-types.js';
@@ -16,10 +16,17 @@ import type { LogEntry } from '../../src/domain-types.js';
 /** Lines held back from the buffer while the viewer is paused. */
 export const pendingQueue: LogEntry[] = [];
 
-/** Hold a line that arrived while paused, and count it on the live button. */
+/**
+ * Hold a line that arrived while paused, and count it on the live button —
+ * unless it redraws a line already held, queued or on screen (a progress
+ * bar): that one is rewritten in place on resume, so it is not news.
+ */
 export function queueWhilePaused(entry: LogEntry): void {
+  const redraw =
+    rewrittenIndex(pendingQueue, entry) >= 0 ||
+    rewrittenIndex(buffer.entries, entry) >= 0;
   pendingQueue.push(entry);
-  dispatchLive({ type: 'arrived', count: 1 });
+  if (!redraw) dispatchLive({ type: 'arrived', count: 1 });
 }
 
 /**

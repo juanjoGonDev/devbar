@@ -34,6 +34,17 @@ Todas las novedades relevantes de DevBar. El formato sigue
   o todo el historial, y elegir a los cuántos días se borran solas las
   entradas (30 por defecto, hasta 365).
 
+## [0.12.1] - 2026-11-16
+
+### Corregido
+
+- **Barras de progreso en el log.** Las líneas que una herramienta reescribe
+  en su sitio con un retorno de carro, como el progreso de una subida o una
+  descarga (`aws s3 cp`, `curl`…), se ven ahora como una sola línea que se va
+  actualizando, igual que en una terminal, en vez de cientos de líneas
+  repetidas. Si esa línea es un aviso o un error, cuenta una sola vez. Vale
+  para la ventana de logs, el log de cada script de un workflow y el móvil.
+
 ## [0.12.0] - 2026-10-17
 
 ### Añadido

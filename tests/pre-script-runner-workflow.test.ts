@@ -293,6 +293,31 @@ describe('src/pre-script-runner.ts — workflow runs', () => {
       expect(runner.scriptLog(999, ref('A'))).toBeNull();
       expect(runner.scriptLog('latest', ref('nope'))).toBeNull();
     });
+
+    it('swaps a progress redraw into the line it rewrites', async () => {
+      const { pm, runner, finish } = setup(graph(['A'], ['trigger>A']), ['A']);
+      const run = runner.run();
+      await settle();
+      const line = (text: string, seq: number, replaces?: number) =>
+        pm.pushLog(pid('A'), {
+          ts: Date.now(),
+          stream: 'stdout',
+          level: null,
+          line: text,
+          seq,
+          ...(replaces === undefined ? {} : { replaces }),
+        });
+      line('upload 10%', 1);
+      line('upload 60%', 2, 1);
+      line('upload 100%', 3, 2);
+      await finish('A');
+      await run;
+      const lines = runner
+        .scriptLog('latest', ref('A'))
+        ?.map((entry) => entry.line)
+        .filter((text) => text.startsWith('upload'));
+      expect(lines).toEqual(['upload 100%']);
+    });
   });
 
   describe('retryFrom', () => {

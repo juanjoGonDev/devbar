@@ -18,6 +18,7 @@ import type {
   WorkflowScriptRunState,
 } from '../ipc-contract.js';
 import { makeAggregatorId } from '../compound-id.js';
+import { replacedIndex } from '../log-replace.js';
 import {
   PIPELINE_TRIGGER,
   descendants,
@@ -49,14 +50,19 @@ const SETTLED_OK: readonly WorkflowNodeStatus[] = ['success', 'warning'];
 /** How much of one script's output a run keeps for `scriptLog`. */
 const SCRIPT_LOG_LIMIT = 2000;
 
-/** Keeps one line of a script's output for the run, dropping the oldest. */
+/**
+ * Keeps one line of a script's output for the run, dropping the oldest. A
+ * progress redraw takes the place of the line it rewrites instead.
+ */
 export function appendScriptLog(
   run: LiveRun,
   key: string,
   entry: LogEntry,
 ): void {
   const lines = run.logs.get(key) ?? [];
-  lines.push(entry);
+  const rewritten = replacedIndex(lines, entry.replaces);
+  if (rewritten >= 0) lines[rewritten] = entry;
+  else lines.push(entry);
   if (lines.length > SCRIPT_LOG_LIMIT) lines.shift();
   run.logs.set(key, lines);
 }

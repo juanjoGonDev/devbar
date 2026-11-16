@@ -19,6 +19,7 @@ import {
   buffer,
   recomputeVisible,
   replaceEntries,
+  swapRewritten,
   trimBuffer,
 } from './buffer.js';
 import { buildRow } from './rows.js';
@@ -254,6 +255,7 @@ export function resetBuffer(next: LogEntry[]): void {
  * yanked forward.
  */
 export function pushEntry(entry: LogEntry): void {
+  if (entry.replaces !== undefined && redrawEntry(entry)) return;
   // A selection detaches the view from the tail. Otherwise every arriving line
   // slides the window and drops rows off the top — with the DOM budget down
   // from the old 20 000 to a few hundred that happens constantly, so a
@@ -297,6 +299,44 @@ export function pushEntry(entry: LogEntry): void {
   if (view.live.following) mainEl.scrollTop = mainEl.scrollHeight;
   renderCounts();
   updateScrollButton();
+}
+
+/**
+ * A redraw of a line a carriage return rewrote (a progress bar): it takes that
+ * line's place, row and all, instead of arriving — so it is no news to a
+ * paused reader and no new line in the counts. False when the buffer no
+ * longer holds the line it rewrites: it is then appended like any other.
+ */
+function redrawEntry(entry: LogEntry): boolean {
+  const swap = swapRewritten(entry);
+  if (!swap) return false;
+  const { index, previous } = swap;
+  addToTally(tally, previous, -1);
+  addToTally(tally, entry);
+  // A frame of a stack block is part of its head's fold: re-read the blocks.
+  const frames = stackOf(previous)?.members.length;
+  if (frames !== undefined) indexStacks(buffer.entries);
+  else indexStackEntry(buffer.entries[index - 1], entry);
+  const shown = matchesFilter(entry, view.filterRe, view.levelFilter);
+  if (shown !== matchesFilter(previous, view.filterRe, view.levelFilter)) {
+    // In or out of the filtered view: `visible` changes shape.
+    recomputeVisible(view.filterRe, view.levelFilter);
+    findHooks.recount();
+    if (view.live.following) renderAtBottom();
+    else repaintInPlace();
+    return true;
+  }
+  if (view.findRe) findHooks.recount(); // its hits are in the text that changed
+  // Joining or leaving a block changes how its first row folds, not just this one.
+  if (stackOf(entry)?.members.length !== frames) repaintInPlace();
+  else
+    linesEl
+      .querySelector(`.line[data-eidx="${index}"]`)
+      ?.replaceWith(buildRow(entry, index, showInContext));
+  if (view.live.following) mainEl.scrollTop = mainEl.scrollHeight;
+  renderCounts();
+  updateScrollButton();
+  return true;
 }
 
 /**

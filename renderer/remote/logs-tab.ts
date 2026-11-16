@@ -5,6 +5,7 @@ import type {
 import type { PanelContext } from './context.js';
 import type { PanelElements } from './elements.js';
 import { clockTime } from './format.js';
+import { replacedIndex } from '../../src/log-replace.js';
 import { el } from './view.js';
 
 /**
@@ -72,6 +73,11 @@ export function createLogsTab(
   let failed = false;
   /** Bumped per load: an answer for a process no longer shown is dropped. */
   let loadRound = 0;
+  /**
+   * Live lines that arrived while the tail was on its way: the tail and the
+   * stream travel apart, so they are replayed onto it once it lands.
+   */
+  let early: RemoteLogLine[] | null = null;
 
   const target = (): Target | undefined =>
     targets(ctx.state()).find((t) => t.processId === selected);
@@ -149,6 +155,7 @@ export function createLogsTab(
     const round = ++loadRound;
     lines = [];
     lastSeq = 0;
+    early = [];
     failed = false;
     following = true;
     paint();
@@ -161,6 +168,24 @@ export function createLogsTab(
       if (round !== loadRound) return;
       failed = true;
     }
+    const held = early;
+    early = null;
+    ingest(held);
+    paint();
+  }
+
+  function ingest(batch: readonly RemoteLogLine[]): void {
+    const fresh = batch.filter((line) => line.seq > lastSeq);
+    if (fresh.length === 0) return;
+    lastSeq = fresh.at(-1)?.seq ?? lastSeq;
+    const next = [...lines];
+    for (const line of fresh) {
+      // A progress redraw takes the place of the line it rewrites.
+      const rewritten = replacedIndex(next, line.replaces);
+      if (rewritten >= 0) next[rewritten] = line;
+      else next.push(line);
+    }
+    lines = next.slice(-KEEP);
     paint();
   }
 
@@ -260,11 +285,8 @@ export function createLogsTab(
     },
     append: (batch) => {
       if (batch.id !== selected) return;
-      const fresh = batch.lines.filter((line) => line.seq > lastSeq);
-      if (fresh.length === 0) return;
-      lastSeq = fresh.at(-1)?.seq ?? lastSeq;
-      lines = [...lines, ...fresh].slice(-KEEP);
-      paint();
+      if (early) early.push(...batch.lines);
+      else ingest(batch.lines);
     },
   };
 }

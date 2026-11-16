@@ -64,6 +64,19 @@ describe('renderer/logs/status.ts', () => {
       expect(statusText()).toBe('');
     });
 
+    it('does not count a redraw of a line it already holds as news', () => {
+      // A progress bar redrawing itself: the line on screen and the one
+      // queued are both rewritten in place on resume, not added.
+      pauseByHand();
+      buffer.replaceEntries([entry('upload 10%', { seq: 2 })], null, new Set());
+      status.queueWhilePaused(entry('upload 50%', { seq: 3, replaces: 2 }));
+      status.queueWhilePaused(entry('upload 90%', { seq: 4, replaces: 3 }));
+      expect(status.pendingQueue).toHaveLength(2);
+      expect(view.view.live.unseen).toBe(0);
+      status.queueWhilePaused(entry('otra', { seq: 5 }));
+      expect(liveText()).toBe('En pausa · 1 nuevas');
+    });
+
     it('keeps only what the adopted snapshot does not already carry', () => {
       pauseByHand();
       status.queueWhilePaused(entry('vieja', { seq: 4 }));

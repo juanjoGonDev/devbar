@@ -52,6 +52,8 @@ let model: ActivityModel = createActivity();
 /** The `visible` array the model was built from, and how much of it it holds. */
 let tracked: number[] | null = null;
 let counted = 0;
+/** `buffer.redraws` when the model was last brought up to date. */
+let redrawsSeen = 0;
 let stale = true;
 /** Bumped whenever the model changes, so an unchanged strip is not redrawn. */
 let revision = 0;
@@ -97,7 +99,13 @@ function* visibleLines(from: number): Generator<ActivityLine> {
 /** Bring the model up to `buffer.visible`, as cheaply as what changed allows. */
 function sync(): void {
   const visible = buffer.visible;
-  if (stale || visible !== tracked || visible.length < counted) {
+  // A line redrawn in place moved in time: rebuilt, at most once per tick.
+  if (
+    stale ||
+    visible !== tracked ||
+    visible.length < counted ||
+    buffer.redraws !== redrawsSeen
+  ) {
     model = buildActivity(visibleLines(0));
     stale = false;
     revision += 1;
@@ -107,6 +115,7 @@ function sync(): void {
   }
   tracked = visible;
   counted = visible.length;
+  redrawsSeen = buffer.redraws;
 }
 
 /** The drawn row at the middle of the viewport, found by bisection. */

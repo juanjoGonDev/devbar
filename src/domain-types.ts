@@ -345,6 +345,12 @@ export interface LogEntry {
    * cannot, because a burst shares a millisecond.
    */
   seq?: number;
+  /**
+   * The `seq` of the entry this one rewrote in place: the line ended in a
+   * carriage return (a progress bar) and this is its redraw. A mirror of the
+   * buffer swaps it in for that entry instead of appending it.
+   */
+  replaces?: number;
   stream: 'stdout' | 'stderr' | 'sys';
   level: LogLevel | null;
   originalLevel?: LogLevel | null;
