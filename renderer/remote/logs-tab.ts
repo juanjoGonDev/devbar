@@ -41,6 +41,21 @@ export interface LogsTab {
   append(batch: { id: string; lines: RemoteLogLine[] }): void;
 }
 
+/**
+ * Hold a live line while the tail is on its way, bounded like the tail: a
+ * stalled request must not let a chatty process grow the queue forever. A
+ * redraw of the last held line takes its place, so a progress bar is one
+ * entry however many frames it draws; it then `replaces` the first link of
+ * its chain, since the tail may hold any of them (see `replacedIndex`).
+ */
+export function stageLive(held: RemoteLogLine[], line: RemoteLogLine): void {
+  const last = held.at(-1);
+  if (last && line.replaces !== undefined && line.replaces === last.seq)
+    held[held.length - 1] = { ...line, replaces: last.replaces ?? last.seq };
+  else held.push(line);
+  if (held.length > KEEP) held.splice(0, held.length - KEEP);
+}
+
 function targets(state: RemoteStateView | null): Target[] {
   return (state?.groups ?? []).flatMap((group) => [
     ...group.commands.map((c) => ({
@@ -181,7 +196,7 @@ export function createLogsTab(
     const next = [...lines];
     for (const line of fresh) {
       // A progress redraw takes the place of the line it rewrites.
-      const rewritten = replacedIndex(next, line.replaces);
+      const rewritten = replacedIndex(next, line.replaces, undefined, line.seq);
       if (rewritten >= 0) next[rewritten] = line;
       else next.push(line);
     }
@@ -285,7 +300,7 @@ export function createLogsTab(
     },
     append: (batch) => {
       if (batch.id !== selected) return;
-      if (early) early.push(...batch.lines);
+      if (early) for (const line of batch.lines) stageLive(early, line);
       else ingest(batch.lines);
     },
   };

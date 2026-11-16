@@ -12,6 +12,8 @@ import {
   text,
   type PageHarness,
 } from './helpers/remote-page.js';
+import { stageLive } from '../renderer/remote/logs-tab.js';
+import type { RemoteLogLine } from '../src/ipc-contract/remote-wire.js';
 
 /**
  * «Logs»: one process at a time, its tail first, then live lines over the
@@ -156,6 +158,62 @@ describe('renderer/remote/logs-tab.ts', () => {
     });
 
     expect(shown()).toEqual(['ready', 'upload 100%']);
+  });
+
+  it('keeps one progress row when a long redraw chain lands before an older tail', async () => {
+    const h = await startLinked();
+    h.answer('logs', {
+      status: 200,
+      body: {
+        id: 'cmd:g1:api',
+        seq: 2,
+        lines: [line(1, 'ready'), line(2, 'upload 0')],
+      },
+    });
+    tap(tabButton('logs'));
+    for (let seq = 3; seq <= 1502; seq += 1)
+      h.source().emit('log', {
+        id: 'cmd:g1:api',
+        lines: [{ ...line(seq, `upload ${seq}`), replaces: seq - 1 }],
+      });
+    await settle();
+
+    expect(shown()).toEqual(['ready', 'upload 1502']);
+  });
+
+  it('keeps one progress row when the tail already holds a later link of the chain', async () => {
+    const h = await startLinked();
+    h.answer('logs', {
+      status: 200,
+      body: {
+        id: 'cmd:g1:api',
+        seq: 3,
+        lines: [line(1, 'ready'), line(3, 'upload 3')],
+      },
+    });
+    tap(tabButton('logs'));
+    for (let seq = 3; seq <= 5; seq += 1)
+      h.source().emit('log', {
+        id: 'cmd:g1:api',
+        lines: [{ ...line(seq, `upload ${seq}`), replaces: seq - 1 }],
+      });
+    await settle();
+
+    expect(shown()).toEqual(['ready', 'upload 5']);
+  });
+
+  it('holds at most a tail worth of live lines while the tail is on its way', () => {
+    // A stalled tail request must not let a chatty process grow the queue
+    // without bound; a progress bar takes one entry, however many redraws.
+    const held: RemoteLogLine[] = [];
+    for (let seq = 1; seq <= 1500; seq += 1)
+      stageLive(held, line(seq, `line ${seq}`));
+    for (let seq = 1501; seq <= 1600; seq += 1)
+      stageLive(held, { ...line(seq, `bar ${seq}`), replaces: seq - 1 });
+
+    expect(held).toHaveLength(1000);
+    expect(held.at(-1)).toMatchObject({ seq: 1600, replaces: 1500 });
+    expect(held.at(-2)?.seq).toBe(1499);
   });
 
   it('filters by level, with the counts of each', async () => {
