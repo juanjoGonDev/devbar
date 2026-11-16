@@ -132,6 +132,32 @@ describe('renderer/remote/logs-tab.ts', () => {
     expect(text('count-error')).toBe('0');
   });
 
+  it('keeps a live redraw that lands while the tail is still on its way', async () => {
+    // The tail and the stream travel apart: a frame drawn after the tail was
+    // read can reach the phone before it does.
+    const h = await startLinked();
+    h.answer('logs', {
+      status: 200,
+      body: {
+        id: 'cmd:g1:api',
+        seq: 2,
+        lines: [line(1, 'ready'), line(2, 'upload 10%')],
+      },
+    });
+    tap(tabButton('logs'));
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [{ ...line(3, 'upload 60%'), replaces: 2 }],
+    });
+    await settle();
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [{ ...line(4, 'upload 100%'), replaces: 3 }],
+    });
+
+    expect(shown()).toEqual(['ready', 'upload 100%']);
+  });
+
   it('filters by level, with the counts of each', async () => {
     const h = await startLinked();
     await openLogs(h);
