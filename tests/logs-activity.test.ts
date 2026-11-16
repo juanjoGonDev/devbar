@@ -111,6 +111,26 @@ describe('renderer/logs/activity.ts', () => {
     expect(bars().at(-1)?.classList.contains('tone-warn')).toBe(true);
   });
 
+  it('moves a redrawn line to the minute of its latest frame', () => {
+    // A progress bar redrawn in place is still one line, but it now belongs
+    // where its newest frame landed, not where its first one did.
+    pane.resetBuffer(minutes(35).map((line, i) => ({ ...line, seq: i + 1 })));
+    activity.paintActivity();
+    expect(elements.activitySpanEl.textContent).toBe('últimos 35 min');
+    pane.pushEntry(
+      entry('line 34, redrawn', {
+        ts: BASE + 40 * MINUTE,
+        seq: 36,
+        replaces: 35,
+      }),
+    );
+    activity.paintActivity();
+    expect(elements.activitySpanEl.textContent).toBe('últimos 41 min');
+    expect(elements.activityEl.getAttribute('aria-label')).toBe(
+      'Actividad: 35 líneas, últimos 41 min',
+    );
+  });
+
   it('updates the bars in place, so the one under the pointer survives a repaint', () => {
     pane.resetBuffer(minutes(10));
     activity.paintActivity();

@@ -103,6 +103,18 @@ async function say(
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/** Writes raw output, carriage returns and all, and lets it be read. */
+async function print(
+  child: FakeChild,
+  stream: 'stdout' | 'stderr',
+  ...chunks: string[]
+): Promise<void> {
+  for (const chunk of chunks) {
+    child[stream].write(chunk);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 /** Everything after the `▶ start:` line start() writes itself. */
 function output(
   pm: InstanceType<typeof ProcessManager>,
@@ -202,6 +214,82 @@ describe('src/process-manager.ts — service output and exit', () => {
       await say(lastChild(), 'stdout', '', '   ', 'real output');
       expect(output(pm, CMD_ID).map((entry) => entry.line)).toEqual([
         'real output',
+      ]);
+    });
+  });
+
+  describe('a line a carriage return redraws', () => {
+    it('keeps a progress bar as ONE line holding its latest text', async () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      await print(
+        lastChild(),
+        'stdout',
+        'Completed 0.4 GiB/1.3 GiB\r',
+        'Completed 0.9 GiB/1.3 GiB\r',
+        'Completed 1.3 GiB/1.3 GiB\r',
+      );
+      expect(output(pm, CMD_ID).map((entry) => entry.line)).toEqual([
+        'Completed 1.3 GiB/1.3 GiB',
+      ]);
+    });
+
+    it('stamps the redraw with a fresh seq and the seq it replaces', async () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      const seen: LogEntry[] = [];
+      pm.on('log', ({ entry }) => seen.push(entry));
+      await print(lastChild(), 'stdout', '10%\r', '20%\r');
+      const [first, redraw] = seen;
+      expect(first?.replaces).toBeUndefined();
+      expect(redraw?.replaces).toBe(first?.seq);
+      expect(redraw?.seq).toBe((first?.seq ?? 0) + 1);
+      expect(pm.getLogs(CMD_ID).at(-1)).toBe(redraw);
+    });
+
+    it('counts a warning the bar repeats on every redraw once', async () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      const child = lastChild();
+      await print(child, 'stdout', 'warning: 10%\r');
+      const changes = vi.fn();
+      pm.on('change', changes);
+      await print(child, 'stdout', 'warning: 50%\r', 'warning: 90%\r');
+      expect(pm.getState(CMD_ID).warnCount).toBe(1);
+      expect(output(pm, CMD_ID)).toHaveLength(1);
+      // The counts never moved, so nobody is told they did.
+      expect(changes).not.toHaveBeenCalled();
+    });
+
+    it('moves the count when the redraw changes the line’s level', async () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      await print(lastChild(), 'stdout', 'warning: 10%\r', 'ERROR: failed\n');
+      expect(pm.getState(CMD_ID).warnCount).toBe(0);
+      expect(pm.getState(CMD_ID).errorCount).toBe(1);
+    });
+
+    it('starts a new line when another one came in between', async () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      const child = lastChild();
+      await print(child, 'stdout', 'upload 10%\r');
+      await print(child, 'stderr', 'retrying\n');
+      await print(child, 'stdout', 'upload 20%\r');
+      expect(output(pm, CMD_ID).map((entry) => entry.line)).toEqual([
+        'upload 10%',
+        'retrying',
+        'upload 20%',
+      ]);
+    });
+
+    it('keeps Windows \\r\\n output one line per line', async () => {
+      const pm = manager();
+      pm.start(CMD_ID);
+      await print(lastChild(), 'stdout', 'one\r', '\ntwo\r\n');
+      expect(output(pm, CMD_ID).map((entry) => entry.line)).toEqual([
+        'one',
+        'two',
       ]);
     });
   });

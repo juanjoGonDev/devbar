@@ -18,9 +18,10 @@
 import { matchesFilter } from './filters.js';
 import { fmtTime } from './format.js';
 import { stripAnsi } from './ansi.js';
+import { replacedIndex } from '../../src/log-replace.js';
 import type { Selection } from '../line-selection.js';
 import type { LogEntry } from '../../src/domain-types.js';
-import type { SilenceLevel } from '../../src/ipc-contract.js';
+import type { SilenceLevel, SourcedLogEntry } from '../../src/ipc-contract.js';
 
 export interface LogBuffer {
   entries: LogEntry[];
@@ -32,6 +33,12 @@ export interface LogBuffer {
   /** Selection survives re-rendering because it is keyed by entry, not by row. */
   selected: Set<number>;
   anchorEntry: number | null;
+  /**
+   * Bumped by every redraw swapped in place (`swapRewritten`): `visible` kept
+   * its shape, but a line in it changed its time and maybe its level, so
+   * whatever was counted from them has to be counted again.
+   */
+  redraws: number;
 }
 
 export const buffer: LogBuffer = {
@@ -41,6 +48,7 @@ export const buffer: LogBuffer = {
   winEnd: -1,
   selected: new Set<number>(),
   anchorEntry: null,
+  redraws: 0,
 };
 
 export function recomputeVisible(
@@ -105,6 +113,39 @@ export function trimBuffer(
       : buffer.anchorEntry - drop;
   recomputeVisible(filterRe, levels);
   return { droppedVisible, wasFollowing };
+}
+
+/**
+ * Where in `list` the line a redraw rewrites sits (a carriage return redrew
+ * it: a progress bar), or -1. In a merged view every service counts its own
+ * lines, so only a line of the redraw's own source can match.
+ */
+export function rewrittenIndex(
+  list: readonly LogEntry[],
+  entry: LogEntry,
+): number {
+  const source = (entry as SourcedLogEntry).srcId;
+  return replacedIndex(
+    list,
+    entry.replaces,
+    (held) => (held as SourcedLogEntry).srcId === source,
+  );
+}
+
+/**
+ * Put a redraw in the place of the line it rewrites. Nothing moves, so the
+ * selection — keyed by index — stays on it. Null when the buffer no longer
+ * holds that line: the redraw is then an ordinary new line.
+ */
+export function swapRewritten(
+  entry: LogEntry,
+): { index: number; previous: LogEntry } | null {
+  const index = rewrittenIndex(buffer.entries, entry);
+  const previous = index < 0 ? undefined : buffer.entries[index];
+  if (!previous) return null;
+  buffer.entries[index] = entry;
+  buffer.redraws += 1;
+  return { index, previous };
 }
 
 /*

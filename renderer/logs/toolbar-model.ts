@@ -103,9 +103,13 @@ export function tallyLevels(entries: readonly LogEntry[]): LevelTally {
   return tally;
 }
 
-export function addToTally(tally: LevelTally, entry: LogEntry): void {
+export function addToTally(
+  tally: LevelTally,
+  entry: LogEntry,
+  sign: 1 | -1 = 1,
+): void {
   const level = levelOf(entry);
-  if (level === 'warn') tally.warn += 1;
-  else if (level === 'error') tally.error += 1;
-  if (entry.silenced) tally.silenced += 1;
+  if (level === 'warn') tally.warn += sign;
+  else if (level === 'error') tally.error += sign;
+  if (entry.silenced) tally.silenced += sign;
 }

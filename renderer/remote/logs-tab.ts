@@ -5,6 +5,7 @@ import type {
 import type { PanelContext } from './context.js';
 import type { PanelElements } from './elements.js';
 import { clockTime } from './format.js';
+import { replacedIndex } from '../../src/log-replace.js';
 import { el } from './view.js';
 
 /**
@@ -263,7 +264,14 @@ export function createLogsTab(
       const fresh = batch.lines.filter((line) => line.seq > lastSeq);
       if (fresh.length === 0) return;
       lastSeq = fresh.at(-1)?.seq ?? lastSeq;
-      lines = [...lines, ...fresh].slice(-KEEP);
+      const next = [...lines];
+      for (const line of fresh) {
+        // A progress redraw takes the place of the line it rewrites.
+        const rewritten = replacedIndex(next, line.replaces);
+        if (rewritten >= 0) next[rewritten] = line;
+        else next.push(line);
+      }
+      lines = next.slice(-KEEP);
       paint();
     },
   };

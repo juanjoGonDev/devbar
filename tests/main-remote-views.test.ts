@@ -377,6 +377,19 @@ describe('src/main/remote/views.ts', () => {
       ).toEqual({ seq: 9, ts: 5, level: 'error', line: 'boom' });
     });
 
+    it('says which line a redraw replaces, so the phone swaps it in', () => {
+      expect(
+        logLine({
+          ts: 5,
+          seq: 10,
+          replaces: 9,
+          stream: 'stdout',
+          level: null,
+          line: '60%',
+        }),
+      ).toEqual({ seq: 10, ts: 5, level: null, line: '60%', replaces: 9 });
+    });
+
     it('counts a line with no position as the first one', () => {
       expect(
         logLine({ ts: 5, stream: 'sys', level: null, line: 'x' }).seq,

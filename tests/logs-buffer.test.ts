@@ -6,7 +6,9 @@ import {
   entriesToText,
   recomputeVisible,
   replaceEntries,
+  rewrittenIndex,
   selectionAsPositions,
+  swapRewritten,
   trimBuffer,
 } from '../renderer/logs/buffer.js';
 import { fmtTime } from '../renderer/logs/format.js';
@@ -136,6 +138,43 @@ describe('renderer/logs/buffer.ts', () => {
       buffer.winStart = 0;
       buffer.winEnd = 0;
       expect(trimBuffer(2, null, new Set(['warn']))?.droppedVisible).toBe(1);
+    });
+  });
+
+  describe('a line a carriage return redraws', () => {
+    const at = (text: string, seq: number, srcId?: string): LogEntry => ({
+      ...line(text),
+      seq,
+      ...(srcId === undefined ? {} : { srcId }),
+    });
+
+    it('finds the held line a redraw rewrites', () => {
+      const held = [at('a', 1), at('10%', 2)];
+      expect(rewrittenIndex(held, { ...at('50%', 3), replaces: 2 })).toBe(1);
+      expect(rewrittenIndex(held, at('b', 3))).toBe(-1);
+    });
+
+    it('never matches another service’s line in a merged view', () => {
+      const held = [at('api', 2, 'api')];
+      const redraw = { ...at('web', 3, 'web'), replaces: 2 };
+      expect(rewrittenIndex(held, redraw)).toBe(-1);
+    });
+
+    it('swaps the redraw in at the same place, keeping the selection on it', () => {
+      replaceEntries([at('a', 1), at('10%', 2)], null, NO_LEVEL);
+      buffer.selected.add(1);
+      const redraw = { ...at('50%', 3), replaces: 2 };
+      const swap = swapRewritten(redraw);
+      expect(swap?.index).toBe(1);
+      expect(swap?.previous.line).toBe('10%');
+      expect(buffer.entries).toEqual([at('a', 1), redraw]);
+      expect(buffer.selected).toEqual(new Set([1]));
+    });
+
+    it('leaves the buffer alone when it no longer holds that line', () => {
+      replaceEntries([at('a', 5)], null, NO_LEVEL);
+      expect(swapRewritten({ ...at('50%', 9), replaces: 8 })).toBeNull();
+      expect(buffer.entries).toHaveLength(1);
     });
   });
 

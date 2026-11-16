@@ -1,16 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import readline from 'node:readline';
 import { EventEmitter } from 'node:events';
 import { isWin } from './platform.js';
 import { expandTilde } from './path-helper.js';
 import { buildCmdline, buildCmdlineWindows } from './parse-command.js';
 import { parseProcessId } from './compound-id.js';
-import {
-  isShellNoise,
-  matchesPattern,
-  safeRegex,
-  stripAnsi,
-} from './process/log-filters.js';
+import { matchesPattern, safeRegex, stripAnsi } from './process/log-filters.js';
+import { readLines } from './process/line-splitter.js';
+import { outputLines } from './process/output-lines.js';
 import {
   buildSpawnArgs,
   killGroup,
@@ -98,6 +94,25 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     buffer.push(entry);
     const limit = this.getLogLimit(id);
     if (buffer.length > limit) buffer.shift();
+    this.emit('log', { id, entry });
+  }
+  /**
+   * Rewrite the newest line of `id`'s buffer in place: a carriage return
+   * redrew it (a progress bar). The redraw takes a fresh `seq`, so the
+   * snapshot/stream boundary keeps working, and says which one it `replaces`.
+   */
+  private replaceLog(id: string, entry: LogEntry): void {
+    const buffer = this.logs.get(id);
+    const previous = buffer?.at(-1);
+    if (!buffer || previous?.seq === undefined) {
+      this.pushLog(id, entry);
+      return;
+    }
+    const seq = this.getLogSeq(id) + 1;
+    this.logSeqs.set(id, seq);
+    entry.seq = seq;
+    entry.replaces = previous.seq;
+    buffer[buffer.length - 1] = entry;
     this.emit('log', { id, entry });
   }
   removeState(id: string): void {
@@ -268,56 +283,26 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       line: `▶ start: ${spawnSpec.description}  (cwd=${cwd})`,
     });
     this.emit('change', this.getState(processId));
-    const handleLine =
-      (stream: 'stdout' | 'stderr') =>
-      (line: string): void => {
-        const state = this.states.get(processId);
-        if (
-          !state ||
-          isShellNoise(line) ||
-          (initWindow && stripAnsi(line).trim() === '')
-        )
-          return;
-        let detected: LogLevel | null = null;
-        if (kind === 'command') {
-          if (errorRegex?.test(line)) detected = 'error';
-          else if (warnRegex?.test(line)) detected = 'warn';
-          // No level at all (not «silenced»): recount must never revive it.
-          if (detected && this.probeNoise.isNoise(processId, stripAnsi(line)))
-            detected = null;
-        }
-        let silenced = false;
-        if (detected) {
-          const fresh = this.resolveTarget(processId);
-          const patterns =
-            fresh?.kind === 'command'
-              ? fresh.target.silencedPatterns[detected]
-              : [];
-          const cleaned = stripAnsi(line);
-          silenced = patterns.some((pattern) =>
-            matchesPattern(pattern, cleaned),
-          );
-          if (!silenced) {
-            if (detected === 'error') state.errorCount++;
-            else state.warnCount++;
-          }
-        }
-        this.pushLog(processId, {
-          ts: Date.now(),
-          stream,
-          level: silenced ? null : detected,
-          originalLevel: detected,
-          silenced,
-          line,
-        });
-        if (detected && !silenced) this.emit('change', state);
-      };
-    readline
-      .createInterface({ input: child.stdout })
-      .on('line', handleLine('stdout'));
-    readline
-      .createInterface({ input: child.stderr })
-      .on('line', handleLine('stderr'));
+    const lines = {
+      warnRegex,
+      errorRegex,
+      inInitWindow: () => initWindow,
+      isProbeNoise: (cleaned: string) =>
+        this.probeNoise.isNoise(processId, cleaned),
+      silencedPatterns: (level: LogLevel) => {
+        const fresh = this.resolveTarget(processId);
+        return fresh?.kind === 'command'
+          ? fresh.target.silencedPatterns[level]
+          : [];
+      },
+      state: () => this.states.get(processId),
+      newest: () => this.getLogs(processId).at(-1),
+      push: (entry: LogEntry) => this.pushLog(processId, entry),
+      redraw: (entry: LogEntry) => this.replaceLog(processId, entry),
+      countsChanged: (state: InternalState) => this.emit('change', state),
+    };
+    readLines(child.stdout, outputLines('stdout', lines));
+    readLines(child.stderr, outputLines('stderr', lines));
     child.on('error', (error) => {
       this.pushLog(processId, {
         ts: Date.now(),

@@ -109,6 +109,29 @@ describe('renderer/remote/logs-tab.ts', () => {
     expect(shown()).toEqual(['ready', 'careful', 'boom', 'again']);
   });
 
+  it('swaps a live redraw into the line it rewrites', async () => {
+    // A progress bar: each frame replaces the one before it, even when the
+    // frames arrive in the same batch.
+    const h = await startLinked();
+    await openLogs(h);
+
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [
+        { ...line(4, 'upload 10%'), replaces: 3 },
+        { ...line(5, 'upload 60%'), replaces: 4 },
+      ],
+    });
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [{ ...line(6, 'upload 100%'), replaces: 5 }],
+    });
+
+    expect(shown()).toEqual(['ready', 'careful', 'upload 100%']);
+    expect(text('count-all')).toBe('3');
+    expect(text('count-error')).toBe('0');
+  });
+
   it('filters by level, with the counts of each', async () => {
     const h = await startLinked();
     await openLogs(h);
