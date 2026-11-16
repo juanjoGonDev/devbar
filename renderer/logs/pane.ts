@@ -314,7 +314,9 @@ function redrawEntry(entry: LogEntry): boolean {
   addToTally(tally, previous, -1);
   addToTally(tally, entry);
   // A frame of a stack block is part of its head's fold: re-read the blocks.
-  if (stackOf(previous)) indexStacks(buffer.entries);
+  const frames = stackOf(previous)?.members.length;
+  if (frames !== undefined) indexStacks(buffer.entries);
+  else indexStackEntry(buffer.entries[index - 1], entry);
   const shown = matchesFilter(entry, view.filterRe, view.levelFilter);
   if (shown !== matchesFilter(previous, view.filterRe, view.levelFilter)) {
     // In or out of the filtered view: `visible` changes shape.
@@ -325,9 +327,12 @@ function redrawEntry(entry: LogEntry): boolean {
     return true;
   }
   if (view.findRe) findHooks.recount(); // its hits are in the text that changed
-  linesEl
-    .querySelector(`.line[data-eidx="${index}"]`)
-    ?.replaceWith(buildRow(entry, index, showInContext));
+  // Joining or leaving a block changes how its first row folds, not just this one.
+  if (stackOf(entry)?.members.length !== frames) repaintInPlace();
+  else
+    linesEl
+      .querySelector(`.line[data-eidx="${index}"]`)
+      ?.replaceWith(buildRow(entry, index, showInContext));
   if (view.live.following) mainEl.scrollTop = mainEl.scrollHeight;
   renderCounts();
   updateScrollButton();

@@ -180,6 +180,34 @@ describe('renderer/logs/pane.ts', () => {
       expect(foldButton()?.textContent).toContain('+2 líneas de stack');
     });
 
+    it('unfolds the block when a redraw turns its last frame into ordinary text', () => {
+      // An indented progress bar right after a stack joins it as a frame;
+      // the frame that reaches 100% is no longer indented, so it leaves.
+      pane.resetBuffer([
+        entry('Error: socket hang up', { seq: 1, level: 'error' }),
+        entry('    at a (x:1)', { seq: 2 }),
+        entry('   10% subiendo', { seq: 3 }),
+      ]);
+      expect(foldButton()?.textContent).toContain('+2 líneas de stack');
+      pane.pushEntry(entry('100% subido', { seq: 4, replaces: 3 }));
+      expect(foldButton()).toBeNull();
+      expect(rowOf('    at a (x:1)')?.classList.contains('stack-fold')).toBe(
+        false,
+      );
+      expect(rowOf('100% subido')?.classList.contains('folded')).toBe(false);
+    });
+
+    it('folds a line a redraw turns into a frame of the block above it', () => {
+      pane.resetBuffer([
+        entry('Error: socket hang up', { seq: 1, level: 'error' }),
+        entry('    at a (x:1)', { seq: 2 }),
+        entry('compilando…', { seq: 3 }),
+      ]);
+      pane.pushEntry(entry('    at b (x:2)', { seq: 4, replaces: 3 }));
+      expect(foldButton()?.textContent).toContain('+2 líneas de stack');
+      expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(true);
+    });
+
     it('draws a folded line «Solo coincidencias» keeps as itself', () => {
       pane.resetBuffer(crash());
       view.view.filterRe = /at b/i;
