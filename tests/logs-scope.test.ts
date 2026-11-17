@@ -49,8 +49,12 @@ function snapshot(
   };
 }
 
-function merged(sources: LogSource[] = [], lines: LogEntry[] = []): unknown {
-  return { groupName: 'Back', sources, lines, seqs: {} };
+function merged(
+  sources: LogSource[] = [],
+  lines: LogEntry[] = [],
+  seqs: Record<string, number> = {},
+): unknown {
+  return { groupName: 'Back', sources, lines, seqs };
 }
 
 function source(id: string, name = id): LogSource {
@@ -559,6 +563,75 @@ describe('renderer/logs/scope.ts', () => {
       await first;
       await vi.advanceTimersByTimeAsync(0);
       expect(bufferedLines()).toEqual(['mientras', 'después']);
+    });
+
+    /**
+     * A failed load of group g1 replays its line, but no snapshot has named
+     * the service yet: the line waits on a source lookup. Every lookup waits
+     * for the test to answer the returned function, then names `api`.
+     */
+    async function lineWaitingOnLookup(
+      pending: Pending[],
+    ): Promise<() => void> {
+      let answer: () => void = () => undefined;
+      const answered = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      await open({
+        api: {
+          getMergedLogs: answeredByHand(pending),
+          getMergedSources: () => answered.then(() => [source('api')]),
+        },
+      });
+      const first = scope.openScope({ kind: 'group', groupId: 'g1' });
+      await pushLive('api', 'mientras', 7);
+      pending[0]?.reject(new Error('sin respuesta'));
+      await expect(first).rejects.toThrow('sin respuesta');
+      expect(dom.argsFor('getMergedSources')).toEqual([['g1']]);
+      return answer;
+    }
+
+    it('keeps a line waiting on a source lookup when the reload fails too', async () => {
+      // The reload outdates the lookup's ticket: it must take the line over,
+      // and its own failure hand it back to the live path.
+      const pending: Pending[] = [];
+      const answerLookups = await lineWaitingOnLookup(pending);
+      const second = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[1]?.reject(new Error('sin respuesta'));
+      await expect(second).rejects.toThrow('sin respuesta');
+      answerLookups();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bufferedLines()).toEqual(['mientras']);
+      expect(view.view.groupSources?.has('api')).toBe(true);
+    });
+
+    it('shows a line waiting on a source lookup once when the reload lands', async () => {
+      // The snapshot carries it already: the lookup answering afterwards
+      // must not add it a second time.
+      const pending: Pending[] = [];
+      const answerLookups = await lineWaitingOnLookup(pending);
+      const second = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[1]?.resolve(
+        merged([source('api')], [entry('mientras', { seq: 7 })], { api: 7 }),
+      );
+      await second;
+      answerLookups();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bufferedLines()).toEqual(['mientras']);
+    });
+
+    it('a switch drops a line waiting on a source lookup, and its answer', async () => {
+      // The lookup was for the group that left the screen: neither its line
+      // nor the services it names may reach the scope that replaced it.
+      const pending: Pending[] = [];
+      const answerLookups = await lineWaitingOnLookup(pending);
+      const second = scope.openScope({ kind: 'group', groupId: 'g2' });
+      pending[1]?.resolve(merged([source('db')]));
+      await second;
+      answerLookups();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bufferedLines()).toEqual([]);
+      expect([...(view.view.groupSources?.keys() ?? [])]).toEqual(['db']);
     });
 
     it('a switch to another scope starts empty, failed or not', async () => {

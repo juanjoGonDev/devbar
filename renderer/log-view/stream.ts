@@ -48,9 +48,10 @@ export interface LogStream {
   /**
    * Open a load: take the ticket and start holding what arrives meanwhile.
    * `sameScope`: it reloads the scope a load in flight is still reading, so
-   * it takes over what that load held — its snapshot drops what it covers,
-   * and a failed one hands it back to the live path. A load of another
-   * scope starts empty: those lines are not its own.
+   * it takes over what that load held, and the lines a source lookup still
+   * holds — its snapshot drops what it covers, and a failed one hands it
+   * back to the live path. A load of another scope starts empty: those
+   * lines are not its own.
    */
   beginLoad: (sameScope?: boolean) => LoadTicket;
   /**
@@ -95,8 +96,20 @@ export function createStream(deps: StreamDeps): LogStream {
   function beginLoad(sameScope = false): LoadTicket {
     // The snapshot about to be adopted covers everything a superseded load
     // was holding — if it arrives. Only a reload of the same scope keeps
-    // them, for the case it does not; another scope's are not ours.
-    loadQueue = sameScope && loadQueue ? loadQueue : [];
+    // them, for the case it does not; another scope's are not ours. The
+    // lines waiting on a source lookup join them, older than anything held:
+    // the ticket this retires is the lookup's too, so a reload that left
+    // them there would lose them if its snapshot never came.
+    loadQueue = sameScope
+      ? [
+          ...unknownSourceQueue.splice(0).map(({ entry }) => ({
+            id: entry.srcId,
+            entry,
+            seq: entry.seq,
+          })),
+          ...(loadQueue ?? []),
+        ]
+      : [];
     loads.invalidate();
     return loads.claim();
   }
@@ -148,7 +161,7 @@ export function createStream(deps: StreamDeps): LogStream {
         // that is no longer on screen: writing them into the current map
         // would label live rows with another group's services. The lines they
         // were fetched for go with them — the new scope's snapshot supersedes
-        // that buffer.
+        // that buffer. (A reload of this scope took them into its load.)
         const waiting = unknownSourceQueue.filter((q) => q.current());
         unknownSourceQueue.length = 0;
         if (!waiting.length) return;

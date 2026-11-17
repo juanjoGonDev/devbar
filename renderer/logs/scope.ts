@@ -75,9 +75,12 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   // failed load replays what it held, and the live lines keep coming. Until a
   // snapshot names the services, an unknown one is looked up rather than
   // dropped — and the previous scope's map would let its services in. A
-  // reload keeps the map: it is this scope's already.
-  if (!reload) view.groupSources = new Map();
-  dropUnknownSources(); // held lines belong to the old scope
+  // reload keeps the map: it is this scope's already. So are the lines a
+  // source lookup still holds, which its load takes over.
+  if (!reload) {
+    view.groupSources = new Map();
+    dropUnknownSources(); // held lines belong to the old scope
+  }
   resetSilenceScope(); // a draft and its marks belong to the previous log
   view.mergedIsAll = groupId === null;
   view.mergedGroupId = groupId;
