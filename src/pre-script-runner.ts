@@ -201,6 +201,7 @@ export function createPreScriptRunner({
             status,
             finishedAt: Date.now(),
             exitCode: result.code,
+            ...(result.reason === undefined ? {} : { reason: result.reason }),
           });
           if (block.requireAll && !result.ok && !abandoned) {
             abandoned = true;

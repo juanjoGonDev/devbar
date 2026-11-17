@@ -26,6 +26,9 @@ import type { LogEntry } from '../../src/domain-types.js';
 import type { LogSource, SourcedLogEntry } from '../../src/ipc-contract.js';
 import type { LogViewState } from './context.js';
 
+/** How long a failed source lookup waits before it tries again. */
+export const SOURCE_RETRY_MS = 1000;
+
 /** Answers whether the load that took it is still the newest one. */
 type LoadTicket = () => boolean;
 
@@ -45,8 +48,15 @@ export interface StreamDeps {
 }
 
 export interface LogStream {
-  /** Open a load: take the ticket and start holding what arrives meanwhile. */
-  beginLoad: () => LoadTicket;
+  /**
+   * Open a load: take the ticket and start holding what arrives meanwhile.
+   * `sameScope`: it reloads the scope a load in flight is still reading, so
+   * it takes over what that load held, and the lines a source lookup still
+   * holds — its snapshot drops what it covers, and a failed one hands it
+   * back to the live path. A load of another scope starts empty: those
+   * lines are not its own.
+   */
+  beginLoad: (sameScope?: boolean) => LoadTicket;
   /**
    * Close a load: deliver what arrived while we waited, minus whatever the
    * snapshot already carried. `watermark` answers, per source, how far it got.
@@ -85,11 +95,25 @@ export function createStream(deps: StreamDeps): LogStream {
     current: LoadTicket;
   }[] = [];
   let refreshingSources = false;
+  let sourceRetry: ReturnType<typeof setTimeout> | undefined;
 
-  function beginLoad(): LoadTicket {
-    // An orphan queue from an abandoned load goes: the snapshot we are about
-    // to adopt covers everything it was holding.
-    loadQueue = [];
+  function beginLoad(sameScope = false): LoadTicket {
+    // The snapshot about to be adopted covers everything a superseded load
+    // was holding — if it arrives. Only a reload of the same scope keeps
+    // them, for the case it does not; another scope's are not ours. The
+    // lines waiting on a source lookup join them, older than anything held:
+    // the ticket this retires is the lookup's too, so a reload that left
+    // them there would lose them if its snapshot never came.
+    loadQueue = sameScope
+      ? [
+          ...unknownSourceQueue.splice(0).map(({ entry }) => ({
+            id: entry.srcId,
+            entry,
+            seq: entry.seq,
+          })),
+          ...(loadQueue ?? []),
+        ]
+      : [];
     loads.invalidate();
     return loads.claim();
   }
@@ -120,11 +144,20 @@ export function createStream(deps: StreamDeps): LogStream {
    * know about. Guarded: a burst of lines from a new pre-script must not fire
    * one lookup each.
    */
-  async function learnSource(entry: SourcedLogEntry): Promise<void> {
+  function learnSource(entry: SourcedLogEntry): void {
     // Hold the line that triggered this, and any that arrive while the lookup
     // is in flight. Dropping them would lose a service that logs once and
     // falls quiet — and lose it from the filter and from copy too.
     unknownSourceQueue.push({ entry, current: loads.claim() });
+    void refreshSources();
+  }
+
+  /**
+   * Look the merged sources up for the lines `learnSource` holds. A failed
+   * lookup keeps them and tries again on its own: the service that sent them
+   * may never log again to trigger another one.
+   */
+  async function refreshSources(): Promise<void> {
     if (refreshingSources || !view.groupSources) return;
     refreshingSources = true;
     try {
@@ -141,12 +174,21 @@ export function createStream(deps: StreamDeps): LogStream {
         // that is no longer on screen: writing them into the current map
         // would label live rows with another group's services. The lines they
         // were fetched for go with them — the new scope's snapshot supersedes
-        // that buffer.
+        // that buffer. (A reload of this scope took them into its load.)
         const waiting = unknownSourceQueue.filter((q) => q.current());
         unknownSourceQueue.length = 0;
         if (!waiting.length) return;
         unknownSourceQueue.push(...waiting); // arrived after the switch: still ours
       }
+    } catch {
+      // ponytail: fixed delay, no backoff; a lookup that keeps failing means
+      // main is gone, and a retry a second costs nothing until then.
+      clearTimeout(sourceRetry);
+      sourceRetry = setTimeout(() => {
+        if (unknownSourceQueue.some((queued) => queued.current()))
+          void refreshSources();
+      }, SOURCE_RETRY_MS);
+      return;
     } finally {
       refreshingSources = false;
     }
@@ -178,7 +220,7 @@ export function createStream(deps: StreamDeps): LogStream {
       // foreign: learn the name, then show it.
       const sourced = { ...entry, srcId: id };
       if (!view.groupSources.has(id)) {
-        void learnSource(sourced);
+        learnSource(sourced);
         return;
       }
       deliver(sourced);

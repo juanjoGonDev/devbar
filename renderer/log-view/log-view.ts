@@ -68,13 +68,14 @@ export function createLogView(els: LogViewElements): LogView {
   });
 
   async function open(processId: string): Promise<boolean> {
-    if (state.processId !== processId) {
+    const sameScope = state.processId === processId;
+    if (!sameScope) {
       state.processId = processId;
       pane.resetBuffer([]);
       queue.dropPendingQueue();
     }
     // getLogs also points main's live stream at this view, atomically.
-    const token = stream.beginLoad();
+    const token = stream.beginLoad(sameScope);
     let res: LogsSnapshot;
     try {
       res = await stream.awaitSnapshot(window.api.getLogs(processId), token);

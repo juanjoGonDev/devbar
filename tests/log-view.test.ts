@@ -108,6 +108,56 @@ describe('renderer/log-view/log-view.ts', () => {
     expect(texts()).toEqual(['run 2']);
   });
 
+  it('keeps a line held for a reload that a failed reload superseded', async () => {
+    const calls: {
+      resolve: (value: LogsSnapshot) => void;
+      reject: (error: Error) => void;
+    }[] = [];
+    Object.assign(window.api, {
+      getLogs: () =>
+        new Promise<LogsSnapshot>((resolve, reject) =>
+          calls.push({ resolve, reject }),
+        ),
+    });
+    const { view, texts } = mount();
+    const first = view.open('pre:g:a');
+    calls[0]?.resolve(snapshot([line('uno')]));
+    await first;
+    const reload = view.open('pre:g:a');
+    view.receivePush({ id: 'pre:g:a', entry: line('dos', { seq: 2 }) });
+    const newer = view.open('pre:g:a'); // same scope: it takes over «dos»
+    calls[2]?.reject(new Error('sin respuesta'));
+    expect(await newer).toBe(false);
+    calls[1]?.resolve(snapshot([line('uno'), line('dos')]));
+    expect(await reload).toBe(false); // superseded: its answer is moot
+    expect(texts()).toEqual(['uno', 'dos']);
+  });
+
+  it('refolds a stack trace whose first frame the memory cap trimmed away', async () => {
+    // Capped at 10 lines, a trim fires at line 311 and keeps the last 10:
+    // frames 302–306 of a block whose head (300) and first frame (301) it
+    // drops.
+    const { view, lines } = mount();
+    const opened = view.open('pre:g:a');
+    await answer('pre:g:a', { ...snapshot([]), logLimit: 10 });
+    await opened;
+    for (let seq = 1; seq <= 311; seq += 1) {
+      const text =
+        seq === 300
+          ? 'Error: boom'
+          : seq >= 301 && seq <= 306
+            ? `    at f (x:${seq})`
+            : `línea ${seq}`;
+      const level = seq === 300 ? 'error' : null;
+      view.receivePush({ id: 'pre:g:a', entry: line(text, { seq, level }) });
+    }
+    expect(view.buffer.entries).toHaveLength(10);
+    // Every frame left still has a way to be shown: none is hidden for good
+    // under a fold whose control went with the trimmed frame.
+    const fold = lines.querySelector('.stack-fold');
+    expect(fold?.textContent ?? 'no fold row').toContain('+4 líneas de stack');
+  });
+
   it('gives up a load in flight once cleared', async () => {
     const { view, texts } = mount();
     const opened = view.open('pre:g:a');

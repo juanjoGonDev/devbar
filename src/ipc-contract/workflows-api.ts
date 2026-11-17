@@ -38,6 +38,8 @@ export interface WorkflowScriptRunState extends PreStepScriptRef {
   startedAt: number | null;
   finishedAt: number | null;
   exitCode: number | null;
+  /** Why it was turned away before it started (no path, declined…). */
+  reason?: string;
 }
 
 /**

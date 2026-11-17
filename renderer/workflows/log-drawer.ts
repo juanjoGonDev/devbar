@@ -64,20 +64,20 @@ function mark(status: string): HTMLElement {
 }
 
 /**
- * Whether the script got as far as this run: it started, or it was turned
- * away (no path, declined, already running) and said why in its own log. One
- * still waiting — or skipped, or cancelled before its turn — has nothing in
- * its buffer but the previous run's output.
+ * Whether the script ran in this run. One that did not — still waiting,
+ * skipped, cancelled before its turn, or turned away (no path, declined,
+ * already running) — has nothing in its buffer but the previous run's
+ * output, under which a refusal only appended its reason.
  */
 function reachedThisRun(script: WorkflowScriptRunState): boolean {
-  return script.startedAt !== null || script.finishedAt !== null;
+  return script.startedAt !== null;
 }
 
 /** What the drawer says instead of a log the script does not have yet. */
 function pendingText(script: WorkflowScriptRunState): string {
-  return script.status === 'waiting'
-    ? 'Todavía no ha empezado'
-    : 'No ha llegado a ejecutarse';
+  if (script.status === 'waiting') return 'Todavía no ha empezado';
+  const text = 'No ha llegado a ejecutarse';
+  return script.reason ? `${text} · ${script.reason}` : text;
 }
 
 export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
@@ -109,8 +109,15 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
   window.api.onLog((payload) => view.receivePush(payload));
 
   let selected: string | null = null;
-  /** The process, and the run of it, the view was last pointed at. */
-  let shown: { processId: string; startedAt: number | null } | null = null;
+  /**
+   * The process, and the run of it, the view was last pointed at; `failed`
+   * when that read did not arrive, so the next repaint tries it again.
+   */
+  let shown: {
+    processId: string;
+    startedAt: number | null;
+    failed?: true;
+  } | null = null;
 
   const scripts = (): WorkflowScriptRunState[] =>
     runScripts(deps.run(), deps.pipeline());
@@ -135,11 +142,21 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
     if (!script) return showNothing(null);
     if (!reachedThisRun(script)) return showNothing(pendingText(script));
     const processId = makePreScriptId(script.groupId, script.scriptId);
-    if (shown?.processId === processId && shown.startedAt === script.startedAt)
-      return;
-    shown = { processId, startedAt: script.startedAt };
+    const sameRun =
+      shown?.processId === processId && shown.startedAt === script.startedAt;
+    if (sameRun && !shown?.failed) return;
+    // Only a retry of the same run keeps what the view holds: the view
+    // reloads one process in place, and another run's lines are not this
+    // one's — they would stay if its read failed.
+    if (!sameRun) view.clear();
+    const target = { processId, startedAt: script.startedAt };
+    shown = target;
     empty.hidden = true;
-    void view.open(processId);
+    void view.open(processId).then((opened) => {
+      // A read that failed is not shown: the next repaint tries again. One
+      // the selection already left behind owns nothing to undo.
+      if (!opened && shown === target) shown = { ...target, failed: true };
+    });
   }
 
   function paintMeta(script: WorkflowScriptRunState | null): void {

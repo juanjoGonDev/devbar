@@ -170,9 +170,11 @@ export function failedScriptCount(run: LiveRun): number {
 /**
  * The next run of a retry from `blockId`: that block and every descendant
  * that did not succeed last time run again; every other block keeps its last
- * status and is never started — so its scripts' own buffers in main, the only
- * copy of their output, still hold that run. A reason string when it cannot be
- * retried: an unknown block, or one whose sources did not all succeed.
+ * status and is never started. Its scripts' output stays in their shared
+ * `pre:<g>:<s>` buffers in main, which hold the latest execution of each
+ * script and can be replaced by another workflow's run of it. A reason string
+ * when it cannot be retried: an unknown block, or one whose sources did not
+ * all succeed.
  */
 export function planRetry(
   last: LiveRun,

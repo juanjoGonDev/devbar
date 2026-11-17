@@ -399,6 +399,9 @@ export function createPane(ctx: LogViewCtx): LogPane {
       buffer,
     );
     if (!trim) return false;
+    // A block the cut went through lost its head or its first frame — the row
+    // its fold control is drawn on — so its frames left would stay hidden.
+    stacks.indexAll(buffer.entries);
     recount();
     findHooks.trimmed(held - buffer.entries.length);
     // Only jump to the tail if that is where the reader already was. Forcing

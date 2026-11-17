@@ -35,3 +35,20 @@ export function replacedIndex<T extends Sequenced>(
   }
   return -1;
 }
+
+/**
+ * Queue `line` for delivery, folding a redraw into the queued line it
+ * rewrites: a progress bar is one entry however many frames it draws, and
+ * that entry `replaces` the first link of its chain, since the receiver may
+ * show any of them (see `replacedIndex`). A queue trimmed to its newest
+ * entries then never cuts a chain in two.
+ */
+export function queueCollapsing<T extends Sequenced & { replaces?: number }>(
+  queue: T[],
+  line: T,
+): void {
+  const last = queue.at(-1);
+  if (last && line.replaces !== undefined && line.replaces === last.seq)
+    queue[queue.length - 1] = { ...line, replaces: last.replaces ?? last.seq };
+  else queue.push(line);
+}
