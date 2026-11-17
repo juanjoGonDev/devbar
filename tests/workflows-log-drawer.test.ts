@@ -262,6 +262,29 @@ describe('renderer/workflows/log-drawer.ts', () => {
     expect(texts()).toEqual(['otra vez']);
   });
 
+  it('drops the last run when the read of a new run of it fails', async () => {
+    const drawer = await mount(
+      runState('w-start', chain(), 'running', { a: 'success', b: 'running' }),
+    );
+    drawer.open('front::deps');
+    await win?.settle('getLogs', snapshot([line('la vez anterior')]));
+    run = runState(
+      'w-start',
+      chain(),
+      'running',
+      { a: 'success', b: 'running' },
+      { runId: 8 },
+    );
+    run.scripts = run.scripts.map((s) => ({ ...s, startedAt: 9_000 }));
+    drawer.update();
+    await win?.push('onLog', {
+      id: DEPS_ID,
+      entry: line('otra vez', { seq: 5 }),
+    });
+    await win?.fail('getLogs', new Error('gone'));
+    expect(texts()).toEqual(['otra vez']);
+  });
+
   it('shows why a script was turned away, not the last run its buffer holds', async () => {
     // Refused (no path, declined…): it never started, so its buffer still
     // holds its previous run, the reason appended under it. The run says why.

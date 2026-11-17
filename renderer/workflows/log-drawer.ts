@@ -109,8 +109,15 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
   window.api.onLog((payload) => view.receivePush(payload));
 
   let selected: string | null = null;
-  /** The process, and the run of it, the view was last pointed at. */
-  let shown: { processId: string; startedAt: number | null } | null = null;
+  /**
+   * The process, and the run of it, the view was last pointed at; `failed`
+   * when that read did not arrive, so the next repaint tries it again.
+   */
+  let shown: {
+    processId: string;
+    startedAt: number | null;
+    failed?: true;
+  } | null = null;
 
   const scripts = (): WorkflowScriptRunState[] =>
     runScripts(deps.run(), deps.pipeline());
@@ -135,15 +142,20 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
     if (!script) return showNothing(null);
     if (!reachedThisRun(script)) return showNothing(pendingText(script));
     const processId = makePreScriptId(script.groupId, script.scriptId);
-    if (shown?.processId === processId && shown.startedAt === script.startedAt)
-      return;
+    const sameRun =
+      shown?.processId === processId && shown.startedAt === script.startedAt;
+    if (sameRun && !shown?.failed) return;
+    // Only a retry of the same run keeps what the view holds: the view
+    // reloads one process in place, and another run's lines are not this
+    // one's — they would stay if its read failed.
+    if (!sameRun) view.clear();
     const target = { processId, startedAt: script.startedAt };
     shown = target;
     empty.hidden = true;
     void view.open(processId).then((opened) => {
       // A read that failed is not shown: the next repaint tries again. One
       // the selection already left behind owns nothing to undo.
-      if (!opened && shown === target) shown = null;
+      if (!opened && shown === target) shown = { ...target, failed: true };
     });
   }
 
