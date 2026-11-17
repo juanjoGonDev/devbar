@@ -76,6 +76,8 @@ const api: DevBarApi = {
     simulateUpdate: (version) =>
       ipcRenderer.invoke('dev:simulateUpdate', { version }),
     simulateRealUpdate: () => ipcRenderer.invoke('dev:simulateRealUpdate'),
+    simulateInstallPrompt: () =>
+      ipcRenderer.invoke('dev:simulateInstallPrompt'),
     clearUpdate: () => ipcRenderer.invoke('dev:clearUpdate'),
     simulateTrayColor: (color) =>
       ipcRenderer.invoke('dev:simulateTrayColor', { color }),

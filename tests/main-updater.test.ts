@@ -65,6 +65,24 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
+    it('can ask for any version on demand, for the dev panel', () => {
+      const asked: unknown[] = [];
+      const h = harness({
+        showBannerNotification: (_title, body, options) =>
+          asked.push({ body, options }),
+      });
+      h.updater.askToInstall('9.9.0');
+      expect(asked).toEqual([
+        {
+          body: 'v9.9.0 lista. Reinicia para instalarla.',
+          options: {
+            cta: { label: 'Reiniciar e instalar', action: 'install-update' },
+            sticky: true,
+          },
+        },
+      ]);
+    });
+
     it('skips the automatic check while automatic updates are off', async () => {
       const checkForUpdate = vi.fn(() => Promise.resolve(update));
       const h = harness({ autoUpdate: () => false, checkForUpdate });

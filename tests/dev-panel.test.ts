@@ -26,6 +26,7 @@ let fixtureCalls: unknown[][];
 const DEV_METHODS = [
   'simulateUpdate',
   'simulateRealUpdate',
+  'simulateInstallPrompt',
   'clearUpdate',
   'simulateTrayColor',
   'simulateTrayCount',
@@ -130,6 +131,7 @@ describe('renderer/dev/dev-panel.ts', () => {
       expect(headings).toEqual([
         'Actualización disponible',
         'Actualización real (end to end)',
+        'Permiso para instalar',
         'Notificaciones',
         'Icono de la barra',
         'Diálogos y avisos',
@@ -154,6 +156,7 @@ describe('renderer/dev/dev-panel.ts', () => {
     it.each([
       ['Limpiar', 'clearUpdate', []],
       ['Simular actualización real', 'simulateRealUpdate', []],
+      ['Pedir permiso para instalar', 'simulateInstallPrompt', []],
       ['Aviso simple', 'simulateBanner', [false]],
       ['Aviso con acción', 'simulateBanner', [true]],
       ['Reserva (banner propio)', 'simulateFallbackBanner', [false]],

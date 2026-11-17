@@ -213,6 +213,8 @@ interface DevSimulationApi {
     version?: string;
     error?: string;
   }>;
+  /** The «Reiniciar e instalar» prompt alone, with nothing staged. */
+  simulateInstallPrompt(): Promise<{ ok: boolean; version: string }>;
   clearUpdate(): Promise<SimpleResult>;
   simulateTrayColor(color: TrayColor | null): Promise<SimpleResult>;
   simulateTrayCount(count: number | null): Promise<SimpleResult>;

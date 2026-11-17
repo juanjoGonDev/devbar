@@ -33,6 +33,8 @@ export interface DevHooks {
     options?: { cta?: { label: string; action: string } },
   ): void;
   showCompletionNotification(title: string, body: string): void;
+  /** The updater's own «Reiniciar e instalar» prompt, nothing staged. */
+  askToInstall(version: string): void;
   openPrescriptConfirm(name: string, command: string): void;
   /** The .app we are running from, or null when it is not an installed bundle. */
   installedBundle(): string | null;
@@ -206,6 +208,13 @@ export function registerDevIpc(hooks: DevHooks): void {
       return { ok: true };
     },
   );
+
+  // Only to SEE the prompt: nothing is staged, so its button installs nothing.
+  ipcMain.handle('dev:simulateInstallPrompt', () => {
+    const version = nextMinor(hooks.currentVersion());
+    hooks.askToInstall(version);
+    return { ok: true, version };
+  });
 
   // Goes through the same gate as a real success notification, so this also
   // tells you whether "avisar de acciones completadas" is switched on.

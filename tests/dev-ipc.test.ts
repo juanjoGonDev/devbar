@@ -66,6 +66,7 @@ interface Recorded {
   banners: { title: string; body: string; options: unknown }[];
   fallbackBanners: { title: string; body: string; options: unknown }[];
   completions: { title: string; body: string }[];
+  installPrompts: string[];
   prescriptConfirms: { name: string; command: string }[];
   staged: { zipPath: string; version: string }[];
   toasts: { kind: string; message: string }[];
@@ -87,6 +88,7 @@ function makeHooks(): DevHooks {
       void recorded.fallbackBanners.push({ title, body, options }),
     showCompletionNotification: (title, body) =>
       void recorded.completions.push({ title, body }),
+    askToInstall: (version) => void recorded.installPrompts.push(version),
     openPrescriptConfirm: (name, command) =>
       void recorded.prescriptConfirms.push({ name, command }),
     installedBundle: () => bundle,
@@ -139,6 +141,7 @@ describe('src/dev/dev-ipc.ts', () => {
       banners: [],
       fallbackBanners: [],
       completions: [],
+      installPrompts: [],
       prescriptConfirms: [],
       staged: [],
       toasts: [],
@@ -175,6 +178,7 @@ describe('src/dev/dev-ipc.ts', () => {
         'dev:setFixtureGroups',
         'dev:simulateBanner',
         'dev:simulateFallbackBanner',
+        'dev:simulateInstallPrompt',
         'dev:simulatePrescriptConfirm',
         'dev:simulateRealUpdate',
         'dev:simulateSuccess',
@@ -356,6 +360,15 @@ describe('src/dev/dev-ipc.ts', () => {
         },
       ]);
       expect(recorded.banners).toEqual([]);
+    });
+  });
+
+  describe('dev:simulateInstallPrompt', () => {
+    it('shows the real install prompt for the next minor', async () => {
+      const result = await fire('dev:simulateInstallPrompt');
+
+      expect(result).toEqual({ ok: true, version: '0.10.0' });
+      expect(recorded.installPrompts).toEqual(['0.10.0']);
     });
   });
 

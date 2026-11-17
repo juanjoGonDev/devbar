@@ -37,6 +37,7 @@ function deps(overrides: Partial<DevPanelDeps> = {}) {
     showBanner: () => calls.push('showBanner'),
     showFallbackBanner: () => calls.push('showFallbackBanner'),
     showCompletionNotification: () => calls.push('showCompletionNotification'),
+    askToInstall: (version) => calls.push(`askToInstall:${version}`),
     showConfirmModal: (script, origin, groupName) => {
       calls.push(
         `confirm:${script.name}:${script.command}:${origin}:${groupName}`,
@@ -85,6 +86,7 @@ describe('src/main/dev-panel.ts', () => {
       hooks.showBanner('t', 'b');
       hooks.showFallbackBanner('t', 'b');
       hooks.showCompletionNotification('t', 'b');
+      hooks.askToInstall('1.3.0');
       hooks.openPrescriptConfirm('vpn', 'connect');
       hooks.toast('ok', 'hi');
       expect(hooks.currentVersion()).toBe('1.2.0');
@@ -96,6 +98,7 @@ describe('src/main/dev-panel.ts', () => {
         'showBanner',
         'showFallbackBanner',
         'showCompletionNotification',
+        'askToInstall:1.3.0',
         'confirm:vpn:connect:interactive:null',
         'toast',
       ]);

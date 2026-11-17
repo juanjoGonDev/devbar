@@ -132,6 +132,8 @@ export interface Updater {
   installStagedHeadless: () => Promise<ApplyUpdateResult>;
   available: () => AvailableUpdate | null;
   staged: () => StagedUpdate | null;
+  /** The «Reiniciar e instalar» prompt on its own, for the dev panel. */
+  askToInstall: (version: string) => void;
   setSimulatedUpdate: (update: AvailableUpdate | null) => void;
 }
 
@@ -197,11 +199,17 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     });
     broadcastStatus();
     deps.refreshTrayIcon();
-    // Asks for permission and waits for it: installing restarts DevBar (and
-    // the services it runs), so it never happens on its own.
+    askToInstall(staged.version);
+  }
+
+  /**
+   * Asks for permission and waits for it: installing restarts DevBar (and the
+   * services it runs), so it never happens on its own.
+   */
+  function askToInstall(version: string): void {
     deps.showBannerNotification(
       BANNER_TITLE,
-      `v${staged.version} lista. Reinicia para instalarla.`,
+      `v${version} lista. Reinicia para instalarla.`,
       {
         cta: { label: 'Reiniciar e instalar', action: 'install-update' },
         sticky: true,
@@ -378,6 +386,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     },
     available: () => availableUpdate,
     staged: () => stagedUpdate,
+    askToInstall,
 
     async applyUpdateAndReport(options): Promise<void> {
       let res: ApplyUpdateResult;

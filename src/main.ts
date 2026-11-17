@@ -330,6 +330,7 @@ const devHooks = {
   showBanner: notifications.showBannerNotification,
   showFallbackBanner: notifications.showCustomBanner,
   showCompletionNotification: notifications.showCompletionNotification,
+  askToInstall: updater.askToInstall,
   showConfirmModal: confirms.showConfirmModal,
   toast,
   installedBundle: selfUpdate.installedAppPath,
