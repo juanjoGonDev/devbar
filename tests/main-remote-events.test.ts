@@ -327,6 +327,34 @@ describe('src/main/remote/events.ts', () => {
       expect(lines).toHaveLength(500);
       expect(lines[0]?.seq).toBe(101);
     });
+
+    it('sends a redraw burst as its newest frame, still linked to what the phone shows', () => {
+      const h = harness();
+      const watching = sink();
+      h.hub.attach(
+        { deviceId: 'd1', sessionId: 's-d1', logsId: 'cmd:g1:web' },
+        watching,
+      );
+      h.hub.log('cmd:g1:web', { seq: 1, ts: 1, level: null, line: '0%' });
+      h.fire(100);
+
+      // More frames in one flush than a batch keeps: trimming the oldest
+      // would cut the link to seq 1 and the phone would draw a second bar.
+      for (let seq = 2; seq <= 601; seq++)
+        h.hub.log('cmd:g1:web', {
+          seq,
+          ts: seq,
+          level: null,
+          line: `${seq}%`,
+          replaces: seq - 1,
+        });
+      h.fire(100);
+
+      const [, batch] = events(watching);
+      expect((batch?.data as { lines: unknown[] }).lines).toEqual([
+        { seq: 601, ts: 601, level: null, line: '601%', replaces: 1 },
+      ]);
+    });
   });
 
   describe('subscribe', () => {

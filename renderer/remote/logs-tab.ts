@@ -5,7 +5,7 @@ import type {
 import type { PanelContext } from './context.js';
 import type { PanelElements } from './elements.js';
 import { clockTime } from './format.js';
-import { replacedIndex } from '../../src/log-replace.js';
+import { queueCollapsing, replacedIndex } from '../../src/log-replace.js';
 import { el } from './view.js';
 
 /**
@@ -49,15 +49,10 @@ export interface LogsTab {
 /**
  * Hold a live line while the tail is on its way, bounded like the tail: a
  * stalled request must not let a chatty process grow the queue forever. A
- * redraw of the last held line takes its place, so a progress bar is one
- * entry however many frames it draws; it then `replaces` the first link of
- * its chain, since the tail may hold any of them (see `replacedIndex`).
+ * redraw folds into the held line it rewrites (`queueCollapsing`).
  */
 export function stageLive(held: RemoteLogLine[], line: RemoteLogLine): void {
-  const last = held.at(-1);
-  if (last && line.replaces !== undefined && line.replaces === last.seq)
-    held[held.length - 1] = { ...line, replaces: last.replaces ?? last.seq };
-  else held.push(line);
+  queueCollapsing(held, line);
   if (held.length > KEEP) held.splice(0, held.length - KEEP);
 }
 
