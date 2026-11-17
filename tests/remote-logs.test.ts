@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   byId,
+  HANG,
   NOW,
   settle,
   startLinked,
@@ -214,6 +215,23 @@ describe('renderer/remote/logs-tab.ts', () => {
     expect(held).toHaveLength(1000);
     expect(held.at(-1)).toMatchObject({ seq: 1600, replaces: 1500 });
     expect(held.at(-2)?.seq).toBe(1499);
+  });
+
+  it('shows the live lines it held once a stalled tail request runs out of time', async () => {
+    const h = await startLinked();
+    h.answer('logs', HANG);
+    tap(tabButton('logs'));
+    await settle();
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [line(7, 'still compiling')],
+    });
+    await settle();
+    expect(shown()).toEqual([]);
+
+    await h.tick(); // the tail's deadline
+
+    expect(shown()).toEqual(['still compiling']);
   });
 
   it('filters by level, with the counts of each', async () => {
