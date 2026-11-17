@@ -26,6 +26,9 @@ import type { LogEntry } from '../../src/domain-types.js';
 import type { LogSource, SourcedLogEntry } from '../../src/ipc-contract.js';
 import type { LogViewState } from './context.js';
 
+/** How long a failed source lookup waits before it tries again. */
+export const SOURCE_RETRY_MS = 1000;
+
 /** Answers whether the load that took it is still the newest one. */
 type LoadTicket = () => boolean;
 
@@ -92,6 +95,7 @@ export function createStream(deps: StreamDeps): LogStream {
     current: LoadTicket;
   }[] = [];
   let refreshingSources = false;
+  let sourceRetry: ReturnType<typeof setTimeout> | undefined;
 
   function beginLoad(sameScope = false): LoadTicket {
     // The snapshot about to be adopted covers everything a superseded load
@@ -140,11 +144,20 @@ export function createStream(deps: StreamDeps): LogStream {
    * know about. Guarded: a burst of lines from a new pre-script must not fire
    * one lookup each.
    */
-  async function learnSource(entry: SourcedLogEntry): Promise<void> {
+  function learnSource(entry: SourcedLogEntry): void {
     // Hold the line that triggered this, and any that arrive while the lookup
     // is in flight. Dropping them would lose a service that logs once and
     // falls quiet — and lose it from the filter and from copy too.
     unknownSourceQueue.push({ entry, current: loads.claim() });
+    void refreshSources();
+  }
+
+  /**
+   * Look the merged sources up for the lines `learnSource` holds. A failed
+   * lookup keeps them and tries again on its own: the service that sent them
+   * may never log again to trigger another one.
+   */
+  async function refreshSources(): Promise<void> {
     if (refreshingSources || !view.groupSources) return;
     refreshingSources = true;
     try {
@@ -167,6 +180,15 @@ export function createStream(deps: StreamDeps): LogStream {
         if (!waiting.length) return;
         unknownSourceQueue.push(...waiting); // arrived after the switch: still ours
       }
+    } catch {
+      // ponytail: fixed delay, no backoff; a lookup that keeps failing means
+      // main is gone, and a retry a second costs nothing until then.
+      clearTimeout(sourceRetry);
+      sourceRetry = setTimeout(() => {
+        if (unknownSourceQueue.some((queued) => queued.current()))
+          void refreshSources();
+      }, SOURCE_RETRY_MS);
+      return;
     } finally {
       refreshingSources = false;
     }
@@ -198,7 +220,7 @@ export function createStream(deps: StreamDeps): LogStream {
       // foreign: learn the name, then show it.
       const sourced = { ...entry, srcId: id };
       if (!view.groupSources.has(id)) {
-        void learnSource(sourced);
+        learnSource(sourced);
         return;
       }
       deliver(sourced);
