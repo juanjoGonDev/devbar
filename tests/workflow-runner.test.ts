@@ -239,7 +239,7 @@ describe('src/workflow-runner.ts', () => {
     );
   });
 
-  it('retries from a block and serves the script log of the run', async () => {
+  it('retries from a block', async () => {
     const { runner, finish } = setup([workflow('w1', 'A')]);
     const first = runner.run('w1');
     await settle();
@@ -249,9 +249,6 @@ describe('src/workflow-runner.ts', () => {
     await settle();
     await finish('A');
     expect((await retry).ok).toBe(true);
-    expect(
-      runner.scriptLog('w1', 'latest', { groupId: 'g', scriptId: 'A' }),
-    ).not.toBeNull();
     expect(await runner.retryFrom('nope', 'A')).toEqual({
       ok: false,
       error: 'not_found',

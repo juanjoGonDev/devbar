@@ -13,7 +13,7 @@ import type {
   PreScript,
 } from '../src/domain-types.js';
 import type { WorkflowRunState } from '../src/ipc-contract.js';
-import { block, graph, ref } from './helpers/pipeline.js';
+import { block, graph } from './helpers/pipeline.js';
 
 /**
  * `src/pre-script-runner.ts` — what one workflow run reports and does beyond
@@ -274,49 +274,6 @@ describe('src/pre-script-runner.ts — workflow runs', () => {
       expect(scriptStatus('A')).toBe('warning');
       expect(blockStatus('A')).toBe('warning');
       expect(runner.getSnapshot()?.status).toBe('warning');
-    });
-  });
-
-  describe('script logs', () => {
-    it('keeps each script’s own output for the run', async () => {
-      const { pm, runner, finish } = setup(graph(['A'], ['trigger>A']), ['A']);
-      const run = runner.run();
-      await settle();
-      pm.print('A', 'hello');
-      await finish('A');
-      await run;
-      const lines = runner
-        .scriptLog('latest', ref('A'))
-        ?.map((entry) => entry.line);
-      expect(lines).toContain('hello');
-      expect(runner.scriptLog(101, ref('A'))).not.toBeNull();
-      expect(runner.scriptLog(999, ref('A'))).toBeNull();
-      expect(runner.scriptLog('latest', ref('nope'))).toBeNull();
-    });
-
-    it('swaps a progress redraw into the line it rewrites', async () => {
-      const { pm, runner, finish } = setup(graph(['A'], ['trigger>A']), ['A']);
-      const run = runner.run();
-      await settle();
-      const line = (text: string, seq: number, replaces?: number) =>
-        pm.pushLog(pid('A'), {
-          ts: Date.now(),
-          stream: 'stdout',
-          level: null,
-          line: text,
-          seq,
-          ...(replaces === undefined ? {} : { replaces }),
-        });
-      line('upload 10%', 1);
-      line('upload 60%', 2, 1);
-      line('upload 100%', 3, 2);
-      await finish('A');
-      await run;
-      const lines = runner
-        .scriptLog('latest', ref('A'))
-        ?.map((entry) => entry.line)
-        .filter((text) => text.startsWith('upload'));
-      expect(lines).toEqual(['upload 100%']);
     });
   });
 

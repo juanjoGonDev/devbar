@@ -1,8 +1,6 @@
 import type {
   Group,
-  LogEntry,
   PreScript,
-  PreStepScriptRef,
   Workflow,
   WorkflowRunRecord,
 } from './domain-types.js';
@@ -71,11 +69,6 @@ export interface WorkflowRunner {
   /** The latest run of every workflow that still exists. */
   runStates(): WorkflowRunState[];
   runState(workflowId: string): WorkflowRunState | null;
-  scriptLog(
-    workflowId: string,
-    runId: number | 'latest',
-    ref: PreStepScriptRef,
-  ): LogEntry[] | null;
   isRunning(workflowId: string): boolean;
   anyRunning(): boolean;
   cancelAll(): void;
@@ -176,8 +169,6 @@ export function createWorkflowRunner(deps: WorkflowRunnerDeps): WorkflowRunner {
         return state ? [state] : [];
       }),
     runState: (id) => runners.get(id)?.getSnapshot() ?? null,
-    scriptLog: (id, runId, ref) =>
-      runners.get(id)?.scriptLog(runId, ref) ?? null,
     isRunning: (id) => runners.get(id)?.isRunning() ?? false,
     anyRunning: () => [...runners.values()].some((r) => r.isRunning()),
     cancelAll: () => {

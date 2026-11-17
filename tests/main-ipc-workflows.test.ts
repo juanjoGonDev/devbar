@@ -63,10 +63,6 @@ function harness() {
       },
       runStates: () => [],
       runState: () => null,
-      scriptLog: (id, runId, ref) => {
-        calls.push(`log:${id}:${runId}:${ref.scriptId}`);
-        return [];
-      },
       isRunning: (id) => id === 'busy',
     },
     workflowEntries: () => [],
@@ -90,7 +86,6 @@ describe('src/main/ipc/workflows-ipc.ts', () => {
       'workflows:stop',
       'workflows:retryFrom',
       'workflows:runState',
-      'workflows:scriptLog',
       'workflows:openLog',
       'groups:setHiddenInTray',
     ]);
@@ -154,18 +149,6 @@ describe('src/main/ipc/workflows-ipc.ts', () => {
       blockId: 'b1',
     });
     expect(h.calls).toEqual(['run:w1:manual', 'stop:w1', 'retry:w1:b1']);
-  });
-
-  it('reads a script log of the latest or a given run', () => {
-    const h = harness();
-    const ref = { groupId: 'g', scriptId: 's' };
-    h.ipc.invoke('workflows:scriptLog', {
-      workflowId: 'w1',
-      runId: 'latest',
-      ref,
-    });
-    h.ipc.invoke('workflows:scriptLog', { workflowId: 'w1', runId: 7, ref });
-    expect(h.calls).toEqual(['log:w1:latest:s', 'log:w1:7:s']);
   });
 
   it('opens a script log, or the run narration without a ref', () => {

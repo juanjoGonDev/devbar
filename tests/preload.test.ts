@@ -465,19 +465,6 @@ const FORWARDS: readonly Forward[] = [
     [],
   ],
   [
-    'getWorkflowScriptLog',
-    (api) =>
-      api.getWorkflowScriptLog('w1', 'latest', { groupId: 'g', scriptId: 's' }),
-    'workflows:scriptLog',
-    [
-      {
-        workflowId: 'w1',
-        runId: 'latest',
-        ref: { groupId: 'g', scriptId: 's' },
-      },
-    ],
-  ],
-  [
     'openWorkflowLog',
     (api) => api.openWorkflowLog('w1'),
     'workflows:openLog',

@@ -113,8 +113,6 @@ export interface RunOneDeps {
   shouldAbort?: () => boolean;
   /** The process is about to be spawned. */
   onStarted?: () => void;
-  /** Every line the script's buffer receives while it runs. */
-  onLog?: (entry: LogEntry) => void;
 }
 
 /**
@@ -203,7 +201,6 @@ export async function runOne(
     entry: LogEntry;
   }): void => {
     if (id !== pid) return;
-    deps.onLog?.(entry);
     if (
       !warned &&
       entry.stream !== 'sys' &&
