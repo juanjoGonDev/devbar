@@ -56,6 +56,8 @@ export interface PreScriptProcessManager {
   stop(processId: string): Promise<{ ok: boolean; error?: string | undefined }>;
   /** Tells a script already running — e.g. for another workflow — apart. */
   getState?(processId: string): { status: string };
+  /** Empties a script's buffer: a start that failed did not. */
+  clearLogs?(processId: string): unknown;
 }
 
 type RunnerStatus = 'running' | 'done' | 'error' | 'idle';
@@ -255,6 +257,10 @@ export async function runOne(
     }
     deps.onStarted?.();
     const result = processManager.start(pid);
+    // start() empties the script's buffer only once it spawned. One that
+    // failed returned before that, and the previous run's lines would read as
+    // this run's above its error. ("Already running" is ok: its live log stays.)
+    if (!result.ok) processManager.clearLogs?.(pid);
     // After start(), which empties the script's buffer for the new run: a
     // line written before it was gone from the very log that shows the run.
     pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
