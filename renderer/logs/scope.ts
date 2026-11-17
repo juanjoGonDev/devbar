@@ -71,6 +71,12 @@ export async function jumpToLine(srcId: string, ts: number): Promise<void> {
 async function selectMergedLog(groupId: string | null): Promise<void> {
   const reload = showsMerged(groupId);
   view.processId = null;
+  // Route this scope's lines from the start, not from its first snapshot: a
+  // failed load replays what it held, and the live lines keep coming. Until a
+  // snapshot names the services, an unknown one is looked up rather than
+  // dropped — and the previous scope's map would let its services in. A
+  // reload keeps the map: it is this scope's already.
+  if (!reload) view.groupSources = new Map();
   dropUnknownSources(); // held lines belong to the old scope
   resetSilenceScope(); // a draft and its marks belong to the previous log
   view.mergedIsAll = groupId === null;

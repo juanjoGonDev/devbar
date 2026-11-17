@@ -535,6 +535,32 @@ describe('renderer/logs/scope.ts', () => {
       expect(bufferedLines()).toEqual(['mientras']);
     });
 
+    it('keeps a merged scope live before its first snapshot ever landed', async () => {
+      // No merged snapshot has named the group's services yet: its lines must
+      // still show — the held one and the live ones after the failure — and
+      // a line of the service the window showed before must stay out.
+      const pending: Pending[] = [];
+      await open({
+        api: {
+          getMergedLogs: answeredByHand(pending),
+          getMergedSources: () => Promise.resolve([source('api')]),
+        },
+      });
+      await scope.selectLog('db'); // a service of another group
+      const first = scope.openScope({ kind: 'group', groupId: 'g1' });
+      await pushLive('db', 'del anterior', 6); // main still on the old scope
+      await pushLive('api', 'mientras', 7);
+      const second = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[1]?.reject(new Error('sin respuesta'));
+      await expect(second).rejects.toThrow('sin respuesta');
+      await pushLive('api', 'después', 8);
+      await pushLive('db', 'ajena', 9);
+      pending[0]?.resolve(merged([source('api')])); // superseded: dropped
+      await first;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bufferedLines()).toEqual(['mientras', 'después']);
+    });
+
     it('a switch to another scope starts empty, failed or not', async () => {
       // The everything view would know the source, so a line inherited from
       // the group's load would show: only a reload may take them over.
