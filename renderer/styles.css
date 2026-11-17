@@ -7048,6 +7048,9 @@ label.remote-row {
   gap: 4px;
   min-width: 0;
   overflow-x: auto;
+  /* overflow-x alone makes y auto too: the 0.5px a pressed button sinks
+     (button:active) then overflowed the 26px strip and drew both bars. */
+  overflow-y: hidden;
 }
 .wf-log-tab {
   flex: none;
