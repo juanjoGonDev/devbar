@@ -254,9 +254,11 @@ export async function runOne(
         void processManager.stop(pid);
       }, script.timeoutMs);
     }
-    pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
     deps.onStarted?.();
     const result = processManager.start(pid);
+    // After start(), which empties the script's buffer for the new run: a
+    // line written before it was gone from the very log that shows the run.
+    pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
     if (!result.ok) {
       if (timeoutToken) {
         clearTimeout(timeoutToken);
