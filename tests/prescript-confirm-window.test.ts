@@ -177,6 +177,26 @@ describe('renderer/prescript-confirm.ts', () => {
       ]);
     });
 
+    it('takes only a click as yes when it asks to install', async () => {
+      const gate = await openGate('?token=t1');
+      await gate.settle(
+        'getPrescriptConfirmContext',
+        context({ clickToConfirm: true }),
+      );
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(gate.callCount('resolvePrescriptConfirm')).toBe(0);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(gate.argsFor('resolvePrescriptConfirm')).toEqual([
+        ['t1', 'cancel'],
+      ]);
+    });
+
+    it('ignores Enter before it knows what it is asking', async () => {
+      const gate = await openGate('?token=t1');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(gate.callCount('resolvePrescriptConfirm')).toBe(0);
+    });
+
     it('ignores a key that means neither', async () => {
       const gate = await openGate('?token=t1');
       await gate.settle('getPrescriptConfirmContext', context());

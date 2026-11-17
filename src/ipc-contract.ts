@@ -154,6 +154,9 @@ export interface PrescriptConfirmContext {
   detail?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  /** Only a click says yes: the modal takes focus while the user may be
+   *  typing elsewhere, and a stray Enter must not restart DevBar. */
+  clickToConfirm?: boolean;
 }
 interface ChangelogPayload {
   releases: ReleaseSummary[];

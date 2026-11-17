@@ -6,6 +6,9 @@ initTheme();
 const token = new URLSearchParams(window.location.search).get('token');
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
 let decided = false;
+// Enter says yes only once the question is on screen, and never where only a
+// click may (installing an update: see `clickToConfirm`).
+let enterConfirms = false;
 function decide(decision: 'confirm' | 'cancel'): void {
   if (decided || !token) return;
   decided = true;
@@ -22,6 +25,7 @@ async function init(): Promise<void> {
     window.close();
     return;
   }
+  enterConfirms = context.clickToConfirm !== true;
   const logo = byId('pc-logo', HTMLImageElement);
   if (context.logo) logo.src = context.logo;
   else logo.style.display = 'none';
@@ -72,7 +76,7 @@ byId('pc-btn-cancel', HTMLButtonElement).addEventListener('click', () =>
   decide('cancel'),
 );
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') decide('confirm');
+  if (event.key === 'Enter' && enterConfirms) decide('confirm');
   else if (event.key === 'Escape') decide('cancel');
 });
 void init();

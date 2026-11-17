@@ -249,6 +249,7 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
                 'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
               confirmLabel: 'Reiniciar e instalar',
               cancelLabel: 'Ahora no',
+              clickToConfirm: true,
             },
             'update',
           ),

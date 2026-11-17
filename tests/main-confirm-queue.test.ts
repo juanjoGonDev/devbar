@@ -226,6 +226,7 @@ describe('src/main/confirm-queue.ts', () => {
           'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
         confirmLabel: 'Reiniciar e instalar',
         cancelLabel: 'Ahora no',
+        clickToConfirm: true,
       });
       expect(timers).toHaveLength(0);
       queue.resolveConfirm('t1', 'confirm');
