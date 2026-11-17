@@ -5218,6 +5218,12 @@ body.prescript-confirm {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.prescript-confirm #pc-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
 .prescript-confirm #pc-countdown {
   margin: 2px 0 6px;
   font-size: 11px;

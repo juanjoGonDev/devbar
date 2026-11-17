@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { harness, update } from './helpers/updater-harness.js';
 
+/**
+ * Staged, and the install modal that staging opens on its own already
+ * answered (with whatever `h.confirm.answer` held), so a test's own apply is
+ * the next question.
+ */
+async function stagedAndAsked(h: ReturnType<typeof harness>): Promise<void> {
+  await vi.waitFor(() => expect(h.asked.length).toBeGreaterThan(0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('src/main/updater.ts', () => {
   describe('status', () => {
     it('starts with nothing known and the running version', () => {
@@ -33,19 +43,17 @@ describe('src/main/updater.ts', () => {
       await vi.waitFor(() =>
         expect(h.calls).toContain('stage:/home/updates/1.3.0'),
       );
-      expect(h.banners.at(-1)).toMatch(/Reinicia para instalarla/);
+      await vi.waitFor(() =>
+        expect(h.notices.at(-1)).toMatch(/Reinicia para instalarla/),
+      );
       log.mockRestore();
     });
 
-    it('asks to restart and install with a banner that waits for an answer', async () => {
+    it('asks with the install modal once the download is ready, and installs nothing until answered', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-      const asked: unknown[] = [];
-      const h = harness({
-        showBannerNotification: (_title, body, options) =>
-          asked.push({ body, options }),
-      });
+      const h = harness();
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(asked).toHaveLength(1));
+      await vi.waitFor(() => expect(h.asked).toEqual(['1.3.0']));
       expect(
         h.calls.filter(
           (call) =>
@@ -53,34 +61,42 @@ describe('src/main/updater.ts', () => {
             call === 'markUpdateExit' ||
             call.startsWith('quit:'),
         ),
-        'staging must leave installing to the user',
+        '«Ahora no» must leave the update waiting',
       ).toEqual([]);
-      expect(asked[0]).toEqual({
-        body: 'v1.3.0 lista. Reinicia para instalarla.',
-        options: {
-          cta: { label: 'Reiniciar e instalar', action: 'install-update' },
-          sticky: true,
-        },
+      expect(h.updater.status().phase).toMatchObject({
+        state: 'ready-to-install',
       });
+      expect(h.notices).toEqual(['v1.3.0 lista. Reinicia para instalarla.']);
+      expect(h.banners).toEqual([]);
       log.mockRestore();
     });
 
-    it('can ask for any version on demand, for the dev panel', () => {
-      const asked: unknown[] = [];
+    it('restarts and installs once the modal is answered yes', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const h = harness();
+      h.confirm.answer = true;
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.calls).toContain('quit:200'));
+      expect(h.calls).toContain('spawnSwap');
+      log.mockRestore();
+    });
+
+    it('opens no second modal while one is still waiting', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
       const h = harness({
-        showBannerNotification: (_title, body, options) =>
-          asked.push({ body, options }),
-      });
-      h.updater.askToInstall('9.9.0');
-      expect(asked).toEqual([
-        {
-          body: 'v9.9.0 lista. Reinicia para instalarla.',
-          options: {
-            cta: { label: 'Reiniciar e instalar', action: 'install-update' },
-            sticky: true,
-          },
+        confirmInstall: (version) => {
+          h.asked.push(version);
+          return new Promise<boolean>(() => undefined);
         },
-      ]);
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+      await expect(h.updater.applyUpdate()).resolves.toEqual({
+        ok: false,
+        busy: true,
+      });
+      expect(h.asked).toHaveLength(1);
+      log.mockRestore();
     });
 
     it('skips the automatic check while automatic updates are off', async () => {
@@ -318,10 +334,13 @@ describe('src/main/updater.ts', () => {
     it('stages a locally built zip through the real announce path', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
       const h = harness();
+      // As the dev panel does: the simulated release first, then its zip.
+      h.updater.setSimulatedUpdate({ ...update, version: '1.4.0' });
       await h.updater.stageFromZip('/tmp/DevBar.zip', '1.4.0');
       expect(h.calls).toContain('extract:/tmp/DevBar.zip');
       expect(h.updater.staged()?.version).toBe('1.4.0');
-      expect(h.banners.at(-1)).toMatch(/v1.4.0 lista/);
+      expect(h.notices.at(-1)).toMatch(/v1.4.0 lista/);
+      expect(h.asked).toEqual(['1.4.0']);
       log.mockRestore();
     });
   });
@@ -339,7 +358,8 @@ describe('src/main/updater.ts', () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
       const h = harness();
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+      await stagedAndAsked(h);
+      h.confirm.answer = true;
       await expect(h.updater.applyUpdate()).resolves.toEqual({
         ok: true,
         quitting: true,
@@ -350,11 +370,11 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
-    it('does nothing when the restart prompt is declined', async () => {
+    it('does nothing when the install modal is declined', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-      const h = harness({ messageBox: () => Promise.resolve({ response: 0 }) });
+      const h = harness();
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+      await stagedAndAsked(h);
       await expect(h.updater.applyUpdate()).resolves.toEqual({
         ok: false,
         cancelled: true,
@@ -362,27 +382,17 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
-    it('installs without a second prompt once the banner was answered', async () => {
-      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-      const messageBox = vi.fn(() => Promise.resolve({ response: 0 }));
-      const h = harness({ messageBox });
-      await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
-      await expect(h.updater.applyUpdate({ confirmed: true })).resolves.toEqual(
-        { ok: true, quitting: true, inPlace: true },
-      );
-      expect(messageBox).not.toHaveBeenCalled();
-      expect(h.calls).toContain('spawnSwap');
-      log.mockRestore();
-    });
-
-    it('reports a restart prompt that could not be shown', async () => {
+    it('reports an install modal that could not be shown', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
       const h = harness({
-        messageBox: () => Promise.reject(new Error('no window')),
+        confirmInstall: (version) => {
+          h.asked.push(version);
+          return Promise.reject(new Error('no window'));
+        },
       });
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+      await stagedAndAsked(h);
+      expect(h.banners).toEqual(['No se pudo actualizar: no window']);
       await expect(h.updater.applyUpdate()).resolves.toEqual({
         ok: false,
         error: 'no window',
@@ -398,7 +408,8 @@ describe('src/main/updater.ts', () => {
         },
       });
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+      await stagedAndAsked(h);
+      h.confirm.answer = true;
       await expect(h.updater.applyUpdate()).resolves.toMatchObject({
         ok: false,
         error: 'permission denied',
@@ -418,10 +429,9 @@ describe('src/main/updater.ts', () => {
   describe('installStagedHeadless', () => {
     it('installs a staged update without asking, for a surface with no dialog', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-      const messageBox = vi.fn(() => Promise.resolve({ response: 0 }));
-      const h = harness({ messageBox });
+      const h = harness();
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+      await stagedAndAsked(h);
 
       expect(h.updater.canInstallStaged()).toBe(true);
       await expect(h.updater.installStagedHeadless()).resolves.toEqual({
@@ -429,7 +439,7 @@ describe('src/main/updater.ts', () => {
         quitting: true,
         inPlace: true,
       });
-      expect(messageBox).not.toHaveBeenCalled();
+      expect(h.asked, 'only the modal staging opened').toHaveLength(1);
       expect(h.calls).toContain('spawnSwap');
       expect(h.updater.status().phase).toEqual({
         state: 'restarting',

@@ -58,8 +58,7 @@ function harness(overrides: Partial<NotificationDeps> = {}) {
     workArea: () => WORK_AREA,
     notifySuccessEnabled: () => true,
     openConfig: (goto) => opened.push(goto),
-    applyUpdate: (confirmed) =>
-      applied.push(confirmed ? 'update:confirmed' : 'update'),
+    applyUpdate: () => applied.push('update'),
     platform: 'darwin',
     setTimer: (fn, ms) => {
       const timer = { fn, ms, cleared: false };
@@ -129,21 +128,18 @@ describe('src/main/notification-banner.ts', () => {
       warn.mockRestore();
     });
 
-    it('keeps a sticky notice in the in-app banner until it is answered', () => {
+    it('only logs a notice its caller shows another way', () => {
       const notices: unknown[] = [];
       const h = harness({ onNotice: (notice) => notices.push(notice) });
       h.notifications.showBannerNotification('DevBar', 'v1.3.0 lista.', {
         cta: { label: 'Reiniciar e instalar', action: 'install-update' },
-        sticky: true,
+        logOnly: true,
       });
-      expect(h.natives).toHaveLength(0);
-      expect(h.windows[0]?.loaded[0]?.options).toMatchObject({
-        query: { secs: '0', cta: 'Reiniciar e instalar' },
-      });
-      expect(h.timers).toHaveLength(0);
       expect(notices).toEqual([
         { title: 'DevBar', body: 'v1.3.0 lista.', action: 'install-update' },
       ]);
+      expect(h.natives).toHaveLength(0);
+      expect(h.windows).toHaveLength(0);
     });
 
     it('routes a CTA click through the action map', () => {
@@ -153,85 +149,6 @@ describe('src/main/notification-banner.ts', () => {
       });
       h.natives[0]?.fire('click');
       expect(h.opened).toEqual(['about']);
-    });
-
-    it('takes a native install click as the answer itself', () => {
-      const h = harness();
-      h.notifications.showBannerNotification('DevBar', 'v1.3.0 lista.', {
-        cta: { label: 'Reiniciar', action: 'install-update' },
-      });
-      h.natives[0]?.fire('click');
-      expect(h.applied).toEqual(['update:confirmed']);
-    });
-  });
-
-  describe('sticky banner', () => {
-    const STICKY = {
-      cta: { label: 'Reiniciar e instalar', action: 'install-update' },
-      sticky: true,
-    };
-
-    it('comes back once a transient banner that replaced it closes', () => {
-      const h = harness({ notificationsSupported: () => false });
-      h.notifications.showBannerNotification('DevBar', 'v1.3.0 lista.', STICKY);
-      h.notifications.showBannerNotification('DevBar', 'api terminó');
-      expect(h.windows[0]?.destroyed).toBe(true);
-      h.timers[0]?.fn();
-      expect(h.windows[1]?.destroyed).toBe(true);
-      expect(h.windows[2]?.loaded[0]?.options).toMatchObject({
-        query: { body: 'v1.3.0 lista.', secs: '0' },
-      });
-    });
-
-    it('comes back when the transient banner is dismissed', () => {
-      const h = harness();
-      h.notifications.showCustomBanner('DevBar', 'v1.3.0 lista.', STICKY);
-      h.notifications.showCustomBanner('DevBar', 'api terminó');
-      h.notifications.dismissBanner();
-      expect(h.windows).toHaveLength(3);
-      expect(h.windows[2]?.destroyed).toBe(false);
-    });
-
-    it('stays gone once it is dismissed itself', () => {
-      const h = harness();
-      h.notifications.showCustomBanner('DevBar', 'v1.3.0 lista.', STICKY);
-      h.notifications.dismissBanner();
-      h.notifications.showCustomBanner('DevBar', 'api terminó');
-      h.timers[0]?.fn();
-      expect(h.windows).toHaveLength(2);
-    });
-  });
-
-  describe('answerBanner', () => {
-    const STICKY = {
-      cta: { label: 'Reiniciar e instalar', action: 'install-update' },
-      sticky: true,
-    };
-
-    it('installs without asking again when its own banner was clicked', () => {
-      const h = harness();
-      h.notifications.showCustomBanner('DevBar', 'v1.3.0 lista.', STICKY);
-      h.notifications.answerBanner(h.windows[0]?.webContents, 'install-update');
-      expect(h.applied).toEqual(['update:confirmed']);
-      expect(h.windows[0]?.destroyed).toBe(true);
-      expect(h.windows).toHaveLength(1);
-    });
-
-    it('still asks, and leaves the banner, when the call comes from elsewhere', () => {
-      const h = harness();
-      h.notifications.showCustomBanner('DevBar', 'v1.3.0 lista.', STICKY);
-      h.notifications.answerBanner({}, 'install-update');
-      expect(h.applied).toEqual(['update']);
-      expect(h.windows[0]?.destroyed).toBe(false);
-    });
-
-    it('still asks when the banner on screen offered something else', () => {
-      const h = harness();
-      h.notifications.showCustomBanner('DevBar', 'hola', {
-        cta: { label: 'Ver', action: 'open-about' },
-      });
-      h.notifications.answerBanner(h.windows[0]?.webContents, 'install-update');
-      expect(h.applied).toEqual(['update']);
     });
   });
 

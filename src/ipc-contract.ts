@@ -148,6 +148,12 @@ export interface PrescriptConfirmContext {
    * script with the same name, so the group is shown as a qualifier next to
    * the script name it belongs to. */
   groupName: string | null;
+  /** Wording for a modal that is not a script (installing an update): the
+   *  title, a line of text in place of the command, and both buttons. */
+  title?: string;
+  detail?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
 }
 interface ChangelogPayload {
   releases: ReleaseSummary[];

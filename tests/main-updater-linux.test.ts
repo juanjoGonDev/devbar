@@ -148,7 +148,7 @@ describe('src/main/updater.ts — Linux flow and reporting', () => {
       vi.restoreAllMocks();
     });
 
-    it('restarts a staged AppImage without a modal confirmation', async () => {
+    it('restarts a staged AppImage once the install modal says yes', async () => {
       vi.spyOn(console, 'log').mockImplementation(() => undefined);
       const box = vi.fn(() => Promise.resolve({ response: 0 }));
       const h = linux({
@@ -164,12 +164,20 @@ describe('src/main/updater.ts — Linux flow and reporting', () => {
           ),
       });
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+      await vi.waitFor(() => expect(h.asked).toEqual(['1.3.0']));
+      expect(h.calls, 'staging alone never restarts').not.toContain(
+        'spawnSwap',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      h.confirm.answer = true;
       await expect(h.updater.applyUpdate()).resolves.toMatchObject({
         ok: true,
         quitting: true,
       });
-      expect(box).not.toHaveBeenCalled();
+      expect(
+        box,
+        'our own modal, never the native dialog',
+      ).not.toHaveBeenCalled();
       expect(h.calls).toContain('spawnSwap');
       vi.restoreAllMocks();
     });

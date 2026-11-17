@@ -37,12 +37,17 @@ function deps(overrides: Partial<DevPanelDeps> = {}) {
     showBanner: () => calls.push('showBanner'),
     showFallbackBanner: () => calls.push('showFallbackBanner'),
     showCompletionNotification: () => calls.push('showCompletionNotification'),
-    askToInstall: (version) => calls.push(`askToInstall:${version}`),
-    showConfirmModal: (script, origin, groupName) => {
-      calls.push(
-        `confirm:${script.name}:${script.command}:${origin}:${groupName}`,
-      );
-      return Promise.resolve(true);
+    confirms: {
+      showConfirmModal: (script, origin, groupName) => {
+        calls.push(
+          `confirm:${script.name}:${script.command}:${origin}:${groupName}`,
+        );
+        return Promise.resolve(true);
+      },
+      confirmInstall: (version) => {
+        calls.push(`askToInstall:${version}`);
+        return Promise.resolve(false);
+      },
     },
     toast: () => calls.push('toast'),
     installedBundle: () => '/Applications/DevBar.app',

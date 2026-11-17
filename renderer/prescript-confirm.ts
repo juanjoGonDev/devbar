@@ -30,8 +30,20 @@ async function init(): Promise<void> {
   const groupEl = byId('pc-group', HTMLElement);
   if (context.groupName) groupEl.textContent = context.groupName;
   else groupEl.style.display = 'none';
-  byId('pc-title', HTMLElement).textContent = `¿Ejecutar «${context.name}»?`;
-  byId('pc-cmd', HTMLElement).textContent = context.command;
+  byId('pc-title', HTMLElement).textContent =
+    context.title ?? `¿Ejecutar «${context.name}»?`;
+  const cmd = byId('pc-cmd', HTMLElement);
+  cmd.textContent = context.command;
+  cmd.hidden = context.command === '';
+  // Not a script (installing an update): a line of text instead of a command.
+  const detail = byId('pc-detail', HTMLElement);
+  detail.textContent = context.detail ?? '';
+  detail.hidden = !context.detail;
+  if (context.confirmLabel)
+    byId('pc-btn-confirm', HTMLButtonElement).textContent =
+      context.confirmLabel;
+  if (context.cancelLabel)
+    byId('pc-btn-cancel', HTMLButtonElement).textContent = context.cancelLabel;
   if (context.secs != null) {
     const button = byId(
       context.onTimeout === 'confirm' ? 'pc-btn-confirm' : 'pc-btn-cancel',

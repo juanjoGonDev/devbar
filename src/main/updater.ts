@@ -97,29 +97,23 @@ export interface UpdaterDeps extends AssistedUpdateDeps, LinuxUpdateDeps {
   configFocused: () => boolean;
   /** The «Actualizar automáticamente» switch, read on every automatic check. */
   autoUpdate: () => boolean;
+  /** The «Reiniciar e instalar» modal (see install-staged-update.ts). */
+  confirmInstall: (version: string) => Promise<boolean>;
   copyText: (text: string) => void;
   showItemInFolder: (target: string) => void;
-}
-
-interface ApplyOptions {
-  confirmed?: boolean;
 }
 
 export interface Updater {
   status: () => UpdateStatus;
   broadcastStatus: () => void;
   runUpdateCheck: (options?: { manual?: boolean }) => Promise<UpdateStatus>;
-  /**
-   * `confirmed`: the user already said yes to restarting (the «Reiniciar e
-   * instalar» banner), so a staged update installs without asking again.
-   */
-  applyUpdate: (options?: ApplyOptions) => Promise<ApplyUpdateResult>;
+  applyUpdate: () => Promise<ApplyUpdateResult>;
   /**
    * applyUpdate for surfaces that cannot show the result themselves (tray
    * menu, banner button): failures and "your turn" steps become a banner
    * that opens the Updates pane. Never rejects.
    */
-  applyUpdateAndReport: (options?: ApplyOptions) => Promise<void>;
+  applyUpdateAndReport: () => Promise<void>;
   copyInstallCommand: () => SimpleResult;
   showDownloadedFile: () => SimpleResult;
   /** Dev simulation: stage a locally built zip through the real code path. */
@@ -132,8 +126,6 @@ export interface Updater {
   installStagedHeadless: () => Promise<ApplyUpdateResult>;
   available: () => AvailableUpdate | null;
   staged: () => StagedUpdate | null;
-  /** The «Reiniciar e instalar» prompt on its own, for the dev panel. */
-  askToInstall: (version: string) => void;
   setSimulatedUpdate: (update: AvailableUpdate | null) => void;
 }
 
@@ -146,6 +138,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   let updateNotifiedThisLaunch = false; // banner shown at most once per launch
   let stagedUpdate: StagedUpdate | null = null; // downloaded, waiting for restart
   let stagingVersion: string | null = null; // download in flight, avoid duplicates
+  let asking = false; // the install modal is waiting for an answer
   // The automatic loop must not re-pull ~100 MB every 5 minutes after a
   // failure; an explicit retry from the user clears the entry.
   const stagingFailedVersions = new Set<string>();
@@ -199,22 +192,18 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     });
     broadcastStatus();
     deps.refreshTrayIcon();
-    askToInstall(staged.version);
-  }
-
-  /**
-   * Asks for permission and waits for it: installing restarts DevBar (and the
-   * services it runs), so it never happens on its own.
-   */
-  function askToInstall(version: string): void {
+    // A linked phone still hears about it; here, the modal below says it.
     deps.showBannerNotification(
       BANNER_TITLE,
-      `v${version} lista. Reinicia para instalarla.`,
+      `v${staged.version} lista. Reinicia para instalarla.`,
       {
         cta: { label: 'Reiniciar e instalar', action: 'install-update' },
-        sticky: true,
+        logOnly: true,
       },
     );
+    // Asks with the install modal and waits for the answer: installing
+    // restarts DevBar (and the services it runs), so it never happens alone.
+    void applyUpdateAndReport();
   }
 
   /** Drop previously staged versions — each one is a full copy of the app. */
@@ -327,13 +316,12 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     return linux.download(update);
   }
 
-  async function applyUpdate({
-    confirmed = false,
-  }: ApplyOptions = {}): Promise<ApplyUpdateResult> {
+  async function applyUpdate(): Promise<ApplyUpdateResult> {
     if (!availableUpdate) return { ok: false, error: 'no_update' };
     const update = availableUpdate;
     const current = phase.get();
-    if (isBusyPhase(current) || stagingVersion === update.version)
+    // `asking`: the install modal is already up; a second one would queue.
+    if (isBusyPhase(current) || stagingVersion === update.version || asking)
       return { ok: false, busy: true };
     const staged = stagedUpdate;
     const target = deps.installedAppPath();
@@ -342,11 +330,16 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       staged &&
       staged.version === update.version &&
       deps.canInstallInPlace(target)
-    )
-      res = await installStagedUpdate(deps, phase, staged, target, {
-        ask: !confirmed,
-      });
-    else if (deps.platform === 'linux')
+    ) {
+      asking = true;
+      try {
+        res = await installStagedUpdate(deps, phase, staged, target, {
+          ask: true,
+        });
+      } finally {
+        asking = false;
+      }
+    } else if (deps.platform === 'linux')
       res = await applyLinuxUpdate(update, current, target);
     else res = await runAssistedUpdate(deps, update, phase);
     // Failures that went through the phase store are logged there already.
@@ -355,6 +348,22 @@ export function createUpdater(deps: UpdaterDeps): Updater {
         `[updates] no se pudo actualizar a v${update.version}: ${res.error ?? 'desconocido'}`,
       );
     return res;
+  }
+
+  /**
+   * applyUpdate for surfaces that cannot show the result themselves: failures
+   * and "your turn" steps become a banner that opens the Updates pane.
+   */
+  async function applyUpdateAndReport(): Promise<void> {
+    let res: ApplyUpdateResult;
+    try {
+      res = await applyUpdate();
+    } catch (err) {
+      res = { ok: false, error: errorMessage(err) };
+      console.error(`[updates] no se pudo actualizar: ${res.error}`);
+    }
+    const report = applyReport(res, phase.get());
+    if (report) deps.showBannerNotification(BANNER_TITLE, report, OPEN_UPDATES);
   }
 
   /** The staged update and where it goes, when a swap could start now. */
@@ -386,20 +395,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     },
     available: () => availableUpdate,
     staged: () => stagedUpdate,
-    askToInstall,
-
-    async applyUpdateAndReport(options): Promise<void> {
-      let res: ApplyUpdateResult;
-      try {
-        res = await applyUpdate(options);
-      } catch (err) {
-        res = { ok: false, error: errorMessage(err) };
-        console.error(`[updates] no se pudo actualizar: ${res.error}`);
-      }
-      const report = applyReport(res, phase.get());
-      if (report)
-        deps.showBannerNotification(BANNER_TITLE, report, OPEN_UPDATES);
-    },
+    applyUpdateAndReport,
     copyInstallCommand: () => copyPhaseCommand(phase.get(), deps.copyText),
     showDownloadedFile: () => showPhaseFile(phase.get(), deps.showItemInFolder),
 

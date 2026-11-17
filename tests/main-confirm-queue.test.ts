@@ -209,6 +209,52 @@ describe('src/main/confirm-queue.ts', () => {
     });
   });
 
+  describe('confirmInstall', () => {
+    it('asks to restart and install the downloaded version, with no countdown', async () => {
+      const { queue, timers } = harness();
+      const answer = queue.confirmInstall('1.3.0');
+      await tick();
+      expect(queue.getContext('t1')).toEqual({
+        name: 'DevBar v1.3.0',
+        command: '',
+        secs: null,
+        onTimeout: 'cancel',
+        logo: 'data:image/png;base64,LOGO',
+        groupName: null,
+        title: 'DevBar v1.3.0 está lista',
+        detail:
+          'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
+        confirmLabel: 'Reiniciar e instalar',
+        cancelLabel: 'Ahora no',
+      });
+      expect(timers).toHaveLength(0);
+      queue.resolveConfirm('t1', 'confirm');
+      await expect(answer).resolves.toBe(true);
+    });
+
+    it('waits its turn behind a script confirmation', async () => {
+      const { queue, windows } = harness();
+      void queue.confirmScript(script, null);
+      const answer = queue.confirmInstall('1.3.0');
+      await tick();
+      expect(windows).toHaveLength(1);
+      queue.resolveConfirm('t1', 'cancel');
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'cancel');
+      await expect(answer).resolves.toBe(false);
+    });
+
+    it('stays open through a pipeline cancel, and off a phone', async () => {
+      const { queue } = harness();
+      void queue.confirmInstall('1.3.0');
+      await tick();
+      queue.cancelConfirm();
+      expect(queue.hasPending('t1')).toBe(true);
+      expect(queue.pending()).toEqual([]);
+    });
+  });
+
   describe('confirmIfNeeded', () => {
     it('lets an unguarded target through without a modal', async () => {
       const { queue, windows } = harness();

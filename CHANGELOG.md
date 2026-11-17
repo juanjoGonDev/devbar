@@ -9,9 +9,11 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 - **Actualizaciones automáticas, con permiso.** DevBar busca, descarga y
   prepara las nuevas versiones en segundo plano y, cuando una está lista, te
-  lo pregunta con un aviso que se queda en pantalla hasta que respondes:
-  «Reiniciar e instalar» la instala y vuelve a abrir DevBar; cerrarlo la deja
-  para más tarde en Acerca de. Nunca reinicia por su cuenta. Se activa o
+  lo pregunta con una ventana que aparece por encima de todo, como la
+  confirmación de los scripts, y espera tu respuesta: «Reiniciar e instalar»
+  la instala y vuelve a abrir DevBar; «Ahora no» la deja para más tarde en
+  Acerca de. Nunca reinicia por su cuenta. Instalar desde Acerca de o desde
+  el menú de la barra también pregunta con esa ventana. Se activa o
   desactiva en Ajustes › General › Actualizaciones (activado por defecto);
   desactivado, solo busca cuando pulsas «Buscar ahora».
 

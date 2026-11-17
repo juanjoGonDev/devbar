@@ -224,8 +224,7 @@ const notifications = createNotifications({
   notificationsSupported: () => Notification.isSupported(),
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
-  // Confirmed only for a click on the update's own prompt: that is the yes.
-  applyUpdate: (confirmed) => void updater.applyUpdateAndReport({ confirmed }),
+  applyUpdate: () => void updater.applyUpdateAndReport(),
   platform: process.platform,
   onNotice: (notice) => remote.notice(notice),
 });
@@ -245,6 +244,7 @@ const updater = createUpdater({
   configFocused: () =>
     Boolean(registry.config && (registry.config as BrowserWindow).isFocused()),
   autoUpdate: () => configStore.getGlobalSettings().autoUpdate,
+  confirmInstall: confirms.confirmInstall,
 });
 
 const startup = createStartup({
@@ -330,8 +330,7 @@ const devHooks = {
   showBanner: notifications.showBannerNotification,
   showFallbackBanner: notifications.showCustomBanner,
   showCompletionNotification: notifications.showCompletionNotification,
-  askToInstall: updater.askToInstall,
-  showConfirmModal: confirms.showConfirmModal,
+  confirms,
   toast,
   installedBundle: selfUpdate.installedAppPath,
   updatesDir: host.updatesDir,

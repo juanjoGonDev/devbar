@@ -50,7 +50,7 @@ export interface AssistedUpdateDeps extends VerifiedDownloadDeps {
   showBannerNotification: (
     title: string,
     body: string,
-    options?: { cta?: { label: string; action: string }; sticky?: boolean },
+    options?: { cta?: { label: string; action: string }; logOnly?: boolean },
   ) => void;
   toast: (kind: string, message: string) => void;
   /** Record this exit as an UPDATE so the relaunch may resume the services. */

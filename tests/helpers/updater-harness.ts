@@ -20,6 +20,12 @@ export const update: AvailableUpdate = {
 export function harness(overrides: Partial<UpdaterDeps> = {}) {
   const calls: string[] = [];
   const banners: string[] = [];
+  /** Every version the install modal asked about, in order. */
+  const asked: string[] = [];
+  /** What the user answers in the install modal; «Ahora no» by default. */
+  const confirm = { answer: false };
+  /** Notices kept for a linked phone. */
+  const notices: string[] = [];
   const toasts: { kind: string; message: string }[] = [];
   const statuses: unknown[] = [];
   const phases: UpdatePhase[] = [];
@@ -95,18 +101,26 @@ export function harness(overrides: Partial<UpdaterDeps> = {}) {
     copyText: (text) => calls.push(`copy:${text}`),
     showItemInFolder: (target) => calls.push(`show:${target}`),
     refreshTrayIcon: () => calls.push('refreshTrayIcon'),
-    showBannerNotification: (_title, body) => banners.push(body),
+    showBannerNotification: (_title, body, options) =>
+      (options?.logOnly ? notices : banners).push(body),
     toast: (kind, message) => toasts.push({ kind, message }),
     markUpdateExit: () => calls.push('markUpdateExit'),
     quitAfter: (ms) => calls.push(`quit:${ms}`),
     configFocused: () => false,
     autoUpdate: () => true,
+    confirmInstall: (version) => {
+      asked.push(version);
+      return Promise.resolve(confirm.answer);
+    },
     ...overrides,
   };
   return {
     updater: createUpdater(deps),
     calls,
     banners,
+    asked,
+    confirm,
+    notices,
     toasts,
     statuses,
     phases,

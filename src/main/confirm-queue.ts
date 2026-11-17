@@ -24,9 +24,11 @@ export interface ConfirmWindowLike {
  * confirmation (`confirmIfNeeded`). Both origins share the SAME serial modal
  * queue (ADR-2) and the SAME pending map — origin only decides which entries
  * `cancelConfirm` may resolve, and which queued jobs the generation counter
- * may pre-empt.
+ * may pre-empt. `update` = restarting to install a downloaded update: never
+ * cancelled by a pipeline cancel, and kept off a phone (which installs
+ * through its own button).
  */
-type ConfirmOrigin = 'pipeline' | 'interactive';
+type ConfirmOrigin = 'pipeline' | 'interactive' | 'update';
 
 /** The fields a confirmable target contributes to the modal. */
 type ConfirmableScript = Pick<
@@ -70,6 +72,8 @@ export interface ConfirmQueue {
     target: Command | Action | null | undefined,
     group: Group | null,
   ) => Promise<boolean>;
+  /** «Reiniciar e instalar» for a downloaded update; waits for an answer. */
+  confirmInstall: (version: string) => Promise<boolean>;
   cancelConfirm: () => void;
   resolveConfirm: (token: string, decision: ConfirmDecision) => void;
   hasPending: (token: string) => boolean;
@@ -112,59 +116,67 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     changed();
   }
 
-  function showConfirmModal(
-    script: ConfirmableScript,
+  function openModal(
+    context: PrescriptConfirmContext,
     origin: ConfirmOrigin,
-    groupName: string | null,
   ): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       const token = newToken();
+      const { secs, onTimeout } = context;
       const entry: PendingConfirm = {
         resolve,
         timer: null,
         win: null,
         origin,
-        context: {
-          name: script.name,
-          command: [script.command, ...(script.args || [])].join(' ').trim(),
-          secs: script.confirmSecs, // null => no countdown (indefinite)
-          onTimeout: script.confirmOnTimeout, // 'confirm' | 'cancel'
-          logo: deps.logo(),
-          groupName,
-        },
-        deadline:
-          script.confirmSecs == null ? null : now() + script.confirmSecs * 1000,
+        context,
+        deadline: secs == null ? null : now() + secs * 1000,
       };
       pendingConfirms.set(token, entry);
       entry.win = deps.openWindow(token);
       changed();
       // AUTHORITATIVE auto-resolve timer lives in MAIN (ADR-1) — the
       // renderer's countdown is purely cosmetic and never resolves on its own.
-      if (script.confirmSecs != null) {
+      if (secs != null)
         entry.timer = setTimer(
-          () => resolveConfirm(token, script.confirmOnTimeout),
-          script.confirmSecs * 1000,
+          () => resolveConfirm(token, onTimeout),
+          secs * 1000,
         );
-      }
     });
   }
 
-  /**
-   * Shared enqueue mechanics for BOTH origins: always serializes through the
-   * SAME chain so only one modal ever shows at a time (ADR-2). Only a
-   * `pipeline` job can be pre-empted while still queued; an `interactive` job
-   * always shows when its turn comes up.
-   */
-  function enqueueConfirm(
+  function showConfirmModal(
     script: ConfirmableScript,
     origin: ConfirmOrigin,
     groupName: string | null,
+  ): Promise<boolean> {
+    return openModal(
+      {
+        name: script.name,
+        command: [script.command, ...(script.args || [])].join(' ').trim(),
+        secs: script.confirmSecs, // null => no countdown (indefinite)
+        onTimeout: script.confirmOnTimeout, // 'confirm' | 'cancel'
+        logo: deps.logo(),
+        groupName,
+      },
+      origin,
+    );
+  }
+
+  /**
+   * Shared enqueue mechanics for EVERY origin: always serializes through the
+   * SAME chain so only one modal ever shows at a time (ADR-2). Only a
+   * `pipeline` job can be pre-empted while still queued; any other job always
+   * shows when its turn comes up.
+   */
+  function enqueue(
+    show: () => Promise<boolean>,
+    origin: ConfirmOrigin,
   ): Promise<boolean> {
     const generation = pipelineConfirmGeneration;
     const run = (): Promise<boolean> =>
       origin === 'pipeline' && generation !== pipelineConfirmGeneration
         ? Promise.resolve(false)
-        : showConfirmModal(script, origin, groupName); // never rejects
+        : show(); // never rejects
     const result = confirmChain.then(run, run);
     confirmChain = result.then(
       () => undefined,
@@ -181,15 +193,17 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     // The logo stays out: it is the desktop modal's data URL, kilobytes a
     // phone has no use for.
     pending: () =>
-      [...pendingConfirms].map(([token, { context, deadline }]) => ({
-        token,
-        name: context.name,
-        command: context.command,
-        groupName: context.groupName,
-        secs: context.secs,
-        onTimeout: context.onTimeout,
-        deadline,
-      })),
+      [...pendingConfirms]
+        .filter(([, { origin }]) => origin !== 'update')
+        .map(([token, { context, deadline }]) => ({
+          token,
+          name: context.name,
+          command: context.command,
+          groupName: context.groupName,
+          secs: context.secs,
+          onTimeout: context.onTimeout,
+          deadline,
+        })),
     onChange: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -213,7 +227,33 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
 
     /** Injected into the pre-script runner. */
     confirmScript(script, group) {
-      return enqueueConfirm(script, 'pipeline', group?.name ?? null);
+      return enqueue(
+        () => showConfirmModal(script, 'pipeline', group?.name ?? null),
+        'pipeline',
+      );
+    },
+
+    confirmInstall(version) {
+      return enqueue(
+        () =>
+          openModal(
+            {
+              name: `DevBar v${version}`,
+              command: '',
+              secs: null, // waits for the user, however long it takes
+              onTimeout: 'cancel',
+              logo: deps.logo(),
+              groupName: null,
+              title: `DevBar v${version} está lista`,
+              detail:
+                'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
+              confirmLabel: 'Reiniciar e instalar',
+              cancelLabel: 'Ahora no',
+            },
+            'update',
+          ),
+        'update',
+      );
     },
 
     /**
@@ -226,16 +266,16 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
       if (!target || !target.confirm) return Promise.resolve(true);
       // origin 'interactive': a manual/scheduled confirmation must never be
       // cancelled or pre-empted by an unrelated pipeline cancel.
-      return enqueueConfirm(
-        {
-          name: target.name,
-          command: target.command,
-          args: target.args,
-          confirmSecs: target.confirmSecs,
-          confirmOnTimeout: target.confirmOnTimeout,
-        },
+      const script = {
+        name: target.name,
+        command: target.command,
+        args: target.args,
+        confirmSecs: target.confirmSecs,
+        confirmOnTimeout: target.confirmOnTimeout,
+      };
+      return enqueue(
+        () => showConfirmModal(script, 'interactive', group?.name ?? null),
         'interactive',
-        group?.name ?? null,
       );
     },
   };
