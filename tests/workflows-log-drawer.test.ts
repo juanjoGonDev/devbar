@@ -300,6 +300,25 @@ describe('renderer/workflows/log-drawer.ts', () => {
     expect(toggles).toEqual([true, false]);
   });
 
+  it('reads the script again after a read that failed', async () => {
+    const drawer = await mount(finished());
+    drawer.open('front::deps');
+    await win?.fail('getLogs', new Error('gone'));
+    drawer.update(); // the next repaint: not left empty for good
+    expect(win?.argsFor('getLogs')).toEqual([[DEPS_ID], [DEPS_ID]]);
+    await win?.settle('getLogs', snapshot([line('instalando')]));
+    expect(texts()).toEqual(['instalando']);
+  });
+
+  it('lets a failed read of a script no longer selected go', async () => {
+    const drawer = await mount(finished());
+    drawer.open('front::deps');
+    q('.wf-log-tab[data-ref="back::setup"]').click();
+    await win?.fail('getLogs', new Error('gone')); // the deps read
+    drawer.update();
+    expect(win?.argsFor('getLogs')).toEqual([[DEPS_ID], [SETUP_ID]]);
+  });
+
   it('stays empty without a run, and survives a failed read', async () => {
     const drawer = await mount(null);
     drawer.open(null);

@@ -137,9 +137,14 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
     const processId = makePreScriptId(script.groupId, script.scriptId);
     if (shown?.processId === processId && shown.startedAt === script.startedAt)
       return;
-    shown = { processId, startedAt: script.startedAt };
+    const target = { processId, startedAt: script.startedAt };
+    shown = target;
     empty.hidden = true;
-    void view.open(processId);
+    void view.open(processId).then((opened) => {
+      // A read that failed is not shown: the next repaint tries again. One
+      // the selection already left behind owns nothing to undo.
+      if (!opened && shown === target) shown = null;
+    });
   }
 
   function paintMeta(script: WorkflowScriptRunState | null): void {
