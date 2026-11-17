@@ -100,6 +100,7 @@ export function harness(overrides: Partial<UpdaterDeps> = {}) {
     markUpdateExit: () => calls.push('markUpdateExit'),
     quitAfter: (ms) => calls.push(`quit:${ms}`),
     configFocused: () => false,
+    autoUpdate: () => true,
     ...overrides,
   };
   return {

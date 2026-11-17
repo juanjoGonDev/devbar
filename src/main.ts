@@ -224,7 +224,8 @@ const notifications = createNotifications({
   notificationsSupported: () => Notification.isSupported(),
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
-  applyUpdate: () => void updater.applyUpdateAndReport(),
+  // The banner's «Reiniciar e instalar» click is the user's yes.
+  applyUpdate: () => void updater.applyUpdateAndReport({ confirmed: true }),
   platform: process.platform,
   onNotice: (notice) => remote.notice(notice),
 });
@@ -243,6 +244,7 @@ const updater = createUpdater({
   quitAfter: (ms) => setTimeout(() => app.quit(), ms),
   configFocused: () =>
     Boolean(registry.config && (registry.config as BrowserWindow).isFocused()),
+  autoUpdate: () => configStore.getGlobalSettings().autoUpdate,
 });
 
 const startup = createStartup({

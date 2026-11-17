@@ -37,6 +37,43 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
+    it('asks to restart and install with a banner that waits for an answer', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const asked: unknown[] = [];
+      const h = harness({
+        showBannerNotification: (_title, body, options) =>
+          asked.push({ body, options }),
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(asked).toHaveLength(1));
+      expect(asked[0]).toEqual({
+        body: 'v1.3.0 lista. Reinicia para instalarla.',
+        options: {
+          cta: { label: 'Reiniciar e instalar', action: 'install-update' },
+          sticky: true,
+        },
+      });
+      log.mockRestore();
+    });
+
+    it('skips the automatic check while automatic updates are off', async () => {
+      const checkForUpdate = vi.fn(() => Promise.resolve(update));
+      const h = harness({ autoUpdate: () => false, checkForUpdate });
+      const result = await h.updater.runUpdateCheck();
+      expect(checkForUpdate).not.toHaveBeenCalled();
+      expect(result.available).toBeNull();
+      expect(result.lastCheckAt).toBeNull();
+    });
+
+    it('still checks when the user asks while automatic updates are off', async () => {
+      const h = harness({
+        autoUpdate: () => false,
+        stageableAsset: () => null,
+      });
+      const result = await h.updater.runUpdateCheck({ manual: true });
+      expect(result.available).toEqual(update);
+    });
+
     it('records no update when GitHub has nothing newer', async () => {
       const h = harness({ checkForUpdate: () => Promise.resolve(null) });
       await h.updater.runUpdateCheck();
@@ -280,6 +317,20 @@ describe('src/main/updater.ts', () => {
         ok: false,
         cancelled: true,
       });
+      log.mockRestore();
+    });
+
+    it('installs without a second prompt once the banner was answered', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const messageBox = vi.fn(() => Promise.resolve({ response: 0 }));
+      const h = harness({ messageBox });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
+      await expect(h.updater.applyUpdate({ confirmed: true })).resolves.toEqual(
+        { ok: true, quitting: true, inPlace: true },
+      );
+      expect(messageBox).not.toHaveBeenCalled();
+      expect(h.calls).toContain('spawnSwap');
       log.mockRestore();
     });
 

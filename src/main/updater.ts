@@ -95,21 +95,31 @@ export interface UpdaterDeps extends AssistedUpdateDeps, LinuxUpdateDeps {
   ) => void;
   refreshTrayIcon: () => void;
   configFocused: () => boolean;
+  /** The «Actualizar automáticamente» switch, read on every automatic check. */
+  autoUpdate: () => boolean;
   copyText: (text: string) => void;
   showItemInFolder: (target: string) => void;
+}
+
+interface ApplyOptions {
+  confirmed?: boolean;
 }
 
 export interface Updater {
   status: () => UpdateStatus;
   broadcastStatus: () => void;
   runUpdateCheck: (options?: { manual?: boolean }) => Promise<UpdateStatus>;
-  applyUpdate: () => Promise<ApplyUpdateResult>;
+  /**
+   * `confirmed`: the user already said yes to restarting (the «Reiniciar e
+   * instalar» banner), so a staged update installs without asking again.
+   */
+  applyUpdate: (options?: ApplyOptions) => Promise<ApplyUpdateResult>;
   /**
    * applyUpdate for surfaces that cannot show the result themselves (tray
    * menu, banner button): failures and "your turn" steps become a banner
    * that opens the Updates pane. Never rejects.
    */
-  applyUpdateAndReport: () => Promise<void>;
+  applyUpdateAndReport: (options?: ApplyOptions) => Promise<void>;
   copyInstallCommand: () => SimpleResult;
   showDownloadedFile: () => SimpleResult;
   /** Dev simulation: stage a locally built zip through the real code path. */
@@ -187,10 +197,15 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     });
     broadcastStatus();
     deps.refreshTrayIcon();
+    // Asks for permission and waits for it: installing restarts DevBar (and
+    // the services it runs), so it never happens on its own.
     deps.showBannerNotification(
       BANNER_TITLE,
       `v${staged.version} lista. Reinicia para instalarla.`,
-      { cta: { label: 'Reiniciar', action: 'install-update' } },
+      {
+        cta: { label: 'Reiniciar e instalar', action: 'install-update' },
+        sticky: true,
+      },
     );
   }
 
@@ -304,7 +319,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     return linux.download(update);
   }
 
-  async function applyUpdate(): Promise<ApplyUpdateResult> {
+  async function applyUpdate({
+    confirmed = false,
+  }: ApplyOptions = {}): Promise<ApplyUpdateResult> {
     if (!availableUpdate) return { ok: false, error: 'no_update' };
     const update = availableUpdate;
     const current = phase.get();
@@ -319,7 +336,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       deps.canInstallInPlace(target)
     )
       res = await installStagedUpdate(deps, phase, staged, target, {
-        ask: true,
+        ask: !confirmed,
       });
     else if (deps.platform === 'linux')
       res = await applyLinuxUpdate(update, current, target);
@@ -362,10 +379,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     available: () => availableUpdate,
     staged: () => stagedUpdate,
 
-    async applyUpdateAndReport(): Promise<void> {
+    async applyUpdateAndReport(options): Promise<void> {
       let res: ApplyUpdateResult;
       try {
-        res = await applyUpdate();
+        res = await applyUpdate(options);
       } catch (err) {
         res = { ok: false, error: errorMessage(err) };
         console.error(`[updates] no se pudo actualizar: ${res.error}`);
@@ -383,6 +400,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
      * is reported as such — never as "up to date".
      */
     async runUpdateCheck({ manual = false } = {}) {
+      if (!manual && !deps.autoUpdate()) return status();
       if (manual && isSettledPhase(phase.get()))
         phase.set({ state: 'checking' });
       let found: AvailableUpdate | null;

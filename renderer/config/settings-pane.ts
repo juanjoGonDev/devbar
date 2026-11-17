@@ -6,6 +6,7 @@ import { errorMessage, type ShowToast } from './toast.js';
 export interface SettingsPaneElements {
   autostart: HTMLInputElement;
   autostartHint: HTMLElement;
+  autoUpdate: HTMLInputElement;
   silenceWarnings: HTMLInputElement;
   silenceErrors: HTMLInputElement;
   maxLogLines: HTMLInputElement;
@@ -75,6 +76,7 @@ export function createSettingsPane(
       return false;
     }
     els.autostart.checked = !!s.autostart;
+    els.autoUpdate.checked = s.autoUpdate !== false;
     selectedTheme = s.theme ?? 'auto';
     markThemeOption();
     els.silenceWarnings.checked = !!s.silenceWarnings;
@@ -103,6 +105,7 @@ export function createSettingsPane(
         : Number(maxLogLinesRaw) || DEFAULT_MAX_LOG_LINES;
     await window.api.saveSettings({
       autostart: els.autostart.checked,
+      autoUpdate: els.autoUpdate.checked,
       theme: selectedTheme,
       silenceWarnings: els.silenceWarnings.checked,
       silenceErrors: els.silenceErrors.checked,
@@ -225,6 +228,7 @@ export function createSettingsPane(
     });
 
   els.autostart.addEventListener('change', persistSettings);
+  els.autoUpdate.addEventListener('change', persistSettings);
   els.silenceWarnings.addEventListener('change', persistSettings);
   els.silenceErrors.addEventListener('change', persistSettings);
   if (els.maxLogLines) {

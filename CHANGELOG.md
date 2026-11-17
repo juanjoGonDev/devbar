@@ -3,6 +3,18 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.15.0] - 2026-11-17
+
+### Añadido
+
+- **Actualizaciones automáticas, con permiso.** DevBar busca, descarga y
+  prepara las nuevas versiones en segundo plano y, cuando una está lista, te
+  lo pregunta con un aviso que se queda en pantalla hasta que respondes:
+  «Reiniciar e instalar» la instala y vuelve a abrir DevBar; cerrarlo la deja
+  para más tarde en Acerca de. Nunca reinicia por su cuenta. Se activa o
+  desactiva en Ajustes › General › Actualizaciones (activado por defecto);
+  desactivado, solo busca cuando pulsas «Buscar ahora».
+
 ## [0.14.0] - 2026-11-03
 
 ### Añadido

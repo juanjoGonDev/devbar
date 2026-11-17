@@ -128,6 +128,23 @@ describe('src/main/notification-banner.ts', () => {
       warn.mockRestore();
     });
 
+    it('keeps a sticky notice in the in-app banner until it is answered', () => {
+      const notices: unknown[] = [];
+      const h = harness({ onNotice: (notice) => notices.push(notice) });
+      h.notifications.showBannerNotification('DevBar', 'v1.3.0 lista.', {
+        cta: { label: 'Reiniciar e instalar', action: 'install-update' },
+        sticky: true,
+      });
+      expect(h.natives).toHaveLength(0);
+      expect(h.windows[0]?.loaded[0]?.options).toMatchObject({
+        query: { secs: '0', cta: 'Reiniciar e instalar' },
+      });
+      expect(h.timers).toHaveLength(0);
+      expect(notices).toEqual([
+        { title: 'DevBar', body: 'v1.3.0 lista.', action: 'install-update' },
+      ]);
+    });
+
     it('routes a CTA click through the action map', () => {
       const h = harness();
       h.notifications.showBannerNotification('DevBar', 'hola', {

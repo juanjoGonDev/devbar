@@ -18,6 +18,7 @@ function settings(extra: Partial<GlobalSettings> = {}): GlobalSettings {
     notifySuccess: false,
     showHiddenGroupsFold: false,
     showHiddenWorkflowsFold: true,
+    autoUpdate: false,
     mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
     ...extra,
   };
@@ -109,6 +110,7 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-notify-success').checked).toBe(false);
       expect(input('set-show-hidden-groups-fold').checked).toBe(false);
       expect(input('set-show-hidden-workflows-fold').checked).toBe(true);
+      expect(input('set-auto-update').checked).toBe(false);
       expect(themeButton('dark').getAttribute('aria-pressed')).toBe('true');
       expect(themeButton('auto').getAttribute('aria-pressed')).toBe('false');
     });
@@ -126,6 +128,7 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-notify-success').checked).toBe(true);
       expect(input('set-show-hidden-groups-fold').checked).toBe(true);
       expect(input('set-show-hidden-workflows-fold').checked).toBe(false);
+      expect(input('set-auto-update').checked).toBe(true);
     });
   });
 
@@ -178,6 +181,21 @@ describe('renderer/config/settings-pane.ts', () => {
       toggle.dispatchEvent(new Event('change'));
       expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
         showHiddenWorkflowsFold: false,
+      });
+    });
+
+    it('persists the automatic updates switch', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      expect(toggle.closest('label')?.textContent).toContain(
+        'Actualizar automáticamente',
+      );
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+        autoUpdate: true,
       });
     });
 

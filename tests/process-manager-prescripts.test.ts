@@ -61,6 +61,7 @@ const GLOBAL_SETTINGS: GlobalSettings = {
   notifySuccess: true,
   showHiddenGroupsFold: true,
   showHiddenWorkflowsFold: false,
+  autoUpdate: true,
   mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
 };
 

@@ -40,6 +40,11 @@ interface BannerOptions {
    * phone, which «Control remoto» logs for every phone but that one).
    */
   record?: boolean;
+  /**
+   * Stays on screen until it is answered: always the in-app banner (a system
+   * notification may vanish on its own), with no auto-close timer.
+   */
+  sticky?: boolean;
 }
 
 export interface NotificationDeps {
@@ -74,7 +79,7 @@ export interface Notifications {
   showCustomBanner: (
     title: string,
     body: string,
-    options?: { cta?: BannerCta },
+    options?: { cta?: BannerCta; sticky?: boolean },
   ) => void;
   /** Gated by the global `notifySuccess` toggle. */
   showCompletionNotification: (title: string, body: string) => void;
@@ -102,10 +107,10 @@ export function createNotifications(deps: NotificationDeps): Notifications {
   function showCustomBanner(
     title: string,
     body: string,
-    { cta }: { cta?: BannerCta } = {},
+    { cta, sticky = false }: { cta?: BannerCta; sticky?: boolean } = {},
   ): void {
     closeNotificationWindow(); // replace any visible banner
-    const secs = BANNER_AUTOCLOSE_SECS;
+    const secs = sticky ? 0 : BANNER_AUTOCLOSE_SECS;
     const bounds = bannerBounds(deps.workArea());
     // Linux sessions often run WITHOUT a compositor (Raspberry Pi OS among
     // them), and a transparent window over no compositor is a solid black
@@ -168,6 +173,10 @@ export function createNotifications(deps: NotificationDeps): Notifications {
   ): void {
     if (options.record !== false)
       deps.onNotice?.({ title, body, action: options.cta?.action ?? null });
+    if (options.sticky) {
+      showCustomBanner(title, body, options);
+      return;
+    }
     if (!deps.notificationsSupported()) {
       console.log('[notify] sistema no soportado → banner propio');
       showCustomBanner(title, body, options);

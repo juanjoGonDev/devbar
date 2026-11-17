@@ -324,8 +324,17 @@ describe('src/config-store/store.ts', () => {
         notifySuccess: true,
         showHiddenGroupsFold: true,
         showHiddenWorkflowsFold: false,
+        autoUpdate: true,
         mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
       });
+    });
+
+    it('keeps automatic updates on for settings saved before the switch existed', async () => {
+      const store = await harness.open({
+        seed: { version: 4, globalSettings: { theme: 'dark' } },
+      });
+
+      expect(store.getGlobalSettings().autoUpdate).toBe(true);
     });
 
     it('keeps showing the hidden groups fold for settings saved before it existed', async () => {
@@ -387,9 +396,11 @@ describe('src/config-store/store.ts', () => {
         notifySuccess: 0 as unknown as boolean,
         showHiddenGroupsFold: '' as unknown as boolean,
         showHiddenWorkflowsFold: 1 as unknown as boolean,
+        autoUpdate: 0 as unknown as boolean,
       });
 
       expect(saved).toMatchObject({
+        autoUpdate: false,
         showHiddenGroupsFold: false,
         showHiddenWorkflowsFold: true,
         autostart: true,

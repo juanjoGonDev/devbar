@@ -253,6 +253,7 @@ export function makeSettings(
     notifySuccess: true,
     showHiddenGroupsFold: true,
     showHiddenWorkflowsFold: false,
+    autoUpdate: true,
     mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
     ...overrides,
   };
