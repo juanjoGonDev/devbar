@@ -26,8 +26,10 @@ function harness(groups: Group[] = [], overrides: Partial<LogsIpcDeps> = {}) {
   const buffers = new Map<string, LogEntry[]>();
   const watched: string[] = [];
   const scopes: (string | null)[] = [];
+  const configWatched: string[] = [];
   const ipc = recordingIpc();
   const SHARED = { shared: true };
+  const CONFIG = { config: true };
   registerLogsIpc(ipc, {
     configStore: {
       getGroup: (id) => groups.find((g) => g.id === id) ?? null,
@@ -64,10 +66,12 @@ function harness(groups: Group[] = [], overrides: Partial<LogsIpcDeps> = {}) {
       isSharedWindowSender: (sender) => sender === SHARED,
       watchSingle: (processId) => watched.push(processId),
       watchScope: (groupId) => scopes.push(groupId),
+      isConfigWindowSender: (sender) => sender === CONFIG,
+      watchConfigLog: (processId) => configWatched.push(processId),
     },
     ...overrides,
   });
-  return { ipc, buffers, watched, scopes, SHARED };
+  return { ipc, buffers, watched, scopes, configWatched, SHARED, CONFIG };
 }
 
 describe('src/main/ipc/logs-ipc.ts', () => {
@@ -111,6 +115,16 @@ describe('src/main/ipc/logs-ipc.ts', () => {
     it('leaves the subscription of a detached window alone', () => {
       const h = harness();
       h.ipc.invokeFrom({}, 'logs:get', 'cmd:g1:c1');
+      expect(h.watched).toEqual([]);
+      expect(h.configWatched).toEqual([]);
+    });
+
+    it('subscribes the settings window’s workflow terminal in the same tick', () => {
+      // The terminal under the workflow canvas is a log view like the logs
+      // window: the same snapshot call points the same live stream at it.
+      const h = harness();
+      h.ipc.invokeFrom(h.CONFIG, 'logs:get', 'pre:g1:vpn');
+      expect(h.configWatched).toEqual(['pre:g1:vpn']);
       expect(h.watched).toEqual([]);
     });
   });

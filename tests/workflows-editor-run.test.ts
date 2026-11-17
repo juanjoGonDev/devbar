@@ -297,10 +297,9 @@ describe('renderer/pipeline-editor.ts (runs)', () => {
       );
       click(query('.pipeline-block[data-block="p"] [aria-label="Ver logs"]'));
       expect(query('.wf-log').hidden).toBe(false);
-      expect(win.argsFor('getWorkflowScriptLog')[0]).toEqual([
-        'w-start',
-        'latest',
-        SETUP,
+      // The script's own log buffer, read as the logs window reads it.
+      expect(win.argsFor('getLogs')[0]).toEqual([
+        `pre:${SETUP.groupId}:${SETUP.scriptId}`,
       ]);
     });
   });

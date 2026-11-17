@@ -10,7 +10,8 @@ import type { LogEntry } from '../domain-types.js';
 
 /**
  * The logs windows: the shared multi-log window (sidebar + one visible log or
- * a merged scope) and any number of detached single-log ones.
+ * a merged scope) and any number of detached single-log ones — and the one
+ * log the settings window's workflow terminal shows, fed the same way.
  *
  * The shared window only receives lines for what it is currently showing, so N
  * running services don't flood it with N streams — and the membership rule it
@@ -57,6 +58,10 @@ export interface LogWindows {
   watchSingle: (processId: string) => void;
   /** The shared window switched to a merged scope; null groupId = every group. */
   watchScope: (groupId: string | null) => void;
+  /** True when `sender` is the settings window's webContents. */
+  isConfigWindowSender: (sender: unknown) => boolean;
+  /** The settings window's workflow terminal switched to one script. */
+  watchConfigLog: (processId: string) => void;
 }
 
 export function createLogWindows(deps: LogWindowsDeps): LogWindows {
@@ -72,6 +77,12 @@ export function createLogWindows(deps: LogWindowsDeps): LogWindows {
    * cannot be in a set captured beforehand, but its group is known.
    */
   let mainLogsScope: { groupId: string | null } | null = null;
+  /**
+   * The one log the settings window's workflow terminal shows. It is a log
+   * view like the shared window's single one, so it is fed the same way —
+   * only what it watches, never every stream.
+   */
+  let configWatching: string | null = null;
 
   /** The BrowserWindow itself, shared by the single-log and merged entry points. */
   function buildLogsWindow({
@@ -224,6 +235,9 @@ export function createLogWindows(deps: LogWindowsDeps): LogWindows {
     ) {
       main.webContents.send('logs:line', payload);
     }
+    const config = registry.config;
+    if (config && !config.isDestroyed() && configWatching === payload.id)
+      config.webContents.send('logs:line', payload);
   }
 
   return {
@@ -246,6 +260,19 @@ export function createLogWindows(deps: LogWindowsDeps): LogWindows {
     watchScope(groupId): void {
       mainLogsWatching = null;
       mainLogsScope = { groupId };
+    },
+
+    isConfigWindowSender(sender): boolean {
+      const config = registry.config;
+      return Boolean(
+        config &&
+        !config.isDestroyed() &&
+        (config.webContents as unknown) === sender,
+      );
+    },
+
+    watchConfigLog(processId): void {
+      configWatching = processId;
     },
   };
 }
