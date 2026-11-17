@@ -180,6 +180,34 @@ describe('renderer/logs/pane.ts', () => {
       expect(foldButton()?.textContent).toContain('+2 líneas de stack');
     });
 
+    it('unfolds the block when a redraw turns its last frame into ordinary text', () => {
+      // An indented progress bar right after a stack joins it as a frame;
+      // the frame that reaches 100% is no longer indented, so it leaves.
+      pane.resetBuffer([
+        entry('Error: socket hang up', { seq: 1, level: 'error' }),
+        entry('    at a (x:1)', { seq: 2 }),
+        entry('   10% subiendo', { seq: 3 }),
+      ]);
+      expect(foldButton()?.textContent).toContain('+2 líneas de stack');
+      pane.pushEntry(entry('100% subido', { seq: 4, replaces: 3 }));
+      expect(foldButton()).toBeNull();
+      expect(rowOf('    at a (x:1)')?.classList.contains('stack-fold')).toBe(
+        false,
+      );
+      expect(rowOf('100% subido')?.classList.contains('folded')).toBe(false);
+    });
+
+    it('folds a line a redraw turns into a frame of the block above it', () => {
+      pane.resetBuffer([
+        entry('Error: socket hang up', { seq: 1, level: 'error' }),
+        entry('    at a (x:1)', { seq: 2 }),
+        entry('compilando…', { seq: 3 }),
+      ]);
+      pane.pushEntry(entry('    at b (x:2)', { seq: 4, replaces: 3 }));
+      expect(foldButton()?.textContent).toContain('+2 líneas de stack');
+      expect(rowOf('    at b (x:2)')?.classList.contains('folded')).toBe(true);
+    });
+
     it('draws a folded line «Solo coincidencias» keeps as itself', () => {
       pane.resetBuffer(crash());
       view.view.filterRe = /at b/i;
@@ -389,6 +417,78 @@ describe('renderer/logs/pane.ts', () => {
       const drawn = drawnText().filter((text) => text === 'la gota');
       expect(drawn).toEqual(['la gota']);
       expect(buffer.buffer.entries).toHaveLength(5);
+    });
+  });
+
+  describe('a line a carriage return redraws', () => {
+    function progress(): LogEntry[] {
+      return [entry('start', { seq: 1 }), entry('upload 10%', { seq: 2 })];
+    }
+
+    it('takes the place of the row it rewrites instead of adding one', () => {
+      pane.resetBuffer(progress());
+      pane.pushEntry(entry('upload 60%', { seq: 3, replaces: 2 }));
+      pane.pushEntry(entry('upload 100%', { seq: 4, replaces: 3 }));
+      expect(drawnText()).toEqual(['start', 'upload 100%']);
+      expect(buffer.buffer.entries.map((held) => held.line)).toEqual([
+        'start',
+        'upload 100%',
+      ]);
+      expect(elements.countsEl.textContent).toBe('2 líneas');
+    });
+
+    it('is not news: a reader scrolled back is not told of «nuevas»', () => {
+      pane.resetBuffer(progress());
+      stubScroll({ scrollTop: 0, scrollHeight: 1000, clientHeight: 100 });
+      view.view.live = { following: false, cause: 'scroll', unseen: 0 };
+      pane.pushEntry(entry('upload 60%', { seq: 3, replaces: 2 }));
+      expect(view.view.live.unseen).toBe(0);
+      pane.pushEntry(entry('next', { seq: 4 }));
+      expect(view.view.live.unseen).toBe(1);
+    });
+
+    it('keeps the level chips in step with what the line now says', () => {
+      pane.resetBuffer([
+        entry('warning: 10%', { seq: 1, originalLevel: 'warn', level: 'warn' }),
+      ]);
+      pane.pushEntry(entry('done', { seq: 2, replaces: 1 }));
+      expect(elements.levelWarnCountEl.textContent).toBe('0');
+    });
+
+    it('keeps the selection on the line it rewrote', () => {
+      pane.resetBuffer(progress());
+      buffer.buffer.selected.add(1);
+      pane.pushEntry(entry('upload 60%', { seq: 3, replaces: 2 }));
+      expect(buffer.buffer.selected).toEqual(new Set([1]));
+      expect(drawnRows()[1]?.classList.contains('selected')).toBe(true);
+    });
+
+    it('is appended as a new line when the line it rewrites is gone', () => {
+      pane.resetBuffer(progress());
+      pane.pushEntry(entry('upload 60%', { seq: 9, replaces: 8 }));
+      expect(drawnText()).toEqual(['start', 'upload 10%', 'upload 60%']);
+    });
+
+    it('never rewrites another service’s line that shares its number', () => {
+      // A merged view tags each line with its source; every source counts
+      // its own lines, so two of them can hold the same seq.
+      const api = { srcId: 'api' };
+      const web = { srcId: 'web' };
+      pane.resetBuffer([entry('api 10%', { seq: 2, ...api })]);
+      pane.pushEntry(entry('web 50%', { seq: 3, replaces: 2, ...web }));
+      expect(drawnText()).toEqual(['api 10%', 'web 50%']);
+    });
+
+    it('drops out of view when it no longer passes the filter', () => {
+      pane.resetBuffer([
+        entry('build', { seq: 1 }),
+        entry('api 10%', { seq: 2 }),
+      ]);
+      view.view.filterRe = /api/i;
+      pane.applyFilter();
+      pane.pushEntry(entry('done', { seq: 3, replaces: 2 }));
+      expect(drawnText()).toEqual([]);
+      expect(elements.countsEl.textContent).toBe('0 de 2 líneas');
     });
   });
 

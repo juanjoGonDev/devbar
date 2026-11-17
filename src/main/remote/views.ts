@@ -142,6 +142,7 @@ export function logLine(entry: LogEntry): RemoteLogLine {
     ts: entry.ts,
     level: entry.level,
     line: stripAnsi(entry.line),
+    ...(entry.replaces === undefined ? {} : { replaces: entry.replaces }),
   };
 }
 

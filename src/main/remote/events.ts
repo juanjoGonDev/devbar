@@ -1,4 +1,5 @@
 import type { RemoteLogLine } from '../../ipc-contract/remote-wire.js';
+import { queueCollapsing } from '../../log-replace.js';
 import type { TimerHandle, Timers } from './timers.js';
 
 /**
@@ -187,7 +188,9 @@ export function createEventHub(deps: EventHubDeps): EventHub {
     log: (processId, line) => {
       if (!watches(processId)) return;
       const batch = pendingLogs.get(processId) ?? [];
-      batch.push(line);
+      // A progress bar's frames fold into one entry, so trimming the oldest
+      // never drops the link a later frame points at.
+      queueCollapsing(batch, line);
       if (batch.length > LOG_BATCH_MAX) batch.shift();
       pendingLogs.set(processId, batch);
       flushTimer ??= timers.setTimeout(flushLogs, LOG_FLUSH_MS);

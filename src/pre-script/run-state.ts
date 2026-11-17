@@ -6,7 +6,6 @@
  * src/pre-script-runner.ts, which keeps the scheduling and the processes.
  */
 import type {
-  LogEntry,
   Pipeline,
   PreStepScriptRef,
   WorkflowRunResult,
@@ -36,7 +35,6 @@ export interface LiveRun {
   internal: Map<string, BlockRunStatus>;
   blocks: Map<string, WorkflowBlockRunState>;
   scripts: Map<string, WorkflowScriptRunState>;
-  logs: Map<string, LogEntry[]>;
   status: WorkflowRunState['status'];
   startedAt: number;
   finishedAt: number | null;
@@ -45,21 +43,6 @@ export interface LiveRun {
 }
 
 const SETTLED_OK: readonly WorkflowNodeStatus[] = ['success', 'warning'];
-
-/** How much of one script's output a run keeps for `scriptLog`. */
-const SCRIPT_LOG_LIMIT = 2000;
-
-/** Keeps one line of a script's output for the run, dropping the oldest. */
-export function appendScriptLog(
-  run: LiveRun,
-  key: string,
-  entry: LogEntry,
-): void {
-  const lines = run.logs.get(key) ?? [];
-  lines.push(entry);
-  if (lines.length > SCRIPT_LOG_LIMIT) lines.shift();
-  run.logs.set(key, lines);
-}
 
 export function snapshotOf(run: LiveRun, workflowId: string): WorkflowRunState {
   return {
@@ -148,7 +131,6 @@ export function freshRun(pipeline: Pipeline, runId: number): LiveRun {
     internal: new Map(),
     blocks,
     scripts,
-    logs: new Map(),
     status: 'running',
     startedAt: Date.now(),
     finishedAt: null,
@@ -188,8 +170,11 @@ export function failedScriptCount(run: LiveRun): number {
 /**
  * The next run of a retry from `blockId`: that block and every descendant
  * that did not succeed last time run again; every other block keeps its last
- * status (and logs) and is never started. A reason string when it cannot be
- * retried: an unknown block, or one whose sources did not all succeed.
+ * status and is never started. Its scripts' output stays in their shared
+ * `pre:<g>:<s>` buffers in main, which hold the latest execution of each
+ * script and can be replaced by another workflow's run of it. A reason string
+ * when it cannot be retried: an unknown block, or one whose sources did not
+ * all succeed.
  */
 export function planRetry(
   last: LiveRun,
@@ -220,8 +205,6 @@ export function planRetry(
       const key = pipelineRefKey(ref);
       const keptScript = last.scripts.get(key);
       if (keptScript) next.scripts.set(key, { ...keptScript });
-      const logs = last.logs.get(key);
-      if (logs) next.logs.set(key, logs);
       next.handle.doneScripts += 1;
     }
   }

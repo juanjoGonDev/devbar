@@ -5,6 +5,7 @@ import type {
 import type { PanelContext } from './context.js';
 import type { PanelElements } from './elements.js';
 import { clockTime } from './format.js';
+import { queueCollapsing, replacedIndex } from '../../src/log-replace.js';
 import { el } from './view.js';
 
 /**
@@ -18,6 +19,11 @@ import { el } from './view.js';
 type Filter = 'all' | 'warn' | 'error';
 const TAIL = 300;
 const KEEP = 1000;
+/**
+ * How long the tail may take. Live lines are held until it settles, so a
+ * request that hangs must not hide them: past this it counts as failed.
+ */
+const TAIL_DEADLINE_MS = 10_000;
 /** Within this many pixels of the end still counts as "at the end". */
 const END_SLACK_PX = 24;
 
@@ -38,6 +44,16 @@ export interface LogsTab {
   /** The process the next `show` opens on. */
   prefer(processId: string): void;
   append(batch: { id: string; lines: RemoteLogLine[] }): void;
+}
+
+/**
+ * Hold a live line while the tail is on its way, bounded like the tail: a
+ * stalled request must not let a chatty process grow the queue forever. A
+ * redraw folds into the held line it rewrites (`queueCollapsing`).
+ */
+export function stageLive(held: RemoteLogLine[], line: RemoteLogLine): void {
+  queueCollapsing(held, line);
+  if (held.length > KEEP) held.splice(0, held.length - KEEP);
 }
 
 function targets(state: RemoteStateView | null): Target[] {
@@ -72,6 +88,11 @@ export function createLogsTab(
   let failed = false;
   /** Bumped per load: an answer for a process no longer shown is dropped. */
   let loadRound = 0;
+  /**
+   * Live lines that arrived while the tail was on its way: the tail and the
+   * stream travel apart, so they are replayed onto it once it lands.
+   */
+  let early: RemoteLogLine[] | null = null;
 
   const target = (): Target | undefined =>
     targets(ctx.state()).find((t) => t.processId === selected);
@@ -149,18 +170,48 @@ export function createLogsTab(
     const round = ++loadRound;
     lines = [];
     lastSeq = 0;
+    early = [];
     failed = false;
     following = true;
     paint();
+    let deadline: unknown = null;
     try {
-      const tail = await ctx.client.logs(processId, TAIL);
+      const tail = await Promise.race([
+        ctx.client.logs(processId, TAIL),
+        new Promise<never>((_, reject) => {
+          deadline = ctx.env.setTimeout(
+            () => reject(new Error('the log tail took too long')),
+            TAIL_DEADLINE_MS,
+          );
+        }),
+      ]);
       if (round !== loadRound) return;
       lines = tail.lines;
       lastSeq = Math.max(tail.seq, lines.at(-1)?.seq ?? 0);
     } catch {
       if (round !== loadRound) return;
       failed = true;
+    } finally {
+      ctx.env.clearTimeout(deadline);
     }
+    const held = early;
+    early = null;
+    ingest(held);
+    paint();
+  }
+
+  function ingest(batch: readonly RemoteLogLine[]): void {
+    const fresh = batch.filter((line) => line.seq > lastSeq);
+    if (fresh.length === 0) return;
+    lastSeq = fresh.at(-1)?.seq ?? lastSeq;
+    const next = [...lines];
+    for (const line of fresh) {
+      // A progress redraw takes the place of the line it rewrites.
+      const rewritten = replacedIndex(next, line.replaces, undefined, line.seq);
+      if (rewritten >= 0) next[rewritten] = line;
+      else next.push(line);
+    }
+    lines = next.slice(-KEEP);
     paint();
   }
 
@@ -260,11 +311,8 @@ export function createLogsTab(
     },
     append: (batch) => {
       if (batch.id !== selected) return;
-      const fresh = batch.lines.filter((line) => line.seq > lastSeq);
-      if (fresh.length === 0) return;
-      lastSeq = fresh.at(-1)?.seq ?? lastSeq;
-      lines = [...lines, ...fresh].slice(-KEEP);
-      paint();
+      if (early) for (const line of batch.lines) stageLive(early, line);
+      else ingest(batch.lines);
     },
   };
 }

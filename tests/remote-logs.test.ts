@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   byId,
+  HANG,
   NOW,
   settle,
   startLinked,
@@ -12,6 +13,8 @@ import {
   text,
   type PageHarness,
 } from './helpers/remote-page.js';
+import { stageLive } from '../renderer/remote/logs-tab.js';
+import type { RemoteLogLine } from '../src/ipc-contract/remote-wire.js';
 
 /**
  * «Logs»: one process at a time, its tail first, then live lines over the
@@ -107,6 +110,128 @@ describe('renderer/remote/logs-tab.ts', () => {
     h.source().emit('log', { id: 'cmd:g1:other', lines: [line(9, 'no')] });
 
     expect(shown()).toEqual(['ready', 'careful', 'boom', 'again']);
+  });
+
+  it('swaps a live redraw into the line it rewrites', async () => {
+    // A progress bar: each frame replaces the one before it, even when the
+    // frames arrive in the same batch.
+    const h = await startLinked();
+    await openLogs(h);
+
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [
+        { ...line(4, 'upload 10%'), replaces: 3 },
+        { ...line(5, 'upload 60%'), replaces: 4 },
+      ],
+    });
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [{ ...line(6, 'upload 100%'), replaces: 5 }],
+    });
+
+    expect(shown()).toEqual(['ready', 'careful', 'upload 100%']);
+    expect(text('count-all')).toBe('3');
+    expect(text('count-error')).toBe('0');
+  });
+
+  it('keeps a live redraw that lands while the tail is still on its way', async () => {
+    // The tail and the stream travel apart: a frame drawn after the tail was
+    // read can reach the phone before it does.
+    const h = await startLinked();
+    h.answer('logs', {
+      status: 200,
+      body: {
+        id: 'cmd:g1:api',
+        seq: 2,
+        lines: [line(1, 'ready'), line(2, 'upload 10%')],
+      },
+    });
+    tap(tabButton('logs'));
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [{ ...line(3, 'upload 60%'), replaces: 2 }],
+    });
+    await settle();
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [{ ...line(4, 'upload 100%'), replaces: 3 }],
+    });
+
+    expect(shown()).toEqual(['ready', 'upload 100%']);
+  });
+
+  it('keeps one progress row when a long redraw chain lands before an older tail', async () => {
+    const h = await startLinked();
+    h.answer('logs', {
+      status: 200,
+      body: {
+        id: 'cmd:g1:api',
+        seq: 2,
+        lines: [line(1, 'ready'), line(2, 'upload 0')],
+      },
+    });
+    tap(tabButton('logs'));
+    for (let seq = 3; seq <= 1502; seq += 1)
+      h.source().emit('log', {
+        id: 'cmd:g1:api',
+        lines: [{ ...line(seq, `upload ${seq}`), replaces: seq - 1 }],
+      });
+    await settle();
+
+    expect(shown()).toEqual(['ready', 'upload 1502']);
+  });
+
+  it('keeps one progress row when the tail already holds a later link of the chain', async () => {
+    const h = await startLinked();
+    h.answer('logs', {
+      status: 200,
+      body: {
+        id: 'cmd:g1:api',
+        seq: 3,
+        lines: [line(1, 'ready'), line(3, 'upload 3')],
+      },
+    });
+    tap(tabButton('logs'));
+    for (let seq = 3; seq <= 5; seq += 1)
+      h.source().emit('log', {
+        id: 'cmd:g1:api',
+        lines: [{ ...line(seq, `upload ${seq}`), replaces: seq - 1 }],
+      });
+    await settle();
+
+    expect(shown()).toEqual(['ready', 'upload 5']);
+  });
+
+  it('holds at most a tail worth of live lines while the tail is on its way', () => {
+    // A stalled tail request must not let a chatty process grow the queue
+    // without bound; a progress bar takes one entry, however many redraws.
+    const held: RemoteLogLine[] = [];
+    for (let seq = 1; seq <= 1500; seq += 1)
+      stageLive(held, line(seq, `line ${seq}`));
+    for (let seq = 1501; seq <= 1600; seq += 1)
+      stageLive(held, { ...line(seq, `bar ${seq}`), replaces: seq - 1 });
+
+    expect(held).toHaveLength(1000);
+    expect(held.at(-1)).toMatchObject({ seq: 1600, replaces: 1500 });
+    expect(held.at(-2)?.seq).toBe(1499);
+  });
+
+  it('shows the live lines it held once a stalled tail request runs out of time', async () => {
+    const h = await startLinked();
+    h.answer('logs', HANG);
+    tap(tabButton('logs'));
+    await settle();
+    h.source().emit('log', {
+      id: 'cmd:g1:api',
+      lines: [line(7, 'still compiling')],
+    });
+    await settle();
+    expect(shown()).toEqual([]);
+
+    await h.tick(); // the tail's deadline
+
+    expect(shown()).toEqual(['still compiling']);
   });
 
   it('filters by level, with the counts of each', async () => {

@@ -214,6 +214,23 @@ describe('src/main/log-windows.ts', () => {
       expect(h.windows[0]?.sent).toHaveLength(1);
     });
 
+    it('feeds the settings window only the script its terminal is watching', () => {
+      const h = harness();
+      const config = fakeWindow('config');
+      h.registry.config = config;
+      h.logWindows.broadcastLog({ id: 'pre:g1:vpn', entry });
+      expect(config.sent).toEqual([]);
+      h.logWindows.watchConfigLog('pre:g1:vpn');
+      h.logWindows.broadcastLog({ id: 'pre:g1:other', entry });
+      h.logWindows.broadcastLog({ id: 'pre:g1:vpn', entry });
+      expect(config.sent).toEqual([
+        { channel: 'logs:line', payload: { id: 'pre:g1:vpn', entry } },
+      ]);
+      config.destroy();
+      h.logWindows.broadcastLog({ id: 'pre:g1:vpn', entry });
+      expect(config.sent).toHaveLength(1);
+    });
+
     it('sends nothing once the shared window is destroyed', () => {
       const h = harness();
       h.logWindows.ensureLogsWindow('cmd:g1:web');
@@ -231,6 +248,15 @@ describe('src/main/log-windows.ts', () => {
       const shared = h.registry.logs.get(MAIN_LOGS_KEY) as WindowLike;
       expect(h.logWindows.isSharedWindowSender(shared.webContents)).toBe(true);
       expect(h.logWindows.isSharedWindowSender({})).toBe(false);
+    });
+
+    it('knows the settings window by its webContents', () => {
+      const h = harness();
+      expect(h.logWindows.isConfigWindowSender({})).toBe(false);
+      const config = fakeWindow('config');
+      h.registry.config = config;
+      expect(h.logWindows.isConfigWindowSender(config.webContents)).toBe(true);
+      expect(h.logWindows.isConfigWindowSender({})).toBe(false);
     });
 
     it('answers false when there is no shared window at all', () => {

@@ -240,6 +240,7 @@ function logLines(value: unknown): RemoteLogLine[] {
       ts: num(raw.ts),
       level: raw.level === 'warn' || raw.level === 'error' ? raw.level : null,
       line: str(raw.line),
+      ...(typeof raw.replaces === 'number' ? { replaces: raw.replaces } : {}),
     }));
 }
 

@@ -85,6 +85,13 @@ class MockProcessManager
     return this._logs[id] ?? [];
   }
 
+  clearLogs(id: string): boolean {
+    const buffer = this._logs[id];
+    if (!buffer) return false;
+    buffer.length = 0;
+    return true;
+  }
+
   getState(id: string): MockState {
     return this.states[id] ?? { status: 'stopped' };
   }
@@ -517,5 +524,32 @@ describe('createPreScriptRunner — current()', () => {
     ]);
     expect(inFlightRes).toEqual(firstRes);
     expect(runner.current()).toBeNull();
+  });
+});
+
+describe('createPreScriptRunner — a script that fails to start', () => {
+  it("drops the previous run's output from its log", async () => {
+    // A start that fails returns before ProcessManager empties the buffer:
+    // the last run's lines would read as this run's, above its error.
+    const steps = [makeStep('s1', 'serial', [ref('g1', 'sc1')])];
+    const pm = makeMockPM(); // pre:g1:sc1 not configured: start() fails
+    pm.pushLog('pre:g1:sc1', {
+      ts: 0,
+      stream: 'stdout',
+      level: null,
+      line: 'salida de la vez anterior',
+    });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore([G1], steps),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    await runner.run();
+    expect(getScriptLines(pm, 'pre:g1:sc1')).toEqual([
+      `── Directorio: ${G1.path} ──`,
+      '── No ha podido arrancar: pid not configured ──',
+    ]);
   });
 });

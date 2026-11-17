@@ -3,6 +3,34 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.13.0] - 2026-11-16
+
+### Corregido
+
+- **Barras de progreso en el log.** Las líneas que una herramienta reescribe
+  en su sitio con un retorno de carro, como el progreso de una subida o una
+  descarga (`aws s3 cp`, `curl`…), se ven ahora como una sola línea que se va
+  actualizando, igual que en una terminal, en vez de cientos de líneas
+  repetidas. Si esa línea es un aviso o un error, cuenta una sola vez. Vale
+  para la ventana de logs, el log de cada script de un workflow y el móvil.
+
+- **El terminal de los workflows es la ventana de logs.** El log oscuro bajo
+  el lienzo de un workflow muestra ahora las mismas líneas que la ventana de
+  logs para ese script, y de la misma forma: los mismos colores para avisos y
+  errores, el JSON coloreado y desplegable, las trazas de error plegadas, las
+  barras de progreso que se refrescan en su sitio y el seguimiento del final
+  (que se detiene si subes a leer). Va en directo, en vez de refrescarse cada
+  segundo, y conserva la línea «Directorio» del principio. Un script que aún
+  no ha empezado en la ejecución actual lo dice, en vez de enseñar la salida
+  de la anterior.
+
+- **Sin líneas en blanco al arrancar una shell lenta.** Las líneas vacías que
+  deja un `.zshrc` que tarda en cargar ya no aparecen en el log, tarde lo que
+  tarde: se descartan hasta que el proceso escribe su primera línea de verdad.
+
+- **Pestañas del terminal de workflows.** Pulsar una pestaña ya no hace
+  aparecer barras de desplazamiento.
+
 ## [0.12.0] - 2026-10-17
 
 ### Añadido

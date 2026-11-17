@@ -141,6 +141,8 @@ export interface RemoteLogLine {
   ts: number;
   level: 'warn' | 'error' | null;
   line: string;
+  /** A progress redraw: the `seq` of the line it rewrites in place. */
+  replaces?: number;
 }
 
 /** The only global settings a phone may read and change. */

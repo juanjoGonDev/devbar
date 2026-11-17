@@ -36,7 +36,7 @@ import { unfoldGroup } from './sidebar-fold.js';
 import { clearFindQuery, filterBy } from './find.js';
 import { muteErrEl, muteWarnEl, sideTreeEl } from './elements.js';
 import { view, type Scope } from './view.js';
-import type { SilenceLevel } from '../../src/ipc-contract.js';
+import type { LogsSnapshot, SilenceLevel } from '../../src/ipc-contract.js';
 
 /** Open any scope, optionally pinned to the levels the caller cares about. */
 export async function openScope(
@@ -69,8 +69,18 @@ export async function jumpToLine(srcId: string, ts: number): Promise<void> {
  * Selecting an individual service afterwards drops back to single mode.
  */
 async function selectMergedLog(groupId: string | null): Promise<void> {
+  const reload = showsMerged(groupId);
   view.processId = null;
-  dropUnknownSources(); // held lines belong to the old scope
+  // Route this scope's lines from the start, not from its first snapshot: a
+  // failed load replays what it held, and the live lines keep coming. Until a
+  // snapshot names the services, an unknown one is looked up rather than
+  // dropped — and the previous scope's map would let its services in. A
+  // reload keeps the map: it is this scope's already. So are the lines a
+  // source lookup still holds, which its load takes over.
+  if (!reload) {
+    view.groupSources = new Map();
+    dropUnknownSources(); // held lines belong to the old scope
+  }
   resetSilenceScope(); // a draft and its marks belong to the previous log
   view.mergedIsAll = groupId === null;
   view.mergedGroupId = groupId;
@@ -82,7 +92,7 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   setSilencePopover(false); // silencing is per-service; it has no meaning here
 
   view.memoryCap = view.globalRetention; // merged snapshots are capped globally
-  const token = beginLoad();
+  const token = beginLoad(reload);
   const res = await awaitSnapshot(window.api.getMergedLogs(groupId), token);
   if (!token()) return; // a newer load won the race, and owns the queue
   view.groupSources = new Map(res.sources.map((s) => [s.id, s]));
@@ -93,6 +103,19 @@ async function selectMergedLog(groupId: string | null): Promise<void> {
   resetBuffer([...res.lines]);
   endLoad((id) => res.seqs[id] ?? 0);
   markMergedInSidebar(groupId);
+}
+
+/**
+ * Whether the merged scope of `groupId` (null: everything) is the one on
+ * screen — set the moment its load began, so a load still in flight counts.
+ * Opening it again is a reload, not a switch.
+ */
+function showsMerged(groupId: string | null): boolean {
+  return (
+    view.processId === null &&
+    view.mergedGroupId === groupId &&
+    view.mergedIsAll === (groupId === null)
+  );
 }
 
 function markMergedInSidebar(groupId: string | null): void {
@@ -142,6 +165,7 @@ export async function selectLog(
   filter?: string,
   level?: SilenceLevel,
 ): Promise<void> {
+  const reload = view.processId === id; // set as its load began: in flight counts
   view.processId = id;
   view.groupSources = null;
   view.mergedGroupId = null;
@@ -172,8 +196,9 @@ export async function selectLog(
   // a plain log switch keeps whatever the user has on screen.
   if (level) setLevelFilter([level]);
 
-  // getLogs also points main's live stream at this buffer, atomically.
-  const token = beginLoad();
+  // getLogs also points main's live stream at this buffer, atomically. A
+  // reload takes over what a load of this same service still holds.
+  const token = beginLoad(reload);
   const res = await awaitSnapshot(window.api.getLogs(id), token);
   if (!token()) return; // a newer load won the race, and owns the queue
   view.memoryCap = res.logLimit; // whatever main kept for it, not what config says now
@@ -231,12 +256,22 @@ export function syncWatched(): void {
   if (buffer.entries.length > view.memoryCap + EDGE_CHUNK) trimMemory();
 }
 
-/** Replace the buffer with main's, for when ours describes a run that ended. */
+/**
+ * Replace the buffer with main's, for when ours describes a run that ended.
+ * It reloads the service on screen, so it takes over what a load of it still
+ * holds: lines of the run that ended included, which the new snapshot covers
+ * — start() empties main's buffer, but its seq keeps counting past them.
+ */
 async function reloadWatched(): Promise<void> {
   const id = view.processId;
   if (!id) return;
-  const token = beginLoad();
-  const res = await awaitSnapshot(window.api.getLogs(id), token);
+  const token = beginLoad(true);
+  let res: LogsSnapshot;
+  try {
+    res = await awaitSnapshot(window.api.getLogs(id), token);
+  } catch {
+    return; // nothing to adopt; what it held went back to the live path
+  }
   // The view may have moved on, and a reload must not outlive its target.
   if (!token() || view.processId !== id) return;
   view.watchedStartedAt = res.commandState.startedAt;

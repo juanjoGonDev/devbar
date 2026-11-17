@@ -146,6 +146,21 @@ describe('renderer/remote/wire.ts', () => {
   });
 
   describe('logBatch', () => {
+    it('reads which line a redraw replaces, and ignores a malformed one', () => {
+      expect(
+        logBatch({
+          id: 'cmd:g1:web',
+          lines: [
+            { seq: 4, ts: 2, level: null, line: '60%', replaces: 3 },
+            { seq: 5, ts: 2, level: null, line: '70%', replaces: 'x' },
+          ],
+        }).lines,
+      ).toEqual([
+        { seq: 4, ts: 2, level: null, line: '60%', replaces: 3 },
+        { seq: 5, ts: 2, level: null, line: '70%' },
+      ]);
+    });
+
     it('reads the id and its lines', () => {
       expect(
         logBatch({

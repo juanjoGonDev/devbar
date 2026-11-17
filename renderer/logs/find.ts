@@ -15,7 +15,12 @@
  */
 import { stripAnsi } from './ansi.js';
 import { buffer } from './buffer.js';
-import { applyFilter, renderLevelChips, revealEntry } from './pane.js';
+import {
+  applyFilter,
+  paintFindCurrent,
+  renderLevelChips,
+  revealEntry,
+} from './pane.js';
 import { dispatchLive } from './live.js';
 import { isFolded, stackOf, toggleStack } from './stack-fold.js';
 import {
@@ -160,25 +165,6 @@ function scheduleTicks(): void {
   ticksTimer = setTimeout(paintTicks, TICKS_DELAY_MS);
 }
 
-/** Move the «current» marks in the drawn rows without rebuilding them. */
-function paintCurrentInPlace(): void {
-  for (const node of Array.from(
-    linesEl.querySelectorAll('.find-current, mark.find-hit.current'),
-  ))
-    node.classList.remove(node.tagName === 'MARK' ? 'current' : 'find-current');
-  const current = view.findCurrent;
-  if (!current) return;
-  const row = linesEl.querySelector<HTMLElement>(
-    `.line[data-eidx="${current.entry}"]`,
-  );
-  if (!row) return;
-  row.classList.add('find-current');
-  for (const mark of Array.from(
-    row.querySelectorAll(`mark.find-hit[data-hit="${current.hit}"]`),
-  ))
-    mark.classList.add('current');
-}
-
 // ─────────────────────────── Matching ───────────────────────────
 
 /** The first drawn line the reader can actually see, to start searching from. */
@@ -283,7 +269,7 @@ function land(cursor: FindCursor): void {
   if (block && isFolded(block)) {
     toggleStack(block);
     rowHooks.repaint();
-  } else paintCurrentInPlace();
+  } else paintFindCurrent();
   revealEntry(cursor.entry);
   paintCounter();
   scheduleTicks();

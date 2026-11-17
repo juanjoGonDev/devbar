@@ -49,12 +49,29 @@ function snapshot(
   };
 }
 
-function merged(sources: LogSource[] = [], lines: LogEntry[] = []): unknown {
-  return { groupName: 'Back', sources, lines, seqs: {} };
+function merged(
+  sources: LogSource[] = [],
+  lines: LogEntry[] = [],
+  seqs: Record<string, number> = {},
+): unknown {
+  return { groupName: 'Back', sources, lines, seqs };
 }
 
 function source(id: string, name = id): LogSource {
   return { id, name, groupId: 'g1', groupName: 'Back' };
+}
+
+/** A request the test answers by hand, in whatever order it likes. */
+interface Pending {
+  resolve(value: unknown): void;
+  reject(error: Error): void;
+}
+
+function answeredByHand(pending: Pending[]): () => Promise<unknown> {
+  return () =>
+    new Promise((resolve, reject) => {
+      pending.push({ resolve, reject });
+    });
 }
 
 describe('renderer/logs/scope.ts', () => {
@@ -99,6 +116,20 @@ describe('renderer/logs/scope.ts', () => {
         ? [(row as HTMLElement).dataset.id ?? '']
         : [],
     );
+  }
+
+  function bufferedLines(): string[] {
+    return buffer.buffer.entries.map((line) => line.line);
+  }
+
+  /** A live line from main, through the window's stream. */
+  async function pushLive(
+    id: string,
+    line: string,
+    seq: number,
+  ): Promise<void> {
+    const stream = await import('../renderer/logs/stream.js');
+    stream.receivePush({ id, entry: entry(line, { seq }) });
   }
 
   function viewingGroups(): string[] {
@@ -478,6 +509,150 @@ describe('renderer/logs/scope.ts', () => {
     });
   });
 
+  describe('a reload of the scope already on screen', () => {
+    it('replays what the load it replaced was holding when it fails', async () => {
+      const pending: Pending[] = [];
+      await open({ api: { getLogs: answeredByHand(pending) } });
+      const first = scope.selectLog('api');
+      await pushLive('api', 'mientras', 7); // held for the first load
+      const second = scope.selectLog('api');
+      pending[1]?.reject(new Error('sin respuesta'));
+      await expect(second).rejects.toThrow('sin respuesta');
+      pending[0]?.resolve(snapshot()); // superseded: its answer is dropped
+      await first;
+      expect(bufferedLines()).toEqual(['mientras']);
+    });
+
+    it('replays it for a merged scope too', async () => {
+      const pending: Pending[] = [];
+      await open({ api: { getMergedLogs: answeredByHand(pending) } });
+      const opening = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[0]?.resolve(merged([source('api')]));
+      await opening;
+      const first = scope.openScope({ kind: 'group', groupId: 'g1' });
+      await pushLive('api', 'mientras', 7);
+      const second = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[2]?.reject(new Error('sin respuesta'));
+      await expect(second).rejects.toThrow('sin respuesta');
+      pending[1]?.resolve(merged([source('api')]));
+      await first;
+      expect(bufferedLines()).toEqual(['mientras']);
+    });
+
+    it('keeps a merged scope live before its first snapshot ever landed', async () => {
+      // No merged snapshot has named the group's services yet: its lines must
+      // still show — the held one and the live ones after the failure — and
+      // a line of the service the window showed before must stay out.
+      const pending: Pending[] = [];
+      await open({
+        api: {
+          getMergedLogs: answeredByHand(pending),
+          getMergedSources: () => Promise.resolve([source('api')]),
+        },
+      });
+      await scope.selectLog('db'); // a service of another group
+      const first = scope.openScope({ kind: 'group', groupId: 'g1' });
+      await pushLive('db', 'del anterior', 6); // main still on the old scope
+      await pushLive('api', 'mientras', 7);
+      const second = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[1]?.reject(new Error('sin respuesta'));
+      await expect(second).rejects.toThrow('sin respuesta');
+      await pushLive('api', 'después', 8);
+      await pushLive('db', 'ajena', 9);
+      pending[0]?.resolve(merged([source('api')])); // superseded: dropped
+      await first;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bufferedLines()).toEqual(['mientras', 'después']);
+    });
+
+    /**
+     * A failed load of group g1 replays its line, but no snapshot has named
+     * the service yet: the line waits on a source lookup. Every lookup waits
+     * for the test to answer the returned function, then names `api`.
+     */
+    async function lineWaitingOnLookup(
+      pending: Pending[],
+    ): Promise<() => void> {
+      let answer: () => void = () => undefined;
+      const answered = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      await open({
+        api: {
+          getMergedLogs: answeredByHand(pending),
+          getMergedSources: () => answered.then(() => [source('api')]),
+        },
+      });
+      const first = scope.openScope({ kind: 'group', groupId: 'g1' });
+      await pushLive('api', 'mientras', 7);
+      pending[0]?.reject(new Error('sin respuesta'));
+      await expect(first).rejects.toThrow('sin respuesta');
+      expect(dom.argsFor('getMergedSources')).toEqual([['g1']]);
+      return answer;
+    }
+
+    it('keeps a line waiting on a source lookup when the reload fails too', async () => {
+      // The reload outdates the lookup's ticket: it must take the line over,
+      // and its own failure hand it back to the live path.
+      const pending: Pending[] = [];
+      const answerLookups = await lineWaitingOnLookup(pending);
+      const second = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[1]?.reject(new Error('sin respuesta'));
+      await expect(second).rejects.toThrow('sin respuesta');
+      answerLookups();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bufferedLines()).toEqual(['mientras']);
+      expect(view.view.groupSources?.has('api')).toBe(true);
+    });
+
+    it('shows a line waiting on a source lookup once when the reload lands', async () => {
+      // The snapshot carries it already: the lookup answering afterwards
+      // must not add it a second time.
+      const pending: Pending[] = [];
+      const answerLookups = await lineWaitingOnLookup(pending);
+      const second = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[1]?.resolve(
+        merged([source('api')], [entry('mientras', { seq: 7 })], { api: 7 }),
+      );
+      await second;
+      answerLookups();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bufferedLines()).toEqual(['mientras']);
+    });
+
+    it('a switch drops a line waiting on a source lookup, and its answer', async () => {
+      // The lookup was for the group that left the screen: neither its line
+      // nor the services it names may reach the scope that replaced it.
+      const pending: Pending[] = [];
+      const answerLookups = await lineWaitingOnLookup(pending);
+      const second = scope.openScope({ kind: 'group', groupId: 'g2' });
+      pending[1]?.resolve(merged([source('db')]));
+      await second;
+      answerLookups();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bufferedLines()).toEqual([]);
+      expect([...(view.view.groupSources?.keys() ?? [])]).toEqual(['db']);
+    });
+
+    it('a switch to another scope starts empty, failed or not', async () => {
+      // The everything view would know the source, so a line inherited from
+      // the group's load would show: only a reload may take them over.
+      const pending: Pending[] = [];
+      await open({ api: { getMergedLogs: answeredByHand(pending) } });
+      const opening = scope.openScope({ kind: 'group', groupId: 'g1' });
+      pending[0]?.resolve(merged([source('api')]));
+      await opening;
+      const first = scope.openScope({ kind: 'group', groupId: 'g1' });
+      await pushLive('api', 'del grupo', 7);
+      const second = scope.openScope({ kind: 'all' });
+      pending[2]?.reject(new Error('sin respuesta'));
+      await expect(second).rejects.toThrow('sin respuesta');
+      pending[1]?.resolve(merged([source('api')]));
+      await first;
+      expect(bufferedLines()).toEqual([]);
+    });
+  });
+
   describe('jumpToLine', () => {
     it('lands on the same line in that service and stops following the tail', async () => {
       await open({
@@ -633,6 +808,60 @@ describe('renderer/logs/scope.ts', () => {
       answers[1]?.(undefined);
       await vi.advanceTimersByTimeAsync(0);
       expect(buffer.buffer.entries).toEqual([]);
+    });
+
+    describe('two reloads for one restart', () => {
+      const pending: Pending[] = [];
+
+      /** Opens run 1, restarts it, and starts a second reload over the first. */
+      async function restartTwice(): Promise<void> {
+        pending.length = 0;
+        await open({ api: { getLogs: answeredByHand(pending) } });
+        const opening = scope.selectLog('api');
+        pending[0]?.resolve(
+          snapshot({ seq: 3, lines: [entry('de la vieja', { seq: 3 })] }),
+        );
+        await opening;
+        listWatched({ startedAt: 999 });
+        scope.syncWatched();
+        await pushLive('api', 'última de la vieja', 4);
+        await pushLive('api', '▶ start', 5);
+        scope.syncWatched(); // a sidebar refresh before the first one answered
+      }
+
+      it('drops the old run held by the first: main kept counting past it', async () => {
+        // start() empties main's buffer, so the snapshot does not carry the
+        // old run's last line; its seq still covers it, so it stays gone.
+        await restartTwice();
+        await pushLive('api', 'tras la lectura', 7);
+        pending[2]?.resolve(
+          snapshot({
+            seq: 6,
+            startedAt: 999,
+            lines: [entry('▶ start', { seq: 5 }), entry('arrancó', { seq: 6 })],
+          }),
+        );
+        pending[1]?.resolve(snapshot({ seq: 5, startedAt: 999 }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(bufferedLines()).toEqual([
+          '▶ start',
+          'arrancó',
+          'tras la lectura',
+        ]);
+      });
+
+      it('replays what the first held when the second fails', async () => {
+        await restartTwice();
+        pending[2]?.reject(new Error('sin respuesta'));
+        pending[1]?.resolve(snapshot({ seq: 5, startedAt: 999 }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(bufferedLines()).toEqual([
+          'de la vieja',
+          'última de la vieja',
+          '▶ start',
+        ]);
+        expect(view.view.watchedStartedAt).toBe(100); // the next refresh retries
+      });
     });
   });
 });

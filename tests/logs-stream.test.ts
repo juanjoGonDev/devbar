@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   drain,
@@ -7,6 +7,7 @@ import {
   mountLogsDom,
   type LogsDom,
 } from './helpers/logs-dom.js';
+import { SOURCE_RETRY_MS } from '../renderer/log-view/stream.js';
 import type { LogSource } from '../src/ipc-contract.js';
 
 /**
@@ -28,14 +29,17 @@ type StatusModule = typeof import('../renderer/logs/status.js');
 interface Deferred<T> {
   promise: Promise<T>;
   resolve(value: T): void;
+  reject(error: Error): void;
 }
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((res, rej) => {
     resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function source(id: string, name = id): LogSource {
@@ -146,6 +150,16 @@ describe('renderer/logs/stream.ts', () => {
       stream.beginLoad();
       stream.endLoad(() => 0);
       expect(drawn()).toEqual([]);
+    });
+
+    it('hands it to a reload of the same scope instead, minus what that one carried', () => {
+      // Kept for the case that reload fails; adopted, it drops what it covers.
+      stream.beginLoad();
+      stream.receivePush({ id: 'api', entry: entry('cubierta', { seq: 4 }) });
+      stream.receivePush({ id: 'api', entry: entry('nueva', { seq: 6 }) });
+      stream.beginLoad(true);
+      stream.endLoad(() => 5);
+      expect(drawn()).toEqual(['nueva']);
     });
   });
 
@@ -269,6 +283,38 @@ describe('renderer/logs/stream.ts', () => {
       sourceReads[1]?.resolve([source('nuevo', 'Nuevo')]);
       await drain();
       expect(drawn()).toEqual(['de la nueva']);
+    });
+
+    describe('a lookup that fails', () => {
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('looks again on its own, so a service that fell quiet still shows', async () => {
+        stream.receivePush({ id: 'nuevo', entry: entry('única') });
+        sourceReads[0]?.reject(new Error('ipc'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(drawn()).toEqual([]);
+
+        await vi.advanceTimersByTimeAsync(SOURCE_RETRY_MS);
+        expect(sourceReads).toHaveLength(2);
+        sourceReads[1]?.resolve([source('nuevo', 'Nuevo')]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(drawn()).toEqual(['única']);
+      });
+
+      it('stops looking once a scope switch dropped the lines', async () => {
+        stream.receivePush({ id: 'nuevo', entry: entry('vieja') });
+        sourceReads[0]?.reject(new Error('ipc'));
+        await vi.advanceTimersByTimeAsync(0);
+        stream.dropUnknownSources();
+
+        await vi.advanceTimersByTimeAsync(SOURCE_RETRY_MS);
+        expect(sourceReads).toHaveLength(1);
+      });
     });
 
     it('a scope switch throws away the lines waiting on a name', async () => {
