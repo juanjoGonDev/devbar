@@ -45,8 +45,14 @@ export interface StreamDeps {
 }
 
 export interface LogStream {
-  /** Open a load: take the ticket and start holding what arrives meanwhile. */
-  beginLoad: () => LoadTicket;
+  /**
+   * Open a load: take the ticket and start holding what arrives meanwhile.
+   * `sameScope`: it reloads the scope a load in flight is still reading, so
+   * it takes over what that load held — its snapshot drops what it covers,
+   * and a failed one hands it back to the live path. A load of another
+   * scope starts empty: those lines are not its own.
+   */
+  beginLoad: (sameScope?: boolean) => LoadTicket;
   /**
    * Close a load: deliver what arrived while we waited, minus whatever the
    * snapshot already carried. `watermark` answers, per source, how far it got.
@@ -86,10 +92,11 @@ export function createStream(deps: StreamDeps): LogStream {
   }[] = [];
   let refreshingSources = false;
 
-  function beginLoad(): LoadTicket {
-    // An orphan queue from an abandoned load goes: the snapshot we are about
-    // to adopt covers everything it was holding.
-    loadQueue = [];
+  function beginLoad(sameScope = false): LoadTicket {
+    // The snapshot about to be adopted covers everything a superseded load
+    // was holding — if it arrives. Only a reload of the same scope keeps
+    // them, for the case it does not; another scope's are not ours.
+    loadQueue = sameScope && loadQueue ? loadQueue : [];
     loads.invalidate();
     return loads.claim();
   }

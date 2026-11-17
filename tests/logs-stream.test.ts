@@ -147,6 +147,16 @@ describe('renderer/logs/stream.ts', () => {
       stream.endLoad(() => 0);
       expect(drawn()).toEqual([]);
     });
+
+    it('hands it to a reload of the same scope instead, minus what that one carried', () => {
+      // Kept for the case that reload fails; adopted, it drops what it covers.
+      stream.beginLoad();
+      stream.receivePush({ id: 'api', entry: entry('cubierta', { seq: 4 }) });
+      stream.receivePush({ id: 'api', entry: entry('nueva', { seq: 6 }) });
+      stream.beginLoad(true);
+      stream.endLoad(() => 5);
+      expect(drawn()).toEqual(['nueva']);
+    });
   });
 
   describe('awaitSnapshot', () => {
