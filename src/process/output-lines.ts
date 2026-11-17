@@ -13,8 +13,13 @@ interface OutputLineDeps {
   /** Regexes are a command concept: an action or pre-script has none. */
   warnRegex: RegExp | null;
   errorRegex: RegExp | null;
-  /** True while an rc file may still be printing blank lines at start-up. */
-  inInitWindow: () => boolean;
+  /**
+   * Whether the process printed a real line yet, on either stream: before
+   * that, a blank line is an rc file starting up, however slow it is.
+   */
+  printedYet: () => boolean;
+  /** This line is the process's own output: blank lines count from now on. */
+  printing: () => void;
   /** A port probe's own echo, which gets no level at all. */
   isProbeNoise: (cleaned: string) => boolean;
   /** Read per line, so a pattern added mid-run applies to the next one. */
@@ -66,11 +71,12 @@ export function outputLines(
     if (
       !state ||
       isShellNoise(line) ||
-      (deps.inInitWindow() && stripAnsi(line).trim() === '')
+      (!deps.printedYet() && stripAnsi(line).trim() === '')
     ) {
       last = null;
       return;
     }
+    deps.printing();
     // Rewritten in place only while it is still the newest line: once
     // anything else (stderr, a sys line) came after it, the redraw is a new
     // line, as a terminal would scroll it.

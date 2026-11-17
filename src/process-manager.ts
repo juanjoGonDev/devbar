@@ -263,10 +263,9 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     }
     const warnRegex = kind === 'command' ? safeRegex(target.warnRegex) : null,
       errorRegex = kind === 'command' ? safeRegex(target.errorRegex) : null;
-    let initWindow = true;
-    setTimeout(() => {
-      initWindow = false;
-    }, 1500);
+    // Until the process prints a real line, on either stream, a blank one is
+    // an rc file starting up — however long that takes.
+    let printed = false;
     const logLimit = this.resolveLogLimit(resolved);
     this.logs.set(processId, []);
     this.states.set(processId, {
@@ -286,7 +285,10 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     const lines = {
       warnRegex,
       errorRegex,
-      inInitWindow: () => initWindow,
+      printedYet: () => printed,
+      printing: () => {
+        printed = true;
+      },
       isProbeNoise: (cleaned: string) =>
         this.probeNoise.isNoise(processId, cleaned),
       silencedPatterns: (level: LogLevel) => {

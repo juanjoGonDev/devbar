@@ -216,6 +216,33 @@ describe('src/process-manager.ts — service output and exit', () => {
         'real output',
       ]);
     });
+
+    it('drops them however long the shell takes to start', async () => {
+      // A slow .zshrc (6 s here) printed its noise, dropped as such, with
+      // the blank lines between them left behind on screen. Only the start
+      // runs on fake timers: `say` waits on a real one for readline.
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const pm = manager();
+      try {
+        pm.start(CMD_ID);
+        vi.advanceTimersByTime(6000);
+      } finally {
+        vi.useRealTimers();
+      }
+      await say(
+        lastChild(),
+        'stderr',
+        'zsh: no job control in this shell',
+        '',
+        '   ',
+      );
+      await say(lastChild(), 'stdout', 'real output', '', 'more');
+      expect(output(pm, CMD_ID).map((entry) => entry.line)).toEqual([
+        'real output',
+        '',
+        'more',
+      ]);
+    });
   });
 
   describe('a line a carriage return redraws', () => {
