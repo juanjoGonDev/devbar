@@ -329,10 +329,13 @@ function redrawEntry(entry: LogEntry): boolean {
   if (view.findRe) findHooks.recount(); // its hits are in the text that changed
   // Joining or leaving a block changes how its first row folds, not just this one.
   if (stackOf(entry)?.members.length !== frames) repaintInPlace();
-  else
+  else {
     linesEl
       .querySelector(`.line[data-eidx="${index}"]`)
       ?.replaceWith(buildRow(entry, index, showInContext));
+    // The recount may have moved the current hit to a row nobody rebuilt.
+    if (view.findRe) paintFindCurrent();
+  }
   if (view.live.following) mainEl.scrollTop = mainEl.scrollHeight;
   renderCounts();
   updateScrollButton();
@@ -361,6 +364,25 @@ function refreshStackHead(entry: LogEntry, entryIndex: number): void {
     first
   )
     row.replaceWith(buildRow(first, firstIndex, showInContext));
+}
+
+/** Move the find widget's «current» marks in the drawn rows, rebuilding none. */
+export function paintFindCurrent(): void {
+  for (const node of Array.from(
+    linesEl.querySelectorAll('.find-current, mark.find-hit.current'),
+  ))
+    node.classList.remove(node.tagName === 'MARK' ? 'current' : 'find-current');
+  const current = view.findCurrent;
+  if (!current) return;
+  const row = linesEl.querySelector<HTMLElement>(
+    `.line[data-eidx="${current.entry}"]`,
+  );
+  if (!row) return;
+  row.classList.add('find-current');
+  for (const mark of Array.from(
+    row.querySelectorAll(`mark.find-hit[data-hit="${current.hit}"]`),
+  ))
+    mark.classList.add('current');
 }
 
 /** Rebuild the drawn rows where they are — a block folded or unfolded. */

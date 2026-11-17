@@ -390,6 +390,27 @@ describe('renderer/logs/find.ts', () => {
       expect(currentRow()).toBe('api 400');
     });
 
+    it('marks the hit it moves to when a redraw rewrites the current one away', () => {
+      pane.resetBuffer([
+        entry('api lista', { seq: 1 }),
+        entry('nada', { seq: 2 }),
+        entry('subiendo api 50%', { seq: 3 }),
+      ]);
+      find.openFind();
+      search('api');
+      key(elements.findInputEl, 'Enter', { shiftKey: true });
+      expect(currentRow()).toBe('subiendo api 50%');
+      // The progress bar's last frame no longer says «api»: the cursor moves
+      // to the hit left, and that row has to say so, not just the counter.
+      pane.pushEntry(entry('100% subido', { seq: 4, replaces: 3 }));
+      expect(elements.findCountEl.textContent).toBe('1 de 1');
+      expect(currentRow()).toBe('api lista');
+      const current = Array.from(
+        elements.linesEl.querySelectorAll('mark.find-hit.current'),
+      );
+      expect(current.map((mark) => mark.textContent)).toEqual(['api']);
+    });
+
     it('counts the matches of a fresh snapshot', () => {
       find.openFind();
       search('api');
