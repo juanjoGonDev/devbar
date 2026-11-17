@@ -29,8 +29,8 @@ export function stripAnsi(value: string): string {
 
 /**
  * Chatter the INTERACTIVE login shell itself emits (`-ic` loads the user's
- * rc files), not the service. Blank lines are not noise by this rule — the
- * start-up window in `ProcessManager.start` handles those.
+ * rc files), not the service. Blank lines are not noise by this rule — they
+ * are dropped until the process prints its first real line (`outputLines`).
  */
 export function isShellNoise(line: string): boolean {
   const clean = stripAnsi(line).trim();

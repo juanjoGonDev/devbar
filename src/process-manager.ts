@@ -4,9 +4,9 @@ import { isWin } from './platform.js';
 import { expandTilde } from './path-helper.js';
 import { buildCmdline, buildCmdlineWindows } from './parse-command.js';
 import { parseProcessId } from './compound-id.js';
-import { matchesPattern, safeRegex, stripAnsi } from './process/log-filters.js';
+import { matchesPattern, stripAnsi } from './process/log-filters.js';
 import { readLines } from './process/line-splitter.js';
-import { outputLines } from './process/output-lines.js';
+import { levelDetectors, outputLines } from './process/output-lines.js';
 import {
   buildSpawnArgs,
   killGroup,
@@ -150,6 +150,8 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
         resolved?.kind === 'command'
           ? resolved.target.silencedPatterns
           : { warn: [], error: [] };
+    // Like `outputLines`: a workflow script's levels colour, never count.
+    const counted = resolved?.kind !== 'prescript';
     let warns = 0,
       errors = 0;
     for (const entry of buffer) {
@@ -161,7 +163,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
         );
       entry.silenced = silenced;
       entry.level = silenced ? null : level;
-      if (!silenced) {
+      if (!silenced && counted) {
         if (level === 'error') errors++;
         else warns++;
       }
@@ -261,8 +263,7 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
       this.setState(processId, { status: 'stopped', lastError: message });
       return { ok: false, error: message };
     }
-    const warnRegex = kind === 'command' ? safeRegex(target.warnRegex) : null,
-      errorRegex = kind === 'command' ? safeRegex(target.errorRegex) : null;
+    const { warnRegex, errorRegex } = levelDetectors(resolved);
     // Until the process prints a real line, on either stream, a blank one is
     // an rc file starting up — however long that takes.
     let printed = false;
@@ -285,6 +286,9 @@ export class ProcessManager extends EventEmitter<ProcessManagerEvents> {
     const lines = {
       warnRegex,
       errorRegex,
+      // A workflow script's level only colours its own log: counting it would
+      // badge the script in the logs sidebar for a line its run never judged.
+      countsLevels: kind !== 'prescript',
       printedYet: () => printed,
       printing: () => {
         printed = true;
