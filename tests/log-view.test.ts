@@ -108,6 +108,31 @@ describe('renderer/log-view/log-view.ts', () => {
     expect(texts()).toEqual(['run 2']);
   });
 
+  it('refolds a stack trace whose first frame the memory cap trimmed away', async () => {
+    // Capped at 10 lines, a trim fires at line 311 and keeps the last 10:
+    // frames 302–306 of a block whose head (300) and first frame (301) it
+    // drops.
+    const { view, lines } = mount();
+    const opened = view.open('pre:g:a');
+    await answer('pre:g:a', { ...snapshot([]), logLimit: 10 });
+    await opened;
+    for (let seq = 1; seq <= 311; seq += 1) {
+      const text =
+        seq === 300
+          ? 'Error: boom'
+          : seq >= 301 && seq <= 306
+            ? `    at f (x:${seq})`
+            : `línea ${seq}`;
+      const level = seq === 300 ? 'error' : null;
+      view.receivePush({ id: 'pre:g:a', entry: line(text, { seq, level }) });
+    }
+    expect(view.buffer.entries).toHaveLength(10);
+    // Every frame left still has a way to be shown: none is hidden for good
+    // under a fold whose control went with the trimmed frame.
+    const fold = lines.querySelector('.stack-fold');
+    expect(fold?.textContent ?? 'no fold row').toContain('+4 líneas de stack');
+  });
+
   it('gives up a load in flight once cleared', async () => {
     const { view, texts } = mount();
     const opened = view.open('pre:g:a');
