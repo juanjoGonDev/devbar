@@ -6,7 +6,8 @@
  * Resuming needs the pane (redraw at the tail, flush what was held), so the
  * button's click is wired in `pane.ts`, which sits above this module.
  */
-import { liveLabel, nextLive, type LiveEvent } from './live-state.js';
+import { liveLabel } from './live-state.js';
+import { liveDispatcher } from '../log-view/context.js';
 import { liveBtn, liveTextEl, setText } from './elements.js';
 import { view } from './view.js';
 
@@ -21,9 +22,4 @@ export function paintLive(): void {
 }
 
 /** Apply one event, repainting only when the state actually moved. */
-export function dispatchLive(event: LiveEvent): void {
-  const next = nextLive(view.live, event);
-  if (next === view.live) return;
-  view.live = next;
-  paintLive();
-}
+export const dispatchLive = liveDispatcher(view, paintLive);

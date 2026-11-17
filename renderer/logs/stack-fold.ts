@@ -8,10 +8,11 @@
  * stack is open — form a block under the line just before them, drawn
  * collapsed as «+N líneas de stack».
  *
- * The grouping is pure (`isStackLine`, `groupStacks`); the index below keys
- * blocks by entry OBJECT rather than position, so trimming the buffer never
- * rebases it, and whether a block is open is keyed by its head entry, so it
- * survives repaints and rebuilds of the index alike. Nothing here touches the
+ * The grouping is pure (`isStackLine`, `groupStacks`); an index — one per
+ * view, `createStackIndex` — keys blocks by entry OBJECT rather than
+ * position, so trimming the buffer never rebases it, and whether a block is
+ * open is keyed by its head entry, so it survives repaints and rebuilds of
+ * the index alike. Nothing here touches the
  * DOM: filtering, silencing and the search still see every line of a block,
  * because folding only decides how a drawn row looks.
  */
@@ -80,42 +81,56 @@ export interface StackBlock {
   members: LogEntry[];
 }
 
-let blockOf = new WeakMap<LogEntry, StackBlock>();
-/** Heads of the blocks someone opened. */
+/**
+ * One view's blocks. Every log view keeps its own, rebuilt with its own
+ * snapshots: two of them must never reset each other's.
+ */
+export interface StackIndex {
+  /**
+   * Index one line given the line before it — for a line that just arrived.
+   * Lines of two different services in a merged view never join one block.
+   */
+  indexEntry: (prev: LogEntry | undefined, entry: LogEntry) => void;
+  /** Rebuild the index over a fresh set of lines (a snapshot, a scope switch). */
+  indexAll: (entries: readonly LogEntry[]) => void;
+  stackOf: (entry: LogEntry) => StackBlock | undefined;
+}
+
+/** Heads of the blocks someone opened: keyed by entry, so shared safely. */
 const opened = new WeakSet<LogEntry>();
 
 function sourceOf(entry: LogEntry): string | undefined {
   return (entry as SourcedLogEntry).srcId;
 }
 
-/**
- * Index one line given the line before it — for a line that just arrived.
- * Lines of two different services in a merged view never join one block.
- */
-export function indexStackEntry(
-  prev: LogEntry | undefined,
-  entry: LogEntry,
-): void {
-  if (!prev || sourceOf(prev) !== sourceOf(entry)) return;
-  const open = blockOf.get(prev);
-  const afterError = (prev.originalLevel ?? prev.level) === 'error';
-  if (!isStackLine(entry.line, open !== undefined, afterError)) return;
-  if (open) {
-    open.members.push(entry);
-    blockOf.set(entry, open);
-  } else blockOf.set(entry, { head: prev, members: [entry] });
+export function createStackIndex(): StackIndex {
+  let blockOf = new WeakMap<LogEntry, StackBlock>();
+  const indexEntry = (prev: LogEntry | undefined, entry: LogEntry): void => {
+    if (!prev || sourceOf(prev) !== sourceOf(entry)) return;
+    const open = blockOf.get(prev);
+    const afterError = (prev.originalLevel ?? prev.level) === 'error';
+    if (!isStackLine(entry.line, open !== undefined, afterError)) return;
+    if (open) {
+      open.members.push(entry);
+      blockOf.set(entry, open);
+    } else blockOf.set(entry, { head: prev, members: [entry] });
+  };
+  return {
+    indexEntry,
+    indexAll(entries) {
+      blockOf = new WeakMap();
+      for (let i = 0; i < entries.length; i += 1)
+        indexEntry(entries[i - 1], entries[i] as LogEntry);
+    },
+    stackOf: (entry) => blockOf.get(entry),
+  };
 }
 
-/** Rebuild the index over a fresh set of lines (a snapshot, a scope switch). */
-export function indexStacks(entries: readonly LogEntry[]): void {
-  blockOf = new WeakMap();
-  for (let i = 0; i < entries.length; i += 1)
-    indexStackEntry(entries[i - 1], entries[i] as LogEntry);
-}
-
-export function stackOf(entry: LogEntry): StackBlock | undefined {
-  return blockOf.get(entry);
-}
+/** The logs window's own index. */
+export const windowStacks = createStackIndex();
+export const indexStackEntry = windowStacks.indexEntry;
+export const indexStacks = windowStacks.indexAll;
+export const stackOf = windowStacks.stackOf;
 
 /** Drawn collapsed: big enough to be worth folding, and not opened. */
 export function isFolded(block: StackBlock): boolean {

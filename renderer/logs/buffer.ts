@@ -41,24 +41,34 @@ export interface LogBuffer {
   redraws: number;
 }
 
-export const buffer: LogBuffer = {
-  entries: [],
-  visible: [],
-  winStart: 0,
-  winEnd: -1,
-  selected: new Set<number>(),
-  anchorEntry: null,
-  redraws: 0,
-};
+/** An empty buffer: every log view holds its own. */
+export function createBuffer(): LogBuffer {
+  return {
+    entries: [],
+    visible: [],
+    winStart: 0,
+    winEnd: -1,
+    selected: new Set<number>(),
+    anchorEntry: null,
+    redraws: 0,
+  };
+}
+
+/**
+ * The logs window's buffer. The functions that every view shares work on it
+ * unless handed another view's (`target`); the selection is the window's own.
+ */
+export const buffer: LogBuffer = createBuffer();
 
 export function recomputeVisible(
   filterRe: RegExp | null,
   levels: ReadonlySet<SilenceLevel>,
+  target: LogBuffer = buffer,
 ): void {
-  buffer.visible = [];
-  for (let i = 0; i < buffer.entries.length; i += 1) {
-    const entry = buffer.entries[i];
-    if (entry && matchesFilter(entry, filterRe, levels)) buffer.visible.push(i);
+  target.visible = [];
+  for (let i = 0; i < target.entries.length; i += 1) {
+    const entry = target.entries[i];
+    if (entry && matchesFilter(entry, filterRe, levels)) target.visible.push(i);
   }
 }
 
@@ -67,11 +77,12 @@ export function replaceEntries(
   next: LogEntry[],
   filterRe: RegExp | null,
   levels: ReadonlySet<SilenceLevel>,
+  target: LogBuffer = buffer,
 ): void {
-  buffer.entries = next;
-  buffer.selected.clear();
-  buffer.anchorEntry = null;
-  recomputeVisible(filterRe, levels);
+  target.entries = next;
+  target.selected.clear();
+  target.anchorEntry = null;
+  recomputeVisible(filterRe, levels, target);
 }
 
 /** What the caller has to redraw after the oldest lines were dropped. */
@@ -92,26 +103,27 @@ export function trimBuffer(
   cap: number,
   filterRe: RegExp | null,
   levels: ReadonlySet<SilenceLevel>,
+  target: LogBuffer = buffer,
 ): Trim | null {
-  const drop = buffer.entries.length - cap;
+  const drop = target.entries.length - cap;
   if (drop <= 0) return null;
   // How far the window has to slide, and whether it was following the tail —
   // decided BEFORE the shift, while the old indices still mean something.
-  const droppedVisible = buffer.visible.filter((index) => index < drop).length;
-  const wasFollowing = buffer.winEnd >= buffer.visible.length - 1;
+  const droppedVisible = target.visible.filter((index) => index < drop).length;
+  const wasFollowing = target.winEnd >= target.visible.length - 1;
 
-  buffer.entries = buffer.entries.slice(drop);
+  target.entries = target.entries.slice(drop);
   const rebased = new Set<number>();
-  for (const index of buffer.selected) {
+  for (const index of target.selected) {
     if (index - drop >= 0) rebased.add(index - drop);
   }
-  buffer.selected.clear();
-  for (const index of rebased) buffer.selected.add(index);
-  buffer.anchorEntry =
-    buffer.anchorEntry === null || buffer.anchorEntry - drop < 0
+  target.selected.clear();
+  for (const index of rebased) target.selected.add(index);
+  target.anchorEntry =
+    target.anchorEntry === null || target.anchorEntry - drop < 0
       ? null
-      : buffer.anchorEntry - drop;
-  recomputeVisible(filterRe, levels);
+      : target.anchorEntry - drop;
+  recomputeVisible(filterRe, levels, target);
   return { droppedVisible, wasFollowing };
 }
 
@@ -139,12 +151,13 @@ export function rewrittenIndex(
  */
 export function swapRewritten(
   entry: LogEntry,
+  target: LogBuffer = buffer,
 ): { index: number; previous: LogEntry } | null {
-  const index = rewrittenIndex(buffer.entries, entry);
-  const previous = index < 0 ? undefined : buffer.entries[index];
+  const index = rewrittenIndex(target.entries, entry);
+  const previous = index < 0 ? undefined : target.entries[index];
   if (!previous) return null;
-  buffer.entries[index] = entry;
-  buffer.redraws += 1;
+  target.entries[index] = entry;
+  target.redraws += 1;
   return { index, previous };
 }
 

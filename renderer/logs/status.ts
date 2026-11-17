@@ -7,8 +7,8 @@
  * sits here because a scope switch has to empty it in the same breath as it
  * clears the selection.
  */
-import { queuedAfter } from '../pending-queue.js';
-import { buffer, rewrittenIndex } from './buffer.js';
+import { createPendingLines } from '../log-view/pending.js';
+import { buffer } from './buffer.js';
 import { dispatchLive } from './live.js';
 import { clearSelectionBtn, linesEl, statusEl } from './elements.js';
 import type { LogEntry } from '../../src/domain-types.js';
@@ -16,42 +16,18 @@ import type { LogEntry } from '../../src/domain-types.js';
 /** Lines held back from the buffer while the viewer is paused. */
 export const pendingQueue: LogEntry[] = [];
 
-/**
- * Hold a line that arrived while paused, and count it on the live button —
- * unless it redraws a line already held, queued or on screen (a progress
- * bar): that one is rewritten in place on resume, so it is not news.
- */
-export function queueWhilePaused(entry: LogEntry): void {
-  const redraw =
-    rewrittenIndex(pendingQueue, entry) >= 0 ||
-    rewrittenIndex(buffer.entries, entry) >= 0;
-  pendingQueue.push(entry);
-  if (!redraw) dispatchLive({ type: 'arrived', count: 1 });
-}
+const pending = createPendingLines({
+  buffer,
+  pending: pendingQueue,
+  dispatchLive,
+});
 
-/**
- * Forget lines queued while paused. They describe the buffer we are about to
- * replace, so they go BEFORE we ask main for the new one — never after: main
- * snapshots and resubscribes in the same tick, so a line is in one or the
- * other and never both. Dropping the queue once the snapshot lands would throw
- * away everything that arrived in between.
- */
-export function dropPendingQueue(): void {
-  pendingQueue.length = 0;
-  dispatchLive({ type: 'reset' });
-}
-
-/**
- * Keep only what a freshly adopted snapshot does not already contain. The
- * subscription that fed the queue is the SAME one across a reload, so main's
- * snapshot-and-resubscribe-in-one-tick rule does not separate them here: only
- * the buffer's own sequence does.
- */
-export function keepQueuedAfter(watermark: (entry: LogEntry) => number): void {
-  const fresh = queuedAfter(pendingQueue, watermark);
-  pendingQueue.length = 0;
-  pendingQueue.push(...fresh);
-}
+/** Hold a line that arrived while paused (see `log-view/pending.ts`). */
+export const queueWhilePaused = pending.queueWhilePaused;
+/** Forget lines queued while paused, before a new snapshot is asked for. */
+export const dropPendingQueue = pending.dropPendingQueue;
+/** Keep only what a freshly adopted snapshot does not already contain. */
+export const keepQueuedAfter = pending.keepQueuedAfter;
 
 export function reportSelection(): void {
   const count = buffer.selected.size;
