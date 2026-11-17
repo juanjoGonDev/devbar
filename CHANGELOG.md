@@ -3,7 +3,7 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
-## [0.13.0] - 2026-11-03
+## [0.14.0] - 2026-11-03
 
 ### Añadido
 
@@ -34,7 +34,7 @@ Todas las novedades relevantes de DevBar. El formato sigue
   o todo el historial, y elegir a los cuántos días se borran solas las
   entradas (30 por defecto, hasta 365).
 
-## [0.12.1] - 2026-11-16
+## [0.13.0] - 2026-11-16
 
 ### Corregido
 
