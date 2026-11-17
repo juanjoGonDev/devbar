@@ -8,21 +8,23 @@
  * pane would mean each one holding its own copy and the copies drifting; this
  * module keeps a single answer and no pane owns it.
  *
- * It imports nothing but types — and the pure live-state module, which imports
- * nothing at all — on purpose: it is the bottom of the graph, so any pane may
- * read it without creating a cycle.
+ * It imports nothing but types — and the engine's state factory, which imports
+ * nothing but the pure live-state module — on purpose: it is the bottom of the
+ * graph, so any pane may read it without creating a cycle. Its engine half
+ * (`LogViewState`) is what the shared log pane reads; the rest is the
+ * window's own.
  */
-import type { LogEntry } from '../../src/domain-types.js';
 import type {
   LogListGroup,
   LogListItem,
-  LogSource,
   LogsTarget,
   SilenceLevel,
 } from '../../src/ipc-contract.js';
-import type { PatternMatcher } from './silence-preview.js';
-import type { FindCursor } from './find-model.js';
-import { LIVE, type LiveState } from './live-state.js';
+import {
+  createLogViewState,
+  type FindHooks,
+  type LogViewState,
+} from '../log-view/context.js';
 
 /**
  * The three scopes the window can show. Every entry point — nav counters, tray
@@ -35,46 +37,14 @@ export type Scope =
   | { kind: 'group'; groupId: string }
   | { kind: 'single'; processId: string };
 
-export interface LogsView {
-  /** The single service on screen; null while a merged scope is shown. */
-  processId: string | null;
+export interface LogsView extends LogViewState {
   /** Current resolved target (group + command/action). */
   currentTarget: LogsTarget | null;
   /** groupId + commandId extracted from processId for silence ops. */
   currentGroupId: string | null;
   currentCommandId: string | null;
-  /**
-   * srcId → source while the window shows a merged stream; null in single
-   * mode. Doubles as the "am I merged" flag.
-   */
-  groupSources: Map<string, LogSource> | null;
   /** Distinguishes the generic view from a single-group one; both are merged. */
   mergedIsAll: boolean;
-  /** The merged scope on screen, so unknown sources can be looked up again. */
-  mergedGroupId: string | null;
-  /**
-   * Levels the view is pinned to. Empty means "show everything"; otherwise
-   * only lines of the selected levels survive. Combines with the text filter —
-   * both must pass.
-   */
-  levelFilter: Set<SilenceLevel>;
-  /**
-   * What hides the lines that do not match: the find query while «Solo
-   * coincidencias» is on, null otherwise. Non-global, so `test` keeps no state.
-   */
-  filterRe: RegExp | null;
-  /** The find query, global, for marking its hits; null while nothing is searched. */
-  findRe: RegExp | null;
-  /** The hit the find widget is on, drawn brighter than the rest. */
-  findCurrent: FindCursor | null;
-  /**
-   * Lines held in memory. Mirrors what ProcessManager actually keeps for the
-   * target on screen — a number only main can give us, since a running process
-   * froze its limit at start and a setting edited since does not apply to it.
-   * Holding more than main does would let the viewer filter and copy lines the
-   * process buffer has already dropped.
-   */
-  memoryCap: number;
   /** The global setting, for views with no override of their own. */
   globalRetention: number;
   /**
@@ -90,42 +60,19 @@ export interface LogsView {
   /** Name of what is on screen, and of the group it belongs to. */
   displayName: string;
   groupName: string;
-  /**
-   * The rule the silenced popover is previewing — a draft being typed, or a
-   * saved rule under the pointer. Rows it would swallow are drawn marked, so
-   * a row built later (scrolling, a new line) is marked the same way.
-   */
-  silencePreview: SilencePreview | null;
-  /** Following the tail, or paused — and why (see `live-state.ts`). */
-  live: LiveState;
-}
-
-/** A rule being previewed: which lines it swallows, and where it bites. */
-export interface SilencePreview {
-  swallows(entry: LogEntry): boolean;
-  matcher: PatternMatcher;
 }
 
 export const view: LogsView = {
-  processId: null,
+  ...createLogViewState(),
   currentTarget: null,
   currentGroupId: null,
   currentCommandId: null,
-  groupSources: null,
   mergedIsAll: false,
-  mergedGroupId: null,
-  levelFilter: new Set<SilenceLevel>(),
-  filterRe: null,
-  findRe: null,
-  findCurrent: null,
-  memoryCap: 20_000,
   globalRetention: 20_000,
   watchedStartedAt: null,
   sideData: [],
   displayName: '',
   groupName: '',
-  silencePreview: null,
-  live: LIVE,
 };
 
 export function itemById(id: string): LogListItem | null {
@@ -197,19 +144,6 @@ export function installRowHooks(next: RowHooks): void {
  * cannot import it back. Until the widget installs itself nothing is searched,
  * and every hook is a no-op.
  */
-export interface FindHooks {
-  /** `visible` was rebuilt from scratch: count the matches again. */
-  recount(): void;
-  /** A line joined the end of `visible`. */
-  appended(entryIndex: number): void;
-  /** The `dropped` oldest entries left the buffer; `visible` kept its filters. */
-  trimmed(dropped: number): void;
-  /** «Ver en contexto» stopped hiding the lines that do not match. */
-  filterDropped(): void;
-  /** An entry point pinned a level: the chips saying so must be on screen. */
-  levelPinned(): void;
-}
-
 export const findHooks: FindHooks = {
   recount: () => undefined,
   appended: () => undefined,

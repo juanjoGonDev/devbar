@@ -6,7 +6,6 @@
  * src/pre-script-runner.ts, which keeps the scheduling and the processes.
  */
 import type {
-  LogEntry,
   Pipeline,
   PreStepScriptRef,
   WorkflowRunResult,
@@ -18,7 +17,6 @@ import type {
   WorkflowScriptRunState,
 } from '../ipc-contract.js';
 import { makeAggregatorId } from '../compound-id.js';
-import { replacedIndex } from '../log-replace.js';
 import {
   PIPELINE_TRIGGER,
   descendants,
@@ -37,7 +35,6 @@ export interface LiveRun {
   internal: Map<string, BlockRunStatus>;
   blocks: Map<string, WorkflowBlockRunState>;
   scripts: Map<string, WorkflowScriptRunState>;
-  logs: Map<string, LogEntry[]>;
   status: WorkflowRunState['status'];
   startedAt: number;
   finishedAt: number | null;
@@ -46,26 +43,6 @@ export interface LiveRun {
 }
 
 const SETTLED_OK: readonly WorkflowNodeStatus[] = ['success', 'warning'];
-
-/** How much of one script's output a run keeps for `scriptLog`. */
-const SCRIPT_LOG_LIMIT = 2000;
-
-/**
- * Keeps one line of a script's output for the run, dropping the oldest. A
- * progress redraw takes the place of the line it rewrites instead.
- */
-export function appendScriptLog(
-  run: LiveRun,
-  key: string,
-  entry: LogEntry,
-): void {
-  const lines = run.logs.get(key) ?? [];
-  const rewritten = replacedIndex(lines, entry.replaces);
-  if (rewritten >= 0) lines[rewritten] = entry;
-  else lines.push(entry);
-  if (lines.length > SCRIPT_LOG_LIMIT) lines.shift();
-  run.logs.set(key, lines);
-}
 
 export function snapshotOf(run: LiveRun, workflowId: string): WorkflowRunState {
   return {
@@ -154,7 +131,6 @@ export function freshRun(pipeline: Pipeline, runId: number): LiveRun {
     internal: new Map(),
     blocks,
     scripts,
-    logs: new Map(),
     status: 'running',
     startedAt: Date.now(),
     finishedAt: null,
@@ -194,7 +170,8 @@ export function failedScriptCount(run: LiveRun): number {
 /**
  * The next run of a retry from `blockId`: that block and every descendant
  * that did not succeed last time run again; every other block keeps its last
- * status (and logs) and is never started. A reason string when it cannot be
+ * status and is never started — so its scripts' own buffers in main, the only
+ * copy of their output, still hold that run. A reason string when it cannot be
  * retried: an unknown block, or one whose sources did not all succeed.
  */
 export function planRetry(
@@ -226,8 +203,6 @@ export function planRetry(
       const key = pipelineRefKey(ref);
       const keptScript = last.scripts.get(key);
       if (keptScript) next.scripts.set(key, { ...keptScript });
-      const logs = last.logs.get(key);
-      if (logs) next.logs.set(key, logs);
       next.handle.doneScripts += 1;
     }
   }

@@ -1,18 +1,10 @@
 import { iconButton } from '../icon.js';
-import { latestWins } from '../latest-wins.js';
-import { stripAnsi } from '../logs/ansi.js';
+import { createLogView } from '../log-view/log-view.js';
 import { formatClock, formatPreciseDuration } from './list-model.js';
 import { runScripts } from '../pipeline/run-view.js';
 import { pipelineRefKey } from '../../src/pipeline-graph.js';
-import {
-  DEFAULT_ERROR_REGEX,
-  DEFAULT_WARN_REGEX,
-} from '../../src/log-level-defaults.js';
-import type {
-  LogEntry,
-  Pipeline,
-  PreStepScriptRef,
-} from '../../src/domain-types.js';
+import { makePreScriptId } from '../../src/compound-id.js';
+import type { Pipeline, PreStepScriptRef } from '../../src/domain-types.js';
 import type {
   WorkflowRunState,
   WorkflowScriptRunState,
@@ -21,10 +13,16 @@ import { spinPhase } from '../spin-phase.js';
 
 /**
  * The log drawer at the bottom of the canvas: one tab per script of the
- * workflow's latest run, the selected script's output (refreshed every second
- * while it runs, and whenever the run moves on), «exit N · 3.2s», a way out
- * to the logs window, and a close button. It sticks to the bottom unless the
- * user scrolled up to read.
+ * workflow's latest run, the selected script's output, «exit N · 3.2s», a
+ * way out to the logs window, and a close button.
+ *
+ * The output is the logs window's own view of that script — the same engine
+ * (`renderer/log-view/`) over the same buffer (`pre:<group>:<script>` in
+ * main), fed the same way: a `logs:get` snapshot, then the `logs:line`
+ * pushes, live. So it reads exactly as the logs window does: colours,
+ * JSON, folded stack traces, progress bars redrawn in place, following the
+ * tail unless the reader scrolled up. Only the tabs, the meta and the
+ * buttons are the drawer's own.
  */
 
 export interface LogDrawerDeps {
@@ -34,7 +32,6 @@ export interface LogDrawerDeps {
   pipeline: () => Pipeline;
   nameOf: (ref: PreStepScriptRef) => string;
   now: () => number;
-  pollMs?: number;
   /** The drawer opened or closed (the legend makes room for it). */
   onToggle?: (open: boolean) => void;
 }
@@ -45,15 +42,8 @@ export interface LogDrawer {
   open(refKey?: string | null): void;
   close(): void;
   isOpen(): boolean;
-  /** The run changed: repaint the tabs and refetch what may have grown. */
+  /** The run changed: repaint the tabs, and follow a script that (re)started. */
   update(): void;
-}
-
-const pad2 = (value: number): string => String(value).padStart(2, '0');
-
-function clock(ts: number): string {
-  const d = new Date(ts);
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -67,32 +57,27 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** The same detectors a command gets by default, so a workflow script's line
- *  reads as the same level here as it would in the logs window. */
-const ERROR_RE = new RegExp(DEFAULT_ERROR_REGEX, 'i');
-const WARN_RE = new RegExp(DEFAULT_WARN_REGEX, 'i');
-
-function levelOf(entry: LogEntry, text: string): 'error' | 'warn' | null {
-  if (entry.level) return entry.level;
-  if (ERROR_RE.test(text)) return 'error';
-  if (WARN_RE.test(text)) return 'warn';
-  return null;
-}
-
-function lineOf(entry: LogEntry): HTMLElement {
-  const text = stripAnsi(entry.line);
-  const level = levelOf(entry, text);
-  const line = el('div', 'wf-log-line');
-  if (level) line.classList.add(`is-${level}`);
-  if (entry.stream === 'sys') line.classList.add('is-sys');
-  line.append(el('span', 'wf-log-time', `[${clock(entry.ts)}] `), text);
-  return line;
-}
-
 function mark(status: string): HTMLElement {
   return status === 'running'
     ? spinPhase(el('span', 'pipeline-spinner'))
     : el('span', `wf-dot is-${status}`);
+}
+
+/**
+ * Whether the script got as far as this run: it started, or it was turned
+ * away (no path, declined, already running) and said why in its own log. One
+ * still waiting — or skipped, or cancelled before its turn — has nothing in
+ * its buffer but the previous run's output.
+ */
+function reachedThisRun(script: WorkflowScriptRunState): boolean {
+  return script.startedAt !== null || script.finishedAt !== null;
+}
+
+/** What the drawer says instead of a log the script does not have yet. */
+function pendingText(script: WorkflowScriptRunState): string {
+  return script.status === 'waiting'
+    ? 'Todavía no ha empezado'
+    : 'No ha llegado a ejecutarse';
 }
 
 export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
@@ -113,47 +98,48 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
   const body = el('div', 'wf-log-body');
   body.setAttribute('role', 'log');
   body.tabIndex = 0;
+  const lines = el('div', 'wf-log-lines');
+  const empty = el('div', 'wf-log-empty');
+  empty.hidden = true;
+  body.append(lines, empty);
   element.append(head, body);
   deps.host.append(element);
 
+  const view = createLogView({ lines, main: body, scrollButton: null });
+  window.api.onLog((payload) => view.receivePush(payload));
+
   let selected: string | null = null;
-  let stick = true;
-  let shownStatus: string | null = null;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const reads = latestWins();
+  /** The process, and the run of it, the view was last pointed at. */
+  let shown: { processId: string; startedAt: number | null } | null = null;
 
   const scripts = (): WorkflowScriptRunState[] =>
     runScripts(deps.run(), deps.pipeline());
   const selectedScript = (): WorkflowScriptRunState | null =>
     scripts().find((s) => pipelineRefKey(s) === selected) ?? null;
 
-  function stopPolling(): void {
-    if (timer !== null) clearTimeout(timer);
-    timer = null;
+  /** Nothing to show: the view lets go of what it was showing. */
+  function showNothing(text: string | null): void {
+    shown = null;
+    view.clear();
+    empty.textContent = text ?? '';
+    empty.hidden = text === null;
   }
 
-  async function fetchLog(): Promise<void> {
-    stopPolling();
+  /**
+   * Point the view at the selected script's buffer — once per run of it: a
+   * new run (a retry, the next run) emptied main's buffer, so it is read
+   * again; the same run just keeps streaming.
+   */
+  function follow(): void {
     const script = selectedScript();
-    const id = deps.workflowId();
-    if (!script || !id) {
-      body.replaceChildren();
+    if (!script) return showNothing(null);
+    if (!reachedThisRun(script)) return showNothing(pendingText(script));
+    const processId = makePreScriptId(script.groupId, script.scriptId);
+    if (shown?.processId === processId && shown.startedAt === script.startedAt)
       return;
-    }
-    reads.invalidate();
-    const current = reads.claim();
-    const ref = { groupId: script.groupId, scriptId: script.scriptId };
-    let entries: LogEntry[] | null = null;
-    try {
-      entries = await window.api.getWorkflowScriptLog(id, 'latest', ref);
-    } catch {
-      entries = null;
-    }
-    if (!current() || element.hidden) return;
-    body.replaceChildren(...(entries ?? []).map(lineOf));
-    if (stick) body.scrollTop = body.scrollHeight;
-    if (selectedScript()?.status === 'running')
-      timer = setTimeout(() => void fetchLog(), deps.pollMs ?? 1000);
+    shown = { processId, startedAt: script.startedAt };
+    empty.hidden = true;
+    void view.open(processId);
   }
 
   function paintMeta(script: WorkflowScriptRunState | null): void {
@@ -203,10 +189,8 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
 
   function select(key: string | null): void {
     selected = key;
-    stick = true;
     paintTabs();
-    shownStatus = selectedScript()?.status ?? null;
-    void fetchLog();
+    follow();
   }
 
   tabs.addEventListener('click', (event) => {
@@ -214,9 +198,6 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
       '.wf-log-tab',
     );
     if (tab?.dataset.ref) select(tab.dataset.ref);
-  });
-  body.addEventListener('scroll', () => {
-    stick = body.scrollTop + body.clientHeight >= body.scrollHeight - 4;
   });
   external.addEventListener('click', () => {
     const id = deps.workflowId();
@@ -230,8 +211,7 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
 
   function close(): void {
     if (element.hidden) return;
-    stopPolling();
-    reads.invalidate();
+    showNothing(null);
     element.hidden = true;
     deps.onToggle?.(false);
   }
@@ -250,13 +230,7 @@ export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {
     update: () => {
       if (element.hidden) return;
       paintTabs();
-      const status = selectedScript()?.status ?? null;
-      // A script that just started or finished has new output to show; one
-      // still running is already being polled.
-      if (status !== shownStatus) {
-        shownStatus = status;
-        void fetchLog();
-      }
+      follow();
     },
   };
 }

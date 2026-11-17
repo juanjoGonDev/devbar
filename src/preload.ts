@@ -201,8 +201,6 @@ const api: DevBarApi = {
   retryWorkflowFrom: (workflowId, blockId) =>
     ipcRenderer.invoke('workflows:retryFrom', { workflowId, blockId }),
   getWorkflowRunStates: () => ipcRenderer.invoke('workflows:runState'),
-  getWorkflowScriptLog: (workflowId, runId, ref) =>
-    ipcRenderer.invoke('workflows:scriptLog', { workflowId, runId, ref }),
   openWorkflowLog: (workflowId, ref = null) =>
     ipcRenderer.invoke('workflows:openLog', { workflowId, ref }),
   onWorkflowsUpdate: (cb) => subscribe('workflows:update', cb),

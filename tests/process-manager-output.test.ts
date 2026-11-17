@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { normalizeGroup } from '../src/groups-model.js';
-import { makeActionId, makeCommandId } from '../src/compound-id.js';
+import {
+  makeActionId,
+  makeCommandId,
+  makePreScriptId,
+} from '../src/compound-id.js';
 import type { GlobalSettings, Group, LogEntry } from '../src/domain-types.js';
 
 /**
@@ -46,6 +50,7 @@ const { ProcessManager } = await import('../src/process-manager.js');
 
 const CMD_ID = makeCommandId('g1', 'c1');
 const ACTION_ID = makeActionId('g1', 'a1');
+const SCRIPT_ID = makePreScriptId('g1', 's1');
 
 interface GroupShape {
   command?: string;
@@ -73,7 +78,7 @@ function group({
       },
     ],
     actions: [{ id: 'a1', name: 'Install', command: 'pnpm i', env: [] }],
-    preScripts: [],
+    preScripts: [{ id: 's1', name: 'Setup', command: 'make setup', env: [] }],
   });
 }
 
@@ -193,6 +198,44 @@ describe('src/process-manager.ts — service output and exit', () => {
     });
   });
 
+  describe('classifying a workflow script line', () => {
+    it('reads its level with the detectors a command gets by default', async () => {
+      // The logs window and the workflow terminal colour a line from its
+      // level alone, so the script's must be set here, where it is stored.
+      const pm = manager();
+      pm.start(SCRIPT_ID);
+      await say(
+        lastChild(),
+        'stdout',
+        'compilado src/errors/index.ts',
+        '0 errors, 0 warnings',
+        'DeprecationWarning: Buffer() está obsoleto',
+        'TypeError: x is undefined',
+      );
+      expect(output(pm, SCRIPT_ID).map((entry) => entry.level)).toEqual([
+        null,
+        null,
+        'warn',
+        'error',
+      ]);
+    });
+
+    it('never counts them, so nothing outside its own log turns amber or red', async () => {
+      // Its counts feed the logs window's sidebar badges; a script's warning
+      // is its workflow's business (run-one.ts has its own rule for that).
+      const pm = manager();
+      pm.start(SCRIPT_ID);
+      const changes: number[] = [];
+      pm.on('change', (state) => changes.push(state.errorCount));
+      await say(lastChild(), 'stdout', 'warning: lento', 'error: roto');
+      await print(lastChild(), 'stdout', 'error 50%\r', 'error 100%\n');
+      pm.recount(SCRIPT_ID); // what re-deriving the counts does, too
+      expect(pm.getState(SCRIPT_ID).warnCount).toBe(0);
+      expect(pm.getState(SCRIPT_ID).errorCount).toBe(0);
+      expect(changes.every((count) => count === 0)).toBe(true);
+    });
+  });
+
   describe('lines that never reach the buffer', () => {
     it('drops the interactive login shell’s own chatter', async () => {
       const pm = manager();
@@ -214,6 +257,33 @@ describe('src/process-manager.ts — service output and exit', () => {
       await say(lastChild(), 'stdout', '', '   ', 'real output');
       expect(output(pm, CMD_ID).map((entry) => entry.line)).toEqual([
         'real output',
+      ]);
+    });
+
+    it('drops them however long the shell takes to start', async () => {
+      // A slow .zshrc (6 s here) printed its noise, dropped as such, with
+      // the blank lines between them left behind on screen. Only the start
+      // runs on fake timers: `say` waits on a real one for readline.
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      const pm = manager();
+      try {
+        pm.start(CMD_ID);
+        vi.advanceTimersByTime(6000);
+      } finally {
+        vi.useRealTimers();
+      }
+      await say(
+        lastChild(),
+        'stderr',
+        'zsh: no job control in this shell',
+        '',
+        '   ',
+      );
+      await say(lastChild(), 'stdout', 'real output', '', 'more');
+      expect(output(pm, CMD_ID).map((entry) => entry.line)).toEqual([
+        'real output',
+        '',
+        'more',
       ]);
     });
   });

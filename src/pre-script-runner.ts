@@ -1,10 +1,4 @@
-import type {
-  Group,
-  LogEntry,
-  PipelineBlock,
-  PreScript,
-  PreStepScriptRef,
-} from './domain-types.js';
+import type { Group, PipelineBlock, PreScript } from './domain-types.js';
 import type { WorkflowRunState } from './ipc-contract.js';
 import { makePreScriptId } from './compound-id.js';
 import { formatUptime } from './format-uptime.js';
@@ -22,7 +16,6 @@ import {
   type RunHandle,
 } from './pre-script/run-one.js';
 import {
-  appendScriptLog,
   failedScriptCount,
   freshRun,
   planRetry,
@@ -98,8 +91,6 @@ export interface PreScriptRunner {
   isRunning(): boolean;
   /** The latest run — in flight or finished — or null before the first. */
   getSnapshot(): WorkflowRunState | null;
-  /** A script's own output during run `runId` (`'latest'`: the last one). */
-  scriptLog(runId: number | 'latest', ref: PreStepScriptRef): LogEntry[] | null;
   /** The in-flight `run()` promise, or `null` when idle. Lets a caller that
    * got `already_running` wait for the run already underway and adopt ITS
    * result, instead of treating another caller's run as a failure of its
@@ -140,7 +131,7 @@ export function createPreScriptRunner({
   confirmScript,
   cancelConfirm,
 }: RunnerDeps): PreScriptRunner {
-  /** The latest run, kept after it ends (statuses, logs, retry). */
+  /** The latest run, kept after it ends (statuses, retry). */
   let live: LiveRun | null = null;
   let running: RunHandle | null = null;
   // The promise backing the in-flight run, or null when idle. Exposed via
@@ -199,7 +190,6 @@ export function createPreScriptRunner({
             setScript(run, ref, { status: 'running', startedAt: Date.now() });
             broadcastUpdate();
           },
-          onLog: (entry) => appendScriptLog(run, key, entry),
         }).then((result) => {
           handle.doneScripts += 1;
           const status = scriptStatusOf(
@@ -452,24 +442,12 @@ export function createPreScriptRunner({
     return { ok: true };
   }
 
-  function scriptLog(
-    runId: number | 'latest',
-    ref: PreStepScriptRef,
-  ): LogEntry[] | null {
-    if (!live || (runId !== 'latest' && runId !== live.handle.runId))
-      return null;
-    const key = pipelineRefKey(ref);
-    if (!live.scripts.has(key)) return null;
-    return [...(live.logs.get(key) ?? [])];
-  }
-
   return {
     run,
     retryFrom,
     cancel,
     isRunning: () => running !== null,
     getSnapshot: () => (live ? snapshotOf(live, workflowId) : null),
-    scriptLog,
     current: () => currentRunPromise,
   };
 }

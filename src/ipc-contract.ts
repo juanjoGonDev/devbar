@@ -71,7 +71,7 @@ export type LogsTarget =
   | { kind: 'action'; group: Group; target: Action }
   | { kind: 'prescript'; group: Group; target: PreScript }
   | { kind: 'unknown'; group: null; target: { name: string } };
-interface LogsSnapshot {
+export interface LogsSnapshot {
   target: LogsTarget;
   lines: LogEntry[];
   /** What main actually retains for this target, frozen at start. */

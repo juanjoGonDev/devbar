@@ -526,6 +526,33 @@ describe('createPreScriptRunner — multi-group interleaving and cwd resolution'
     ).toBe(true);
   });
 
+  it('keeps the directory line once the process empties its buffer to start', async () => {
+    // ProcessManager.start() resets the script's buffer to the new run: a
+    // line written before it was gone from the very log that shows the run.
+    class StartingAfresh extends MockProcessManager {
+      override start(pid: string): { ok: boolean; error?: string } {
+        this._logs[pid] = [];
+        return super.start(pid);
+      }
+    }
+    const group = makeGroup({
+      id: 'gA',
+      path: '/repo/a',
+      preScripts: [makeScript({ id: 'sca', name: 'A' })],
+    });
+    const steps = [makeStep('s1', 'serial', [ref('gA', 'sca')])];
+    const pm = new StartingAfresh({ 'pre:gA:sca': { code: 0 } });
+    const runner = createPreScriptRunner({
+      processManager: pm,
+      configStore: makeConfigStore([group], steps),
+      broadcastUpdate: vi.fn(),
+    });
+    expectSucceeded(await runner.run());
+    expect(getScriptLines(pm, 'pre:gA:sca')[0]).toBe(
+      '── Directorio: /repo/a ──',
+    );
+  });
+
   it('cross-group interleaving executes steps strictly in list order', async () => {
     const groupA = makeGroup({
       id: 'gA',

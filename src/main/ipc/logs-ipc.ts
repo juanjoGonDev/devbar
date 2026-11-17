@@ -54,6 +54,10 @@ export interface LogsIpcDeps {
     isSharedWindowSender: (sender: unknown) => boolean;
     watchSingle: (processId: string) => void;
     watchScope: (groupId: string | null) => void;
+    /** True when the request came from the settings window. */
+    isConfigWindowSender: (sender: unknown) => boolean;
+    /** The settings window's workflow terminal switched to one script. */
+    watchConfigLog: (processId: string) => void;
   };
 }
 
@@ -159,6 +163,10 @@ export function registerLogsIpc(ipc: IpcRegistrar, deps: LogsIpcDeps): void {
     // stream (which would render it twice).
     if (deps.logWindows.isSharedWindowSender(event.sender))
       deps.logWindows.watchSingle(processId);
+    // The workflow terminal under the canvas reads a script's log the very
+    // same way, and is subscribed by the very same call.
+    else if (deps.logWindows.isConfigWindowSender(event.sender))
+      deps.logWindows.watchConfigLog(processId);
     const cmdState = processManager.getState(processId);
     return {
       target: processManager.resolveTarget(processId) || {

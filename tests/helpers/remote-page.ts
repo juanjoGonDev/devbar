@@ -58,7 +58,10 @@ interface Call {
   transcript: Uint8Array;
 }
 
-type Answer = { status: number; body: unknown } | Error;
+/** An answer that never comes: the request stays pending, as a stalled one does. */
+export const HANG = Symbol('hang');
+
+type Answer = { status: number; body: unknown } | Error | typeof HANG;
 
 export interface FakeSource extends EventSourceLike {
   url: string;
@@ -174,6 +177,7 @@ export function pageHarness(
       if (reply && op !== 'auth') sticky.set(op, reply);
       if (!reply) return Promise.reject(new Error(`no answer for ${op}`));
       if (reply instanceof Error) return Promise.reject(reply);
+      if (reply === HANG) return new Promise(() => undefined);
       const given = (args ?? {}) as Record<string, unknown>;
       if (op === 'auth' && reply.status === 200)
         call.session.deviceId = String(given.deviceId);

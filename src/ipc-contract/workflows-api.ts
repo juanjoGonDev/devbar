@@ -1,6 +1,5 @@
 import type {
   Group,
-  LogEntry,
   PreStepScriptRef,
   Workflow,
   WorkflowRunRecord,
@@ -131,12 +130,6 @@ export interface WorkflowsApi {
   ): Promise<WorkflowRunOutcome>;
   /** The latest run of every workflow that ran this session. */
   getWorkflowRunStates(): Promise<WorkflowRunState[]>;
-  /** One script's output during one run (`'latest'`: the latest run). */
-  getWorkflowScriptLog(
-    workflowId: string,
-    runId: number | 'latest',
-    ref: PreStepScriptRef,
-  ): Promise<LogEntry[] | null>;
   /** The logs window, on the script (or, with no ref, the run's narration). */
   openWorkflowLog(
     workflowId: string,

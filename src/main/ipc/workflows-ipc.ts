@@ -6,7 +6,6 @@ import type { WorkflowEntry } from '../../ipc-contract.js';
 import type { WorkflowRunner } from '../../workflow-runner.js';
 import {
   ipcBooleanField,
-  ipcNumber,
   ipcRecord,
   ipcString,
   ipcStringField,
@@ -15,8 +14,10 @@ import {
 
 /**
  * The workflows over IPC: their configuration (list, save, create, delete,
- * enable, the startup trigger), their runs (run, stop, retry, run state, per
- * script logs) and the tray-only group visibility the same screens set. Each
+ * enable, the startup trigger), their runs (run, stop, retry, run state, the
+ * logs window on a script) and the tray-only group visibility the same
+ * screens set. A script's output is its own log buffer, read like any other
+ * (`logs:get`). Each
  * handler narrows its payload; every write broadcasts. Validation of a whole
  * workflow happens in the store (src/workflows.ts): a refused one throws its
  * user-facing reason back to the renderer and nothing is stored.
@@ -34,13 +35,7 @@ export interface WorkflowsIpcDeps {
   >;
   workflowRunner: Pick<
     WorkflowRunner,
-    | 'run'
-    | 'stop'
-    | 'retryFrom'
-    | 'runStates'
-    | 'runState'
-    | 'scriptLog'
-    | 'isRunning'
+    'run' | 'stop' | 'retryFrom' | 'runStates' | 'runState' | 'isRunning'
   >;
   /** The list rows the renderers show (see state-snapshot.ts). */
   workflowEntries: () => WorkflowEntry[];
@@ -126,15 +121,6 @@ export function registerWorkflowsIpc(
       runner.retryFrom(workflowId(payload), ipcStringField(payload, 'blockId')),
   );
   ipc.handle('workflows:runState', () => runner.runStates());
-  ipc.handle(
-    'workflows:scriptLog',
-    (_e: IpcMainInvokeEvent, payload: unknown) => {
-      const raw = ipcRecord(payload);
-      const runId =
-        raw.runId === 'latest' ? 'latest' : ipcNumber(raw.runId, 'runId');
-      return runner.scriptLog(workflowId(payload), runId, ipcRef(raw.ref));
-    },
-  );
   ipc.handle(
     'workflows:openLog',
     (_e: IpcMainInvokeEvent, payload: unknown) => {

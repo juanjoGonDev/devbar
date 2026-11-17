@@ -9197,6 +9197,9 @@ button.xf-item.is-danger .icon {
   gap: 4px;
   min-width: 0;
   overflow-x: auto;
+  /* overflow-x alone makes y auto too: the 0.5px a pressed button sinks
+     (button:active) then overflowed the 26px strip and drew both bars. */
+  overflow-y: hidden;
 }
 .wf-log-tab {
   flex: none;
@@ -9252,30 +9255,44 @@ button.xf-item.is-danger .icon {
   filter: none;
   color: #f5f5f7;
 }
+/* The lines are the logs window's own rows (log-rows.css); only how the
+   drawer frames them is set here. */
 .wf-log-body {
+  position: relative;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 10px 14px;
+  overflow: auto;
+  padding: 6px 0;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
+  line-height: 1.55;
   user-select: text;
 }
 .wf-log-body:focus-visible {
   outline: none;
 }
-.wf-log-time,
-.wf-log-line.is-sys {
+.wf-log-body .line {
+  padding: 1px 12px;
+}
+/* The settings' buttons are raised and dim on press; a row's are flat. */
+.wf-log-body button {
+  box-shadow: none;
+  font-weight: inherit;
+  transition: none;
+}
+.wf-log-body button:hover,
+.wf-log-body button:active {
+  filter: none;
+  transform: none;
+  box-shadow: none;
+}
+.wf-log-empty {
+  padding: 4px 12px;
   color: #8e8e93;
+  font-style: italic;
 }
-.wf-log-line.is-warn {
-  color: #ffb340;
-}
-.wf-log-line.is-error {
-  color: #ff6961;
+.wf-log-empty[hidden] {
+  display: none;
 }
 .pipeline-editor.has-log .pipeline-minimap {
   display: none;

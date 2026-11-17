@@ -113,8 +113,6 @@ export interface RunOneDeps {
   shouldAbort?: () => boolean;
   /** The process is about to be spawned. */
   onStarted?: () => void;
-  /** Every line the script's buffer receives while it runs. */
-  onLog?: (entry: LogEntry) => void;
 }
 
 /**
@@ -203,7 +201,6 @@ export async function runOne(
     entry: LogEntry;
   }): void => {
     if (id !== pid) return;
-    deps.onLog?.(entry);
     if (
       !warned &&
       entry.stream !== 'sys' &&
@@ -254,9 +251,11 @@ export async function runOne(
         void processManager.stop(pid);
       }, script.timeoutMs);
     }
-    pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
     deps.onStarted?.();
     const result = processManager.start(pid);
+    // After start(), which empties the script's buffer for the new run: a
+    // line written before it was gone from the very log that shows the run.
+    pushScriptLog(pid, `── Directorio: ${groupPath} ──`);
     if (!result.ok) {
       if (timeoutToken) {
         clearTimeout(timeoutToken);

@@ -129,6 +129,8 @@ function harness(
       isSharedWindowSender: () => false,
       watchSingle: noop,
       watchScope: noop,
+      isConfigWindowSender: () => false,
+      watchConfigLog: noop,
       ensureLogsWindow: (id: string) => calls.push(`logs:${id}`),
       ensureLogsScopeWindow: () => ({}),
     },

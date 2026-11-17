@@ -19,6 +19,11 @@ import { el } from './view.js';
 type Filter = 'all' | 'warn' | 'error';
 const TAIL = 300;
 const KEEP = 1000;
+/**
+ * How long the tail may take. Live lines are held until it settles, so a
+ * request that hangs must not hide them: past this it counts as failed.
+ */
+const TAIL_DEADLINE_MS = 10_000;
 /** Within this many pixels of the end still counts as "at the end". */
 const END_SLACK_PX = 24;
 
@@ -174,14 +179,25 @@ export function createLogsTab(
     failed = false;
     following = true;
     paint();
+    let deadline: unknown = null;
     try {
-      const tail = await ctx.client.logs(processId, TAIL);
+      const tail = await Promise.race([
+        ctx.client.logs(processId, TAIL),
+        new Promise<never>((_, reject) => {
+          deadline = ctx.env.setTimeout(
+            () => reject(new Error('the log tail took too long')),
+            TAIL_DEADLINE_MS,
+          );
+        }),
+      ]);
       if (round !== loadRound) return;
       lines = tail.lines;
       lastSeq = Math.max(tail.seq, lines.at(-1)?.seq ?? 0);
     } catch {
       if (round !== loadRound) return;
       failed = true;
+    } finally {
+      ctx.env.clearTimeout(deadline);
     }
     const held = early;
     early = null;
