@@ -48,8 +48,9 @@ function harness(groups: Group[] = [], overrides: Partial<WindowIpcDeps> = {}) {
     notifications: {
       showBannerNotification: (title, body) =>
         calls.push(`banner:${title}:${body}`),
-      closeNotificationWindow: () => calls.push('closeBanner'),
-      runNotificationAction: (action) => calls.push(`action:${action}`),
+      dismissBanner: () => calls.push('dismissBanner'),
+      answerBanner: (sender, action) =>
+        calls.push(`answer:${action}:${String(sender)}`),
     },
     trayHost: {
       hideIfVisible: () => calls.push('hideIfVisible'),
@@ -437,15 +438,15 @@ describe('src/main/ipc/window-ipc.ts', () => {
     it('dismisses the current banner', () => {
       const h = harness();
       expect(h.ipc.invoke('notification:dismiss')).toEqual({ ok: true });
-      expect(h.calls).toEqual(['closeBanner']);
+      expect(h.calls).toEqual(['dismissBanner']);
     });
 
-    it('runs a CTA and then dismisses', () => {
+    it('hands a CTA to the banner along with who sent it', () => {
       const h = harness();
-      expect(h.ipc.invoke('notification:action', 'open-about')).toEqual({
-        ok: true,
-      });
-      expect(h.calls).toEqual(['action:open-about', 'closeBanner']);
+      expect(
+        h.ipc.invokeFrom('banner', 'notification:action', 'open-about'),
+      ).toEqual({ ok: true });
+      expect(h.calls).toEqual(['answer:open-about:banner']);
     });
   });
 

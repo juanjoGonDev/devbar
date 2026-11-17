@@ -50,8 +50,8 @@ export interface WindowIpcDeps {
   };
   notifications: {
     showBannerNotification: (title: string, body: string) => void;
-    closeNotificationWindow: () => void;
-    runNotificationAction: (action: string) => void;
+    dismissBanner: () => void;
+    answerBanner: (sender: unknown, action: string) => void;
   };
   trayHost: {
     /** Hides the tray popover, but only when it is on screen. */
@@ -244,18 +244,19 @@ export function registerWindowIpc(
 
   // Dismiss the current completion banner (clicked in the banner renderer).
   ipc.handle('notification:dismiss', () => {
-    deps.notifications.closeNotificationWindow();
+    deps.notifications.dismissBanner();
     return { ok: true };
   });
 
-  // A banner CTA was clicked → run the mapped action, then dismiss.
+  // A banner CTA was clicked → run the mapped action, then dismiss. The
+  // sender goes along: only the banner itself may stand for the user's yes.
   ipc.handle(
     'notification:action',
-    (_e: IpcMainInvokeEvent, rawAction: unknown) => {
-      deps.notifications.runNotificationAction(
+    (e: IpcMainInvokeEvent, rawAction: unknown) => {
+      deps.notifications.answerBanner(
+        e.sender,
         ipcString(rawAction, 'notification action'),
       );
-      deps.notifications.closeNotificationWindow();
       return { ok: true };
     },
   );

@@ -438,9 +438,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       if (found && !devUpdateSimulated) {
         // When this install shape supports an in-place update, stay quiet until
         // the download is on disk — one notice ("reinicia") beats two.
-        if (deps.stageableAsset(found, deps.installedAppPath()))
-          void stageUpdate(found);
-        else notifyUpdateAvailable(found, manual);
+        if (deps.stageableAsset(found, deps.installedAppPath())) {
+          // The switch may have gone off while the check was in flight.
+          if (manual || deps.autoUpdate()) void stageUpdate(found);
+        } else notifyUpdateAvailable(found, manual);
       }
       broadcastStatus();
       return status();

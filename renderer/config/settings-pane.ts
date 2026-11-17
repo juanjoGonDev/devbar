@@ -45,6 +45,8 @@ export function createSettingsPane(
   // of order, so a rejected OLD save must not roll the control back over a
   // NEWER selection that already succeeded.
   let themeSaveSeq = 0;
+  // Same reason for the instant-save controls below.
+  let settingsSaveSeq = 0;
   const themeOpts = Array.from(
     document.querySelectorAll<HTMLButtonElement>('.theme-opt'),
   );
@@ -98,12 +100,13 @@ export function createSettingsPane(
     // initial values, not the stored ones: persisting now would overwrite
     // autostart/notifications/log settings with those stale values.
     if (!settingsLoaded) return;
+    const token = ++settingsSaveSeq;
     const maxLogLinesRaw = els.maxLogLines ? els.maxLogLines.value : '';
     const maxLogLines =
       maxLogLinesRaw === ''
         ? DEFAULT_MAX_LOG_LINES
         : Number(maxLogLinesRaw) || DEFAULT_MAX_LOG_LINES;
-    await window.api.saveSettings({
+    const save = window.api.saveSettings({
       autostart: els.autostart.checked,
       autoUpdate: els.autoUpdate.checked,
       theme: selectedTheme,
@@ -114,6 +117,18 @@ export function createSettingsPane(
       showHiddenGroupsFold: els.showHiddenGroupsFold.checked,
       showHiddenWorkflowsFold: els.showHiddenWorkflowsFold.checked,
     });
+    try {
+      await save;
+    } catch (err) {
+      if (token !== settingsSaveSeq) return; // a newer save owns the controls
+      // The controls show a change that was never stored: read back what was.
+      showToast(
+        `No se pudieron guardar los ajustes: ${errorMessage(err)}. Se han restaurado los anteriores.`,
+        'error',
+      );
+      void loadSettings();
+      return;
+    }
     showToast('Ajustes guardados', 'ok');
   }
 

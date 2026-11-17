@@ -33,6 +33,15 @@ interface BannerCta {
   action: string;
 }
 
+interface CustomBannerOptions {
+  cta?: BannerCta;
+  /**
+   * Stays on screen until it is answered: no auto-close timer, and a transient
+   * banner that takes its slot gives it back once it closes.
+   */
+  sticky?: boolean;
+}
+
 interface BannerOptions {
   cta?: BannerCta;
   /**
@@ -56,7 +65,8 @@ export interface NotificationDeps {
   workArea: () => Rect;
   notifySuccessEnabled: () => boolean;
   openConfig: (goto: string) => void;
-  applyUpdate: () => void;
+  /** `confirmed`: the click came from the user on the update's own prompt. */
+  applyUpdate: (confirmed: boolean) => void;
   /** The host OS: Linux compositors may be absent, which decides the
    *  window's transparency (see showCustomBanner). */
   platform: NodeJS.Platform;
@@ -79,13 +89,21 @@ export interface Notifications {
   showCustomBanner: (
     title: string,
     body: string,
-    options?: { cta?: BannerCta; sticky?: boolean },
+    options?: CustomBannerOptions,
   ) => void;
   /** Gated by the global `notifySuccess` toggle. */
   showCompletionNotification: (title: string, body: string) => void;
   closeNotificationWindow: () => void;
+  /** The banner's ✕ (or any request to dismiss what is on screen). */
+  dismissBanner: () => void;
+  /**
+   * A banner CTA arriving over IPC. Only the banner on screen, offering that
+   * very action, counts as the user's answer; any other sender still runs it,
+   * but an install then asks first.
+   */
+  answerBanner: (sender: unknown, action: string) => void;
   /** A CTA from either path (native click or banner button). */
-  runNotificationAction: (action: string) => void;
+  runNotificationAction: (action: string, confirmed?: boolean) => void;
 }
 
 export function createNotifications(deps: NotificationDeps): Notifications {
@@ -93,6 +111,17 @@ export function createNotifications(deps: NotificationDeps): Notifications {
   const clearTimer = deps.clearTimer ?? ((timer) => clearTimeout(timer));
   let notificationWindow: BrowserWindow | null = null;
   let notificationTimer: NodeJS.Timeout | null = null;
+  /** What the banner on screen offers, and whether it is the sticky one. */
+  let shown: { action: string | null; sticky: boolean } = {
+    action: null,
+    sticky: false,
+  };
+  /** A sticky banner still waiting for its answer, to bring back. */
+  let pendingSticky: {
+    title: string;
+    body: string;
+    options: CustomBannerOptions;
+  } | null = null;
 
   function closeNotificationWindow(): void {
     if (notificationTimer) {
@@ -101,14 +130,33 @@ export function createNotifications(deps: NotificationDeps): Notifications {
     }
     const win = notificationWindow;
     notificationWindow = null;
+    shown = { action: null, sticky: false };
     if (win && !win.isDestroyed()) win.close();
+  }
+
+  /** Single slot: once a transient banner is gone, the unanswered one returns. */
+  function restoreSticky(): void {
+    if (pendingSticky && !notificationWindow)
+      showCustomBanner(
+        pendingSticky.title,
+        pendingSticky.body,
+        pendingSticky.options,
+      );
+  }
+
+  function dismissBanner(): void {
+    if (shown.sticky) pendingSticky = null; // answered: it stays gone
+    closeNotificationWindow();
+    restoreSticky();
   }
 
   function showCustomBanner(
     title: string,
     body: string,
-    { cta, sticky = false }: { cta?: BannerCta; sticky?: boolean } = {},
+    options: CustomBannerOptions = {},
   ): void {
+    const { cta, sticky = false } = options;
+    if (sticky) pendingSticky = { title, body, options };
     closeNotificationWindow(); // replace any visible banner
     const secs = sticky ? 0 : BANNER_AUTOCLOSE_SECS;
     const bounds = bannerBounds(deps.workArea());
@@ -149,20 +197,37 @@ export function createNotifications(deps: NotificationDeps): Notifications {
     void win.loadFile(deps.rendererFile('notification.html'), { query });
     win.once('ready-to-show', () => win.showInactive()); // never steal focus
     win.on('closed', () => {
-      if (notificationWindow === win) notificationWindow = null;
+      if (notificationWindow !== win) return;
+      notificationWindow = null;
+      shown = { action: null, sticky: false };
     });
     notificationWindow = win;
+    shown = { action: cta?.action ?? null, sticky };
 
     // Main owns the authoritative close timer; the renderer bar is cosmetic.
     if (secs > 0)
-      notificationTimer = setTimer(closeNotificationWindow, secs * 1000);
+      notificationTimer = setTimer(() => {
+        closeNotificationWindow();
+        restoreSticky();
+      }, secs * 1000);
   }
 
-  function runNotificationAction(action: string): void {
+  function runNotificationAction(action: string, confirmed = false): void {
     if (action === 'open-about') deps.openConfig('about');
     else if (action === 'open-changelog') deps.openConfig('about-changelog');
-    else if (action === 'install-update') deps.applyUpdate();
+    else if (action === 'install-update') deps.applyUpdate(confirmed);
     else if (action === 'open-remote') deps.openConfig('remote');
+  }
+
+  function answerBanner(sender: unknown, action: string): void {
+    const win = notificationWindow;
+    const own =
+      win !== null &&
+      !win.isDestroyed() &&
+      win.webContents === sender &&
+      shown.action === action;
+    runNotificationAction(action, own);
+    if (own) dismissBanner();
   }
 
   /** Prefer the real macOS notification, fall back to our own banner. */
@@ -185,7 +250,9 @@ export function createNotifications(deps: NotificationDeps): Notifications {
     let delivered = false;
     const notification = deps.createNotification({ title, body });
     const action = options.cta && options.cta.action;
-    if (action) notification.on('click', () => runNotificationAction(action));
+    // A click on the system notification is the user's own answer.
+    if (action)
+      notification.on('click', () => runNotificationAction(action, true));
     notification.on('show', () => {
       delivered = true;
       console.log('[notify] aceptada por el sistema');
@@ -201,6 +268,8 @@ export function createNotifications(deps: NotificationDeps): Notifications {
     showBannerNotification,
     showCustomBanner,
     closeNotificationWindow,
+    dismissBanner,
+    answerBanner,
     runNotificationAction,
     showCompletionNotification(title, body): void {
       if (!deps.notifySuccessEnabled()) return;

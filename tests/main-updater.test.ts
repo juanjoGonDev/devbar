@@ -46,6 +46,15 @@ describe('src/main/updater.ts', () => {
       });
       await h.updater.runUpdateCheck();
       await vi.waitFor(() => expect(asked).toHaveLength(1));
+      expect(
+        h.calls.filter(
+          (call) =>
+            call === 'spawnSwap' ||
+            call === 'markUpdateExit' ||
+            call.startsWith('quit:'),
+        ),
+        'staging must leave installing to the user',
+      ).toEqual([]);
       expect(asked[0]).toEqual({
         body: 'v1.3.0 lista. Reinicia para instalarla.',
         options: {
@@ -63,6 +72,21 @@ describe('src/main/updater.ts', () => {
       expect(checkForUpdate).not.toHaveBeenCalled();
       expect(result.available).toBeNull();
       expect(result.lastCheckAt).toBeNull();
+    });
+
+    it('does not download a release found after the switch went off mid-check', async () => {
+      let auto = true;
+      const h = harness({
+        autoUpdate: () => auto,
+        checkForUpdate: () => {
+          auto = false;
+          return Promise.resolve(update);
+        },
+      });
+      const result = await h.updater.runUpdateCheck();
+      expect(result.available).toEqual(update);
+      expect(h.calls.some((call) => call.startsWith('stage:'))).toBe(false);
+      expect(h.calls).not.toContain('mkdir');
     });
 
     it('still checks when the user asks while automatic updates are off', async () => {

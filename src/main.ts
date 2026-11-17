@@ -224,8 +224,8 @@ const notifications = createNotifications({
   notificationsSupported: () => Notification.isSupported(),
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
-  // The banner's «Reiniciar e instalar» click is the user's yes.
-  applyUpdate: () => void updater.applyUpdateAndReport({ confirmed: true }),
+  // Confirmed only for a click on the update's own prompt: that is the yes.
+  applyUpdate: (confirmed) => void updater.applyUpdateAndReport({ confirmed }),
   platform: process.platform,
   onNotice: (notice) => remote.notice(notice),
 });

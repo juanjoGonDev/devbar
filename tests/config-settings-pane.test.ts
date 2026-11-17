@@ -144,6 +144,40 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(toastText()).toBe('Ajustes guardados');
     });
 
+    it('puts the stored values back and says so when a save fails', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      const reads = win.callCount('getSettings');
+      await win.fail('saveSettings', new Error('disk full'));
+      expect(toastText()).toContain('disk full');
+      expect(win.callCount('getSettings')).toBe(reads + 1);
+      await win.settle('getSettings', settings());
+      expect(toggle.checked).toBe(false);
+    });
+
+    it('lets a newer change keep the controls when an older save fails', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      input('set-autostart').checked = false;
+      input('set-autostart').dispatchEvent(new Event('change'));
+      const reads = win.callCount('getSettings');
+      await win.settleNewest('saveSettings', settings());
+      await win.fail('saveSettings', new Error('disk full'));
+      expect(
+        win.callCount('getSettings'),
+        'the older failure must not reload over the newer save',
+      ).toBe(reads);
+      expect(toggle.checked).toBe(true);
+    });
+
     it('persists the log limit on change and on blur', async () => {
       win = await openConfigWindow();
       await answerBystanderSettingsReads(win);
