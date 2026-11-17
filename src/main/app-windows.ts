@@ -34,10 +34,18 @@ export interface AppWindowsDeps {
   onConfirmWindowClosed: (token: string) => void;
   /** The config window is gone (a «Control remoto» QR shown in it dies). */
   onConfigClosed?: () => void;
+  /** Activates DevBar over whatever app is in front (`app.focus`). */
+  focusApp: () => void;
+}
+
+/** Opening Settings; `urgent` for a request that expires unanswered. */
+interface ConfigWindowOptions {
+  goto?: string;
+  urgent?: boolean;
 }
 
 export interface AppWindows {
-  ensureConfigWindow: (options?: { goto?: string }) => void;
+  ensureConfigWindow: (options?: ConfigWindowOptions) => void;
   ensureSilencedWindow: (
     groupId: string,
     commandId: string,
@@ -53,10 +61,29 @@ export function createAppWindows(deps: AppWindowsDeps): AppWindows {
   const { registry } = deps;
   let forceCloseConfig = false;
 
-  function ensureConfigWindow({ goto }: { goto?: string } = {}): void {
+  /**
+   * Over every other app: an accessory (menu-bar) app's `focus()` does not
+   * activate it, so DevBar takes the focus first and the window is lifted
+   * above the rest for a moment. Windows may still refuse a background app
+   * the foreground, so its taskbar button flashes too.
+   */
+  function bringToFront(win: BrowserWindow): void {
+    deps.focusApp();
+    win.setAlwaysOnTop(true);
+    win.moveTop();
+    win.setAlwaysOnTop(false);
+    if (!deps.isMac) win.flashFrame(true);
+  }
+
+  function ensureConfigWindow({
+    goto,
+    urgent = false,
+  }: ConfigWindowOptions = {}): void {
     const existing = registry.config as BrowserWindow | null;
     if (existing && !existing.isDestroyed()) {
+      if (existing.isMinimized()) existing.restore();
       existing.show();
+      if (urgent) bringToFront(existing);
       existing.focus();
       if (goto) existing.webContents.send('config:goto', goto);
       return;
@@ -113,6 +140,7 @@ export function createAppWindows(deps: AppWindowsDeps): AppWindows {
     });
     deps.attachConsole(win, 'config');
     deps.onWindowsChanged();
+    if (urgent) bringToFront(win);
   }
 
   return {

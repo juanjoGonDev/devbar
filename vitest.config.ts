@@ -55,6 +55,10 @@ export default defineConfig({
         // could not reach the per-file bar anyway. The logic it used to hold
         // now lives in src/main/, which is covered.
         'src/main.ts',
+        // The stdio bridge's entry point, same reason in miniature: it only
+        // hands the real process streams, fs and exit to runBridge, whose
+        // logic (and the real socket connect) is covered in mcp-bridge.
+        'src/mcp/cli.ts',
       ],
       // A floor, not a ratchet: every file must carry its own weight, so a
       // new module cannot ride in on the average of the ones around it.

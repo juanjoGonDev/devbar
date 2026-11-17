@@ -18,6 +18,8 @@ const WINDOWS: ReadonlyArray<[script: string, html: string]> = [
   ['pipeline-editor.ts', 'config.html'],
   // «Control remoto» resolves its section and dialogs in one module.
   ['config/remote-elements.ts', 'config.html'],
+  // «MCP», likewise.
+  ['config/mcp-elements.ts', 'config.html'],
   // The command / action / pre-script dialog, likewise.
   ['config/sub-dialog-elements.ts', 'config.html'],
   ['tray.ts', 'tray.html'],

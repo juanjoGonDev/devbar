@@ -16,6 +16,7 @@ import type { UpdatesApi } from './ipc-contract/updates-api.js';
 import type { CustomIconsApi } from './ipc-contract/custom-icons-api.js';
 import type { RemoteApi } from './ipc-contract/remote-api.js';
 import type { WorkflowsApi } from './ipc-contract/workflows-api.js';
+import type { McpApi } from './ipc-contract/mcp-api.js';
 
 export type { UpdatePhase } from './update-phase-types.js';
 export type { UpdateStatus } from './ipc-contract/updates-api.js';
@@ -236,7 +237,7 @@ interface FixtureGroupsStatus {
 }
 
 export interface DevBarApi
-  extends UpdatesApi, CustomIconsApi, RemoteApi, WorkflowsApi {
+  extends UpdatesApi, CustomIconsApi, RemoteApi, WorkflowsApi, McpApi {
   listGroups(): Promise<Group[]>;
   getGroupStates(): Promise<GroupState[]>;
   saveGroup(

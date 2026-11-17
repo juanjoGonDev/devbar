@@ -5,12 +5,14 @@ import { DEFAULT_MAX_LOG_LINES } from '../domain-types.js';
 import type {
   CustomIcon,
   GlobalSettings,
+  McpSettings,
   Group,
   LegacyService,
   Workflow,
   WorkflowRunRecord,
 } from '../domain-types.js';
 import { normalizeCustomIcons } from '../custom-icons.js';
+import { AUDIT_RETENTION_DAYS, retentionDays } from '../mcp-audit-labels.js';
 import { OWNER_ONLY, restrictToOwner } from './owner-only.js';
 import { normalizeWorkflows, pruneWorkflowRefs } from '../workflows.js';
 import {
@@ -50,7 +52,28 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   notifySuccess: true,
   showHiddenGroupsFold: true,
   showHiddenWorkflowsFold: false,
+  mcp: {
+    enabled: false,
+    transport: 'stdio',
+    auditRetentionDays: AUDIT_RETENTION_DAYS.default,
+  },
 };
+
+/**
+ * Only the local stdio transport exists; anything else reads as off. The
+ * days «Actividad» keeps are clamped into range (30 when never chosen).
+ */
+function normalizeMcpSettings(value: unknown): McpSettings {
+  const raw =
+    value !== null && typeof value === 'object'
+      ? (value as Record<string, unknown>)
+      : {};
+  return {
+    enabled: raw.enabled === true,
+    transport: 'stdio',
+    auditRetentionDays: retentionDays(raw.auditRetentionDays),
+  };
+}
 
 type StoreState = {
   version: number;
@@ -72,6 +95,8 @@ type StoreState = {
   trayPopover?: PinnedPopover;
   /** «Control remoto»: switches and linked devices (token hashes only). */
   remoteControl?: RemoteControlState;
+  /** The AI assistants that connected over MCP, with their permissions. */
+  mcpClients?: unknown[];
   /** Absent until a v1/v2 store is actually converted — see the schema. */
   _services_pre_v3_backup?: unknown[];
   /** Original emoji of every icon the Lucide migration replaced, keyed
@@ -121,6 +146,11 @@ const schema = {
   // "never configured" — src/main/remote/device-store.ts reads that as the
   // defaults (off).
   remoteControl: { type: 'object' },
+  // Its own key too, for the same reason: the permissions of each assistant
+  // are not settings to export, back up or hand to every window. Absent
+  // means "no assistant ever connected"; src/main/mcp/client-store.ts
+  // normalizes what it reads.
+  mcpClients: { type: 'array' },
 } as const;
 
 /**
@@ -306,9 +336,11 @@ export function writeCustomIcons(icons: readonly CustomIcon[]): void {
 }
 
 export function getGlobalSettings(): GlobalSettings {
+  const stored = store.get('globalSettings', DEFAULT_GLOBAL_SETTINGS);
   return {
     ...DEFAULT_GLOBAL_SETTINGS,
-    ...store.get('globalSettings', DEFAULT_GLOBAL_SETTINGS),
+    ...stored,
+    mcp: normalizeMcpSettings(stored.mcp),
   };
 }
 export function saveGlobalSettings(
@@ -324,6 +356,14 @@ export function saveGlobalSettings(
   next.notifySuccess = Boolean(next.notifySuccess);
   next.showHiddenGroupsFold = Boolean(next.showHiddenGroupsFold);
   next.showHiddenWorkflowsFold = Boolean(next.showHiddenWorkflowsFold);
+  // Only saveMcpSettings (Settings › MCP's switch) moves the MCP server: not
+  // the general settings save, nor an imported backup, nor an assistant.
+  next.mcp = getGlobalSettings().mcp;
+  store.set('globalSettings', next);
+  return next;
+}
+export function saveMcpSettings(mcp: McpSettings): GlobalSettings {
+  const next = { ...getGlobalSettings(), mcp: normalizeMcpSettings(mcp) };
   store.set('globalSettings', next);
   return next;
 }
@@ -362,6 +402,14 @@ export function getRemoteControl(): unknown {
 }
 export function saveRemoteControl(value: RemoteControlState): void {
   store.set('remoteControl', value);
+}
+
+/** Raw: src/main/mcp/client-store.ts normalizes what it reads. */
+export function getMcpClients(): unknown {
+  return store.get('mcpClients');
+}
+export function saveMcpClients(value: readonly unknown[]): void {
+  store.set('mcpClients', [...value]);
 }
 
 /** The schema version currently on disk — what an export/backup is labelled. */

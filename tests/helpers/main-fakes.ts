@@ -75,6 +75,14 @@ export interface FakeWindow {
   getBounds: () => { x: number; y: number; width: number; height: number };
   setSize: (width: number, height: number, animate?: boolean) => void;
   getSize: () => [number, number];
+  minimized: boolean;
+  /** Every raise-for-attention call, in order: `top:on`, `move`, `flash`… */
+  attention: string[];
+  isMinimized: () => boolean;
+  restore: () => void;
+  setAlwaysOnTop: (flag: boolean, level?: string) => void;
+  moveTop: () => void;
+  flashFrame: (flag: boolean) => void;
 }
 
 export function fakeWindow(title = ''): FakeWindow {
@@ -137,6 +145,16 @@ export function fakeWindow(title = ''): FakeWindow {
       win.size = [width, height];
     },
     getSize: () => win.size,
+    minimized: false,
+    attention: [],
+    isMinimized: () => win.minimized,
+    restore: () => {
+      win.minimized = false;
+      win.visible = true;
+    },
+    setAlwaysOnTop: (flag) => win.attention.push(flag ? 'top:on' : 'top:off'),
+    moveTop: () => win.attention.push('move'),
+    flashFrame: (flag) => win.attention.push(flag ? 'flash' : 'flash:off'),
   };
   return win;
 }
@@ -235,6 +253,7 @@ export function makeSettings(
     notifySuccess: true,
     showHiddenGroupsFold: true,
     showHiddenWorkflowsFold: false,
+    mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
     ...overrides,
   };
 }

@@ -151,6 +151,32 @@ const api: DevBarApi = {
     subscribe('remote:pairCodeClaimed', () => cb()),
   onRemotePairRequest: (cb) => subscribe('remote:pairRequest', cb),
   onRemotePairRequestClosed: (cb) => subscribe('remote:pairRequestClosed', cb),
+  getMcpState: () => ipcRenderer.invoke('mcp:getState'),
+  setMcpEnabled: (enabled) => ipcRenderer.invoke('mcp:setEnabled', { enabled }),
+  approveMcpClient: (id, scopes) =>
+    ipcRenderer.invoke('mcp:approveClient', { id, scopes }),
+  rejectMcpClient: (id) => ipcRenderer.invoke('mcp:rejectClient', { id }),
+  updateMcpClient: (id, patch) =>
+    ipcRenderer.invoke('mcp:updateClient', { id, patch }),
+  revokeMcpClient: (id) => ipcRenderer.invoke('mcp:revokeClient', { id }),
+  queryMcpAudit: (query) => ipcRenderer.invoke('mcp:queryAudit', query),
+  undoMcpChange: (undoToken) => ipcRenderer.invoke('mcp:undo', { undoToken }),
+  getMcpAuditSelectionInfo: (selection, view) =>
+    ipcRenderer.invoke('mcp:auditSelectionInfo', { selection, view }),
+  deleteMcpAudit: (selection) =>
+    ipcRenderer.invoke('mcp:deleteAudit', { selection }),
+  undoMcpChanges: (selection) =>
+    ipcRenderer.invoke('mcp:undoChanges', { selection }),
+  setMcpAuditRetention: (days) =>
+    ipcRenderer.invoke('mcp:setAuditRetention', { days }),
+  answerMcpConfirm: (id, answer) =>
+    ipcRenderer.invoke('mcp:answerConfirm', { id, answer }),
+  listMcpConfirms: () => ipcRenderer.invoke('mcp:listConfirms'),
+  onMcpUpdate: (cb) => subscribe('mcp:update', cb),
+  onMcpConfirmRequest: (cb) => subscribe('mcp:confirmRequest', cb),
+  onMcpConfirmClosed: (cb) => subscribe('mcp:confirmClosed', cb),
+  onMcpAudit: (cb) => subscribe('mcp:audit', cb),
+  onMcpAuditRefresh: (cb) => subscribe('mcp:auditRefresh', () => cb()),
   exportConfig: () => ipcRenderer.invoke('config:export'),
   importConfig: () => ipcRenderer.invoke('config:import'),
   confirmImport: (args) => ipcRenderer.invoke('config:confirmImport', args),

@@ -136,11 +136,13 @@ export function createSidebarNav(els: SidebarNavElements): SidebarNav {
   }
 
   // Deep links: the tray version chip jumps to "Acerca de" (+ changelog);
-  // a «se ha conectado» notice jumps to «Control remoto»; the tray's
+  // a «se ha conectado» notice jumps to «Control remoto», an assistant
+  // asking to connect jumps to «MCP»; the tray's
   // «Gestionar workflows» / «Gestionar grupos» jump to those lists.
   if (window.api.onConfigGoto) {
     window.api.onConfigGoto((target) => {
-      if (target === 'remote' || target === 'groups') showSection(target);
+      if (target === 'remote' || target === 'groups' || target === 'mcp')
+        showSection(target);
       if (target === 'workflows') {
         showSection('prescripts');
         els.onWorkflows?.();

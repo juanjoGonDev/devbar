@@ -54,6 +54,8 @@ function ensureBubble(): HTMLDivElement {
     'font-size:11px',
     'font-weight:400',
     'line-height:1.35',
+    // A title may hold several lines (one per filter, say): keep them.
+    'white-space:pre-line',
     `max-width:min(280px, calc(100vw - ${MARGIN * 2}px))`,
     `max-height:calc(100vh - ${MARGIN * 2}px)`,
     'overflow:hidden',

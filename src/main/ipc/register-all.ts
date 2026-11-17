@@ -9,6 +9,7 @@ import {
   type CustomIconUploadDeps,
 } from '../custom-icon-upload.js';
 import { registerLogsIpc, type LogsIpcDeps } from './logs-ipc.js';
+import { registerMcpIpc, type McpIpcDeps } from './mcp-ipc.js';
 import { registerPortsIpc, type PortsIpcDeps } from './ports-ipc.js';
 import { registerRemoteIpc, type RemoteIpcDeps } from './remote-ipc.js';
 import { registerRuntimeIpc, type RuntimeIpcDeps } from './runtime-ipc.js';
@@ -92,6 +93,7 @@ export interface RegisterAllDeps {
   iconBattery: unknown;
   customIconsChanged: IconsIpcDeps['customIconsChanged'];
   remote: RemoteIpcDeps['remote'];
+  mcp: McpIpcDeps['mcp'];
   portsOf: PortsIpcDeps['portsOf'];
 }
 
@@ -131,6 +133,7 @@ export function registerAllIpc(ipc: IpcRegistrar, deps: RegisterAllDeps): void {
     customIconsChanged: deps.customIconsChanged,
   });
   registerRemoteIpc(ipc, deps);
+  registerMcpIpc(ipc, deps);
   registerPortsIpc(ipc, {
     configStore: deps.configStore,
     portsOf: deps.portsOf,

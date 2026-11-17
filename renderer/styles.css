@@ -5865,6 +5865,2155 @@ label.remote-row {
   text-align: center;
 }
 
+/* ── MCP: confirm (renderer/config/mcp-confirm.ts) ────────────────────
+   An assistant's risky call, waiting for the user: risk tile and tag, a
+   GitHub-like diff, the assistant's reason and a countdown. Colours are the
+   block's own tokens, redefined for dark below. */
+.mcp-confirm {
+  --mcp-tile-bg: rgba(142, 142, 147, 0.16);
+  --mcp-tile-fg: #6e6e73;
+  --mcp-tag-bg: var(--badge-neutral-bg);
+  --mcp-tag-fg: #6e6e73;
+  --mcp-diff-border: #d0d7de;
+  --mcp-diff-head-bg: #f6f8fa;
+  --mcp-diff-bg: #ffffff;
+  --mcp-diff-ctx-fg: #57606a;
+  --mcp-diff-del-bg: #ffebe9;
+  --mcp-diff-del-fg: #82071e;
+  --mcp-diff-add-bg: #e6ffec;
+  --mcp-diff-add-fg: #116329;
+  --mcp-reason-bg: rgba(0, 0, 0, 0.04);
+  --mcp-reason-fg: #3a3a3c;
+  --mcp-footer-bg: rgba(0, 0, 0, 0.02);
+  /* White on this red: 5.6:1, in both themes. */
+  --mcp-danger-fill: #d70015;
+  width: 620px;
+}
+.mcp-confirm[data-risk='executes'] {
+  --mcp-tile-bg: #fff1d6;
+  --mcp-tile-fg: #a05a00;
+  --mcp-tag-bg: var(--badge-error-bg);
+  --mcp-tag-fg: var(--badge-error-fg);
+}
+.mcp-confirm[data-risk='destructive'] {
+  --mcp-tile-bg: var(--badge-error-bg);
+  --mcp-tile-fg: var(--badge-error-fg);
+  --mcp-tag-bg: var(--badge-error-bg);
+  --mcp-tag-fg: var(--badge-error-fg);
+}
+:root[data-theme='dark'] .mcp-confirm {
+  /* Dark scrollbars for the diff's sideways and downward scroll. */
+  color-scheme: dark;
+  --mcp-tile-fg: #aeaeb2;
+  --mcp-tag-fg: #aeaeb2;
+  --mcp-diff-border: rgba(255, 255, 255, 0.14);
+  --mcp-diff-head-bg: rgba(255, 255, 255, 0.05);
+  --mcp-diff-bg: rgba(0, 0, 0, 0.22);
+  --mcp-diff-ctx-fg: #8b949e;
+  --mcp-diff-del-bg: rgba(248, 81, 73, 0.16);
+  --mcp-diff-del-fg: #ffa198;
+  --mcp-diff-add-bg: rgba(46, 160, 67, 0.18);
+  --mcp-diff-add-fg: #7ee787;
+  --mcp-reason-bg: rgba(255, 255, 255, 0.06);
+  --mcp-reason-fg: #d1d1d6;
+  --mcp-footer-bg: rgba(255, 255, 255, 0.03);
+}
+:root[data-theme='dark'] .mcp-confirm[data-risk='executes'] {
+  --mcp-tile-bg: rgba(255, 159, 10, 0.2);
+  --mcp-tile-fg: #ffb340;
+  --mcp-tag-bg: var(--badge-error-bg);
+  --mcp-tag-fg: var(--badge-error-fg);
+}
+:root[data-theme='dark'] .mcp-confirm[data-risk='destructive'] {
+  --mcp-tile-fg: var(--badge-error-fg);
+  --mcp-tag-fg: var(--badge-error-fg);
+}
+.mcp-confirm-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 14px;
+}
+.mcp-confirm-tile {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--mcp-tile-bg);
+  color: var(--mcp-tile-fg);
+  font-size: 20px;
+}
+.mcp-confirm-heading {
+  flex: 1;
+  min-width: 0;
+}
+.mcp-confirm-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+}
+.mcp-confirm-subtitle {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.mcp-confirm-badges {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 6px;
+}
+.mcp-confirm-risk {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--mcp-tag-bg);
+  color: var(--mcp-tag-fg);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mcp-confirm-queue {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mcp-confirm-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px 6px;
+}
+.mcp-confirm .mcp-diff-box {
+  overflow: hidden;
+  border: 1px solid var(--mcp-diff-border);
+  border-radius: 8px;
+  background: var(--mcp-diff-bg);
+}
+.mcp-confirm .mcp-diff-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--mcp-diff-border);
+  background: var(--mcp-diff-head-bg);
+}
+.mcp-confirm .mcp-diff-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mcp-confirm .mcp-diff-count {
+  font-size: 11.5px;
+  color: var(--mcp-diff-ctx-fg);
+}
+/* Long lines scroll sideways together; a long list scrolls down. */
+.mcp-confirm .mcp-diff {
+  display: grid;
+  grid-template-columns: minmax(100%, max-content);
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.mcp-confirm .mcp-diff:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.mcp-confirm .mcp-diff-line {
+  padding: 0 12px;
+  white-space: pre;
+  color: var(--mcp-diff-ctx-fg);
+}
+/* The − / + markers: pseudo-content, so a copy carries only the value. */
+.mcp-confirm .mcp-diff-line::before {
+  content: '';
+  display: inline-block;
+  width: 2ch;
+}
+.mcp-confirm .mcp-diff-line[data-kind='del'] {
+  background: var(--mcp-diff-del-bg);
+  color: var(--mcp-diff-del-fg);
+}
+.mcp-confirm .mcp-diff-line[data-kind='del']::before {
+  content: '\2212';
+}
+.mcp-confirm .mcp-diff-line[data-kind='add'] {
+  background: var(--mcp-diff-add-bg);
+  color: var(--mcp-diff-add-fg);
+}
+.mcp-confirm .mcp-diff-line[data-kind='add']::before {
+  content: '\002B';
+}
+.mcp-confirm .mcp-diff-field {
+  display: inline-block;
+}
+.mcp-confirm-reason {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--mcp-reason-bg);
+  color: var(--mcp-reason-fg);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.mcp-confirm-reason[hidden] {
+  display: none;
+}
+.mcp-confirm-reason .icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.mcp-confirm-note {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.mcp-confirm-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--mcp-footer-bg);
+}
+.mcp-confirm-countdown,
+.mcp-confirm-notice {
+  flex: 1;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mcp-confirm-notice {
+  color: inherit;
+  font-weight: 600;
+}
+.mcp-confirm-countdown[hidden],
+.mcp-confirm-notice[hidden] {
+  display: none;
+}
+.mcp-confirm-footer button {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+.mcp-confirm-apply {
+  font-weight: 600;
+}
+button.primary.mcp-confirm-apply.is-destructive {
+  background: var(--mcp-danger-fill);
+  box-shadow: 0 1px 2px rgba(215, 0, 21, 0.35);
+}
+.mcp-confirm-footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* ── End MCP: confirm ──────────────────────────────────────────────── */
+
+/* ── Settings: MCP (renderer/config/mcp-*.ts) ─────────────────────────
+   The server card, the connect block, the client list with its
+   permissions sheet and the activity log. One token set for the section
+   and its sheet, redefined for dark right below. */
+:root {
+  --mcp-surface: #ffffff;
+  --mcp-hairline: rgba(0, 0, 0, 0.06);
+  --mcp-ok: #1f8a3c;
+  --mcp-danger: #d70015;
+  --mcp-tile-bg: rgba(94, 92, 230, 0.12);
+  --mcp-tile-fg: #5e5ce6;
+  --mcp-code-bg: #1d1d1f;
+  --mcp-code-fg: #e5e5ea;
+  --mcp-pending-bg: rgba(255, 159, 10, 0.08);
+  --mcp-danger-wash: rgba(255, 59, 48, 0.04);
+  --mcp-avatar-bg: rgba(142, 142, 147, 0.16);
+  --mcp-avatar-fg: #3a3a3c;
+  --mcp-claude-bg: rgba(193, 95, 60, 0.12);
+  --mcp-claude-fg: #c15f3c;
+  --mcp-log-head-bg: rgba(0, 0, 0, 0.025);
+  --mcp-change-bg: rgba(0, 122, 255, 0.04);
+  --mcp-dot-neutral: #c7c7cc;
+  --mcp-dot-warn: #ff9f0a;
+  --mcp-diff-del-bg: #ffebe9;
+  --mcp-diff-del-fg: #82071e;
+  --mcp-diff-add-bg: #e6ffec;
+  --mcp-diff-add-fg: #116329;
+}
+:root[data-theme='dark'] {
+  --mcp-surface: #2a2a2c;
+  --mcp-hairline: rgba(255, 255, 255, 0.07);
+  --mcp-ok: #30d158;
+  --mcp-danger: #ff6961;
+  --mcp-tile-bg: rgba(125, 122, 255, 0.2);
+  --mcp-tile-fg: #a5a3ff;
+  --mcp-code-bg: #0d0d0f;
+  --mcp-code-fg: #e5e5ea;
+  --mcp-pending-bg: rgba(255, 159, 10, 0.1);
+  --mcp-danger-wash: rgba(255, 69, 58, 0.06);
+  --mcp-avatar-bg: rgba(142, 142, 147, 0.24);
+  --mcp-avatar-fg: #e5e5ea;
+  --mcp-claude-bg: rgba(217, 119, 87, 0.2);
+  --mcp-claude-fg: #e8916f;
+  --mcp-log-head-bg: rgba(255, 255, 255, 0.03);
+  --mcp-change-bg: rgba(10, 132, 255, 0.08);
+  --mcp-dot-neutral: #636366;
+  --mcp-dot-warn: #ffa94d;
+  --mcp-diff-del-bg: rgba(248, 81, 73, 0.15);
+  --mcp-diff-del-fg: #ffa198;
+  --mcp-diff-add-bg: rgba(46, 160, 67, 0.15);
+  --mcp-diff-add-fg: #7ee787;
+}
+/* The «⋯» menu is the linked devices' one (renderer/config/remote-device-
+   menu.ts): give it the section's own surface and red. */
+.config-section[data-section='mcp'] {
+  --remote-surface: var(--mcp-surface);
+  --remote-danger: var(--mcp-danger);
+}
+.config-section[data-section='mcp'].active {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.mcp-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.mcp-view[hidden] {
+  display: none;
+}
+.mcp-card {
+  background: var(--bg-card-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.mcp-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+}
+.mcp-row + .mcp-row,
+.mcp-error + .mcp-row {
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.mcp-title {
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mcp-row-label {
+  font-size: 13px;
+}
+.mcp-hint {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.mcp-clients-trust {
+  margin: 8px 4px 0;
+}
+.mcp-tile {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--mcp-tile-bg);
+  color: var(--mcp-tile-fg);
+  font-size: 18px;
+}
+.mcp-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mcp-status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.mcp-status.is-on {
+  color: var(--mcp-ok);
+}
+.mcp-status.is-on::before {
+  background: var(--running);
+}
+.mcp-status.is-error {
+  color: var(--mcp-danger);
+}
+.mcp-status.is-error::before {
+  background: var(--error);
+}
+.mcp-error {
+  margin: -4px 16px 10px 64px;
+  color: var(--mcp-danger);
+  font-size: 12px;
+}
+.mcp-error[hidden] {
+  display: none;
+}
+.config-section[data-section='mcp'] .mode-segment:has(input:disabled) {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Section titles: the small caps line over a card, with an optional note. */
+.mcp-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mcp-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mcp-group-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mcp-group-note {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* «Conectar un cliente»: the kind switch, the block to paste and «Copiar». */
+.mcp-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.mcp-connect .mode-segmented {
+  align-self: flex-start;
+  /* Six clients: on a narrow window they wrap instead of overflowing. */
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.mcp-code {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--mcp-code-bg);
+  color: var(--mcp-code-fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  /* The whole command stays in view: a long path wraps instead of hiding
+     behind a scrollbar; the JSON keeps its indentation. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.mcp-connect-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mcp-connect-foot .mcp-hint {
+  margin: 0;
+}
+#mcp-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* «CLIENTES»: avatar, name over its use, scope tags and the actions. */
+.mcp-clients {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mcp-client {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+}
+.mcp-client .remote-menu {
+  top: calc(100% - 6px);
+  right: 10px;
+}
+.mcp-client-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+.mcp-client + .mcp-client {
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-client.is-pending {
+  background: var(--mcp-pending-bg);
+}
+.mcp-clients .mcp-client.is-pending:first-child {
+  border-radius: 9px 9px 0 0;
+}
+.mcp-clients .mcp-client.is-pending:only-child {
+  border-radius: 9px;
+}
+/* Dimmed piece by piece, not the whole row: an opacity on the row would
+   fade its open «⋯» menu too. */
+.mcp-client.is-revoked > :not(.mcp-client-actions),
+.mcp-client.is-revoked .mcp-client-actions > :not(.remote-menu) {
+  opacity: 0.55;
+}
+.mcp-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--mcp-avatar-bg);
+  color: var(--mcp-avatar-fg);
+  font-size: 14px;
+  font-weight: 700;
+}
+.mcp-avatar[data-kind='claude-code'],
+.mcp-avatar[data-kind='claude-desktop'] {
+  background: var(--mcp-claude-bg);
+  color: var(--mcp-claude-fg);
+}
+.mcp-avatar.is-pending {
+  background: var(--badge-warn-bg);
+  color: var(--badge-warn-fg);
+  font-size: 16px;
+}
+.mcp-client-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.mcp-client-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mcp-client-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-client-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mcp-tag-new {
+  background: var(--badge-warn-bg);
+  color: var(--badge-warn-fg);
+}
+.mcp-scope-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.mcp-scope-tag[data-scope='read'] {
+  background: var(--badge-ok-bg);
+  color: var(--badge-ok-fg);
+}
+.mcp-scope-tag[data-scope='control'] {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+.mcp-scope-tag[data-scope='workflows'] {
+  background: var(--mcp-tile-bg);
+  color: var(--mcp-tile-fg);
+}
+.mcp-scope-tag[data-scope='config'] {
+  background: var(--badge-error-bg);
+  color: var(--badge-error-fg);
+}
+/* «Renombrar»: the name becomes a field in place, one accent ring around
+   the field and its save / cancel buttons, no nested borders. */
+.mcp-rename {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  max-width: 300px;
+  height: 26px;
+  margin-left: -7px;
+  padding: 0 2px 0 6px;
+  border-radius: 7px;
+  background: var(--mcp-surface);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 4px var(--accent-tint);
+}
+.mcp-rename input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+.mcp-rename input::selection {
+  background: rgba(10, 132, 255, 0.35);
+}
+.mcp-rename button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+.mcp-rename button:hover {
+  background: var(--bg-row-hover);
+  color: inherit;
+  filter: none;
+}
+.mcp-rename button.is-save {
+  color: var(--accent);
+}
+.mcp-rename-hint {
+  font-size: 11px;
+}
+/* While renaming, the name gets the row: the scope tags step aside. */
+.mcp-client.is-renaming .mcp-scope-tags {
+  display: none;
+}
+.mcp-client.is-renaming .mcp-client-title {
+  width: 100%;
+}
+.mcp-empty {
+  margin: 0;
+  padding: 18px 16px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.mcp-empty[hidden] {
+  display: none;
+}
+.mcp-revoked[hidden] {
+  display: none;
+}
+.mcp-revoked > summary {
+  padding: 6px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.mcp-revoked[open] > summary {
+  margin-bottom: 6px;
+}
+
+/* The permissions sheet: the settings side sheet, a little wider. */
+dialog.sub-sheet.mcp-sheet {
+  width: 600px;
+}
+.mcp-sheet .sheet-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+}
+.mcp-sheet .mcp-group-title {
+  margin-top: 14px;
+}
+.mcp-sheet .mcp-card {
+  background: var(--mcp-surface);
+}
+.mcp-avatar-lg {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  font-size: 15px;
+}
+.mcp-scope {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 200px 32px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.mcp-scope + .mcp-scope {
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-scope[data-scope='config'] {
+  background: var(--mcp-danger-wash);
+  border-radius: 0 0 9px 9px;
+}
+.mcp-scope-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 15px;
+}
+.mcp-scope[data-scope='read'] .mcp-scope-tile {
+  background: var(--badge-ok-bg);
+  color: var(--badge-ok-fg);
+}
+.mcp-scope[data-scope='control'] .mcp-scope-tile {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+.mcp-scope[data-scope='workflows'] .mcp-scope-tile {
+  background: var(--mcp-tile-bg);
+  color: var(--mcp-tile-fg);
+}
+.mcp-scope[data-scope='config'] .mcp-scope-tile {
+  background: var(--badge-error-bg);
+  color: var(--badge-error-fg);
+}
+.mcp-scope-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mcp-scope-title {
+  font-weight: 600;
+}
+.mcp-scope-warning {
+  color: var(--mcp-danger);
+  font-weight: 600;
+}
+.mcp-select {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--mcp-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+.mcp-select:disabled {
+  opacity: 0.7;
+}
+.mcp-scope .remote-switch {
+  justify-self: end;
+}
+.mcp-sheet-note {
+  margin: 2px 4px 0;
+}
+/* «¿Permitir cambios de configuración sin confirmar?» over the sheet. */
+.modal.mcp-warning-modal {
+  width: 420px;
+}
+.mcp-warning-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--badge-error-bg);
+  color: var(--mcp-danger);
+  font-size: 15px;
+}
+.mcp-warning-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+/* «Actividad»'s confirmations: blue for an undo, a warning line in amber. */
+.mcp-warning-tile.is-info {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+.mcp-activity-dialog .modal-body p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mcp-activity-dialog .modal-body p + p {
+  margin-top: 8px;
+}
+.mcp-activity-dialog p.mcp-ask-warn {
+  color: var(--badge-warn-fg);
+}
+.mcp-activity-dialog p.mcp-ask-what {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+/* «Eliminar por fechas»: the presets, the range picker, the live count. */
+.range-del .xf-chips {
+  padding: 0 0 10px;
+}
+.range-del .rp {
+  padding: 0 0 4px;
+}
+.mcp-activity-dialog p.range-count {
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+.range-count b {
+  color: var(--mcp-danger);
+}
+/* «¿Revocar el acceso de …?»: the client as its row shows it, then why. */
+.mcp-revoke-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--mcp-surface);
+}
+.mcp-revoke-card .mcp-client-text {
+  gap: 2px;
+}
+.mcp-revoke-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mcp-access {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.mcp-access-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mcp-access-row + .mcp-access-row {
+  padding-top: 10px;
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mcp-group-chips[hidden] {
+  display: none;
+}
+button.mcp-group-chip {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--badge-neutral-bg);
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button.mcp-group-chip[aria-pressed='true'] {
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+  font-weight: 600;
+}
+.mcp-connection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.mcp-connection-line {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+}
+/* «Servidor | Actividad»: the section's two tabs. */
+.mcp-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--tray-tabs-bg);
+}
+button.mcp-tab {
+  padding: 4px 16px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+button.mcp-tab[aria-selected='true'] {
+  background: var(--tray-tab-on-bg);
+  box-shadow: var(--tray-tab-on-shadow);
+  color: inherit;
+  font-weight: 600;
+}
+button.mcp-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* «Actividad»: one row over the log — a compact search, «Actualizar» when
+   there is something new, and the summary of what narrows it. */
+.act-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+}
+.act-search {
+  position: relative;
+  display: flex;
+  flex: 0 0 240px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px 0 26px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--mcp-surface);
+  font-size: 12.5px;
+  transition: flex-basis 0.15s ease;
+}
+.act-search:focus-within {
+  flex-basis: 300px;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .act-search {
+    transition: none;
+  }
+}
+.act-search > .icon {
+  position: absolute;
+  left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.act-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+}
+.act-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.act-search kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--badge-neutral-bg);
+  color: var(--muted);
+  font: 10.5px var(--font-mono);
+}
+.act-search button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--badge-neutral-bg);
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+.act-search [hidden],
+button.act-fresh[hidden] {
+  display: none;
+}
+button.act-fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 13px;
+  background: var(--badge-info-bg);
+  box-shadow: none;
+  color: var(--badge-info-fg);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.act-active {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 22px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.act-active .spacer {
+  flex: 1;
+}
+.act-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 9px;
+  border-radius: 11px;
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+  font-weight: 600;
+}
+.act-pill .icon {
+  font-size: 11px;
+}
+.act-pill button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 10px;
+}
+.act-pill button:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+/* The column menu pops out of the header, so the card cannot clip it. The
+   header text is muted; what is sorted and the menu read in body colour. */
+.mcp-log {
+  --act-text: #1d1d1f;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--mcp-surface);
+  overflow: visible;
+}
+:root[data-theme='dark'] .mcp-log {
+  --act-text: #f5f5f7;
+}
+.mcp-log-head,
+.mcp-entry-line {
+  display: grid;
+  grid-template-columns: 22px 64px 110px minmax(0, 1fr) 96px 112px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 0 12px;
+}
+.mcp-log-head {
+  position: relative;
+  height: 32px;
+  border-radius: 9px 9px 0 0;
+  background: var(--mcp-log-head-bg);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+/*
+ * Only the rows scroll. While «Actividad» is on screen the settings content
+ * stops scrolling and hands its height down: the tabs, the search row, the
+ * column header and the pager stay put, and the list between them takes the
+ * rest. «Servidor» scrolls the whole content as every other section does.
+ * The card keeps `overflow: visible` (its column menus pop out over the
+ * rows); the head and the pager carry its rounded corners.
+ */
+.config-content:has(
+  > .config-section[data-section='mcp'].active > #mcp-activity:not([hidden])
+) {
+  overflow: hidden;
+}
+.config-section[data-section='mcp'].active:has(> #mcp-activity:not([hidden])) {
+  height: 100%;
+}
+#mcp-activity {
+  flex: 1;
+  min-height: 0;
+}
+.mcp-log-head,
+.act-pager {
+  flex-shrink: 0;
+}
+.mcp-log-rows {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+/* «There is more above»: a faint shade under the header once scrolled. It
+   rides on its own sticky layer so the opaque day separators cannot hide it. */
+.mcp-log-rows::before {
+  content: '';
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: block;
+  height: 6px;
+  margin-bottom: -6px;
+  background: linear-gradient(rgba(0, 0, 0, 0.14), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+:root[data-theme='dark'] .mcp-log-rows::before {
+  background: linear-gradient(rgba(0, 0, 0, 0.4), transparent);
+}
+.mcp-log-rows.is-scrolled::before {
+  opacity: 1;
+}
+.mcp-entry {
+  border-top: 1px solid var(--mcp-hairline);
+}
+.mcp-entry.is-change {
+  background: var(--mcp-change-bg);
+}
+.mcp-entry.is-open {
+  padding-bottom: 12px;
+}
+.mcp-entry-line {
+  min-height: 44px;
+  font-size: 12.5px;
+}
+.mcp-entry-time {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mcp-entry-client,
+.mcp-entry-action {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-entry-tool {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.mcp-entry-summary {
+  color: var(--muted);
+}
+.mcp-entry-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mcp-entry-result::before {
+  content: '';
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mcp-dot-neutral);
+}
+.mcp-entry-result[data-result='ok'] {
+  color: var(--mcp-ok);
+}
+.mcp-entry-result[data-result='ok']::before {
+  background: var(--running);
+}
+.mcp-entry-result[data-result='warning'] {
+  color: var(--badge-warn-fg);
+}
+.mcp-entry-result[data-result='warning']::before {
+  background: var(--mcp-dot-warn);
+}
+.mcp-entry-result[data-result='error'],
+.mcp-entry-result[data-result='rejected'] {
+  color: var(--mcp-danger);
+}
+.mcp-entry-result[data-result='error']::before,
+.mcp-entry-result[data-result='rejected']::before {
+  background: var(--error);
+}
+.mcp-entry-tail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.mcp-entry-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+button.mcp-entry-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+button.mcp-entry-toggle:hover {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+button.mcp-entry-toggle .icon {
+  transition: transform 0.15s ease;
+}
+button.mcp-entry-toggle[aria-expanded='true'] .icon {
+  transform: rotate(90deg);
+}
+/* Lined up under «Acción»: padding + box + time + client + three gaps. */
+.mcp-log-rows .mcp-diff {
+  margin: 0 16px 0 244px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.mcp-log-rows .mcp-diff[hidden] {
+  display: none;
+}
+.mcp-log-rows .mcp-diff-line {
+  padding: 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mcp-log-rows .mcp-diff-line[data-kind='del'] {
+  background: var(--mcp-diff-del-bg);
+  color: var(--mcp-diff-del-fg);
+}
+.mcp-log-rows .mcp-diff-line[data-kind='add'] {
+  background: var(--mcp-diff-add-bg);
+  color: var(--mcp-diff-add-fg);
+}
+/* Header cells: the label sorts, the funnel opens the column menu. */
+.xh {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: -6px;
+}
+button.xh-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+button.xh-sort:hover {
+  background: var(--bg-row-hover);
+  color: var(--act-text);
+  filter: none;
+}
+button.xh-sort .icon {
+  font-size: 12px;
+}
+.xh.is-sorted button.xh-sort {
+  color: var(--act-text);
+}
+.xh-prio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--badge-neutral-bg);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+button.xh-funnel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.mcp-log-head:hover button.xh-funnel,
+button.xh-funnel:focus-visible,
+button.xh-funnel[aria-expanded='true'] {
+  opacity: 1;
+}
+button.xh-funnel:hover,
+button.xh-funnel[aria-expanded='true'] {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.xh.is-filtered button.xh-funnel {
+  opacity: 1;
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+}
+/* The column menu (a spreadsheet-like filter popover). Its max-height is the
+   room left under it in the window (set by renderer/config/
+   mcp-activity-place.ts): a menu taller than that scrolls inside itself
+   instead of being cut off, since «Actividad» itself does not scroll. */
+.xf {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: 268px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--mcp-surface);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+  color: var(--act-text);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root[data-theme='dark'] .xf {
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.xf.is-right {
+  left: auto;
+  right: 0;
+}
+.xf-sec {
+  padding: 5px;
+}
+.xf-sec + .xf-sec {
+  border-top: 1px solid var(--border);
+}
+button.xf-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  text-align: left;
+}
+button.xf-item:hover,
+button.xf-item:focus-visible {
+  outline: none;
+  background: var(--accent-tint);
+  filter: none;
+}
+button.xf-item .icon {
+  color: var(--muted);
+  font-size: 14px;
+}
+button.xf-item .icon.on {
+  margin-left: auto;
+  color: var(--accent);
+}
+.xf-title {
+  padding: 6px 8px 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.xf-find {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 2px 3px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-card-strong);
+}
+.xf-find:focus-within {
+  border-color: var(--accent);
+}
+.xf-find .icon {
+  color: var(--muted);
+  font-size: 12px;
+}
+.xf-find input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+}
+.xf-list {
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 0 3px 2px;
+}
+.xf-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.xf-check:hover {
+  background: var(--bg-row-hover);
+}
+.xf-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.xf-check .n {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.xf-check.is-all {
+  font-weight: 600;
+}
+.xf-check.is-group {
+  margin-top: 2px;
+  font-weight: 600;
+}
+.xf-check.is-child {
+  padding-left: 26px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.xf-check .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mcp-dot-neutral);
+}
+.xf-check .dot[data-result='ok'] {
+  background: var(--running);
+}
+.xf-check .dot[data-result='warning'] {
+  background: var(--mcp-dot-warn);
+}
+.xf-check .dot[data-result='error'],
+.xf-check .dot[data-result='rejected'] {
+  background: var(--error);
+}
+.xf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 2px 4px 6px;
+}
+button.xf-chip {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button.xf-chip[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--badge-info-bg);
+  color: var(--badge-info-fg);
+  font-weight: 600;
+}
+/* «Rango…» of «Hora»: the app's own range picker (renderer/config/
+   mcp-range-picker.ts) — Chromium's datetime-local popup ignores the theme.
+   Too tall for the menu, it opens in a flyout beside it: still a child of the
+   menu (same dialog, next in the Tab order), but fixed and placed from the
+   menu's box by mcp-activity-place.ts, so neither the menu's scrolling nor
+   the settings content can clip it. */
+.xf-fly {
+  position: fixed;
+  z-index: 31;
+  width: 284px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--mcp-surface);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+}
+:root[data-theme='dark'] .xf-fly {
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.rp {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 6px 6px;
+}
+.xf-fly .rp {
+  padding: 0;
+}
+.rp-ends {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+button.rp-end {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card-strong);
+  box-shadow: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.rp-end:hover {
+  border-color: var(--border-strong);
+  filter: none;
+}
+button.rp-end[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+button.rp-end:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.rp-end-k {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.rp-end-v {
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rp-end-v.is-empty {
+  color: var(--muted);
+  font-weight: 400;
+}
+.rp-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 4px;
+}
+.rp-month {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.rp-nav {
+  display: flex;
+  gap: 2px;
+}
+button.rp-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+button.rp-step:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  color: inherit;
+  filter: none;
+}
+button.rp-step:disabled {
+  opacity: 0.3;
+}
+.rp-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rp-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+.rp-dow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.rp-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+}
+/* The band between the ends: rounded where a week starts or ends. */
+.rp-cell.in-range::before,
+.rp-grid.is-span .rp-cell.is-from::before,
+.rp-grid.is-span .rp-cell.is-to::before {
+  content: '';
+  position: absolute;
+  inset: 3px 0;
+  background: var(--accent-tint);
+}
+.rp-grid.is-span .rp-cell.is-from::before {
+  left: 50%;
+}
+.rp-grid.is-span .rp-cell.is-to::before {
+  right: 50%;
+}
+.rp-week > .rp-cell.in-range:first-child::before {
+  left: 3px;
+  border-radius: 12px 0 0 12px;
+}
+.rp-week > .rp-cell.in-range:last-child::before {
+  right: 3px;
+  border-radius: 0 12px 12px 0;
+}
+button.rp-day {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+button.rp-day:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+button.rp-day.is-out {
+  color: var(--muted);
+  opacity: 0.6;
+}
+button.rp-day.is-today {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+button.rp-day:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+/* An end is a solid accent circle, even on a day of another month. */
+.rp-cell.is-from button.rp-day,
+.rp-cell.is-to button.rp-day {
+  background: var(--accent-strong);
+  box-shadow: none;
+  color: #fff;
+  font-weight: 700;
+  opacity: 1;
+}
+button.rp-day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.rp-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 0;
+  border-top: 1px solid var(--border);
+}
+.rp-time-k {
+  color: var(--muted);
+  font-size: 12px;
+}
+.rp-clock {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-card-strong);
+}
+.rp-clock:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+input.rp-seg {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: 600 12.5px var(--font-mono);
+  text-align: center;
+  caret-color: transparent;
+}
+input.rp-seg:focus {
+  background: var(--accent-strong);
+  color: #fff;
+}
+.rp-colon {
+  color: var(--muted);
+  font-weight: 600;
+}
+.rp-spacer {
+  flex: 1;
+}
+button.rp-now {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+.xf-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+}
+.xf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+button.xf-foot-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+button.xf-foot-link:disabled {
+  color: var(--muted);
+}
+/* Rows: a separator per day while the time leads; flat rows carry a date. */
+/* The day stays on top of its rows while they scroll under it, so it has to
+   be opaque: the head tint laid over the card's own surface. */
+.act-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border-top: 1px solid var(--mcp-hairline);
+  background:
+    linear-gradient(var(--mcp-log-head-bg), var(--mcp-log-head-bg)),
+    var(--mcp-surface);
+  box-shadow: inset 0 -1px 0 var(--mcp-hairline);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.mcp-log.is-flat .mcp-log-head,
+.mcp-log.is-flat .mcp-entry-line {
+  grid-template-columns: 22px 92px 110px minmax(0, 1fr) 96px 112px;
+}
+.mcp-log.is-flat .mcp-log-rows .mcp-diff {
+  margin-left: 272px;
+}
+.mcp-entry-time.has-date {
+  white-space: nowrap;
+}
+/* Selecting rows: a box leads each row (faint until hovered or ticked) and
+   the header; ticked rows take the accent tint. */
+.sel-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sel-box input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent-strong);
+  cursor: pointer;
+}
+.mcp-entry:not(.is-selected) .sel-box input:not(:focus-visible) {
+  opacity: 0.45;
+}
+.mcp-entry:hover .sel-box input {
+  opacity: 1;
+}
+.mcp-entry.is-selected,
+.mcp-entry.is-selected.is-change {
+  background: var(--accent-tint);
+}
+/* While anything is selected the header becomes the selection bar. */
+.mcp-log-head.is-selecting {
+  display: flex;
+  height: 40px;
+  padding: 0 10px 0 12px;
+  background: var(--badge-info-bg);
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.mcp-log-head.is-selecting > :not(.sel-bar),
+.sel-bar[hidden] {
+  display: none;
+}
+.sel-bar {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sel-bar .sel-box {
+  width: 22px;
+}
+.sel-count {
+  color: var(--badge-info-fg);
+  font-weight: 700;
+}
+.sel-where {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.sel-bar .spacer {
+  flex: 1;
+}
+button.sel-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+button.sel-act .icon {
+  font-size: 13px;
+}
+button.sel-act.is-danger {
+  color: var(--mcp-danger);
+}
+button.sel-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+button.sel-x:hover {
+  background: var(--bg-row-hover);
+  color: inherit;
+  filter: none;
+}
+/* «Están seleccionadas las 50 de esta página. Seleccionar las 1.284…» */
+.sel-banner {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-top: 1px solid var(--mcp-hairline);
+  background: var(--accent-tint);
+  font-size: 12px;
+}
+button.sel-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+/* «Limpiar»: a button at the end of the row over the log and its popover
+   (the look of the column menus, right-aligned under it). */
+.clean-host {
+  position: relative;
+  flex-shrink: 0;
+}
+button.act-clean {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+button.act-clean[aria-expanded='true'] {
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+.xf.clean-pop {
+  left: auto;
+  right: 0;
+  width: 304px;
+}
+.xf.clean-pop[hidden] {
+  display: none;
+}
+button.xf-item .n {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+button.xf-item:disabled {
+  opacity: 0.45;
+}
+button.xf-item.is-danger,
+button.xf-item.is-danger .icon {
+  color: var(--mcp-danger);
+}
+.auto-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 8px 2px;
+}
+.auto-row .num-stepper input[type='number'] {
+  width: 34px;
+}
+.auto-hint {
+  margin: 6px 8px 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.xf-foot .auto-hint {
+  margin: 0;
+}
+.auto-hint.is-warn {
+  color: var(--badge-warn-fg);
+}
+.mcp-log-rows mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: rgba(255, 214, 10, 0.35);
+  color: inherit;
+}
+.act-empty {
+  padding: 34px 16px;
+  border-top: 1px solid var(--mcp-hairline);
+  color: var(--muted);
+  text-align: center;
+}
+.act-empty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--act-text);
+  font-size: 13px;
+}
+/* The pager, at the foot of the card. */
+.act-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 16px;
+  border-top: 1px solid var(--mcp-hairline);
+  border-radius: 0 0 9px 9px;
+  background: var(--mcp-log-head-bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+.act-pager .spacer {
+  flex: 1;
+}
+.act-pager label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.act-pager select.mcp-select {
+  width: auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 22px 0 8px;
+  font-size: 12px;
+}
+.act-pages {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.act-pages button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.act-pages button:hover:not(:disabled) {
+  background: var(--bg-row-hover);
+  filter: none;
+}
+.act-pages button[aria-current='page'] {
+  background: var(--accent-strong);
+  color: #fff;
+  font-weight: 600;
+}
+.act-pages button:disabled {
+  opacity: 0.35;
+}
+.act-pages .gap {
+  width: 20px;
+  text-align: center;
+}
+/* ── End Settings: MCP ─────────────────────────────────────────────── */
+
 /* ── Workflows: list, editor chrome, run states, log drawer ────────────
  * Built by renderer/workflows/*.ts and the pipeline editor. One token set
  * for the whole section, redefined for dark below. */

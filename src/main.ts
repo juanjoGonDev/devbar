@@ -46,6 +46,7 @@ import {
   settingsPushes,
 } from './main/renderer-bus.js';
 import { remoteControlFor } from './main/remote/remote-wiring.js';
+import { mcpFor, withMcpShutdown } from './main/mcp/mcp-wiring.js';
 import { createScheduleRunner } from './main/schedule-runner.js';
 import { createShutdownController } from './main/shutdown.js';
 import { isSmokeMode, runSmokeMode } from './main/smoke-mode.js';
@@ -192,6 +193,7 @@ const chrome = {
   windowIcon: host.windowIcon,
   background: host.background,
   workArea: host.workArea,
+  focusApp: host.focusApp,
   attachConsole: logger.attachWindowConsole,
   onWindowsChanged: () =>
     applyDockVisibility(isMac ? app.dock : null, anyAppWindowOpen(registry)),
@@ -217,12 +219,9 @@ const appWindows = createAppWindows({
 });
 
 const notifications = createNotifications({
-  createWindow: host.createWindow,
+  ...chrome,
   createNotification: (options) => new Notification(options),
   notificationsSupported: () => Notification.isSupported(),
-  rendererFile: host.rendererFile,
-  preloadPath: host.preloadPath,
-  workArea: host.workArea,
   notifySuccessEnabled: () => configStore.getGlobalSettings().notifySuccess,
   openConfig: (goto) => appWindows.ensureConfigWindow({ goto }),
   applyUpdate: () => void updater.applyUpdateAndReport(),
@@ -267,7 +266,11 @@ const schedules = createScheduleRunner({
   workflowRunner,
 });
 
-/** What both the IPC handlers and «Control remoto» drive. */
+// `sync` expands each `~` and ignores blanks and repeats itself.
+const syncRepoWatchers = (): void =>
+  repoWatcher.sync(configStore.listGroups().map((group) => group.path));
+
+/** What the IPC handlers, «Control remoto» and the MCP server drive. */
 const wiring = {
   host,
   configStore,
@@ -282,17 +285,20 @@ const wiring = {
   broadcast,
   repaintWindows,
   registry,
+  syncRepoWatchers,
   ...settingsPushes(registry),
 };
 
 // «Control remoto»: the LAN server for linked phones, off unless enabled.
 const remote = remoteControlFor({ ...wiring, notifications });
+// MCP: the local endpoint AI assistants connect through, off unless enabled.
+const mcp = mcpFor({ ...wiring, appWindows });
 
 const shutdown = createShutdownController({
   isPrimary,
   smokeMode: SMOKE_MODE,
   repoWatcher,
-  remoteServer: remote,
+  remoteServer: withMcpShutdown(remote, mcp),
   workflowRunner,
   processManager,
   sessionResume: () => sessionResume,
@@ -301,11 +307,6 @@ const shutdown = createShutdownController({
   appQuit: () => app.quit(),
   processExit: (code) => process.exit(code),
 });
-
-function syncRepoWatchers(): void {
-  const paths = configStore.listGroups().map((g) => expandTilde(g.path));
-  repoWatcher.sync([...new Set(paths.filter(Boolean))]);
-}
 
 const trayHost = createTrayHost(() => menuBar, host, configStore);
 
@@ -350,7 +351,7 @@ const devHooks = {
 };
 
 function registerIpc(): void {
-  registerAllIpc(ipcMain, {
+  registerAllIpc(mcp.tapIpc(ipcMain), {
     ...host,
     ...wiring,
     configIo,
@@ -358,7 +359,6 @@ function registerIpc(): void {
     appWindows,
     notifications,
     trayHost,
-    syncRepoWatchers,
     expandTilde,
     fetchReleases: (limit) =>
       updateCheck.fetchReleases({ ...UPDATE_REPO, limit }),
@@ -367,6 +367,7 @@ function registerIpc(): void {
     customIconsChanged: (icons) =>
       sendToRenderers(registry, 'customIcons:changed', icons),
     remote,
+    mcp,
     portsOf: ports.portsOf,
   });
   registerDevPanel(
@@ -385,7 +386,7 @@ function registerIpc(): void {
  * tray popover.
  */
 function scheduleBootWork(): void {
-  void remote.startIfEnabled();
+  void Promise.all([remote.startIfEnabled(), mcp.startIfEnabled()]);
   setTimeout(() => void startup.autoStartAllMarkedCommands(), 300);
   setTimeout(() => void schedules.checkSchedules(new Date()), 1000);
   schedules.startScheduleLoop();

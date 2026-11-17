@@ -175,6 +175,8 @@ export function createElectronHost(options: ElectronHostOptions) {
 
     createWindow: (opts: BrowserWindowConstructorOptions): BrowserWindow =>
       new BrowserWindow(opts),
+    /** Activates DevBar over the app in front (macOS needs `steal`). */
+    focusApp: (): void => app.focus({ steal: true }),
     activeDisplay,
     workArea: (): Rectangle => activeDisplay().workArea,
     // Sizes the tray popover. A Linux WM that publishes no reserved area
