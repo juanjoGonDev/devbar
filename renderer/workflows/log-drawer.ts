@@ -64,20 +64,20 @@ function mark(status: string): HTMLElement {
 }
 
 /**
- * Whether the script got as far as this run: it started, or it was turned
- * away (no path, declined, already running) and said why in its own log. One
- * still waiting — or skipped, or cancelled before its turn — has nothing in
- * its buffer but the previous run's output.
+ * Whether the script ran in this run. One that did not — still waiting,
+ * skipped, cancelled before its turn, or turned away (no path, declined,
+ * already running) — has nothing in its buffer but the previous run's
+ * output, under which a refusal only appended its reason.
  */
 function reachedThisRun(script: WorkflowScriptRunState): boolean {
-  return script.startedAt !== null || script.finishedAt !== null;
+  return script.startedAt !== null;
 }
 
 /** What the drawer says instead of a log the script does not have yet. */
 function pendingText(script: WorkflowScriptRunState): string {
-  return script.status === 'waiting'
-    ? 'Todavía no ha empezado'
-    : 'No ha llegado a ejecutarse';
+  if (script.status === 'waiting') return 'Todavía no ha empezado';
+  const text = 'No ha llegado a ejecutarse';
+  return script.reason ? `${text} · ${script.reason}` : text;
 }
 
 export function createLogDrawer(deps: LogDrawerDeps): LogDrawer {

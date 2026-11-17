@@ -81,6 +81,8 @@ export interface OneResult {
   skipped?: boolean;
   /** A clean exit whose output matched the group's warn pattern. */
   warned?: boolean;
+  /** Why it was turned away before it started, as its own log says it. */
+  reason?: string;
 }
 
 /** Writes one narration line into a log buffer (`pushSysLog` in the runner). */
@@ -157,39 +159,39 @@ export async function runOne(
     return { ok: true, code: null, skipped: true };
   }
   const pid = makePreScriptId(ref.groupId, script.id);
+  /** Turned away before it started: said in its own log, and in the result. */
+  const refuse = (
+    reason: string,
+    level: 'error' | null,
+    result: Pick<OneResult, 'error' | 'cancelled'>,
+  ): OneResult => {
+    pushScriptLog(pid, `── ${reason} ──`, level);
+    return { ok: false, code: -1, ...result, reason };
+  };
   const groupPath = group.path.trim();
   if (!groupPath) {
     // An ordinary per-script failure, not a whole-pipeline abort: siblings
     // already spawned in the same parallel block still complete.
-    pushScriptLog(pid, `── Sin ruta configurada en su grupo ──`, 'error');
-    return { ok: false, code: -1, error: 'no_group_path' };
+    return refuse('Sin ruta configurada en su grupo', 'error', {
+      error: 'no_group_path',
+    });
   }
   if (script.confirm) {
     const confirmed = deps.confirmScript
       ? await deps.confirmScript(script, group, ref.groupId)
       : false;
-    if (!confirmed) {
-      pushScriptLog(pid, `── Cancelado por el usuario ──`);
-      return {
-        ok: false,
-        code: -1,
+    if (!confirmed)
+      return refuse('Cancelado por el usuario', null, {
         error: 'confirm_declined',
         cancelled: true,
-      };
-    }
+      });
   }
-  if (deps.shouldAbort?.() === true) {
-    pushScriptLog(pid, `── Cancelado ──`);
-    return { ok: false, code: -1, error: 'aborted', cancelled: true };
-  }
-  if (processManager.getState?.(pid).status === 'running') {
-    pushScriptLog(
-      pid,
-      `── Ya se está ejecutando (¿en otro workflow?) ──`,
-      'error',
-    );
-    return { ok: false, code: -1, error: 'already_running' };
-  }
+  if (deps.shouldAbort?.() === true)
+    return refuse('Cancelado', null, { error: 'aborted', cancelled: true });
+  if (processManager.getState?.(pid).status === 'running')
+    return refuse('Ya se está ejecutando (¿en otro workflow?)', 'error', {
+      error: 'already_running',
+    });
   handle.childPids.add(pid);
   const matchers = warnMatchers(group);
   let warned = false;

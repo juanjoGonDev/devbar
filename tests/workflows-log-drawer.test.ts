@@ -11,7 +11,11 @@ import {
   type LogDrawer,
 } from '../renderer/workflows/log-drawer.js';
 import type { LogEntry } from '../src/domain-types.js';
-import type { LogsSnapshot, WorkflowRunState } from '../src/ipc-contract.js';
+import type {
+  LogsSnapshot,
+  WorkflowRunState,
+  WorkflowScriptRunState,
+} from '../src/ipc-contract.js';
 
 /**
  * The workflow terminal under the canvas. Its tabs, meta and buttons are its
@@ -258,16 +262,28 @@ describe('renderer/workflows/log-drawer.ts', () => {
     expect(texts()).toEqual(['otra vez']);
   });
 
-  it('shows why a script was turned away before it could start', async () => {
-    // Refused (no path, declined…): it never started, but it did reach this
-    // run, and the reason is in its own log.
+  it('shows why a script was turned away, not the last run its buffer holds', async () => {
+    // Refused (no path, declined…): it never started, so its buffer still
+    // holds its previous run, the reason appended under it. The run says why.
     const state = finished();
-    state.scripts = state.scripts.map((s) =>
-      s.scriptId === 'deps' ? { ...s, startedAt: null } : s,
+    state.scripts = state.scripts.map((s): WorkflowScriptRunState =>
+      s.scriptId === 'deps'
+        ? {
+            ...s,
+            status: 'cancelled',
+            startedAt: null,
+            exitCode: -1,
+            reason: 'Cancelado por el usuario',
+          }
+        : s,
     );
     const drawer = await mount(state);
     drawer.open('front::deps');
-    expect(win?.argsFor('getLogs')).toEqual([[DEPS_ID]]);
+    expect(win?.argsFor('getLogs')).toEqual([]);
+    expect(q('.wf-log-empty').hidden).toBe(false);
+    expect(q('.wf-log-empty').textContent).toBe(
+      'No ha llegado a ejecutarse · Cancelado por el usuario',
+    );
   });
 
   it('opens the logs window on the script and closes', async () => {

@@ -303,6 +303,32 @@ describe('createPreScriptRunner — confirmation gate', () => {
     ).toBe(true);
   });
 
+  it('says on the run state why a declined script never started', async () => {
+    // The workflow terminal shows it there: the script's own buffer still
+    // holds its previous run, with this reason appended under it.
+    const group = makeGroup({
+      id: 'g1',
+      path: '/tmp/g1',
+      preScripts: [makeScript({ id: 'sc1', name: 'A', confirm: true })],
+    });
+    const steps = [makeStep('s1', 'serial', [ref('g1', 'sc1')])];
+    const runner = createPreScriptRunner({
+      processManager: makeMockPM({ 'pre:g1:sc1': { code: 0 } }),
+      configStore: makeConfigStore([group], steps),
+      broadcastUpdate: vi.fn(),
+      onError: vi.fn(),
+      confirmScript: vi.fn().mockResolvedValue(false),
+      cancelConfirm: vi.fn(),
+    });
+
+    await runner.run();
+    expect(runner.getSnapshot()?.scripts[0]).toMatchObject({
+      status: 'cancelled',
+      startedAt: null,
+      reason: 'Cancelado por el usuario',
+    });
+  });
+
   it('R2.4: no confirmScript dep injected → fail-safe declined (cancelled, not failure), start never called', async () => {
     const group = makeGroup({
       id: 'g1',
