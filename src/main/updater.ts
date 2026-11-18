@@ -433,8 +433,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
         return status();
       }
       lastUpdateCheckAt = new Date().toISOString();
-      // A simulated update owns the slot until the dev panel releases it.
-      if (!devUpdateSimulated) availableUpdate = found || null;
+      // A simulated update owns the slot until the dev panel releases it, and
+      // the install modal owns it while it waits (a phone installs that one);
+      // a newer release is picked up by the next check.
+      if (!devUpdateSimulated && !asking) availableUpdate = found || null;
       const current = phase.get();
       const known = phaseVersion(current);
       // A newer release than the one a failure is about replaces that failure.
