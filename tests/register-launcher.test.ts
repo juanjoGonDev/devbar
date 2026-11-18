@@ -613,8 +613,14 @@ describe('scripts/register-launcher.ts', () => {
         `$l.TargetPath = '${fixture.install}${path.sep}DevBar.exe'`,
       );
       expect(script).toContain(`$l.WorkingDirectory = '${fixture.install}'`);
+      // The exe's own icon, as the NSIS installer does: the in-app update
+      // runs that installer over this folder, which deletes a copied-in
+      // resources\icon.ico but keeps the shortcut — leaving it blank.
       expect(script).toContain(
-        `$l.IconLocation = '${path.join(fixture.install, 'resources', 'icon.ico')},0'`,
+        `$l.IconLocation = '${fixture.install}${path.sep}DevBar.exe,0'`,
+      );
+      expect(fs.existsSync(path.join(fixture.install, 'resources'))).toBe(
+        false,
       );
       expect(script.endsWith('; $l.Save()')).toBe(true);
       // The parent directory has to exist before WScript.Shell saves there.
