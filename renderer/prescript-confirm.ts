@@ -6,9 +6,10 @@ initTheme();
 const token = new URLSearchParams(window.location.search).get('token');
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
 let decided = false;
-// Enter says yes only once the question is on screen, and never where only a
-// click may (installing an update: see `clickToConfirm`).
-let enterConfirms = false;
+// The keyboard (Enter, or a key on the focused yes button) says yes only once
+// the question is on screen, and never where only a click may (installing an
+// update: see `clickToConfirm`).
+let keyboardConfirms = false;
 function decide(decision: 'confirm' | 'cancel'): void {
   if (decided || !token) return;
   decided = true;
@@ -25,7 +26,7 @@ async function init(): Promise<void> {
     window.close();
     return;
   }
-  enterConfirms = context.clickToConfirm !== true;
+  keyboardConfirms = context.clickToConfirm !== true;
   const logo = byId('pc-logo', HTMLImageElement);
   if (context.logo) logo.src = context.logo;
   else logo.style.display = 'none';
@@ -69,14 +70,17 @@ async function init(): Promise<void> {
     }, 1000);
   }
 }
-byId('pc-btn-confirm', HTMLButtonElement).addEventListener('click', () =>
-  decide('confirm'),
-);
+byId('pc-btn-confirm', HTMLButtonElement).addEventListener('click', (event) => {
+  // Enter or Space on the focused button clicks it with no pointer behind it
+  // (detail 0): not a click, where only a click may say yes.
+  if (event.detail === 0 && !keyboardConfirms) return;
+  decide('confirm');
+});
 byId('pc-btn-cancel', HTMLButtonElement).addEventListener('click', () =>
   decide('cancel'),
 );
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && enterConfirms) decide('confirm');
+  if (event.key === 'Enter' && keyboardConfirms) decide('confirm');
   else if (event.key === 'Escape') decide('cancel');
 });
 void init();

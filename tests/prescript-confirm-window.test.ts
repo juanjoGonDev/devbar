@@ -191,6 +191,22 @@ describe('renderer/prescript-confirm.ts', () => {
       ]);
     });
 
+    it('ignores the keyboard on its yes button when only a click may answer', async () => {
+      const gate = await openGate('?token=t1');
+      await gate.settle(
+        'getPrescriptConfirmContext',
+        context({ clickToConfirm: true }),
+      );
+      const yes = byId('pc-btn-confirm');
+      // Enter or Space on the focused button: a click with no pointer behind it.
+      yes.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+      expect(gate.callCount('resolvePrescriptConfirm')).toBe(0);
+      yes.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      expect(gate.argsFor('resolvePrescriptConfirm')).toEqual([
+        ['t1', 'confirm'],
+      ]);
+    });
+
     it('ignores Enter before it knows what it is asking', async () => {
       const gate = await openGate('?token=t1');
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));

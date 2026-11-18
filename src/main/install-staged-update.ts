@@ -3,7 +3,7 @@ import type {
   ApplyUpdateResult,
   AssistedUpdateDeps,
 } from './assisted-update.js';
-import type { PhaseStore } from './update-phase.js';
+import { isBusyPhase, type PhaseStore } from './update-phase.js';
 import type { StagedUpdate } from '../domain-types.js';
 
 /**
@@ -57,6 +57,9 @@ export async function installStagedUpdate(
   if (ask) {
     const refusal = await confirmed(deps, staged);
     if (refusal) return refusal;
+    // While the modal waited, another surface (a phone) may have started the
+    // swap: a second one would race it over the same target and backup.
+    if (isBusyPhase(phase.get())) return { ok: false, busy: true };
   }
   try {
     deps.spawnSwap({

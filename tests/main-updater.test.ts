@@ -99,6 +99,55 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
+    it('starts a single swap when the phone installs while the modal waits', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      let answer: (yes: boolean) => void = () => undefined;
+      const h = harness({
+        confirmInstall: (version) => {
+          h.asked.push(version);
+          return new Promise<boolean>((resolve) => {
+            answer = resolve;
+          });
+        },
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.asked).toHaveLength(1));
+      await expect(h.updater.installStagedHeadless()).resolves.toMatchObject({
+        ok: true,
+        quitting: true,
+      });
+      answer(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.calls.filter((call) => call === 'spawnSwap')).toHaveLength(1);
+      log.mockRestore();
+    });
+
+    it('keeps the download the open modal asks about when a newer release turns up', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      let answer: (yes: boolean) => void = () => undefined;
+      let latest = update;
+      const h = harness({
+        checkForUpdate: () => Promise.resolve(latest),
+        confirmInstall: (version) => {
+          h.asked.push(version);
+          return new Promise<boolean>((resolve) => {
+            answer = resolve;
+          });
+        },
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.asked).toEqual(['1.3.0']));
+      latest = { ...update, version: '1.4.0' };
+      await h.updater.runUpdateCheck();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.calls).not.toContain('stage:/home/updates/1.4.0');
+      expect(h.removed).not.toContain('/home/updates/1.3.0');
+      expect(h.updater.staged()?.version).toBe('1.3.0');
+      answer(true);
+      await vi.waitFor(() => expect(h.calls).toContain('spawnSwap'));
+      log.mockRestore();
+    });
+
     it('skips the automatic check while automatic updates are off', async () => {
       const checkForUpdate = vi.fn(() => Promise.resolve(update));
       const h = harness({ autoUpdate: () => false, checkForUpdate });

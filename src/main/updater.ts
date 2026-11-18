@@ -237,6 +237,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       })
     )
       return null;
+    // The open install modal is about the staged copy: staging a newer one
+    // would prune it from under the answer. The next check stages it.
+    if (asking) return null;
     const plan = deps.stageableAsset(update, deps.installedAppPath());
     if (!plan) return null;
     stagingVersion = version;
