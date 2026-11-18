@@ -216,6 +216,18 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
+    it('refuses a simulated staging while a real download runs', async () => {
+      const h = harness({
+        downloadFile: () => new Promise<string>(() => undefined),
+      });
+      await h.updater.runUpdateCheck();
+      await expect(
+        h.updater.stageFromZip('/tmp/DevBar.zip', '1.3.0'),
+      ).rejects.toThrow(/descarga en curso/);
+      expect(h.calls).not.toContain('extract:/tmp/DevBar.zip');
+      expect(h.asked).toEqual([]);
+    });
+
     it('skips the automatic check while automatic updates are off', async () => {
       const checkForUpdate = vi.fn(() => Promise.resolve(update));
       const h = harness({ autoUpdate: () => false, checkForUpdate });

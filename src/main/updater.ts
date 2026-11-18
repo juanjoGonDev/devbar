@@ -471,6 +471,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
      */
     async stageFromZip(zipPath, version): Promise<void> {
       if (asking) throw new Error(MODAL_OWNS_UPDATE);
+      // A real download finishing later would prune what this stages, even
+      // with its modal open (the real paths never open one mid-download).
+      if (stagingVersion !== null) throw new Error('hay una descarga en curso');
       stagedUpdate = await deps.extractUpdate({
         zipPath,
         destDir: path.join(deps.updatesDir(), version),
