@@ -77,10 +77,14 @@ describe('renderer/notification.ts', () => {
 
     it('runs the progress bar for as long as the banner will live', async () => {
       await openBanner('?title=Listo&secs=6');
-      expect(byId('progress').style.animation).toBe(
-        'devbar-shrink 6s linear forwards',
-      );
-      expect(byId('progress').style.display).toBe('');
+      // Read the longhands: a browser serializes the `animation` shorthand in
+      // its canonical order (name last), not in the order it was written.
+      const { style } = byId('progress');
+      expect(style.animationName).toBe('devbar-shrink');
+      expect(style.animationDuration).toBe('6s');
+      expect(style.animationTimingFunction).toBe('linear');
+      expect(style.animationFillMode).toBe('forwards');
+      expect(style.display).toBe('');
     });
 
     it('hides the bar entirely for a banner that does not expire', async () => {
