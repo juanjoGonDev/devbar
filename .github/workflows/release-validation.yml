@@ -285,7 +285,7 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build and verify AppImage + deb (x64, arm64, armv7)
+      - name: Build and verify AppImage + deb (x64, arm64)
         run: |
           # electron-builder downloads Electron dists + toolsets (NSIS,
           # fpm, appimagetool) from GitHub releases; a transient 5xx

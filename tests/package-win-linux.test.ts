@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   baseConfig,
-  contractArchName,
   hostArch,
   linuxArchs,
   linuxBuildOptions,
@@ -36,7 +35,7 @@ const repositoryRoot = path.resolve(
 /** A fake checkout root, so the asserted paths are literal, not derived. */
 const ROOT = path.join(path.sep, 'repo');
 const VERSION = '9.9.9';
-const BUILDER_ARCH_KEYS = ['x64', 'arm64', 'armv7l'];
+const BUILDER_ARCH_KEYS = ['x64', 'arm64'];
 const temporaryDirectories: string[] = [];
 
 function winConfig(arch: string, mode: PackageMode) {
@@ -101,8 +100,12 @@ describe('scripts/package-win-linux.ts', () => {
   describe('hostArch', () => {
     it('maps the node arch onto the electron-builder arch key', () => {
       expect(hostArch('arm64')).toBe('arm64');
-      expect(hostArch('arm')).toBe('armv7l');
       expect(hostArch('x64')).toBe('x64');
+    });
+
+    it('refuses a 32-bit ARM host, which Electron no longer builds for', () => {
+      // Falling back to x64 would build an app that cannot run there.
+      expect(() => hostArch('arm')).toThrow('32-bit ARM is not supported');
     });
 
     it('falls back to x64 for any other host', () => {
@@ -116,14 +119,6 @@ describe('scripts/package-win-linux.ts', () => {
     });
   });
 
-  describe('contractArchName', () => {
-    it('renames only the 32-bit Pi arch', () => {
-      expect(contractArchName('armv7l')).toBe('armv7');
-      expect(contractArchName('arm64')).toBe('arm64');
-      expect(contractArchName('x64')).toBe('x64');
-    });
-  });
-
   describe('unpackedDirName', () => {
     it('leaves the x64 output dir unsuffixed, as electron-builder spells it', () => {
       expect(unpackedDirName('linux', 'x64')).toBe('linux-unpacked');
@@ -134,7 +129,6 @@ describe('scripts/package-win-linux.ts', () => {
       // The dir target on a Raspberry Pi lands here; an install script
       // that reads back the x64 spelling fails after a successful build.
       expect(unpackedDirName('linux', 'arm64')).toBe('linux-arm64-unpacked');
-      expect(unpackedDirName('linux', 'arm')).toBe('linux-armv7l-unpacked');
       expect(unpackedDirName('win', 'arm64')).toBe('win-arm64-unpacked');
     });
 
@@ -148,7 +142,7 @@ describe('scripts/package-win-linux.ts', () => {
   describe('windowsArchs / linuxArchs', () => {
     it('builds every arch of the release contract in full mode', () => {
       expect(windowsArchs('full')).toEqual(['x64', 'arm64']);
-      expect(linuxArchs('full')).toEqual(['x64', 'arm64', 'armv7l']);
+      expect(linuxArchs('full')).toEqual(['x64', 'arm64']);
     });
 
     it('builds the host arch only in dir and host mode', () => {
@@ -291,16 +285,14 @@ describe('scripts/package-win-linux.ts', () => {
       });
     });
 
-    it('targets armv7l but names the artifact armv7 (the contract name)', () => {
-      // electron-builder's arch key and the release artifact contract
-      // disagree on this one arch; the updater downloads by contract name.
-      expect(linuxConfig('armv7l', 'full').config).toMatchObject({
+    it('targets arm64 and names the artifact after it', () => {
+      expect(linuxConfig('arm64', 'full').config).toMatchObject({
         linux: {
           target: [
-            { target: 'AppImage', arch: ['armv7l'] },
-            { target: 'deb', arch: ['armv7l'] },
+            { target: 'AppImage', arch: ['arm64'] },
+            { target: 'deb', arch: ['arm64'] },
           ],
-          artifactName: 'DevBar-9.9.9-linux-armv7.${ext}',
+          artifactName: 'DevBar-9.9.9-linux-arm64.${ext}',
         },
       });
     });
@@ -315,7 +307,7 @@ describe('scripts/package-win-linux.ts', () => {
     });
 
     it('collapses dir mode to a single unpacked host-arch target', () => {
-      const config = linuxConfig('armv7l', 'dir').config;
+      const config = linuxConfig('arm64', 'dir').config;
       const target = (config as { linux: { target: unknown[] } }).linux.target;
       expect(target).toHaveLength(1);
       expect(target[0]).toMatchObject({ target: 'dir' });
@@ -358,29 +350,24 @@ describe('scripts/package-win-linux.ts', () => {
       expect(lines).toEqual(['[win] x64 done', '[win] arm64 done']);
     });
 
-    it('invokes electron-builder once per Linux arch and reports armv7', async () => {
+    it('invokes electron-builder once per Linux arch, in order', async () => {
       const builder = recordingBuilder();
       const lines = captureLog();
       await runBuild({ target: 'linux', mode: 'full' }, builder, '9.9.9', ROOT);
-      expect(builder.calls).toHaveLength(3);
-      expect(builder.calls[2]).toMatchObject({
+      expect(builder.calls).toHaveLength(2);
+      expect(builder.calls[1]).toMatchObject({
         linux: [],
         config: {
           linux: {
             target: [
-              { target: 'AppImage', arch: ['armv7l'] },
-              { target: 'deb', arch: ['armv7l'] },
+              { target: 'AppImage', arch: ['arm64'] },
+              { target: 'deb', arch: ['arm64'] },
             ],
-            artifactName: 'DevBar-9.9.9-linux-armv7.${ext}',
+            artifactName: 'DevBar-9.9.9-linux-arm64.${ext}',
           },
         },
       });
-      // The progress line speaks the contract name, not the builder key.
-      expect(lines).toEqual([
-        '[linux] x64 done',
-        '[linux] arm64 done',
-        '[linux] armv7 done',
-      ]);
+      expect(lines).toEqual(['[linux] x64 done', '[linux] arm64 done']);
     });
 
     it('builds a single unpacked target in dir mode', async () => {

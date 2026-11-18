@@ -83,7 +83,7 @@ export interface AppIpcDeps {
     status: () => UpdateStatus;
     runUpdateCheck: (options?: { manual?: boolean }) => Promise<unknown>;
     applyUpdate: () => Promise<ApplyUpdateResult>;
-    copyInstallCommand: () => { ok: boolean; error?: string };
+    copyInstallCommand: () => Promise<{ ok: boolean; error?: string }>;
     showDownloadedFile: () => { ok: boolean; error?: string };
   };
   /** stopAll wiped every log buffer, so a stale run id must not linger. */
@@ -107,8 +107,8 @@ export interface AppIpcDeps {
   openExternalAsync: (url: string) => Promise<unknown>;
   /** Builds the GitHub issue report, copies it to the clipboard and
    *  answers the URL to open (host-provided; see src/report-issue.ts). */
-  reportIssue: () => { url: string; bodyIncluded: boolean };
-  copyReport: () => { ok: boolean; error?: string };
+  reportIssue: () => Promise<{ url: string; bodyIncluded: boolean }>;
+  copyReport: () => Promise<{ ok: boolean; error?: string }>;
   reportPreview: () => { text: string; errors: number; warnings: number };
   setTimer?: (fn: () => void, ms: number) => unknown;
   newImportToken?: () => string;
@@ -297,7 +297,7 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
   ipc.handle('app:reportIssue', async () => {
     let report: { url: string; bodyIncluded: boolean };
     try {
-      report = deps.reportIssue();
+      report = await deps.reportIssue();
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

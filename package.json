@@ -52,7 +52,7 @@
     "@vitest/coverage-v8": "5.1.0",
     "@vitest/eslint-plugin": "1.6.28",
     "dependency-cruiser": "18.7.2",
-    "electron": "43.7.5",
+    "electron": "45.3.2",
     "electron-builder": "26.18.0",
     "esbuild": "0.28.2",
     "eslint": "10.15.0",
@@ -88,7 +88,7 @@
       "@hono/node-server@>=2.0.0 <2.1.6": "2.1.8",
       "vite@>=8.0.0 <8.1.6": "8.3.8",
       "@electron/asar@>=4.0.0 <4.3.2": "4.3.2",
-      "@types/electron-positioner>electron": "43.7.5"
+      "@types/electron-positioner>electron": "45.3.2"
     },
     "auditConfig": {
       "ignoreGhsas": [

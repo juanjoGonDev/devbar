@@ -26,8 +26,8 @@ export const RELEASE_PLATFORMS: readonly ReleasePlatform[] = [
 const MACOS_ARCHITECTURES = ['arm64', 'x64'] as const;
 /** Windows 10/11 x64 + Windows on ARM. */
 const WIN_ARCHITECTURES = ['x64', 'arm64'] as const;
-/** Desktop x64 + Raspberry Pi 4/5 (arm64) + 32-bit Pi OS (armv7). */
-const LINUX_ARCHITECTURES = ['x64', 'arm64', 'armv7'] as const;
+/** Desktop x64 + Raspberry Pi 4/5 (arm64). Electron ships no 32-bit ARM. */
+const LINUX_ARCHITECTURES = ['x64', 'arm64'] as const;
 
 function platformArtifactNames(
   version: string,

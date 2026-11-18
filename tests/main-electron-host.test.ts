@@ -14,6 +14,8 @@ const electron = vi.hoisted(() => ({
   calls: [] as string[],
   loginItem: { wasOpenedAtLogin: true },
   emptyImage: true,
+  /** What the next clipboard write rejects with; `null` resolves it. */
+  clipboardError: null as Error | null,
 }));
 
 vi.mock('electron', () => {
@@ -57,7 +59,13 @@ vi.mock('electron', () => {
       }
     },
     clipboard: {
-      writeText: (text: string) => electron.calls.push(`clipboard:${text}`),
+      // Electron >= 45: the main-process write is asynchronous.
+      writeText: (text: string): Promise<void> => {
+        electron.calls.push(`clipboard:${text}`);
+        return electron.clipboardError
+          ? Promise.reject(electron.clipboardError)
+          : Promise.resolve();
+      },
     },
     dialog: {
       showMessageBox: (...args: unknown[]) => {
@@ -413,7 +421,7 @@ describe('src/main/electron-host.ts', () => {
       electron.calls.length = 0;
       const h = host();
       h.relaunch();
-      h.copyText('sudo apt install /tmp/a.deb');
+      await h.copyText('sudo apt install /tmp/a.deb');
       h.showItemInFolder('/tmp/a.deb');
       expect(electron.calls).toEqual([
         'relaunch',
@@ -466,6 +474,41 @@ describe('src/main/electron-host.ts', () => {
       expect(preview.text).toContain('### Entorno');
       expect(preview.text).toContain('### Errores y avisos recientes');
       expect(preview).toMatchObject({ errors: 0, warnings: 0 });
+    });
+
+    it('copies the report before answering the issue URL to open', async () => {
+      electron.calls.length = 0;
+      const report = await host().reportIssue();
+      expect(report.url).toMatch(/^https:\/\/github\.com\/.+\/issues\/new/);
+      expect(electron.calls).toEqual([expect.stringContaining('clipboard:')]);
+      expect(electron.calls[0]).toContain('### Entorno');
+    });
+
+    it('fails the issue report when the clipboard write is refused', async () => {
+      electron.clipboardError = new Error('clipboard busy');
+      try {
+        await expect(host().reportIssue()).rejects.toThrow('clipboard busy');
+      } finally {
+        electron.clipboardError = null;
+      }
+    });
+
+    it('copies the report alone, answering ok once it is written', async () => {
+      electron.calls.length = 0;
+      await expect(host().copyReport()).resolves.toEqual({ ok: true });
+      expect(electron.calls).toEqual([expect.stringContaining('### Entorno')]);
+    });
+
+    it('answers ok: false when the clipboard write is refused', async () => {
+      electron.clipboardError = new Error('clipboard busy');
+      try {
+        await expect(host().copyReport()).resolves.toEqual({
+          ok: false,
+          error: 'clipboard busy',
+        });
+      } finally {
+        electron.clipboardError = null;
+      }
     });
 
     it('subscribes crash hooks to the process and the app', () => {

@@ -335,7 +335,7 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build and verify AppImage + deb (x64, arm64, armv7)
+      - name: Build and verify AppImage + deb (x64, arm64)
         run: |
           # electron-builder downloads Electron dists + toolsets (NSIS,
           # fpm, appimagetool) from GitHub releases; a transient 5xx must
@@ -377,8 +377,6 @@ jobs:
             dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-x64.deb
             dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-arm64.AppImage
             dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-arm64.deb
-            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-armv7.AppImage
-            dist/electron-builder/DevBar-${{ needs.detect.outputs.version }}-linux-armv7.deb
 
   assemble:
     name: Assemble and verify the full release set
@@ -494,8 +492,6 @@ jobs:
             "DevBar-${VERSION}-linux-x64.deb" \
             "DevBar-${VERSION}-linux-arm64.AppImage" \
             "DevBar-${VERSION}-linux-arm64.deb" \
-            "DevBar-${VERSION}-linux-armv7.AppImage" \
-            "DevBar-${VERSION}-linux-armv7.deb" \
             "SHA256SUMS.txt" \
             | LC_ALL=C sort > "$RUNNER_TEMP/expected-assets.txt"
 

@@ -15,7 +15,7 @@ overrides:
   '@hono/node-server@>=2.0.0 <2.1.6': 2.1.8
   vite@>=8.0.0 <8.1.6: 8.3.8
   '@electron/asar@>=4.0.0 <4.3.2': 4.3.2
-  '@types/electron-positioner>electron': 43.7.5
+  '@types/electron-positioner>electron': 45.3.2
 
 importers:
 
@@ -32,7 +32,7 @@ importers:
         version: 12.0.0
       menubar:
         specifier: 9.5.3
-        version: 9.5.3(electron@43.7.5)
+        version: 9.5.3(electron@45.3.2)
       qrcode-generator:
         specifier: 2.0.4
         version: 2.0.4
@@ -77,8 +77,8 @@ importers:
         specifier: 18.7.2
         version: 18.7.2
       electron:
-        specifier: 43.7.5
-        version: 43.7.5
+        specifier: 45.3.2
+        version: 45.3.2
       electron-builder:
         specifier: 26.18.0
         version: 26.18.0(electron-builder-squirrel-windows@26.18.0)
@@ -1446,8 +1446,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@43.7.5:
-    resolution: {integrity: sha512-AR+OLH/8QAwx6Lz6mhaDQhesbjC/Xh2WOiFSI/CDFU6FKX/qJdBg65bEUn+MLvbvIi/LlaRQeLljnUcKb1KS0A==}
+  electron@45.3.2:
+    resolution: {integrity: sha512-bPO0MMvJCdKdPfXgd3ES8zupu+ocr6XmSuRGwyZazTiigTz8jE7rwukSkck0iomS6UZeFuCwzu0uanMD/D34uw==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -3760,7 +3760,7 @@ snapshots:
 
   '@types/electron-positioner@4.1.4':
     dependencies:
-      electron: 43.7.5
+      electron: 45.3.2
     transitivePeerDependencies:
       - supports-color
 
@@ -4432,7 +4432,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@43.7.5:
+  electron@45.3.2:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0
@@ -5229,9 +5229,9 @@ snapshots:
 
   media-typer@1.1.1: {}
 
-  menubar@9.5.3(electron@43.7.5):
+  menubar@9.5.3(electron@45.3.2):
     dependencies:
-      electron: 43.7.5
+      electron: 45.3.2
       electron-positioner: 4.1.0
 
   merge-descriptors@2.0.0: {}

@@ -280,7 +280,7 @@ export function createElectronHost(options: ElectronHostOptions) {
         run: runProcess,
       })),
     relaunch: (): void => app.relaunch(),
-    copyText: (text: string): void => clipboard.writeText(text),
+    copyText: (text: string): Promise<void> => clipboard.writeText(text),
     showItemInFolder: (target: string): void => shell.showItemInFolder(target),
     writeFile: (target: string, contents: string): void =>
       fs.writeFileSync(target, contents),
@@ -356,16 +356,18 @@ export function createElectronHost(options: ElectronHostOptions) {
      * pre-filled when it fits the URL, title-only otherwise. Pure logic in
      * src/report-issue.ts; this only reads the log and touches the OS.
      */
-    reportIssue: (): { url: string; bodyIncluded: boolean } => {
+    reportIssue: async (): Promise<{ url: string; bodyIncluded: boolean }> => {
       const report = buildReport();
-      clipboard.writeText(report.clipboardText);
+      // Awaited: the caller promises the report is on the clipboard before
+      // the browser opens, and a refused write must fail the report.
+      await clipboard.writeText(report.clipboardText);
       return { url: report.url, bodyIncluded: report.bodyIncluded };
     },
     /** Copy-only variant: same report, no browser launch — the user pastes
      *  it wherever they prefer. */
-    copyReport: (): { ok: boolean; error?: string } => {
+    copyReport: async (): Promise<{ ok: boolean; error?: string }> => {
       try {
-        clipboard.writeText(buildReport().clipboardText);
+        await clipboard.writeText(buildReport().clipboardText);
         return { ok: true };
       } catch (error: unknown) {
         return {
