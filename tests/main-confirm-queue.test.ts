@@ -324,6 +324,54 @@ describe('src/main/confirm-queue.ts', () => {
     });
   });
 
+  describe('windowClosed', () => {
+    it('is a cancel when the window just closes', async () => {
+      const { queue } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      queue.windowClosed('t1');
+      await expect(install).resolves.toBe(false);
+    });
+
+    it('reports an install prompt that never loaded, instead of «Ahora no»', async () => {
+      const { queue } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      queue.windowClosed('t1', 'missing page');
+      await expect(install).rejects.toThrow('missing page');
+      expect(queue.hasPending('t1')).toBe(false);
+    });
+
+    it('reports a preview that never loaded too', async () => {
+      const { queue } = harness();
+      const preview = queue.previewInstall('1.3.0');
+      await tick();
+      queue.windowClosed('t1', 'missing page');
+      await expect(preview).rejects.toThrow('missing page');
+    });
+
+    it('still cancels a script whose window never loaded', async () => {
+      const { queue } = harness();
+      const pending = queue.confirmInteractive(script, null);
+      await tick();
+      queue.windowClosed('t1', 'missing page');
+      await expect(pending).resolves.toBe(false);
+    });
+
+    it('keeps the queue moving after a failed install prompt', async () => {
+      const { queue, windows } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      const next = queue.confirmInstall('1.4.0');
+      await tick();
+      queue.windowClosed('t1', 'missing page');
+      await expect(install).rejects.toThrow('missing page');
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'cancel');
+      await expect(next).resolves.toBe(false);
+    });
+  });
+
   describe('previewInstall', () => {
     it('shows the install modal, kept off a phone', async () => {
       const { queue } = harness();

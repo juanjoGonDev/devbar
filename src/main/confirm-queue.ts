@@ -46,6 +46,7 @@ type ConfirmableScript = Pick<
 
 interface PendingConfirm {
   resolve: (confirmed: boolean) => void;
+  reject: (error: Error) => void;
   timer: NodeJS.Timeout | null;
   win: ConfirmWindowLike | null;
   context: PrescriptConfirmContext;
@@ -95,6 +96,12 @@ export interface ConfirmQueue {
   cancelConfirm: () => void;
   resolveConfirm: (token: string, decision: ConfirmDecision) => void;
   hasPending: (token: string) => boolean;
+  /**
+   * The modal's window went away. Closed, it is a cancel. Never loaded
+   * (`failure`), an install prompt or its preview REJECTS with the reason, so
+   * it is reported instead of passing for «Ahora no»; a script still cancels.
+   */
+  windowClosed: (token: string, failure?: string) => void;
   getContext: (token: string) => PrescriptConfirmContext | null;
   /** Every open confirmation, for surfaces other than its modal (a phone). */
   pending: () => RemoteConfirmView[];
@@ -146,11 +153,12 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     context: PrescriptConfirmContext,
     origin: ConfirmOrigin,
   ): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
+    return new Promise<boolean>((resolve, reject) => {
       const token = newToken();
       const { secs, onTimeout } = context;
       const entry: PendingConfirm = {
         resolve,
+        reject,
         timer: null,
         win: null,
         origin,
@@ -215,7 +223,7 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
       (origin === 'pipeline' && generation !== pipelineConfirmGeneration) ||
       (yielding !== null && yieldAt !== yieldGeneration[yielding])
         ? Promise.resolve(false)
-        : show(); // never rejects
+        : show(); // rejects only for an install prompt that never loaded
     const result = confirmChain.then(run, run);
     confirmChain = result.then(
       () => undefined,
@@ -245,8 +253,23 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     return enqueue(() => openModal(context, origin), origin);
   }
 
+  function windowClosed(token: string, failure?: string): void {
+    const entry = pendingConfirms.get(token);
+    if (!entry) return;
+    const reports = entry.origin === 'update' || entry.origin === 'preview';
+    if (failure === undefined || !reports) {
+      resolveConfirm(token, 'cancel');
+      return;
+    }
+    pendingConfirms.delete(token);
+    if (entry.timer) clearTimer(entry.timer);
+    entry.reject(new Error(failure));
+    changed();
+  }
+
   return {
     showConfirmModal,
+    windowClosed,
     resolveConfirm,
     hasPending: (token) => pendingConfirms.has(token),
     getContext: (token) => pendingConfirms.get(token)?.context ?? null,

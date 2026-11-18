@@ -212,9 +212,8 @@ const appWindows = createAppWindows({
   commandName: (groupId, commandId) =>
     configStore.getGroup(groupId)?.commands?.find((c) => c.id === commandId)
       ?.name ?? null,
-  onConfirmWindowClosed: (token) => {
-    if (confirms.hasPending(token)) confirms.resolveConfirm(token, 'cancel');
-  },
+  onConfirmWindowClosed: (token, failure) =>
+    confirms.windowClosed(token, failure),
   onConfigClosed: () => remote.cancelPairing(),
 });
 

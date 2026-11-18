@@ -31,7 +31,8 @@ export interface AppWindowsDeps {
   /** The command's display name, or null when it no longer exists. */
   commandName: (groupId: string, commandId: string) => string | null;
   /** A modal closed without a decision => implicit cancel. */
-  onConfirmWindowClosed: (token: string) => void;
+  /** `failure`: the page never loaded, which is not the user's cancel. */
+  onConfirmWindowClosed: (token: string, failure?: string) => void;
   /** The config window is gone (a «Control remoto» QR shown in it dies). */
   onConfigClosed?: () => void;
   /** Activates DevBar over whatever app is in front (`app.focus`). */
@@ -228,9 +229,11 @@ export function createAppWindows(deps: AppWindowsDeps): AppWindows {
           query: { token },
         }),
       ).catch((err: unknown) => {
+        const failure = err instanceof Error ? err.message : String(err);
         console.error(
-          `[confirm] no se pudo cargar la confirmación: ${err instanceof Error ? err.message : String(err)}`,
+          `[confirm] no se pudo cargar la confirmación: ${failure}`,
         );
+        deps.onConfirmWindowClosed(token, failure);
         if (!win.isDestroyed()) win.close();
       });
       win.once('ready-to-show', () => {

@@ -40,7 +40,8 @@ function harness(overrides: Partial<AppWindowsDeps> = {}) {
     platformLabel: () => 'macos',
     commandName: (groupId, commandId) =>
       groupId === 'g1' && commandId === 'c1' ? 'web' : null,
-    onConfirmWindowClosed: (token) => confirmClosed.push(token),
+    onConfirmWindowClosed: (token, failure) =>
+      confirmClosed.push(failure === undefined ? token : `${token}:${failure}`),
     focusApp: () => {
       appFocused += 1;
     },
@@ -305,7 +306,11 @@ describe('src/main/app-windows.ts', () => {
         },
       });
       h.appWindows.ensurePrescriptConfirmWindow('t1');
-      await vi.waitFor(() => expect(h.confirmClosed).toEqual(['t1']));
+      await vi.waitFor(() =>
+        expect(h.confirmClosed[0], 'the failure, told apart from a close').toBe(
+          't1:missing page',
+        ),
+      );
       expect(error).toHaveBeenCalled();
       error.mockRestore();
     });
