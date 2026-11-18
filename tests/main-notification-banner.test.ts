@@ -128,6 +128,20 @@ describe('src/main/notification-banner.ts', () => {
       warn.mockRestore();
     });
 
+    it('only logs a notice its caller shows another way', () => {
+      const notices: unknown[] = [];
+      const h = harness({ onNotice: (notice) => notices.push(notice) });
+      h.notifications.showBannerNotification('DevBar', 'v1.3.0 lista.', {
+        cta: { label: 'Reiniciar e instalar', action: 'install-update' },
+        logOnly: true,
+      });
+      expect(notices).toEqual([
+        { title: 'DevBar', body: 'v1.3.0 lista.', action: 'install-update' },
+      ]);
+      expect(h.natives).toHaveLength(0);
+      expect(h.windows).toHaveLength(0);
+    });
+
     it('routes a CTA click through the action map', () => {
       const h = harness();
       h.notifications.showBannerNotification('DevBar', 'hola', {

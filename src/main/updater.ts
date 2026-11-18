@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { errorMessage } from './ipc-validators.js';
 import {
-  parseBundleId,
+  installedBundleIdOf,
   shouldNotifyUpdate,
   shouldStageUpdate,
 } from './update-plan.js';
@@ -11,11 +11,13 @@ import {
   type AssistedUpdateDeps,
 } from './assisted-update.js';
 import { createLinuxUpdateFlow, type LinuxUpdateDeps } from './linux-update.js';
+import { pruneStagedVersions } from './update-prune.js';
 import { downloadVerified } from './update-download.js';
 import { installStagedUpdate } from './install-staged-update.js';
 import {
-  applyReport,
+  applyAndReport,
   copyPhaseCommand,
+  noticeReady,
   showPhaseFile,
   type SimpleResult,
 } from './update-actions.js';
@@ -95,6 +97,10 @@ export interface UpdaterDeps extends AssistedUpdateDeps, LinuxUpdateDeps {
   ) => void;
   refreshTrayIcon: () => void;
   configFocused: () => boolean;
+  /** The «Actualizar automáticamente» switch, read on every automatic check. */
+  autoUpdate: () => boolean;
+  /** The «Reiniciar e instalar» modal (see install-staged-update.ts). */
+  confirmInstall: (version: string) => Promise<boolean>;
   copyText: (text: string) => void;
   showItemInFolder: (target: string) => void;
 }
@@ -113,7 +119,7 @@ export interface Updater {
   copyInstallCommand: () => SimpleResult;
   showDownloadedFile: () => SimpleResult;
   /** Dev simulation: stage a locally built zip through the real code path. */
-  stageFromZip: (zipPath: string, version: string) => Promise<void>;
+  stageFromZip: (zipPath: string, update: AvailableUpdate) => Promise<void>;
   pruneStagedUpdates: (keep: string) => void;
   installedBundleId: () => string | null;
   /** A staged update matching the release can be swapped in right now. */
@@ -126,6 +132,12 @@ export interface Updater {
 }
 
 const BANNER_TITLE = 'DevBar — actualización';
+/**
+ * Why the dev simulations leave the update alone while the install modal
+ * waits: it owns the staged copy, and the release it asks about must stay the
+ * one a phone can install too.
+ */
+const MODAL_OWNS_UPDATE = 'aviso de instalación abierto o descarga en curso';
 const OPEN_UPDATES = { cta: { label: 'Ver', action: 'open-about' } };
 
 export function createUpdater(deps: UpdaterDeps): Updater {
@@ -134,6 +146,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   let updateNotifiedThisLaunch = false; // banner shown at most once per launch
   let stagedUpdate: StagedUpdate | null = null; // downloaded, waiting for restart
   let stagingVersion: string | null = null; // download in flight, avoid duplicates
+  let asking = false; // the install modal is waiting for an answer
+  // A newer release a check found while another downloaded, and whether that
+  // check was asked for: it gets the slot when the download ends.
+  let pendingStage: { update: AvailableUpdate; manual: boolean } | null = null;
   // The automatic loop must not re-pull ~100 MB every 5 minutes after a
   // failure; an explicit retry from the user clears the entry.
   const stagingFailedVersions = new Set<string>();
@@ -177,6 +193,14 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   }
 
   function announceStaged(staged: StagedUpdate): void {
+    // A newer release turned up while this one downloaded: this copy is no
+    // longer the update, so it is neither announced nor offered (the newer
+    // one waits in `pendingStage` for the slot).
+    if (availableUpdate && availableUpdate.version !== staged.version) {
+      phase.set({ state: 'available', version: availableUpdate.version });
+      broadcastStatus();
+      return;
+    }
     console.log(`[updates] v${staged.version} descargada, lista para instalar`);
     phase.set({
       state: 'ready-to-install',
@@ -187,35 +211,41 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     });
     broadcastStatus();
     deps.refreshTrayIcon();
-    deps.showBannerNotification(
-      BANNER_TITLE,
-      `v${staged.version} lista. Reinicia para instalarla.`,
-      { cta: { label: 'Reiniciar', action: 'install-update' } },
-    );
+    noticeReady(deps.showBannerNotification, BANNER_TITLE, staged.version);
+    // Asks with the install modal and waits for the answer: installing
+    // restarts DevBar (and the services it runs), so it never happens alone.
+    // Only about this copy: a newer release found meanwhile is the next
+    // check's to stage and ask about, never an unrequested assisted download.
+    // `swappable`: the staged copy is still the release and still fits the
+    // install folder; otherwise there is nothing to ask about here.
+    if (swappable()) void applyUpdateAndReport();
   }
 
-  /** Drop previously staged versions — each one is a full copy of the app. */
-  function pruneStagedUpdates(keep: string): void {
-    const updatesDir = deps.updatesDir();
-    try {
-      for (const entry of deps.updaterFs.readdirSync(updatesDir)) {
-        if (entry === keep) continue;
-        const candidate = path.join(updatesDir, entry);
-        if (!deps.updaterFs.isDirectory(candidate)) continue;
-        deps.updaterFs.rmSync(candidate, { recursive: true, force: true });
-      }
-    } catch (err) {
-      console.warn(`[updates] no se pudo limpiar: ${errorMessage(err)}`);
-    }
-  }
+  /** Drop the other staged versions, never the one being unpacked now. */
+  const pruneStagedUpdates = (keep: string): void =>
+    pruneStagedVersions(deps.updaterFs, deps.updatesDir(), [
+      keep,
+      stagingVersion,
+    ]);
 
   /**
    * Download the platform's update artifact in the background and stage it
    * next to our config. Resolves the failure reason, or null. A failure stays
    * visible (phase + banner) and can be retried from the Updates pane.
    */
-  async function stageUpdate(update: AvailableUpdate): Promise<string | null> {
+  // Resolves the failure reason, or null.
+  async function stageUpdate(update: AvailableUpdate, manual = false) {
     const { version } = update;
+    if (stagingVersion !== null && stagingVersion !== version) {
+      // One download at a time. A later automatic check for the same release
+      // must not undo a manual request for it.
+      const asked =
+        pendingStage?.update.version === version && pendingStage.manual;
+      pendingStage = { update, manual: manual || asked };
+      return null;
+    }
+    // Once a swap is under way, a new staging would prune the copy it uses.
+    if (isBusyPhase(phase.get())) return null;
     if (
       !shouldStageUpdate({
         version,
@@ -225,6 +255,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       })
     )
       return null;
+    // The open install modal is about the staged copy: staging a newer one
+    // would prune it from under the answer. The next check stages it.
+    if (asking) return null;
     const plan = deps.stageableAsset(update, deps.installedAppPath());
     if (!plan) return null;
     stagingVersion = version;
@@ -251,8 +284,12 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       failure = `no se pudo preparar: ${errorMessage(err)}`;
       phase.set({ state: 'download-failed', version, reason: failure });
     } finally {
-      deps.updaterFs.rmSync(filePath, { force: true });
-      stagingVersion = null;
+      stagingVersion = null; // first: a failed removal must not keep the slot
+      try {
+        deps.updaterFs.rmSync(filePath, { force: true });
+      } catch (err) {
+        console.warn(`[updates] no se pudo borrar: ${errorMessage(err)}`);
+      }
       // Housekeeping, deliberately outside the try: a prune that trips over a
       // dangling entry must not mark a perfectly good download as failed and
       // swallow the "restart to install" notice for the rest of the session.
@@ -269,6 +306,12 @@ export function createUpdater(deps: UpdaterDeps): Updater {
           OPEN_UPDATES,
         );
     }
+    // Its turn now, success or not, if its check was asked for or automatic
+    // updates are still on.
+    const next = pendingStage;
+    pendingStage = null;
+    if (next && (next.manual || deps.autoUpdate()))
+      void stageUpdate(next.update, next.manual);
     return failure;
   }
 
@@ -308,7 +351,8 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     if (!availableUpdate) return { ok: false, error: 'no_update' };
     const update = availableUpdate;
     const current = phase.get();
-    if (isBusyPhase(current) || stagingVersion === update.version)
+    // `asking`: the install modal is already up; a second one would queue.
+    if (isBusyPhase(current) || stagingVersion !== null || asking)
       return { ok: false, busy: true };
     const staged = stagedUpdate;
     const target = deps.installedAppPath();
@@ -317,11 +361,12 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       staged &&
       staged.version === update.version &&
       deps.canInstallInPlace(target)
-    )
-      res = await installStagedUpdate(deps, phase, staged, target, {
-        ask: true,
-      });
-    else if (deps.platform === 'linux')
+    ) {
+      asking = true;
+      res = await installStagedUpdate(deps, phase, staged, target).finally(
+        () => (asking = false),
+      );
+    } else if (deps.platform === 'linux')
       res = await applyLinuxUpdate(update, current, target);
     else res = await runAssistedUpdate(deps, update, phase);
     // Failures that went through the phase store are logged there already.
@@ -332,6 +377,15 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     return res;
   }
 
+  /**
+   * applyUpdate for surfaces that cannot show the result themselves: failures
+   * and "your turn" steps become a banner that opens the Updates pane.
+   */
+  const applyUpdateAndReport = (): Promise<void> =>
+    applyAndReport(applyUpdate, phase.get, (report) =>
+      deps.showBannerNotification(BANNER_TITLE, report, OPEN_UPDATES),
+    );
+
   /** The staged update and where it goes, when a swap could start now. */
   const swappable = (): { staged: StagedUpdate; target: string } | null => {
     const staged = stagedUpdate;
@@ -340,6 +394,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       !staged ||
       staged.version !== availableUpdate?.version ||
       isBusyPhase(phase.get()) ||
+      stagingVersion !== null ||
       !deps.canInstallInPlace(target)
     )
       return null;
@@ -361,19 +416,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     },
     available: () => availableUpdate,
     staged: () => stagedUpdate,
-
-    async applyUpdateAndReport(): Promise<void> {
-      let res: ApplyUpdateResult;
-      try {
-        res = await applyUpdate();
-      } catch (err) {
-        res = { ok: false, error: errorMessage(err) };
-        console.error(`[updates] no se pudo actualizar: ${res.error}`);
-      }
-      const report = applyReport(res, phase.get());
-      if (report)
-        deps.showBannerNotification(BANNER_TITLE, report, OPEN_UPDATES);
-    },
+    applyUpdateAndReport,
     copyInstallCommand: () => copyPhaseCommand(phase.get(), deps.copyText),
     showDownloadedFile: () => showPhaseFile(phase.get(), deps.showItemInFolder),
 
@@ -383,6 +426,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
      * is reported as such — never as "up to date".
      */
     async runUpdateCheck({ manual = false } = {}) {
+      if (!manual && !deps.autoUpdate()) return status();
       if (manual && isSettledPhase(phase.get()))
         phase.set({ state: 'checking' });
       let found: AvailableUpdate | null;
@@ -400,8 +444,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
         return status();
       }
       lastUpdateCheckAt = new Date().toISOString();
-      // A simulated update owns the slot until the dev panel releases it.
-      if (!devUpdateSimulated) availableUpdate = found || null;
+      // A simulated update owns the slot until the dev panel releases it, and
+      // the install modal owns it while it waits (a phone installs that one);
+      // a newer release is picked up by the next check.
+      if (!devUpdateSimulated && !asking) availableUpdate = found || null;
       const current = phase.get();
       const known = phaseVersion(current);
       // A newer release than the one a failure is about replaces that failure.
@@ -420,9 +466,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       if (found && !devUpdateSimulated) {
         // When this install shape supports an in-place update, stay quiet until
         // the download is on disk — one notice ("reinicia") beats two.
-        if (deps.stageableAsset(found, deps.installedAppPath()))
-          void stageUpdate(found);
-        else notifyUpdateAvailable(found, manual);
+        if (deps.stageableAsset(found, deps.installedAppPath())) {
+          // The switch may have gone off while the check was in flight.
+          if (manual || deps.autoUpdate()) void stageUpdate(found, manual);
+        } else notifyUpdateAvailable(found, manual);
       }
       broadcastStatus();
       return status();
@@ -433,27 +480,31 @@ export function createUpdater(deps: UpdaterDeps): Updater {
      * download so the dev simulation can exercise this half for real with a
      * locally built zip — the half where a bad bundle would actually bite.
      */
-    async stageFromZip(zipPath, version): Promise<void> {
-      stagedUpdate = await deps.extractUpdate({
+    async stageFromZip(zipPath, update): Promise<void> {
+      // A real download finishing later would prune what this stages, even
+      // with its modal open (the real paths never open one mid-download).
+      if (asking || stagingVersion !== null) throw new Error(MODAL_OWNS_UPDATE);
+      // Unpacking over the staged copy would wipe it before knowing it works.
+      if (stagedUpdate?.version === update.version)
+        throw new Error(`v${update.version} ya está preparada`);
+      stagingVersion = update.version; // and no real download starts meanwhile
+      const unpacking = deps.extractUpdate({
         zipPath,
-        destDir: path.join(deps.updatesDir(), version),
-        version,
+        destDir: path.join(deps.updatesDir(), update.version),
+        version: update.version,
       });
-      announceStaged(stagedUpdate);
+      const staged = await unpacking.finally(() => (stagingVersion = null));
+      // Published only with its copy on disk: a failure leaves it as it was.
+      devUpdateSimulated = true;
+      availableUpdate = update;
+      stagedUpdate = staged;
+      announceStaged(staged);
     },
 
-    /**
-     * This build's CFBundleIdentifier, read back from the bundle it is running
-     * out of. Null in a dev run, which has no bundle of ours.
-     */
-    installedBundleId(): string | null {
-      const bundle = deps.installedAppPath();
-      if (!bundle || !deps.isMac) return null;
-      const plist = deps.updaterFs.readInstalledPlist(bundle);
-      return plist === null ? null : parseBundleId(plist);
-    },
+    installedBundleId: () => installedBundleIdOf(deps),
 
     setSimulatedUpdate(update): void {
+      if (asking || stagingVersion !== null) throw new Error(MODAL_OWNS_UPDATE);
       devUpdateSimulated = update !== null;
       availableUpdate = update;
     },

@@ -52,6 +52,7 @@ const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   notifySuccess: true,
   showHiddenGroupsFold: true,
   showHiddenWorkflowsFold: false,
+  autoUpdate: true,
   mcp: {
     enabled: false,
     transport: 'stdio',
@@ -356,6 +357,7 @@ export function saveGlobalSettings(
   next.notifySuccess = Boolean(next.notifySuccess);
   next.showHiddenGroupsFold = Boolean(next.showHiddenGroupsFold);
   next.showHiddenWorkflowsFold = Boolean(next.showHiddenWorkflowsFold);
+  next.autoUpdate = Boolean(next.autoUpdate);
   // Only saveMcpSettings (Settings › MCP's switch) moves the MCP server: not
   // the general settings save, nor an imported backup, nor an assistant.
   next.mcp = getGlobalSettings().mcp;

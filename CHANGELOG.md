@@ -3,6 +3,24 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.15.0] - 2026-11-17
+
+### Añadido
+
+- **Actualizaciones automáticas, con permiso.** DevBar busca las nuevas
+  versiones en segundo plano. Donde puede sustituirse a sí misma (macOS y
+  Windows instalados, y la AppImage en Linux) también las descarga y
+  prepara, y cuando una está lista te lo pregunta con una ventana que
+  aparece por encima de todo, como la confirmación de los scripts, y que
+  solo se acepta con un clic: «Reiniciar e instalar» la instala y vuelve a
+  abrir DevBar; «Ahora no» la deja para más tarde en Acerca de. Nunca
+  reinicia por su cuenta, e instalarla desde Acerca de o desde el menú de la
+  barra también pregunta con esa ventana. Con el paquete .deb de Linux, o
+  si la app no puede sustituirse, avisa de la nueva versión y se instala
+  desde Acerca de, como hasta ahora. Se activa o
+  desactiva en Ajustes › General › Actualizaciones (activado por defecto);
+  desactivado, solo busca cuando pulsas «Buscar ahora».
+
 ## [0.14.0] - 2026-11-03
 
 ### Añadido

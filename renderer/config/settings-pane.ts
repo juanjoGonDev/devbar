@@ -1,11 +1,15 @@
 import { DEFAULT_MAX_LOG_LINES } from '../../src/domain-types.js';
-import type { ThemePreference } from '../../src/domain-types.js';
+import type {
+  GlobalSettings,
+  ThemePreference,
+} from '../../src/domain-types.js';
 import { wireNumberStepper } from './number-stepper.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
 export interface SettingsPaneElements {
   autostart: HTMLInputElement;
   autostartHint: HTMLElement;
+  autoUpdate: HTMLInputElement;
   silenceWarnings: HTMLInputElement;
   silenceErrors: HTMLInputElement;
   maxLogLines: HTMLInputElement;
@@ -44,6 +48,13 @@ export function createSettingsPane(
   // of order, so a rejected OLD save must not roll the control back over a
   // NEWER selection that already succeeded.
   let themeSaveSeq = 0;
+  // Same reason for the instant-save controls below.
+  let settingsSaveSeq = 0;
+  // And for reads: a recovery read and a focus retry can overlap, and only
+  // the newest one may apply its snapshot (and release the controls).
+  let settingsReadSeq = 0;
+  /** The newest read: an overtaken one reports its outcome instead. */
+  let latestRead: Promise<boolean> = Promise.resolve(false);
   const themeOpts = Array.from(
     document.querySelectorAll<HTMLButtonElement>('.theme-opt'),
   );
@@ -58,35 +69,75 @@ export function createSettingsPane(
     }
   }
 
-  async function loadSettings(): Promise<boolean> {
+  // The instant-save controls (the log limit's −/+ and the theme included)
+  // stay disabled until the stored settings are on screen: an edit made
+  // before would never be saved, or would be overwritten by the read.
+  const stepperButtons = [
+    ...(els.maxLogLines
+      .closest('.num-stepper')
+      ?.querySelectorAll<HTMLButtonElement>('button') ?? []),
+  ];
+  function holdControls(held: boolean): void {
+    for (const control of [
+      els.autostart,
+      els.autoUpdate,
+      els.silenceWarnings,
+      els.silenceErrors,
+      els.maxLogLines,
+      els.notifySuccess,
+      els.showHiddenGroupsFold,
+      els.showHiddenWorkflowsFold,
+      ...stepperButtons,
+      ...themeOpts,
+    ])
+      control.disabled = held;
+    // The stepper decides its own buttons at the bounds.
+    if (!held) logLinesStepper.refresh();
+  }
+
+  /** The on/off settings as stored (a load, or a save from anywhere). */
+  function showStoredFlags(s: Partial<GlobalSettings>): void {
+    els.autostart.checked = !!s.autostart;
+    els.autoUpdate.checked = s.autoUpdate !== false;
+    els.silenceWarnings.checked = !!s.silenceWarnings;
+    els.silenceErrors.checked = !!s.silenceErrors;
+    els.notifySuccess.checked = s.notifySuccess !== false;
+    els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;
+    els.showHiddenWorkflowsFold.checked = s.showHiddenWorkflowsFold === true;
+  }
+
+  function loadSettings(): Promise<boolean> {
+    latestRead = readSettings(++settingsReadSeq);
+    return latestRead;
+  }
+
+  async function readSettings(read: number): Promise<boolean> {
     // Reset BEFORE the read: a rejection on a retry (e.g. the post-import
     // reload) must re-block the controls and re-arm the focus retry — if a
     // previous load had succeeded, settingsLoaded would still be true and
     // stale controls could persist over the imported settings.
     settingsLoaded = false;
+    holdControls(true);
     let s: Awaited<ReturnType<typeof window.api.getSettings>>;
     try {
       s = await window.api.getSettings();
     } catch (err) {
+      if (read !== settingsReadSeq) return latestRead; // a newer read decides
       showToast(
         `No se pudieron cargar los ajustes: ${errorMessage(err)}. Los controles de esta ventana están bloqueados; vuelve a enfocar la ventana para reintentar.`,
         'error',
       );
       return false;
     }
-    els.autostart.checked = !!s.autostart;
+    if (read !== settingsReadSeq) return latestRead; // a newer read decides
+    showStoredFlags(s);
     selectedTheme = s.theme ?? 'auto';
     markThemeOption();
-    els.silenceWarnings.checked = !!s.silenceWarnings;
-    els.silenceErrors.checked = !!s.silenceErrors;
     els.maxLogLines.value = String(
       s.maxLogLines != null ? s.maxLogLines : DEFAULT_MAX_LOG_LINES,
     );
     logLinesStepper.refresh();
-    if (els.notifySuccess)
-      els.notifySuccess.checked = s.notifySuccess !== false;
-    els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;
-    els.showHiddenWorkflowsFold.checked = s.showHiddenWorkflowsFold === true;
+    holdControls(false);
     settingsLoaded = true;
     return true;
   }
@@ -96,14 +147,16 @@ export function createSettingsPane(
     // initial values, not the stored ones: persisting now would overwrite
     // autostart/notifications/log settings with those stale values.
     if (!settingsLoaded) return;
+    const token = ++settingsSaveSeq;
     const maxLogLinesRaw = els.maxLogLines ? els.maxLogLines.value : '';
     const maxLogLines =
       maxLogLinesRaw === ''
         ? DEFAULT_MAX_LOG_LINES
         : Number(maxLogLinesRaw) || DEFAULT_MAX_LOG_LINES;
-    await window.api.saveSettings({
+    const save = window.api.saveSettings({
       autostart: els.autostart.checked,
-      theme: selectedTheme,
+      autoUpdate: els.autoUpdate.checked,
+      // The theme saves on its own (its handler can roll a failure back).
       silenceWarnings: els.silenceWarnings.checked,
       silenceErrors: els.silenceErrors.checked,
       maxLogLines,
@@ -111,7 +164,20 @@ export function createSettingsPane(
       showHiddenGroupsFold: els.showHiddenGroupsFold.checked,
       showHiddenWorkflowsFold: els.showHiddenWorkflowsFold.checked,
     });
-    showToast('Ajustes guardados', 'ok');
+    try {
+      await save;
+    } catch (err) {
+      if (token !== settingsSaveSeq) return; // a newer save owns the controls
+      // The controls may show a change that was never stored: say so, then
+      // read back what was (loadSettings holds the controls meanwhile).
+      const failure = `No se pudieron guardar los ajustes: ${errorMessage(err)}.`;
+      showToast(failure, 'error');
+      const restored = await loadSettings();
+      if (restored)
+        showToast(`${failure} Ahora se muestran los guardados.`, 'error');
+      return;
+    }
+    if (token === settingsSaveSeq) showToast('Ajustes guardados', 'ok');
   }
 
   // ── Per-OS copy ──────────────────────────────────────────────────────
@@ -224,7 +290,13 @@ export function createSettingsPane(
       }
     });
 
+  // A save from elsewhere (a phone, another window): show what is stored, so
+  // the next save from here does not write a stale value back over it.
+  window.api.onSettingsChange((saved) => {
+    if (settingsLoaded) showStoredFlags(saved);
+  });
   els.autostart.addEventListener('change', persistSettings);
+  els.autoUpdate.addEventListener('change', persistSettings);
   els.silenceWarnings.addEventListener('change', persistSettings);
   els.silenceErrors.addEventListener('change', persistSettings);
   if (els.maxLogLines) {

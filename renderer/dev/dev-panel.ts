@@ -54,12 +54,22 @@ function buildGroups(version: HTMLInputElement, api = window.api): Group[] {
     },
     {
       title: 'Actualización real (end to end)',
-      note: 'Construye una copia de ESTE bundle con la versión un minor por encima, la vuelve a firmar y la pasa por el mismo staging que una release: verificación del sello, desempaquetado y aviso de «reinicia para instalar». Después, «Reiniciar» en el aviso o en «Acerca de» ejecuta el intercambio real y la app vuelve con la versión nueva. Solo funciona en una app instalada; deja el bundle instalado en la versión simulada, así que reinstala con install-local:dev cuando termines.',
+      note: 'Construye una copia de ESTE bundle con la versión un minor por encima, la vuelve a firmar y la pasa por el mismo staging que una release: verificación del sello, desempaquetado y el modal que pide permiso. Después, «Reiniciar e instalar» en el modal ejecuta el intercambio real y la app vuelve con la versión nueva; si lo dejas para luego, el botón de «Acerca de» vuelve a abrir el modal, y el intercambio solo empieza al aceptarlo. Solo funciona en una app instalada; deja el bundle instalado en la versión simulada, así que reinstala con install-local:dev cuando termines.',
       actions: [
         {
           label: 'Simular actualización real',
           hint: 'Tarda unos segundos: copia el bundle entero.',
           run: () => api.dev.simulateRealUpdate(),
+        },
+      ],
+    },
+    {
+      title: 'Permiso para instalar',
+      note: 'El modal que salta por encima de todo cuando una actualización termina de descargarse, como el permiso de los scripts: espera, sin cuenta atrás, hasta que respondes. Aquí es solo para verlo: no hay nada descargado, así que ninguno de los dos botones hace nada más que cerrarlo. Para el recorrido completo, «Simular actualización real».',
+      actions: [
+        {
+          label: 'Pedir permiso para instalar',
+          run: () => api.dev.simulateInstallPrompt(),
         },
       ],
     },

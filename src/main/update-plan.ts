@@ -23,6 +23,21 @@ export function parseBundleId(plist: string): string | null {
 }
 
 /**
+ * This build's CFBundleIdentifier, read back from the bundle it is running
+ * out of. Null in a dev run (no bundle of ours) and off macOS (no plist).
+ */
+export function installedBundleIdOf(deps: {
+  installedAppPath: () => string | null;
+  isMac: boolean;
+  updaterFs: { readInstalledPlist: (bundle: string) => string | null };
+}): string | null {
+  const bundle = deps.installedAppPath();
+  if (!bundle || !deps.isMac) return null;
+  const plist = deps.updaterFs.readInstalledPlist(bundle);
+  return plist === null ? null : parseBundleId(plist);
+}
+
+/**
  * Whether background staging should start for `version`. The check loop runs
  * every 5 minutes; without the failure memo a version that fails to download
  * would re-pull ~100 MB on every tick.
@@ -34,7 +49,8 @@ export function shouldStageUpdate(input: {
   failedVersions: ReadonlySet<string>;
 }): boolean {
   if (input.stagedVersion === input.version) return false;
-  if (input.stagingVersion === input.version) return false;
+  // One download at a time: a second one would prune the first's copy.
+  if (input.stagingVersion !== null) return false;
   return !input.failedVersions.has(input.version);
 }
 

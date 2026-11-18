@@ -167,6 +167,15 @@ describe('src/main/ipc-validators.ts', () => {
       ).toThrow(/showHiddenWorkflowsFold/);
     });
 
+    it('accepts the automatic updates flag', () => {
+      expect(ipcGlobalSettingsPatch({ autoUpdate: false })).toEqual({
+        autoUpdate: false,
+      });
+      expect(() => ipcGlobalSettingsPatch({ autoUpdate: 'no' })).toThrow(
+        /autoUpdate/,
+      );
+    });
+
     it('ignores absent fields entirely', () => {
       expect(ipcGlobalSettingsPatch({})).toEqual({});
     });

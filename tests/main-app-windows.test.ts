@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow, NativeImage } from 'electron';
 import {
   createAppWindows,
@@ -40,7 +40,8 @@ function harness(overrides: Partial<AppWindowsDeps> = {}) {
     platformLabel: () => 'macos',
     commandName: (groupId, commandId) =>
       groupId === 'g1' && commandId === 'c1' ? 'web' : null,
-    onConfirmWindowClosed: (token) => confirmClosed.push(token),
+    onConfirmWindowClosed: (token, failure) =>
+      confirmClosed.push(failure === undefined ? token : `${token}:${failure}`),
     focusApp: () => {
       appFocused += 1;
     },
@@ -291,6 +292,57 @@ describe('src/main/app-windows.ts', () => {
       expect(h.windows[0]?.visible).toBe(false);
       h.windows[0]?.emit('ready-to-show');
       expect(h.windows[0]?.visible).toBe(true);
+    });
+
+    it('cancels a prompt whose page fails to load, so no queue waits on it', async () => {
+      const error = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      const h = harness({
+        createWindow: () => {
+          const win = fakeWindow('');
+          win.loadFile = () => Promise.reject(new Error('missing page'));
+          return win as unknown as BrowserWindow;
+        },
+      });
+      h.appWindows.ensurePrescriptConfirmWindow('t1');
+      await vi.waitFor(() =>
+        expect(h.confirmClosed[0], 'the failure, told apart from a close').toBe(
+          't1:missing page',
+        ),
+      );
+      expect(error).toHaveBeenCalled();
+      error.mockRestore();
+    });
+
+    it('settles the prompt when its renderer dies after loading', () => {
+      const h = harness();
+      h.appWindows.ensurePrescriptConfirmWindow('t1');
+      h.windows[0]?.webContents.emit('render-process-gone');
+      expect(h.confirmClosed[0]).toMatch(/^t1:/);
+      expect(h.windows[0]?.destroyed).toBe(true);
+    });
+
+    it('logs no failure for a prompt closed on purpose while it loaded', async () => {
+      const error = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      let failLoad: (reason: Error) => void = () => undefined;
+      const win = fakeWindow('');
+      win.loadFile = () =>
+        new Promise<void>((_resolve, reject) => {
+          failLoad = reject;
+        });
+      const h = harness({
+        createWindow: () => win as unknown as BrowserWindow,
+      });
+      h.appWindows.ensurePrescriptConfirmWindow('t1');
+      win.close(); // the queue cancelling it while it loads
+      failLoad(new Error('ERR_ABORTED'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(error).not.toHaveBeenCalled();
+      expect(h.confirmClosed).toEqual(['t1']);
+      error.mockRestore();
     });
 
     it('treats an OS-level close as an implicit cancel', () => {

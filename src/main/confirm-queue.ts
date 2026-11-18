@@ -24,9 +24,22 @@ export interface ConfirmWindowLike {
  * confirmation (`confirmIfNeeded`). Both origins share the SAME serial modal
  * queue (ADR-2) and the SAME pending map — origin only decides which entries
  * `cancelConfirm` may resolve, and which queued jobs the generation counter
- * may pre-empt.
+ * may pre-empt. `update` = restarting to install a downloaded update: never
+ * cancelled by a pipeline cancel, and kept off a phone (which installs
+ * through its own button). `preview` = the dev panel's look at that modal.
+ * Prompts that wait with no countdown step aside, unanswered, for the ones
+ * that matter more: a preview for anything, an install for any script.
  */
-type ConfirmOrigin = 'pipeline' | 'interactive';
+type ConfirmOrigin = 'pipeline' | 'interactive' | 'update' | 'preview';
+type YieldingOrigin = 'update' | 'preview';
+
+const isYielding = (origin: ConfirmOrigin): origin is YieldingOrigin =>
+  origin === 'update' || origin === 'preview';
+
+const yieldsTo = (lower: YieldingOrigin, origin: ConfirmOrigin): boolean =>
+  lower === 'preview'
+    ? origin !== 'preview'
+    : origin === 'pipeline' || origin === 'interactive';
 
 /** The fields a confirmable target contributes to the modal. */
 type ConfirmableScript = Pick<
@@ -36,6 +49,7 @@ type ConfirmableScript = Pick<
 
 interface PendingConfirm {
   resolve: (confirmed: boolean) => void;
+  reject: (error: Error) => void;
   timer: NodeJS.Timeout | null;
   win: ConfirmWindowLike | null;
   context: PrescriptConfirmContext;
@@ -57,6 +71,8 @@ export interface ConfirmQueueDeps {
 }
 
 export interface ConfirmQueue {
+  /** Opens at once, bypassing the queue: for this module's own tests only.
+   *  Every real caller goes through a queued entrypoint. */
   showConfirmModal: (
     script: ConfirmableScript,
     origin: ConfirmOrigin,
@@ -70,9 +86,26 @@ export interface ConfirmQueue {
     target: Command | Action | null | undefined,
     group: Group | null,
   ) => Promise<boolean>;
+  /** «Reiniciar e instalar» for a downloaded update; waits for an answer. */
+  confirmInstall: (version: string) => Promise<boolean>;
+  /** The same modal for the dev panel, which anything real pushes aside. */
+  previewInstall: (version: string) => Promise<boolean>;
+  /** A script's confirmation outside any pipeline (a workflow run, the dev
+   *  panel): opens at once, never cancelled by a pipeline cancel, and makes
+   *  a waiting install prompt step aside. */
+  confirmInteractive: (
+    script: ConfirmableScript,
+    groupName: string | null,
+  ) => Promise<boolean>;
   cancelConfirm: () => void;
   resolveConfirm: (token: string, decision: ConfirmDecision) => void;
   hasPending: (token: string) => boolean;
+  /**
+   * The modal's window went away. Closed, it is a cancel. Never loaded
+   * (`failure`), an install prompt or its preview REJECTS with the reason, so
+   * it is reported instead of passing for «Ahora no»; a script still cancels.
+   */
+  windowClosed: (token: string, failure?: string) => void;
   getContext: (token: string) => PrescriptConfirmContext | null;
   /** Every open confirmation, for surfaces other than its modal (a phone). */
   pending: () => RemoteConfirmView[];
@@ -101,6 +134,14 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
    * confirmation too.
    */
   let pipelineConfirmGeneration = 0;
+  /**
+   * Bumped whenever something a waiting prompt yields to arrives (see
+   * `yieldsTo`): one still waiting for its turn then steps aside unshown.
+   */
+  const yieldGeneration: Record<YieldingOrigin, number> = {
+    update: 0,
+    preview: 0,
+  };
 
   function resolveConfirm(token: string, decision: ConfirmDecision): void {
     const entry = pendingConfirms.get(token);
@@ -112,59 +153,92 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     changed();
   }
 
+  function openModal(
+    context: PrescriptConfirmContext,
+    origin: ConfirmOrigin,
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve, reject) => {
+      const token = newToken();
+      const { secs, onTimeout } = context;
+      const entry: PendingConfirm = {
+        resolve,
+        reject,
+        timer: null,
+        win: null,
+        origin,
+        context,
+        deadline: secs == null ? null : now() + secs * 1000,
+      };
+      pendingConfirms.set(token, entry);
+      try {
+        entry.win = deps.openWindow(token);
+      } catch (err) {
+        pendingConfirms.delete(token); // no window, no timer: nothing ends it
+        throw err;
+      }
+      changed();
+      // AUTHORITATIVE auto-resolve timer lives in MAIN (ADR-1) — the
+      // renderer's countdown is purely cosmetic and never resolves on its own.
+      if (secs != null)
+        entry.timer = setTimer(
+          () => resolveConfirm(token, onTimeout),
+          secs * 1000,
+        );
+    });
+  }
+
   function showConfirmModal(
     script: ConfirmableScript,
     origin: ConfirmOrigin,
     groupName: string | null,
   ): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      const token = newToken();
-      const entry: PendingConfirm = {
-        resolve,
-        timer: null,
-        win: null,
-        origin,
-        context: {
-          name: script.name,
-          command: [script.command, ...(script.args || [])].join(' ').trim(),
-          secs: script.confirmSecs, // null => no countdown (indefinite)
-          onTimeout: script.confirmOnTimeout, // 'confirm' | 'cancel'
-          logo: deps.logo(),
-          groupName,
-        },
-        deadline:
-          script.confirmSecs == null ? null : now() + script.confirmSecs * 1000,
-      };
-      pendingConfirms.set(token, entry);
-      entry.win = deps.openWindow(token);
-      changed();
-      // AUTHORITATIVE auto-resolve timer lives in MAIN (ADR-1) — the
-      // renderer's countdown is purely cosmetic and never resolves on its own.
-      if (script.confirmSecs != null) {
-        entry.timer = setTimer(
-          () => resolveConfirm(token, script.confirmOnTimeout),
-          script.confirmSecs * 1000,
-        );
-      }
-    });
+    return openModal(
+      {
+        name: script.name,
+        command: [script.command, ...(script.args || [])].join(' ').trim(),
+        secs: script.confirmSecs, // null => no countdown (indefinite)
+        onTimeout: script.confirmOnTimeout, // 'confirm' | 'cancel'
+        logo: deps.logo(),
+        groupName,
+      },
+      origin,
+    );
   }
 
   /**
-   * Shared enqueue mechanics for BOTH origins: always serializes through the
+   * Shared enqueue mechanics for EVERY origin: always serializes through the
    * SAME chain so only one modal ever shows at a time (ADR-2). Only a
-   * `pipeline` job can be pre-empted while still queued; an `interactive` job
-   * always shows when its turn comes up.
+   * `pipeline` job can be pre-empted while still queued; any other job always
+   * shows when its turn comes up.
    */
-  function enqueueConfirm(
-    script: ConfirmableScript,
+  /**
+   * An install prompt waits with no countdown, possibly with nobody at the
+   * desk: it must not hold a script's confirmation (and its countdown) back.
+   * It steps aside unanswered, open or still waiting its turn; the update
+   * stays ready in About.
+   */
+  function stepAsideFor(origin: ConfirmOrigin): void {
+    for (const lower of ['update', 'preview'] as const) {
+      if (!yieldsTo(lower, origin)) continue;
+      yieldGeneration[lower] += 1;
+      for (const [token, entry] of pendingConfirms)
+        if (entry.origin === lower) resolveConfirm(token, 'cancel');
+    }
+  }
+
+  function enqueue(
+    show: () => Promise<boolean>,
     origin: ConfirmOrigin,
-    groupName: string | null,
   ): Promise<boolean> {
+    stepAsideFor(origin);
     const generation = pipelineConfirmGeneration;
+    const yielding = isYielding(origin) ? origin : null;
+    const yieldAt = yielding ? yieldGeneration[yielding] : 0;
     const run = (): Promise<boolean> =>
-      origin === 'pipeline' && generation !== pipelineConfirmGeneration
+      (origin === 'pipeline' && generation !== pipelineConfirmGeneration) ||
+      (yielding !== null && yieldAt !== yieldGeneration[yielding])
         ? Promise.resolve(false)
-        : showConfirmModal(script, origin, groupName); // never rejects
+        : show(); // rejects only for an install prompt that never loaded
     const result = confirmChain.then(run, run);
     confirmChain = result.then(
       () => undefined,
@@ -173,23 +247,67 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     return result;
   }
 
+  function askToInstall(
+    version: string,
+    origin: YieldingOrigin,
+  ): Promise<boolean> {
+    const context: PrescriptConfirmContext = {
+      name: `DevBar v${version}`,
+      command: '',
+      secs: null, // waits for the user, however long it takes
+      onTimeout: 'cancel',
+      logo: deps.logo(),
+      groupName: null,
+      title: `DevBar v${version} está lista`,
+      detail:
+        'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
+      confirmLabel: 'Reiniciar e instalar',
+      cancelLabel: 'Ahora no',
+      clickToConfirm: true,
+    };
+    // Never over another confirmation (a workflow's opens outside the queue):
+    // it steps aside instead, like it does for one that arrives later.
+    const show = (): Promise<boolean> =>
+      [...pendingConfirms.values()].some((entry) => !isYielding(entry.origin))
+        ? Promise.resolve(false)
+        : openModal(context, origin);
+    return enqueue(show, origin);
+  }
+
+  function windowClosed(token: string, failure?: string): void {
+    const entry = pendingConfirms.get(token);
+    if (!entry) return;
+    const reports = isYielding(entry.origin);
+    if (failure === undefined || !reports) {
+      resolveConfirm(token, 'cancel');
+      return;
+    }
+    pendingConfirms.delete(token);
+    if (entry.timer) clearTimer(entry.timer);
+    entry.reject(new Error(failure));
+    changed();
+  }
+
   return {
     showConfirmModal,
+    windowClosed,
     resolveConfirm,
     hasPending: (token) => pendingConfirms.has(token),
     getContext: (token) => pendingConfirms.get(token)?.context ?? null,
     // The logo stays out: it is the desktop modal's data URL, kilobytes a
     // phone has no use for.
     pending: () =>
-      [...pendingConfirms].map(([token, { context, deadline }]) => ({
-        token,
-        name: context.name,
-        command: context.command,
-        groupName: context.groupName,
-        secs: context.secs,
-        onTimeout: context.onTimeout,
-        deadline,
-      })),
+      [...pendingConfirms]
+        .filter(([, { origin }]) => origin !== 'update' && origin !== 'preview')
+        .map(([token, { context, deadline }]) => ({
+          token,
+          name: context.name,
+          command: context.command,
+          groupName: context.groupName,
+          secs: context.secs,
+          onTimeout: context.onTimeout,
+          deadline,
+        })),
     onChange: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -213,7 +331,20 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
 
     /** Injected into the pre-script runner. */
     confirmScript(script, group) {
-      return enqueueConfirm(script, 'pipeline', group?.name ?? null);
+      return enqueue(
+        () => showConfirmModal(script, 'pipeline', group?.name ?? null),
+        'pipeline',
+      );
+    },
+
+    confirmInstall: (version) => askToInstall(version, 'update'),
+    previewInstall: (version) => askToInstall(version, 'preview'),
+    // At once, outside the serial queue, as before: a workflow prompt with no
+    // countdown must not hold a scheduled confirmation (and its timeout)
+    // back. A waiting install prompt still steps aside for it.
+    confirmInteractive: (script, groupName) => {
+      stepAsideFor('interactive');
+      return showConfirmModal(script, 'interactive', groupName);
     },
 
     /**
@@ -226,16 +357,16 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
       if (!target || !target.confirm) return Promise.resolve(true);
       // origin 'interactive': a manual/scheduled confirmation must never be
       // cancelled or pre-empted by an unrelated pipeline cancel.
-      return enqueueConfirm(
-        {
-          name: target.name,
-          command: target.command,
-          args: target.args,
-          confirmSecs: target.confirmSecs,
-          confirmOnTimeout: target.confirmOnTimeout,
-        },
+      const script = {
+        name: target.name,
+        command: target.command,
+        args: target.args,
+        confirmSecs: target.confirmSecs,
+        confirmOnTimeout: target.confirmOnTimeout,
+      };
+      return enqueue(
+        () => showConfirmModal(script, 'interactive', group?.name ?? null),
         'interactive',
-        group?.name ?? null,
       );
     },
   };

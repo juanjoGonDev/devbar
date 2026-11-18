@@ -7,6 +7,7 @@ import {
   type DevPanelDeps,
 } from '../src/main/dev-panel.js';
 import type { DevHooks } from '../src/dev/dev-ipc.js';
+import type { AvailableUpdate } from '../src/domain-types.js';
 
 const fixtures: DevPanelDeps['fixtures'] = {
   environment: () => ({
@@ -24,6 +25,16 @@ const fixtures: DevPanelDeps['fixtures'] = {
   refresh: () => undefined,
 };
 
+const simulated: AvailableUpdate = {
+  version: '1.3.0',
+  url: '',
+  dmgUrl: null,
+  zipUrl: null,
+  setupUrl: null,
+  appImageUrl: null,
+  debUrl: null,
+};
+
 function deps(overrides: Partial<DevPanelDeps> = {}) {
   const calls: string[] = [];
   const base: DevPanelDeps = {
@@ -37,18 +48,25 @@ function deps(overrides: Partial<DevPanelDeps> = {}) {
     showBanner: () => calls.push('showBanner'),
     showFallbackBanner: () => calls.push('showFallbackBanner'),
     showCompletionNotification: () => calls.push('showCompletionNotification'),
-    showConfirmModal: (script, origin, groupName) => {
-      calls.push(
-        `confirm:${script.name}:${script.command}:${origin}:${groupName}`,
-      );
-      return Promise.resolve(true);
+    confirms: {
+      confirmInteractive: (script, groupName) => {
+        calls.push(`confirm:${script.name}:${script.command}:${groupName}`);
+        return Promise.resolve(true);
+      },
+      previewInstall: (version) => {
+        calls.push(`askToInstall:${version}`);
+        return Promise.resolve(false);
+      },
     },
     toast: () => calls.push('toast'),
     installedBundle: () => '/Applications/DevBar.app',
     updatesDir: () => '/home/updates',
-    stageFromZip: () => Promise.resolve(),
+    stageFromZip: (_zip, update) => {
+      calls.push(`stage:${update.version}`);
+      return Promise.resolve();
+    },
     removeFile: () => calls.push('removeFile'),
-    stagedVersion: () => '1.3.0',
+    stagedVersion: () => '1.2.0',
     pruneStagedUpdates: (keep) => calls.push(`prune:${keep}`),
     fixtures,
     ...overrides,
@@ -85,6 +103,7 @@ describe('src/main/dev-panel.ts', () => {
       hooks.showBanner('t', 'b');
       hooks.showFallbackBanner('t', 'b');
       hooks.showCompletionNotification('t', 'b');
+      hooks.askToInstall('1.3.0');
       hooks.openPrescriptConfirm('vpn', 'connect');
       hooks.toast('ok', 'hi');
       expect(hooks.currentVersion()).toBe('1.2.0');
@@ -96,15 +115,46 @@ describe('src/main/dev-panel.ts', () => {
         'showBanner',
         'showFallbackBanner',
         'showCompletionNotification',
-        'confirm:vpn:connect:interactive:null',
+        'askToInstall:1.3.0',
+        'confirm:vpn:connect:null',
         'toast',
       ]);
     });
 
     it('prunes by what IS staged after a local staging run', async () => {
       const d = deps();
-      await createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', '1.3.0');
-      expect(d.calls).toEqual(['removeFile', 'prune:1.3.0']);
+      await createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated);
+      expect(
+        d.calls,
+        'prunes by the staged 1.2.0, not the asked 1.3.0',
+      ).toEqual(['stage:1.3.0', 'removeFile', 'prune:1.2.0']);
+    });
+
+    it('hands the release to the updater, which publishes it with its copy', async () => {
+      const d = deps({
+        stageFromZip: () =>
+          Promise.reject(new Error('aviso de instalación abierto')),
+      });
+      await expect(
+        createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated),
+      ).rejects.toThrow('aviso de instalación abierto');
+      expect(d.calls, 'never published on its own').toEqual([
+        'removeFile',
+        'prune:1.2.0',
+      ]);
+    });
+
+    it('keeps a staging that worked, and prunes, when the zip cannot be removed', async () => {
+      const d = deps({
+        removeFile: () => {
+          d.calls.push('removeFile');
+          throw new Error('EPERM');
+        },
+      });
+      await expect(
+        createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated),
+      ).resolves.toBeUndefined();
+      expect(d.calls).toEqual(['stage:1.3.0', 'removeFile', 'prune:1.2.0']);
     });
 
     it('still cleans up when staging fails, and prunes nothing with no staged copy', async () => {
@@ -113,7 +163,7 @@ describe('src/main/dev-panel.ts', () => {
         stagedVersion: () => null,
       });
       await expect(
-        createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', '1.3.0'),
+        createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated),
       ).rejects.toThrow('bad zip');
       expect(d.calls).toEqual(['removeFile']);
     });

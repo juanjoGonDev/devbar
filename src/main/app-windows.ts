@@ -31,7 +31,8 @@ export interface AppWindowsDeps {
   /** The command's display name, or null when it no longer exists. */
   commandName: (groupId: string, commandId: string) => string | null;
   /** A modal closed without a decision => implicit cancel. */
-  onConfirmWindowClosed: (token: string) => void;
+  /** `failure`: the page never loaded, which is not the user's cancel. */
+  onConfirmWindowClosed: (token: string, failure?: string) => void;
   /** The config window is gone (a «Control remoto» QR shown in it dies). */
   onConfigClosed?: () => void;
   /** Activates DevBar over whatever app is in front (`app.focus`). */
@@ -221,9 +222,28 @@ export function createAppWindows(deps: AppWindowsDeps): AppWindows {
       });
       win.setMenuBarVisibility(false);
       win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-      void win.loadFile(deps.rendererFile('prescript-confirm.html'), {
-        query: { token },
-      });
+      // A page that never loads, or a renderer that dies, never answers:
+      // report it and close the window, so no queue (an install, a script)
+      // waits forever. A window already closed on purpose (the queue
+      // cancelled it mid-load) is no failure to report.
+      const lost = (failure: string): void => {
+        if (win.isDestroyed()) return;
+        console.error(
+          `[confirm] la confirmación no se pudo mostrar: ${failure}`,
+        );
+        deps.onConfirmWindowClosed(token, failure);
+        win.close();
+      };
+      void Promise.resolve(
+        win.loadFile(deps.rendererFile('prescript-confirm.html'), {
+          query: { token },
+        }),
+      ).catch((err: unknown) =>
+        lost(err instanceof Error ? err.message : String(err)),
+      );
+      win.webContents.once('render-process-gone', () =>
+        lost('la ventana se cerró inesperadamente'),
+      );
       win.once('ready-to-show', () => {
         win.show();
         win.focus();

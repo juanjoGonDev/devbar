@@ -72,12 +72,34 @@ describe('renderer/prescript-confirm.ts', () => {
   }
 
   describe('what it asks about', () => {
+    it('takes its title, text and buttons from main when they are given', async () => {
+      const gate = await openGate('?token=t1');
+      await gate.settle(
+        'getPrescriptConfirmContext',
+        context({
+          name: 'DevBar v1.3.0',
+          command: '',
+          title: 'DevBar v1.3.0 está lista',
+          detail: 'Ya está descargada.',
+          confirmLabel: 'Reiniciar e instalar',
+          cancelLabel: 'Ahora no',
+        }),
+      );
+      expect(byId('pc-title').textContent).toBe('DevBar v1.3.0 está lista');
+      expect(byId('pc-detail').textContent).toBe('Ya está descargada.');
+      expect(byId('pc-detail').hidden).toBe(false);
+      expect(byId('pc-cmd').hidden).toBe(true);
+      expect(byId('pc-btn-confirm').textContent).toBe('Reiniciar e instalar');
+      expect(byId('pc-btn-cancel').textContent).toBe('Ahora no');
+    });
+
     it('names the script and shows the command it would run', async () => {
       const gate = await openGate('?token=t1');
       expect(gate.argsFor('getPrescriptConfirmContext')).toEqual([['t1']]);
       await gate.settle('getPrescriptConfirmContext', context());
       expect(byId('pc-title').textContent).toBe('¿Ejecutar «migrar»?');
       expect(byId('pc-cmd').textContent).toBe('pnpm db:migrate');
+      expect(byId('pc-detail').hidden).toBe(true);
     });
 
     it('qualifies the name with the group, since two groups may share it', async () => {
@@ -153,6 +175,54 @@ describe('renderer/prescript-confirm.ts', () => {
       expect(gate.argsFor('resolvePrescriptConfirm')).toEqual([
         ['t1', 'confirm'],
       ]);
+    });
+
+    it('takes only a click as yes when it asks to install', async () => {
+      const gate = await openGate('?token=t1');
+      await gate.settle(
+        'getPrescriptConfirmContext',
+        context({ clickToConfirm: true }),
+      );
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(gate.callCount('resolvePrescriptConfirm')).toBe(0);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(gate.argsFor('resolvePrescriptConfirm')).toEqual([
+        ['t1', 'cancel'],
+      ]);
+    });
+
+    it('ignores the keyboard on its yes button when only a click may answer', async () => {
+      const gate = await openGate('?token=t1');
+      await gate.settle(
+        'getPrescriptConfirmContext',
+        context({ clickToConfirm: true }),
+      );
+      const yes = byId('pc-btn-confirm');
+      // Enter or Space on the focused button: a click with no pointer behind it.
+      yes.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+      expect(gate.callCount('resolvePrescriptConfirm')).toBe(0);
+      yes.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      expect(gate.argsFor('resolvePrescriptConfirm')).toEqual([
+        ['t1', 'confirm'],
+      ]);
+    });
+
+    it('takes no yes, only a no, before it shows what it asks', async () => {
+      const gate = await openGate('?token=t1');
+      byId('pc-btn-confirm').dispatchEvent(
+        new MouseEvent('click', { bubbles: true, detail: 1 }),
+      );
+      expect(gate.callCount('resolvePrescriptConfirm')).toBe(0);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(gate.argsFor('resolvePrescriptConfirm')).toEqual([
+        ['t1', 'cancel'],
+      ]);
+    });
+
+    it('ignores Enter before it knows what it is asking', async () => {
+      const gate = await openGate('?token=t1');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(gate.callCount('resolvePrescriptConfirm')).toBe(0);
     });
 
     it('ignores a key that means neither', async () => {

@@ -120,7 +120,7 @@ const workflowRunner = createWorkflowRunner({
     toast: (kind, message) => toast(kind, message),
     notify: (title, body) =>
       notifications.showCompletionNotification(title, body),
-    confirm: (script) => confirms.showConfirmModal(script, 'interactive', null),
+    confirm: (script) => confirms.confirmInteractive(script, null),
     bootReportsStartupFailure: () => !startup.shouldShowGenericFailureToast(),
     totalScripts: (id) => workflowRunner.runState(id)?.totalScripts ?? 0,
   }),
@@ -212,9 +212,8 @@ const appWindows = createAppWindows({
   commandName: (groupId, commandId) =>
     configStore.getGroup(groupId)?.commands?.find((c) => c.id === commandId)
       ?.name ?? null,
-  onConfirmWindowClosed: (token) => {
-    if (confirms.hasPending(token)) confirms.resolveConfirm(token, 'cancel');
-  },
+  onConfirmWindowClosed: (token, failure) =>
+    confirms.windowClosed(token, failure),
   onConfigClosed: () => remote.cancelPairing(),
 });
 
@@ -243,6 +242,8 @@ const updater = createUpdater({
   quitAfter: (ms) => setTimeout(() => app.quit(), ms),
   configFocused: () =>
     Boolean(registry.config && (registry.config as BrowserWindow).isFocused()),
+  autoUpdate: () => configStore.getGlobalSettings().autoUpdate,
+  confirmInstall: confirms.confirmInstall,
 });
 
 const startup = createStartup({
@@ -328,7 +329,7 @@ const devHooks = {
   showBanner: notifications.showBannerNotification,
   showFallbackBanner: notifications.showCustomBanner,
   showCompletionNotification: notifications.showCompletionNotification,
-  showConfirmModal: confirms.showConfirmModal,
+  confirms,
   toast,
   installedBundle: selfUpdate.installedAppPath,
   updatesDir: host.updatesDir,

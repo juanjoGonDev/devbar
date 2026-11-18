@@ -148,11 +148,18 @@ describe('src/main/updater.ts — Linux flow and reporting', () => {
       vi.restoreAllMocks();
     });
 
-    it('restarts a staged AppImage without a modal confirmation', async () => {
+    it('restarts a staged AppImage once the install modal says yes', async () => {
       vi.spyOn(console, 'log').mockImplementation(() => undefined);
       const box = vi.fn(() => Promise.resolve({ response: 0 }));
+      let answer: (yes: boolean) => void = () => undefined;
       const h = linux({
         messageBox: box,
+        confirmInstall: (version) => {
+          h.asked.push(version);
+          return new Promise<boolean>((resolve) => {
+            answer = resolve;
+          });
+        },
         stageableAsset: () => ({
           url: linuxUpdate.appImageUrl ?? '',
           fileName: 'DevBar-1.3.0-linux-arm64.AppImage',
@@ -164,13 +171,17 @@ describe('src/main/updater.ts — Linux flow and reporting', () => {
           ),
       });
       await h.updater.runUpdateCheck();
-      await vi.waitFor(() => expect(h.updater.staged()).not.toBeNull());
-      await expect(h.updater.applyUpdate()).resolves.toMatchObject({
-        ok: true,
-        quitting: true,
-      });
-      expect(box).not.toHaveBeenCalled();
-      expect(h.calls).toContain('spawnSwap');
+      await vi.waitFor(() => expect(h.asked).toEqual(['1.3.0']));
+      expect(h.calls, 'nothing restarts before the answer').not.toContain(
+        'spawnSwap',
+      );
+      answer(true);
+      await vi.waitFor(() => expect(h.calls).toContain('quit:200'));
+      expect(h.calls.filter((call) => call === 'spawnSwap')).toHaveLength(1);
+      expect(
+        box,
+        'our own modal, never the native dialog',
+      ).not.toHaveBeenCalled();
       vi.restoreAllMocks();
     });
 

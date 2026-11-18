@@ -221,6 +221,12 @@ const FORWARDS: readonly Forward[] = [
     [{ cta: false }],
   ],
   [
+    'dev.simulateInstallPrompt',
+    (api) => api.dev.simulateInstallPrompt(),
+    'dev:simulateInstallPrompt',
+    [],
+  ],
+  [
     'dev.simulateSuccess',
     (api) => api.dev.simulateSuccess(),
     'dev:simulateSuccess',

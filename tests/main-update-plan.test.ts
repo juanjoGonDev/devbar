@@ -57,6 +57,12 @@ describe('src/main/update-plan.ts', () => {
       );
     });
 
+    it('waits for the download in flight before starting another version', () => {
+      expect(shouldStageUpdate({ ...base, stagingVersion: '1.1.0' })).toBe(
+        false,
+      );
+    });
+
     it('does not re-pull a version that failed this session', () => {
       expect(
         shouldStageUpdate({ ...base, failedVersions: new Set(['1.2.0']) }),

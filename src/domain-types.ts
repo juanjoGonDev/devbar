@@ -329,6 +329,11 @@ export interface GlobalSettings {
   showHiddenGroupsFold: boolean;
   /** The same fold for the workflows hidden from the tray and the phone. */
   showHiddenWorkflowsFold: boolean;
+  /**
+   * Whether DevBar looks for, downloads and stages new releases on its own.
+   * Off, only «Buscar ahora» checks. Installing always waits for the user.
+   */
+  autoUpdate: boolean;
   /** The MCP server for AI assistants; changed only by `setMcpEnabled`. */
   mcp: McpSettings;
 }

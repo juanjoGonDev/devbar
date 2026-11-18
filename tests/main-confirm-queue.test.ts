@@ -10,7 +10,7 @@ interface Timer {
   cleared: boolean;
 }
 
-function harness() {
+function harness(openFailure: Error | null = null) {
   const windows: {
     token: string;
     win: ConfirmWindowLike & { closed: boolean };
@@ -20,6 +20,7 @@ function harness() {
   const clock = { now: 1_000_000 };
   const queue = createConfirmQueue({
     openWindow: (token) => {
+      if (openFailure) throw openFailure;
       const win = {
         closed: false,
         isDestroyed: () => win.closed,
@@ -206,6 +207,242 @@ describe('src/main/confirm-queue.ts', () => {
       expect(windows).toHaveLength(2);
       queue.resolveConfirm('t2', 'confirm');
       await expect(interactive).resolves.toBe(true);
+    });
+  });
+
+  describe('confirmInstall', () => {
+    it('asks to restart and install the downloaded version, with no countdown', async () => {
+      const { queue, timers } = harness();
+      const answer = queue.confirmInstall('1.3.0');
+      await tick();
+      expect(queue.getContext('t1')).toEqual({
+        name: 'DevBar v1.3.0',
+        command: '',
+        secs: null,
+        onTimeout: 'cancel',
+        logo: 'data:image/png;base64,LOGO',
+        groupName: null,
+        title: 'DevBar v1.3.0 está lista',
+        detail:
+          'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
+        confirmLabel: 'Reiniciar e instalar',
+        cancelLabel: 'Ahora no',
+        clickToConfirm: true,
+      });
+      expect(timers).toHaveLength(0);
+      queue.resolveConfirm('t1', 'confirm');
+      await expect(answer).resolves.toBe(true);
+    });
+
+    it('waits its turn behind a script confirmation', async () => {
+      const { queue, windows } = harness();
+      void queue.confirmScript(script, null);
+      const answer = queue.confirmInstall('1.3.0');
+      await tick();
+      expect(windows).toHaveLength(1);
+      expect(queue.getContext('t1')?.name, 'the script opens first').toBe(
+        'vpn',
+      );
+      queue.resolveConfirm('t1', 'cancel');
+      await tick();
+      expect(windows).toHaveLength(2);
+      expect(queue.getContext('t2')?.title).toBe('DevBar v1.3.0 está lista');
+      queue.resolveConfirm('t2', 'cancel');
+      await expect(answer).resolves.toBe(false);
+    });
+
+    it('steps aside, unanswered, for a script confirmation', async () => {
+      const { queue, windows } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      const command = queue.confirmIfNeeded(
+        makeCommand({ confirm: true }),
+        null,
+      );
+      await expect(install).resolves.toBe(false);
+      expect(windows[0]?.win.closed).toBe(true);
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'confirm');
+      await expect(command).resolves.toBe(true);
+    });
+
+    it('steps aside before it ever shows when a script arrives first', async () => {
+      const { queue, windows } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      const command = queue.confirmIfNeeded(
+        makeCommand({ confirm: true }),
+        null,
+      );
+      await expect(install).resolves.toBe(false);
+      await tick();
+      expect(windows, 'only the script modal opened').toHaveLength(1);
+      queue.resolveConfirm('t1', 'confirm');
+      await expect(command).resolves.toBe(true);
+    });
+
+    it('steps aside while waiting its turn behind another confirmation', async () => {
+      const { queue, windows } = harness();
+      const first = queue.confirmScript(script, null);
+      await tick();
+      const install = queue.confirmInstall('1.3.0');
+      const command = queue.confirmIfNeeded(
+        makeCommand({ confirm: true }),
+        null,
+      );
+      queue.resolveConfirm('t1', 'confirm');
+      await expect(first).resolves.toBe(true);
+      await expect(install).resolves.toBe(false);
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'confirm');
+      await expect(command).resolves.toBe(true);
+    });
+
+    it('steps aside for a workflow confirmation', async () => {
+      const { queue, windows } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      const workflow = queue.confirmInteractive(script, null);
+      await expect(install).resolves.toBe(false);
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'confirm');
+      await expect(workflow).resolves.toBe(true);
+    });
+
+    it('steps aside for a pre-script as well', async () => {
+      const { queue } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      void queue.confirmScript(script, null);
+      await expect(install).resolves.toBe(false);
+    });
+
+    it('stays open through a pipeline cancel, and off a phone', async () => {
+      const { queue } = harness();
+      void queue.confirmInstall('1.3.0');
+      await tick();
+      queue.cancelConfirm();
+      expect(queue.hasPending('t1')).toBe(true);
+      expect(queue.pending()).toEqual([]);
+    });
+  });
+
+  describe('confirmInteractive', () => {
+    it('opens at once, never waiting behind another confirmation', async () => {
+      const { queue, windows } = harness();
+      void queue.confirmScript(script, null);
+      await tick();
+      void queue.confirmInteractive(script, null);
+      await tick();
+      expect(
+        windows,
+        'a waiting workflow must not hold schedules back',
+      ).toHaveLength(2);
+    });
+
+    it('is never covered by an install prompt that arrives after it', async () => {
+      const { queue, windows } = harness();
+      void queue.confirmInteractive(script, null);
+      await tick();
+      const install = queue.confirmInstall('1.3.0');
+      await expect(install).resolves.toBe(false);
+      expect(windows).toHaveLength(1);
+    });
+  });
+
+  describe('a window that cannot open', () => {
+    it('leaves no stale entry behind', async () => {
+      const { queue } = harness(new Error('no window'));
+      await expect(queue.confirmInstall('1.3.0')).rejects.toThrow('no window');
+      expect(queue.hasPending('t1')).toBe(false);
+    });
+  });
+
+  describe('windowClosed', () => {
+    it('is a cancel when the window just closes', async () => {
+      const { queue } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      queue.windowClosed('t1');
+      await expect(install).resolves.toBe(false);
+    });
+
+    it('reports an install prompt that never loaded, instead of «Ahora no»', async () => {
+      const { queue } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      queue.windowClosed('t1', 'missing page');
+      await expect(install).rejects.toThrow('missing page');
+      expect(queue.hasPending('t1')).toBe(false);
+    });
+
+    it('reports a preview that never loaded too', async () => {
+      const { queue } = harness();
+      const preview = queue.previewInstall('1.3.0');
+      await tick();
+      queue.windowClosed('t1', 'missing page');
+      await expect(preview).rejects.toThrow('missing page');
+    });
+
+    it('still cancels a script whose window never loaded', async () => {
+      const { queue } = harness();
+      const pending = queue.confirmInteractive(script, null);
+      await tick();
+      queue.windowClosed('t1', 'missing page');
+      await expect(pending).resolves.toBe(false);
+    });
+
+    it('keeps the queue moving after a failed install prompt', async () => {
+      const { queue, windows } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      const next = queue.confirmInstall('1.4.0');
+      await tick();
+      queue.windowClosed('t1', 'missing page');
+      await expect(install).rejects.toThrow('missing page');
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'cancel');
+      await expect(next).resolves.toBe(false);
+    });
+  });
+
+  describe('previewInstall', () => {
+    it('shows the install modal, kept off a phone', async () => {
+      const { queue } = harness();
+      void queue.previewInstall('1.3.0');
+      await tick();
+      expect(queue.getContext('t1')).toMatchObject({
+        title: 'DevBar v1.3.0 está lista',
+        clickToConfirm: true,
+      });
+      expect(queue.pending()).toEqual([]);
+    });
+
+    it('steps aside, unanswered, for a real install prompt', async () => {
+      const { queue, windows } = harness();
+      const preview = queue.previewInstall('1.3.0');
+      await tick();
+      const install = queue.confirmInstall('1.3.0');
+      await expect(preview).resolves.toBe(false);
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'confirm');
+      await expect(install).resolves.toBe(true);
+    });
+
+    it('never shows ahead of a real install queued after it', async () => {
+      const { queue, windows } = harness();
+      void queue.confirmScript(script, null);
+      await tick();
+      const preview = queue.previewInstall('1.3.0');
+      void queue.confirmInstall('1.3.0');
+      queue.resolveConfirm('t1', 'confirm');
+      await expect(preview).resolves.toBe(false);
+      await tick();
+      expect(windows).toHaveLength(2);
+      expect(queue.getContext('t2')?.title).toBe('DevBar v1.3.0 está lista');
     });
   });
 

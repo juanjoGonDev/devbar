@@ -18,6 +18,7 @@ function settings(extra: Partial<GlobalSettings> = {}): GlobalSettings {
     notifySuccess: false,
     showHiddenGroupsFold: false,
     showHiddenWorkflowsFold: true,
+    autoUpdate: false,
     mcp: { enabled: false, transport: 'stdio', auditRetentionDays: 30 },
     ...extra,
   };
@@ -109,6 +110,7 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-notify-success').checked).toBe(false);
       expect(input('set-show-hidden-groups-fold').checked).toBe(false);
       expect(input('set-show-hidden-workflows-fold').checked).toBe(true);
+      expect(input('set-auto-update').checked).toBe(false);
       expect(themeButton('dark').getAttribute('aria-pressed')).toBe('true');
       expect(themeButton('auto').getAttribute('aria-pressed')).toBe('false');
     });
@@ -126,6 +128,7 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(input('set-notify-success').checked).toBe(true);
       expect(input('set-show-hidden-groups-fold').checked).toBe(true);
       expect(input('set-show-hidden-workflows-fold').checked).toBe(false);
+      expect(input('set-auto-update').checked).toBe(true);
     });
   });
 
@@ -139,6 +142,178 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(win.callCount('saveSettings')).toBe(1);
       await win.settle('saveSettings', settings());
       expect(toastText()).toBe('Ajustes guardados');
+    });
+
+    it('puts the stored values back and says so when a save fails', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      const reads = win.callCount('getSettings');
+      await win.fail('saveSettings', new Error('disk full'));
+      expect(toastText()).toContain('disk full');
+      expect(toastText(), 'nothing is restored yet').not.toContain(
+        'se muestran los guardados',
+      );
+      expect(toggle.disabled, 'no edit may be lost to the reload').toBe(true);
+      expect(win.callCount('getSettings')).toBe(reads + 1);
+      await win.settle('getSettings', settings());
+      expect(toggle.checked).toBe(false);
+      expect(toggle.disabled).toBe(false);
+      expect(toastText()).toContain('se muestran los guardados');
+    });
+
+    it('holds the log limit stepper while the stored settings are read back', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      const steppers = [
+        ...(input('set-max-log-lines')
+          .closest('.num-stepper')
+          ?.querySelectorAll<HTMLButtonElement>('button') ?? []),
+      ];
+      expect(steppers.length).toBeGreaterThan(0);
+      expect(steppers.every((button) => button.disabled)).toBe(true);
+      await win.settle('getSettings', settings());
+      expect(steppers.some((button) => !button.disabled)).toBe(true);
+    });
+
+    it('holds the theme buttons too while the stored settings are read back', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      expect(themeButton('light').disabled).toBe(true);
+      await win.settle('getSettings', settings());
+      expect(themeButton('light').disabled).toBe(false);
+    });
+
+    it('lets the newest read win over an older one that answers late', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      window.dispatchEvent(new Event('focus'));
+      await win.settleNewest('getSettings', settings({ autoUpdate: true }));
+      expect(toggle.checked).toBe(true);
+      await win.settle('getSettings', settings());
+      expect(toggle.checked, 'the stale read changes nothing').toBe(true);
+      expect(toggle.disabled).toBe(false);
+    });
+
+    it('keeps the theme out of the other settings when they save', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).not.toHaveProperty('theme');
+    });
+
+    it('takes the newest read as the outcome of one it overtook', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      window.dispatchEvent(new Event('focus'));
+      await win.settleNewest('getSettings', settings());
+      await win.settle('getSettings', settings());
+      expect(toastText()).toContain('se muestran los guardados');
+    });
+
+    it('shows a setting changed elsewhere, so a later save keeps it', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings({ autostart: true }));
+      await win.push('onSettingsChange', settings({ autostart: false }));
+      expect(input('set-autostart').checked).toBe(false);
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+        autostart: false,
+        autoUpdate: true,
+      });
+    });
+
+    it('claims no success for a save a newer one overtook', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      input('set-autostart').checked = false;
+      input('set-autostart').dispatchEvent(new Event('change'));
+      await win.settle('saveSettings', settings());
+      expect(toastText()).not.toBe('Ajustes guardados');
+      await win.settleNewest('saveSettings', settings());
+      expect(toastText()).toBe('Ajustes guardados');
+    });
+
+    it('keeps the controls held until a read succeeds', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      await win.fail('getSettings', new Error('store locked'));
+      expect(toggle.disabled, 'an edit now would never be saved').toBe(true);
+      // Windows earlier tests left unloaded re-read too; this one's is newest.
+      window.dispatchEvent(new Event('focus'));
+      await win.settleNewest('getSettings', settings());
+      expect(toggle.disabled).toBe(false);
+    });
+
+    it('claims no restore when the read back fails too', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      await win.fail('getSettings', new Error('store locked'));
+      expect(toastText()).toContain('store locked');
+      expect(toastText()).not.toContain('se muestran los guardados');
+    });
+
+    it('lets a newer change keep the controls when an older save fails', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      input('set-autostart').checked = false;
+      input('set-autostart').dispatchEvent(new Event('change'));
+      const reads = win.callCount('getSettings');
+      expect(
+        win.argsFor('saveSettings')[1]?.[0],
+        'the newer save carries both changes',
+      ).toMatchObject({ autoUpdate: true, autostart: false });
+      await win.settleNewest(
+        'saveSettings',
+        settings({ autoUpdate: true, autostart: false }),
+      );
+      await win.fail('saveSettings', new Error('disk full'));
+      expect(
+        win.callCount('getSettings'),
+        'the older failure must not reload over the newer save',
+      ).toBe(reads);
+      expect(toggle.checked).toBe(true);
     });
 
     it('persists the log limit on change and on blur', async () => {
@@ -178,6 +353,21 @@ describe('renderer/config/settings-pane.ts', () => {
       toggle.dispatchEvent(new Event('change'));
       expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
         showHiddenWorkflowsFold: false,
+      });
+    });
+
+    it('persists the automatic updates switch', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      expect(toggle.closest('label')?.textContent).toContain(
+        'Actualizar automáticamente',
+      );
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+        autoUpdate: true,
       });
     });
 

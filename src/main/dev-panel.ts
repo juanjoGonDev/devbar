@@ -34,11 +34,13 @@ export interface DevPanelDeps {
     options?: { cta?: { label: string; action: string } },
   ) => void;
   showCompletionNotification: (title: string, body: string) => void;
-  showConfirmModal: ConfirmQueue['showConfirmModal'];
+  /** The script confirmation and the install modal, as the app shows them. */
+  confirms: Pick<ConfirmQueue, 'confirmInteractive' | 'previewInstall'>;
   toast: (kind: string, message: string) => void;
   installedBundle: () => string | null;
   updatesDir: () => string;
-  stageFromZip: (zipPath: string, version: string) => Promise<void>;
+  /** Stages the zip and, only once it is unpacked, publishes `update`. */
+  stageFromZip: (zipPath: string, update: AvailableUpdate) => Promise<void>;
   removeFile: (target: string) => void;
   stagedVersion: () => string | null;
   pruneStagedUpdates: (keep: string) => void;
@@ -127,13 +129,14 @@ export function createFixtureHost(deps: {
 }
 
 export function createDevHooks(deps: DevPanelDeps): DevHooks {
+  const setSimulatedUpdate = (update: AvailableUpdate | null): void => {
+    deps.setSimulatedUpdate(update);
+    deps.refreshTrayIcon();
+    deps.broadcastUpdateStatus();
+  };
   return {
     currentVersion: () => deps.currentVersion(),
-    setSimulatedUpdate: (update) => {
-      deps.setSimulatedUpdate(update);
-      deps.refreshTrayIcon();
-      deps.broadcastUpdateStatus();
-    },
+    setSimulatedUpdate,
     setSimulatedTrayColor: (color) => deps.setSimulatedTrayColor(color),
     setSimulatedTrayCount: (count) => {
       deps.setSimulatedTrayCount(count);
@@ -145,11 +148,13 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
       deps.showFallbackBanner(title, body, options),
     showCompletionNotification: (title, body) =>
       deps.showCompletionNotification(title, body),
+    // A preview: anything real (an install, a script) pushes it aside.
+    askToInstall: (version) => deps.confirms.previewInstall(version),
     // Dev-only manual trigger, unrelated to the real pipeline: a pipeline
     // cancel must never close this simulated dialog, and no real group backs
     // it.
     openPrescriptConfirm: (name, command) =>
-      void deps.showConfirmModal(
+      void deps.confirms.confirmInteractive(
         {
           name,
           command,
@@ -157,7 +162,6 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
           confirmSecs: null,
           confirmOnTimeout: 'cancel',
         },
-        'interactive',
         null,
       ),
     toast: (kind, message) => deps.toast(kind, message),
@@ -166,11 +170,21 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
     // which passes the guard and then fails deep inside the copy.
     installedBundle: () => deps.installedBundle(),
     updatesDir: () => deps.updatesDir(),
-    stageLocalUpdate: async (zipPath, version) => {
+    stageLocalUpdate: async (zipPath, update) => {
       try {
-        await deps.stageFromZip(zipPath, version);
+        // The updater publishes `update` only with its copy unpacked, so a
+        // refusal or a failure leaves the release as it was.
+        await deps.stageFromZip(zipPath, update);
       } finally {
-        deps.removeFile(zipPath);
+        // Cleanup only: a zip left behind must not turn a staging that worked
+        // into a failure, nor skip the prune below.
+        try {
+          deps.removeFile(zipPath);
+        } catch (err) {
+          console.warn(
+            `[dev] no se pudo borrar ${zipPath}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
         // Prune by what IS staged, not by what we wanted to stage: on a failure
         // the latter deletes the update already waiting, and the staged pointer
         // would still point into that directory.

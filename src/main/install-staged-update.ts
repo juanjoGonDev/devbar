@@ -3,7 +3,7 @@ import type {
   ApplyUpdateResult,
   AssistedUpdateDeps,
 } from './assisted-update.js';
-import type { PhaseStore } from './update-phase.js';
+import { isBusyPhase, type PhaseStore } from './update-phase.js';
 import type { StagedUpdate } from '../domain-types.js';
 
 /**
@@ -16,8 +16,14 @@ import type { StagedUpdate } from '../domain-types.js';
 
 export interface InstallStagedDeps extends Pick<
   AssistedUpdateDeps,
-  'platform' | 'messageBox' | 'toast' | 'markUpdateExit' | 'quitAfter'
+  'toast' | 'markUpdateExit' | 'quitAfter'
 > {
+  /**
+   * The «Reiniciar e instalar» modal: DevBar's own window, on top of
+   * everything on every platform (a native dialog can open behind other
+   * windows on some Linux window managers). Resolves the user's answer.
+   */
+  confirmInstall: (version: string) => Promise<boolean>;
   pid: number;
   updatesDir: () => string;
   spawnSwap: (input: {
@@ -32,21 +38,13 @@ async function confirmed(
   deps: InstallStagedDeps,
   staged: StagedUpdate,
 ): Promise<ApplyUpdateResult | null> {
-  let res;
   try {
-    res = await deps.messageBox({
-      type: 'question',
-      buttons: ['Ahora no', 'Reiniciar e instalar'],
-      defaultId: 1,
-      cancelId: 0,
-      message: `DevBar v${staged.version} está lista`,
-      detail:
-        'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
-    });
+    return (await deps.confirmInstall(staged.version))
+      ? null
+      : { ok: false, cancelled: true };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
-  return res.response === 1 ? null : { ok: false, cancelled: true };
 }
 
 export async function installStagedUpdate(
@@ -54,13 +52,14 @@ export async function installStagedUpdate(
   phase: PhaseStore,
   staged: StagedUpdate,
   target: string,
-  { ask }: { ask: boolean },
+  { ask = true }: { ask?: boolean } = {},
 ): Promise<ApplyUpdateResult> {
-  // Linux asks nothing more: the click WAS the confirmation, and a modal
-  // can open behind every window on some window managers / Wayland.
-  if (ask && deps.platform !== 'linux') {
+  if (ask) {
     const refusal = await confirmed(deps, staged);
     if (refusal) return refusal;
+    // While the modal waited, another surface (a phone) may have started the
+    // swap: a second one would race it over the same target and backup.
+    if (isBusyPhase(phase.get())) return { ok: false, busy: true };
   }
   try {
     deps.spawnSwap({

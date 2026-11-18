@@ -47,6 +47,10 @@ const toastEl = byId<HTMLElement>('toast', HTMLElement);
 const subDialogEls = subDialogElements();
 
 const setAutostart = byId<HTMLInputElement>('set-autostart', HTMLInputElement);
+const setAutoUpdate = byId<HTMLInputElement>(
+  'set-auto-update',
+  HTMLInputElement,
+);
 const setSilenceWarnings = byId<HTMLInputElement>(
   'set-silence-warnings',
   HTMLInputElement,
@@ -256,6 +260,7 @@ const settings = createSettingsPane(
   {
     autostart: setAutostart,
     autostartHint,
+    autoUpdate: setAutoUpdate,
     silenceWarnings: setSilenceWarnings,
     silenceErrors: setSilenceErrors,
     maxLogLines: setMaxLogLines,

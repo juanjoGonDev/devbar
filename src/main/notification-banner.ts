@@ -40,6 +40,11 @@ interface BannerOptions {
    * phone, which «Control remoto» logs for every phone but that one).
    */
   record?: boolean;
+  /**
+   * Only the notice log (a linked phone) gets it: the caller shows it its own
+   * way (the install modal), so nothing appears here.
+   */
+  logOnly?: boolean;
 }
 
 export interface NotificationDeps {
@@ -168,6 +173,7 @@ export function createNotifications(deps: NotificationDeps): Notifications {
   ): void {
     if (options.record !== false)
       deps.onNotice?.({ title, body, action: options.cta?.action ?? null });
+    if (options.logOnly) return;
     if (!deps.notificationsSupported()) {
       console.log('[notify] sistema no soportado → banner propio');
       showCustomBanner(title, body, options);

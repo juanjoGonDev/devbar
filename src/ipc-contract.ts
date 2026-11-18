@@ -148,6 +148,15 @@ export interface PrescriptConfirmContext {
    * script with the same name, so the group is shown as a qualifier next to
    * the script name it belongs to. */
   groupName: string | null;
+  /** Wording for a modal that is not a script (installing an update): the
+   *  title, a line of text in place of the command, and both buttons. */
+  title?: string;
+  detail?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** Only a click says yes: the modal takes focus while the user may be
+   *  typing elsewhere, and a stray Enter must not restart DevBar. */
+  clickToConfirm?: boolean;
 }
 interface ChangelogPayload {
   releases: ReleaseSummary[];
@@ -206,13 +215,17 @@ interface ApplyImportResult {
  * in a normal build.
  */
 interface DevSimulationApi {
-  simulateUpdate(version?: string): Promise<{ ok: boolean; version: string }>;
+  simulateUpdate(
+    version?: string,
+  ): Promise<{ ok: true; version: string } | { ok: false; error: string }>;
   /** The real thing: builds a bundle one minor up and stages it for install. */
   simulateRealUpdate(): Promise<{
     ok: boolean;
     version?: string;
     error?: string;
   }>;
+  /** The «Reiniciar e instalar» prompt alone, with nothing staged. */
+  simulateInstallPrompt(): Promise<{ ok: boolean; version: string }>;
   clearUpdate(): Promise<SimpleResult>;
   simulateTrayColor(color: TrayColor | null): Promise<SimpleResult>;
   simulateTrayCount(count: number | null): Promise<SimpleResult>;
