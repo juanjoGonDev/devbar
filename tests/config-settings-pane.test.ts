@@ -220,6 +220,47 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(win.argsFor('saveSettings')[0]?.[0]).not.toHaveProperty('theme');
     });
 
+    it('takes the newest read as the outcome of one it overtook', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      window.dispatchEvent(new Event('focus'));
+      await win.settleNewest('getSettings', settings());
+      await win.settle('getSettings', settings());
+      expect(toastText()).toContain('se muestran los guardados');
+    });
+
+    it('shows a setting changed elsewhere, so a later save keeps it', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings({ autostart: true }));
+      await win.push('onSettingsChange', settings({ autostart: false }));
+      expect(input('set-autostart').checked).toBe(false);
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).toMatchObject({
+        autostart: false,
+        autoUpdate: true,
+      });
+    });
+
+    it('claims no success for a save a newer one overtook', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      input('set-autostart').checked = false;
+      input('set-autostart').dispatchEvent(new Event('change'));
+      await win.settle('saveSettings', settings());
+      expect(toastText()).not.toBe('Ajustes guardados');
+      await win.settleNewest('saveSettings', settings());
+      expect(toastText()).toBe('Ajustes guardados');
+    });
+
     it('keeps the controls held until a read succeeds', async () => {
       win = await openConfigWindow();
       await answerBystanderSettingsReads(win);

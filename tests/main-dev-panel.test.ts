@@ -144,6 +144,19 @@ describe('src/main/dev-panel.ts', () => {
       ]);
     });
 
+    it('keeps a staging that worked, and prunes, when the zip cannot be removed', async () => {
+      const d = deps({
+        removeFile: () => {
+          d.calls.push('removeFile');
+          throw new Error('EPERM');
+        },
+      });
+      await expect(
+        createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated),
+      ).resolves.toBeUndefined();
+      expect(d.calls).toEqual(['stage:1.3.0', 'removeFile', 'prune:1.2.0']);
+    });
+
     it('still cleans up when staging fails, and prunes nothing with no staged copy', async () => {
       const d = deps({
         stageFromZip: () => Promise.reject(new Error('bad zip')),

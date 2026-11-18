@@ -215,7 +215,9 @@ interface ApplyImportResult {
  * in a normal build.
  */
 interface DevSimulationApi {
-  simulateUpdate(version?: string): Promise<{ ok: boolean; version: string }>;
+  simulateUpdate(
+    version?: string,
+  ): Promise<{ ok: true; version: string } | { ok: false; error: string }>;
   /** The real thing: builds a bundle one minor up and stages it for install. */
   simulateRealUpdate(): Promise<{
     ok: boolean;

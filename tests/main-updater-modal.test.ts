@@ -240,6 +240,46 @@ describe('src/main/updater.ts — install modal', () => {
     expect(h.asked).toEqual([]);
   });
 
+  it('ends on the newer release, and stages it, when one turned up mid-download', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    let latest = update;
+    let finish: () => void = () => undefined;
+    const h = harness({
+      checkForUpdate: () => Promise.resolve(latest),
+      downloadFile: (_url, dest) => {
+        h.calls.push('download');
+        return new Promise<string>((resolve) => {
+          finish = () => resolve(dest);
+        });
+      },
+    });
+    await h.updater.runUpdateCheck();
+    latest = { ...update, version: '1.4.0' };
+    await h.updater.runUpdateCheck();
+    finish();
+    await vi.waitFor(() =>
+      expect(h.calls.filter((call) => call === 'download')).toHaveLength(2),
+    );
+    expect(h.notices, 'no ready notice for the superseded copy').toEqual([]);
+    expect(h.asked).toEqual([]);
+    log.mockRestore();
+  });
+
+  it('starts no new download once the swap has started', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    let latest = update;
+    const h = harness({ checkForUpdate: () => Promise.resolve(latest) });
+    h.confirm.answer = true;
+    await h.updater.runUpdateCheck();
+    await vi.waitFor(() => expect(h.calls).toContain('quit:200'));
+    latest = { ...update, version: '1.4.0' };
+    await h.updater.runUpdateCheck();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.calls).not.toContain('stage:/home/updates/1.4.0');
+    expect(h.dirs.get('/home/updates')).toContain('1.3.0');
+    log.mockRestore();
+  });
+
   it('starts no second download while one runs', async () => {
     let latest = update;
     const h = harness({

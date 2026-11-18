@@ -222,20 +222,28 @@ export function createAppWindows(deps: AppWindowsDeps): AppWindows {
       });
       win.setMenuBarVisibility(false);
       win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-      // A page that fails to load never shows: close it, which answers the
-      // prompt as cancelled, so no queue (an install, a script) waits forever.
+      // A page that never loads, or a renderer that dies, never answers:
+      // report it and close the window, so no queue (an install, a script)
+      // waits forever. A window already closed on purpose (the queue
+      // cancelled it mid-load) is no failure to report.
+      const lost = (failure: string): void => {
+        if (win.isDestroyed()) return;
+        console.error(
+          `[confirm] la confirmación no se pudo mostrar: ${failure}`,
+        );
+        deps.onConfirmWindowClosed(token, failure);
+        win.close();
+      };
       void Promise.resolve(
         win.loadFile(deps.rendererFile('prescript-confirm.html'), {
           query: { token },
         }),
-      ).catch((err: unknown) => {
-        const failure = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[confirm] no se pudo cargar la confirmación: ${failure}`,
-        );
-        deps.onConfirmWindowClosed(token, failure);
-        if (!win.isDestroyed()) win.close();
-      });
+      ).catch((err: unknown) =>
+        lost(err instanceof Error ? err.message : String(err)),
+      );
+      win.webContents.once('render-process-gone', () =>
+        lost('la ventana se cerró inesperadamente'),
+      );
       win.once('ready-to-show', () => {
         win.show();
         win.focus();

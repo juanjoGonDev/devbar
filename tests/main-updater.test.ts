@@ -258,6 +258,8 @@ describe('src/main/updater.ts', () => {
       await vi.waitFor(() =>
         expect(h.removed).toContain('/home/updates/1.2.0'),
       );
+      expect(h.dirs.get('/home/updates')).toContain('1.3.0');
+      expect(h.dirs.get('/home/updates')).not.toContain('1.2.0');
       log.mockRestore();
     });
 

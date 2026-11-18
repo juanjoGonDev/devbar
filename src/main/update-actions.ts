@@ -46,3 +46,22 @@ export function showPhaseFile(
   showItemInFolder(phase.path);
   return { ok: true };
 }
+
+/**
+ * The "ready to install" notice, for a linked phone's log only: on the desk
+ * the install modal says it. Its call to action marks it as an update there.
+ */
+export function noticeReady(
+  show: (
+    title: string,
+    body: string,
+    options: { cta: { label: string; action: string }; logOnly: boolean },
+  ) => void,
+  title: string,
+  version: string,
+): void {
+  show(title, `v${version} lista. Reinicia para instalarla.`, {
+    cta: { label: 'Reiniciar e instalar', action: 'install-update' },
+    logOnly: true,
+  });
+}

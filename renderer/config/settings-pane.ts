@@ -1,5 +1,8 @@
 import { DEFAULT_MAX_LOG_LINES } from '../../src/domain-types.js';
-import type { ThemePreference } from '../../src/domain-types.js';
+import type {
+  GlobalSettings,
+  ThemePreference,
+} from '../../src/domain-types.js';
 import { wireNumberStepper } from './number-stepper.js';
 import { errorMessage, type ShowToast } from './toast.js';
 
@@ -50,6 +53,8 @@ export function createSettingsPane(
   // And for reads: a recovery read and a focus retry can overlap, and only
   // the newest one may apply its snapshot (and release the controls).
   let settingsReadSeq = 0;
+  /** The newest read: an overtaken one reports its outcome instead. */
+  let latestRead: Promise<boolean> = Promise.resolve(false);
   const themeOpts = Array.from(
     document.querySelectorAll<HTMLButtonElement>('.theme-opt'),
   );
@@ -90,40 +95,48 @@ export function createSettingsPane(
     if (!held) logLinesStepper.refresh();
   }
 
-  async function loadSettings(): Promise<boolean> {
+  /** The on/off settings as stored (a load, or a save from anywhere). */
+  function showStoredFlags(s: Partial<GlobalSettings>): void {
+    els.autostart.checked = !!s.autostart;
+    els.autoUpdate.checked = s.autoUpdate !== false;
+    els.silenceWarnings.checked = !!s.silenceWarnings;
+    els.silenceErrors.checked = !!s.silenceErrors;
+    els.notifySuccess.checked = s.notifySuccess !== false;
+    els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;
+    els.showHiddenWorkflowsFold.checked = s.showHiddenWorkflowsFold === true;
+  }
+
+  function loadSettings(): Promise<boolean> {
+    latestRead = readSettings(++settingsReadSeq);
+    return latestRead;
+  }
+
+  async function readSettings(read: number): Promise<boolean> {
     // Reset BEFORE the read: a rejection on a retry (e.g. the post-import
     // reload) must re-block the controls and re-arm the focus retry — if a
     // previous load had succeeded, settingsLoaded would still be true and
     // stale controls could persist over the imported settings.
     settingsLoaded = false;
     holdControls(true);
-    const read = ++settingsReadSeq;
     let s: Awaited<ReturnType<typeof window.api.getSettings>>;
     try {
       s = await window.api.getSettings();
     } catch (err) {
-      if (read !== settingsReadSeq) return false; // a newer read decides
+      if (read !== settingsReadSeq) return latestRead; // a newer read decides
       showToast(
         `No se pudieron cargar los ajustes: ${errorMessage(err)}. Los controles de esta ventana están bloqueados; vuelve a enfocar la ventana para reintentar.`,
         'error',
       );
       return false;
     }
-    if (read !== settingsReadSeq) return false; // a newer read decides
-    els.autostart.checked = !!s.autostart;
-    els.autoUpdate.checked = s.autoUpdate !== false;
+    if (read !== settingsReadSeq) return latestRead; // a newer read decides
+    showStoredFlags(s);
     selectedTheme = s.theme ?? 'auto';
     markThemeOption();
-    els.silenceWarnings.checked = !!s.silenceWarnings;
-    els.silenceErrors.checked = !!s.silenceErrors;
     els.maxLogLines.value = String(
       s.maxLogLines != null ? s.maxLogLines : DEFAULT_MAX_LOG_LINES,
     );
     logLinesStepper.refresh();
-    if (els.notifySuccess)
-      els.notifySuccess.checked = s.notifySuccess !== false;
-    els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;
-    els.showHiddenWorkflowsFold.checked = s.showHiddenWorkflowsFold === true;
     holdControls(false);
     settingsLoaded = true;
     return true;
@@ -164,7 +177,7 @@ export function createSettingsPane(
         showToast(`${failure} Ahora se muestran los guardados.`, 'error');
       return;
     }
-    showToast('Ajustes guardados', 'ok');
+    if (token === settingsSaveSeq) showToast('Ajustes guardados', 'ok');
   }
 
   // ── Per-OS copy ──────────────────────────────────────────────────────
@@ -277,6 +290,11 @@ export function createSettingsPane(
       }
     });
 
+  // A save from elsewhere (a phone, another window): show what is stored, so
+  // the next save from here does not write a stale value back over it.
+  window.api.onSettingsChange((saved) => {
+    if (settingsLoaded) showStoredFlags(saved);
+  });
   els.autostart.addEventListener('change', persistSettings);
   els.autoUpdate.addEventListener('change', persistSettings);
   els.silenceWarnings.addEventListener('change', persistSettings);

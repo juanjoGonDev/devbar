@@ -17,6 +17,7 @@ import { installStagedUpdate } from './install-staged-update.js';
 import {
   applyReport,
   copyPhaseCommand,
+  noticeReady,
   showPhaseFile,
   type SimpleResult,
 } from './update-actions.js';
@@ -189,6 +190,15 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   }
 
   function announceStaged(staged: StagedUpdate): void {
+    // A newer release turned up while this one downloaded: this copy is no
+    // longer the update, so it is neither announced nor offered, and the
+    // newer one is staged now (one download at a time).
+    if (availableUpdate && availableUpdate.version !== staged.version) {
+      phase.set({ state: 'available', version: availableUpdate.version });
+      broadcastStatus();
+      void stageUpdate(availableUpdate);
+      return;
+    }
     console.log(`[updates] v${staged.version} descargada, lista para instalar`);
     phase.set({
       state: 'ready-to-install',
@@ -199,15 +209,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     });
     broadcastStatus();
     deps.refreshTrayIcon();
-    // A linked phone still hears about it; here, the modal below says it.
-    deps.showBannerNotification(
-      BANNER_TITLE,
-      `v${staged.version} lista. Reinicia para instalarla.`,
-      {
-        cta: { label: 'Reiniciar e instalar', action: 'install-update' },
-        logOnly: true,
-      },
-    );
+    noticeReady(deps.showBannerNotification, BANNER_TITLE, staged.version);
     // Asks with the install modal and waits for the answer: installing
     // restarts DevBar (and the services it runs), so it never happens alone.
     // Only about this copy: a newer release found meanwhile is the next
@@ -231,6 +233,8 @@ export function createUpdater(deps: UpdaterDeps): Updater {
    */
   async function stageUpdate(update: AvailableUpdate): Promise<string | null> {
     const { version } = update;
+    // Once a swap is under way, a new staging would prune the copy it uses.
+    if (isBusyPhase(phase.get())) return null;
     if (
       !shouldStageUpdate({
         version,

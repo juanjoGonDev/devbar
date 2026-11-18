@@ -41,7 +41,8 @@ export interface DevHooks {
   /** Where staged updates live, so the simulated one is cleaned up with them. */
   updatesDir(): string;
   /** The production staging path, minus the download it no longer needs. */
-  /** Publishes `update` as the simulated release, then stages its zip. */
+  /** Stages the zip; `update` becomes the simulated release only once its
+   *  copy is unpacked, so a refused or failed staging leaves it as it was. */
   stageLocalUpdate(zipPath: string, update: AvailableUpdate): Promise<void>;
   toast(kind: string, message: string): void;
   currentVersion(): string;

@@ -54,7 +54,7 @@ function buildGroups(version: HTMLInputElement, api = window.api): Group[] {
     },
     {
       title: 'Actualización real (end to end)',
-      note: 'Construye una copia de ESTE bundle con la versión un minor por encima, la vuelve a firmar y la pasa por el mismo staging que una release: verificación del sello, desempaquetado y el modal que pide permiso. Después, «Reiniciar e instalar» en el modal (o en «Acerca de») ejecuta el intercambio real y la app vuelve con la versión nueva. Solo funciona en una app instalada; deja el bundle instalado en la versión simulada, así que reinstala con install-local:dev cuando termines.',
+      note: 'Construye una copia de ESTE bundle con la versión un minor por encima, la vuelve a firmar y la pasa por el mismo staging que una release: verificación del sello, desempaquetado y el modal que pide permiso. Después, «Reiniciar e instalar» en el modal ejecuta el intercambio real y la app vuelve con la versión nueva; si lo dejas para luego, el botón de «Acerca de» vuelve a abrir el modal, y el intercambio solo empieza al aceptarlo. Solo funciona en una app instalada; deja el bundle instalado en la versión simulada, así que reinstala con install-local:dev cuando termines.',
       actions: [
         {
           label: 'Simular actualización real',

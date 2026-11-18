@@ -315,6 +315,36 @@ describe('src/main/app-windows.ts', () => {
       error.mockRestore();
     });
 
+    it('settles the prompt when its renderer dies after loading', () => {
+      const h = harness();
+      h.appWindows.ensurePrescriptConfirmWindow('t1');
+      h.windows[0]?.webContents.emit('render-process-gone');
+      expect(h.confirmClosed[0]).toMatch(/^t1:/);
+      expect(h.windows[0]?.destroyed).toBe(true);
+    });
+
+    it('logs no failure for a prompt closed on purpose while it loaded', async () => {
+      const error = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      let failLoad: (reason: Error) => void = () => undefined;
+      const win = fakeWindow('');
+      win.loadFile = () =>
+        new Promise<void>((_resolve, reject) => {
+          failLoad = reject;
+        });
+      const h = harness({
+        createWindow: () => win as unknown as BrowserWindow,
+      });
+      h.appWindows.ensurePrescriptConfirmWindow('t1');
+      win.close(); // the queue cancelling it while it loads
+      failLoad(new Error('ERR_ABORTED'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(error).not.toHaveBeenCalled();
+      expect(h.confirmClosed).toEqual(['t1']);
+      error.mockRestore();
+    });
+
     it('treats an OS-level close as an implicit cancel', () => {
       const h = harness();
       h.appWindows.ensurePrescriptConfirmWindow('t1');

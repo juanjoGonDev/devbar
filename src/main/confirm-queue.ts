@@ -33,6 +33,9 @@ export interface ConfirmWindowLike {
 type ConfirmOrigin = 'pipeline' | 'interactive' | 'update' | 'preview';
 type YieldingOrigin = 'update' | 'preview';
 
+const isYielding = (origin: ConfirmOrigin): origin is YieldingOrigin =>
+  origin === 'update' || origin === 'preview';
+
 const yieldsTo = (lower: YieldingOrigin, origin: ConfirmOrigin): boolean =>
   lower === 'preview'
     ? origin !== 'preview'
@@ -88,7 +91,8 @@ export interface ConfirmQueue {
   /** The same modal for the dev panel, which anything real pushes aside. */
   previewInstall: (version: string) => Promise<boolean>;
   /** A script's confirmation outside any pipeline (a workflow run, the dev
-   *  panel): queued like every other, never cancelled by a pipeline cancel. */
+   *  panel): opens at once, never cancelled by a pipeline cancel, and makes
+   *  a waiting install prompt step aside. */
   confirmInteractive: (
     script: ConfirmableScript,
     groupName: string | null,
@@ -166,7 +170,12 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
         deadline: secs == null ? null : now() + secs * 1000,
       };
       pendingConfirms.set(token, entry);
-      entry.win = deps.openWindow(token);
+      try {
+        entry.win = deps.openWindow(token);
+      } catch (err) {
+        pendingConfirms.delete(token); // no window, no timer: nothing ends it
+        throw err;
+      }
       changed();
       // AUTHORITATIVE auto-resolve timer lives in MAIN (ADR-1) — the
       // renderer's countdown is purely cosmetic and never resolves on its own.
@@ -202,22 +211,28 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
    * `pipeline` job can be pre-empted while still queued; any other job always
    * shows when its turn comes up.
    */
-  function enqueue(
-    show: () => Promise<boolean>,
-    origin: ConfirmOrigin,
-  ): Promise<boolean> {
-    // An install prompt waits with no countdown, possibly with nobody at the
-    // desk: it must not hold a script's confirmation (and its countdown)
-    // back. It steps aside unanswered; the update stays ready in About.
+  /**
+   * An install prompt waits with no countdown, possibly with nobody at the
+   * desk: it must not hold a script's confirmation (and its countdown) back.
+   * It steps aside unanswered, open or still waiting its turn; the update
+   * stays ready in About.
+   */
+  function stepAsideFor(origin: ConfirmOrigin): void {
     for (const lower of ['update', 'preview'] as const) {
       if (!yieldsTo(lower, origin)) continue;
       yieldGeneration[lower] += 1;
       for (const [token, entry] of pendingConfirms)
         if (entry.origin === lower) resolveConfirm(token, 'cancel');
     }
+  }
+
+  function enqueue(
+    show: () => Promise<boolean>,
+    origin: ConfirmOrigin,
+  ): Promise<boolean> {
+    stepAsideFor(origin);
     const generation = pipelineConfirmGeneration;
-    const yielding =
-      origin === 'update' || origin === 'preview' ? origin : null;
+    const yielding = isYielding(origin) ? origin : null;
     const yieldAt = yielding ? yieldGeneration[yielding] : 0;
     const run = (): Promise<boolean> =>
       (origin === 'pipeline' && generation !== pipelineConfirmGeneration) ||
@@ -250,13 +265,19 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
       cancelLabel: 'Ahora no',
       clickToConfirm: true,
     };
-    return enqueue(() => openModal(context, origin), origin);
+    // Never over another confirmation (a workflow's opens outside the queue):
+    // it steps aside instead, like it does for one that arrives later.
+    const show = (): Promise<boolean> =>
+      [...pendingConfirms.values()].some((entry) => !isYielding(entry.origin))
+        ? Promise.resolve(false)
+        : openModal(context, origin);
+    return enqueue(show, origin);
   }
 
   function windowClosed(token: string, failure?: string): void {
     const entry = pendingConfirms.get(token);
     if (!entry) return;
-    const reports = entry.origin === 'update' || entry.origin === 'preview';
+    const reports = isYielding(entry.origin);
     if (failure === undefined || !reports) {
       resolveConfirm(token, 'cancel');
       return;
@@ -318,11 +339,13 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
 
     confirmInstall: (version) => askToInstall(version, 'update'),
     previewInstall: (version) => askToInstall(version, 'preview'),
-    confirmInteractive: (script, groupName) =>
-      enqueue(
-        () => showConfirmModal(script, 'interactive', groupName),
-        'interactive',
-      ),
+    // At once, outside the serial queue, as before: a workflow prompt with no
+    // countdown must not hold a scheduled confirmation (and its timeout)
+    // back. A waiting install prompt still steps aside for it.
+    confirmInteractive: (script, groupName) => {
+      stepAsideFor('interactive');
+      return showConfirmModal(script, 'interactive', groupName);
+    },
 
     /**
      * Gate a command/action start behind its optional confirmation modal.

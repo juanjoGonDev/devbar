@@ -176,7 +176,15 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
         // refusal or a failure leaves the release as it was.
         await deps.stageFromZip(zipPath, update);
       } finally {
-        deps.removeFile(zipPath);
+        // Cleanup only: a zip left behind must not turn a staging that worked
+        // into a failure, nor skip the prune below.
+        try {
+          deps.removeFile(zipPath);
+        } catch (err) {
+          console.warn(
+            `[dev] no se pudo borrar ${zipPath}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
         // Prune by what IS staged, not by what we wanted to stage: on a failure
         // the latter deletes the update already waiting, and the staged pointer
         // would still point into that directory.

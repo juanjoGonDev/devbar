@@ -10,7 +10,7 @@ interface Timer {
   cleared: boolean;
 }
 
-function harness() {
+function harness(openFailure: Error | null = null) {
   const windows: {
     token: string;
     win: ConfirmWindowLike & { closed: boolean };
@@ -20,6 +20,7 @@ function harness() {
   const clock = { now: 1_000_000 };
   const queue = createConfirmQueue({
     openWindow: (token) => {
+      if (openFailure) throw openFailure;
       const win = {
         closed: false,
         isDestroyed: () => win.closed,
@@ -239,9 +240,13 @@ describe('src/main/confirm-queue.ts', () => {
       const answer = queue.confirmInstall('1.3.0');
       await tick();
       expect(windows).toHaveLength(1);
+      expect(queue.getContext('t1')?.name, 'the script opens first').toBe(
+        'vpn',
+      );
       queue.resolveConfirm('t1', 'cancel');
       await tick();
       expect(windows).toHaveLength(2);
+      expect(queue.getContext('t2')?.title).toBe('DevBar v1.3.0 está lista');
       queue.resolveConfirm('t2', 'cancel');
       await expect(answer).resolves.toBe(false);
     });
@@ -294,7 +299,7 @@ describe('src/main/confirm-queue.ts', () => {
       await expect(command).resolves.toBe(true);
     });
 
-    it('steps aside for a workflow confirmation, which now queues too', async () => {
+    it('steps aside for a workflow confirmation', async () => {
       const { queue, windows } = harness();
       const install = queue.confirmInstall('1.3.0');
       await tick();
@@ -321,6 +326,37 @@ describe('src/main/confirm-queue.ts', () => {
       queue.cancelConfirm();
       expect(queue.hasPending('t1')).toBe(true);
       expect(queue.pending()).toEqual([]);
+    });
+  });
+
+  describe('confirmInteractive', () => {
+    it('opens at once, never waiting behind another confirmation', async () => {
+      const { queue, windows } = harness();
+      void queue.confirmScript(script, null);
+      await tick();
+      void queue.confirmInteractive(script, null);
+      await tick();
+      expect(
+        windows,
+        'a waiting workflow must not hold schedules back',
+      ).toHaveLength(2);
+    });
+
+    it('is never covered by an install prompt that arrives after it', async () => {
+      const { queue, windows } = harness();
+      void queue.confirmInteractive(script, null);
+      await tick();
+      const install = queue.confirmInstall('1.3.0');
+      await expect(install).resolves.toBe(false);
+      expect(windows).toHaveLength(1);
+    });
+  });
+
+  describe('a window that cannot open', () => {
+    it('leaves no stale entry behind', async () => {
+      const { queue } = harness(new Error('no window'));
+      await expect(queue.confirmInstall('1.3.0')).rejects.toThrow('no window');
+      expect(queue.hasPending('t1')).toBe(false);
     });
   });
 
