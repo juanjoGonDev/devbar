@@ -233,13 +233,15 @@ export function createUpdater(deps: UpdaterDeps): Updater {
    * next to our config. Resolves the failure reason, or null. A failure stays
    * visible (phase + banner) and can be retried from the Updates pane.
    */
-  async function stageUpdate(
-    update: AvailableUpdate,
-    manual = false,
-  ): Promise<string | null> {
+  // Resolves the failure reason, or null.
+  async function stageUpdate(update: AvailableUpdate, manual = false) {
     const { version } = update;
     if (stagingVersion !== null && stagingVersion !== version) {
-      pendingStage = { update, manual }; // one download at a time
+      // One download at a time. A later automatic check for the same release
+      // must not undo a manual request for it.
+      const asked =
+        pendingStage?.update.version === version && pendingStage.manual;
+      pendingStage = { update, manual: manual || asked };
       return null;
     }
     // Once a swap is under way, a new staging would prune the copy it uses.

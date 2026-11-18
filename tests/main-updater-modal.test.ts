@@ -295,6 +295,33 @@ describe('src/main/updater.ts — install modal', () => {
     error.mockRestore();
   });
 
+  it('keeps a manual request when a later automatic check finds the same release', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    let auto = true;
+    let latest = update;
+    let finish: () => void = () => undefined;
+    const h = harness({
+      autoUpdate: () => auto,
+      checkForUpdate: () => Promise.resolve(latest),
+      downloadFile: (_url, dest) => {
+        h.calls.push('download');
+        return new Promise<string>((resolve) => {
+          finish = () => resolve(dest);
+        });
+      },
+    });
+    await h.updater.runUpdateCheck();
+    latest = { ...update, version: '1.4.0' };
+    await h.updater.runUpdateCheck({ manual: true });
+    await h.updater.runUpdateCheck();
+    auto = false;
+    finish();
+    await vi.waitFor(() =>
+      expect(h.calls.filter((call) => call === 'download')).toHaveLength(2),
+    );
+    log.mockRestore();
+  });
+
   it('downloads no newer release an automatic check found once the switch is off', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     let auto = true;
