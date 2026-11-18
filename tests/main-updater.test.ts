@@ -233,6 +233,31 @@ describe('src/main/updater.ts', () => {
       expect(h.updater.staged()).toBeNull();
     });
 
+    it('keeps a real download out while a simulated copy unpacks', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      let unpack: () => void = () => undefined;
+      const h = harness({
+        extractUpdate: (input) =>
+          new Promise((resolve) => {
+            unpack = () =>
+              resolve({ version: input.version, appPath: '/staged-sim' });
+          }),
+      });
+      const staging = h.updater.stageFromZip('/tmp/DevBar.zip', {
+        ...update,
+        version: '1.4.0',
+      });
+      await h.updater.runUpdateCheck();
+      expect(h.calls, 'no real download while it unpacks').not.toContain(
+        'download',
+      );
+      unpack();
+      await staging;
+      expect(h.updater.staged()?.version).toBe('1.4.0');
+      expect(h.updater.available()?.version).toBe('1.4.0');
+      log.mockRestore();
+    });
+
     it('refuses a simulated staging while a real download runs', async () => {
       const h = harness({
         downloadFile: () => new Promise<string>(() => undefined),

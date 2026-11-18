@@ -344,11 +344,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       deps.canInstallInPlace(target)
     ) {
       asking = true;
-      try {
-        res = await installStagedUpdate(deps, phase, staged, target);
-      } finally {
-        asking = false;
-      }
+      res = await installStagedUpdate(deps, phase, staged, target).finally(
+        () => (asking = false),
+      );
     } else if (deps.platform === 'linux')
       res = await applyLinuxUpdate(update, current, target);
     else res = await runAssistedUpdate(deps, update, phase);
@@ -473,11 +471,13 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       // A real download finishing later would prune what this stages, even
       // with its modal open (the real paths never open one mid-download).
       if (asking || stagingVersion !== null) throw new Error(MODAL_OWNS_UPDATE);
-      const staged = await deps.extractUpdate({
+      stagingVersion = update.version; // and no real download starts meanwhile
+      const unpacking = deps.extractUpdate({
         zipPath,
         destDir: path.join(deps.updatesDir(), update.version),
         version: update.version,
       });
+      const staged = await unpacking.finally(() => (stagingVersion = null));
       // Published only with its copy on disk: a failure leaves it as it was.
       devUpdateSimulated = true;
       availableUpdate = update;

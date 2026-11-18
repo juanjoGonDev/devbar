@@ -61,9 +61,9 @@ export function createSettingsPane(
     }
   }
 
-  // The instant-save controls (the log limit's −/+ included) stay disabled
-  // until the stored settings are on screen: an edit made before would never
-  // be saved, or would be overwritten by the read.
+  // The instant-save controls (the log limit's −/+ and the theme included)
+  // stay disabled until the stored settings are on screen: an edit made
+  // before would never be saved, or would be overwritten by the read.
   const stepperButtons = [
     ...(els.maxLogLines
       .closest('.num-stepper')
@@ -80,6 +80,7 @@ export function createSettingsPane(
       els.showHiddenGroupsFold,
       els.showHiddenWorkflowsFold,
       ...stepperButtons,
+      ...themeOpts,
     ])
       control.disabled = held;
     // The stepper decides its own buttons at the bounds.

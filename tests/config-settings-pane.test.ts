@@ -183,6 +183,18 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(steppers.some((button) => !button.disabled)).toBe(true);
     });
 
+    it('holds the theme buttons too while the stored settings are read back', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      expect(themeButton('light').disabled).toBe(true);
+      await win.settle('getSettings', settings());
+      expect(themeButton('light').disabled).toBe(false);
+    });
+
     it('keeps the controls held until a read succeeds', async () => {
       win = await openConfigWindow();
       await answerBystanderSettingsReads(win);
