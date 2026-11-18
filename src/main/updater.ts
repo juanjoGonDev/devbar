@@ -130,6 +130,13 @@ export interface Updater {
 }
 
 const BANNER_TITLE = 'DevBar — actualización';
+/**
+ * Why the dev simulations leave the update alone while the install modal
+ * waits: it owns the staged copy, and the release it asks about must stay the
+ * one a phone can install too.
+ */
+const MODAL_OWNS_UPDATE =
+  'hay un aviso de instalación abierto: contéstalo antes de simular otra versión';
 const OPEN_UPDATES = { cta: { label: 'Ver', action: 'open-about' } };
 
 export function createUpdater(deps: UpdaterDeps): Updater {
@@ -461,11 +468,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
      * locally built zip — the half where a bad bundle would actually bite.
      */
     async stageFromZip(zipPath, version): Promise<void> {
-      // Same rule as stageUpdate: the open modal owns the staged copy.
-      if (asking)
-        throw new Error(
-          'hay un aviso de instalación abierto: contéstalo antes de simular otra versión',
-        );
+      if (asking) throw new Error(MODAL_OWNS_UPDATE);
       stagedUpdate = await deps.extractUpdate({
         zipPath,
         destDir: path.join(deps.updatesDir(), version),
@@ -486,6 +489,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     },
 
     setSimulatedUpdate(update): void {
+      if (asking) throw new Error(MODAL_OWNS_UPDATE);
       devUpdateSimulated = update !== null;
       availableUpdate = update;
     },

@@ -166,6 +166,29 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
+    it('keeps the release the modal asks about when a simulation tries to replace it', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const h = harness({
+        confirmInstall: (version) => {
+          h.asked.push(version);
+          return new Promise<boolean>(() => undefined);
+        },
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.asked).toEqual(['1.3.0']));
+      expect(() =>
+        h.updater.setSimulatedUpdate({ ...update, version: '1.4.0' }),
+      ).toThrow(/aviso de instalación/);
+      expect(() => h.updater.setSimulatedUpdate(null)).toThrow(
+        /aviso de instalación/,
+      );
+      expect(h.updater.available()?.version).toBe('1.3.0');
+      expect(h.updater.canInstallStaged(), 'a phone can still install').toBe(
+        true,
+      );
+      log.mockRestore();
+    });
+
     it('skips the automatic check while automatic updates are off', async () => {
       const checkForUpdate = vi.fn(() => Promise.resolve(update));
       const h = harness({ autoUpdate: () => false, checkForUpdate });

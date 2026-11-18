@@ -76,10 +76,15 @@ interface Recorded {
 
 let recorded: Recorded;
 let bundle: string | null;
+/** Why the app refuses a simulated release right now, when it does. */
+let refusal: string | null;
 
 function makeHooks(): DevHooks {
   return {
-    setSimulatedUpdate: (update) => void recorded.simulatedUpdate.push(update),
+    setSimulatedUpdate: (update) => {
+      if (refusal !== null) throw new Error(refusal);
+      recorded.simulatedUpdate.push(update);
+    },
     setSimulatedTrayColor: (color) => void recorded.trayColor.push(color),
     setSimulatedTrayCount: (count) => void recorded.trayCount.push(count),
     showBanner: (title, body, options) =>
@@ -134,6 +139,7 @@ describe('src/dev/dev-ipc.ts', () => {
     build.result = 'staged.zip';
     build.failure = null;
     bundle = '/Applications/DevBar.app';
+    refusal = null;
     recorded = {
       simulatedUpdate: [],
       trayColor: [],
@@ -247,6 +253,16 @@ describe('src/dev/dev-ipc.ts', () => {
       expect(recorded.staged).toEqual([
         { zipPath: 'staged.zip', version: '0.10.0' },
       ]);
+    });
+
+    it('refuses before building when the app cannot take a simulated release', async () => {
+      refusal = 'hay un aviso de instalación abierto';
+
+      const result = await fire('dev:simulateRealUpdate');
+
+      expect(result).toEqual({ ok: false, error: refusal });
+      expect(build.calls).toEqual([]);
+      expect(recorded.staged).toEqual([]);
     });
 
     it('reports the build failure instead of throwing at the renderer', async () => {

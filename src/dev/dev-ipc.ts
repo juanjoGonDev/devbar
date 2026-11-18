@@ -136,12 +136,14 @@ export function registerDevIpc(hooks: DevHooks): void {
       };
     const version = nextMinor(hooks.currentVersion());
     try {
+      // First, so a refusal (the install modal is waiting) costs no build and
+      // changes nothing.
+      hooks.setSimulatedUpdate(simulatedUpdate(version));
       const zipPath = await buildSimulatedUpdate({
         bundlePath,
         workDir: hooks.updatesDir(),
         version,
       });
-      hooks.setSimulatedUpdate(simulatedUpdate(version));
       await hooks.stageLocalUpdate(zipPath, version);
       return { ok: true, version };
     } catch (error: unknown) {
