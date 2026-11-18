@@ -154,9 +154,28 @@ describe('renderer/config/settings-pane.ts', () => {
       const reads = win.callCount('getSettings');
       await win.fail('saveSettings', new Error('disk full'));
       expect(toastText()).toContain('disk full');
+      expect(toastText(), 'nothing is restored yet').not.toContain(
+        'se muestran los guardados',
+      );
+      expect(toggle.disabled, 'no edit may be lost to the reload').toBe(true);
       expect(win.callCount('getSettings')).toBe(reads + 1);
       await win.settle('getSettings', settings());
       expect(toggle.checked).toBe(false);
+      expect(toggle.disabled).toBe(false);
+      expect(toastText()).toContain('se muestran los guardados');
+    });
+
+    it('claims no restore when the read back fails too', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      await win.fail('getSettings', new Error('store locked'));
+      expect(toastText()).toContain('store locked');
+      expect(toastText()).not.toContain('se muestran los guardados');
     });
 
     it('lets a newer change keep the controls when an older save fails', async () => {
@@ -169,7 +188,14 @@ describe('renderer/config/settings-pane.ts', () => {
       input('set-autostart').checked = false;
       input('set-autostart').dispatchEvent(new Event('change'));
       const reads = win.callCount('getSettings');
-      await win.settleNewest('saveSettings', settings());
+      expect(
+        win.argsFor('saveSettings')[1]?.[0],
+        'the newer save carries both changes',
+      ).toMatchObject({ autoUpdate: true, autostart: false });
+      await win.settleNewest(
+        'saveSettings',
+        settings({ autoUpdate: true, autostart: false }),
+      );
       await win.fail('saveSettings', new Error('disk full'));
       expect(
         win.callCount('getSettings'),

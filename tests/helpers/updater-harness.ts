@@ -3,6 +3,7 @@
  * banners, toasts, pushes and removed files so a test can read back what the
  * update flow did. Shared by the updater test files.
  */
+import path from 'node:path';
 import { createUpdater, type UpdaterDeps } from '../../src/main/updater.js';
 import type { AvailableUpdate } from '../../src/domain-types.js';
 import type { UpdatePhase } from '../../src/ipc-contract.js';
@@ -52,6 +53,12 @@ export function harness(overrides: Partial<UpdaterDeps> = {}) {
     }),
     stageDownloadedArtifact: (input) => {
       calls.push(`stage:${input.destDir}`);
+      // The staged copy is a directory next to the others, as on disk.
+      const parent = path.dirname(input.destDir);
+      dirs.set(parent, [
+        ...(dirs.get(parent) ?? []),
+        path.basename(input.destDir),
+      ]);
       return Promise.resolve({ version: input.version, appPath: '/staged' });
     },
     extractUpdate: (input) => {
@@ -72,8 +79,16 @@ export function harness(overrides: Partial<UpdaterDeps> = {}) {
     removeFile: (target) => removed.push(target),
     updaterFs: {
       mkdirSync: () => calls.push('mkdir'),
-      rmSync: (target) => removed.push(target),
-      readdirSync: (dir) => dirs.get(dir) ?? [],
+      rmSync: (target) => {
+        removed.push(target);
+        const parent = path.dirname(target);
+        const name = path.basename(target);
+        dirs.set(
+          parent,
+          (dirs.get(parent) ?? []).filter((entry) => entry !== name),
+        );
+      },
+      readdirSync: (dir) => [...(dirs.get(dir) ?? [])],
       isDirectory: (target) => !target.endsWith('.zip'),
       readInstalledPlist: () =>
         '<key>CFBundleIdentifier</key><string>dev.devbar.app</string>',
@@ -126,5 +141,6 @@ export function harness(overrides: Partial<UpdaterDeps> = {}) {
     phases,
     processes,
     removed,
+    dirs,
   };
 }

@@ -246,6 +246,30 @@ describe('src/main/confirm-queue.ts', () => {
       await expect(answer).resolves.toBe(false);
     });
 
+    it('steps aside, unanswered, for a script confirmation', async () => {
+      const { queue, windows } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      const command = queue.confirmIfNeeded(
+        makeCommand({ confirm: true }),
+        null,
+      );
+      await expect(install).resolves.toBe(false);
+      expect(windows[0]?.win.closed).toBe(true);
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'confirm');
+      await expect(command).resolves.toBe(true);
+    });
+
+    it('steps aside for a pre-script as well', async () => {
+      const { queue } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      void queue.confirmScript(script, null);
+      await expect(install).resolves.toBe(false);
+    });
+
     it('stays open through a pipeline cancel, and off a phone', async () => {
       const { queue } = harness();
       void queue.confirmInstall('1.3.0');

@@ -141,7 +141,7 @@ describe('src/main/updater.ts', () => {
       await h.updater.runUpdateCheck();
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(h.calls).not.toContain('stage:/home/updates/1.4.0');
-      expect(h.removed).not.toContain('/home/updates/1.3.0');
+      expect(h.dirs.get('/home/updates')).toContain('1.3.0');
       expect(h.updater.staged()?.version).toBe('1.3.0');
       answer(true);
       await vi.waitFor(() => expect(h.calls).toContain('spawnSwap'));
@@ -226,6 +226,48 @@ describe('src/main/updater.ts', () => {
       ).rejects.toThrow(/descarga en curso/);
       expect(h.calls).not.toContain('extract:/tmp/DevBar.zip');
       expect(h.asked).toEqual([]);
+    });
+
+    it('starts no second download while one runs', async () => {
+      let latest = update;
+      const h = harness({
+        checkForUpdate: () => Promise.resolve(latest),
+        downloadFile: () => {
+          h.calls.push('download');
+          return new Promise<string>(() => undefined);
+        },
+      });
+      await h.updater.runUpdateCheck();
+      latest = { ...update, version: '1.4.0' };
+      await h.updater.runUpdateCheck();
+      expect(h.calls.filter((call) => call === 'download')).toHaveLength(1);
+    });
+
+    it('asks only about the release it staged, never one found meanwhile', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      let latest = update;
+      let finish: () => void = () => undefined;
+      const messageBox = vi.fn(() => Promise.resolve({ response: 0 }));
+      const h = harness({
+        messageBox,
+        checkForUpdate: () => Promise.resolve(latest),
+        downloadFile: (_url, dest) =>
+          new Promise<string>((resolve) => {
+            finish = () => resolve(dest);
+          }),
+      });
+      await h.updater.runUpdateCheck();
+      latest = { ...update, version: '1.4.0' };
+      await h.updater.runUpdateCheck();
+      finish();
+      await vi.waitFor(() => expect(h.updater.staged()?.version).toBe('1.3.0'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(h.asked).toEqual([]);
+      expect(
+        messageBox,
+        'no assisted download for 1.4.0',
+      ).not.toHaveBeenCalled();
+      log.mockRestore();
     });
 
     it('skips the automatic check while automatic updates are off', async () => {

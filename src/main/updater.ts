@@ -135,8 +135,7 @@ const BANNER_TITLE = 'DevBar — actualización';
  * waits: it owns the staged copy, and the release it asks about must stay the
  * one a phone can install too.
  */
-const MODAL_OWNS_UPDATE =
-  'hay un aviso de instalación abierto: contéstalo antes de simular otra versión';
+const MODAL_OWNS_UPDATE = 'contesta antes el aviso de instalación abierto';
 const OPEN_UPDATES = { cta: { label: 'Ver', action: 'open-about' } };
 
 export function createUpdater(deps: UpdaterDeps): Updater {
@@ -210,7 +209,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     );
     // Asks with the install modal and waits for the answer: installing
     // restarts DevBar (and the services it runs), so it never happens alone.
-    void applyUpdateAndReport();
+    // Only about this copy: a newer release found meanwhile is the next
+    // check's to stage and ask about, never an unrequested assisted download.
+    if (availableUpdate?.version === staged.version)
+      void applyUpdateAndReport();
   }
 
   /** Drop previously staged versions — each one is a full copy of the app. */

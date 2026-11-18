@@ -7,6 +7,7 @@ import {
   type DevPanelDeps,
 } from '../src/main/dev-panel.js';
 import type { DevHooks } from '../src/dev/dev-ipc.js';
+import type { AvailableUpdate } from '../src/domain-types.js';
 
 const fixtures: DevPanelDeps['fixtures'] = {
   environment: () => ({
@@ -22,6 +23,16 @@ const fixtures: DevPanelDeps['fixtures'] = {
   stop: () => Promise.resolve({ ok: true }),
   removeState: () => undefined,
   refresh: () => undefined,
+};
+
+const simulated: AvailableUpdate = {
+  version: '1.3.0',
+  url: '',
+  dmgUrl: null,
+  zipUrl: null,
+  setupUrl: null,
+  appImageUrl: null,
+  debUrl: null,
 };
 
 function deps(overrides: Partial<DevPanelDeps> = {}) {
@@ -111,7 +122,28 @@ describe('src/main/dev-panel.ts', () => {
 
     it('prunes by what IS staged after a local staging run', async () => {
       const d = deps();
-      await createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', '1.3.0');
+      await createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated);
+      expect(d.calls).toEqual([
+        'setSimulatedUpdate',
+        'refreshTrayIcon',
+        'broadcastUpdateStatus',
+        'removeFile',
+        'prune:1.3.0',
+      ]);
+    });
+
+    it('stages nothing, and still cleans up, when the release is refused', async () => {
+      const stageFromZip = vi.fn(() => Promise.resolve());
+      const d = deps({
+        setSimulatedUpdate: () => {
+          throw new Error('aviso de instalación abierto');
+        },
+        stageFromZip,
+      });
+      await expect(
+        createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated),
+      ).rejects.toThrow('aviso de instalación abierto');
+      expect(stageFromZip).not.toHaveBeenCalled();
       expect(d.calls).toEqual(['removeFile', 'prune:1.3.0']);
     });
 
@@ -121,9 +153,14 @@ describe('src/main/dev-panel.ts', () => {
         stagedVersion: () => null,
       });
       await expect(
-        createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', '1.3.0'),
+        createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated),
       ).rejects.toThrow('bad zip');
-      expect(d.calls).toEqual(['removeFile']);
+      expect(d.calls).toEqual([
+        'setSimulatedUpdate',
+        'refreshTrayIcon',
+        'broadcastUpdateStatus',
+        'removeFile',
+      ]);
     });
   });
 

@@ -78,6 +78,8 @@ let recorded: Recorded;
 let bundle: string | null;
 /** Why the app refuses a simulated release right now, when it does. */
 let refusal: string | null;
+/** Why the install modal could not open, when it cannot. */
+let promptFailure: Error | null;
 
 function makeHooks(): DevHooks {
   return {
@@ -93,13 +95,19 @@ function makeHooks(): DevHooks {
       void recorded.fallbackBanners.push({ title, body, options }),
     showCompletionNotification: (title, body) =>
       void recorded.completions.push({ title, body }),
-    askToInstall: (version) => void recorded.installPrompts.push(version),
+    askToInstall: (version) => {
+      recorded.installPrompts.push(version);
+      return promptFailure
+        ? Promise.reject(promptFailure)
+        : Promise.resolve(false);
+    },
     openPrescriptConfirm: (name, command) =>
       void recorded.prescriptConfirms.push({ name, command }),
     installedBundle: () => bundle,
     updatesDir: () => '/tmp/devbar-updates',
-    stageLocalUpdate: (zipPath, version) => {
-      recorded.staged.push({ zipPath, version });
+    stageLocalUpdate: (zipPath, update) => {
+      if (refusal !== null) return Promise.reject(new Error(refusal));
+      recorded.staged.push({ zipPath, version: update.version });
       return Promise.resolve();
     },
     toast: (kind, message) => void recorded.toasts.push({ kind, message }),
@@ -140,6 +148,7 @@ describe('src/dev/dev-ipc.ts', () => {
     build.failure = null;
     bundle = '/Applications/DevBar.app';
     refusal = null;
+    promptFailure = null;
     recorded = {
       simulatedUpdate: [],
       trayColor: [],
@@ -255,14 +264,15 @@ describe('src/dev/dev-ipc.ts', () => {
       ]);
     });
 
-    it('refuses before building when the app cannot take a simulated release', async () => {
+    it('publishes nothing when the app refuses the simulated release', async () => {
       refusal = 'hay un aviso de instalación abierto';
 
       const result = await fire('dev:simulateRealUpdate');
 
       expect(result).toEqual({ ok: false, error: refusal });
-      expect(build.calls).toEqual([]);
+      expect(recorded.simulatedUpdate).toEqual([]);
       expect(recorded.staged).toEqual([]);
+      expect(recorded.toasts).toEqual([{ kind: 'error', message: refusal }]);
     });
 
     it('reports the build failure instead of throwing at the renderer', async () => {
@@ -272,6 +282,9 @@ describe('src/dev/dev-ipc.ts', () => {
 
       expect(result).toEqual({ ok: false, error: 'codesign refused' });
       expect(recorded.staged).toEqual([]);
+      expect(recorded.simulatedUpdate, 'the release stays as it was').toEqual(
+        [],
+      );
     });
 
     it('stringifies a rejection that is not an Error', async () => {
@@ -280,6 +293,26 @@ describe('src/dev/dev-ipc.ts', () => {
       const result = await fire('dev:simulateRealUpdate');
 
       expect(result).toEqual({ ok: false, error: 'plain string rejection' });
+    });
+  });
+
+  describe('refusals while the install modal waits', () => {
+    it('says why it cannot clear the update', async () => {
+      refusal = 'hay un aviso de instalación abierto';
+
+      const result = await fire('dev:clearUpdate');
+
+      expect(result).toEqual({ ok: false, error: refusal });
+      expect(recorded.toasts).toEqual([{ kind: 'error', message: refusal }]);
+    });
+
+    it('says why it cannot simulate a release', async () => {
+      refusal = 'hay un aviso de instalación abierto';
+
+      const result = await fire('dev:simulateUpdate', { version: '3.4.5' });
+
+      expect(result).toEqual({ ok: false, error: refusal });
+      expect(recorded.toasts).toEqual([{ kind: 'error', message: refusal }]);
     });
   });
 
@@ -376,6 +409,19 @@ describe('src/dev/dev-ipc.ts', () => {
         },
       ]);
       expect(recorded.banners).toEqual([]);
+    });
+  });
+
+  describe('dev:simulateInstallPrompt — failures', () => {
+    it('says so when the prompt cannot open', async () => {
+      promptFailure = new Error('no window');
+
+      await fire('dev:simulateInstallPrompt');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(recorded.toasts).toEqual([
+        { kind: 'error', message: 'No se pudo abrir el aviso: no window' },
+      ]);
     });
   });
 

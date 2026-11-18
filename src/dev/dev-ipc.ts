@@ -34,14 +34,15 @@ export interface DevHooks {
   ): void;
   showCompletionNotification(title: string, body: string): void;
   /** The updater's own «Reiniciar e instalar» prompt, nothing staged. */
-  askToInstall(version: string): void;
+  askToInstall(version: string): Promise<boolean>;
   openPrescriptConfirm(name: string, command: string): void;
   /** The .app we are running from, or null when it is not an installed bundle. */
   installedBundle(): string | null;
   /** Where staged updates live, so the simulated one is cleaned up with them. */
   updatesDir(): string;
   /** The production staging path, minus the download it no longer needs. */
-  stageLocalUpdate(zipPath: string, version: string): Promise<void>;
+  /** Publishes `update` as the simulated release, then stages its zip. */
+  stageLocalUpdate(zipPath: string, update: AvailableUpdate): Promise<void>;
   toast(kind: string, message: string): void;
   currentVersion(): string;
   /** What the "Grupos de prueba" overlay needs from the running app. */
@@ -54,6 +55,9 @@ const TRAY_COLORS: readonly TrayColor[] = [
   'warn',
   'error',
 ];
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -96,6 +100,13 @@ function simulatedUpdate(version: string): AvailableUpdate {
 
 export function registerDevIpc(hooks: DevHooks): void {
   const fixtureMode = createFixtureMode(hooks.fixtures);
+  // The panel shows no result of its own: a refusal (the install modal is
+  // waiting) or a failure reaches the developer as a toast.
+  const refuse = (error: unknown): { ok: false; error: string } => {
+    const message = messageOf(error);
+    hooks.toast('error', message);
+    return { ok: false, error: message };
+  };
 
   // "Grupos de prueba": the app shows only the fixture set while it is on,
   // with the user's own groups hidden but untouched (see fixture-mode.ts).
@@ -115,7 +126,11 @@ export function registerDevIpc(hooks: DevHooks): void {
     (_e: IpcMainInvokeEvent, payload: unknown) => {
       const raw = asRecord(payload);
       const version = asString(raw.version, nextMinor(hooks.currentVersion()));
-      hooks.setSimulatedUpdate(simulatedUpdate(version));
+      try {
+        hooks.setSimulatedUpdate(simulatedUpdate(version));
+      } catch (error: unknown) {
+        return refuse(error);
+      }
       return { ok: true, version };
     },
   );
@@ -136,26 +151,24 @@ export function registerDevIpc(hooks: DevHooks): void {
       };
     const version = nextMinor(hooks.currentVersion());
     try {
-      // First, so a refusal (the install modal is waiting) costs no build and
-      // changes nothing.
-      hooks.setSimulatedUpdate(simulatedUpdate(version));
       const zipPath = await buildSimulatedUpdate({
         bundlePath,
         workDir: hooks.updatesDir(),
         version,
       });
-      await hooks.stageLocalUpdate(zipPath, version);
+      await hooks.stageLocalUpdate(zipPath, simulatedUpdate(version));
       return { ok: true, version };
     } catch (error: unknown) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
+      return refuse(error);
     }
   });
 
   ipcMain.handle('dev:clearUpdate', () => {
-    hooks.setSimulatedUpdate(null);
+    try {
+      hooks.setSimulatedUpdate(null);
+    } catch (error: unknown) {
+      return refuse(error);
+    }
     return { ok: true };
   });
 
@@ -214,7 +227,11 @@ export function registerDevIpc(hooks: DevHooks): void {
   // Only to SEE the prompt: nothing is staged, so its button installs nothing.
   ipcMain.handle('dev:simulateInstallPrompt', () => {
     const version = nextMinor(hooks.currentVersion());
-    hooks.askToInstall(version);
+    hooks
+      .askToInstall(version)
+      .catch((error: unknown) =>
+        hooks.toast('error', `No se pudo abrir el aviso: ${messageOf(error)}`),
+      );
     return { ok: true, version };
   });
 

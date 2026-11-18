@@ -121,12 +121,25 @@ export function createSettingsPane(
       await save;
     } catch (err) {
       if (token !== settingsSaveSeq) return; // a newer save owns the controls
-      // The controls show a change that was never stored: read back what was.
-      showToast(
-        `No se pudieron guardar los ajustes: ${errorMessage(err)}. Se han restaurado los anteriores.`,
-        'error',
-      );
-      void loadSettings();
+      // The controls may show a change that was never stored: say so, then
+      // read back what was, holding the controls so no edit is lost to it.
+      const failure = `No se pudieron guardar los ajustes: ${errorMessage(err)}.`;
+      showToast(failure, 'error');
+      const held = [
+        els.autostart,
+        els.autoUpdate,
+        els.silenceWarnings,
+        els.silenceErrors,
+        els.maxLogLines,
+        els.notifySuccess,
+        els.showHiddenGroupsFold,
+        els.showHiddenWorkflowsFold,
+      ];
+      for (const control of held) control.disabled = true;
+      const restored = await loadSettings();
+      for (const control of held) control.disabled = false;
+      if (restored)
+        showToast(`${failure} Ahora se muestran los guardados.`, 'error');
       return;
     }
     showToast('Ajustes guardados', 'ok');

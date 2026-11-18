@@ -172,6 +172,12 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     show: () => Promise<boolean>,
     origin: ConfirmOrigin,
   ): Promise<boolean> {
+    // An install prompt waits with no countdown, possibly with nobody at the
+    // desk: it must not hold a script's confirmation (and its countdown)
+    // back. It steps aside unanswered; the update stays ready in About.
+    if (origin !== 'update')
+      for (const [token, entry] of pendingConfirms)
+        if (entry.origin === 'update') resolveConfirm(token, 'cancel');
     const generation = pipelineConfirmGeneration;
     const run = (): Promise<boolean> =>
       origin === 'pipeline' && generation !== pipelineConfirmGeneration

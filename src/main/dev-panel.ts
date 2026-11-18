@@ -128,13 +128,14 @@ export function createFixtureHost(deps: {
 }
 
 export function createDevHooks(deps: DevPanelDeps): DevHooks {
+  const setSimulatedUpdate = (update: AvailableUpdate | null): void => {
+    deps.setSimulatedUpdate(update);
+    deps.refreshTrayIcon();
+    deps.broadcastUpdateStatus();
+  };
   return {
     currentVersion: () => deps.currentVersion(),
-    setSimulatedUpdate: (update) => {
-      deps.setSimulatedUpdate(update);
-      deps.refreshTrayIcon();
-      deps.broadcastUpdateStatus();
-    },
+    setSimulatedUpdate,
     setSimulatedTrayColor: (color) => deps.setSimulatedTrayColor(color),
     setSimulatedTrayCount: (count) => {
       deps.setSimulatedTrayCount(count);
@@ -146,7 +147,7 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
       deps.showFallbackBanner(title, body, options),
     showCompletionNotification: (title, body) =>
       deps.showCompletionNotification(title, body),
-    askToInstall: (version) => void deps.confirms.confirmInstall(version),
+    askToInstall: (version) => deps.confirms.confirmInstall(version),
     // Dev-only manual trigger, unrelated to the real pipeline: a pipeline
     // cancel must never close this simulated dialog, and no real group backs
     // it.
@@ -168,9 +169,12 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
     // which passes the guard and then fails deep inside the copy.
     installedBundle: () => deps.installedBundle(),
     updatesDir: () => deps.updatesDir(),
-    stageLocalUpdate: async (zipPath, version) => {
+    stageLocalUpdate: async (zipPath, update) => {
       try {
-        await deps.stageFromZip(zipPath, version);
+        // Published only now, with its bundle built: a refusal (the install
+        // modal waiting) throws here, before anything changes.
+        setSimulatedUpdate(update);
+        await deps.stageFromZip(zipPath, update.version);
       } finally {
         deps.removeFile(zipPath);
         // Prune by what IS staged, not by what we wanted to stage: on a failure

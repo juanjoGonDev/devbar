@@ -34,7 +34,8 @@ export function shouldStageUpdate(input: {
   failedVersions: ReadonlySet<string>;
 }): boolean {
   if (input.stagedVersion === input.version) return false;
-  if (input.stagingVersion === input.version) return false;
+  // One download at a time: a second one would prune the first's copy.
+  if (input.stagingVersion !== null) return false;
   return !input.failedVersions.has(input.version);
 }
 
