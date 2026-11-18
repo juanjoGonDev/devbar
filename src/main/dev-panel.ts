@@ -35,7 +35,7 @@ export interface DevPanelDeps {
   ) => void;
   showCompletionNotification: (title: string, body: string) => void;
   /** The script confirmation and the install modal, as the app shows them. */
-  confirms: Pick<ConfirmQueue, 'showConfirmModal' | 'confirmInstall'>;
+  confirms: Pick<ConfirmQueue, 'confirmInteractive' | 'previewInstall'>;
   toast: (kind: string, message: string) => void;
   installedBundle: () => string | null;
   updatesDir: () => string;
@@ -148,12 +148,13 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
       deps.showFallbackBanner(title, body, options),
     showCompletionNotification: (title, body) =>
       deps.showCompletionNotification(title, body),
-    askToInstall: (version) => deps.confirms.confirmInstall(version),
+    // A preview: anything real (an install, a script) pushes it aside.
+    askToInstall: (version) => deps.confirms.previewInstall(version),
     // Dev-only manual trigger, unrelated to the real pipeline: a pipeline
     // cancel must never close this simulated dialog, and no real group backs
     // it.
     openPrescriptConfirm: (name, command) =>
-      void deps.confirms.showConfirmModal(
+      void deps.confirms.confirmInteractive(
         {
           name,
           command,
@@ -161,7 +162,6 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
           confirmSecs: null,
           confirmOnTimeout: 'cancel',
         },
-        'interactive',
         null,
       ),
     toast: (kind, message) => deps.toast(kind, message),

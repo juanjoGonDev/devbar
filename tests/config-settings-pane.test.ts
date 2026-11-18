@@ -195,6 +195,31 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(themeButton('light').disabled).toBe(false);
     });
 
+    it('lets the newest read win over an older one that answers late', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      window.dispatchEvent(new Event('focus'));
+      await win.settleNewest('getSettings', settings({ autoUpdate: true }));
+      expect(toggle.checked).toBe(true);
+      await win.settle('getSettings', settings());
+      expect(toggle.checked, 'the stale read changes nothing').toBe(true);
+      expect(toggle.disabled).toBe(false);
+    });
+
+    it('keeps the theme out of the other settings when they save', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      expect(win.argsFor('saveSettings')[0]?.[0]).not.toHaveProperty('theme');
+    });
+
     it('keeps the controls held until a read succeeds', async () => {
       win = await openConfigWindow();
       await answerBystanderSettingsReads(win);

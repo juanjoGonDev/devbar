@@ -49,13 +49,11 @@ function deps(overrides: Partial<DevPanelDeps> = {}) {
     showFallbackBanner: () => calls.push('showFallbackBanner'),
     showCompletionNotification: () => calls.push('showCompletionNotification'),
     confirms: {
-      showConfirmModal: (script, origin, groupName) => {
-        calls.push(
-          `confirm:${script.name}:${script.command}:${origin}:${groupName}`,
-        );
+      confirmInteractive: (script, groupName) => {
+        calls.push(`confirm:${script.name}:${script.command}:${groupName}`);
         return Promise.resolve(true);
       },
-      confirmInstall: (version) => {
+      previewInstall: (version) => {
         calls.push(`askToInstall:${version}`);
         return Promise.resolve(false);
       },
@@ -68,7 +66,7 @@ function deps(overrides: Partial<DevPanelDeps> = {}) {
       return Promise.resolve();
     },
     removeFile: () => calls.push('removeFile'),
-    stagedVersion: () => '1.3.0',
+    stagedVersion: () => '1.2.0',
     pruneStagedUpdates: (keep) => calls.push(`prune:${keep}`),
     fixtures,
     ...overrides,
@@ -118,7 +116,7 @@ describe('src/main/dev-panel.ts', () => {
         'showFallbackBanner',
         'showCompletionNotification',
         'askToInstall:1.3.0',
-        'confirm:vpn:connect:interactive:null',
+        'confirm:vpn:connect:null',
         'toast',
       ]);
     });
@@ -126,7 +124,10 @@ describe('src/main/dev-panel.ts', () => {
     it('prunes by what IS staged after a local staging run', async () => {
       const d = deps();
       await createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated);
-      expect(d.calls).toEqual(['stage:1.3.0', 'removeFile', 'prune:1.3.0']);
+      expect(
+        d.calls,
+        'prunes by the staged 1.2.0, not the asked 1.3.0',
+      ).toEqual(['stage:1.3.0', 'removeFile', 'prune:1.2.0']);
     });
 
     it('hands the release to the updater, which publishes it with its copy', async () => {
@@ -139,7 +140,7 @@ describe('src/main/dev-panel.ts', () => {
       ).rejects.toThrow('aviso de instalación abierto');
       expect(d.calls, 'never published on its own').toEqual([
         'removeFile',
-        'prune:1.3.0',
+        'prune:1.2.0',
       ]);
     });
 

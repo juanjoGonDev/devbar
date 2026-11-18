@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { BrowserWindow, NativeImage } from 'electron';
 import {
   createAppWindows,
@@ -291,6 +291,23 @@ describe('src/main/app-windows.ts', () => {
       expect(h.windows[0]?.visible).toBe(false);
       h.windows[0]?.emit('ready-to-show');
       expect(h.windows[0]?.visible).toBe(true);
+    });
+
+    it('cancels a prompt whose page fails to load, so no queue waits on it', async () => {
+      const error = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      const h = harness({
+        createWindow: () => {
+          const win = fakeWindow('');
+          win.loadFile = () => Promise.reject(new Error('missing page'));
+          return win as unknown as BrowserWindow;
+        },
+      });
+      h.appWindows.ensurePrescriptConfirmWindow('t1');
+      await vi.waitFor(() => expect(h.confirmClosed).toEqual(['t1']));
+      expect(error).toHaveBeenCalled();
+      error.mockRestore();
     });
 
     it('treats an OS-level close as an implicit cancel', () => {

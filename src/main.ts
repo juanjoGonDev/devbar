@@ -120,7 +120,7 @@ const workflowRunner = createWorkflowRunner({
     toast: (kind, message) => toast(kind, message),
     notify: (title, body) =>
       notifications.showCompletionNotification(title, body),
-    confirm: (script) => confirms.showConfirmModal(script, 'interactive', null),
+    confirm: (script) => confirms.confirmInteractive(script, null),
     bootReportsStartupFailure: () => !startup.shouldShowGenericFailureToast(),
     totalScripts: (id) => workflowRunner.runState(id)?.totalScripts ?? 0,
   }),

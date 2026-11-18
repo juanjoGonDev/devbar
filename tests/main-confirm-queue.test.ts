@@ -294,6 +294,18 @@ describe('src/main/confirm-queue.ts', () => {
       await expect(command).resolves.toBe(true);
     });
 
+    it('steps aside for a workflow confirmation, which now queues too', async () => {
+      const { queue, windows } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      await tick();
+      const workflow = queue.confirmInteractive(script, null);
+      await expect(install).resolves.toBe(false);
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'confirm');
+      await expect(workflow).resolves.toBe(true);
+    });
+
     it('steps aside for a pre-script as well', async () => {
       const { queue } = harness();
       const install = queue.confirmInstall('1.3.0');
@@ -309,6 +321,44 @@ describe('src/main/confirm-queue.ts', () => {
       queue.cancelConfirm();
       expect(queue.hasPending('t1')).toBe(true);
       expect(queue.pending()).toEqual([]);
+    });
+  });
+
+  describe('previewInstall', () => {
+    it('shows the install modal, kept off a phone', async () => {
+      const { queue } = harness();
+      void queue.previewInstall('1.3.0');
+      await tick();
+      expect(queue.getContext('t1')).toMatchObject({
+        title: 'DevBar v1.3.0 está lista',
+        clickToConfirm: true,
+      });
+      expect(queue.pending()).toEqual([]);
+    });
+
+    it('steps aside, unanswered, for a real install prompt', async () => {
+      const { queue, windows } = harness();
+      const preview = queue.previewInstall('1.3.0');
+      await tick();
+      const install = queue.confirmInstall('1.3.0');
+      await expect(preview).resolves.toBe(false);
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'confirm');
+      await expect(install).resolves.toBe(true);
+    });
+
+    it('never shows ahead of a real install queued after it', async () => {
+      const { queue, windows } = harness();
+      void queue.confirmScript(script, null);
+      await tick();
+      const preview = queue.previewInstall('1.3.0');
+      void queue.confirmInstall('1.3.0');
+      queue.resolveConfirm('t1', 'confirm');
+      await expect(preview).resolves.toBe(false);
+      await tick();
+      expect(windows).toHaveLength(2);
+      expect(queue.getContext('t2')?.title).toBe('DevBar v1.3.0 está lista');
     });
   });
 

@@ -26,9 +26,17 @@ export interface ConfirmWindowLike {
  * `cancelConfirm` may resolve, and which queued jobs the generation counter
  * may pre-empt. `update` = restarting to install a downloaded update: never
  * cancelled by a pipeline cancel, and kept off a phone (which installs
- * through its own button).
+ * through its own button). `preview` = the dev panel's look at that modal.
+ * Prompts that wait with no countdown step aside, unanswered, for the ones
+ * that matter more: a preview for anything, an install for any script.
  */
-type ConfirmOrigin = 'pipeline' | 'interactive' | 'update';
+type ConfirmOrigin = 'pipeline' | 'interactive' | 'update' | 'preview';
+type YieldingOrigin = 'update' | 'preview';
+
+const yieldsTo = (lower: YieldingOrigin, origin: ConfirmOrigin): boolean =>
+  lower === 'preview'
+    ? origin !== 'preview'
+    : origin === 'pipeline' || origin === 'interactive';
 
 /** The fields a confirmable target contributes to the modal. */
 type ConfirmableScript = Pick<
@@ -59,6 +67,8 @@ export interface ConfirmQueueDeps {
 }
 
 export interface ConfirmQueue {
+  /** Opens at once, bypassing the queue: for this module's own tests only.
+   *  Every real caller goes through a queued entrypoint. */
   showConfirmModal: (
     script: ConfirmableScript,
     origin: ConfirmOrigin,
@@ -74,6 +84,14 @@ export interface ConfirmQueue {
   ) => Promise<boolean>;
   /** «Reiniciar e instalar» for a downloaded update; waits for an answer. */
   confirmInstall: (version: string) => Promise<boolean>;
+  /** The same modal for the dev panel, which anything real pushes aside. */
+  previewInstall: (version: string) => Promise<boolean>;
+  /** A script's confirmation outside any pipeline (a workflow run, the dev
+   *  panel): queued like every other, never cancelled by a pipeline cancel. */
+  confirmInteractive: (
+    script: ConfirmableScript,
+    groupName: string | null,
+  ) => Promise<boolean>;
   cancelConfirm: () => void;
   resolveConfirm: (token: string, decision: ConfirmDecision) => void;
   hasPending: (token: string) => boolean;
@@ -106,10 +124,13 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
    */
   let pipelineConfirmGeneration = 0;
   /**
-   * Bumped by every script or pre-script confirmation: an install prompt
-   * still waiting for its turn when one arrives steps aside before it shows.
+   * Bumped whenever something a waiting prompt yields to arrives (see
+   * `yieldsTo`): one still waiting for its turn then steps aside unshown.
    */
-  let updateConfirmGeneration = 0;
+  const yieldGeneration: Record<YieldingOrigin, number> = {
+    update: 0,
+    preview: 0,
+  };
 
   function resolveConfirm(token: string, decision: ConfirmDecision): void {
     const entry = pendingConfirms.get(token);
@@ -180,16 +201,19 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     // An install prompt waits with no countdown, possibly with nobody at the
     // desk: it must not hold a script's confirmation (and its countdown)
     // back. It steps aside unanswered; the update stays ready in About.
-    if (origin !== 'update') {
-      updateConfirmGeneration += 1;
+    for (const lower of ['update', 'preview'] as const) {
+      if (!yieldsTo(lower, origin)) continue;
+      yieldGeneration[lower] += 1;
       for (const [token, entry] of pendingConfirms)
-        if (entry.origin === 'update') resolveConfirm(token, 'cancel');
+        if (entry.origin === lower) resolveConfirm(token, 'cancel');
     }
     const generation = pipelineConfirmGeneration;
-    const updateGeneration = updateConfirmGeneration;
+    const yielding =
+      origin === 'update' || origin === 'preview' ? origin : null;
+    const yieldAt = yielding ? yieldGeneration[yielding] : 0;
     const run = (): Promise<boolean> =>
       (origin === 'pipeline' && generation !== pipelineConfirmGeneration) ||
-      (origin === 'update' && updateGeneration !== updateConfirmGeneration)
+      (yielding !== null && yieldAt !== yieldGeneration[yielding])
         ? Promise.resolve(false)
         : show(); // never rejects
     const result = confirmChain.then(run, run);
@@ -198,6 +222,27 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
       () => undefined,
     ); // neutralize so the next job is unaffected
     return result;
+  }
+
+  function askToInstall(
+    version: string,
+    origin: YieldingOrigin,
+  ): Promise<boolean> {
+    const context: PrescriptConfirmContext = {
+      name: `DevBar v${version}`,
+      command: '',
+      secs: null, // waits for the user, however long it takes
+      onTimeout: 'cancel',
+      logo: deps.logo(),
+      groupName: null,
+      title: `DevBar v${version} está lista`,
+      detail:
+        'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
+      confirmLabel: 'Reiniciar e instalar',
+      cancelLabel: 'Ahora no',
+      clickToConfirm: true,
+    };
+    return enqueue(() => openModal(context, origin), origin);
   }
 
   return {
@@ -209,7 +254,7 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     // phone has no use for.
     pending: () =>
       [...pendingConfirms]
-        .filter(([, { origin }]) => origin !== 'update')
+        .filter(([, { origin }]) => origin !== 'update' && origin !== 'preview')
         .map(([token, { context, deadline }]) => ({
           token,
           name: context.name,
@@ -248,29 +293,13 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
       );
     },
 
-    confirmInstall(version) {
-      return enqueue(
-        () =>
-          openModal(
-            {
-              name: `DevBar v${version}`,
-              command: '',
-              secs: null, // waits for the user, however long it takes
-              onTimeout: 'cancel',
-              logo: deps.logo(),
-              groupName: null,
-              title: `DevBar v${version} está lista`,
-              detail:
-                'Ya está descargada. DevBar se cerrará, se sustituirá por la nueva versión y volverá a abrirse sola.',
-              confirmLabel: 'Reiniciar e instalar',
-              cancelLabel: 'Ahora no',
-              clickToConfirm: true,
-            },
-            'update',
-          ),
-        'update',
-      );
-    },
+    confirmInstall: (version) => askToInstall(version, 'update'),
+    previewInstall: (version) => askToInstall(version, 'preview'),
+    confirmInteractive: (script, groupName) =>
+      enqueue(
+        () => showConfirmModal(script, 'interactive', groupName),
+        'interactive',
+      ),
 
     /**
      * Gate a command/action start behind its optional confirmation modal.

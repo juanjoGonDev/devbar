@@ -47,6 +47,9 @@ export function createSettingsPane(
   let themeSaveSeq = 0;
   // Same reason for the instant-save controls below.
   let settingsSaveSeq = 0;
+  // And for reads: a recovery read and a focus retry can overlap, and only
+  // the newest one may apply its snapshot (and release the controls).
+  let settingsReadSeq = 0;
   const themeOpts = Array.from(
     document.querySelectorAll<HTMLButtonElement>('.theme-opt'),
   );
@@ -94,16 +97,19 @@ export function createSettingsPane(
     // stale controls could persist over the imported settings.
     settingsLoaded = false;
     holdControls(true);
+    const read = ++settingsReadSeq;
     let s: Awaited<ReturnType<typeof window.api.getSettings>>;
     try {
       s = await window.api.getSettings();
     } catch (err) {
+      if (read !== settingsReadSeq) return false; // a newer read decides
       showToast(
         `No se pudieron cargar los ajustes: ${errorMessage(err)}. Los controles de esta ventana están bloqueados; vuelve a enfocar la ventana para reintentar.`,
         'error',
       );
       return false;
     }
+    if (read !== settingsReadSeq) return false; // a newer read decides
     els.autostart.checked = !!s.autostart;
     els.autoUpdate.checked = s.autoUpdate !== false;
     selectedTheme = s.theme ?? 'auto';
@@ -137,7 +143,7 @@ export function createSettingsPane(
     const save = window.api.saveSettings({
       autostart: els.autostart.checked,
       autoUpdate: els.autoUpdate.checked,
-      theme: selectedTheme,
+      // The theme saves on its own (its handler can roll a failure back).
       silenceWarnings: els.silenceWarnings.checked,
       silenceErrors: els.silenceErrors.checked,
       maxLogLines,

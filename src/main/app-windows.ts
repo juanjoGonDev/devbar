@@ -221,8 +221,17 @@ export function createAppWindows(deps: AppWindowsDeps): AppWindows {
       });
       win.setMenuBarVisibility(false);
       win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-      void win.loadFile(deps.rendererFile('prescript-confirm.html'), {
-        query: { token },
+      // A page that fails to load never shows: close it, which answers the
+      // prompt as cancelled, so no queue (an install, a script) waits forever.
+      void Promise.resolve(
+        win.loadFile(deps.rendererFile('prescript-confirm.html'), {
+          query: { token },
+        }),
+      ).catch((err: unknown) => {
+        console.error(
+          `[confirm] no se pudo cargar la confirmación: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        if (!win.isDestroyed()) win.close();
       });
       win.once('ready-to-show', () => {
         win.show();

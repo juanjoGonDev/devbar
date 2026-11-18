@@ -11,6 +11,7 @@ import {
   type AssistedUpdateDeps,
 } from './assisted-update.js';
 import { createLinuxUpdateFlow, type LinuxUpdateDeps } from './linux-update.js';
+import { pruneStagedVersions } from './update-prune.js';
 import { downloadVerified } from './update-download.js';
 import { installStagedUpdate } from './install-staged-update.js';
 import {
@@ -211,24 +212,17 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     // restarts DevBar (and the services it runs), so it never happens alone.
     // Only about this copy: a newer release found meanwhile is the next
     // check's to stage and ask about, never an unrequested assisted download.
-    if (availableUpdate?.version === staged.version)
-      void applyUpdateAndReport();
+    // `swappable`: the staged copy is still the release and still fits the
+    // install folder; otherwise there is nothing to ask about here.
+    if (swappable()) void applyUpdateAndReport();
   }
 
-  /** Drop previously staged versions — each one is a full copy of the app. */
-  function pruneStagedUpdates(keep: string): void {
-    const updatesDir = deps.updatesDir();
-    try {
-      for (const entry of deps.updaterFs.readdirSync(updatesDir)) {
-        if (entry === keep) continue;
-        const candidate = path.join(updatesDir, entry);
-        if (!deps.updaterFs.isDirectory(candidate)) continue;
-        deps.updaterFs.rmSync(candidate, { recursive: true, force: true });
-      }
-    } catch (err) {
-      console.warn(`[updates] no se pudo limpiar: ${errorMessage(err)}`);
-    }
-  }
+  /** Drop the other staged versions, never the one being unpacked now. */
+  const pruneStagedUpdates = (keep: string): void =>
+    pruneStagedVersions(deps.updaterFs, deps.updatesDir(), [
+      keep,
+      stagingVersion,
+    ]);
 
   /**
    * Download the platform's update artifact in the background and stage it
@@ -275,8 +269,12 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       failure = `no se pudo preparar: ${errorMessage(err)}`;
       phase.set({ state: 'download-failed', version, reason: failure });
     } finally {
-      deps.updaterFs.rmSync(filePath, { force: true });
-      stagingVersion = null;
+      stagingVersion = null; // first: a failed removal must not keep the slot
+      try {
+        deps.updaterFs.rmSync(filePath, { force: true });
+      } catch (err) {
+        console.warn(`[updates] no se pudo borrar: ${errorMessage(err)}`);
+      }
       // Housekeeping, deliberately outside the try: a prune that trips over a
       // dangling entry must not mark a perfectly good download as failed and
       // swallow the "restart to install" notice for the rest of the session.
@@ -333,7 +331,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     const update = availableUpdate;
     const current = phase.get();
     // `asking`: the install modal is already up; a second one would queue.
-    if (isBusyPhase(current) || stagingVersion === update.version || asking)
+    if (isBusyPhase(current) || stagingVersion !== null || asking)
       return { ok: false, busy: true };
     const staged = stagedUpdate;
     const target = deps.installedAppPath();
@@ -382,6 +380,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       !staged ||
       staged.version !== availableUpdate?.version ||
       isBusyPhase(phase.get()) ||
+      stagingVersion !== null ||
       !deps.canInstallInPlace(target)
     )
       return null;
@@ -471,6 +470,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       // A real download finishing later would prune what this stages, even
       // with its modal open (the real paths never open one mid-download).
       if (asking || stagingVersion !== null) throw new Error(MODAL_OWNS_UPDATE);
+      // Unpacking over the staged copy would wipe it before knowing it works.
+      if (stagedUpdate?.version === update.version)
+        throw new Error(`v${update.version} ya está preparada`);
       stagingVersion = update.version; // and no real download starts meanwhile
       const unpacking = deps.extractUpdate({
         zipPath,
@@ -497,7 +499,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     },
 
     setSimulatedUpdate(update): void {
-      if (asking) throw new Error(MODAL_OWNS_UPDATE);
+      if (asking || stagingVersion !== null) throw new Error(MODAL_OWNS_UPDATE);
       devUpdateSimulated = update !== null;
       availableUpdate = update;
     },
