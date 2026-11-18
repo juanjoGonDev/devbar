@@ -461,6 +461,11 @@ export function createUpdater(deps: UpdaterDeps): Updater {
      * locally built zip — the half where a bad bundle would actually bite.
      */
     async stageFromZip(zipPath, version): Promise<void> {
+      // Same rule as stageUpdate: the open modal owns the staged copy.
+      if (asking)
+        throw new Error(
+          'hay un aviso de instalación abierto: contéstalo antes de simular otra versión',
+        );
       stagedUpdate = await deps.extractUpdate({
         zipPath,
         destDir: path.join(deps.updatesDir(), version),

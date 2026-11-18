@@ -148,6 +148,24 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
+    it('refuses a simulated staging while the modal waits, keeping its copy', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const h = harness({
+        confirmInstall: (version) => {
+          h.asked.push(version);
+          return new Promise<boolean>(() => undefined);
+        },
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() => expect(h.asked).toEqual(['1.3.0']));
+      await expect(
+        h.updater.stageFromZip('/tmp/DevBar.zip', '1.4.0'),
+      ).rejects.toThrow(/aviso de instalación/);
+      expect(h.calls).not.toContain('extract:/tmp/DevBar.zip');
+      expect(h.updater.staged()?.version).toBe('1.3.0');
+      log.mockRestore();
+    });
+
     it('skips the automatic check while automatic updates are off', async () => {
       const checkForUpdate = vi.fn(() => Promise.resolve(update));
       const h = harness({ autoUpdate: () => false, checkForUpdate });
