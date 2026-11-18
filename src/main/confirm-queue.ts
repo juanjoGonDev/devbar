@@ -105,6 +105,11 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
    * confirmation too.
    */
   let pipelineConfirmGeneration = 0;
+  /**
+   * Bumped by every script or pre-script confirmation: an install prompt
+   * still waiting for its turn when one arrives steps aside before it shows.
+   */
+  let updateConfirmGeneration = 0;
 
   function resolveConfirm(token: string, decision: ConfirmDecision): void {
     const entry = pendingConfirms.get(token);
@@ -175,12 +180,16 @@ export function createConfirmQueue(deps: ConfirmQueueDeps): ConfirmQueue {
     // An install prompt waits with no countdown, possibly with nobody at the
     // desk: it must not hold a script's confirmation (and its countdown)
     // back. It steps aside unanswered; the update stays ready in About.
-    if (origin !== 'update')
+    if (origin !== 'update') {
+      updateConfirmGeneration += 1;
       for (const [token, entry] of pendingConfirms)
         if (entry.origin === 'update') resolveConfirm(token, 'cancel');
+    }
     const generation = pipelineConfirmGeneration;
+    const updateGeneration = updateConfirmGeneration;
     const run = (): Promise<boolean> =>
-      origin === 'pipeline' && generation !== pipelineConfirmGeneration
+      (origin === 'pipeline' && generation !== pipelineConfirmGeneration) ||
+      (origin === 'update' && updateGeneration !== updateConfirmGeneration)
         ? Promise.resolve(false)
         : show(); // never rejects
     const result = confirmChain.then(run, run);

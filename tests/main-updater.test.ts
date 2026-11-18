@@ -159,7 +159,10 @@ describe('src/main/updater.ts', () => {
       await h.updater.runUpdateCheck();
       await vi.waitFor(() => expect(h.asked).toEqual(['1.3.0']));
       await expect(
-        h.updater.stageFromZip('/tmp/DevBar.zip', '1.4.0'),
+        h.updater.stageFromZip('/tmp/DevBar.zip', {
+          ...update,
+          version: '1.4.0',
+        }),
       ).rejects.toThrow(/aviso de instalación/);
       expect(h.calls).not.toContain('extract:/tmp/DevBar.zip');
       expect(h.updater.staged()?.version).toBe('1.3.0');
@@ -216,14 +219,29 @@ describe('src/main/updater.ts', () => {
       log.mockRestore();
     });
 
+    it('leaves the release as it was when the simulated copy fails to unpack', async () => {
+      const h = harness({
+        extractUpdate: () => Promise.reject(new Error('bad zip')),
+      });
+      await expect(
+        h.updater.stageFromZip('/tmp/DevBar.zip', {
+          ...update,
+          version: '1.4.0',
+        }),
+      ).rejects.toThrow('bad zip');
+      expect(h.updater.available()).toBeNull();
+      expect(h.updater.staged()).toBeNull();
+    });
+
     it('refuses a simulated staging while a real download runs', async () => {
       const h = harness({
         downloadFile: () => new Promise<string>(() => undefined),
       });
       await h.updater.runUpdateCheck();
       await expect(
-        h.updater.stageFromZip('/tmp/DevBar.zip', '1.3.0'),
+        h.updater.stageFromZip('/tmp/DevBar.zip', update),
       ).rejects.toThrow(/descarga en curso/);
+      expect(h.updater.available(), 'nothing published').toEqual(update);
       expect(h.calls).not.toContain('extract:/tmp/DevBar.zip');
       expect(h.asked).toEqual([]);
     });
@@ -505,9 +523,11 @@ describe('src/main/updater.ts', () => {
     it('stages a locally built zip through the real announce path', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
       const h = harness();
-      // As the dev panel does: the simulated release first, then its zip.
-      h.updater.setSimulatedUpdate({ ...update, version: '1.4.0' });
-      await h.updater.stageFromZip('/tmp/DevBar.zip', '1.4.0');
+      await h.updater.stageFromZip('/tmp/DevBar.zip', {
+        ...update,
+        version: '1.4.0',
+      });
+      expect(h.updater.available()?.version).toBe('1.4.0');
       expect(h.calls).toContain('extract:/tmp/DevBar.zip');
       expect(h.updater.staged()?.version).toBe('1.4.0');
       expect(h.notices.at(-1)).toMatch(/v1.4.0 lista/);

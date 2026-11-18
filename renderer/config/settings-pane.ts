@@ -61,12 +61,38 @@ export function createSettingsPane(
     }
   }
 
+  // The instant-save controls (the log limit's −/+ included) stay disabled
+  // until the stored settings are on screen: an edit made before would never
+  // be saved, or would be overwritten by the read.
+  const stepperButtons = [
+    ...(els.maxLogLines
+      .closest('.num-stepper')
+      ?.querySelectorAll<HTMLButtonElement>('button') ?? []),
+  ];
+  function holdControls(held: boolean): void {
+    for (const control of [
+      els.autostart,
+      els.autoUpdate,
+      els.silenceWarnings,
+      els.silenceErrors,
+      els.maxLogLines,
+      els.notifySuccess,
+      els.showHiddenGroupsFold,
+      els.showHiddenWorkflowsFold,
+      ...stepperButtons,
+    ])
+      control.disabled = held;
+    // The stepper decides its own buttons at the bounds.
+    if (!held) logLinesStepper.refresh();
+  }
+
   async function loadSettings(): Promise<boolean> {
     // Reset BEFORE the read: a rejection on a retry (e.g. the post-import
     // reload) must re-block the controls and re-arm the focus retry — if a
     // previous load had succeeded, settingsLoaded would still be true and
     // stale controls could persist over the imported settings.
     settingsLoaded = false;
+    holdControls(true);
     let s: Awaited<ReturnType<typeof window.api.getSettings>>;
     try {
       s = await window.api.getSettings();
@@ -91,6 +117,7 @@ export function createSettingsPane(
       els.notifySuccess.checked = s.notifySuccess !== false;
     els.showHiddenGroupsFold.checked = s.showHiddenGroupsFold !== false;
     els.showHiddenWorkflowsFold.checked = s.showHiddenWorkflowsFold === true;
+    holdControls(false);
     settingsLoaded = true;
     return true;
   }
@@ -122,22 +149,10 @@ export function createSettingsPane(
     } catch (err) {
       if (token !== settingsSaveSeq) return; // a newer save owns the controls
       // The controls may show a change that was never stored: say so, then
-      // read back what was, holding the controls so no edit is lost to it.
+      // read back what was (loadSettings holds the controls meanwhile).
       const failure = `No se pudieron guardar los ajustes: ${errorMessage(err)}.`;
       showToast(failure, 'error');
-      const held = [
-        els.autostart,
-        els.autoUpdate,
-        els.silenceWarnings,
-        els.silenceErrors,
-        els.maxLogLines,
-        els.notifySuccess,
-        els.showHiddenGroupsFold,
-        els.showHiddenWorkflowsFold,
-      ];
-      for (const control of held) control.disabled = true;
       const restored = await loadSettings();
-      for (const control of held) control.disabled = false;
       if (restored)
         showToast(`${failure} Ahora se muestran los guardados.`, 'error');
       return;

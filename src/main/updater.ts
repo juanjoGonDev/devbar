@@ -117,7 +117,7 @@ export interface Updater {
   copyInstallCommand: () => SimpleResult;
   showDownloadedFile: () => SimpleResult;
   /** Dev simulation: stage a locally built zip through the real code path. */
-  stageFromZip: (zipPath: string, version: string) => Promise<void>;
+  stageFromZip: (zipPath: string, update: AvailableUpdate) => Promise<void>;
   pruneStagedUpdates: (keep: string) => void;
   installedBundleId: () => string | null;
   /** A staged update matching the release can be swapped in right now. */
@@ -135,7 +135,7 @@ const BANNER_TITLE = 'DevBar — actualización';
  * waits: it owns the staged copy, and the release it asks about must stay the
  * one a phone can install too.
  */
-const MODAL_OWNS_UPDATE = 'contesta antes el aviso de instalación abierto';
+const MODAL_OWNS_UPDATE = 'aviso de instalación abierto o descarga en curso';
 const OPEN_UPDATES = { cta: { label: 'Ver', action: 'open-about' } };
 
 export function createUpdater(deps: UpdaterDeps): Updater {
@@ -345,9 +345,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     ) {
       asking = true;
       try {
-        res = await installStagedUpdate(deps, phase, staged, target, {
-          ask: true,
-        });
+        res = await installStagedUpdate(deps, phase, staged, target);
       } finally {
         asking = false;
       }
@@ -471,17 +469,20 @@ export function createUpdater(deps: UpdaterDeps): Updater {
      * download so the dev simulation can exercise this half for real with a
      * locally built zip — the half where a bad bundle would actually bite.
      */
-    async stageFromZip(zipPath, version): Promise<void> {
-      if (asking) throw new Error(MODAL_OWNS_UPDATE);
+    async stageFromZip(zipPath, update): Promise<void> {
       // A real download finishing later would prune what this stages, even
       // with its modal open (the real paths never open one mid-download).
-      if (stagingVersion !== null) throw new Error('hay una descarga en curso');
-      stagedUpdate = await deps.extractUpdate({
+      if (asking || stagingVersion !== null) throw new Error(MODAL_OWNS_UPDATE);
+      const staged = await deps.extractUpdate({
         zipPath,
-        destDir: path.join(deps.updatesDir(), version),
-        version,
+        destDir: path.join(deps.updatesDir(), update.version),
+        version: update.version,
       });
-      announceStaged(stagedUpdate);
+      // Published only with its copy on disk: a failure leaves it as it was.
+      devUpdateSimulated = true;
+      availableUpdate = update;
+      stagedUpdate = staged;
+      announceStaged(staged);
     },
 
     /**

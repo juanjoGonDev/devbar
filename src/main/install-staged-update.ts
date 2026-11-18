@@ -52,7 +52,7 @@ export async function installStagedUpdate(
   phase: PhaseStore,
   staged: StagedUpdate,
   target: string,
-  { ask }: { ask: boolean },
+  { ask = true }: { ask?: boolean } = {},
 ): Promise<ApplyUpdateResult> {
   if (ask) {
     const refusal = await confirmed(deps, staged);

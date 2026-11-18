@@ -165,6 +165,40 @@ describe('renderer/config/settings-pane.ts', () => {
       expect(toastText()).toContain('se muestran los guardados');
     });
 
+    it('holds the log limit stepper while the stored settings are read back', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      input('set-auto-update').checked = true;
+      input('set-auto-update').dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      const steppers = [
+        ...(input('set-max-log-lines')
+          .closest('.num-stepper')
+          ?.querySelectorAll<HTMLButtonElement>('button') ?? []),
+      ];
+      expect(steppers.length).toBeGreaterThan(0);
+      expect(steppers.every((button) => button.disabled)).toBe(true);
+      await win.settle('getSettings', settings());
+      expect(steppers.some((button) => !button.disabled)).toBe(true);
+    });
+
+    it('keeps the controls held until a read succeeds', async () => {
+      win = await openConfigWindow();
+      await answerBystanderSettingsReads(win);
+      await win.settle('getSettings', settings());
+      const toggle = input('set-auto-update');
+      toggle.checked = true;
+      toggle.dispatchEvent(new Event('change'));
+      await win.fail('saveSettings', new Error('disk full'));
+      await win.fail('getSettings', new Error('store locked'));
+      expect(toggle.disabled, 'an edit now would never be saved').toBe(true);
+      // Windows earlier tests left unloaded re-read too; this one's is newest.
+      window.dispatchEvent(new Event('focus'));
+      await win.settleNewest('getSettings', settings());
+      expect(toggle.disabled).toBe(false);
+    });
+
     it('claims no restore when the read back fails too', async () => {
       win = await openConfigWindow();
       await answerBystanderSettingsReads(win);

@@ -63,7 +63,10 @@ function deps(overrides: Partial<DevPanelDeps> = {}) {
     toast: () => calls.push('toast'),
     installedBundle: () => '/Applications/DevBar.app',
     updatesDir: () => '/home/updates',
-    stageFromZip: () => Promise.resolve(),
+    stageFromZip: (_zip, update) => {
+      calls.push(`stage:${update.version}`);
+      return Promise.resolve();
+    },
     removeFile: () => calls.push('removeFile'),
     stagedVersion: () => '1.3.0',
     pruneStagedUpdates: (keep) => calls.push(`prune:${keep}`),
@@ -123,28 +126,21 @@ describe('src/main/dev-panel.ts', () => {
     it('prunes by what IS staged after a local staging run', async () => {
       const d = deps();
       await createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated);
-      expect(d.calls).toEqual([
-        'setSimulatedUpdate',
-        'refreshTrayIcon',
-        'broadcastUpdateStatus',
-        'removeFile',
-        'prune:1.3.0',
-      ]);
+      expect(d.calls).toEqual(['stage:1.3.0', 'removeFile', 'prune:1.3.0']);
     });
 
-    it('stages nothing, and still cleans up, when the release is refused', async () => {
-      const stageFromZip = vi.fn(() => Promise.resolve());
+    it('hands the release to the updater, which publishes it with its copy', async () => {
       const d = deps({
-        setSimulatedUpdate: () => {
-          throw new Error('aviso de instalación abierto');
-        },
-        stageFromZip,
+        stageFromZip: () =>
+          Promise.reject(new Error('aviso de instalación abierto')),
       });
       await expect(
         createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated),
       ).rejects.toThrow('aviso de instalación abierto');
-      expect(stageFromZip).not.toHaveBeenCalled();
-      expect(d.calls).toEqual(['removeFile', 'prune:1.3.0']);
+      expect(d.calls, 'never published on its own').toEqual([
+        'removeFile',
+        'prune:1.3.0',
+      ]);
     });
 
     it('still cleans up when staging fails, and prunes nothing with no staged copy', async () => {
@@ -155,12 +151,7 @@ describe('src/main/dev-panel.ts', () => {
       await expect(
         createDevHooks(d.base).stageLocalUpdate('/tmp/a.zip', simulated),
       ).rejects.toThrow('bad zip');
-      expect(d.calls).toEqual([
-        'setSimulatedUpdate',
-        'refreshTrayIcon',
-        'broadcastUpdateStatus',
-        'removeFile',
-      ]);
+      expect(d.calls).toEqual(['removeFile']);
     });
   });
 

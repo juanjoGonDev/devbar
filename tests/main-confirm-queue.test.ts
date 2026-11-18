@@ -262,6 +262,38 @@ describe('src/main/confirm-queue.ts', () => {
       await expect(command).resolves.toBe(true);
     });
 
+    it('steps aside before it ever shows when a script arrives first', async () => {
+      const { queue, windows } = harness();
+      const install = queue.confirmInstall('1.3.0');
+      const command = queue.confirmIfNeeded(
+        makeCommand({ confirm: true }),
+        null,
+      );
+      await expect(install).resolves.toBe(false);
+      await tick();
+      expect(windows, 'only the script modal opened').toHaveLength(1);
+      queue.resolveConfirm('t1', 'confirm');
+      await expect(command).resolves.toBe(true);
+    });
+
+    it('steps aside while waiting its turn behind another confirmation', async () => {
+      const { queue, windows } = harness();
+      const first = queue.confirmScript(script, null);
+      await tick();
+      const install = queue.confirmInstall('1.3.0');
+      const command = queue.confirmIfNeeded(
+        makeCommand({ confirm: true }),
+        null,
+      );
+      queue.resolveConfirm('t1', 'confirm');
+      await expect(first).resolves.toBe(true);
+      await expect(install).resolves.toBe(false);
+      await tick();
+      expect(windows).toHaveLength(2);
+      queue.resolveConfirm('t2', 'confirm');
+      await expect(command).resolves.toBe(true);
+    });
+
     it('steps aside for a pre-script as well', async () => {
       const { queue } = harness();
       const install = queue.confirmInstall('1.3.0');

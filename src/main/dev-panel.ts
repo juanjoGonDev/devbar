@@ -39,7 +39,8 @@ export interface DevPanelDeps {
   toast: (kind: string, message: string) => void;
   installedBundle: () => string | null;
   updatesDir: () => string;
-  stageFromZip: (zipPath: string, version: string) => Promise<void>;
+  /** Stages the zip and, only once it is unpacked, publishes `update`. */
+  stageFromZip: (zipPath: string, update: AvailableUpdate) => Promise<void>;
   removeFile: (target: string) => void;
   stagedVersion: () => string | null;
   pruneStagedUpdates: (keep: string) => void;
@@ -171,10 +172,9 @@ export function createDevHooks(deps: DevPanelDeps): DevHooks {
     updatesDir: () => deps.updatesDir(),
     stageLocalUpdate: async (zipPath, update) => {
       try {
-        // Published only now, with its bundle built: a refusal (the install
-        // modal waiting) throws here, before anything changes.
-        setSimulatedUpdate(update);
-        await deps.stageFromZip(zipPath, update.version);
+        // The updater publishes `update` only with its copy unpacked, so a
+        // refusal or a failure leaves the release as it was.
+        await deps.stageFromZip(zipPath, update);
       } finally {
         deps.removeFile(zipPath);
         // Prune by what IS staged, not by what we wanted to stage: on a failure

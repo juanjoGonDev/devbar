@@ -207,6 +207,18 @@ describe('renderer/prescript-confirm.ts', () => {
       ]);
     });
 
+    it('takes no yes, only a no, before it shows what it asks', async () => {
+      const gate = await openGate('?token=t1');
+      byId('pc-btn-confirm').dispatchEvent(
+        new MouseEvent('click', { bubbles: true, detail: 1 }),
+      );
+      expect(gate.callCount('resolvePrescriptConfirm')).toBe(0);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(gate.argsFor('resolvePrescriptConfirm')).toEqual([
+        ['t1', 'cancel'],
+      ]);
+    });
+
     it('ignores Enter before it knows what it is asking', async () => {
       const gate = await openGate('?token=t1');
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));

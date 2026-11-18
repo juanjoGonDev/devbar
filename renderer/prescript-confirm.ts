@@ -10,6 +10,9 @@ let decided = false;
 // the question is on screen, and never where only a click may (installing an
 // update: see `clickToConfirm`).
 let keyboardConfirms = false;
+// No yes at all, not even a click, before the question is on screen: the
+// window may show while its context is still loading. A no is always fine.
+let asked = false;
 function decide(decision: 'confirm' | 'cancel'): void {
   if (decided || !token) return;
   decided = true;
@@ -26,6 +29,7 @@ async function init(): Promise<void> {
     window.close();
     return;
   }
+  asked = true;
   keyboardConfirms = context.clickToConfirm !== true;
   const logo = byId('pc-logo', HTMLImageElement);
   if (context.logo) logo.src = context.logo;
@@ -73,7 +77,7 @@ async function init(): Promise<void> {
 byId('pc-btn-confirm', HTMLButtonElement).addEventListener('click', (event) => {
   // Enter or Space on the focused button clicks it with no pointer behind it
   // (detail 0): not a click, where only a click may say yes.
-  if (event.detail === 0 && !keyboardConfirms) return;
+  if (!asked || (event.detail === 0 && !keyboardConfirms)) return;
   decide('confirm');
 });
 byId('pc-btn-cancel', HTMLButtonElement).addEventListener('click', () =>
