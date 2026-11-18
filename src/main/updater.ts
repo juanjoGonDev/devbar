@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { errorMessage } from './ipc-validators.js';
 import {
-  parseBundleId,
+  installedBundleIdOf,
   shouldNotifyUpdate,
   shouldStageUpdate,
 } from './update-plan.js';
@@ -15,7 +15,7 @@ import { pruneStagedVersions } from './update-prune.js';
 import { downloadVerified } from './update-download.js';
 import { installStagedUpdate } from './install-staged-update.js';
 import {
-  applyReport,
+  applyAndReport,
   copyPhaseCommand,
   noticeReady,
   showPhaseFile,
@@ -147,6 +147,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   let stagedUpdate: StagedUpdate | null = null; // downloaded, waiting for restart
   let stagingVersion: string | null = null; // download in flight, avoid duplicates
   let asking = false; // the install modal is waiting for an answer
+  // A newer release a check found while another downloaded, and whether that
+  // check was asked for: it gets the slot when the download ends.
+  let pendingStage: { update: AvailableUpdate; manual: boolean } | null = null;
   // The automatic loop must not re-pull ~100 MB every 5 minutes after a
   // failure; an explicit retry from the user clears the entry.
   const stagingFailedVersions = new Set<string>();
@@ -191,12 +194,11 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 
   function announceStaged(staged: StagedUpdate): void {
     // A newer release turned up while this one downloaded: this copy is no
-    // longer the update, so it is neither announced nor offered, and the
-    // newer one is staged now (one download at a time).
+    // longer the update, so it is neither announced nor offered (the newer
+    // one waits in `pendingStage` for the slot).
     if (availableUpdate && availableUpdate.version !== staged.version) {
       phase.set({ state: 'available', version: availableUpdate.version });
       broadcastStatus();
-      void stageUpdate(availableUpdate);
       return;
     }
     console.log(`[updates] v${staged.version} descargada, lista para instalar`);
@@ -231,8 +233,15 @@ export function createUpdater(deps: UpdaterDeps): Updater {
    * next to our config. Resolves the failure reason, or null. A failure stays
    * visible (phase + banner) and can be retried from the Updates pane.
    */
-  async function stageUpdate(update: AvailableUpdate): Promise<string | null> {
+  async function stageUpdate(
+    update: AvailableUpdate,
+    manual = false,
+  ): Promise<string | null> {
     const { version } = update;
+    if (stagingVersion !== null && stagingVersion !== version) {
+      pendingStage = { update, manual }; // one download at a time
+      return null;
+    }
     // Once a swap is under way, a new staging would prune the copy it uses.
     if (isBusyPhase(phase.get())) return null;
     if (
@@ -295,6 +304,12 @@ export function createUpdater(deps: UpdaterDeps): Updater {
           OPEN_UPDATES,
         );
     }
+    // Its turn now, success or not, if its check was asked for or automatic
+    // updates are still on.
+    const next = pendingStage;
+    pendingStage = null;
+    if (next && (next.manual || deps.autoUpdate()))
+      void stageUpdate(next.update, next.manual);
     return failure;
   }
 
@@ -364,17 +379,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
    * applyUpdate for surfaces that cannot show the result themselves: failures
    * and "your turn" steps become a banner that opens the Updates pane.
    */
-  async function applyUpdateAndReport(): Promise<void> {
-    let res: ApplyUpdateResult;
-    try {
-      res = await applyUpdate();
-    } catch (err) {
-      res = { ok: false, error: errorMessage(err) };
-      console.error(`[updates] no se pudo actualizar: ${res.error}`);
-    }
-    const report = applyReport(res, phase.get());
-    if (report) deps.showBannerNotification(BANNER_TITLE, report, OPEN_UPDATES);
-  }
+  const applyUpdateAndReport = (): Promise<void> =>
+    applyAndReport(applyUpdate, phase.get, (report) =>
+      deps.showBannerNotification(BANNER_TITLE, report, OPEN_UPDATES),
+    );
 
   /** The staged update and where it goes, when a swap could start now. */
   const swappable = (): { staged: StagedUpdate; target: string } | null => {
@@ -458,7 +466,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
         // the download is on disk — one notice ("reinicia") beats two.
         if (deps.stageableAsset(found, deps.installedAppPath())) {
           // The switch may have gone off while the check was in flight.
-          if (manual || deps.autoUpdate()) void stageUpdate(found);
+          if (manual || deps.autoUpdate()) void stageUpdate(found, manual);
         } else notifyUpdateAvailable(found, manual);
       }
       broadcastStatus();
@@ -491,16 +499,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       announceStaged(staged);
     },
 
-    /**
-     * This build's CFBundleIdentifier, read back from the bundle it is running
-     * out of. Null in a dev run, which has no bundle of ours.
-     */
-    installedBundleId(): string | null {
-      const bundle = deps.installedAppPath();
-      if (!bundle || !deps.isMac) return null;
-      const plist = deps.updaterFs.readInstalledPlist(bundle);
-      return plist === null ? null : parseBundleId(plist);
-    },
+    installedBundleId: () => installedBundleIdOf(deps),
 
     setSimulatedUpdate(update): void {
       if (asking || stagingVersion !== null) throw new Error(MODAL_OWNS_UPDATE);

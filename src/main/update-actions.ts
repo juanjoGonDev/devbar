@@ -1,3 +1,4 @@
+import { errorMessage } from './ipc-validators.js';
 import type { ApplyUpdateResult } from './assisted-update.js';
 import type { UpdatePhase } from '../ipc-contract.js';
 
@@ -15,7 +16,7 @@ export type SimpleResult = { ok: true } | { ok: false; error: string };
  * The banner text an apply result deserves, or null when there is nothing to
  * say: a cancel, a flow already running, or a restart that is under way.
  */
-export function applyReport(
+function applyReport(
   res: ApplyUpdateResult,
   phase: UpdatePhase,
 ): string | null {
@@ -26,6 +27,27 @@ export function applyReport(
   if (phase.state === 'ready-to-install' && phase.install !== 'restart')
     return `v${phase.version} descargada. Instálala desde Configuración → Acerca de.`;
   return null;
+}
+
+/**
+ * An apply for a surface that cannot show its result itself (the tray menu,
+ * a notification button, the automatic install prompt): failures and "your
+ * turn" steps become a banner through `report`. Never rejects.
+ */
+export async function applyAndReport(
+  apply: () => Promise<ApplyUpdateResult>,
+  currentPhase: () => UpdatePhase,
+  report: (text: string) => void,
+): Promise<void> {
+  let res: ApplyUpdateResult;
+  try {
+    res = await apply();
+  } catch (err) {
+    res = { ok: false, error: errorMessage(err) };
+    console.error(`[updates] no se pudo actualizar: ${res.error}`);
+  }
+  const text = applyReport(res, currentPhase());
+  if (text) report(text);
 }
 
 export function copyPhaseCommand(

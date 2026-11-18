@@ -265,6 +265,62 @@ describe('src/main/updater.ts — install modal', () => {
     log.mockRestore();
   });
 
+  it('still stages the newer release a manual check asked for when the first download fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    let latest = update;
+    let failFirst: (reason: Error) => void = () => undefined;
+    const h = harness({
+      autoUpdate: () => false,
+      checkForUpdate: () => Promise.resolve(latest),
+      downloadFile: () => {
+        h.calls.push('download');
+        return h.calls.filter((call) => call === 'download').length === 1
+          ? new Promise<string>((_resolve, reject) => {
+              failFirst = reject;
+            })
+          : new Promise<string>(() => undefined);
+      },
+    });
+    await h.updater.runUpdateCheck({ manual: true });
+    latest = { ...update, version: '1.4.0' };
+    await h.updater.runUpdateCheck({ manual: true });
+    failFirst(new Error('network down'));
+    await vi.waitFor(() =>
+      expect(h.calls.filter((call) => call === 'download')).toHaveLength(2),
+    );
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it('downloads no newer release an automatic check found once the switch is off', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    let auto = true;
+    let latest = update;
+    let finish: () => void = () => undefined;
+    const h = harness({
+      autoUpdate: () => auto,
+      checkForUpdate: () => Promise.resolve(latest),
+      downloadFile: (_url, dest) => {
+        h.calls.push('download');
+        return new Promise<string>((resolve) => {
+          finish = () => resolve(dest);
+        });
+      },
+    });
+    await h.updater.runUpdateCheck();
+    latest = { ...update, version: '1.4.0' };
+    await h.updater.runUpdateCheck();
+    auto = false;
+    finish();
+    await vi.waitFor(() => expect(h.updater.staged()?.version).toBe('1.3.0'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.calls.filter((call) => call === 'download')).toHaveLength(1);
+    log.mockRestore();
+  });
+
   it('starts no new download once the swap has started', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     let latest = update;
