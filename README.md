@@ -69,7 +69,8 @@ pnpm run fetch-electron   # one-time: downloads the Electron binary for `pnpm st
 pnpm start
 ```
 
-> Requires pnpm ≥ 10.16 and Node ≥ 22.13.0 (enforced via `engine-strict`)
+> Requires pnpm ≥ 10.16 and Node 22.22.2+, 24.15.0+ or 26+ (enforced via
+> `engine-strict`; jsdom sets that range)
 > on macOS, Windows and Linux — no bash needed (the dev build runs in Node).
 > Use the pnpm pinned in `package.json` (`pnpm@10.32.1`), e.g. via corepack
 > (`corepack enable`) — other pnpm versions can flag the lockfile as out of
