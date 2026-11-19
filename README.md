@@ -125,7 +125,8 @@ OS instead of a macOS-specific name.
 The release workflow builds all three platforms in parallel, launches the
 packaged Windows and Linux binaries as a smoke test (NSIS install + portable
 on Windows, AppImage + deb under `xvfb` on Linux), assembles the full
-`SHA256SUMS.txt`, and publishes all 14 artifacts.
+`SHA256SUMS.txt`, and publishes every artifact listed in
+`scripts/release-artifacts.ts`.
 
 ## Install / reinstall
 
