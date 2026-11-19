@@ -101,11 +101,11 @@ const host = createElectronHost({
 });
 
 // File logger (main console now; each BrowserWindow's console is hooked
-// when it is created) plus the crash hooks that write through it.
-startMainDiagnostics(host);
-
-// Resource samples in app.log — fans-spin-up reports need numbers.
-attachProductionSampling(host, () => app.getAppMetrics());
+// when it is created) plus the crash hooks that write through it, and
+// resource samples in app.log (fans-spin-up reports need numbers). Primary
+// only: a second instance would rotate the running one's app.log away.
+if (isPrimary) startMainDiagnostics(host);
+if (isPrimary) attachProductionSampling(host, () => app.getAppMetrics());
 
 // ─────────────────────── Composition root ────────────────────────────
 
