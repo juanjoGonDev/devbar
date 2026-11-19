@@ -159,13 +159,13 @@ describe('platform updaters — staging and swap launch', () => {
       };
     }
 
-    /** `minimum: null` = an Info.plist without LSMinimumSystemVersion. */
+    /** `minimum` as an Error: how the LSMinimumSystemVersion read fails. */
     function withBundle(
       version = '1.2.3',
       {
         minimum = '13.0',
         host = '14.5',
-      }: { minimum?: string | null; host?: string } = {},
+      }: { minimum?: string | Error; host?: string } = {},
     ): void {
       dittoWrites((destDir) => {
         const app = path.join(destDir, 'DevBar.app', 'Contents');
@@ -174,7 +174,7 @@ describe('platform updaters — staging and swap launch', () => {
       });
       mocks.handlers['/usr/libexec/PlistBuddy'] = (args) => {
         if (!args[1]?.includes('LSMinimumSystemVersion')) return version;
-        if (minimum === null) throw new Error('Does Not Exist');
+        if (minimum instanceof Error) throw minimum;
         return minimum;
       };
       mocks.handlers['/usr/bin/sw_vers'] = () => host;
@@ -216,7 +216,11 @@ describe('platform updaters — staging and swap launch', () => {
     });
 
     it('stages a bundle that names no minimum macOS version', async () => {
-      withBundle('1.2.3', { minimum: null, host: '12.7.4' });
+      // What execFile rejects with: PlistBuddy's stderr is in the message.
+      const missing = new Error(
+        'Command failed: /usr/libexec/PlistBuddy\nPrint: Entry, ":LSMinimumSystemVersion", Does Not Exist\n',
+      );
+      withBundle('1.2.3', { minimum: missing, host: '12.7.4' });
       await expect(
         extractUpdate({
           zipPath: '/dl/DevBar.zip',
@@ -224,6 +228,22 @@ describe('platform updaters — staging and swap launch', () => {
           version: '1.2.3',
         }),
       ).resolves.toMatchObject({ version: '1.2.3' });
+    });
+
+    it('refuses a bundle whose minimum macOS version cannot be read', async () => {
+      // Only a missing key means "no floor": a read that crashed must not
+      // let a bundle this Mac may not launch through.
+      withBundle('1.2.3', {
+        minimum: new Error('Command failed: PlistBuddy killed by SIGKILL'),
+        host: '12.7.4',
+      });
+      await expect(
+        extractUpdate({
+          zipPath: '/dl/DevBar.zip',
+          destDir: path.join(tempDir(), 'stage'),
+          version: '1.2.3',
+        }),
+      ).rejects.toThrow('PlistBuddy killed by SIGKILL');
     });
 
     it('clears whatever a previous attempt left in the staging dir', async () => {

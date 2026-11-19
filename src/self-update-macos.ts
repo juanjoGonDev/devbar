@@ -76,12 +76,16 @@ export async function extractUpdate({
 
   // Electron raises its macOS floor now and then, and the swap deletes the
   // working copy: a bundle this Mac cannot launch must stop here. No key
-  // means no floor, which is how macOS reads it too.
+  // means no floor, which is how macOS reads it too; any other failure of
+  // the read must not pass for one.
   const minimum = await run('/usr/libexec/PlistBuddy', [
     '-c',
     'Print :LSMinimumSystemVersion',
     plist,
-  ]).catch(() => '');
+  ]).catch((err: Error) => {
+    if (err.message.includes('Does Not Exist')) return '';
+    throw err;
+  });
   const host = await run('/usr/bin/sw_vers', ['-productVersion']);
   if (isNewerVersion(minimum, host))
     throw new UnsupportedSystemError(
