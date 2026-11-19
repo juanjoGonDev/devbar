@@ -1,4 +1,3 @@
-import { normalizeArch } from '../update-check.js';
 import type { AvailableUpdate } from '../domain-types.js';
 import type { LinuxInstallShape } from './linux-package.js';
 
@@ -155,9 +154,7 @@ export function linuxUpdateArtifact(input: {
   shape: LinuxInstallShape;
   arch: string;
 }): LinuxUpdateArtifact | null {
-  const { version, update, shape } = input;
-  // linux-armv7.* — Node reports 32-bit ARM as `arm`.
-  const arch = normalizeArch('linux', input.arch);
+  const { version, update, shape, arch } = input;
   const deb = update.debUrl
     ? {
         url: update.debUrl,
