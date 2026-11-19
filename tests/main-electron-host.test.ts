@@ -16,6 +16,8 @@ const electron = vi.hoisted(() => ({
   emptyImage: true,
   /** What the next clipboard write rejects with; `null` resolves it. */
   clipboardError: null as Error | null,
+  /** A write the test settles itself; wins over `clipboardError`. */
+  clipboardWrite: null as Promise<void> | null,
 }));
 
 vi.mock('electron', () => {
@@ -62,6 +64,7 @@ vi.mock('electron', () => {
       // Electron >= 45: the main-process write is asynchronous.
       writeText: (text: string): Promise<void> => {
         electron.calls.push(`clipboard:${text}`);
+        if (electron.clipboardWrite) return electron.clipboardWrite;
         return electron.clipboardError
           ? Promise.reject(electron.clipboardError)
           : Promise.resolve();
@@ -497,6 +500,29 @@ describe('src/main/electron-host.ts', () => {
       electron.calls.length = 0;
       await expect(host().copyReport()).resolves.toEqual({ ok: true });
       expect(electron.calls).toEqual([expect.stringContaining('### Entorno')]);
+    });
+
+    it('holds both reports until the clipboard write completes', async () => {
+      let finishWrite = (): void => {};
+      electron.clipboardWrite = new Promise<void>((resolve) => {
+        finishWrite = resolve;
+      });
+      try {
+        const h = host();
+        const settled: string[] = [];
+        const issue = h.reportIssue().finally(() => settled.push('issue'));
+        const copy = h.copyReport().finally(() => settled.push('copy'));
+        // Every pending microtask has run by the next macrotask.
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(settled).toEqual([]);
+        finishWrite();
+        expect((await issue).url).toMatch(
+          /^https:\/\/github\.com\/.+\/issues\/new/,
+        );
+        await expect(copy).resolves.toEqual({ ok: true });
+      } finally {
+        electron.clipboardWrite = null;
+      }
     });
 
     it('answers ok: false when the clipboard write is refused', async () => {
