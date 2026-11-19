@@ -86,8 +86,11 @@ vi.mock('node:child_process', () => ({
   },
 }));
 
-const { extractUpdate, spawnSwap: macSpawnSwap } =
-  await import('../src/self-update-macos.js');
+const {
+  extractUpdate,
+  spawnSwap: macSpawnSwap,
+  UnsupportedSystemError,
+} = await import('../src/self-update-macos.js');
 const { stageAppImage, spawnSwap: linuxSpawnSwap } =
   await import('../src/self-update-linux.js');
 const {
@@ -200,15 +203,16 @@ describe('platform updaters — staging and swap launch', () => {
       // The swap deletes the working copy, so a bundle this Mac cannot
       // launch has to be stopped before it is ever staged.
       withBundle('1.2.3', { minimum: '13.0', host: '12.7.4' });
-      await expect(
-        extractUpdate({
-          zipPath: '/dl/DevBar.zip',
-          destDir: path.join(tempDir(), 'stage'),
-          version: '1.2.3',
-        }),
-      ).rejects.toThrow(
+      const staging = extractUpdate({
+        zipPath: '/dl/DevBar.zip',
+        destDir: path.join(tempDir(), 'stage'),
+        version: '1.2.3',
+      });
+      await expect(staging).rejects.toThrow(
         'v1.2.3 necesita macOS 13.0 o posterior y este Mac tiene macOS 12.7.4',
       );
+      // The updater keys on the class to keep every other route closed.
+      await expect(staging).rejects.toBeInstanceOf(UnsupportedSystemError);
     });
 
     it('stages a bundle that names no minimum macOS version', async () => {
