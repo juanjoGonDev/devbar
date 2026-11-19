@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { harness, update } from './helpers/updater-harness.js';
+import { UnsupportedSystemError } from '../src/self-update-macos.js';
 
 /**
  * Staged, and the install modal that staging opens on its own already
@@ -222,6 +223,30 @@ describe('src/main/updater.ts', () => {
         }),
       );
       expect(h.banners.at(-1)).toMatch(/No se pudo preparar v1.3.0/);
+      vi.restoreAllMocks();
+    });
+
+    it('never retries through the .dmg a release this Mac cannot launch', async () => {
+      // «Reintentar» lands in applyUpdate, which falls back to the assisted
+      // .dmg when nothing is staged: that route never runs the system check.
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const reason =
+        'v1.3.0 necesita macOS 13.0 o posterior y este Mac tiene macOS 12.7.4';
+      const messageBox = vi.fn(() => Promise.resolve({ response: 1 }));
+      const h = harness({
+        messageBox,
+        stageDownloadedArtifact: () =>
+          Promise.reject(new UnsupportedSystemError(reason)),
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() =>
+        expect(h.updater.status().phase.state).toBe('download-failed'),
+      );
+      await expect(h.updater.applyUpdate()).resolves.toEqual({
+        ok: false,
+        error: reason,
+      });
+      expect(messageBox, 'no assisted .dmg download').not.toHaveBeenCalled();
       vi.restoreAllMocks();
     });
 

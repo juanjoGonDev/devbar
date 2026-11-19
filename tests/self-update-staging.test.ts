@@ -86,8 +86,11 @@ vi.mock('node:child_process', () => ({
   },
 }));
 
-const { extractUpdate, spawnSwap: macSpawnSwap } =
-  await import('../src/self-update-macos.js');
+const {
+  extractUpdate,
+  spawnSwap: macSpawnSwap,
+  UnsupportedSystemError,
+} = await import('../src/self-update-macos.js');
 const { stageAppImage, spawnSwap: linuxSpawnSwap } =
   await import('../src/self-update-linux.js');
 const {
@@ -156,13 +159,25 @@ describe('platform updaters — staging and swap launch', () => {
       };
     }
 
-    function withBundle(version = '1.2.3'): void {
+    /** `minimum` as an Error: how the LSMinimumSystemVersion read fails. */
+    function withBundle(
+      version = '1.2.3',
+      {
+        minimum = '13.0',
+        host = '14.5',
+      }: { minimum?: string | Error; host?: string } = {},
+    ): void {
       dittoWrites((destDir) => {
         const app = path.join(destDir, 'DevBar.app', 'Contents');
         fs.mkdirSync(app, { recursive: true });
         fs.writeFileSync(path.join(app, 'Info.plist'), '<plist/>');
       });
-      mocks.handlers['/usr/libexec/PlistBuddy'] = () => version;
+      mocks.handlers['/usr/libexec/PlistBuddy'] = (args) => {
+        if (!args[1]?.includes('LSMinimumSystemVersion')) return version;
+        if (minimum instanceof Error) throw minimum;
+        return minimum;
+      };
+      mocks.handlers['/usr/bin/sw_vers'] = () => host;
       mocks.handlers['/usr/bin/codesign'] = () => '';
     }
 
@@ -178,8 +193,57 @@ describe('platform updaters — staging and swap launch', () => {
       expect(mocks.execFileCalls.map((call) => call.file)).toEqual([
         '/usr/bin/ditto',
         '/usr/libexec/PlistBuddy',
+        '/usr/libexec/PlistBuddy',
+        '/usr/bin/sw_vers',
         '/usr/bin/codesign',
       ]);
+    });
+
+    it('refuses a bundle that needs a newer macOS than this Mac runs', async () => {
+      // The swap deletes the working copy, so a bundle this Mac cannot
+      // launch has to be stopped before it is ever staged.
+      withBundle('1.2.3', { minimum: '13.0', host: '12.7.4' });
+      const staging = extractUpdate({
+        zipPath: '/dl/DevBar.zip',
+        destDir: path.join(tempDir(), 'stage'),
+        version: '1.2.3',
+      });
+      await expect(staging).rejects.toThrow(
+        'v1.2.3 necesita macOS 13.0 o posterior y este Mac tiene macOS 12.7.4',
+      );
+      // The updater keys on the class to keep every other route closed.
+      await expect(staging).rejects.toBeInstanceOf(UnsupportedSystemError);
+    });
+
+    it('stages a bundle that names no minimum macOS version', async () => {
+      // What execFile rejects with: PlistBuddy's stderr is in the message.
+      const missing = new Error(
+        'Command failed: /usr/libexec/PlistBuddy\nPrint: Entry, ":LSMinimumSystemVersion", Does Not Exist\n',
+      );
+      withBundle('1.2.3', { minimum: missing, host: '12.7.4' });
+      await expect(
+        extractUpdate({
+          zipPath: '/dl/DevBar.zip',
+          destDir: path.join(tempDir(), 'stage'),
+          version: '1.2.3',
+        }),
+      ).resolves.toMatchObject({ version: '1.2.3' });
+    });
+
+    it('refuses a bundle whose minimum macOS version cannot be read', async () => {
+      // Only a missing key means "no floor": a read that crashed must not
+      // let a bundle this Mac may not launch through.
+      withBundle('1.2.3', {
+        minimum: new Error('Command failed: PlistBuddy killed by SIGKILL'),
+        host: '12.7.4',
+      });
+      await expect(
+        extractUpdate({
+          zipPath: '/dl/DevBar.zip',
+          destDir: path.join(tempDir(), 'stage'),
+          version: '1.2.3',
+        }),
+      ).rejects.toThrow('PlistBuddy killed by SIGKILL');
     });
 
     it('clears whatever a previous attempt left in the staging dir', async () => {

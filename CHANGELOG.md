@@ -3,6 +3,19 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.15.1] - 2026-11-19
+
+### Corregido
+
+- **DevBar ya no prepara una actualización que tu macOS no puede abrir.**
+  Antes de preparar una versión nueva, comprueba qué macOS necesita; si tu Mac
+  tiene uno más antiguo, mantiene la versión actual y te avisa de cuál hace
+  falta, también si pulsas «Reintentar». Así, en macOS 12 Monterey DevBar se
+  queda en 0.15.1 en lugar de instalar la 0.16.0, que requiere macOS 13
+  Ventura o posterior. Si DevBar no puede actualizarse solo (por ejemplo,
+  porque está en una carpeta donde no puede escribir), te sigue ofreciendo el
+  .dmg para instalarlo a mano, y ahí no comprueba la versión de macOS.
+
 ## [0.15.0] - 2026-11-17
 
 ### Añadido
