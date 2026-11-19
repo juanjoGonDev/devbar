@@ -16,7 +16,6 @@ export interface AutostartHost {
   isWin: boolean;
   setLoginItemSettings: (settings: {
     openAtLogin: boolean;
-    openAsHidden?: boolean;
     args?: string[];
   }) => void;
   setLinuxAutostart: (execPath: string, enabled: boolean) => void;
@@ -34,7 +33,10 @@ export function applyAutostart(host: AutostartHost, enabled: boolean): void {
   if (!host.isPackaged) return;
   try {
     if (host.isMac) {
-      host.setLoginItemSettings({ openAtLogin: !!enabled, openAsHidden: true });
+      // No `openAsHidden`: Electron 45 removed it (macOS 13 and later, all
+      // it supports, already ignored it), and a menu-bar app opens no window
+      // at login anyway.
+      host.setLoginItemSettings({ openAtLogin: !!enabled });
     } else if (host.isWin) {
       // The --login argument is the boot signal on Windows (see autostart.ts).
       host.setLoginItemSettings({

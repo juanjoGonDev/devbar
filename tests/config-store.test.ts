@@ -223,13 +223,17 @@ describe('src/config-store/store.ts', () => {
     });
 
     it('leaves an already canonical v4 store exactly as it found it', async () => {
+      // Canonical includes every key with a schema default: conf >= 16 writes
+      // the missing ones to disk as soon as the store is constructed.
       const seed = {
         version: 4,
         groups: [],
         workflows: [],
+        workflowRuns: {},
         services: [],
         globalSettings: { theme: 'dark' },
         scheduleState: {},
+        customIcons: [],
         _services_pre_v3_backup: [],
       };
       await harness.open({ seed });

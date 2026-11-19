@@ -6,7 +6,6 @@ import {
   selectAssetUrl,
   parseReleases,
   releaseAssetSuffixes,
-  normalizeArch,
   fetchReleases,
   fetchReleaseSha256,
   checkForUpdate,
@@ -46,17 +45,6 @@ describe('releaseAssetSuffixes', () => {
       appImage: 'linux-arm64.AppImage',
       deb: 'linux-arm64.deb',
     });
-  });
-
-  it('maps Node "arm" to the release naming linux-armv7 (32-bit Pi)', () => {
-    expect(releaseAssetSuffixes('linux', 'arm')).toEqual({
-      appImage: 'linux-armv7.AppImage',
-      deb: 'linux-armv7.deb',
-    });
-    expect(normalizeArch('linux', 'arm')).toBe('armv7');
-    expect(normalizeArch('linux', 'arm64')).toBe('arm64');
-    expect(normalizeArch('darwin', 'arm64')).toBe('arm64');
-    expect(normalizeArch('win32', 'x64')).toBe('x64');
   });
 
   it('offers no artifacts for unsupported platforms', () => {

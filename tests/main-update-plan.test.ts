@@ -245,17 +245,6 @@ describe('src/main/update-plan.ts', () => {
       ).toMatchObject({ kind: 'deb' });
     });
 
-    it('names a 32-bit ARM artifact the way the release does', () => {
-      expect(
-        linuxUpdateArtifact({
-          version: '1.2.0',
-          update: both,
-          shape: 'other',
-          arch: 'arm',
-        }),
-      ).toMatchObject({ fileName: 'DevBar-1.2.0-linux-armv7.deb' });
-    });
-
     it('is null when the release published nothing for Linux', () => {
       expect(
         linuxUpdateArtifact({

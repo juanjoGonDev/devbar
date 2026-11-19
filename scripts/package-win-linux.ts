@@ -13,13 +13,12 @@ import { isEntrypoint } from './lib/script-runtime.ts';
  *
  * Targets (the release artifact names live in scripts/release-artifacts.ts):
  *   win:    NSIS installer + portable, x64 + arm64
- *   linux:  AppImage + .deb, x64 + arm64 + armv7 (arm64 = Raspberry Pi 4/5
- *           64-bit, armv7 = 32-bit Pi OS)
+ *   linux:  AppImage + .deb, x64 + arm64 (arm64 = Raspberry Pi 4/5 64-bit)
  *
- * electron-builder spells the 32-bit Pi arch "armv7l" while the artifact
- * contract calls it "armv7", so each arch is built in its own invocation
- * with an explicit artifact name. The app is pure JS, so cross-building
- * from any host works; downloads of the Electron runtime are cached.
+ * No 32-bit ARM (armv7): Electron 45 stopped publishing it. Each arch is
+ * built in its own invocation with an explicit artifact name. The app is
+ * pure JS, so cross-building from any host works; downloads of the
+ * Electron runtime are cached.
  *
  * Usage: node --experimental-strip-types scripts/package-win-linux.ts win|linux [full|dir|host]
  *
@@ -71,7 +70,11 @@ export function hostArch(architecture: string = process.arch): string {
     case 'arm64':
       return 'arm64';
     case 'arm':
-      return 'armv7l';
+      // Falling through to x64 would build an app this host cannot run.
+      throw new Error(
+        '32-bit ARM is not supported: Electron no longer ships armv7 builds. ' +
+          'Use a 64-bit OS (arm64) instead.',
+      );
     default:
       return 'x64';
   }
@@ -81,10 +84,9 @@ export function hostArch(architecture: string = process.arch): string {
  * The unpacked output directory electron-builder writes for one arch.
  * x64 is the builder's default arch and gets NO suffix (`linux-unpacked`,
  * `win-unpacked`); every other arch is appended (`linux-arm64-unpacked` on
- * a Raspberry Pi 4/5, `win-arm64-unpacked` on Windows on ARM,
- * `linux-armv7l-unpacked` on 32-bit Pi OS). Anyone that reads a `dir`
- * target back must derive the name the same way — hardcoding the x64
- * spelling is how `pnpm install-local` failed on the Pi.
+ * a Raspberry Pi 4/5, `win-arm64-unpacked` on Windows on ARM). Anyone that
+ * reads a `dir` target back must derive the name the same way — hardcoding
+ * the x64 spelling is how `pnpm install-local` failed on the Pi.
  */
 export function unpackedDirName(
   target: PackageTarget,
@@ -94,21 +96,13 @@ export function unpackedDirName(
   return `${target}${arch === 'x64' ? '' : `-${arch}`}-unpacked`;
 }
 
-/**
- * electron-builder's armv7 key is "armv7l"; the artifact contract says
- * "armv7". hostArch() already returns the builder key.
- */
-export function contractArchName(builderArch: string): string {
-  return builderArch === 'armv7l' ? 'armv7' : builderArch;
-}
-
 /** electron-builder arch keys to build, in order, for one mode. */
 export function windowsArchs(mode: PackageMode): readonly string[] {
   return mode === 'full' ? ['x64', 'arm64'] : [hostArch()];
 }
 
 export function linuxArchs(mode: PackageMode): readonly string[] {
-  return mode === 'full' ? ['x64', 'arm64', 'armv7l'] : [hostArch()];
+  return mode === 'full' ? ['x64', 'arm64'] : [hostArch()];
 }
 
 /** electron-builder's `${ext}` template placeholder, per target type. */
@@ -235,7 +229,7 @@ export function linuxBuildOptions({
         // No executableArgs on purpose: the display backend is decided at
         // runtime (src/main/linux-display-backend.ts), and leaving them unset
         // keeps AppImage's default --no-sandbox Exec argument.
-        artifactName: `DevBar-${version}-linux-${contractArchName(arch)}.${ext()}`,
+        artifactName: `DevBar-${version}-linux-${arch}.${ext()}`,
       },
     },
   };
@@ -285,7 +279,7 @@ export async function runBuild(
   }
   for (const arch of linuxArchs(mode)) {
     await builder.build(linuxBuildOptions({ arch, mode, version, root }));
-    console.log(`[linux] ${contractArchName(arch)} done`);
+    console.log(`[linux] ${arch} done`);
   }
 }
 

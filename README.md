@@ -21,9 +21,9 @@
 Download the latest installers from
 [GitHub Releases](https://github.com/juanjoGonDev/devbar/releases/latest):
 
-**macOS** (ad-hoc signed, but not Developer ID signed or notarized — the
-first launch may need an explicit approval in **System Settings → Privacy
-& Security**):
+**macOS 13 Ventura or later** (ad-hoc signed, but not Developer ID signed or
+notarized — the first launch may need an explicit approval in **System
+Settings → Privacy & Security**):
 
 - `DevBar-<version>-macos-arm64.dmg` — Apple Silicon Macs.
 - `DevBar-<version>-macos-x64.dmg` — Intel Macs.
@@ -36,7 +36,8 @@ first launch may need an explicit approval in **System Settings → Privacy
 - `DevBar-<version>-win-<arch>-portable.exe` — single self-contained exe,
   run it from any folder.
 
-**Linux** (x64, `arm64` = Raspberry Pi 4/5 64-bit, `armv7` = 32-bit Pi OS):
+**Linux** (x64 and `arm64` = Raspberry Pi 4/5 with a 64-bit OS; 32-bit ARM
+is not supported):
 
 - `DevBar-<version>-linux-<arch>.AppImage` — run straight from the file
   (recommended; the in-app updater swaps it in place).
@@ -68,7 +69,8 @@ pnpm run fetch-electron   # one-time: downloads the Electron binary for `pnpm st
 pnpm start
 ```
 
-> Requires pnpm ≥ 10.16 and Node ≥ 22.13.0 (enforced via `engine-strict`)
+> Requires pnpm ≥ 10.16 and Node 22.22.2+, 24.15.0+ or 26+ (enforced via
+> `engine-strict`; jsdom sets that range)
 > on macOS, Windows and Linux — no bash needed (the dev build runs in Node).
 > Use the pnpm pinned in `package.json` (`pnpm@10.32.1`), e.g. via corepack
 > (`corepack enable`) — other pnpm versions can flag the lockfile as out of
@@ -106,7 +108,7 @@ contract for AppImage/deb targets), which is why CI builds them on
 | Unpacked dev app (host arch) | `pnpm run pack`                | macOS `dist/DevBar-darwin-*` · win `dist/electron-builder/win-unpacked` · linux `…/linux-unpacked` |
 | macOS DMG + ZIP              | `pnpm run dist` (= `dist:mac`) | `dist/release/DevBar-<v>-macos-{arm64,x64}.{dmg,zip}` + `SHA256SUMS.txt`                           |
 | Windows NSIS + portable      | `pnpm run dist`                | `dist/electron-builder/DevBar-<v>-win-{x64,arm64}-{setup,portable}.exe`                            |
-| Linux AppImage + deb         | `pnpm run dist`                | `dist/electron-builder/DevBar-<v>-linux-{x64,arm64,armv7}.{AppImage,deb}`                          |
+| Linux AppImage + deb         | `pnpm run dist`                | `dist/electron-builder/DevBar-<v>-linux-{x64,arm64}.{AppImage,deb}`                                |
 | Build + verify (this OS)     | `pnpm run release`             | Runs `dist` then `release:verify` for the host OS — one command from build to validated artifacts  |
 
 `pnpm run verify` runs the matching verifier (artifact contract + contents)
@@ -123,7 +125,8 @@ OS instead of a macOS-specific name.
 The release workflow builds all three platforms in parallel, launches the
 packaged Windows and Linux binaries as a smoke test (NSIS install + portable
 on Windows, AppImage + deb under `xvfb` on Linux), assembles the full
-`SHA256SUMS.txt`, and publishes all 14 artifacts.
+`SHA256SUMS.txt`, and publishes every artifact listed in
+`scripts/release-artifacts.ts`.
 
 ## Install / reinstall
 

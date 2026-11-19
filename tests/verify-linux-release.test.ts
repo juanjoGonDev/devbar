@@ -286,10 +286,11 @@ describe('scripts/verify-linux-release.ts', () => {
       expect(result.detail).toContain('expected 0xb7');
     });
 
-    it('rejects an armv7 binary shipped under the arm64 artifact name', async () => {
+    it('rejects a 32-bit ARM binary shipped under the arm64 artifact name', async () => {
+      const EM_ARM = 0x28;
       const file = await writeFixture(
         'DevBar-1.0.0-linux-arm64.AppImage',
-        validImage(ELF_MACHINE.armv7),
+        validImage(EM_ARM),
       );
       expect(looksLikeAppImage(file, ELF_MACHINE.arm64)).toBe(false);
     });
@@ -309,9 +310,8 @@ describe('scripts/verify-linux-release.ts', () => {
     it.each([
       ['DevBar-1.0.0-linux-x64.AppImage', 'x64'],
       ['DevBar-1.0.0-linux-arm64.AppImage', 'arm64'],
-      ['DevBar-1.0.0-linux-armv7.AppImage', 'armv7'],
       ['DevBar-1.0.0-linux-x64.deb', 'x64'],
-      ['DevBar-1.0.0-linux-armv7.deb', 'armv7'],
+      ['DevBar-1.0.0-linux-arm64.deb', 'arm64'],
     ])('reads %s as %s', (name, architecture) => {
       expect(artifactArchitecture(name)).toBe(architecture);
     });
@@ -326,6 +326,10 @@ describe('scripts/verify-linux-release.ts', () => {
       expect(() =>
         artifactArchitecture('DevBar-1.0.0-linux-riscv64.deb'),
       ).toThrow('cannot determine architecture from');
+      // Electron 45 dropped 32-bit ARM, and the release with it.
+      expect(() =>
+        artifactArchitecture('DevBar-1.0.0-linux-armv7.deb'),
+      ).toThrow('cannot determine architecture from');
     });
   });
 
@@ -335,7 +339,6 @@ describe('scripts/verify-linux-release.ts', () => {
     const DEB_ARCHITECTURE: Record<string, string> = {
       x64: 'amd64',
       arm64: 'arm64',
-      armv7: 'armhf',
     };
     const DESKTOP_ENTRY =
       '-rw-r--r-- root/root 231 2024-01-01 00:00 ./usr/share/applications/devbar.desktop\n';
@@ -432,15 +435,13 @@ describe('scripts/verify-linux-release.ts', () => {
       await main({ directory, version: VERSION, dpkg: reader });
 
       expect(lines[0]).toBe(
-        `Verified 6 linux artifacts for v1.0.0 in ${directory}`,
+        `Verified 4 linux artifacts for v1.0.0 in ${directory}`,
       );
       expect(lines.slice(1)).toEqual([
         'ok: DevBar-1.0.0-linux-x64.AppImage (AppImage structure: marker + container + filesystem, ELF x64)',
         'ok: DevBar-1.0.0-linux-arm64.AppImage (AppImage structure: marker + container + filesystem, ELF arm64)',
-        'ok: DevBar-1.0.0-linux-armv7.AppImage (AppImage structure: marker + container + filesystem, ELF armv7)',
         'ok: DevBar-1.0.0-linux-x64.deb (dpkg -c: desktop entry + icon present, Architecture: amd64)',
         'ok: DevBar-1.0.0-linux-arm64.deb (dpkg -c: desktop entry + icon present, Architecture: arm64)',
-        'ok: DevBar-1.0.0-linux-armv7.deb (dpkg -c: desktop entry + icon present, Architecture: armhf)',
       ]);
       expect(calls).toEqual([
         {
@@ -455,12 +456,6 @@ describe('scripts/verify-linux-release.ts', () => {
           field: 'Architecture',
         },
         { operation: 'contents', artifact: 'DevBar-1.0.0-linux-arm64.deb' },
-        {
-          operation: 'field',
-          artifact: 'DevBar-1.0.0-linux-armv7.deb',
-          field: 'Architecture',
-        },
-        { operation: 'contents', artifact: 'DevBar-1.0.0-linux-armv7.deb' },
       ]);
     });
 
@@ -566,7 +561,7 @@ describe('scripts/verify-linux-release.ts', () => {
         main({ directory, version: VERSION, dpkg: reader, requireDpkg: true }),
       ).rejects.toThrow(
         'dpkg-deb is unavailable on this host, so the .deb content check cannot run: ' +
-          'DevBar-1.0.0-linux-x64.deb, DevBar-1.0.0-linux-arm64.deb, DevBar-1.0.0-linux-armv7.deb',
+          'DevBar-1.0.0-linux-x64.deb, DevBar-1.0.0-linux-arm64.deb',
       );
     });
 
@@ -588,19 +583,18 @@ describe('scripts/verify-linux-release.ts', () => {
       expect(lines.filter((line) => line.startsWith('skip:'))).toEqual([
         'skip: DevBar-1.0.0-linux-x64.deb (dpkg-deb unavailable on this host)',
         'skip: DevBar-1.0.0-linux-arm64.deb (dpkg-deb unavailable on this host)',
-        'skip: DevBar-1.0.0-linux-armv7.deb (dpkg-deb unavailable on this host)',
       ]);
     });
 
     it('fails before any content check when an expected artifact is missing', async () => {
       const directory = await artifactSet();
-      await rm(path.join(directory, `DevBar-${VERSION}-linux-armv7.deb`));
+      await rm(path.join(directory, `DevBar-${VERSION}-linux-arm64.deb`));
       const { calls, reader } = recordingDpkg();
       const lines = captureLogs();
 
       await expect(
         main({ directory, version: VERSION, dpkg: reader }),
-      ).rejects.toThrow('DevBar-1.0.0-linux-armv7.deb is missing or empty');
+      ).rejects.toThrow('DevBar-1.0.0-linux-arm64.deb is missing or empty');
       expect(calls).toEqual([]);
       expect(lines).toEqual([]);
     });

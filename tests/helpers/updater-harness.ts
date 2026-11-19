@@ -113,7 +113,10 @@ export function harness(overrides: Partial<UpdaterDeps> = {}) {
     },
     pathExists: () => true,
     relaunch: () => calls.push('relaunch'),
-    copyText: (text) => calls.push(`copy:${text}`),
+    copyText: (text) => {
+      calls.push(`copy:${text}`);
+      return Promise.resolve();
+    },
     showItemInFolder: (target) => calls.push(`show:${target}`),
     refreshTrayIcon: () => calls.push('refreshTrayIcon'),
     showBannerNotification: (_title, body, options) =>

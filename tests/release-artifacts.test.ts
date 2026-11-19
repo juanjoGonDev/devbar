@@ -87,11 +87,9 @@ describe('scripts/release-artifacts.ts', () => {
           'DevBar-0.2.0-linux-x64.deb',
           'DevBar-0.2.0-linux-arm64.AppImage',
           'DevBar-0.2.0-linux-arm64.deb',
-          'DevBar-0.2.0-linux-armv7.AppImage',
-          'DevBar-0.2.0-linux-armv7.deb',
         ]),
       );
-      expect(names).toHaveLength(14);
+      expect(names).toHaveLength(12);
       expect(new Set(names).size).toBe(names.length);
     });
 
@@ -113,8 +111,6 @@ describe('scripts/release-artifacts.ts', () => {
         'DevBar-0.2.0-linux-x64.deb',
         'DevBar-0.2.0-linux-arm64.AppImage',
         'DevBar-0.2.0-linux-arm64.deb',
-        'DevBar-0.2.0-linux-armv7.AppImage',
-        'DevBar-0.2.0-linux-armv7.deb',
       ]);
     });
 
@@ -388,7 +384,7 @@ describe('scripts/release-artifacts.ts', () => {
         { cwd: callerDirectory, timeout: 60_000 },
       );
 
-      expect(stdout).toContain('Verified 14 release artifacts for v0.2.0');
+      expect(stdout).toContain('Verified 12 release artifacts for v0.2.0');
       // This test compiles the whole node project and then runs the emitted
       // verifier, so its own budget is the two subprocess guards above plus
       // the fixture. It has to sit above their sum, or the test can only ever

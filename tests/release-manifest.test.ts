@@ -152,15 +152,15 @@ describe('scripts/release-manifest.ts', () => {
 
       expect(manifestPath).toBe(path.join(directory, 'SHA256SUMS.txt'));
       const lines = readFileSync(manifestPath, 'utf8').trimEnd().split('\n');
-      expect(lines).toHaveLength(14);
+      expect(lines).toHaveLength(12);
       expect(lines).toContain(
-        `${sha256('fixture:DevBar-1.2.3-linux-armv7.deb')}  DevBar-1.2.3-linux-armv7.deb`,
+        `${sha256('fixture:DevBar-1.2.3-linux-arm64.deb')}  DevBar-1.2.3-linux-arm64.deb`,
       );
       expect(lines).toContain(
         `${sha256('fixture:DevBar-1.2.3-macos-arm64.dmg')}  DevBar-1.2.3-macos-arm64.dmg`,
       );
       expect(capture.lines).toEqual([
-        `Wrote ${manifestPath} (14 artifacts for v1.2.3)\n`,
+        `Wrote ${manifestPath} (12 artifacts for v1.2.3)\n`,
       ]);
     });
 
@@ -188,7 +188,7 @@ describe('scripts/release-manifest.ts', () => {
       expect(readFileSync(manifestPath, 'utf8')).toContain(
         'DevBar-7.8.9-win-arm64-portable.exe',
       );
-      expect(capture.lines.join('')).toContain('(14 artifacts for v7.8.9)');
+      expect(capture.lines.join('')).toContain('(12 artifacts for v7.8.9)');
     });
 
     it('defaults the version to the one in package.json', async () => {
@@ -198,7 +198,7 @@ describe('scripts/release-manifest.ts', () => {
       const manifestPath = await main([directory]);
       capture.restore();
       const lines = readFileSync(manifestPath, 'utf8').trimEnd().split('\n');
-      expect(lines).toHaveLength(14);
+      expect(lines).toHaveLength(12);
       for (const line of lines)
         expect(line, line).toContain(`  DevBar-${version}-`);
     });

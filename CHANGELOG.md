@@ -3,6 +3,36 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.16.0] - 2026-11-18
+
+### Cambiado
+
+- **Electron 45 (Chromium 156).** DevBar se actualiza de Electron 43 a 45,
+  con Chromium 156 y Node 24.
+- **Requiere macOS 13 Ventura o posterior.** Electron 45 ya no funciona en
+  macOS 12 Monterey; si usas esa versión, quédate en DevBar 0.15.0. A partir
+  de esta versión, DevBar no instala una actualización que tu macOS no puede
+  abrir y te avisa de la versión que hace falta.
+- **«Reportar un fallo» espera a tener el informe copiado.** El informe ya
+  está en el portapapeles antes de que se abra el navegador; si no se puede
+  copiar, no se abre una incidencia vacía y DevBar avisa del error. «Copiar
+  reporte» y «Copiar comando» (en Actualizaciones) también avisan si la copia
+  falla.
+
+### Eliminado
+
+- **Builds de Linux ARM de 32 bits (armv7).** Electron 45 ya no los publica,
+  así que dejan de existir el AppImage y el .deb `armv7`. En una Raspberry Pi
+  hace falta un sistema de 64 bits (`arm64`), que sigue disponible.
+
+### Seguridad
+
+- **Vulnerabilidades corregidas** en Electron, en el servidor MCP (`hono` y
+  `@hono/node-server`), en la validación de la configuración y de las
+  peticiones MCP (`fast-uri`) y en dependencias de las herramientas de
+  compilación, empaquetado y pruebas (`undici`, `vite`, `@electron/asar`,
+  `glob`).
+
 ## [0.15.0] - 2026-11-17
 
 ### Añadido

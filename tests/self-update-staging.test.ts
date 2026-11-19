@@ -156,13 +156,25 @@ describe('platform updaters — staging and swap launch', () => {
       };
     }
 
-    function withBundle(version = '1.2.3'): void {
+    /** `minimum: null` = an Info.plist without LSMinimumSystemVersion. */
+    function withBundle(
+      version = '1.2.3',
+      {
+        minimum = '13.0',
+        host = '14.5',
+      }: { minimum?: string | null; host?: string } = {},
+    ): void {
       dittoWrites((destDir) => {
         const app = path.join(destDir, 'DevBar.app', 'Contents');
         fs.mkdirSync(app, { recursive: true });
         fs.writeFileSync(path.join(app, 'Info.plist'), '<plist/>');
       });
-      mocks.handlers['/usr/libexec/PlistBuddy'] = () => version;
+      mocks.handlers['/usr/libexec/PlistBuddy'] = (args) => {
+        if (!args[1]?.includes('LSMinimumSystemVersion')) return version;
+        if (minimum === null) throw new Error('Does Not Exist');
+        return minimum;
+      };
+      mocks.handlers['/usr/bin/sw_vers'] = () => host;
       mocks.handlers['/usr/bin/codesign'] = () => '';
     }
 
@@ -178,8 +190,36 @@ describe('platform updaters — staging and swap launch', () => {
       expect(mocks.execFileCalls.map((call) => call.file)).toEqual([
         '/usr/bin/ditto',
         '/usr/libexec/PlistBuddy',
+        '/usr/libexec/PlistBuddy',
+        '/usr/bin/sw_vers',
         '/usr/bin/codesign',
       ]);
+    });
+
+    it('refuses a bundle that needs a newer macOS than this Mac runs', async () => {
+      // The swap deletes the working copy, so a bundle this Mac cannot
+      // launch has to be stopped before it is ever staged.
+      withBundle('1.2.3', { minimum: '13.0', host: '12.7.4' });
+      await expect(
+        extractUpdate({
+          zipPath: '/dl/DevBar.zip',
+          destDir: path.join(tempDir(), 'stage'),
+          version: '1.2.3',
+        }),
+      ).rejects.toThrow(
+        'v1.2.3 necesita macOS 13.0 o posterior y este Mac tiene macOS 12.7.4',
+      );
+    });
+
+    it('stages a bundle that names no minimum macOS version', async () => {
+      withBundle('1.2.3', { minimum: null, host: '12.7.4' });
+      await expect(
+        extractUpdate({
+          zipPath: '/dl/DevBar.zip',
+          destDir: path.join(tempDir(), 'stage'),
+          version: '1.2.3',
+        }),
+      ).resolves.toMatchObject({ version: '1.2.3' });
     });
 
     it('clears whatever a previous attempt left in the staging dir', async () => {
