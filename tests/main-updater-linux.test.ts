@@ -325,15 +325,17 @@ describe('src/main/updater.ts — Linux flow and reporting', () => {
       await h.updater.runUpdateCheck();
       await h.updater.applyUpdate();
       const file = '/home/pi/Downloads/DevBar-1.3.0-linux-arm64.deb';
-      expect(h.updater.copyInstallCommand()).toEqual({ ok: true });
+      await expect(h.updater.copyInstallCommand()).resolves.toEqual({
+        ok: true,
+      });
       expect(h.updater.showDownloadedFile()).toEqual({ ok: true });
       expect(h.calls).toContain(`copy:sudo apt install ${file}`);
       expect(h.calls).toContain(`show:${file}`);
     });
 
-    it('has nothing to copy or show before a download', () => {
+    it('has nothing to copy or show before a download', async () => {
       const h = harness();
-      expect(h.updater.copyInstallCommand()).toEqual({
+      await expect(h.updater.copyInstallCommand()).resolves.toEqual({
         ok: false,
         error: 'no_command',
       });

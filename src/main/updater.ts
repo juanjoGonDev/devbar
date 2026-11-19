@@ -101,7 +101,7 @@ export interface UpdaterDeps extends AssistedUpdateDeps, LinuxUpdateDeps {
   autoUpdate: () => boolean;
   /** The «Reiniciar e instalar» modal (see install-staged-update.ts). */
   confirmInstall: (version: string) => Promise<boolean>;
-  copyText: (text: string) => void;
+  copyText: (text: string) => Promise<void>;
   showItemInFolder: (target: string) => void;
 }
 
@@ -116,7 +116,7 @@ export interface Updater {
    * that opens the Updates pane. Never rejects.
    */
   applyUpdateAndReport: () => Promise<void>;
-  copyInstallCommand: () => SimpleResult;
+  copyInstallCommand: () => Promise<SimpleResult>;
   showDownloadedFile: () => SimpleResult;
   /** Dev simulation: stage a locally built zip through the real code path. */
   stageFromZip: (zipPath: string, update: AvailableUpdate) => Promise<void>;

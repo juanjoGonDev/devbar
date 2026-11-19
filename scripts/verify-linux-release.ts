@@ -33,21 +33,19 @@ const DEFAULT_OUTPUT_DIRECTORY =
   process.argv[2] || path.join(ROOT, 'dist', 'electron-builder');
 const DEFAULT_VERSION = process.argv[3] || packageJson.version;
 
-const LINUX_ARCHITECTURES = ['x64', 'arm64', 'armv7'] as const;
+const LINUX_ARCHITECTURES = ['x64', 'arm64'] as const;
 type LinuxArchitecture = (typeof LINUX_ARCHITECTURES)[number];
 
 /** ELF `e_machine` (EM_*) value each release architecture must declare. */
 export const ELF_MACHINE: Record<LinuxArchitecture, number> = {
   x64: 0x3e, // EM_X86_64
   arm64: 0xb7, // EM_AARCH64
-  armv7: 0x28, // EM_ARM
 };
 
 /** Debian control `Architecture:` value for each release architecture. */
 const DEB_ARCHITECTURE: Record<LinuxArchitecture, string> = {
   x64: 'amd64',
   arm64: 'arm64',
-  armv7: 'armhf',
 };
 
 /**
@@ -57,7 +55,7 @@ const DEB_ARCHITECTURE: Record<LinuxArchitecture, string> = {
  * CI, so nothing downstream would catch the swap.
  */
 export function artifactArchitecture(name: string): LinuxArchitecture {
-  const parsed = /-linux-(x64|arm64|armv7)\./.exec(name)?.[1];
+  const parsed = /-linux-(x64|arm64)\./.exec(name)?.[1];
   const architecture = LINUX_ARCHITECTURES.find((value) => value === parsed);
   if (architecture === undefined)
     throw new Error(`cannot determine architecture from ${name}`);
@@ -198,7 +196,7 @@ function findSquashfsSuperblock(filePath: string): {
  *    descriptor sits in sector 16 (2048-byte sectors) and carries the
  *    "CD001" signature at offset 1 of that sector.
  * The marker alone would accept a 16-byte marker-only blob, which could
- * then ride along as a published arm64/armv7 artifact (only the x64
+ * then ride along as a published arm64 artifact (only the x64
  * image is launched in CI). The remaining ident padding is zeroes, so
  * the legacy "AppImage" string check is checking the wrong convention.
  * On rejection, `detail` explains WHY — the release jobs log it so a
@@ -237,7 +235,7 @@ export function checkAppImage(
       if (elf.toString('latin1') !== '\x7fELF')
         return { ok: false, detail: 'no \\x7fELF magic at offset 0' };
       // e_machine (u16 LE at 0x12) is the only field that distinguishes
-      // an x64 runtime from an arm64/armv7 one, so without it a binary
+      // an x64 runtime from an arm64 one, so without it a binary
       // built for the wrong CPU passes under the architecture its
       // artifact name claims.
       const machine = Buffer.alloc(2);

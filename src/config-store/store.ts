@@ -130,7 +130,8 @@ const schema = {
   scheduleState: { type: 'object', default: {} },
   customIcons: { type: 'array', default: [] },
   // Deliberately NO default: conf fills schema defaults into `store.store`
-  // before anything reads it, and `migrateServicesToGroups` treats ANY array
+  // before anything reads it (conf >= 16 also writes them to disk as soon as
+  // the store is constructed), and `migrateServicesToGroups` treats ANY array
   // here as "a backup already exists" (so a real one is never overwritten).
   // A default of `[]` therefore told every v1/v2 conversion that the user's
   // original `services` had already been backed up, and the only copy of them

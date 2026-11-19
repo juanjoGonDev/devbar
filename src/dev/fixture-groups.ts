@@ -101,7 +101,7 @@ function fixtureSet(env: FixtureEnvironment, copy: number): unknown[] {
         {
           id: 'alerts',
           name: 'Avisos y errores',
-          icon: 'triangle-alert',
+          icon: 'triangle-exclamation-point',
           iconColor: '#eab308',
           command: node(SCRIPTS.alerts),
           env: RUN_AS_NODE,
@@ -192,7 +192,7 @@ function fixtureSet(env: FixtureEnvironment, copy: number): unknown[] {
         {
           id: 'alerts',
           name: 'Avisos y errores',
-          icon: 'triangle-alert',
+          icon: 'triangle-exclamation-point',
           iconColor: '#eab308',
           command: node(SCRIPTS.alerts),
           env: RUN_AS_NODE,

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { entry, mountLogsDom, type LogsDom } from './helpers/logs-dom.js';
 import type { LogEntry } from '../src/domain-types.js';
@@ -25,6 +25,11 @@ describe('renderer/logs/row-actions.ts', () => {
   let copied: string[];
 
   beforeEach(async () => {
+    // The panes defer work on `setTimeout` (find paints its ticks on one after
+    // «Filtrar por esto»). A real one can outlive the file and fire after
+    // jsdom is torn down (`document is not defined`), so every timer here is
+    // a fake one the `afterEach` below throws away.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     dom = mountLogsDom({
       api: {
         buildSilencePattern: (text: string) => `re:${text}`,
@@ -51,6 +56,11 @@ describe('renderer/logs/row-actions.ts', () => {
     });
     view.view.currentGroupId = 'g1';
     view.view.currentCommandId = 'c1';
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   /** Draw these lines and hover the row holding `text`. */

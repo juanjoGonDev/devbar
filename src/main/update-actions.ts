@@ -50,13 +50,13 @@ export async function applyAndReport(
   if (text) report(text);
 }
 
-export function copyPhaseCommand(
+export async function copyPhaseCommand(
   phase: UpdatePhase,
-  copyText: (text: string) => void,
-): SimpleResult {
+  copyText: (text: string) => Promise<void>,
+): Promise<SimpleResult> {
   const command = 'command' in phase ? phase.command : null;
   if (!command) return { ok: false, error: 'no_command' };
-  copyText(command);
+  await copyText(command);
   return { ok: true };
 }
 

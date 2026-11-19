@@ -131,9 +131,9 @@ describe('scripts/install-local.ts', () => {
       });
     });
 
-    it('reads the armv7l unpacked dir on 32-bit Pi OS', () => {
-      expect(layout('linux', '/repo', '/home/u', 'arm')?.unpackedDir).toBe(
-        '/repo/dist/electron-builder/linux-armv7l-unpacked',
+    it('refuses 32-bit Pi OS, which no build exists for', () => {
+      expect(() => layout('linux', '/repo', '/home/u', 'arm')).toThrow(
+        '32-bit ARM is not supported',
       );
     });
 

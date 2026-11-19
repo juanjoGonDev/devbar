@@ -77,11 +77,16 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # CVE-2026-93748 has no upstream fix and is only present through the
-      # build-time electron-builder download client. Keep auditing every other
-      # moderate+ finding; remove this exception once upstream ships a fix.
+      # Advisories with no installable fix are ignored in package.json
+      # (pnpm.auditConfig.ignoreGhsas), so this step and a local `pnpm audit`
+      # agree: picomatch GHSA-fc5q-39xc-vjpf has no patched release, and
+      # minimatch GHSA-g3hv-75wg-m249 is fixed only in 11.x while
+      # electron-builder and typescript-eslint still require ^9/^10. Both are
+      # build/lint-time only (`pnpm why <pkg> --prod` is empty). Every other
+      # moderate+ finding fails the release; drop an ignore once upstream
+      # ships a fix.
       - name: Audit release dependency graph
-        run: pnpm audit --audit-level=moderate --ignore CVE-2026-93748
+        run: pnpm audit --audit-level=moderate
 
       - name: Run release artifact regression tests
         run: pnpm exec vitest run tests/release-artifacts.test.ts
@@ -280,7 +285,7 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build and verify AppImage + deb (x64, arm64, armv7)
+      - name: Build and verify AppImage + deb (x64, arm64)
         run: |
           # electron-builder downloads Electron dists + toolsets (NSIS,
           # fpm, appimagetool) from GitHub releases; a transient 5xx
