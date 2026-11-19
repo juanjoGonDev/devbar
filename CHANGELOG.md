@@ -10,7 +10,9 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - **Electron 45 (Chromium 156).** DevBar se actualiza de Electron 43 a 45,
   con Chromium 156 y Node 24.
 - **Requiere macOS 13 Ventura o posterior.** Electron 45 ya no funciona en
-  macOS 12 Monterey; si usas esa versión, quédate en DevBar 0.15.0.
+  macOS 12 Monterey; si usas esa versión, quédate en DevBar 0.15.0. A partir
+  de esta versión, DevBar no instala una actualización que tu macOS no puede
+  abrir y te avisa de la versión que hace falta.
 - **«Reportar un fallo» espera a tener el informe copiado.** El informe ya
   está en el portapapeles antes de que se abra el navegador; si no se puede
   copiar, no se abre una incidencia vacía y DevBar avisa del error. «Copiar
