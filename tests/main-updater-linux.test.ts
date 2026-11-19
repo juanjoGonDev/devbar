@@ -333,6 +333,32 @@ describe('src/main/updater.ts — Linux flow and reporting', () => {
       expect(h.calls).toContain(`show:${file}`);
     });
 
+    it('answers a failure instead of rejecting when the clipboard refuses the command', async () => {
+      const h = harness({
+        platform: 'linux',
+        isMac: false,
+        stageableAsset: () => null,
+        linuxInstallShape: () => Promise.resolve('other'),
+        checkForUpdate: () =>
+          Promise.resolve({
+            ...update,
+            debUrl: 'https://github.test/DevBar-1.3.0-linux-arm64.deb',
+          }),
+        fetchReleaseSha256: () =>
+          Promise.resolve(
+            new Map([['DevBar-1.3.0-linux-arm64.deb', 'debhash']]),
+          ),
+        downloadsDir: () => '/home/pi/Downloads',
+        copyText: () => Promise.reject(new Error('clipboard busy')),
+      });
+      await h.updater.runUpdateCheck();
+      await h.updater.applyUpdate();
+      await expect(h.updater.copyInstallCommand()).resolves.toEqual({
+        ok: false,
+        error: 'clipboard busy',
+      });
+    });
+
     it('has nothing to copy or show before a download', async () => {
       const h = harness();
       await expect(h.updater.copyInstallCommand()).resolves.toEqual({

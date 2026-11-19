@@ -56,7 +56,11 @@ export async function copyPhaseCommand(
 ): Promise<SimpleResult> {
   const command = 'command' in phase ? phase.command : null;
   if (!command) return { ok: false, error: 'no_command' };
-  await copyText(command);
+  try {
+    await copyText(command);
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
   return { ok: true };
 }
 

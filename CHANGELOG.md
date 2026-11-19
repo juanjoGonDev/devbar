@@ -14,7 +14,8 @@ Todas las novedades relevantes de DevBar. El formato sigue
 - **«Reportar un fallo» espera a tener el informe copiado.** El informe ya
   está en el portapapeles antes de que se abra el navegador; si no se puede
   copiar, no se abre una incidencia vacía y DevBar avisa del error. «Copiar
-  reporte» también avisa si la copia falla.
+  reporte» y «Copiar comando» (en Actualizaciones) también avisan si la copia
+  falla.
 
 ### Eliminado
 
