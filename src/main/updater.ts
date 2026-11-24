@@ -478,6 +478,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       });
       const staged = await unpacking.finally(() => (stagingVersion = null));
       // Published only with its copy on disk: a failure leaves it as it was.
+      unsupportedVersions.delete(update.version);
       devUpdateSimulated = true;
       availableUpdate = update;
       stagedUpdate = staged;
