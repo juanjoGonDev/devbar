@@ -12,8 +12,9 @@ Todas las novedades relevantes de DevBar. El formato sigue
   sin la variable `ELECTRON_RUN_AS_NODE` que incluye la línea de Ajustes › MCP.
   Entonces DevBar arrancaba como una segunda copia de la app, y la que ya
   estaba abierta mostraba la configuración en cada conexión. Ahora DevBar
-  reconoce esa línea y arranca el servidor MCP igualmente, así que el
-  asistente también consigue conectarse.
+  reconoce esa línea y arranca el servidor MCP igualmente. En Windows, lo
+  ejecuta en un proceso Node con los flujos de entrada y salida heredados,
+  para que el asistente también consiga conectarse.
 - **Abrir DevBar cuando ya está abierto ya no le borra el log.** Ese segundo
   arranque rotaba el `app.log` de la copia en marcha, y «Reportar un fallo» se
   quedaba sin su historial reciente.
