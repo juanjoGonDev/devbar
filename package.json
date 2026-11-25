@@ -53,7 +53,7 @@
     "@vitest/coverage-v8": "5.0.2",
     "@vitest/eslint-plugin": "1.6.27",
     "dependency-cruiser": "18.4.0",
-    "electron": "43.7.5",
+    "electron": "45.3.4",
     "electron-builder": "26.17.0",
     "esbuild": "0.28.2",
     "eslint": "10.11.0",
