@@ -7,7 +7,7 @@ import {
   type RuntimeActionsDeps,
 } from '../runtime-actions.js';
 import { saveSettings, type SettingsSaveDeps } from '../settings-save.js';
-import type { Updater } from '../updater.js';
+import type { Updater } from '../updater-api.js';
 import type { ControlApiDeps } from './control-api.js';
 import type { RemoteRuntime } from './live.js';
 import { remoteWorkflowVisible } from './views.js';

@@ -1,5 +1,7 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { harness, update } from './helpers/updater-harness.js';
+import { harness, update, updatesDir } from './helpers/updater-harness.js';
+import { UnsupportedSystemError } from '../src/self-update-macos.js';
 
 /**
  * Staged, and the install modal that staging opens on its own already
@@ -41,7 +43,7 @@ describe('src/main/updater.ts', () => {
       expect(result.available).toEqual(update);
       expect(result.lastCheckAt).toEqual(expect.any(String));
       await vi.waitFor(() =>
-        expect(h.calls).toContain('stage:/home/updates/1.3.0'),
+        expect(h.calls).toContain(`stage:${path.join(updatesDir, '1.3.0')}`),
       );
       await vi.waitFor(() =>
         expect(h.notices.at(-1)).toMatch(/Reinicia para instalarla/),
@@ -225,6 +227,30 @@ describe('src/main/updater.ts', () => {
       vi.restoreAllMocks();
     });
 
+    it('never retries through the .dmg a release this Mac cannot launch', async () => {
+      // «Reintentar» lands in applyUpdate, which falls back to the assisted
+      // .dmg when nothing is staged: that route never runs the system check.
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const reason =
+        'v1.3.0 necesita macOS 13.0 o posterior y este Mac tiene macOS 12.7.4';
+      const messageBox = vi.fn(() => Promise.resolve({ response: 1 }));
+      const h = harness({
+        messageBox,
+        stageDownloadedArtifact: () =>
+          Promise.reject(new UnsupportedSystemError(reason)),
+      });
+      await h.updater.runUpdateCheck();
+      await vi.waitFor(() =>
+        expect(h.updater.status().phase.state).toBe('download-failed'),
+      );
+      await expect(h.updater.applyUpdate()).resolves.toEqual({
+        ok: false,
+        error: reason,
+      });
+      expect(messageBox, 'no assisted .dmg download').not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    });
+
     it('keeps a staging failure in the pane while config is focused', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const h = harness({
@@ -245,7 +271,7 @@ describe('src/main/updater.ts', () => {
       await h.updater.runUpdateCheck();
       await vi.waitFor(() =>
         expect(h.removed).toContain(
-          '/home/updates/DevBar-1.3.0-macos-arm64.zip',
+          path.join(updatesDir, 'DevBar-1.3.0-macos-arm64.zip'),
         ),
       );
       log.mockRestore();
@@ -256,10 +282,10 @@ describe('src/main/updater.ts', () => {
       const h = harness();
       await h.updater.runUpdateCheck();
       await vi.waitFor(() =>
-        expect(h.removed).toContain('/home/updates/1.2.0'),
+        expect(h.removed).toContain(path.join(updatesDir, '1.2.0')),
       );
-      expect(h.dirs.get('/home/updates')).toContain('1.3.0');
-      expect(h.dirs.get('/home/updates')).not.toContain('1.2.0');
+      expect(h.dirs.get(updatesDir)).toContain('1.3.0');
+      expect(h.dirs.get(updatesDir)).not.toContain('1.2.0');
       log.mockRestore();
     });
 
@@ -296,6 +322,61 @@ describe('src/main/updater.ts', () => {
       expect(h.notices.at(-1)).toMatch(/v1.4.0 lista/);
       expect(h.asked).toEqual(['1.4.0']);
       log.mockRestore();
+    });
+
+    it('clears a cached incompatibility only after a local bundle validates', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const reason =
+        'v1.3.0 necesita macOS 13.0 o posterior y este Mac tiene macOS 12.7.4';
+      let extractionFails = true;
+      const h = harness({
+        stageDownloadedArtifact: () =>
+          Promise.reject(new UnsupportedSystemError(reason)),
+        extractUpdate: () =>
+          extractionFails
+            ? Promise.reject(new Error('malformed local bundle'))
+            : Promise.resolve({ version: update.version, appPath: '/staged' }),
+      });
+
+      try {
+        await h.updater.runUpdateCheck();
+        await vi.waitFor(() =>
+          expect(h.updater.status().phase).toMatchObject({
+            state: 'download-failed',
+            version: update.version,
+          }),
+        );
+        await expect(h.updater.applyUpdate()).resolves.toEqual({
+          ok: false,
+          error: reason,
+        });
+
+        await expect(
+          h.updater.stageFromZip('/tmp/bad-DevBar.zip', update),
+        ).rejects.toThrow('malformed local bundle');
+        await expect(h.updater.applyUpdate()).resolves.toEqual({
+          ok: false,
+          error: reason,
+        });
+
+        extractionFails = false;
+        await h.updater.stageFromZip('/tmp/DevBar.zip', update);
+        await stagedAndAsked(h);
+        expect(h.updater.staged()).toMatchObject({
+          version: update.version,
+          appPath: '/staged',
+        });
+        h.confirm.answer = true;
+        await expect(h.updater.applyUpdate()).resolves.toEqual({
+          ok: true,
+          quitting: true,
+          inPlace: true,
+        });
+        expect(h.calls).toContain('spawnSwap');
+      } finally {
+        vi.restoreAllMocks();
+      }
     });
   });
 
