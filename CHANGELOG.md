@@ -3,16 +3,15 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
-## [0.16.0] - 2026-11-18
+## [0.16.0] - 2026-11-28
 
 ### Cambiado
 
 - **Electron 45 (Chromium 156).** DevBar se actualiza de Electron 43 a 45,
   con Chromium 156 y Node 24.
 - **Requiere macOS 13 Ventura o posterior.** Electron 45 ya no funciona en
-  macOS 12 Monterey; si usas esa versión, quédate en DevBar 0.15.0. A partir
-  de esta versión, DevBar no instala una actualización que tu macOS no puede
-  abrir y te avisa de la versión que hace falta.
+  macOS 12 Monterey; si usas esa versión, quédate en DevBar 0.15.3, que ya no
+  instala por su cuenta una versión que tu Mac no puede abrir.
 - **«Reportar un fallo» espera a tener el informe copiado.** El informe ya
   está en el portapapeles antes de que se abra el navegador; si no se puede
   copiar, no se abre una incidencia vacía y DevBar avisa del error. «Copiar
@@ -32,6 +31,35 @@ Todas las novedades relevantes de DevBar. El formato sigue
   peticiones MCP (`fast-uri`) y en dependencias de las herramientas de
   compilación, empaquetado y pruebas (`undici`, `vite`, `@electron/asar`,
   `glob`).
+
+## [0.15.3] - 2026-11-25
+
+### Corregido
+
+- **DevBar ya no prepara una actualización que tu macOS no puede abrir.**
+  Antes de preparar una versión nueva, comprueba qué macOS necesita; si tu Mac
+  tiene uno más antiguo, mantiene la versión actual y te avisa de cuál hace
+  falta, también si pulsas «Reintentar». Así, en macOS 12 Monterey DevBar se
+  queda en 0.15.3 en lugar de instalar la 0.16.0, que requiere macOS 13
+  Ventura o posterior. Si DevBar no puede actualizarse solo (por ejemplo,
+  porque está en una carpeta donde no puede escribir), te sigue ofreciendo el
+  .dmg para instalarlo a mano, y ahí no comprueba la versión de macOS.
+
+## [0.15.2] - 2026-11-19
+
+### Corregido
+
+- **La configuración ya no se abre sola cuando un asistente se conecta por MCP.**
+  Algunos clientes (como Codex en Windows) arrancan el servidor MCP de DevBar
+  sin la variable `ELECTRON_RUN_AS_NODE` que incluye la línea de Ajustes › MCP.
+  Entonces DevBar arrancaba como una segunda copia de la app, y la que ya
+  estaba abierta mostraba la configuración en cada conexión. Ahora DevBar
+  reconoce esa línea y arranca el servidor MCP igualmente. En Windows, lo
+  ejecuta en un proceso Node con los flujos de entrada y salida heredados,
+  para que el asistente también consiga conectarse.
+- **Abrir DevBar cuando ya está abierto ya no le borra el log.** Ese segundo
+  arranque rotaba el `app.log` de la copia en marcha, y «Reportar un fallo» se
+  quedaba sin su historial reciente.
 
 ## [0.15.0] - 2026-11-17
 

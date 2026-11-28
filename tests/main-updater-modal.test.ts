@@ -1,5 +1,6 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { harness, update } from './helpers/updater-harness.js';
+import { harness, update, updatesDir } from './helpers/updater-harness.js';
 
 /**
  * The install modal and what it owns: once a staged copy is announced, the
@@ -109,8 +110,8 @@ describe('src/main/updater.ts — install modal', () => {
     latest = { ...update, version: '1.4.0' };
     await h.updater.runUpdateCheck();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(h.calls).not.toContain('stage:/home/updates/1.4.0');
-    expect(h.dirs.get('/home/updates')).toContain('1.3.0');
+    expect(h.calls).not.toContain(`stage:${path.join(updatesDir, '1.4.0')}`);
+    expect(h.dirs.get(updatesDir)).toContain('1.3.0');
     expect(h.updater.staged()?.version).toBe('1.3.0');
     answer(true);
     await vi.waitFor(() => expect(h.calls).toContain('spawnSwap'));
@@ -358,8 +359,8 @@ describe('src/main/updater.ts — install modal', () => {
     latest = { ...update, version: '1.4.0' };
     await h.updater.runUpdateCheck();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(h.calls).not.toContain('stage:/home/updates/1.4.0');
-    expect(h.dirs.get('/home/updates')).toContain('1.3.0');
+    expect(h.calls).not.toContain(`stage:${path.join(updatesDir, '1.4.0')}`);
+    expect(h.dirs.get(updatesDir)).toContain('1.3.0');
     log.mockRestore();
   });
 
@@ -407,9 +408,9 @@ describe('src/main/updater.ts — install modal', () => {
       downloadFile: () => new Promise<string>(() => undefined),
     });
     await h.updater.runUpdateCheck();
-    h.dirs.set('/home/updates', ['1.2.0', '1.3.0', 'file.zip']);
+    h.dirs.set(updatesDir, ['1.2.0', '1.3.0', 'file.zip']);
     h.updater.pruneStagedUpdates('1.2.0');
-    expect(h.removed).not.toContain('/home/updates/1.3.0');
+    expect(h.removed).not.toContain(path.join(updatesDir, '1.3.0'));
   });
 
   it('frees the download slot even when the download cannot be removed', async () => {
@@ -433,7 +434,7 @@ describe('src/main/updater.ts — install modal', () => {
     latest = { ...update, version: '1.4.0' };
     await h.updater.runUpdateCheck();
     await vi.waitFor(() =>
-      expect(h.calls).toContain('stage:/home/updates/1.4.0'),
+      expect(h.calls).toContain(`stage:${path.join(updatesDir, '1.4.0')}`),
     );
     log.mockRestore();
   });

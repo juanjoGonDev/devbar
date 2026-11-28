@@ -8,6 +8,8 @@ import { createUpdater, type UpdaterDeps } from '../../src/main/updater.js';
 import type { AvailableUpdate } from '../../src/domain-types.js';
 import type { UpdatePhase } from '../../src/ipc-contract.js';
 
+export const updatesDir = path.join(path.sep, 'home', 'updates');
+
 export const update: AvailableUpdate = {
   version: '1.3.0',
   url: 'https://github.test/releases/v1.3.0',
@@ -32,9 +34,7 @@ export function harness(overrides: Partial<UpdaterDeps> = {}) {
   const phases: UpdatePhase[] = [];
   const processes: string[][] = [];
   const removed: string[] = [];
-  const dirs = new Map<string, string[]>([
-    ['/home/updates', ['1.2.0', 'file.zip']],
-  ]);
+  const dirs = new Map<string, string[]>([[updatesDir, ['1.2.0', 'file.zip']]]);
   const deps: UpdaterDeps = {
     repo: { owner: 'o', repo: 'r' },
     platform: 'darwin',
@@ -75,7 +75,7 @@ export function harness(overrides: Partial<UpdaterDeps> = {}) {
       return Promise.resolve(dest);
     },
     downloadsDir: () => '/Users/me/Downloads',
-    updatesDir: () => '/home/updates',
+    updatesDir: () => updatesDir,
     removeFile: (target) => removed.push(target),
     updaterFs: {
       mkdirSync: () => calls.push('mkdir'),

@@ -4,6 +4,9 @@ import path from 'node:path';
 import type { StagedUpdate } from './domain-types.js';
 import { isNewerVersion } from './update-check.js';
 
+/** The downloaded bundle needs a newer macOS than this Mac runs. */
+export class UnsupportedSystemError extends Error {}
+
 function run(file: string, args: readonly string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(file, [...args], (err, stdout) => {
@@ -73,15 +76,19 @@ export async function extractUpdate({
 
   // Electron raises its macOS floor now and then, and the swap deletes the
   // working copy: a bundle this Mac cannot launch must stop here. No key
-  // means no floor, which is how macOS reads it too.
+  // means no floor, which is how macOS reads it too; any other failure of
+  // the read must not pass for one.
   const minimum = await run('/usr/libexec/PlistBuddy', [
     '-c',
     'Print :LSMinimumSystemVersion',
     plist,
-  ]).catch(() => '');
+  ]).catch((err: Error) => {
+    if (err.message.includes('Does Not Exist')) return '';
+    throw err;
+  });
   const host = await run('/usr/bin/sw_vers', ['-productVersion']);
   if (isNewerVersion(minimum, host))
-    throw new Error(
+    throw new UnsupportedSystemError(
       `v${version} necesita macOS ${minimum} o posterior y este Mac tiene macOS ${host}`,
     );
 

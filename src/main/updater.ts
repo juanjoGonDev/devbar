@@ -19,7 +19,6 @@ import {
   copyPhaseCommand,
   noticeReady,
   showPhaseFile,
-  type SimpleResult,
 } from './update-actions.js';
 import {
   createPhaseStore,
@@ -30,6 +29,8 @@ import {
 } from './update-phase.js';
 import type { AvailableUpdate, StagedUpdate } from '../domain-types.js';
 import type { UpdatePhase, UpdateStatus } from '../ipc-contract.js';
+import { UnsupportedSystemError } from '../self-update-macos.js';
+import type { Updater } from './updater-api.js';
 
 /**
  * The update lifecycle around the assisted flow: check GitHub, stage the
@@ -105,32 +106,6 @@ export interface UpdaterDeps extends AssistedUpdateDeps, LinuxUpdateDeps {
   showItemInFolder: (target: string) => void;
 }
 
-export interface Updater {
-  status: () => UpdateStatus;
-  broadcastStatus: () => void;
-  runUpdateCheck: (options?: { manual?: boolean }) => Promise<UpdateStatus>;
-  applyUpdate: () => Promise<ApplyUpdateResult>;
-  /**
-   * applyUpdate for surfaces that cannot show the result themselves (tray
-   * menu, banner button): failures and "your turn" steps become a banner
-   * that opens the Updates pane. Never rejects.
-   */
-  applyUpdateAndReport: () => Promise<void>;
-  copyInstallCommand: () => Promise<SimpleResult>;
-  showDownloadedFile: () => SimpleResult;
-  /** Dev simulation: stage a locally built zip through the real code path. */
-  stageFromZip: (zipPath: string, update: AvailableUpdate) => Promise<void>;
-  pruneStagedUpdates: (keep: string) => void;
-  installedBundleId: () => string | null;
-  /** A staged update matching the release can be swapped in right now. */
-  canInstallStaged: () => boolean;
-  /** applyUpdate without the restart dialog, staged updates only. */
-  installStagedHeadless: () => Promise<ApplyUpdateResult>;
-  available: () => AvailableUpdate | null;
-  staged: () => StagedUpdate | null;
-  setSimulatedUpdate: (update: AvailableUpdate | null) => void;
-}
-
 const BANNER_TITLE = 'DevBar — actualización';
 /**
  * Why the dev simulations leave the update alone while the install modal
@@ -153,6 +128,10 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   // The automatic loop must not re-pull ~100 MB every 5 minutes after a
   // failure; an explicit retry from the user clears the entry.
   const stagingFailedVersions = new Set<string>();
+  // Versions this Mac cannot launch, with the reason. Unlike a failed
+  // download, retrying cannot help, and the assisted .dmg route never runs
+  // the check: a retry must answer the reason instead of taking that route.
+  const unsupportedVersions = new Map<string, string>();
   let devUpdateSimulated = false;
   const phase = createPhaseStore((next) => deps.send('updates:phase', next));
   const linux = createLinuxUpdateFlow(deps, phase);
@@ -282,6 +261,8 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       else failure = download.reason;
     } catch (err) {
       failure = `no se pudo preparar: ${errorMessage(err)}`;
+      if (err instanceof UnsupportedSystemError)
+        unsupportedVersions.set(version, err.message);
       phase.set({ state: 'download-failed', version, reason: failure });
     } finally {
       stagingVersion = null; // first: a failed removal must not keep the slot
@@ -350,6 +331,8 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   async function applyUpdate(): Promise<ApplyUpdateResult> {
     if (!availableUpdate) return { ok: false, error: 'no_update' };
     const update = availableUpdate;
+    const unsupported = unsupportedVersions.get(update.version);
+    if (unsupported) return { ok: false, error: unsupported };
     const current = phase.get();
     // `asking`: the install modal is already up; a second one would queue.
     if (isBusyPhase(current) || stagingVersion !== null || asking)
@@ -495,6 +478,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       });
       const staged = await unpacking.finally(() => (stagingVersion = null));
       // Published only with its copy on disk: a failure leaves it as it was.
+      unsupportedVersions.delete(update.version);
       devUpdateSimulated = true;
       availableUpdate = update;
       stagedUpdate = staged;

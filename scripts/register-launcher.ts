@@ -338,19 +338,22 @@ function registerDesktopEntry(
 }
 
 function registerStartMenuShortcut(
-  { installDir, repoRoot, lnkPath, spawn, report }: RegisterLauncherOptions,
+  { installDir, lnkPath, spawn, report }: RegisterLauncherOptions,
   appPath: string,
 ): void {
   // Start Menu shortcut — the Windows equivalent of the app-menu entry.
   report.step('Registering in the Start Menu…');
   try {
     fs.mkdirSync(path.dirname(lnkPath), { recursive: true });
-    const icon = launcherIcon(installDir, '.ico', repoRoot, report);
+    // The exe's own icon, as the NSIS installer does. The in-app update runs
+    // that installer over this folder: it deletes anything copied in next
+    // to the app (a resources\icon.ico would vanish) but keeps this
+    // shortcut, which would be left with a blank icon.
     const result = spawn('powershell', [
       '-NoProfile',
       '-NonInteractive',
       '-Command',
-      lnkCommand(lnkPath, appPath, installDir, icon),
+      lnkCommand(lnkPath, appPath, installDir, appPath),
     ]);
     if (result.error) throw result.error;
     if (result.status === 0) {

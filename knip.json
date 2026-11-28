@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "src/main.ts",
+    "src/entry.ts",
     "src/preload.ts",
     "src/mcp/cli.ts",
     "renderer/*.ts",
