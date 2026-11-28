@@ -5,6 +5,12 @@ Todas las novedades relevantes de DevBar. El formato sigue
 
 ## [0.16.0] - 2026-11-28
 
+### Añadido
+
+- **72 iconos nuevos** en el selector de iconos, de la última versión de
+  Lucide (un destornillador, una chaqueta o una caseta de perro, entre otros),
+  y también se encuentran buscando en español.
+
 ### Cambiado
 
 - **Electron 45 (Chromium 156).** DevBar se actualiza de Electron 43 a 45,

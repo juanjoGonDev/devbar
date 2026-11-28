@@ -48,24 +48,24 @@
     "@types/debug": "4.1.13",
     "@types/electron-positioner": "4.1.4",
     "@types/jsdom": "30.0.0",
-    "@types/node": "26.6.6",
-    "@vitest/coverage-v8": "5.1.0",
+    "@types/node": "26.6.10",
+    "@vitest/coverage-v8": "5.1.2",
     "@vitest/eslint-plugin": "1.6.28",
-    "dependency-cruiser": "18.7.2",
-    "electron": "45.3.2",
+    "dependency-cruiser": "18.9.0",
+    "electron": "45.5.0",
     "electron-builder": "26.18.0",
     "esbuild": "0.28.2",
     "eslint": "10.15.0",
     "jiti": "2.7.0",
     "js-yaml": "5.5.0",
     "jsdom": "31.0.1",
-    "knip": "6.45.1",
-    "lefthook": "2.2.2",
-    "lucide-static": "1.73.0",
+    "knip": "6.48.0",
+    "lefthook": "2.2.3",
+    "lucide-static": "1.80.0",
     "prettier": "3.10.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.72.2",
-    "vitest": "5.1.0"
+    "typescript-eslint": "8.74.0",
+    "vitest": "5.1.2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -88,7 +88,7 @@
       "@hono/node-server@>=2.0.0 <2.1.6": "2.1.8",
       "vite@>=8.0.0 <8.1.6": "8.3.8",
       "@electron/asar@>=4.0.0 <4.3.2": "4.3.2",
-      "@types/electron-positioner>electron": "45.3.2"
+      "@types/electron-positioner>electron": "45.5.0"
     },
     "auditConfig": {
       "ignoreGhsas": [
