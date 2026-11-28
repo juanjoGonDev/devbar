@@ -1,6 +1,6 @@
 {
   "name": "devbar",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "description": "Menu bar service launcher for macOS, Windows and Linux",
   "main": "build/src/entry.js",
   "packageManager": "pnpm@10.32.1",
@@ -82,6 +82,7 @@
       "fast-uri@>=3.0.0 <3.1.9": "3.1.9",
       "js-yaml@<5": "4.3.2",
       "brace-expansion@>=4.0.0 <5.0.9": "^5.0.9",
+      "minimatch@>=7.0.0 <11.0.1": "11.0.8",
       "undici@>=7.0.0 <7.30.1": "7.30.2",
       "undici@>=6.0.0 <6.29.1": "6.29.1",
       "hono@<4.13.16": "4.13.18",
@@ -89,12 +90,6 @@
       "vite@>=8.0.0 <8.1.6": "8.3.8",
       "@electron/asar@>=4.0.0 <4.3.2": "4.3.2",
       "@types/electron-positioner>electron": "45.5.0"
-    },
-    "auditConfig": {
-      "ignoreGhsas": [
-        "GHSA-fc5q-39xc-vjpf",
-        "GHSA-g3hv-75wg-m249"
-      ]
     },
     "onlyBuiltDependencies": [
       "lefthook"

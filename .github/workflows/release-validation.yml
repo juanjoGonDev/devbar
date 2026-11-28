@@ -77,14 +77,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # Advisories with no installable fix are ignored in package.json
-      # (pnpm.auditConfig.ignoreGhsas), so this step and a local `pnpm audit`
-      # agree: picomatch GHSA-fc5q-39xc-vjpf has no patched release, and
-      # minimatch GHSA-g3hv-75wg-m249 is fixed only in 11.x while
-      # electron-builder and typescript-eslint still require ^9/^10. Both are
-      # build/lint-time only (`pnpm why <pkg> --prod` is empty). Every other
-      # moderate+ finding fails the release; drop an ignore once upstream
-      # ships a fix.
+      # Every moderate+ finding fails the release. A transitive fix that a
+      # parent's range does not reach yet goes in package.json as a
+      # range-scoped pnpm override, never as an audit ignore.
       - name: Audit release dependency graph
         run: pnpm audit --audit-level=moderate
 
