@@ -3,6 +3,15 @@
 Todas las novedades relevantes de DevBar. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y versionado semántico.
 
+## [0.16.1] - 2026-11-28
+
+### Seguridad
+
+- **Vulnerabilidad corregida en `minimatch`**, que usan las herramientas de
+  empaquetado (electron-builder) y de lint. No forma parte de la app, así que
+  en DevBar no cambia nada; con esto el proyecto se queda sin alertas de
+  seguridad abiertas.
+
 ## [0.16.0] - 2026-11-28
 
 ### Añadido
