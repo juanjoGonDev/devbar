@@ -42,12 +42,13 @@ function harness(
     },
     appVersion: () => '1.2.0',
     appQuit: () => calls.push('quit'),
-    copyReport: () => ({ ok: true }),
+    copyReport: () => Promise.resolve({ ok: true }),
     reportPreview: () => ({ text: '', errors: 0, warnings: 0 }),
-    reportIssue: () => ({
-      url: 'https://github.test/issues/new',
-      bodyIncluded: true,
-    }),
+    reportIssue: () =>
+      Promise.resolve({
+        url: 'https://github.test/issues/new',
+        bodyIncluded: true,
+      }),
     platform: 'darwin',
     desktop: '',
     devPanelAvailable: false,

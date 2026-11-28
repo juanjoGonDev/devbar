@@ -30,10 +30,14 @@ describe('src/main/os-integration.ts', () => {
       expect(h.loginItems).toEqual([]);
     });
 
-    it('asks macOS to open hidden at login', () => {
+    it('registers the macOS login item, and removes it when off', () => {
       const h = host({ isMac: true });
       applyAutostart(h.base, true);
-      expect(h.loginItems).toEqual([{ openAtLogin: true, openAsHidden: true }]);
+      applyAutostart(h.base, false);
+      expect(h.loginItems).toEqual([
+        { openAtLogin: true },
+        { openAtLogin: false },
+      ]);
     });
 
     it('passes the boot signal argument on Windows, and clears it when off', () => {

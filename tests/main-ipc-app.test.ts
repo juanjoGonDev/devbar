@@ -91,7 +91,7 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
       },
       copyInstallCommand: () => {
         calls.push('copyCommand');
-        return { ok: true };
+        return Promise.resolve({ ok: true });
       },
       showDownloadedFile: () => {
         calls.push('showDownload');
@@ -115,14 +115,14 @@ function harness(overrides: Partial<AppIpcDeps> = {}) {
     openExternalAsync: (url) => Promise.resolve(calls.push(`external:${url}`)),
     reportIssue: () => {
       calls.push('reportIssue');
-      return {
+      return Promise.resolve({
         url: 'https://github.test/issues/new?title=x',
         bodyIncluded: true,
-      };
+      });
     },
     copyReport: () => {
       calls.push('copyReport');
-      return { ok: true };
+      return Promise.resolve({ ok: true });
     },
     reportPreview: () => ({ text: 'REPORT', errors: 2, warnings: 1 }),
     setTimer: (fn) => timers.push(fn),
@@ -233,6 +233,17 @@ describe('src/main/ipc/app-ipc.ts', () => {
       });
     });
 
+    it('opens nothing when the report could not be copied', async () => {
+      const h = harness({
+        reportIssue: () => Promise.reject(new Error('clipboard busy')),
+      });
+      const res = await h.ipc.invoke('app:reportIssue');
+      // No `copied: true`: the clipboard holds nothing to paste, and the
+      // browser stays closed rather than opening an issue with no report.
+      expect(res).toEqual({ ok: false, error: 'clipboard busy' });
+      expect(h.calls.some((call) => call.startsWith('external:'))).toBe(false);
+    });
+
     it('reports failure when the browser refuses to open', async () => {
       const h = harness({
         openExternalAsync: () => Promise.reject(new Error('no browser')),
@@ -256,9 +267,11 @@ describe('src/main/ipc/app-ipc.ts', () => {
       expect(h.calls).toEqual(['check:true', 'apply']);
     });
 
-    it('copies the install command and reveals the download through the updater', () => {
+    it('copies the install command and reveals the download through the updater', async () => {
       const h = harness();
-      expect(h.ipc.invoke('updates:copyCommand')).toEqual({ ok: true });
+      await expect(h.ipc.invoke('updates:copyCommand')).resolves.toEqual({
+        ok: true,
+      });
       expect(h.ipc.invoke('updates:showDownload')).toEqual({
         ok: false,
         error: 'no_file',

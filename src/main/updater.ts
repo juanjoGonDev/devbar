@@ -102,7 +102,7 @@ export interface UpdaterDeps extends AssistedUpdateDeps, LinuxUpdateDeps {
   autoUpdate: () => boolean;
   /** The «Reiniciar e instalar» modal (see install-staged-update.ts). */
   confirmInstall: (version: string) => Promise<boolean>;
-  copyText: (text: string) => void;
+  copyText: (text: string) => Promise<void>;
   showItemInFolder: (target: string) => void;
 }
 

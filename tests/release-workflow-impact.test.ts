@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-import yaml from 'js-yaml';
+import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 
 import { classifyReleaseImpact } from '../scripts/release-impact-policy.ts';
@@ -28,7 +28,7 @@ interface WorkflowJob {
   permissions?: Record<string, string>;
   steps?: WorkflowStep[];
 }
-const releaseWorkflowDoc = yaml.load(releaseWorkflow) as {
+const releaseWorkflowDoc = load(releaseWorkflow) as {
   on?: Record<string, unknown>;
   concurrency?: { group?: string; 'cancel-in-progress'?: boolean };
   jobs: Record<string, WorkflowJob>;
@@ -291,7 +291,7 @@ describe('release impact workflow integration', () => {
   // ships without ever being dry-run. Both lists have silently drifted before,
   // so assert the containment instead of trusting two hand-maintained copies.
   it('dry-runs every release-impacting script in release-validation.yml', () => {
-    const validationDoc = yaml.load(
+    const validationDoc = load(
       readFileSync('.github/workflows/release-validation.yml', 'utf8'),
     ) as { on?: { pull_request?: { paths?: string[] } } };
     const filtered = new Set(validationDoc.on?.pull_request?.paths ?? []);

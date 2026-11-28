@@ -168,7 +168,7 @@ describe('scripts/verify-release-artifacts.ts', () => {
       await main([directory, '1.2.3']);
       capture.restore();
       expect(capture.lines).toEqual([
-        `Verified 14 release artifacts for v1.2.3 in ${directory}\n`,
+        `Verified 12 release artifacts for v1.2.3 in ${directory}\n`,
       ]);
     });
 
@@ -198,10 +198,10 @@ describe('scripts/verify-release-artifacts.ts', () => {
       const directory = makeArtifactDir({
         version: '1.2.3',
         platform: 'linux',
-        skip: 'DevBar-1.2.3-linux-armv7.AppImage',
+        skip: 'DevBar-1.2.3-linux-arm64.AppImage',
       });
       await expect(main([directory, '1.2.3', 'linux'])).rejects.toThrow(
-        'DevBar-1.2.3-linux-armv7.AppImage is missing or empty',
+        'DevBar-1.2.3-linux-arm64.AppImage is missing or empty',
       );
     });
 

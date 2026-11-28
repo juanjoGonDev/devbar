@@ -15,7 +15,7 @@ export interface Updater {
    * that opens the Updates pane. Never rejects.
    */
   applyUpdateAndReport: () => Promise<void>;
-  copyInstallCommand: () => SimpleResult;
+  copyInstallCommand: () => Promise<SimpleResult>;
   showDownloadedFile: () => SimpleResult;
   /** Dev simulation: stage a locally built zip through the real code path. */
   stageFromZip: (zipPath: string, update: AvailableUpdate) => Promise<void>;
